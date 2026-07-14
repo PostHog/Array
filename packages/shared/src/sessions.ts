@@ -197,7 +197,7 @@ export function resolveBypassRevertMode(
  * Whether a mid-turn message can be folded into the running turn (steered)
  * rather than interrupt-and-resent. Decided by the adapter's negotiated
  * `steering` capability: "native" folds (claude, codex app-server);
- * "interrupt-resend" (legacy) does not. Cloud runs never steer locally.
+ * "interrupt-resend" (legacy) does not.
  *
  * Fallback: if `steering` is unset (a start path that predates capability
  * plumbing), Claude is still treated as native — it has always steered — so the
@@ -206,7 +206,7 @@ export function resolveBypassRevertMode(
 export function sessionSupportsNativeSteer(
   session: Pick<AgentSession, "isCloud" | "steering" | "adapter">,
 ): boolean {
-  if (session.isCloud) return false;
   if (session.steering === "native") return true;
+  if (session.isCloud) return false;
   return session.steering == null && session.adapter === "claude";
 }

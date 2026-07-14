@@ -629,7 +629,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           return undefined;
         });
       this.turns.onSteered(steerRes?.turnId);
-      return { stopReason: await this.turns.awaitCompletion() };
+      return { stopReason: "end_turn", _meta: { steer: true } };
     }
     if (this.turns.isPending) {
       // A turn is pending but has no turnId yet, so we can't steer; fail fast.

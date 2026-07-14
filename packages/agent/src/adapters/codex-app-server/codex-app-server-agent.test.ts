@@ -1481,10 +1481,14 @@ describe("CodexAppServerAgent", () => {
       prompt: [{ type: "text", text: "more context" }],
     } as unknown as PromptRequest);
 
-    // The single turn/completed resolves both the original and the folded prompt.
+    await expect(second).resolves.toMatchObject({
+      stopReason: "end_turn",
+      _meta: { steer: true },
+    });
+
+    // The original prompt remains the sole owner of turn completion.
     stub.emit("turn/completed", { turn: { status: "completed" } });
     expect((await first).stopReason).toBe("end_turn");
-    expect((await second).stopReason).toBe("end_turn");
 
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect(steer?.params).toMatchObject({

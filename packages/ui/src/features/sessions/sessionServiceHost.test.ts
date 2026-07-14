@@ -2939,7 +2939,7 @@ describe("SessionService", () => {
       );
     });
 
-    it("captures agentVersion from run_started params onto the session", async () => {
+    it("captures agent capabilities from run_started params onto the session", async () => {
       const service = getSessionService();
       const hydratedSession = createMockSession({
         taskRunId: "run-123",
@@ -2969,6 +2969,7 @@ describe("SessionService", () => {
             runId: "run-123",
             taskId: "task-123",
             agentVersion: "0.42.3",
+            steering: "native",
           },
         },
       };
@@ -2988,6 +2989,7 @@ describe("SessionService", () => {
           "run-123",
           expect.objectContaining({
             agentVersion: "0.42.3",
+            steering: "native",
             status: "connected",
           }),
         );
@@ -3931,11 +3933,7 @@ describe("SessionService", () => {
       expect(mockTrpcCloudTask.sendCommand.mutate).not.toHaveBeenCalled();
     });
 
-    it("queues a cloud steer instead of interrupting the running turn", async () => {
-      // Regression: cloud has no native mid-turn steer, so steering used to
-      // fall back to cancel-then-resend — which surfaced as a jarring user
-      // interruption. Cloud steer must now queue like a normal message and
-      // never cancel the running turn.
+    it("sends a native cloud steer immediately", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
         createMockSession({
@@ -3943,6 +3941,42 @@ describe("SessionService", () => {
           cloudStatus: "in_progress",
           status: "connected",
           isPromptPending: true,
+          steering: "native",
+        }),
+      );
+      mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
+        success: true,
+        result: { stopReason: "steered", steered: true },
+      });
+
+      const prompt: ContentBlock[] = [{ type: "text", text: "steer me" }];
+      const result = await service.sendPrompt("task-123", prompt, {
+        steer: true,
+      });
+
+      expect(result.stopReason).toBe("steered");
+      expect(mockSessionStoreSetters.enqueueMessage).not.toHaveBeenCalled();
+      expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "user_message",
+          params: { content: "steer me", steer: true },
+        }),
+      );
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-123",
+        expect.objectContaining({ isPromptPending: false }),
+      );
+    });
+
+    it("queues a cloud steer when the sandbox lacks the capability", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connected",
+          isPromptPending: true,
+          steering: undefined,
         }),
       );
 

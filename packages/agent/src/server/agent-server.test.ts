@@ -1789,6 +1789,55 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toHaveBeenCalledTimes(4);
     }, 20000);
 
+    it("steers an active turn without emitting a separate turn completion", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async () => ({
+        stopReason: "end_turn",
+        _meta: { steer: true },
+      }));
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-1",
+          method: "user_message",
+          params: { content: "change direction", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "steered", steered: true },
+      });
+      expect(prompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(broadcastTurnComplete).not.toHaveBeenCalled();
+      expect(resetTurnMessages).not.toHaveBeenCalled();
+    }, 20000);
+
     it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
       const s = createServer();
       await s.start();
@@ -1864,6 +1913,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(runStarted?.notification?.params).toMatchObject({
             runId: "test-run-id",
             taskId: "test-task-id",
+            steering: "native",
           });
           // Agent reports its semver so clients can gate UI features
           // against agent capabilities (e.g. `>=0.40.1`). The exact value

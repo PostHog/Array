@@ -487,7 +487,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       // the benign end_turn is ignored by clients, which key off _meta.steer.
       this.session.input.push(userMessage);
       await this.broadcastUserMessage(params);
-      return { stopReason: "end_turn" };
+      return { stopReason: "end_turn", _meta: { steer: true } };
     }
 
     if (!hasInFlightTurns && !isLocalOnlyCommand) {

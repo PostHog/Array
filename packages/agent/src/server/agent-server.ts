@@ -283,6 +283,15 @@ function hiddenTextBlock(text: string): ContentBlock {
   } as ContentBlock;
 }
 
+function extractSteeringCapability(result: unknown): string | undefined {
+  const steering = (
+    result as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
+}
+
 interface LocalSkillPromptContext {
   /** Set when the message is a bare `/skill` invocation the adapter should strip. */
   skillName?: string;
@@ -358,6 +367,7 @@ export class AgentServer {
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
+  private activeOwnedTurnCount = 0;
   private pendingPermissions = new Map<
     string,
     {
@@ -927,8 +937,6 @@ export class AgentServer {
           `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
         );
 
-        this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
-
         // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
         // also flips the detected-PR context to its push variant.
         const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
@@ -945,15 +953,43 @@ export class AgentServer {
             : {}),
         };
 
+        const shouldSteer =
+          params.steer === true && this.activeOwnedTurnCount > 0;
+
+        if (shouldSteer) {
+          try {
+            const result = await this.session.clientConnection.prompt({
+              sessionId: this.session.acpSessionId,
+              prompt,
+              _meta: { ...promptMeta, steer: true },
+            });
+            const accepted =
+              (result._meta as { steer?: unknown } | undefined)?.steer === true;
+            if (!accepted) {
+              throw new Error("Adapter did not accept the steer message");
+            }
+            return { stopReason: "steered", steered: true };
+          } catch (error) {
+            if (messageId) {
+              this.deliveredMessageIds.delete(messageId);
+            }
+            throw error;
+          }
+        }
+
+        this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
+
         let result: PromptResponse;
         try {
-          result = await this.session.clientConnection.prompt({
-            sessionId: this.session.acpSessionId,
-            prompt,
-            ...(Object.keys(promptMeta).length > 0
-              ? { _meta: promptMeta }
-              : {}),
-          });
+          result = await this.runOwnedTurn(() =>
+            this.session!.clientConnection.prompt({
+              sessionId: this.session!.acpSessionId,
+              prompt,
+              ...(Object.keys(promptMeta).length > 0
+                ? { _meta: promptMeta }
+                : {}),
+            }),
+          );
         } catch (error) {
           if (messageId) {
             this.deliveredMessageIds.delete(messageId);
@@ -1323,10 +1359,11 @@ export class AgentServer {
       clientStream,
     );
 
-    await clientConnection.initialize({
+    const initializeResult = await clientConnection.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
+    const steering = extractSteeringCapability(initializeResult);
 
     const runState = preTaskRun?.state as Record<string, unknown> | undefined;
     // Preserve native Codex modes for cloud runs so they behave the same as
@@ -1466,6 +1503,7 @@ export class AgentServer {
         runId: payload.run_id,
         taskId: payload.task_id,
         agentVersion: this.config.version ?? packageJson.version,
+        ...(steering ? { steering } : {}),
       },
     };
     this.broadcastEvent({
@@ -1526,6 +1564,15 @@ export class AgentServer {
     }
 
     return { classification: classifyAgentError(message), message };
+  }
+
+  private async runOwnedTurn<T>(operation: () => Promise<T>): Promise<T> {
+    this.activeOwnedTurnCount += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activeOwnedTurnCount -= 1;
+    }
   }
 
   /**
@@ -1743,11 +1790,13 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: initialPrompt,
-        ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: this.session!.acpSessionId,
+          prompt: initialPrompt,
+          ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
+        }),
+      );
 
       this.logger.debug("Initial task message completed", {
         stopReason: result.stopReason,
@@ -1955,11 +2004,13 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: builtPrompt.prompt,
-        ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: this.session!.acpSessionId,
+          prompt: builtPrompt.prompt,
+          ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
+        }),
+      );
 
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
