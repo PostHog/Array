@@ -21,6 +21,18 @@ export interface NotebookMarkdownUpdate {
   base_crc?: number | null;
 }
 
+/** A markdown update from the collab SSE stream (or a 409 conflict body). */
+export interface NotebookRemoteUpdateEvent {
+  /** Notebook version this event produces. */
+  version: number;
+  /** UTF-16 span changes transforming version-1 → version; absent means "reload". */
+  diff?: TextChange[];
+  /** CRC-32 of the base markdown; mismatch means our base diverged — reload. */
+  baseCrc?: number | null;
+  /** Saving client's id, used to skip self-echo. */
+  clientId?: string | null;
+}
+
 export type NotebookSyncSaveResult =
   | { status: "saved"; markdown: string; version: number }
   | {
@@ -75,8 +87,16 @@ export class NotebookSyncEngine {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private firstDirtyAt: number | null = null;
   private saving = false;
+  private reloading = false;
   private disposed = false;
   private status: NotebookSyncStatus = "saved";
+  /**
+   * Remote stream events that arrived while a save or reload was in flight.
+   * lastEventId has already advanced past them, so dropping them would leave
+   * us permanently stale — they replay (version-sorted) once the operation
+   * settles.
+   */
+  private pendingRemoteEvents: NotebookRemoteUpdateEvent[] = [];
 
   constructor(
     initial: { markdown: string; version: number; nodeId: string },
@@ -106,6 +126,72 @@ export class NotebookSyncEngine {
     }
     this.setStatus(this.saving ? "saving" : "dirty");
     this.schedule(SYNC_DELAY_MS);
+  }
+
+  /**
+   * A collab-stream `update` event arrived. Mirrors the webapp notebookLogic's
+   * `handleMarkdownStreamEvent`: skip own echoes and stale versions, queue
+   * while a save/reload is in flight, apply exact next-version diffs directly
+   * (CRC-guarded), and fall back to a full reload for anything else (version
+   * gap, oversized diff omitted by the server, or a diff that doesn't fit our
+   * baseline).
+   */
+  applyRemoteUpdate(event: NotebookRemoteUpdateEvent): void {
+    if (this.disposed) return;
+    if (event.clientId && event.clientId === this.clientId) {
+      // Our own save echoing back; the save response already advanced state.
+      return;
+    }
+    if (event.version <= this.baseVersion) return;
+    if (this.saving || this.reloading) {
+      this.pendingRemoteEvents.push(event);
+      return;
+    }
+
+    if (event.diff && event.version === this.baseVersion + 1) {
+      const baseMatches =
+        typeof event.baseCrc !== "number" ||
+        markdownCrc(this.baseMarkdown) === event.baseCrc;
+      const next = baseMatches
+        ? tryApplyTextChanges(this.baseMarkdown, event.diff)
+        : null;
+      if (next !== null) {
+        // Diffs are exact version transitions, so the result is canonical
+        // server state — no GET needed.
+        const previousBase = this.baseMarkdown;
+        const snapshot = this.localMarkdown;
+        this.baseMarkdown = next;
+        this.baseVersion = event.version;
+        this.deps.onRemoteContent({ markdown: next, version: event.version });
+        // Rebase any unsaved local edits over the new server state, like the
+        // 409 path. If the user keeps typing, the editor's own merge of
+        // remoteValue supersedes this via onChange.
+        this.localMarkdown =
+          snapshot === previousBase
+            ? next
+            : mergeNotebookMarkdownChanges({
+                baseMarkdown: previousBase,
+                localMarkdown: snapshot,
+                remoteMarkdown: next,
+              }).mergedMarkdown;
+        if (this.localMarkdown !== this.baseMarkdown) {
+          this.setStatus("dirty");
+          this.schedule(0);
+        } else {
+          this.firstDirtyAt = null;
+          this.setStatus("saved");
+        }
+        return;
+      }
+    }
+
+    // Version gap, diff-less event, or a diff that doesn't fit our base:
+    // full reload, which also resets the baseline.
+    this.reloadAndRebase().catch(() => {
+      // Reload failure (network): stay on the current baseline; the next
+      // stream event or save attempt triggers another reload.
+      this.setStatus("error");
+    });
   }
 
   /** Push any pending edit immediately (e.g. on unmount). */
@@ -195,10 +281,12 @@ export class NotebookSyncEngine {
       // Network or server failure: keep the edit, surface the state, retry.
       this.setStatus("error");
       this.saving = false;
+      this.drainPendingRemoteEvents();
       if (!this.disposed) this.schedule(RETRY_DELAY_MS);
       return;
     }
     this.saving = false;
+    this.drainPendingRemoteEvents();
 
     if (this.localMarkdown !== this.baseMarkdown) {
       // Either more typing landed during the request or a conflict merge left
@@ -265,13 +353,38 @@ export class NotebookSyncEngine {
   }
 
   private async reloadAndRebase(): Promise<void> {
-    const server = await this.deps.reload();
-    this.baseMarkdown = server.markdown;
-    this.baseVersion = server.version;
-    if (server.nodeId) this.nodeId = server.nodeId;
-    this.deps.onRemoteContent({
-      markdown: server.markdown,
-      version: server.version,
-    });
+    this.reloading = true;
+    try {
+      const server = await this.deps.reload();
+      // No unsaved local edits: follow the baseline so we don't misread the
+      // pre-reload document as dirty and push stale content back. Unsaved
+      // edits stay put — the editor merges them over remoteValue and re-emits.
+      if (this.localMarkdown === this.baseMarkdown) {
+        this.localMarkdown = server.markdown;
+      }
+      this.baseMarkdown = server.markdown;
+      this.baseVersion = server.version;
+      if (server.nodeId) this.nodeId = server.nodeId;
+      this.deps.onRemoteContent({
+        markdown: server.markdown,
+        version: server.version,
+      });
+    } finally {
+      this.reloading = false;
+      this.drainPendingRemoteEvents();
+    }
+  }
+
+  private drainPendingRemoteEvents(): void {
+    if (this.pendingRemoteEvents.length === 0) return;
+    const pending = [...this.pendingRemoteEvents].sort(
+      (a, b) => a.version - b.version,
+    );
+    this.pendingRemoteEvents = [];
+    for (const event of pending) {
+      // Re-enters the normal path: stale entries drop, and if another
+      // save/reload started mid-drain the rest re-queue.
+      this.applyRemoteUpdate(event);
+    }
   }
 }

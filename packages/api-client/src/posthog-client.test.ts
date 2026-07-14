@@ -1837,3 +1837,144 @@ describe("PostHogAPIClient.notebookMarkdownSave", () => {
     ).rejects.toThrow("Failed to save notebook");
   });
 });
+
+describe("PostHogAPIClient.notebookCollabStream", () => {
+  function makeClient(fetch: ReturnType<typeof vi.fn>) {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+    return client;
+  }
+
+  function sseResponse(chunks: string[]): Response {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+
+  it("parses SSE frames and passes the Last-Event-ID header", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      sseResponse([
+        ": keepalive\n\n",
+        'id: 12-1\nevent: update\ndata: {"type":"update",\ndata: "version":12}\n\n',
+        // Frame split across chunks: the parser must buffer partial lines.
+        'event: presence\ndata: {"type":"pres',
+        'ence"}\n\n',
+      ]),
+    );
+    const client = makeClient(fetch);
+
+    const events: { id?: string; event: string; data: string }[] = [];
+    await client.notebookCollabStream("abc123", {
+      lastEventId: "11-0",
+      signal: new AbortController().signal,
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "get",
+        path: "/api/projects/123/notebooks/abc123/collab/stream",
+        parameters: {
+          header: {
+            Accept: "text/event-stream",
+            "Last-Event-ID": "11-0",
+          },
+        },
+      }),
+    );
+    // The keepalive comment produced no event; multi-line data joined with \n;
+    // presence frames have no id.
+    expect(events).toEqual([
+      { id: "12-1", event: "update", data: '{"type":"update",\n"version":12}' },
+      { id: undefined, event: "presence", data: '{"type":"presence"}' },
+    ]);
+  });
+
+  it("omits the Last-Event-ID header on a fresh connection", async () => {
+    const fetch = vi.fn().mockResolvedValue(sseResponse([]));
+    const client = makeClient(fetch);
+
+    await client.notebookCollabStream("abc123", {
+      signal: new AbortController().signal,
+      onEvent: () => {},
+    });
+
+    expect(fetch.mock.calls[0][0].parameters.header).toEqual({
+      Accept: "text/event-stream",
+    });
+  });
+
+  it("resolves when the stream ends and discards a trailing partial frame", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      sseResponse([
+        'id: 3-1\nevent: update\ndata: {"version":3}\n\n',
+        // No terminating blank line: incomplete, discarded per the SSE spec.
+        "id: 4-1\nevent: update",
+      ]),
+    );
+    const client = makeClient(fetch);
+
+    const events: { id?: string; event: string; data: string }[] = [];
+    await client.notebookCollabStream("abc123", {
+      signal: new AbortController().signal,
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(events).toEqual([
+      { id: "3-1", event: "update", data: '{"version":3}' },
+    ]);
+  });
+});
+
+describe("PostHogAPIClient.notebookPublishPresence", () => {
+  it("posts the caret to the collab presence endpoint", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+
+    const body = {
+      client_id: "client-1",
+      version: 3,
+      cursor: { node_index: 1, offset: 2 },
+    };
+    await client.notebookPublishPresence("abc123", body);
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "post",
+        path: "/api/projects/123/notebooks/abc123/collab/presence/",
+        overrides: { body: JSON.stringify(body) },
+      }),
+    );
+  });
+});

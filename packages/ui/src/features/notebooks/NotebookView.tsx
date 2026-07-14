@@ -22,7 +22,13 @@ import { Flex, IconButton, ScrollArea, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownNotebook } from "./markdown-notebook/MarkdownNotebook";
+import type {
+  MarkdownNotebookCaretPosition,
+  RemoteNotebookCaret,
+} from "./markdown-notebook/remoteCarets";
+import { NotebookInlineAIController } from "./notebookInlineAI";
 import { getNotebooksAppRegistry } from "./notebookRegistry";
+import { NotebookStreamController } from "./notebookStream";
 import { NotebookSyncEngine, type NotebookSyncStatus } from "./notebookSync";
 import { useNotebook } from "./useNotebook";
 import { NOTEBOOKS_QUERY_KEY } from "./useNotebooks";
@@ -104,18 +110,30 @@ function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
   } | null>(null);
   const [status, setStatus] = useState<NotebookSyncStatus>("saved");
   const [title, setTitle] = useState(notebook.title ?? "");
+  const [remoteCarets, setRemoteCarets] = useState<RemoteNotebookCaret[]>([]);
+  const [aiWritingNodeIndexes, setAiWritingNodeIndexes] = useState<number[]>(
+    [],
+  );
+  const [focusAIPromptRequest, setFocusAIPromptRequest] = useState(0);
   const registry = useMemo(() => getNotebooksAppRegistry(), []);
 
   // The engine's deps close over the latest client without recreating the
   // engine (the authenticated client's identity changes on auth-state churn).
   const clientRef = useRef<PostHogAPIClient>(client);
   clientRef.current = client;
+  // Synchronous mirrors of the latest editor value/title, so the AI runner
+  // reads the current document even between React commits.
+  const valueRef = useRef(initialMarkdown);
+  const titleRef = useRef(notebook.title ?? "");
+  titleRef.current = title;
 
   // The engine is created (and disposed) inside an effect rather than a
   // useMemo: StrictMode's dev double-mount runs the cleanup once against the
   // first mount, and a memoized engine would stay permanently disposed while
   // the surviving render kept handing out its dead callbacks.
   const [engine, setEngine] = useState<NotebookSyncEngine | null>(null);
+  const streamRef = useRef<NotebookStreamController | null>(null);
+  const aiRef = useRef<NotebookInlineAIController | null>(null);
   useEffect(() => {
     const nextEngine = new NotebookSyncEngine(
       {
@@ -156,8 +174,40 @@ function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
         onStatusChange: setStatus,
       },
     );
+    // Realtime: SSE update/presence stream feeding the engine and the caret
+    // overlay, plus the inline-AI runner that weaves Max AI responses into
+    // the document (its writes flow through setMarkdown → the same autosave
+    // path as user edits).
+    const stream = new NotebookStreamController({
+      shortId: notebook.short_id,
+      clientId: nextEngine.clientId,
+      engine: nextEngine,
+      getClient: () => clientRef.current,
+      onPresence: setRemoteCarets,
+    });
+    const ai = new NotebookInlineAIController({
+      getClient: () => clientRef.current,
+      getNotebookMeta: () => ({
+        shortId: notebook.short_id,
+        title: titleRef.current,
+      }),
+      getMarkdown: () => valueRef.current,
+      setMarkdown: (markdown) => {
+        valueRef.current = markdown;
+        setValue(markdown);
+        nextEngine.handleChange(markdown);
+      },
+      setWritingNodeIndexes: setAiWritingNodeIndexes,
+      requestPromptFocus: () => setFocusAIPromptRequest((n) => n + 1),
+    });
+    streamRef.current = stream;
+    aiRef.current = ai;
     setEngine(nextEngine);
     return () => {
+      streamRef.current = null;
+      aiRef.current = null;
+      stream.dispose();
+      ai.dispose();
       nextEngine.dispose({ flush: true });
     };
     // The route remounts this component per notebook (key=shortId) and the
@@ -216,14 +266,26 @@ function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
             <MarkdownNotebook
               value={value}
               onChange={(markdown) => {
+                const previous = valueRef.current;
+                valueRef.current = markdown;
                 setValue(markdown);
                 engine.handleChange(markdown);
+                // Remap active AI response ranges through the edit (no-ops
+                // for the AI runner's own writes echoed back by the editor).
+                aiRef.current?.handleDocumentChange(previous, markdown);
               }}
               mode="edit"
               registry={registry}
               clientId={engine.clientId}
               remoteValue={remote?.markdown}
               remoteVersion={remote?.version}
+              remoteCarets={remoteCarets}
+              onCaretChange={(position: MarkdownNotebookCaretPosition | null) =>
+                streamRef.current?.publishCaret(position)
+              }
+              onAskAI={(request) => aiRef.current?.handleAskAI(request)}
+              aiWritingNodeIndexes={aiWritingNodeIndexes}
+              focusAIPromptRequest={focusAIPromptRequest}
               placeholder="Start writing, or press / to insert…"
               autoFocus
             />

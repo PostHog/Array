@@ -2010,6 +2010,47 @@ export class PostHogAPIClient {
     );
   }
 
+  // Start (or continue) a Max AI conversation turn and return the raw SSE
+  // Response for the caller to stream. The shared fetcher throws on non-2xx,
+  // so a returned Response is always ok.
+  async startConversationStream(
+    body: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/environments/${teamId}/conversations/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    // No Accept header: DRF content negotiation on this endpoint 406s
+    // `text/event-stream` even though the response body streams SSE. The
+    // PostHog web app sends no Accept header here either.
+    return await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+        signal,
+      },
+    });
+  }
+
+  // Cancel an in-progress Max AI conversation turn (best-effort; the caller
+  // usually also aborts its stream fetch). Same verb/path as the PostHog web
+  // app: PATCH .../conversations/{id}/cancel/.
+  async cancelConversation(conversationId: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/environments/${teamId}/conversations/${encodeURIComponent(conversationId)}/cancel/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: urlPath,
+      overrides: {
+        body: "{}",
+      },
+    });
+  }
+
   // Notebooks soft-delete: the API's DELETE method is a 405, so deletion is a
   // PATCH of `deleted: true`, same as the PostHog web app.
   async deleteNotebook(shortId: string): Promise<void> {
@@ -2096,6 +2137,123 @@ export class PostHogAPIClient {
     throw new Error(`Failed to save notebook: ${response.statusText}`);
   }
 
+  // Subscribe to the notebook collab SSE stream (`collab/stream`): accepted
+  // markdown updates and presence pings. Hand-rolled SSE parsing over the raw
+  // fetcher — the shared fetcher returns the raw Response on 2xx, so the body
+  // is streamable. `lastEventId` resumes from a previous connection via the
+  // `Last-Event-ID` request header. Resolves when the server ends the stream
+  // (it caps connections at ~5 minutes — callers reconnect immediately);
+  // rejects on network errors and on abort (an `AbortError`).
+  async notebookCollabStream(
+    shortId: string,
+    opts: {
+      lastEventId?: string;
+      signal: AbortSignal;
+      onEvent: (event: { id?: string; event: string; data: string }) => void;
+    },
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/notebooks/${encodeURIComponent(shortId)}/collab/stream`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const header: Record<string, string> = { Accept: "text/event-stream" };
+    if (opts.lastEventId) {
+      header["Last-Event-ID"] = opts.lastEventId;
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+      parameters: { header },
+      overrides: { signal: opts.signal },
+    });
+    if (!response.body) {
+      throw new Error("Notebook collab stream has no response body");
+    }
+
+    // Minimal SSE parser: accumulate `id:`/`event:`/`data:` field lines
+    // (multiple `data:` lines join with newlines), dispatch a frame on each
+    // blank line, ignore `:` comment lines (the server's keepalives). A
+    // partial frame at EOF is discarded, per the SSE spec.
+    let id: string | undefined;
+    let eventName: string | undefined;
+    let dataLines: string[] = [];
+    const dispatch = (): void => {
+      if (id === undefined && eventName === undefined && dataLines.length === 0)
+        return;
+      opts.onEvent({
+        id,
+        event: eventName ?? "message",
+        data: dataLines.join("\n"),
+      });
+      id = undefined;
+      eventName = undefined;
+      dataLines = [];
+    };
+    const handleLine = (rawLine: string): void => {
+      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+      if (line === "") {
+        dispatch();
+        return;
+      }
+      if (line.startsWith(":")) return; // comment (keepalive)
+      const colon = line.indexOf(":");
+      const field = colon === -1 ? line : line.slice(0, colon);
+      let value = colon === -1 ? "" : line.slice(colon + 1);
+      if (value.startsWith(" ")) value = value.slice(1);
+      if (field === "id") id = value;
+      else if (field === "event") eventName = value;
+      else if (field === "data") dataLines.push(value);
+    };
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline = buffer.indexOf("\n");
+        while (newline !== -1) {
+          handleLine(buffer.slice(0, newline));
+          buffer = buffer.slice(newline + 1);
+          newline = buffer.indexOf("\n");
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  // Broadcast the caller's caret position to the other clients on this
+  // notebook's collab stream. Fire-and-forget on the backend (a short-TTL
+  // Redis stream); presence is lossy by design — the next ping self-heals.
+  async notebookPublishPresence(
+    shortId: string,
+    body: {
+      client_id: string;
+      version: number;
+      cursor: {
+        head?: number;
+        node_index?: number;
+        offset?: number;
+        list_item_index?: number;
+      };
+    },
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/notebooks/${encodeURIComponent(shortId)}/collab/presence/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+  }
+
   // Run a typed query node ({ kind: "TrendsQuery" | "HogQLQuery" | … })
   // against the project's query endpoint. `refresh: "blocking"` serves a
   // fresh cached result or computes one — the same numbers the PostHog UI
@@ -2158,6 +2316,141 @@ export class PostHogAPIClient {
       query: insight.query,
       result: insight.result,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // Notebook embeds — REST lookups for entities referenced from notebook
+  // component blocks (feature flags, experiments, surveys, persons, …).
+  // These routes aren't in the generated OpenAPI client, so we use the raw
+  // fetcher. The shared fetcher throws on any non-2xx
+  // (`Failed request: [<status>] <body>`), so failures simply propagate.
+  // Interface shapes live at the bottom of this file (NotebookEmbed*).
+  // -------------------------------------------------------------------------
+
+  /** Cloud web-app origin (same host as the API) for "open in PostHog" links. */
+  get appHost(): string {
+    return this.api.baseUrl;
+  }
+
+  /** Public accessor for the effective project (team) id, fetched once if unknown. */
+  async getProjectId(): Promise<number> {
+    return this.getTeamId();
+  }
+
+  private async fetchJson<T>(urlPath: string): Promise<T> {
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    return (await response.json()) as T;
+  }
+
+  async getFeatureFlag(idOrKey: string): Promise<NotebookEmbedFeatureFlag> {
+    const teamId = await this.getTeamId();
+    // The detail endpoint only accepts numeric ids; notebook markdown often
+    // stores the flag KEY instead, so non-numeric lookups go through the
+    // list endpoint's search and match on the exact key.
+    if (/^\d+$/.test(idOrKey)) {
+      return this.fetchJson(
+        `/api/projects/${teamId}/feature_flags/${idOrKey}/`,
+      );
+    }
+    const page = await this.fetchJson<{
+      results?: NotebookEmbedFeatureFlag[];
+    }>(
+      `/api/projects/${teamId}/feature_flags/?search=${encodeURIComponent(idOrKey)}&limit=20`,
+    );
+    const match = page.results?.find((flag) => flag.key === idOrKey);
+    if (!match) {
+      throw new Error(`Feature flag "${idOrKey}" not found`);
+    }
+    return match;
+  }
+
+  async getExperiment(id: number): Promise<NotebookEmbedExperiment> {
+    const teamId = await this.getTeamId();
+    return this.fetchJson(`/api/projects/${teamId}/experiments/${id}/`);
+  }
+
+  async getSurvey(id: string): Promise<NotebookEmbedSurvey> {
+    const teamId = await this.getTeamId();
+    return this.fetchJson(
+      `/api/projects/${teamId}/surveys/${encodeURIComponent(id)}/`,
+    );
+  }
+
+  async getEarlyAccessFeature(
+    id: string,
+  ): Promise<NotebookEmbedEarlyAccessFeature> {
+    const teamId = await this.getTeamId();
+    return this.fetchJson(
+      `/api/projects/${teamId}/early_access_feature/${encodeURIComponent(id)}/`,
+    );
+  }
+
+  async getCohort(id: number): Promise<NotebookEmbedCohort> {
+    const teamId = await this.getTeamId();
+    return this.fetchJson(`/api/projects/${teamId}/cohorts/${id}/`);
+  }
+
+  async getPerson(opts: {
+    uuid?: string;
+    distinctId?: string;
+  }): Promise<NotebookEmbedPerson> {
+    const teamId = await this.getTeamId();
+    if (opts.uuid) {
+      return this.fetchJson(
+        `/api/environments/${teamId}/persons/${encodeURIComponent(opts.uuid)}/`,
+      );
+    }
+    if (!opts.distinctId) {
+      throw new Error("Person lookup requires a uuid or distinct id");
+    }
+    const body = await this.fetchJson<{ results?: NotebookEmbedPerson[] }>(
+      `/api/environments/${teamId}/persons/?distinct_id=${encodeURIComponent(opts.distinctId)}`,
+    );
+    const person = body.results?.[0];
+    if (!person) {
+      throw new Error("Person not found");
+    }
+    return person;
+  }
+
+  // Same endpoint the PostHog webapp uses to look up a single group
+  // (see upstream `frontend/src/scenes/groups/groupLogic.ts`).
+  async getGroup(
+    groupTypeIndex: number,
+    groupKey: string,
+  ): Promise<NotebookEmbedGroup> {
+    const teamId = await this.getTeamId();
+    return this.fetchJson(
+      `/api/environments/${teamId}/groups/find?group_type_index=${encodeURIComponent(String(groupTypeIndex))}&group_key=${encodeURIComponent(groupKey)}`,
+    );
+  }
+
+  async getSessionRecordingMeta(
+    id: string,
+  ): Promise<NotebookEmbedRecordingMeta> {
+    const teamId = await this.getTeamId();
+    return this.fetchJson(
+      `/api/environments/${teamId}/session_recordings/${encodeURIComponent(id)}/`,
+    );
+  }
+
+  /**
+   * Fetch a same-origin media path (e.g. `/uploaded_media/<id>`) with auth
+   * headers attached, for notebook images that plain `<img src>` can't load.
+   */
+  async fetchAuthenticatedMedia(path: string): Promise<Blob> {
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path,
+    });
+    return await response.blob();
   }
 
   async listSignalSourceConfigs(
@@ -6413,4 +6706,86 @@ export class PostHogAPIClient {
       nameById,
     );
   }
+}
+
+// -----------------------------------------------------------------------------
+// Minimal response shapes for the notebook-embed lookups above. Only the
+// fields the notebook embed cards render — everything else stays `unknown`.
+// -----------------------------------------------------------------------------
+
+export interface NotebookEmbedFeatureFlag {
+  id: number;
+  key: string;
+  /** Feature flags use `name` as the human description. */
+  name: string | null;
+  active: boolean;
+  filters: unknown;
+}
+
+export interface NotebookEmbedExperiment {
+  id: number;
+  name: string;
+  description?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  feature_flag_key?: string | null;
+  /** Contains `feature_flag_variants` among other launch parameters. */
+  parameters?: unknown;
+  metrics?: unknown[];
+}
+
+export interface NotebookEmbedSurvey {
+  id: string;
+  name: string;
+  description?: string | null;
+  type?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  questions?: unknown[];
+}
+
+export interface NotebookEmbedEarlyAccessFeature {
+  id: string;
+  name: string;
+  description?: string | null;
+  stage?: string | null;
+  documentation_url?: string | null;
+}
+
+export interface NotebookEmbedCohort {
+  id: number;
+  name: string;
+  count?: number | null;
+  is_static?: boolean;
+}
+
+export interface NotebookEmbedPerson {
+  id?: string | number;
+  name?: string | null;
+  distinct_ids?: string[];
+  properties?: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface NotebookEmbedGroup {
+  group_type_index: number;
+  group_key: string;
+  group_properties?: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface NotebookEmbedRecordingMeta {
+  id: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  /** Seconds. */
+  recording_duration?: number | null;
+  person?: {
+    name?: string | null;
+    distinct_ids?: string[];
+    properties?: Record<string, unknown>;
+  } | null;
+  click_count?: number | null;
+  keypress_count?: number | null;
+  console_error_count?: number | null;
 }
