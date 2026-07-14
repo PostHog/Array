@@ -380,7 +380,7 @@ const FeedItem = memo(function FeedItem({
   onOpenThread: (task: Task) => void;
 }) {
   return (
-    <ThreadItem className="rounded-none py-4 pr-8 hover:bg-fill-hover/50">
+    <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
@@ -473,24 +473,31 @@ function FeedRow({
   );
 }
 
-// A card-less feed row for a synthetic "PostHog agent" announcement (context
-// created, CONTEXT.md being built). Same chrome as a task row — Robot avatar,
-// "PostHog / Agent" — minus the task card and reply footer.
+// A card-less feed row for a synthetic announcement. Rows with an `author`
+// render as that user (initials avatar + name — e.g. "Adam L · joined mobile");
+// the rest render as "PostHog / Agent" (context lifecycle updates). Same chrome
+// as a task row, minus the task card and reply footer.
 function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
   return (
     <ChatMessageScrollerItem messageId={message.id}>
-      <ThreadItem className="rounded-none py-4 pr-8">
+      <ThreadItem className="rounded-none py-1 pr-8">
         <ThreadItemGutter>
           <Avatar>
             <AvatarFallback>
-              <RobotIcon size={16} />
+              {message.author ? (
+                getUserInitials(message.author)
+              ) : (
+                <RobotIcon size={16} />
+              )}
             </AvatarFallback>
           </Avatar>
         </ThreadItemGutter>
         <ThreadItemContent className="min-w-0">
           <ThreadItemHeader>
-            <ThreadItemAuthor>PostHog</ThreadItemAuthor>
-            <Badge variant="info">Agent</Badge>
+            <ThreadItemAuthor>
+              {message.author ? userDisplayName(message.author) : "PostHog"}
+            </ThreadItemAuthor>
+            {!message.author && <Badge variant="info">Agent</Badge>}
             <ThreadItemTimestamp dateTime={message.createdAt}>
               {formatRelativeTimeShort(message.createdAt)}
             </ThreadItemTimestamp>
@@ -524,6 +531,7 @@ export function ChannelFeedView({
   systemMessages,
   isLoading,
   emptyState,
+  intro,
   onOpenTask,
   onOpenThread,
 }: {
@@ -531,6 +539,10 @@ export function ChannelFeedView({
   systemMessages?: ChannelFeedSystemMessage[];
   isLoading: boolean;
   emptyState?: React.ReactNode;
+  /** Rendered pinned above the first entry — the Slack-style channel intro
+   * (name, creation line, onboarding card). When set, the feed renders even
+   * with no entries instead of falling back to `emptyState`. */
+  intro?: ReactNode;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
@@ -563,7 +575,7 @@ export function ChannelFeedView({
     );
   }
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && !intro) {
     return <div className="flex-1 overflow-y-auto">{emptyState}</div>;
   }
 
@@ -577,6 +589,7 @@ export function ChannelFeedView({
               the row's top-right corner (absolute, past the row edge). Without a
               gutter they hug the scroll container and get clipped. */}
           <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
+            {intro}
             {entries.map((entry, index) => {
               const previous = entries[index - 1];
               const showDayMarker =

@@ -7,6 +7,8 @@ import {
   ChannelHomeComposer,
   type ChannelHomeComposerHandle,
 } from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
+import { ChannelIntro } from "@posthog/ui/features/canvas/components/ChannelIntro";
+import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import {
   channelFeedQueryKey,
@@ -32,7 +34,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -55,23 +57,22 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
   // backend channel — the same id the feed tasks use, not the folder id.
   const { messages: feedMessages } = useChannelFeedMessages(backendChannel?.id);
-  // "Ann created this context" opens the feed, derived from the channel row so
-  // it renders (and sorts first) even where the feed endpoint isn't deployed.
-  // Suppressed while it would be the feed's only entry — an untouched context
-  // shows the welcome empty state instead.
+  // The Slack-style "joined" opener, derived from the channel row so it renders
+  // (and sorts first) even where the feed endpoint isn't deployed.
   const systemMessages = useMemo(() => {
     const creation = channelCreationMessage(backendChannel);
-    if (!creation || (tasks.length === 0 && feedMessages.length === 0)) {
-      return feedMessages;
-    }
-    return [creation, ...feedMessages];
-  }, [backendChannel, tasks.length, feedMessages]);
+    return creation ? [creation, ...feedMessages] : feedMessages;
+  }, [backendChannel, feedMessages]);
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
   );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
+
+  // The "Create your context.md" dialog, opened from the welcome message's
+  // onboarding checklist. Describe-mode: seeds a plan session for this context.
+  const [contextMdDialogOpen, setContextMdDialogOpen] = useState(false);
 
   const threadTaskId = useThreadPanelStore((s) => s.taskId);
   const openThread = useThreadPanelStore((s) => s.openThread);
@@ -150,6 +151,21 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     ? tasks.find((t) => t.id === threadTaskId)
     : undefined;
 
+  // The Slack-style intro pinned at the feed's start — public channels only;
+  // the personal channel keeps the welcome empty state below. The context.md
+  // card hides once the context has published instructions.
+  const isPersonal = channelName === PERSONAL_CHANNEL_NAME;
+  const hasContextMd = (channelContext ?? "").trim().length > 0;
+  const intro =
+    !isPersonal && channelName && backendChannel ? (
+      <ChannelIntro
+        channel={backendChannel}
+        channelName={channelName}
+        showContextMdCard={!hasContextMd}
+        onCreateContextMd={() => setContextMdDialogOpen(true)}
+      />
+    ) : undefined;
+
   const emptyState = (
     <div className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center gap-6 px-4 py-10">
       <div className="flex flex-col items-center gap-2 text-center">
@@ -192,6 +208,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           systemMessages={systemMessages}
           isLoading={isLoading}
           emptyState={emptyState}
+          intro={intro}
           onOpenTask={handleOpenTask}
           onOpenThread={handleOpenThread}
         />
@@ -212,6 +229,14 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           taskId={threadTaskId}
           task={threadTask}
           onClose={closeThread}
+        />
+      )}
+
+      {channelName && (
+        <CreateChannelModal
+          open={contextMdDialogOpen}
+          onOpenChange={setContextMdDialogOpen}
+          existingContext={{ channelId, channelName }}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import type {
   ChannelFeedMessage,
   TaskChannel,
+  UserBasic,
 } from "@posthog/shared/domain-types";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
@@ -16,6 +17,9 @@ export interface ChannelFeedSystemMessage {
   /** ISO; interleaved with task cards in the feed. */
   createdAt: string;
   text: string;
+  /** When set, the row renders as this user (avatar + name) instead of the
+   * "PostHog / Agent" chrome — e.g. the "joined" row. */
+  author?: UserBasic | null;
 }
 
 export function channelFeedMessagesQueryKey(channelId: string | undefined) {
@@ -45,7 +49,7 @@ function messageText(message: ChannelFeedMessage): string {
 }
 
 /**
- * The feed's "Ann created this context" opener, derived from the channel row
+ * The feed's Slack-style "joined" opener, derived from the channel row
  * (creator + creation time) rather than a feed message: the channel predates
  * everything in its feed, so it always sorts first, and it renders even before
  * the feed-message endpoint is deployed. Personal channels are provisioned by
@@ -58,7 +62,8 @@ export function channelCreationMessage(
   return {
     id: `channel-created-${channel.id}`,
     createdAt: channel.created_at,
-    text: `${userDisplayName(channel.created_by ?? null)} created this context`,
+    text: `joined ${channel.name}`,
+    author: channel.created_by,
   };
 }
 

@@ -5,7 +5,6 @@ import {
   DialogBody,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -26,26 +25,25 @@ import { useState } from "react";
 // Matches Slack's "Create a channel" naming constraint.
 const MAX_CONTEXT_NAME_LENGTH = 80;
 
-const DESCRIPTION_PLACEHOLDER = "Tell me about what this context will be about";
-
-// When a create attempt creates the context but fails to launch the session, we
-// stash the description here so reopening the create dialog restores it instead
-// of losing what the user typed. Module-scoped so it survives the dialog (and
-// its host) unmounting; consumed and cleared on the next create-dialog open.
-let stashedDescription = "";
+const DESCRIPTION_PLACEHOLDER =
+  "Grab all files relating to X feature, get all relevant pull requests, in this X repo(s)";
 
 interface CreateChannelModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // When set, the context already exists (e.g. the CONTEXT.md empty state): the
-  // name field is skipped and submitting just launches the planning session.
+  // When set, the dialog is the "Create your CONTEXT.md" flow for an existing
+  // context: no name field, just a description that seeds the planning session.
   existingContext?: { channelId: string; channelName: string };
 }
 
-// Create-a-context dialog. Asks for a name and a short description of what the
-// context is about, then launches a plan-mode session that investigates and
-// builds the context's CONTEXT.md with the user. Reused from the CONTEXT.md
-// empty state via `existingContext` to describe-and-plan an existing context.
+// Two dialogs in one, split on `existingContext`:
+// - Create mode: name-only. Creates the context, posts the agent's welcome
+//   message into its feed (which carries the onboarding checklist), and lands
+//   the user in the channel. No session is started here — onboarding continues
+//   in the feed.
+// - Describe mode: the "Create your CONTEXT.md" dialog (opened from the welcome
+//   checklist or the CONTEXT.md empty state). A single textarea whose text seeds
+//   a plan-mode session that builds the context's CONTEXT.md with the user.
 export function CreateChannelModal({
   open,
   onOpenChange,
@@ -66,12 +64,7 @@ export function CreateChannelModal({
     setWasOpen(open);
     if (open) {
       setName("");
-      // Restore a description stashed by a prior failed launch (create mode
-      // only), otherwise start blank. Only create mode consumes the stash — a
-      // describe-mode open (e.g. the CONTEXT.md empty state the failed flow
-      // lands on) must not wipe a draft it doesn't use.
-      setDescription(isDescribeMode ? "" : stashedDescription);
-      if (!isDescribeMode) stashedDescription = "";
+      setDescription("");
     }
   }
 
@@ -83,83 +76,73 @@ export function CreateChannelModal({
   const busy = isCreating || isStarting;
   const canSubmit =
     !busy &&
-    !!trimmedDescription &&
-    (isDescribeMode || (!!trimmedName && !nameError));
+    (isDescribeMode ? !!trimmedDescription : !!trimmedName && !nameError);
 
-  const submit = async () => {
-    if (!canSubmit) return;
-
-    // Resolve the target context: an existing one, or create it now. The
-    // context must exist before we can seed a session against its id.
+  // Create mode: create the context, then land in the channel — its feed opens
+  // with the intro (name, creation line, context.md card) and the "joined" row,
+  // both derived from the channel row.
+  const submitCreate = async () => {
     let contextId: string;
-    let contextName: string;
-    if (existingContext) {
-      contextId = existingContext.channelId;
-      contextName = existingContext.channelName;
-    } else {
-      try {
-        const channel = await createChannel(trimmedName);
-        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-          action_type: "create",
-          surface: "sidebar",
-          channel_id: channel.id,
-          success: true,
-        });
-        contextId = channel.id;
-        contextName = trimmedName;
-      } catch (error) {
-        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-          action_type: "create",
-          surface: "sidebar",
-          success: false,
-        });
-        toast.error("Couldn't create context", {
-          description: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-    }
-
-    track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
-      action_type: "generate_started",
-      channel_id: contextId,
-    });
-    const task = await generate({
-      channelId: contextId,
-      channelName: contextName,
-      description: trimmedDescription,
-    });
-
-    if (!task) {
-      // The session failed to start (generate() already toasted the details).
-      // In create mode the context was still created — close and drop the user
-      // on its home so they can retry from the empty state. Stash the typed
-      // description so reopening the create dialog restores it. In describe mode
-      // the context already existed; keep the dialog open (state intact) for a
-      // clean retry.
-      if (!existingContext) {
-        stashedDescription = trimmedDescription;
-        onOpenChange(false);
-        void navigate({
-          to: "/website/$channelId",
-          params: { channelId: contextId },
-        });
-      }
+    try {
+      const channel = await createChannel(trimmedName);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "create",
+        surface: "sidebar",
+        channel_id: channel.id,
+        success: true,
+      });
+      contextId = channel.id;
+    } catch (error) {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "create",
+        surface: "sidebar",
+        success: false,
+      });
+      toast.error("Couldn't create context", {
+        description: error instanceof Error ? error.message : String(error),
+      });
       return;
     }
 
-    // Launch succeeded. The feed announcements ("created this context", derived
-    // from the channel row; context_md_building, posted by generate against the
-    // backend channel) are handled where the channel is known — the dialog just
-    // navigates.
-    //
-    // Land on the context index (its feed), where the announcements and the plan
-    // task card show. The user clicks the card to open the session.
     onOpenChange(false);
     void navigate({
       to: "/website/$channelId",
       params: { channelId: contextId },
     });
+  };
+
+  // Describe mode: launch the plan-mode session that builds CONTEXT.md. On
+  // failure (generate() already toasted) the dialog stays open, state intact,
+  // for a clean retry.
+  const submitDescribe = async () => {
+    if (!existingContext) return;
+    track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
+      action_type: "generate_started",
+      channel_id: existingContext.channelId,
+    });
+    const task = await generate({
+      channelId: existingContext.channelId,
+      channelName: existingContext.channelName,
+      description: trimmedDescription,
+    });
+    if (!task) return;
+
+    // Land on the context index (its feed), where the announcement and the plan
+    // task card show. The user clicks the card to open the session.
+    onOpenChange(false);
+    void navigate({
+      to: "/website/$channelId",
+      params: { channelId: existingContext.channelId },
+    });
+  };
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    if (isDescribeMode) {
+      await submitDescribe();
+    } else {
+      await submitCreate();
+    }
   };
 
   return (
@@ -170,19 +153,40 @@ export function CreateChannelModal({
       }}
     >
       <DialogContent showCloseButton={false} className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {isDescribeMode ? "Build this context" : "Create a context"}
-          </DialogTitle>
-          <DialogDescription>
-            {isDescribeMode
-              ? `Describe what ${existingContext.channelName} is about — an agent plans and builds its CONTEXT.md with you.`
-              : "Name it and describe what it's about — an agent plans and builds its CONTEXT.md with you."}
-          </DialogDescription>
-        </DialogHeader>
+        {isDescribeMode ? (
+          // No visible header in describe mode — the textarea's label carries
+          // the dialog; the title stays for screen readers.
+          <DialogTitle className="sr-only">Create your context.md</DialogTitle>
+        ) : (
+          <DialogHeader>
+            <DialogTitle>Create a context</DialogTitle>
+          </DialogHeader>
+        )}
 
         <DialogBody className="flex flex-col gap-4">
-          {!isDescribeMode && (
+          {isDescribeMode ? (
+            <Field>
+              <FieldLabel htmlFor="context-description">
+                What's this context about?
+              </FieldLabel>
+              <Textarea
+                id="context-description"
+                autoFocus
+                rows={4}
+                value={description}
+                placeholder={DESCRIPTION_PLACEHOLDER}
+                disabled={busy}
+                onChange={(e) => setDescription(e.target.value)}
+                onKeyDown={(e) => {
+                  // ⌘/Ctrl+Enter submits; a bare Enter stays a newline.
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    void submit();
+                  }
+                }}
+              />
+            </Field>
+          ) : (
             <Field>
               <FieldLabel htmlFor="context-name">Name</FieldLabel>
               <Input
@@ -209,26 +213,6 @@ export function CreateChannelModal({
               )}
             </Field>
           )}
-
-          <Field>
-            <FieldLabel htmlFor="context-description">Description</FieldLabel>
-            <Textarea
-              id="context-description"
-              autoFocus={isDescribeMode}
-              rows={4}
-              value={description}
-              placeholder={DESCRIPTION_PLACEHOLDER}
-              disabled={busy}
-              onChange={(e) => setDescription(e.target.value)}
-              onKeyDown={(e) => {
-                // ⌘/Ctrl+Enter submits; a bare Enter stays a newline.
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-            />
-          </Field>
         </DialogBody>
 
         <DialogFooter>
@@ -245,7 +229,7 @@ export function CreateChannelModal({
             loading={busy}
             onClick={submit}
           >
-            {isDescribeMode ? "Start planning" : "Create & plan"}
+            Create
           </Button>
         </DialogFooter>
       </DialogContent>
