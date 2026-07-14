@@ -31,6 +31,7 @@ export interface LoopFormValues {
    */
   repositories: LoopSchemas.LoopRepositoryEntry[];
   triggers: LoopTriggerDraft[];
+  behaviors: LoopSchemas.LoopBehaviors;
   notifications: LoopSchemas.LoopNotifications;
 }
 
@@ -51,6 +52,30 @@ export function defaultLoopNotifications(): LoopSchemas.LoopNotifications {
   return { push: { ...off }, email: { ...off }, slack: { ...off } };
 }
 
+export function defaultLoopBehaviors(): LoopSchemas.LoopBehaviors {
+  return {
+    create_prs: true,
+    watch_ci: false,
+    fix_review_comments: false,
+    max_fix_iterations: 3,
+  };
+}
+
+/** The single "Auto-fix pull requests" toggle drives both CI-watching and
+ * review-comment fixing; it reads as on only when both are on. */
+export function isAutoFixEnabled(
+  behaviors: LoopSchemas.LoopBehaviors,
+): boolean {
+  return behaviors.watch_ci && behaviors.fix_review_comments;
+}
+
+export function withAutoFix(
+  behaviors: LoopSchemas.LoopBehaviors,
+  enabled: boolean,
+): LoopSchemas.LoopBehaviors {
+  return { ...behaviors, watch_ci: enabled, fix_review_comments: enabled };
+}
+
 let draftKeySeq = 0;
 
 export function nextDraftTriggerKey(): string {
@@ -69,6 +94,7 @@ export function emptyLoopFormValues(): LoopFormValues {
     reasoningEffort: null,
     repositories: [],
     triggers: [],
+    behaviors: defaultLoopBehaviors(),
     notifications: defaultLoopNotifications(),
   };
 }
@@ -90,6 +116,7 @@ export function loopToFormValues(loop: LoopSchemas.Loop): LoopFormValues {
       enabled: trigger.enabled,
       config: trigger.config,
     })),
+    behaviors: loop.behaviors,
     notifications: loop.notifications,
   };
 }
@@ -112,6 +139,7 @@ export function formValuesToLoopWrite(
       enabled: trigger.enabled,
       config: trigger.config,
     })),
+    behaviors: values.behaviors,
     notifications: values.notifications,
   };
 }
