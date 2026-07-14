@@ -1,7 +1,6 @@
 import { Text } from "@components/text";
 import { usePathname, useRouter } from "expo-router";
 import {
-  ArrowsClockwise,
   CaretRight,
   Clock,
   GearSix,
@@ -110,7 +109,6 @@ const NavDrawerContent = memo(function NavDrawerContent({
   const handleTasks = () => navigateTo("/tasks");
   const handleInbox = () => navigateTo("/inbox");
   const handleAutomations = () => navigateTo("/automations");
-  const handleLoops = () => navigateTo("/loops");
   // Settings is pushed (not replaced) so back / swipe-back returns the user
   // to whichever tab they were viewing when they opened the drawer.
   const handleSettings = () => {
@@ -135,7 +133,6 @@ const NavDrawerContent = memo(function NavDrawerContent({
   const isOnTasks = pathname === "/tasks";
   const isOnInbox = pathname === "/inbox";
   const isOnAutomations = pathname === "/automations";
-  const isOnLoops = pathname === "/loops";
   const isOnSettings = pathname === "/settings";
   const isOnMcpServers = pathname === "/mcp-servers";
 
@@ -184,18 +181,6 @@ const NavDrawerContent = memo(function NavDrawerContent({
           label="Automations"
           active={isOnAutomations}
           onPress={handleAutomations}
-        />
-        <DrawerItem
-          icon={
-            <ArrowsClockwise
-              size={22}
-              color={isOnLoops ? iconColorActive : iconColor}
-              weight={isOnLoops ? "bold" : "regular"}
-            />
-          }
-          label="Loops"
-          active={isOnLoops}
-          onPress={handleLoops}
         />
         <DrawerItem
           icon={
