@@ -9,7 +9,11 @@ import {
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
-import { getCloudUrlFromRegion, type WorkspaceMode } from "@posthog/shared";
+import {
+  getCloudUrlFromRegion,
+  getErrorMessage,
+  type WorkspaceMode,
+} from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -157,8 +161,9 @@ export function useGenerateContext() {
           // visible), keyed on the backend channel — the same id the task cards
           // use. Timestamped just before the task so it sorts above the card.
           // Best-effort.
+          const createdMs = new Date(task.created_at).getTime();
           const buildingAt = new Date(
-            new Date(task.created_at).getTime() - 1,
+            (Number.isFinite(createdMs) ? createdMs : Date.now()) - 1,
           ).toISOString();
           void client
             ?.postChannelFeedMessage(backendChannelId, {
@@ -183,6 +188,16 @@ export function useGenerateContext() {
           queryKey: trpc.workspace.getAll.queryKey(),
         });
         return task;
+      } catch (error) {
+        // Callers branch on null (CreateChannelModal stashes the description
+        // and lands on the context home); an unhandled rejection would skip
+        // that recovery after the context — and possibly the task — already
+        // exists.
+        toastError(
+          "Couldn't start the planning session",
+          getErrorMessage(error),
+        );
+        return null;
       } finally {
         setIsStarting(false);
       }
