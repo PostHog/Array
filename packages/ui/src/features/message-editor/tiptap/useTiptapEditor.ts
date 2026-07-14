@@ -218,7 +218,10 @@ function showPasteHint(message: string, description: string): void {
     message === "Pasted as file attachment" ? "paste-as-file" : "paste-inline";
   if (!store.shouldShowHint(key)) return;
   store.recordHintShown(key);
-  toast.info(message, description);
+  toast.info(message, {
+    description,
+    action: { label: "Got it", onClick: () => store.markHintLearned(key) },
+  });
 }
 
 export function useTiptapEditor(options: UseTiptapEditorOptions) {
