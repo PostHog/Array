@@ -1,5 +1,10 @@
 import { freeformSystemPromptFor } from "@posthog/core/canvas/canvasTemplates";
 import { FREEFORM_STARTER_CODE } from "@posthog/core/canvas/freeformStarter";
+import { buildAuthorizedWriteMarker } from "@posthog/shared";
+
+// The PostHog MCP sub-tool that publishes a freeform canvas. Named once so the
+// publish instruction and the authorized-write marker below stay in sync.
+const FREEFORM_PUBLISH_TOOL = "desktop-file-system-canvas-partial-update";
 
 // Builds the prompt for the task that generates a freeform (React) canvas. Like
 // CONTEXT.md generation, this runs as a normal repo-less agent task (no repo
@@ -71,7 +76,7 @@ ${contract}
 PUBLISHING — this OVERRIDES any instruction above about replying with the code in
 a fenced \`\`\`tsx block. In this task you do NOT reply with the code. When the
 canvas is ready, PUBLISH it by calling the PostHog MCP tool
-\`desktop-file-system-canvas-partial-update\` exactly once with:
+\`${FREEFORM_PUBLISH_TOOL}\` exactly once with:
 - id: "${dashboardId}"
 - code: the COMPLETE single-file React source for the canvas.
 
@@ -89,5 +94,7 @@ only when no insight can express the metric.`;
 
 <canvas_generation_instructions>
 ${instructions}
-</canvas_generation_instructions>`;
+</canvas_generation_instructions>
+
+${buildAuthorizedWriteMarker({ subTool: FREEFORM_PUBLISH_TOOL, id: dashboardId })}`;
 }

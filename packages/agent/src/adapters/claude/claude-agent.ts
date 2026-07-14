@@ -44,7 +44,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
-import { serializeError } from "@posthog/shared";
+import { parseAuthorizedWriteMarkers, serializeError } from "@posthog/shared";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
 import {
@@ -106,6 +106,7 @@ import {
   setMcpToolApprovalStates,
 } from "./mcp/tool-metadata";
 import { canUseTool } from "./permissions/permission-handlers";
+import { isSanctionedFirstPartyWriteSubTool } from "./permissions/posthog-exec-gate";
 import { getAvailableSlashCommands } from "./session/commands";
 import { parseMcpServers } from "./session/mcp-config";
 import {
@@ -455,6 +456,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Detect local-only slash commands that return results without model invocation
     const msgContent = userMessage.message.content;
+    // Record authorized-write markers (id-scoped first-party publish grants)
+    // from this user message before any early return; only user messages are
+    // trusted to seed them. See Session.authorizedFirstPartyWriteIds.
+    this.captureAuthorizedWrites(msgContent);
     let firstTextPart = "";
     if (typeof msgContent === "string") {
       firstTextPart = msgContent;
@@ -523,6 +528,38 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     this.session.input.push(userMessage);
     this.ensureConsumer(params.sessionId);
     return response;
+  }
+
+  /**
+   * Record authorized-write markers from a user message so the permission gate
+   * can auto-allow a first-party artifact publish (a channel's CONTEXT.md, a
+   * freeform canvas) only when it targets one of these exact ids. Only markers
+   * for the sanctioned publish sub-tools are kept; see
+   * `Session.authorizedFirstPartyWriteIds`.
+   */
+  private captureAuthorizedWrites(
+    content: SDKUserMessage["message"]["content"],
+  ): void {
+    let text = "";
+    if (typeof content === "string") {
+      text = content;
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        if ("type" in block && block.type === "text" && "text" in block) {
+          text += `${block.text as string}\n`;
+        }
+      }
+    }
+    if (!text.includes("posthog:authorized-write")) return;
+    for (const { subTool, id } of parseAuthorizedWriteMarkers(text)) {
+      if (!isSanctionedFirstPartyWriteSubTool(subTool)) continue;
+      let ids = this.session.authorizedFirstPartyWriteIds.get(subTool);
+      if (!ids) {
+        ids = new Set();
+        this.session.authorizedFirstPartyWriteIds.set(subTool, ids);
+      }
+      ids.add(id);
+    }
   }
 
   private ensureConsumer(sessionId: string): void {
@@ -2034,6 +2071,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cwd,
       notificationHistory: [],
       taskRunId: meta?.taskRunId,
+      authorizedFirstPartyWriteIds: new Map(),
     };
     // A replaced session's consumer never reaches closeQueryStream.
     this.emittedToolCalls.clear();

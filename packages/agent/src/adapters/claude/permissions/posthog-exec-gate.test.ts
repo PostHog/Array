@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractPostHogCallId,
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
+  isSanctionedFirstPartyWriteSubTool,
 } from "./posthog-exec-gate";
 
 describe("isPostHogExecTool", () => {
@@ -82,26 +84,89 @@ describe("isPostHogDestructiveSubTool", () => {
     expect(isPostHogDestructiveSubTool("deleter-test")).toBe(false);
   });
 
-  it("exempts sanctioned first-party desktop-file-system writes", () => {
-    // A channel's CONTEXT.md and freeform canvases are the app's own artifacts,
-    // not PostHog product data — they publish without the destructive gate.
+  it("classifies the first-party publish sub-tools as destructive", () => {
+    // They are partial-updates like any other; the id-scoped exemption lives in
+    // the permission handler, not in this pure classifier.
     expect(
       isPostHogDestructiveSubTool(
         "desktop-file-system-instructions-partial-update",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isPostHogDestructiveSubTool("desktop-file-system-canvas-partial-update"),
-    ).toBe(false);
+    ).toBe(true);
+  });
+});
+
+describe("isSanctionedFirstPartyWriteSubTool", () => {
+  it("matches the two first-party publish sub-tools exactly", () => {
+    expect(
+      isSanctionedFirstPartyWriteSubTool(
+        "desktop-file-system-instructions-partial-update",
+      ),
+    ).toBe(true);
+    expect(
+      isSanctionedFirstPartyWriteSubTool(
+        "desktop-file-system-canvas-partial-update",
+      ),
+    ).toBe(true);
   });
 
-  it("still gates broader desktop-file-system mutations (exact-match, not prefix)", () => {
-    // These rename/delete whole channels and must stay gated.
+  it("does not match broader desktop-file-system mutations or product writes", () => {
+    // These rename/delete whole channels (or touch product data) and stay gated.
     expect(
-      isPostHogDestructiveSubTool("desktop-file-system-partial-update"),
-    ).toBe(true);
-    expect(isPostHogDestructiveSubTool("desktop-file-system-destroy")).toBe(
-      true,
-    );
+      isSanctionedFirstPartyWriteSubTool("desktop-file-system-partial-update"),
+    ).toBe(false);
+    expect(
+      isSanctionedFirstPartyWriteSubTool("desktop-file-system-destroy"),
+    ).toBe(false);
+    expect(isSanctionedFirstPartyWriteSubTool("experiment-update")).toBe(false);
+  });
+});
+
+describe("extractPostHogCallId", () => {
+  it("reads the id from a `call --json <tool> <json>` command", () => {
+    expect(
+      extractPostHogCallId({
+        command:
+          'call --json desktop-file-system-instructions-partial-update {"id":"abc-123","content":"# Hi"}',
+      }),
+    ).toBe("abc-123");
+  });
+
+  it("reads the id without the --json flag", () => {
+    expect(
+      extractPostHogCallId({
+        command:
+          'call desktop-file-system-canvas-partial-update {"id":"dash_42","code":"export default 1"}',
+      }),
+    ).toBe("dash_42");
+  });
+
+  it("parses JSON whose content contains braces", () => {
+    expect(
+      extractPostHogCallId({
+        command:
+          'call --json desktop-file-system-instructions-partial-update {"id":"folder-9","content":"a {b} c"}',
+      }),
+    ).toBe("folder-9");
+  });
+
+  it("returns null with no id, no args, malformed JSON, or bad input", () => {
+    expect(
+      extractPostHogCallId({
+        command: 'call --json experiment-update {"name":"no id here"}',
+      }),
+    ).toBeNull();
+    expect(
+      extractPostHogCallId({ command: "call desktop-file-system-list" }),
+    ).toBeNull();
+    expect(
+      extractPostHogCallId({
+        command: "call --json foo-update {not valid json}",
+      }),
+    ).toBeNull();
+    expect(extractPostHogCallId({ command: 42 })).toBeNull();
+    expect(extractPostHogCallId(null)).toBeNull();
   });
 });

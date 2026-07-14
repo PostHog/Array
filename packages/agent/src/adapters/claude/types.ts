@@ -71,6 +71,16 @@ export type Session = BaseSession & {
   modelId?: string;
   cwd: string;
   taskRunId?: string;
+  /**
+   * Sub-tool → artifact ids this session may publish to via the first-party
+   * PostHog MCP `*-partial-update` sub-tools (a channel's CONTEXT.md, a freeform
+   * canvas) without the destructive-write approval. Seeded ONLY from
+   * authorized-write markers found in *user* messages (the app-authored
+   * generation prompt) — the agent can't forge those — so the permission gate
+   * auto-allows a sanctioned publish only when it targets one of these exact
+   * ids. Empty for ordinary sessions.
+   */
+  authorizedFirstPartyWriteIds: Map<string, Set<string>>;
   lastPlanFilePath?: string;
   lastPlanContent?: string;
   effort?: EffortLevel;

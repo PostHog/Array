@@ -323,6 +323,104 @@ describe("canUseTool MCP approval enforcement", () => {
     expect(addApproval).not.toHaveBeenCalled();
   });
 
+  it("auto-allows a first-party publish whose id matches an authorized write", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+    const addApproval = vi.fn();
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: {
+        command:
+          'call --json desktop-file-system-instructions-partial-update {"id":"folder-1","content":"# CONTEXT"}',
+      },
+      session: {
+        permissionMode: "default",
+        authorizedFirstPartyWriteIds: new Map([
+          [
+            "desktop-file-system-instructions-partial-update",
+            new Set(["folder-1"]),
+          ],
+        ]),
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+          addPostHogExecApproval: addApproval,
+        },
+      },
+    });
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    // The authorized id skips the destructive prompt entirely.
+    expect(context.client.requestPermission).not.toHaveBeenCalled();
+    expect(addApproval).not.toHaveBeenCalled();
+  });
+
+  it("still prompts for a first-party publish to an unauthorized id", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: {
+        command:
+          'call --json desktop-file-system-instructions-partial-update {"id":"someone-elses-folder","content":"x"}',
+      },
+      session: {
+        permissionMode: "default",
+        authorizedFirstPartyWriteIds: new Map([
+          [
+            "desktop-file-system-instructions-partial-update",
+            new Set(["folder-1"]),
+          ],
+        ]),
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+          addPostHogExecApproval: vi.fn(),
+        },
+      },
+    });
+    await canUseTool(context);
+
+    // A non-matching id must fall through to the normal destructive approval.
+    expect(context.client.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          title:
+            "The agent wants to run `desktop-file-system-instructions-partial-update` on PostHog",
+        }),
+      }),
+    );
+  });
+
+  it("does not auto-allow an authorized first-party publish in plan mode", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: {
+        command:
+          'call --json desktop-file-system-instructions-partial-update {"id":"folder-1","content":"x"}',
+      },
+      session: {
+        permissionMode: "plan",
+        authorizedFirstPartyWriteIds: new Map([
+          [
+            "desktop-file-system-instructions-partial-update",
+            new Set(["folder-1"]),
+          ],
+        ]),
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+          addPostHogExecApproval: vi.fn(),
+        },
+      },
+    });
+    await canUseTool(context);
+
+    // Plan mode must still require approval — the publish waits for the user to
+    // approve the plan first, preserving CONTEXT.md co-design.
+    expect(context.client.requestPermission).toHaveBeenCalled();
+  });
+
   it("emits tool denial notification for do_not_use", async () => {
     setMcpToolApprovalStates({
       mcp__server__denied_tool: "do_not_use",

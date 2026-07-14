@@ -1,3 +1,5 @@
+import { buildAuthorizedWriteMarker } from "@posthog/shared";
+
 // Builds the prompt for the task that generates a context's CONTEXT.md. The
 // task runs as a normal repo-less agent task (no repo picked up front), so the
 // agent has full tools; this is the task's content (its first user message).
@@ -17,6 +19,10 @@ export const CONTEXT_MD_TASK_TITLE_PREFIX = "Build CONTEXT.md";
 export function contextMdTaskTitle(channelName: string): string {
   return `${CONTEXT_MD_TASK_TITLE_PREFIX} for ${channelName}`;
 }
+
+// The PostHog MCP sub-tool that publishes a channel's CONTEXT.md. Named once so
+// the publish instruction and the authorized-write marker below stay in sync.
+const CONTEXT_PUBLISH_TOOL = "desktop-file-system-instructions-partial-update";
 
 export function buildContextGenerationPrompt(input: {
   channelName: string;
@@ -49,7 +55,7 @@ let the user refine it before you publish. Investigate two sources:
    analytics, and persons. Operate only on this project.
 
 Once the plan is approved, PUBLISH the document by calling the PostHog MCP
-tool \`desktop-file-system-instructions-partial-update\` exactly once with:
+tool \`${CONTEXT_PUBLISH_TOOL}\` exactly once with:
 - id: "${channelId}"
 - content: the full CONTEXT.md markdown
 - base_version: the current instructions version, or 0 if none exists yet
@@ -65,5 +71,7 @@ Write the document in terse, high-signal language: drop articles and filler,
 prefer fragments and short phrases over full sentences, cut anything that does
 not carry technical substance. Keep it concise. CONTEXT.md lives in PostHog, not
 on disk, so publishing via the MCP tool is what saves it — do not just write a
-local file.`;
+local file.
+
+${buildAuthorizedWriteMarker({ subTool: CONTEXT_PUBLISH_TOOL, id: channelId })}`;
 }

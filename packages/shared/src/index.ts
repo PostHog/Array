@@ -3,6 +3,11 @@ export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
 export {
+  type AuthorizedWrite,
+  buildAuthorizedWriteMarker,
+  parseAuthorizedWriteMarkers,
+} from "./authorized-write-marker";
+export {
   type BackoffOptions,
   getBackoffDelay,
   sleepWithBackoff,

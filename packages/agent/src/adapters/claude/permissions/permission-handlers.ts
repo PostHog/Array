@@ -33,9 +33,11 @@ import {
   buildPermissionOptions,
 } from "./permission-options";
 import {
+  extractPostHogCallId,
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
+  isSanctionedFirstPartyWriteSubTool,
 } from "./posthog-exec-gate";
 
 export type ToolPermissionResult =
@@ -772,6 +774,27 @@ export async function canUseTool(
             behavior: "allow",
             updatedInput: toolInput as Record<string, unknown>,
           };
+        }
+        // First-party artifact publish (a channel's CONTEXT.md or a freeform
+        // canvas): skip the destructive prompt only when the call targets the
+        // exact artifact id the task's own app-authored prompt authorized. Any
+        // other id falls through to the normal approval, so the agent can't
+        // publish to an arbitrary artifact silently. Not in plan mode — the
+        // publish must wait until the user has approved the plan.
+        if (
+          session.permissionMode !== "plan" &&
+          isSanctionedFirstPartyWriteSubTool(subTool)
+        ) {
+          const targetId = extractPostHogCallId(toolInput);
+          if (
+            targetId &&
+            session.authorizedFirstPartyWriteIds.get(subTool)?.has(targetId)
+          ) {
+            return {
+              behavior: "allow",
+              updatedInput: toolInput as Record<string, unknown>,
+            };
+          }
         }
         if (session.settingsManager.hasPostHogExecApproval(subTool)) {
           return {
