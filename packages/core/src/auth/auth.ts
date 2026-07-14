@@ -86,6 +86,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private session: InMemorySession | null = null;
   private initializePromise: Promise<void> | null = null;
   private refreshPromise: Promise<InMemorySession> | null = null;
+  // Serializes session-state commits so overlapping selections can't interleave
+  // across async encryption (see commitSessionState).
+  private commitChain: Promise<void> = Promise.resolve();
   constructor(
     @inject(AUTH_PREFERENCE_STORE)
     private readonly authPreference: IAuthPreferenceStore,
@@ -326,7 +329,30 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     }
     return orgProjects[0]?.id ?? null;
   }
-  private async commitSessionState(
+  private commitSessionState(
+    prevSession: InMemorySession,
+    next: {
+      orgProjectsMap: OrgProjectsMap;
+      currentOrgId: string | null;
+      currentProjectId: number | null;
+    },
+  ): Promise<void> {
+    // Serialize commits onto a chain. Encryption is async, so two overlapping
+    // selections would otherwise interleave across the await — an earlier one
+    // completing last would clobber the newer stored session and published
+    // state (and persistSession's own read of the prior selection would race).
+    // Chaining runs each commit's persist-then-publish to completion before the
+    // next starts, so the latest selection wins consistently across the
+    // in-memory session, storage, and subscribers. The stored chain swallows
+    // rejections so one failed commit doesn't wedge later ones; the returned
+    // promise still rejects for the caller.
+    const run = this.commitChain.then(() =>
+      this.applyCommittedSession(prevSession, next),
+    );
+    this.commitChain = run.catch(() => {});
+    return run;
+  }
+  private async applyCommittedSession(
     prevSession: InMemorySession,
     next: {
       orgProjectsMap: OrgProjectsMap;

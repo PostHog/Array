@@ -610,6 +610,77 @@ describe("AuthService", () => {
     );
   });
 
+  it("keeps overlapping selections consistent so the latest one wins", async () => {
+    const orgs = {
+      "org-1": {
+        name: "Org 1",
+        projects: [
+          { id: 42, name: "Project 42" },
+          { id: 84, name: "Project 84" },
+          { id: 99, name: "Project 99" },
+        ],
+      },
+    };
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({
+        accessToken: "initial-access-token",
+        refreshToken: "initial-refresh-token",
+      }),
+    );
+    stubAuthFetch({ orgs });
+
+    // Encryption is gated so overlapping selection commits stay in flight and
+    // can be resolved out of order below.
+    let deferEncrypt = false;
+    const pending: Array<() => void> = [];
+    const gatedCipher: IAuthTokenCipher = {
+      encrypt: (plaintext) =>
+        deferEncrypt
+          ? new Promise<string>((resolve) => {
+              pending.push(() => resolve(plaintext));
+            })
+          : Promise.resolve(plaintext),
+      decrypt: (encrypted) => Promise.resolve(encrypted),
+    };
+    service = new AuthService(
+      preferencePort,
+      sessionPort,
+      oauthFlow as unknown as IAuthOAuthFlowService,
+      connectivity,
+      gatedCipher,
+      mockPowerManager as unknown as IPowerManager,
+      mockLogger,
+      null,
+    );
+    service.init();
+    await service.initialize();
+    await service.login("us");
+    expect(service.getState().currentProjectId).toBe(42);
+
+    deferEncrypt = true;
+    // Two overlapping selections: 84 first, then 99 (the latest intent).
+    const first = service.selectProject(84);
+    const second = service.selectProject(99);
+
+    // Drain pending encryptions newest-first each round to surface any
+    // out-of-order completion, until both commits settle. Serialized commits
+    // only expose one pending encryption at a time; unserialized ones would
+    // let the stale 84 commit land last.
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    await flush();
+    while (pending.length > 0) {
+      for (const resolve of pending.splice(0).reverse()) resolve();
+      await flush();
+    }
+    await Promise.all([first, second]);
+
+    // The latest selection wins everywhere — no stale overwrite and no split
+    // between the in-memory session (getState), stored session, and preference.
+    expect(service.getState().currentProjectId).toBe(99);
+    expect(sessionPort.getCurrent()?.selectedProjectId).toBe(99);
+    expect(preferencePort.get("user-1", "us")?.lastSelectedProjectId).toBe(99);
+  });
+
   it("restores the selected project after app restart while logged out", async () => {
     const orgs = {
       "org-1": {
