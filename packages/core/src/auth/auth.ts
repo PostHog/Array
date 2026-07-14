@@ -334,7 +334,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       currentProjectId: number | null;
     },
   ): Promise<void> {
-    this.session = {
+    const nextSession: InMemorySession = {
       ...prevSession,
       orgProjectsMap: next.orgProjectsMap,
       currentOrgId: next.currentOrgId,
@@ -342,13 +342,20 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       orgProjectsIncomplete: false,
     };
 
-    this.persistProjectPreference(this.session);
+    // Persist the durable session first — it's the only step here that can
+    // fail (encryption is async and may reject). Mutating this.session, the
+    // project preference, or the published state before it would strand the
+    // service on a project change that the stored session and UI never
+    // committed. Commit those only after the persist resolves, so a rejection
+    // leaves every layer on the prior session.
     await this.persistSession({
-      refreshToken: this.session.refreshToken,
-      cloudRegion: this.session.cloudRegion,
+      refreshToken: nextSession.refreshToken,
+      cloudRegion: nextSession.cloudRegion,
       selectedProjectId: next.currentProjectId,
     });
 
+    this.session = nextSession;
+    this.persistProjectPreference(nextSession);
     this.updateState({
       orgProjectsMap: next.orgProjectsMap,
       currentOrgId: next.currentOrgId,

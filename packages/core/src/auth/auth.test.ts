@@ -500,6 +500,70 @@ describe("AuthService", () => {
     });
   });
 
+  it("keeps the prior selection committed when persisting a new selection fails", async () => {
+    const orgs = {
+      "org-1": {
+        name: "Org 1",
+        projects: [
+          { id: 42, name: "Project 42" },
+          { id: 84, name: "Project 84" },
+        ],
+      },
+    };
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({
+        accessToken: "initial-access-token",
+        refreshToken: "initial-refresh-token",
+      }),
+    );
+    stubAuthFetch({ orgs });
+
+    // Encrypts fine during login, then rejects so the selectProject persist
+    // fails mid-flow (mirrors the browser cipher's Web Crypto rejecting).
+    let failEncrypt = false;
+    const flakyCipher: IAuthTokenCipher = {
+      encrypt: (plaintext) =>
+        failEncrypt
+          ? Promise.reject(new Error("encryption unavailable"))
+          : Promise.resolve(plaintext),
+      decrypt: (encrypted) => Promise.resolve(encrypted),
+    };
+    service = new AuthService(
+      preferencePort,
+      sessionPort,
+      oauthFlow as unknown as IAuthOAuthFlowService,
+      connectivity,
+      flakyCipher,
+      mockPowerManager as unknown as IPowerManager,
+      mockLogger,
+      null,
+    );
+
+    // Initialize once while the session store is empty so login/selectProject
+    // don't later trigger the stored-session restore path.
+    service.init();
+    await service.initialize();
+
+    await service.login("us");
+    const priorProjectId = service.getState().currentProjectId;
+    expect(priorProjectId).toBe(42);
+
+    failEncrypt = true;
+    await expect(service.selectProject(84)).rejects.toThrow(
+      "encryption unavailable",
+    );
+
+    // A failed persist must not commit the new project anywhere: published
+    // state, the stored session, and the saved preference all stay on the
+    // prior selection (the preference is the tell — the buggy order saved it
+    // to 84 before the encrypt rejected).
+    expect(service.getState().currentProjectId).toBe(priorProjectId);
+    expect(sessionPort.getCurrent()?.selectedProjectId).toBe(priorProjectId);
+    expect(preferencePort.get("user-1", "us")?.lastSelectedProjectId).toBe(
+      priorProjectId,
+    );
+  });
+
   it("restores the selected project after app restart while logged out", async () => {
     const orgs = {
       "org-1": {
