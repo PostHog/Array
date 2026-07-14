@@ -8,18 +8,10 @@ interface UsePrDetailsOptions {
   includeComments?: boolean;
 }
 
-function threadsToMap(threads: PrReviewThread[]): Map<number, PrCommentThread> {
-  const map = new Map<number, PrCommentThread>();
-  for (const thread of threads) {
-    map.set(thread.rootId, {
-      rootId: thread.rootId,
-      nodeId: thread.nodeId,
-      isResolved: thread.isResolved,
-      comments: thread.comments,
-      filePath: thread.filePath,
-    });
-  }
-  return map;
+function mapPrCommentThreads(
+  threads: PrReviewThread[],
+): Map<number, PrCommentThread> {
+  return new Map(threads.map((thread) => [thread.rootId, thread]));
 }
 
 export interface PrStateDetails {
@@ -80,7 +72,7 @@ export function usePrDetails(
   });
 
   const commentThreads = useMemo(
-    () => threadsToMap(commentsQuery.data ?? []),
+    () => mapPrCommentThreads(commentsQuery.data ?? []),
     [commentsQuery.data],
   );
 
