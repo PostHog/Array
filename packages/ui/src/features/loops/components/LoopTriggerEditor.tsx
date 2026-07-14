@@ -10,15 +10,7 @@ import { Switch } from "@posthog/quill";
 import { CopyButton } from "@posthog/ui/features/agent-applications/components/CopyButton";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { Button } from "@posthog/ui/primitives/Button";
-import {
-  Box,
-  Checkbox,
-  Flex,
-  IconButton,
-  Text,
-  TextField,
-} from "@radix-ui/themes";
-import { useState } from "react";
+import { Box, Checkbox, Flex, IconButton, Text } from "@radix-ui/themes";
 import {
   emptyLoopApiTriggerConfig,
   emptyLoopGithubTriggerConfig,
@@ -223,13 +215,7 @@ function TriggerCard({
   );
 }
 
-type ScheduleFrequency =
-  | "hourly"
-  | "daily"
-  | "weekdays"
-  | "weekly"
-  | "once"
-  | "custom";
+type ScheduleFrequency = "hourly" | "daily" | "weekdays" | "weekly" | "once";
 
 const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
   { value: "hourly", label: "Hourly" },
@@ -237,7 +223,6 @@ const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
   { value: "weekdays", label: "Weekdays" },
   { value: "weekly", label: "Weekly" },
   { value: "once", label: "Once" },
-  { value: "custom", label: "Custom (cron)" },
 ];
 
 const WEEKDAY_OPTIONS = [
@@ -266,7 +251,7 @@ interface ParsedRecurringSchedule {
   weekday: string;
 }
 
-/** Reads the simple shapes the frequency picker writes; anything else is custom. */
+/** Reads the shapes the frequency picker writes; anything else falls back to daily. */
 function parseCronSchedule(
   cron: string | null | undefined,
 ): ParsedRecurringSchedule | null {
@@ -321,17 +306,9 @@ function ScheduleTriggerFields({
   onChange: (config: LoopSchemas.LoopScheduleTriggerConfig) => void;
 }) {
   const parsed = parseCronSchedule(config.cron_expression);
-  // Custom is sticky UI state: "0 9 * * *" typed by hand still parses as
-  // daily, so deriving the mode from the config alone would bounce the user
-  // out of the cron editor while they type.
-  const [customMode, setCustomMode] = useState(
-    () => !config.run_at && !!config.cron_expression && !parsed,
-  );
   const frequency: ScheduleFrequency = config.run_at
     ? "once"
-    : customMode
-      ? "custom"
-      : (parsed?.frequency ?? "daily");
+    : (parsed?.frequency ?? "daily");
   const time = parsed?.time ?? DEFAULT_TIME;
   const weekday = parsed?.weekday ?? "1";
   const timezone = config.timezone || localTimezone();
@@ -354,21 +331,10 @@ function ScheduleTriggerFields({
   const handleFrequencyChange = (value: string) => {
     const next = value as ScheduleFrequency;
     if (next === "once") {
-      setCustomMode(false);
-      onChange({ run_at: new Date().toISOString() });
+      // The backend rejects run_at values in the past; default an hour out.
+      onChange({ run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
       return;
     }
-    if (next === "custom") {
-      setCustomMode(true);
-      onChange({
-        cron_expression:
-          config.cron_expression ??
-          emptyLoopScheduleTriggerConfig().cron_expression,
-        timezone,
-      });
-      return;
-    }
-    setCustomMode(false);
     setRecurring(next, time, weekday);
   };
 
@@ -379,13 +345,9 @@ function ScheduleTriggerFields({
       value={time}
       className="h-8 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2 text-[12.5px] text-gray-12"
       onChange={(e) => {
-        if (!e.target.value || frequency === "custom" || frequency === "once")
+        if (!e.target.value || frequency === "once" || frequency === "hourly")
           return;
-        setRecurring(
-          frequency as "daily" | "weekdays" | "weekly",
-          e.target.value,
-          weekday,
-        );
+        setRecurring(frequency, e.target.value, weekday);
       }}
     />
   );
@@ -438,34 +400,7 @@ function ScheduleTriggerFields({
         ) : null}
       </Flex>
 
-      {frequency === "custom" ? (
-        <Flex gap="2" wrap="wrap">
-          <Flex direction="column" gap="1" className="min-w-[160px] flex-1">
-            <Text className="text-[12px] text-gray-10">Cron expression</Text>
-            <TextField.Root
-              size="2"
-              value={config.cron_expression ?? ""}
-              placeholder="0 9 * * *"
-              disabled={disabled}
-              onChange={(e) =>
-                onChange({ ...config, cron_expression: e.target.value })
-              }
-            />
-          </Flex>
-          <Flex direction="column" gap="1" className="min-w-[160px] flex-1">
-            <Text className="text-[12px] text-gray-10">Timezone</Text>
-            <TextField.Root
-              size="2"
-              value={config.timezone ?? ""}
-              placeholder="UTC"
-              disabled={disabled}
-              onChange={(e) =>
-                onChange({ ...config, timezone: e.target.value })
-              }
-            />
-          </Flex>
-        </Flex>
-      ) : frequency !== "once" ? (
+      {frequency !== "once" ? (
         <Text className="text-[11px] text-gray-9">Times in {timezone}</Text>
       ) : null}
     </Flex>
