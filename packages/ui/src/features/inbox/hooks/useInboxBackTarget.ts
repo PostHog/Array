@@ -1,11 +1,14 @@
 import { useLocation } from "@tanstack/react-router";
 
+const INBOX_LIST_ROUTE_VALUES = [
+  "/code/inbox/pulls",
+  "/code/inbox/reports",
+  "/code/inbox/runs",
+  "/code/inbox/dismissed",
+] as const;
+
 /** List routes an inbox detail screen's back link can return to. */
-export type InboxListRoute =
-  | "/code/inbox/pulls"
-  | "/code/inbox/reports"
-  | "/code/inbox/runs"
-  | "/code/inbox/dismissed";
+export type InboxListRoute = (typeof INBOX_LIST_ROUTE_VALUES)[number];
 
 /**
  * Where a detail screen's back link should go. The Archive redirect records the
@@ -27,12 +30,7 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const INBOX_LIST_ROUTES = new Set<InboxListRoute>([
-  "/code/inbox/pulls",
-  "/code/inbox/reports",
-  "/code/inbox/runs",
-  "/code/inbox/dismissed",
-]);
+const INBOX_LIST_ROUTES = new Set<InboxListRoute>(INBOX_LIST_ROUTE_VALUES);
 
 /**
  * Validate untyped history state before trusting it: it may have come from an
