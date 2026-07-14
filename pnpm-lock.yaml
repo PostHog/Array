@@ -36,6 +36,9 @@ catalogs:
     '@tanstack/router-generator':
       specifier: ^1.167.17
       version: 1.167.17
+    '@tanstack/router-plugin':
+      specifier: ^1.168.13
+      version: 1.168.18
     '@trpc/client':
       specifier: ^11.17.0
       version: 11.17.0
@@ -615,9 +618,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 0.22.1
+        version: 0.22.1(zod@4.4.3)
       '@inversifyjs/strongly-typed':
         specifier: 2.2.0
         version: 2.2.0(inversify@7.11.0(reflect-metadata@0.2.2))
+      '@pierre/diffs':
+        specifier: ^1.2.10
+        version: 1.2.10(@shikijs/themes@3.23.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@posthog/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@posthog/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -627,6 +639,9 @@ importers:
       '@posthog/host-router':
         specifier: workspace:*
         version: link:../../packages/host-router
+      '@posthog/host-trpc':
+        specifier: workspace:*
+        version: link:../../packages/host-trpc
       '@posthog/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -645,6 +660,9 @@ importers:
       '@trpc/client':
         specifier: ^11.17.0
         version: 11.17.0(@trpc/server@11.17.0(typescript@5.9.3))(typescript@5.9.3)
+      '@trpc/server':
+        specifier: ^11.17.0
+        version: 11.17.0(typescript@5.9.3)
       '@trpc/tanstack-react-query':
         specifier: ^11.17.0
         version: 11.17.0(@tanstack/react-query@5.101.0(react@19.2.6))(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.17.0(typescript@5.9.3))(react@19.2.6)(typescript@5.9.3)
@@ -660,10 +678,19 @@ importers:
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.60.0
+        version: 1.60.0
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.2.2(rolldown-vite@7.3.1(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.2.0)(esbuild@0.27.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.22.4)(yaml@2.9.0))
+      '@tanstack/router-plugin':
+        specifier: 'catalog:'
+        version: 1.168.18(@tanstack/react-router@1.170.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(rolldown-vite@7.3.1(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.2.0)(esbuild@0.27.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.22.4)(yaml@2.9.0))(webpack@5.105.0(esbuild@0.27.2))
       '@types/react':
         specifier: ^19.1.0
         version: 19.2.17
@@ -20607,6 +20634,24 @@ snapshots:
     optionalDependencies:
       '@tanstack/react-router': 1.170.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       vite: rolldown-vite@7.3.1(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@24.12.0)(esbuild@0.27.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.22.4)(yaml@2.9.0)
+      webpack: 5.105.0(esbuild@0.27.2)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@tanstack/router-plugin@1.168.18(@tanstack/react-router@1.170.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(rolldown-vite@7.3.1(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.2.0)(esbuild@0.27.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.22.4)(yaml@2.9.0))(webpack@5.105.0(esbuild@0.27.2))':
+    dependencies:
+      '@babel/core': 7.29.0
+      '@babel/template': 7.28.6
+      '@babel/types': 7.29.0
+      '@tanstack/router-core': 1.171.13
+      '@tanstack/router-generator': 1.167.17
+      '@tanstack/router-utils': 1.162.2
+      chokidar: 5.0.0
+      unplugin: 3.0.0
+      zod: 4.4.3
+    optionalDependencies:
+      '@tanstack/react-router': 1.170.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      vite: rolldown-vite@7.3.1(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.2.0)(esbuild@0.27.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.22.4)(yaml@2.9.0)
       webpack: 5.105.0(esbuild@0.27.2)
     transitivePeerDependencies:
       - supports-color
