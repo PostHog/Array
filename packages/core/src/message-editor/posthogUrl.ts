@@ -1,17 +1,35 @@
-export type PostHogResourceType =
-  | "feature_flag"
-  | "experiment"
-  | "insight"
-  | "dashboard"
-  | "error_tracking"
-  | "recording"
-  | "survey"
-  | "notebook"
-  | "cohort"
-  | "action"
-  | "early_access_feature"
-  | "person"
-  | "group";
+// Single source of truth for PostHog resource chip types. The union type is
+// derived from this array so the two can never drift, and consumers can do a
+// positive runtime membership check (e.g. isPostHogRef) instead of defining
+// PostHog chips by exclusion.
+export const POSTHOG_RESOURCE_TYPES = [
+  "feature_flag",
+  "experiment",
+  "insight",
+  "dashboard",
+  "error_tracking",
+  "recording",
+  "survey",
+  "notebook",
+  "cohort",
+  "action",
+  "early_access_feature",
+  "person",
+  "group",
+] as const;
+
+export type PostHogResourceType = (typeof POSTHOG_RESOURCE_TYPES)[number];
+
+const POSTHOG_RESOURCE_TYPE_SET: ReadonlySet<string> = new Set(
+  POSTHOG_RESOURCE_TYPES,
+);
+
+/** True when `type` is one of the PostHog resource chip types. */
+export function isPostHogResourceType(
+  type: string,
+): type is PostHogResourceType {
+  return POSTHOG_RESOURCE_TYPE_SET.has(type);
+}
 
 export interface ParsedPostHogUrl {
   resourceType: PostHogResourceType;

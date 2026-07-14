@@ -33,8 +33,28 @@ function formatDisplayId(resourceId: string, prefix: string): string {
   return `${prefix} ${displayId}`;
 }
 
+/**
+ * Suffix appended to a PostHog chip's label while its title is still being
+ * fetched. Kept as a shared constant so serialization can strip it (see
+ * stripPlaceholderLabelSuffix) and never persist "Loading..." into the XML.
+ */
+export const PLACEHOLDER_LABEL_SUFFIX = " - Loading...";
+
 export function buildPostHogPlaceholderLabel(parsed: ParsedPostHogUrl): string {
-  return `${formatDisplayId(parsed.resourceId, LABEL_PREFIXES[parsed.resourceType])} - Loading...`;
+  return `${formatDisplayId(parsed.resourceId, LABEL_PREFIXES[parsed.resourceType])}${PLACEHOLDER_LABEL_SUFFIX}`;
+}
+
+/**
+ * Strip the transient "- Loading..." suffix from a chip label. Used at
+ * serialization time so that a message submitted before resolvePostHogRefChip
+ * finishes persists the clean base label (e.g. "Feature Flag #42") rather than
+ * the placeholder — which would otherwise render "Loading..." forever when the
+ * message is re-hydrated from history.
+ */
+export function stripPlaceholderLabelSuffix(label: string): string {
+  return label.endsWith(PLACEHOLDER_LABEL_SUFFIX)
+    ? label.slice(0, -PLACEHOLDER_LABEL_SUFFIX.length)
+    : label;
 }
 
 export function buildResolvedLabel(

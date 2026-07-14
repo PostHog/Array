@@ -305,3 +305,51 @@ describe("xmlToContent", () => {
     ]);
   });
 });
+
+describe("contentToXml — PostHog chip labels", () => {
+  it("strips the transient '- Loading...' suffix so it is never persisted", () => {
+    const content: EditorContent = {
+      segments: [
+        {
+          type: "chip",
+          chip: {
+            type: "feature_flag",
+            id: "https://us.posthog.com/project/1/feature_flags/42",
+            // Message submitted before resolvePostHogRefChip finished.
+            label: "Feature Flag #42 - Loading...",
+          },
+        },
+      ],
+    };
+
+    const xml = contentToXml(content);
+    expect(xml).not.toContain("Loading...");
+    expect(xml).toContain('label="Feature Flag #42"');
+
+    // Re-hydrating from history shows the clean base label, not "Loading...".
+    const segment = xmlToContent(xml).segments[0];
+    expect(segment.type).toBe("chip");
+    if (segment.type === "chip") {
+      expect(segment.chip.label).toBe("Feature Flag #42");
+    }
+  });
+
+  it("persists a fully resolved label verbatim", () => {
+    const content: EditorContent = {
+      segments: [
+        {
+          type: "chip",
+          chip: {
+            type: "feature_flag",
+            id: "https://us.posthog.com/project/1/feature_flags/42",
+            label: "Feature Flag #42 - My cool flag",
+          },
+        },
+      ],
+    };
+
+    expect(contentToXml(content)).toContain(
+      'label="Feature Flag #42 - My cool flag"',
+    );
+  });
+});

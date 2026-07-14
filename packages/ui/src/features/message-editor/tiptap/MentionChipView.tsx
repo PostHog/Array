@@ -21,6 +21,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { Chip } from "@posthog/quill";
+import { isPostHogResourceType } from "@posthog/core/message-editor/posthogUrl";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import type { Node as PmNode } from "@tiptap/pm/model";
@@ -102,12 +103,9 @@ function DefaultChip({
   const isFile = type === "file";
   const isFolder = type === "folder";
   const isGithubRef = type === "github_issue" || type === "github_pr";
-  const isPostHogRef =
-    type !== "file" &&
-    type !== "folder" &&
-    type !== "command" &&
-    type !== "error" &&
-    !isGithubRef;
+  // Positive membership check against the known PostHog resource types, so a
+  // future chip type is never silently treated as a clickable PostHog chip.
+  const isPostHogRef = isPostHogResourceType(type);
   const isUrlChip = isGithubRef || isPostHogRef;
   const canOpenUrl = isUrlChip && /^https?:\/\//.test(id);
 

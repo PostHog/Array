@@ -1365,7 +1365,9 @@ export class PostHogAPIClient {
     throw new Error("No team found for user");
   }
 
-  async getDefaultProjectId(): Promise<number> {
+  // Public alias for the private getTeamId(), used when resolving PostHog
+  // resource URLs. Not async — it just forwards the already-Promise result.
+  getDefaultProjectId(): Promise<number> {
     return this.getTeamId();
   }
 
@@ -6153,11 +6155,18 @@ export class PostHogAPIClient {
     );
   }
 
-  async getFeatureFlag(
+  /**
+   * Fetch a single PostHog resource by id from a project-scoped REST endpoint
+   * (`/api/projects/{projectId}/{resourcePath}/{resourceId}/`) and return its
+   * parsed JSON, or null on a non-ok response. Shared by the by-id resource
+   * getters below so the fetch/error/JSON boilerplate lives in one place.
+   */
+  private async fetchProjectResourceById(
+    resourcePath: string,
     projectId: string,
-    flagId: string,
-  ): Promise<{ name: string; key: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/feature_flags/${encodeURIComponent(flagId)}/`;
+    resourceId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/${resourcePath}/${encodeURIComponent(resourceId)}/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
     const response = await this.api.fetcher.fetch({
       method: "get",
@@ -6165,168 +6174,153 @@ export class PostHogAPIClient {
       path: urlPath,
     });
     if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string; key?: string };
-    return { name: data.name ?? "", key: data.key ?? "" };
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  async getFeatureFlag(
+    projectId: string,
+    flagId: string,
+  ): Promise<{ name: string; key: string } | null> {
+    const data = await this.fetchProjectResourceById(
+      "feature_flags",
+      projectId,
+      flagId,
+    );
+    if (!data) return null;
+    return {
+      name: (data.name as string) ?? "",
+      key: (data.key as string) ?? "",
+    };
   }
 
   async getExperiment(
     projectId: string,
     experimentId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "experiments",
+      projectId,
+      experimentId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getInsight(
     projectId: string,
     insightId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/insights/${encodeURIComponent(insightId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "insights",
+      projectId,
+      insightId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getDashboard(
     projectId: string,
     dashboardId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/dashboards/${encodeURIComponent(dashboardId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "dashboards",
+      projectId,
+      dashboardId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getErrorTrackingGroup(
     projectId: string,
     groupId: string,
   ): Promise<{ title: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/error_tracking/${encodeURIComponent(groupId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { title?: string };
-    return { title: data.title ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "error_tracking",
+      projectId,
+      groupId,
+    );
+    if (!data) return null;
+    return { title: (data.title as string) ?? "" };
   }
 
   async getRecording(
     projectId: string,
     recordingId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/session_recordings/${encodeURIComponent(recordingId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "session_recordings",
+      projectId,
+      recordingId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getSurvey(
     projectId: string,
     surveyId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/surveys/${encodeURIComponent(surveyId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "surveys",
+      projectId,
+      surveyId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getNotebook(
     projectId: string,
     notebookId: string,
   ): Promise<{ title: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/notebooks/${encodeURIComponent(notebookId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { title?: string };
-    return { title: data.title ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "notebooks",
+      projectId,
+      notebookId,
+    );
+    if (!data) return null;
+    return { title: (data.title as string) ?? "" };
   }
 
   async getCohort(
     projectId: string,
     cohortId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/cohorts/${encodeURIComponent(cohortId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "cohorts",
+      projectId,
+      cohortId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getAction(
     projectId: string,
     actionId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/actions/${encodeURIComponent(actionId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "actions",
+      projectId,
+      actionId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getEarlyAccessFeature(
     projectId: string,
     featureId: string,
   ): Promise<{ name: string } | null> {
-    const urlPath = `/api/projects/${encodeURIComponent(projectId)}/early_access_feature/${encodeURIComponent(featureId)}/`;
-    const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url,
-      path: urlPath,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { name?: string };
-    return { name: data.name ?? "" };
+    const data = await this.fetchProjectResourceById(
+      "early_access_feature",
+      projectId,
+      featureId,
+    );
+    if (!data) return null;
+    return { name: (data.name as string) ?? "" };
   }
 
   async getPerson(

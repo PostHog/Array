@@ -1,4 +1,5 @@
 import { escapeXmlAttr, type UploadableSkillSource } from "@posthog/shared";
+import { stripPlaceholderLabelSuffix } from "./posthogChip";
 import { parsePostHogUrl } from "./posthogUrl";
 import { isUploadableSkillSource, parseXmlAttrs } from "./skillTags";
 
@@ -97,7 +98,7 @@ export function contentToXml(content: EditorContent): string {
       case "early_access_feature":
       case "person":
       case "group":
-        return `<${chip.type} id="${escapedId}" label="${escapeXmlAttr(chip.label)}" />`;
+        return `<${chip.type} id="${escapedId}" label="${escapeXmlAttr(stripPlaceholderLabelSuffix(chip.label))}" />`;
       case "github_issue":
       case "github_pr": {
         const labelMatch = chip.label.match(/^#(\d+)(?:\s*-\s*(.*))?$/);
