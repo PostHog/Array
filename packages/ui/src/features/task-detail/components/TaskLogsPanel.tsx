@@ -4,6 +4,7 @@ import { Box, Flex } from "@radix-ui/themes";
 import { useCallback, useEffect } from "react";
 import { BackgroundWrapper } from "../../../primitives/BackgroundWrapper";
 import { ErrorBoundary } from "../../../primitives/ErrorBoundary";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { useFolders } from "../../folders/useFolders";
 import { useDraftStore } from "../../message-editor/draftStore";
 import { ProvisioningView } from "../../provisioning/ProvisioningView";
@@ -28,6 +29,12 @@ interface TaskLogsPanelProps {
 }
 
 export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
+  // The folder-picker setup prompt is a local-workspace surface (local git repo
+  // detection, folder picker). A cloud-only host has no local workspaces, so it
+  // must never render — otherwise, in the window before a task is known-cloud
+  // (isCloud derives from the workspace entry / latest run), the !isCloud branch
+  // would mount it and resolve local-only services the host doesn't bind.
+  const { localWorkspaces } = useHostCapabilities();
   const isWorkspaceLoaded = useWorkspaceLoaded();
   const { isPending: isCreatingWorkspace } = useCreateWorkspace();
   const repoKey = getTaskRepository(task);
@@ -116,6 +123,7 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
   // branch below, whose !hasDirectoryMapping gate wouldn't fire here since the
   // task's repo folder is already registered.
   if (
+    localWorkspaces &&
     provisioningError &&
     !repoPath &&
     !isCloud &&
@@ -133,6 +141,7 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
   }
 
   if (
+    localWorkspaces &&
     !repoPath &&
     !isCloud &&
     !isSuspended &&
