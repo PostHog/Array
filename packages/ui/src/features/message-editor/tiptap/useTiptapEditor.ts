@@ -11,10 +11,12 @@ import {
   parseGithubIssueUrl,
 } from "@posthog/core/message-editor/githubIssueUrl";
 import {
+  type AutoConvertedPaste,
   buildMarkdownLink,
   buildPastedTextLabel,
   extractBashCommand,
   isBashModeText,
+  isRepeatOfAutoConvertedPaste,
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
@@ -69,6 +71,11 @@ export interface UseTiptapEditorOptions {
 const EDITOR_CLASS =
   "cli-editor min-h-[1.5em] w-full break-words border-none bg-transparent pr-2 text-[14px] text-[var(--gray-12)] outline-none [overflow-wrap:break-word] [white-space:pre-wrap] [word-break:break-word]";
 
+interface TrackedAutoConvertedPaste extends AutoConvertedPaste {
+  chipInserted: boolean;
+  canceled: boolean;
+}
+
 function insertChipWithTrailingSpace(
   view: EditorView,
   attrs: {
@@ -76,6 +83,7 @@ function insertChipWithTrailingSpace(
     id: string;
     label: string;
     pastedText?: boolean;
+    chipId?: string;
   },
 ): void {
   const chipNode = view.state.schema.nodes.mentionChip.create({
@@ -92,8 +100,14 @@ async function pasteTextAsFile(
   view: EditorView,
   text: string,
   pasteCountRef: React.MutableRefObject<number>,
+  tracked?: TrackedAutoConvertedPaste,
 ): Promise<void> {
   const result = await persistTextContent(text);
+  if (tracked?.canceled) {
+    view.dispatch(view.state.tr.insertText(text));
+    view.focus();
+    return;
+  }
   pasteCountRef.current += 1;
   const lineCount = text.split("\n").length;
   insertChipWithTrailingSpace(view, {
@@ -101,15 +115,51 @@ async function pasteTextAsFile(
     id: result.path,
     label: buildPastedTextLabel(pasteCountRef.current, lineCount),
     pastedText: true,
+    chipId: tracked?.chipId,
   });
+  if (tracked) tracked.chipInserted = true;
   view.focus();
 }
 
 function insertGithubRefPlaceholder(
   view: EditorView,
   parsed: ParsedGithubIssueUrl,
+  chipId: string,
 ): void {
-  insertChipWithTrailingSpace(view, buildGithubRefPlaceholderChip(parsed));
+  insertChipWithTrailingSpace(view, {
+    ...buildGithubRefPlaceholderChip(parsed),
+    chipId,
+  });
+}
+
+function replaceChipWithText(
+  view: EditorView,
+  chipId: string,
+  text: string,
+): boolean {
+  const { doc, selection } = view.state;
+  let chipFrom = -1;
+  let chipTo = -1;
+  doc.descendants((node, pos) => {
+    if (chipFrom >= 0) return false;
+    if (node.type.name !== "mentionChip") return;
+    if (node.attrs.chipId !== chipId) return;
+    const nodeEnd = pos + node.nodeSize;
+    // Also swallow the trailing space the chip insertion added.
+    const after = doc.textBetween(
+      nodeEnd,
+      Math.min(nodeEnd + 1, doc.content.size),
+    );
+    chipFrom = pos;
+    chipTo = after === " " ? nodeEnd + 1 : nodeEnd;
+    return false;
+  });
+  if (chipFrom < 0) return false;
+  // Only treat it as a double paste while the caret still follows the chip.
+  if (selection.from !== chipTo && selection.from !== chipTo - 1) return false;
+  view.dispatch(view.state.tr.insertText(text, chipFrom, chipTo));
+  view.focus();
+  return true;
 }
 
 async function fetchGithubRefTitle(
@@ -234,6 +284,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const draftRef = useRef<ReturnType<typeof useDraftSync> | null>(null);
 
   const pasteCountRef = useRef(0);
+  const lastAutoConvertedPasteRef = useRef<TrackedAutoConvertedPaste | null>(
+    null,
+  );
   const historyActions = usePromptHistoryStore.getState();
   const [isEmptyState, setIsEmptyState] = useState(true);
   const [isReady, setIsReady] = useState(false);
@@ -376,6 +429,10 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           const clipboardText = event.clipboardData?.getData("text/plain");
           const trimmedClipboardText = clipboardText?.trim();
 
+          // Only the immediately-following paste can undo an auto-conversion.
+          const lastConverted = lastAutoConvertedPasteRef.current;
+          lastAutoConvertedPasteRef.current = null;
+
           // Auto-wrap selected text as markdown link when pasting a URL
           if (
             from !== to &&
@@ -398,12 +455,42 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             return true;
           }
 
+          // Pasting the same clipboard again undoes the chip auto-conversion
+          if (
+            from === to &&
+            isRepeatOfAutoConvertedPaste(lastConverted, clipboardText)
+          ) {
+            if (
+              replaceChipWithText(
+                view,
+                lastConverted.chipId,
+                lastConverted.insertText,
+              )
+            ) {
+              event.preventDefault();
+              return true;
+            }
+            if (!lastConverted.chipInserted) {
+              event.preventDefault();
+              lastConverted.canceled = true;
+              return true;
+            }
+          }
+
           // Auto-convert a pasted GitHub issue or PR URL into a chip
-          if (from === to && trimmedClipboardText) {
+          if (from === to && clipboardText && trimmedClipboardText) {
             const parsedRef = parseGithubIssueUrl(trimmedClipboardText);
             if (parsedRef) {
               event.preventDefault();
-              insertGithubRefPlaceholder(view, parsedRef);
+              const chipId = crypto.randomUUID();
+              insertGithubRefPlaceholder(view, parsedRef, chipId);
+              lastAutoConvertedPasteRef.current = {
+                clipboardText,
+                insertText: clipboardText,
+                chipId,
+                chipInserted: true,
+                canceled: false,
+              };
               void resolveGithubRefChip(view, parsedRef);
               return true;
             }
@@ -458,13 +545,29 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           ) {
             event.preventDefault();
 
+            const tracked: TrackedAutoConvertedPaste = {
+              clipboardText: clipboardText || effectiveText,
+              insertText: effectiveText,
+              chipId: crypto.randomUUID(),
+              chipInserted: false,
+              canceled: false,
+            };
+            lastAutoConvertedPasteRef.current = tracked;
+
             (async () => {
               try {
-                await pasteTextAsFile(view, effectiveText, pasteCountRef);
-                showPasteHint(
-                  "Pasted as file attachment",
-                  "Click the chip to convert back to text.",
+                await pasteTextAsFile(
+                  view,
+                  effectiveText,
+                  pasteCountRef,
+                  tracked,
                 );
+                if (!tracked.canceled) {
+                  showPasteHint(
+                    "Pasted as file attachment",
+                    "Paste again or click the chip to convert back to text.",
+                  );
+                }
               } catch (_error) {
                 toast.error("Failed to convert pasted text to attachment");
               }
