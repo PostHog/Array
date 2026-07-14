@@ -43,7 +43,11 @@ function makeStubRpc(responses: Record<string, unknown>) {
           message: `Invalid request: missing field \`${missing}\``,
         };
       }
-      return (responses[method] ?? {}) as T;
+      const response = responses[method];
+      if (response instanceof Error) {
+        throw response;
+      }
+      return (response ?? {}) as T;
     },
     notify() {},
     async close() {},
@@ -1499,6 +1503,76 @@ describe("CodexAppServerAgent", () => {
     // Only one turn/start — the second prompt steered rather than starting anew.
     expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
       1,
+    );
+  });
+
+  it("rejects a failed turn/steer without echoing or acknowledging it", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new Error("steer transport failed"),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "lost steer" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).rejects.toThrow("steer transport failed");
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "lost steer" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines an explicit steer after the active turn has ended", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "too late" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(
+      stub.requests.filter((request) => request.method === "turn/start"),
+    ).toHaveLength(0);
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "too late" },
+        }),
+      }),
     );
   });
 

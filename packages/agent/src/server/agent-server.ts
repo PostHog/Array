@@ -368,6 +368,7 @@ export class AgentServer {
   private pendingEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
   private activeOwnedTurnCount = 0;
+  private ownedTurnsIdleWaiters = new Set<() => void>();
   private pendingPermissions = new Map<
     string,
     {
@@ -953,10 +954,10 @@ export class AgentServer {
             : {}),
         };
 
-        const shouldSteer =
+        const shouldAttemptSteer =
           params.steer === true && this.activeOwnedTurnCount > 0;
 
-        if (shouldSteer) {
+        if (shouldAttemptSteer) {
           try {
             const result = await this.session.clientConnection.prompt({
               sessionId: this.session.acpSessionId,
@@ -965,10 +966,10 @@ export class AgentServer {
             });
             const accepted =
               (result._meta as { steer?: unknown } | undefined)?.steer === true;
-            if (!accepted) {
-              throw new Error("Adapter did not accept the steer message");
+            if (accepted) {
+              return { stopReason: "steered", steered: true };
             }
-            return { stopReason: "steered", steered: true };
+            await this.waitForOwnedTurnsIdle();
           } catch (error) {
             if (messageId) {
               this.deliveredMessageIds.delete(messageId);
@@ -981,15 +982,19 @@ export class AgentServer {
 
         let result: PromptResponse;
         try {
-          result = await this.runOwnedTurn(() =>
-            this.session!.clientConnection.prompt({
-              sessionId: this.session!.acpSessionId,
+          result = await this.runOwnedTurn(() => {
+            const promptResult = this.session?.clientConnection.prompt({
+              sessionId: this.session?.acpSessionId,
               prompt,
               ...(Object.keys(promptMeta).length > 0
                 ? { _meta: promptMeta }
                 : {}),
-            }),
-          );
+            });
+            if (!promptResult) {
+              throw new Error("Agent connection did not accept the prompt");
+            }
+            return promptResult;
+          });
         } catch (error) {
           if (messageId) {
             this.deliveredMessageIds.delete(messageId);
@@ -1572,7 +1577,22 @@ export class AgentServer {
       return await operation();
     } finally {
       this.activeOwnedTurnCount -= 1;
+      if (this.activeOwnedTurnCount === 0) {
+        for (const resolve of this.ownedTurnsIdleWaiters) {
+          resolve();
+        }
+        this.ownedTurnsIdleWaiters.clear();
+      }
     }
+  }
+
+  private async waitForOwnedTurnsIdle(): Promise<void> {
+    if (this.activeOwnedTurnCount === 0) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      this.ownedTurnsIdleWaiters.add(resolve);
+    });
   }
 
   /**
@@ -1789,10 +1809,14 @@ export class AgentServer {
       });
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
       const result = await this.runOwnedTurn(() =>
         this.promptWithUpstreamRetry({
-          sessionId: this.session!.acpSessionId,
+          sessionId: acpSessionId,
           prompt: initialPrompt,
           ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
         }),
@@ -2003,10 +2027,14 @@ export class AgentServer {
       const builtPrompt = await buildPrompt();
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
       const result = await this.runOwnedTurn(() =>
         this.promptWithUpstreamRetry({
-          sessionId: this.session!.acpSessionId,
+          sessionId: acpSessionId,
           prompt: builtPrompt.prompt,
           ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
         }),

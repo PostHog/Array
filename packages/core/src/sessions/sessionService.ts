@@ -141,6 +141,11 @@ type TrpcSubscription = {
   ) => { unsubscribe: () => void };
 };
 
+interface CloudHydrationResult {
+  historyEntryCount: number;
+  liveStreamLineCount: number;
+}
+
 export interface SessionTrpc {
   agent: {
     start: TrpcMutation;
@@ -626,6 +631,10 @@ export class SessionService {
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
   private pendingPermissionHydratedRuns = new Set<string>();
+  private cloudHydrationPromises = new Map<
+    string,
+    Promise<CloudHydrationResult | undefined>
+  >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -4170,6 +4179,19 @@ export class SessionService {
           initialReasoningEffort,
         );
       }
+      if (
+        typeof runState?.resume_from_run_id === "string" &&
+        !this.pendingPermissionHydratedRuns.has(taskRunId)
+      ) {
+        this.hydrateCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        );
+      }
       return () => {};
     }
 
@@ -4288,16 +4310,43 @@ export class SessionService {
       initialReasoningEffort,
     );
 
-    if (shouldHydrateSession) {
-      this.hydrateCloudTaskSessionFromLogs(
-        taskId,
-        taskRunId,
-        logUrl,
-        taskDescription,
-        runStatus,
-        runState,
-      );
-    }
+    const hydration = shouldHydrateSession
+      ? this.hydrateCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        )
+      : undefined;
+
+    let bufferCloudUpdates = shouldHydrateResumeChain;
+    let resumeHistoryCountOffset = 0;
+    const bufferedCloudUpdates: CloudTaskUpdatePayload[] = [];
+    const processCloudUpdate = (update: CloudTaskUpdatePayload): void => {
+      const normalizedUpdate: CloudTaskUpdatePayload =
+        resumeHistoryCountOffset > 0 &&
+        (update.kind === "logs" || update.kind === "snapshot")
+          ? {
+              ...update,
+              totalEntryCount: Math.max(
+                0,
+                update.totalEntryCount - resumeHistoryCountOffset,
+              ),
+            }
+          : update;
+      this.handleCloudTaskUpdate(taskRunId, normalizedUpdate);
+      const watcher = this.cloudTaskWatchers.get(taskId);
+      if (
+        (update.kind === "status" ||
+          update.kind === "snapshot" ||
+          update.kind === "error") &&
+        watcher?.onStatusChange
+      ) {
+        watcher.onStatusChange();
+      }
+    };
 
     // Subscribe before starting the main-process watcher so the first replayed
     // SSE/log burst cannot race ahead of the renderer subscription.
@@ -4305,16 +4354,11 @@ export class SessionService {
       { taskId, runId },
       {
         onData: (update: CloudTaskUpdatePayload) => {
-          this.handleCloudTaskUpdate(taskRunId, update);
-          const watcher = this.cloudTaskWatchers.get(taskId);
-          if (
-            (update.kind === "status" ||
-              update.kind === "snapshot" ||
-              update.kind === "error") &&
-            watcher?.onStatusChange
-          ) {
-            watcher.onStatusChange();
+          if (bufferCloudUpdates) {
+            bufferedCloudUpdates.push(update);
+            return;
           }
+          processCloudUpdate(update);
         },
         onError: (err: unknown) =>
           this.d.log.error("Cloud task subscription error", { taskId, err }),
@@ -4329,6 +4373,25 @@ export class SessionService {
       subscription,
       onStatusChange,
     });
+
+    if (hydration && shouldHydrateResumeChain) {
+      void hydration.then((result) => {
+        if (!this.isCurrentCloudTaskWatcher(taskId, runId, startToken)) {
+          return;
+        }
+        if (result && resumeFromEntryCount === undefined) {
+          resumeHistoryCountOffset = Math.max(
+            0,
+            result.historyEntryCount - result.liveStreamLineCount,
+          );
+        }
+        bufferCloudUpdates = false;
+        for (const update of bufferedCloudUpdates) {
+          processCloudUpdate(update);
+        }
+        bufferedCloudUpdates.length = 0;
+      });
+    }
 
     // Start main-process watcher after the subscription is attached.
     void (async () => {
@@ -4382,192 +4445,219 @@ export class SessionService {
     taskDescription?: string,
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
-  ): void {
-    void (async () => {
-      let rawEntries: StoredLogEntry[];
-      let totalLineCount: number;
-      const resumeFromRunId =
-        typeof runState?.resume_from_run_id === "string"
-          ? runState.resume_from_run_id
-          : undefined;
-      const isResumeRun = Boolean(resumeFromRunId);
-      if (isTerminalStatus(runStatus) || isResumeRun) {
-        // Resume chains need the full history even while the leaf run is still
-        // active; otherwise a renderer restart hydrates only the final run.
-        // Non-resume in-progress runs keep using the single-run log so hydrate
-        // cannot race the live stream and double the active turn.
-        const authStatus = await this.getAuthCredentialsStatus();
-        if (authStatus.kind !== "ready") {
-          return;
-        }
-        if (resumeFromRunId) {
-          const [ancestorResult, currentRunResult] = await Promise.allSettled([
-            authStatus.auth.client.getTaskRunSessionLogs(
-              taskId,
-              resumeFromRunId,
-              { limit: 100000 },
-            ),
-            authStatus.auth.client.getTaskRunSessionLogs(taskId, taskRunId, {
-              limit: 100000,
-            }),
-          ]);
-          const ancestorEntries: StoredLogEntry[] =
-            ancestorResult.status === "fulfilled"
-              ? (ancestorResult.value as StoredLogEntry[])
-              : [];
-          const currentRunEntries: StoredLogEntry[] =
-            currentRunResult.status === "fulfilled"
-              ? (currentRunResult.value as StoredLogEntry[])
-              : [];
-          if (ancestorResult.status === "rejected") {
-            this.d.log.warn("Failed to fetch ancestor session logs", {
-              taskId,
-              taskRunId,
-              resumeFromRunId,
-              err: ancestorResult.reason,
-            });
-          }
-          if (currentRunResult.status === "rejected") {
-            this.d.log.warn("Failed to fetch resumed leaf session logs", {
-              taskId,
-              taskRunId,
-              err: currentRunResult.reason,
-            });
-          }
-
-          const ancestorKeys = ancestorEntries.map((entry) =>
-            JSON.stringify(entry),
-          );
-          const currentIncludesAncestor =
-            ancestorKeys.length > 0 &&
-            ancestorKeys.every(
-              (key, index) => JSON.stringify(currentRunEntries[index]) === key,
-            );
-          const persistedLeafEntries = currentIncludesAncestor
-            ? currentRunEntries.slice(ancestorEntries.length)
-            : currentRunEntries;
-          const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
-          const leafKeys = new Set(
-            persistedLeafEntries.map((entry) => JSON.stringify(entry)),
-          );
-          rawEntries = [
-            ...ancestorEntries,
-            ...persistedLeafEntries,
-            ...leafLogs.rawEntries.filter(
-              (entry) => !leafKeys.has(JSON.stringify(entry)),
-            ),
-          ];
-          totalLineCount = Math.max(
-            leafLogs.totalLineCount,
-            persistedLeafEntries.length,
-          );
-        } else {
-          try {
-            rawEntries = await authStatus.auth.client.getTaskRunSessionLogs(
-              taskId,
-              taskRunId,
-              { limit: 100000 },
-            );
-          } catch (err) {
-            this.d.log.warn("Failed to fetch session logs for hydrate", {
-              taskId,
-              taskRunId,
-              err,
-            });
-            return;
-          }
-          totalLineCount = rawEntries.length;
-        }
-      } else {
-        const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
-        rawEntries = parsed.rawEntries;
-        totalLineCount = parsed.totalLineCount;
-      }
-
-      const session = this.d.store.getSessionByTaskId(taskId);
-      if (!session || session.taskRunId !== taskRunId) {
-        return;
-      }
-
-      let events = convertStoredEntriesToEvents(rawEntries);
-      if (isResumeRun && session.events.length > 0) {
-        const eventKeys = new Set(
-          events.map((event) => JSON.stringify([event.ts, event.message])),
-        );
-        events = [
-          ...events,
-          ...session.events.filter(
-            (event) =>
-              !eventKeys.has(JSON.stringify([event.ts, event.message])),
-          ),
-        ];
-        totalLineCount = Math.max(
-          totalLineCount,
-          session.processedLineCount ?? 0,
-        );
-      }
-      const hasUserPrompt = events.some(
-        (e: AcpMessage) =>
-          isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
-      );
-
-      // Seed the optimistic user-message bubble whenever the agent has
-      // not yet recorded an initial `session/prompt` request — covers the
-      // brand-new task case as well as "agent has emitted lifecycle
-      // notifications but hasn't received its first prompt yet". Prefer the
-      // stashed initial prompt (which carries the channel CONTEXT.md block, so
-      // its chip renders right away) over the bare task description.
-      const seedContent =
-        this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
-      if (!hasUserPrompt && seedContent?.trim()) {
-        this.d.store.appendOptimisticItem(taskRunId, {
-          type: "user_message",
-          content: seedContent,
-          timestamp: Date.now(),
-        });
-      }
-      if (hasUserPrompt) {
-        // The real prompt has landed; the stash is no longer needed.
-        this.initialCloudOptimisticPrompt.delete(taskId);
-        this.d.store.clearTailOptimisticItems(taskRunId);
-      }
-
-      if (rawEntries.length === 0) {
-        this.pendingPermissionHydratedRuns.add(taskRunId);
-        return;
-      }
-
-      // If live updates already populated a processed count, don't overwrite
-      // that newer state with the persisted baseline fetched during startup.
-      if (
-        session.processedLineCount !== undefined &&
-        session.processedLineCount > 0 &&
-        !isResumeRun
-      ) {
-        this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
-        this.pendingPermissionHydratedRuns.add(taskRunId);
-        return;
-      }
-
-      this.d.store.updateSession(taskRunId, {
-        events,
-        isCloud: true,
-        logUrl: logUrl ?? session.logUrl,
-        processedLineCount: totalLineCount,
-      });
-      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
-      this.pendingPermissionHydratedRuns.add(taskRunId);
-      // Without this the "Galumphing…" indicator stays hidden when the hydrated
-      // baseline already contains an in-flight session/prompt — the live delta
-      // path otherwise sees delta <= 0 and never re-evaluates the tail.
-      this.updatePromptStateFromEvents(taskRunId, events);
-    })().catch((err: unknown) => {
+  ): Promise<CloudHydrationResult | undefined> {
+    const existing = this.cloudHydrationPromises.get(taskRunId);
+    if (existing) {
+      return existing;
+    }
+    const hydration = this.performCloudTaskSessionHydration(
+      taskId,
+      taskRunId,
+      logUrl,
+      taskDescription,
+      runStatus,
+      runState,
+    ).catch((err: unknown) => {
       this.d.log.warn("Failed to hydrate cloud task session from logs", {
         taskId,
         taskRunId,
         err,
       });
+      return undefined;
     });
+    this.cloudHydrationPromises.set(taskRunId, hydration);
+    void hydration.finally(() => {
+      if (this.cloudHydrationPromises.get(taskRunId) === hydration) {
+        this.cloudHydrationPromises.delete(taskRunId);
+      }
+    });
+    return hydration;
+  }
+
+  private async performCloudTaskSessionHydration(
+    taskId: string,
+    taskRunId: string,
+    logUrl?: string,
+    taskDescription?: string,
+    runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
+  ): Promise<CloudHydrationResult | undefined> {
+    let rawEntries: StoredLogEntry[];
+    let liveStreamLineCount: number;
+    const resumeFromRunId =
+      typeof runState?.resume_from_run_id === "string"
+        ? runState.resume_from_run_id
+        : undefined;
+    const isResumeRun = Boolean(resumeFromRunId);
+    if (isTerminalStatus(runStatus) || isResumeRun) {
+      // Resume chains need the full history even while the leaf run is still
+      // active; otherwise a renderer restart hydrates only the final run.
+      // Non-resume in-progress runs keep using the single-run log so hydrate
+      // cannot race the live stream and double the active turn.
+      const authStatus = await this.getAuthCredentialsStatus();
+      if (authStatus.kind !== "ready") {
+        return;
+      }
+      if (resumeFromRunId) {
+        const [ancestorResult, currentRunResult] = await Promise.all([
+          authStatus.auth.client.getTaskRunSessionLogsResult(
+            taskId,
+            resumeFromRunId,
+            { limit: 100000 },
+          ),
+          authStatus.auth.client.getTaskRunSessionLogsResult(
+            taskId,
+            taskRunId,
+            { limit: 100000 },
+          ),
+        ]);
+        if (!ancestorResult.complete || !currentRunResult.complete) {
+          this.d.log.warn("Resume session log hydration was incomplete", {
+            taskId,
+            taskRunId,
+            resumeFromRunId,
+            ancestorComplete: ancestorResult.complete,
+            currentRunComplete: currentRunResult.complete,
+          });
+          return;
+        }
+        const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
+        const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
+
+        const ancestorKeys = ancestorEntries.map((entry) =>
+          JSON.stringify(entry),
+        );
+        const currentIncludesAncestor =
+          ancestorKeys.length > 0 &&
+          ancestorKeys.every(
+            (key, index) => JSON.stringify(currentRunEntries[index]) === key,
+          );
+        const persistedLeafEntries = currentIncludesAncestor
+          ? currentRunEntries.slice(ancestorEntries.length)
+          : currentRunEntries;
+        const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
+        const leafKeys = new Set(
+          persistedLeafEntries.map((entry) => JSON.stringify(entry)),
+        );
+        rawEntries = [
+          ...ancestorEntries,
+          ...persistedLeafEntries,
+          ...leafLogs.rawEntries.filter(
+            (entry) => !leafKeys.has(JSON.stringify(entry)),
+          ),
+        ];
+        liveStreamLineCount = Math.max(
+          leafLogs.totalLineCount,
+          persistedLeafEntries.length,
+        );
+      } else {
+        const result = await authStatus.auth.client.getTaskRunSessionLogsResult(
+          taskId,
+          taskRunId,
+          { limit: 100000 },
+        );
+        if (!result.complete) {
+          this.d.log.warn("Session log hydration was incomplete", {
+            taskId,
+            taskRunId,
+          });
+          return;
+        }
+        rawEntries = result.entries;
+        liveStreamLineCount = rawEntries.length;
+      }
+    } else {
+      const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+      rawEntries = parsed.rawEntries;
+      liveStreamLineCount = parsed.totalLineCount;
+    }
+
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session || session.taskRunId !== taskRunId) {
+      return;
+    }
+
+    let events = convertStoredEntriesToEvents(rawEntries);
+    if (isResumeRun && session.events.length > 0) {
+      const eventKeys = new Set(
+        events.map((event) => JSON.stringify([event.ts, event.message])),
+      );
+      events = [
+        ...events,
+        ...session.events.filter(
+          (event) => !eventKeys.has(JSON.stringify([event.ts, event.message])),
+        ),
+      ];
+      liveStreamLineCount = Math.max(
+        liveStreamLineCount,
+        session.processedLineCount ?? 0,
+      );
+    }
+    const hasUserPrompt = events.some(
+      (e: AcpMessage) =>
+        isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
+    );
+
+    // Seed the optimistic user-message bubble whenever the agent has
+    // not yet recorded an initial `session/prompt` request — covers the
+    // brand-new task case as well as "agent has emitted lifecycle
+    // notifications but hasn't received its first prompt yet". Prefer the
+    // stashed initial prompt (which carries the channel CONTEXT.md block, so
+    // its chip renders right away) over the bare task description.
+    const seedContent =
+      this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
+    if (!hasUserPrompt && seedContent?.trim()) {
+      this.d.store.appendOptimisticItem(taskRunId, {
+        type: "user_message",
+        content: seedContent,
+        timestamp: Date.now(),
+      });
+    }
+    if (hasUserPrompt) {
+      // The real prompt has landed; the stash is no longer needed.
+      this.initialCloudOptimisticPrompt.delete(taskId);
+      this.d.store.clearTailOptimisticItems(taskRunId);
+    }
+
+    if (rawEntries.length === 0) {
+      this.pendingPermissionHydratedRuns.add(taskRunId);
+      return {
+        historyEntryCount: 0,
+        liveStreamLineCount,
+      };
+    }
+
+    // If live updates already populated a processed count, don't overwrite
+    // that newer state with the persisted baseline fetched during startup.
+    if (
+      session.processedLineCount !== undefined &&
+      session.processedLineCount > 0 &&
+      !isResumeRun
+    ) {
+      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+      this.pendingPermissionHydratedRuns.add(taskRunId);
+      return {
+        historyEntryCount: rawEntries.length,
+        liveStreamLineCount: session.processedLineCount,
+      };
+    }
+
+    this.d.store.updateSession(taskRunId, {
+      events,
+      isCloud: true,
+      logUrl: logUrl ?? session.logUrl,
+      processedLineCount: liveStreamLineCount,
+    });
+    this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+    this.pendingPermissionHydratedRuns.add(taskRunId);
+    // Without this the "Galumphing…" indicator stays hidden when the hydrated
+    // baseline already contains an in-flight session/prompt — the live delta
+    // path otherwise sees delta <= 0 and never re-evaluates the tail.
+    this.updatePromptStateFromEvents(taskRunId, events);
+    return {
+      historyEntryCount: rawEntries.length,
+      liveStreamLineCount,
+    };
   }
 
   private isCurrentCloudTaskWatcher(

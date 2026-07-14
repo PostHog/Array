@@ -482,7 +482,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const hasInFlightTurns =
       this.session.activeTurn !== null || this.session.turnQueue.length > 0;
 
-    if (hasInFlightTurns && isSteerMeta(params._meta)) {
+    const isSteer = isSteerMeta(params._meta);
+    if (hasInFlightTurns && isSteer) {
       // Fold into the running turn (promptToClaude tagged it priority:"next");
       // the benign end_turn is ignored by clients, which key off _meta.steer.
       const owner =
@@ -492,6 +493,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.session.input.push(userMessage);
       await this.broadcastUserMessage(params);
       return { stopReason: "end_turn", _meta: { steer: true } };
+    }
+    if (isSteer) {
+      return { stopReason: "end_turn", _meta: { steer: false } };
     }
 
     if (!hasInFlightTurns && !isLocalOnlyCommand) {

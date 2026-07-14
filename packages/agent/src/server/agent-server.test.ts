@@ -1838,6 +1838,60 @@ describe("AgentServer HTTP Mode", () => {
       expect(resetTurnMessages).not.toHaveBeenCalled();
     }, 20000);
 
+    it("falls back to a normal follow-up when the active turn ends before steering", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn();
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      prompt
+        .mockImplementationOnce(async () => {
+          serverInternals.activeOwnedTurnCount = 0;
+          return { stopReason: "end_turn", _meta: { steer: false } };
+        })
+        .mockResolvedValueOnce({ stopReason: "end_turn" });
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-race",
+          method: "user_message",
+          params: { content: "continue normally", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "end_turn" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(2);
+      expect(prompt.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(prompt.mock.calls[1]?.[0]?._meta?.steer).toBeUndefined();
+      expect(resetTurnMessages).toHaveBeenCalledTimes(1);
+      expect(broadcastTurnComplete).toHaveBeenCalledTimes(1);
+    }, 20000);
+
     it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
       const s = createServer();
       await s.start();

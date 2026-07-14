@@ -128,6 +128,7 @@ const mockAuthenticatedClient = vi.hoisted(() => ({
   finalizeTaskStagedArtifactUploads: vi.fn(),
   startGithubUserIntegrationConnect: vi.fn(),
   getTaskRunSessionLogs: vi.fn(),
+  getTaskRunSessionLogsResult: vi.fn(),
 }));
 
 type MockAuthenticatedClient = typeof mockAuthenticatedClient;
@@ -416,6 +417,10 @@ describe("SessionService", () => {
     mockGetConfigOptionByCategory.mockReturnValue(undefined);
     mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
     mockAuthenticatedClient.getTaskRunSessionLogs.mockResolvedValue([]);
+    mockAuthenticatedClient.getTaskRunSessionLogsResult.mockResolvedValue({
+      entries: [],
+      complete: true,
+    });
     mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
     mockSessionStoreSetters.getSessions.mockReturnValue({});
     mockAuth.fetchAuthState.mockResolvedValue({
@@ -3190,60 +3195,63 @@ describe("SessionService", () => {
       mockSessionStoreSetters.getSessions.mockReturnValue({
         "run-123": completedSession,
       });
-      mockAuthenticatedClient.getTaskRunSessionLogs.mockResolvedValue([
-        {
-          type: "notification",
-          notification: {
-            method: "_posthog/sdk_session",
-            params: {
-              taskRunId: "run-123",
-              sessionId: "acp-session-1",
-              adapter: "claude",
-            },
-          },
-        },
-        {
-          type: "notification",
-          notification: {
-            method: "_posthog/run_started",
-            params: {
-              sessionId: "acp-session-1",
-              runId: "run-123",
-              taskId: "task-123",
-            },
-          },
-        },
-        {
-          type: "notification",
-          notification: {
-            method: "_posthog/permission_request",
-            params: {
-              requestId: "request-1",
-              toolCall: {
-                toolCallId: "tool-1",
-                title: "What animal do you prefer?",
-                kind: "other",
-                _meta: {
-                  codeToolKind: "question",
-                  questions: [
-                    {
-                      question: "What animal do you prefer?",
-                      options: [
-                        { label: "cats", description: "Cats" },
-                        { label: "dogs", description: "Dogs" },
-                      ],
-                    },
-                  ],
-                },
+      mockAuthenticatedClient.getTaskRunSessionLogsResult.mockResolvedValue({
+        complete: true,
+        entries: [
+          {
+            type: "notification",
+            notification: {
+              method: "_posthog/sdk_session",
+              params: {
+                taskRunId: "run-123",
+                sessionId: "acp-session-1",
+                adapter: "claude",
               },
-              options: [
-                { optionId: "option_0", name: "cats", kind: "allow_once" },
-                { optionId: "option_1", name: "dogs", kind: "allow_once" },
-              ],
             },
           },
-        },
-      ]);
+          {
+            type: "notification",
+            notification: {
+              method: "_posthog/run_started",
+              params: {
+                sessionId: "acp-session-1",
+                runId: "run-123",
+                taskId: "task-123",
+              },
+            },
+          },
+          {
+            type: "notification",
+            notification: {
+              method: "_posthog/permission_request",
+              params: {
+                requestId: "request-1",
+                toolCall: {
+                  toolCallId: "tool-1",
+                  title: "What animal do you prefer?",
+                  kind: "other",
+                  _meta: {
+                    codeToolKind: "question",
+                    questions: [
+                      {
+                        question: "What animal do you prefer?",
+                        options: [
+                          { label: "cats", description: "Cats" },
+                          { label: "dogs", description: "Dogs" },
+                        ],
+                      },
+                    ],
+                  },
+                },
+                options: [
+                  { optionId: "option_0", name: "cats", kind: "allow_once" },
+                  { optionId: "option_1", name: "dogs", kind: "allow_once" },
+                ],
+              },
+            },
+          },
+        ],
+      });
 
       service.watchCloudTask(
         "task-123",
@@ -3418,13 +3426,14 @@ describe("SessionService", () => {
         const leafEntries = [
           { timestamp: "2024-01-01T00:01:00Z", notification: {} },
         ];
-        mockAuthenticatedClient.getTaskRunSessionLogs
-          .mockResolvedValueOnce(parentEntries)
-          .mockResolvedValueOnce(
-            currentIncludesParent
+        mockAuthenticatedClient.getTaskRunSessionLogsResult
+          .mockResolvedValueOnce({ entries: parentEntries, complete: true })
+          .mockResolvedValueOnce({
+            entries: currentIncludesParent
               ? [...parentEntries, ...leafEntries]
               : leafEntries,
-          );
+            complete: true,
+          });
         mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
           JSON.stringify(leafEntries[0]),
         );
@@ -3452,13 +3461,32 @@ describe("SessionService", () => {
           { resume_from_run_id: "run-123" },
         );
 
+        const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+          .calls[0][1] as { onData: (update: unknown) => void };
+        subscribeOptions.onData({
+          kind: "snapshot",
+          taskId: "task-123",
+          runId: "run-456",
+          totalEntryCount: 2,
+          newEntries: [...parentEntries, ...leafEntries],
+          status: "in_progress",
+        });
+        expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
+
+        expect(mockTrpcCloudTask.watch.mutate).toHaveBeenCalledWith({
+          taskId: "task-123",
+          runId: "run-456",
+          apiHost: "https://api.anthropic.com",
+          teamId: 123,
+          resumeFromEntryCount: undefined,
+        });
         await vi.waitFor(() => {
           expect(
-            mockAuthenticatedClient.getTaskRunSessionLogs,
+            mockAuthenticatedClient.getTaskRunSessionLogsResult,
           ).toHaveBeenCalledWith("task-123", "run-123", { limit: 100000 });
         });
         expect(
-          mockAuthenticatedClient.getTaskRunSessionLogs,
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
         ).toHaveBeenCalledWith("task-123", "run-456", { limit: 100000 });
         expect(mockConvertStoredEntriesToEvents).toHaveBeenCalledWith([
           ...parentEntries,
@@ -3485,8 +3513,164 @@ describe("SessionService", () => {
         expect(
           mockSessionStoreSetters.appendOptimisticItem,
         ).not.toHaveBeenCalled();
+        expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
       },
     );
+
+    it("keeps the live cursor and retries after incomplete resume hydration", async () => {
+      const service = getSessionService();
+      const resumePrompt = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 2,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "continue" }] },
+        },
+      };
+      const resumedSession = createMockSession({
+        taskRunId: "run-456",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        events: [resumePrompt],
+        processedLineCount: 1,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        resumedSession,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-456": resumedSession,
+      });
+      const parentEntries = [
+        { timestamp: "2024-01-01T00:00:00Z", notification: {} },
+      ];
+      const leafEntries = [
+        { timestamp: "2024-01-01T00:01:00Z", notification: {} },
+      ];
+      let resolveAncestor!: (result: {
+        entries: typeof parentEntries;
+        complete: boolean;
+      }) => void;
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveAncestor = resolve;
+            }),
+        )
+        .mockResolvedValueOnce({
+          entries: [...parentEntries, ...leafEntries],
+          complete: true,
+        });
+
+      const watch = (): void => {
+        service.watchCloudTask(
+          "task-123",
+          "run-456",
+          "https://api.anthropic.com",
+          123,
+          undefined,
+          "https://logs.example.com/run-456",
+          undefined,
+          "claude",
+          undefined,
+          "first request",
+          undefined,
+          "in_progress",
+          undefined,
+          { resume_from_run_id: "run-123" },
+        );
+      };
+
+      watch();
+      await vi.waitFor(() => {
+        expect(
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
+        ).toHaveBeenCalledTimes(2);
+      });
+      expect(mockTrpcCloudTask.watch.mutate).toHaveBeenCalledWith({
+        taskId: "task-123",
+        runId: "run-456",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        resumeFromEntryCount: undefined,
+      });
+      watch();
+      expect(
+        mockAuthenticatedClient.getTaskRunSessionLogsResult,
+      ).toHaveBeenCalledTimes(2);
+
+      const liveEntry = {
+        timestamp: "2024-01-01T00:02:00Z",
+        notification: { method: "session/update" },
+      };
+      const liveEvent = {
+        type: "acp_message" as const,
+        ts: 1700000120,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "session/update",
+          params: { update: { sessionUpdate: "agent_message_chunk" } },
+        },
+      };
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([liveEvent]);
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as { onData: (update: unknown) => void };
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-456",
+        totalEntryCount: 2,
+        newEntries: [liveEntry],
+      });
+      expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
+
+      resolveAncestor({ entries: parentEntries, complete: false });
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
+          "run-456",
+          [liveEvent],
+          2,
+        );
+      });
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-456",
+        expect.objectContaining({ events: expect.any(Array) }),
+      );
+
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
+        .mockResolvedValueOnce({ entries: parentEntries, complete: true })
+        .mockResolvedValueOnce({
+          entries: [...parentEntries, ...leafEntries],
+          complete: true,
+        });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
+        JSON.stringify(leafEntries[0]),
+      );
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([
+        resumePrompt,
+        liveEvent,
+      ]);
+
+      await vi.waitFor(() => {
+        watch();
+        expect(
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
+        ).toHaveBeenCalledTimes(4);
+      });
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-456",
+          expect.objectContaining({
+            events: expect.arrayContaining([resumePrompt, liveEvent]),
+            processedLineCount: 1,
+          }),
+        );
+      });
+    });
 
     it("ignores stale async starts when the same watcher is replaced", async () => {
       const service = getSessionService();

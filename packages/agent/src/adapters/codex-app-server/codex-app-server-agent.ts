@@ -611,31 +611,32 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (dropped > 0) {
       this.logger.warn("Dropped non-text/non-image prompt blocks", { dropped });
     }
-    // Echo the user prompt (codex emits none), for fresh turns and steering alike.
-    this.broadcastUserInput(params.prompt);
-
     if (this.turns.isRunning) {
       // A turn is already running: fold the message in via turn/steer (precondition: the
       // active turnId). Refresh from the response's rotated turnId so a later steer/interrupt
       // still targets the live turn (no turn/started is re-emitted for a steer).
-      const steerRes = await this.rpc
-        .request<{ turnId?: string }>(APP_SERVER_METHODS.TURN_STEER, {
+      const steerRes = await this.rpc.request<{ turnId?: string }>(
+        APP_SERVER_METHODS.TURN_STEER,
+        {
           threadId: this.threadId,
           input,
           expectedTurnId: this.turns.activeTurnId,
-        })
-        .catch((err) => {
-          this.logger.warn("turn/steer failed", err);
-          return undefined;
-        });
+        },
+      );
       this.turns.onSteered(steerRes?.turnId);
+      this.broadcastUserInput(params.prompt);
       return { stopReason: "end_turn", _meta: { steer: true } };
+    }
+    if ((params._meta as { steer?: unknown } | undefined)?.steer === true) {
+      return { stopReason: "end_turn", _meta: { steer: false } };
     }
     if (this.turns.isPending) {
       // A turn is pending but has no turnId yet, so we can't steer; fail fast.
       throw new Error("prompt() called while a turn is already in progress");
     }
 
+    // Codex does not echo user input, so emit it only once delivery can proceed.
+    this.broadcastUserInput(params.prompt);
     const stopReason = await this.runTurn(input);
     return { stopReason: await this.maybeOfferPlanImplementation(stopReason) };
   }

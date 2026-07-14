@@ -283,6 +283,24 @@ describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
     ]);
   });
 
+  it("declines an explicit steer after the active turn has ended", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-expired-steer";
+    installFakeSession(agent, sessionId);
+
+    await expect(
+      agent.prompt({
+        sessionId,
+        prompt: [{ type: "text", text: "too late" }],
+        _meta: { steer: true },
+      }),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+
+    const session = (agent as unknown as { session: { turnQueue: unknown[] } })
+      .session;
+    expect(session.turnQueue).toHaveLength(0);
+  });
+
   it("reconnects a disconnected signed-commit server before the turn", async () => {
     const { agent } = makeAgent();
     const sessionId = "s-heal";
