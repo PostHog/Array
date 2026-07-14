@@ -3355,12 +3355,33 @@ describe("SessionService", () => {
 
     it("hydrates an in-progress resumed run from the full session-log chain", async () => {
       const service = getSessionService();
+      const priorPrompt = {
+        type: "acp_message" as const,
+        ts: 1700000000,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 1,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "first request" }] },
+        },
+      };
+      const resumePrompt = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 2,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "continue" }] },
+        },
+      };
       const resumedSession = createMockSession({
         taskRunId: "run-456",
         taskId: "task-123",
         status: "disconnected",
         isCloud: true,
-        events: [],
+        events: [resumePrompt],
+        processedLineCount: 1,
         optimisticItems: [
           {
             id: "optimistic-follow-up",
@@ -3385,32 +3406,9 @@ describe("SessionService", () => {
         chainedEntries,
       );
       mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
-        "leaf log should not be used",
+        JSON.stringify(chainedEntries[1]),
       );
-      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue(
-        "leaf s3 log should not be used",
-      );
-
-      const priorPrompt = {
-        type: "acp_message" as const,
-        ts: 1700000000,
-        message: {
-          jsonrpc: "2.0" as const,
-          id: 1,
-          method: "session/prompt",
-          params: { prompt: [{ type: "text", text: "first request" }] },
-        },
-      };
-      const resumePrompt = {
-        type: "acp_message" as const,
-        ts: 1700000060,
-        message: {
-          jsonrpc: "2.0" as const,
-          id: 2,
-          method: "session/prompt",
-          params: { prompt: [{ type: "text", text: "continue" }] },
-        },
-      };
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([
         priorPrompt,
         resumePrompt,
@@ -3445,7 +3443,7 @@ describe("SessionService", () => {
         "run-456",
         expect.objectContaining({
           events: [priorPrompt, resumePrompt],
-          processedLineCount: chainedEntries.length,
+          processedLineCount: 1,
         }),
       );
       expect(

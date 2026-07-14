@@ -4228,12 +4228,16 @@ export class SessionService {
       !this.pendingPermissionHydratedRuns.has(taskRunId) &&
       (isTerminalStatus(existing.cloudStatus) ||
         (runStatus !== undefined && isTerminalStatus(runStatus)));
+    const shouldHydrateResumeChain =
+      Boolean(runState?.resume_from_run_id) &&
+      !this.pendingPermissionHydratedRuns.has(taskRunId);
     const shouldHydrateSession =
       !existing ||
       existing.taskRunId !== taskRunId ||
       shouldResetExistingSession ||
       existing.events.length === 0 ||
-      shouldHydratePersistedPermissions;
+      shouldHydratePersistedPermissions ||
+      shouldHydrateResumeChain;
 
     if (
       !existing ||
@@ -4406,7 +4410,21 @@ export class SessionService {
           });
           return;
         }
-        totalLineCount = rawEntries.length;
+        if (isResumeRun) {
+          const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
+          const chainKeys = new Set(
+            rawEntries.map((entry) => JSON.stringify(entry)),
+          );
+          rawEntries = [
+            ...rawEntries,
+            ...leafLogs.rawEntries.filter(
+              (entry) => !chainKeys.has(JSON.stringify(entry)),
+            ),
+          ];
+          totalLineCount = leafLogs.totalLineCount;
+        } else {
+          totalLineCount = rawEntries.length;
+        }
       } else {
         const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
         rawEntries = parsed.rawEntries;
@@ -4418,7 +4436,23 @@ export class SessionService {
         return;
       }
 
-      const events = convertStoredEntriesToEvents(rawEntries);
+      let events = convertStoredEntriesToEvents(rawEntries);
+      if (isResumeRun && session.events.length > 0) {
+        const eventKeys = new Set(
+          events.map((event) => JSON.stringify([event.ts, event.message])),
+        );
+        events = [
+          ...events,
+          ...session.events.filter(
+            (event) =>
+              !eventKeys.has(JSON.stringify([event.ts, event.message])),
+          ),
+        ];
+        totalLineCount = Math.max(
+          totalLineCount,
+          session.processedLineCount ?? 0,
+        );
+      }
       const hasUserPrompt = events.some(
         (e: AcpMessage) =>
           isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
@@ -4454,7 +4488,8 @@ export class SessionService {
       // that newer state with the persisted baseline fetched during startup.
       if (
         session.processedLineCount !== undefined &&
-        session.processedLineCount > 0
+        session.processedLineCount > 0 &&
+        !isResumeRun
       ) {
         this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
         this.pendingPermissionHydratedRuns.add(taskRunId);

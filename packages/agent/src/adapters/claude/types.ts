@@ -42,6 +42,7 @@ export type BackgroundTerminal =
 /** One in-flight `prompt()` call, settled by the session's consumer. */
 export type Turn = {
   promptUuid: string;
+  pendingSteerUuids: Set<string>;
   isLocalOnlyCommand: boolean;
   commandName?: string;
   /** Invoked once at activation, matching the pre-consumer broadcast timing. */
