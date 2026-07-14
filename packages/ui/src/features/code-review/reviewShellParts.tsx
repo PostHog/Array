@@ -389,7 +389,7 @@ function PrCommentCountBadge({ count }: { count: number }) {
     <Badge
       variant="default"
       title={label}
-      className="shrink-0 gap-[3px] text-[11px] tabular-nums"
+      className="shrink-0 gap-[3px] border-(--gray-7) bg-(--gray-3) text-[11px] text-gray-12 tabular-nums"
     >
       <ChatCircle size={12} weight="fill" />
       {count}
