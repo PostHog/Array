@@ -103,11 +103,7 @@ async function pasteTextAsFile(
   tracked?: TrackedAutoConvertedPaste,
 ): Promise<void> {
   const result = await persistTextContent(text);
-  if (tracked?.canceled) {
-    view.dispatch(view.state.tr.insertText(text));
-    view.focus();
-    return;
-  }
+  if (tracked?.canceled) return;
   pasteCountRef.current += 1;
   const lineCount = text.split("\n").length;
   insertChipWithTrailingSpace(view, {
@@ -468,11 +464,18 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               )
             ) {
               event.preventDefault();
+              useFeatureSettingsStore
+                .getState()
+                .markHintLearned("paste-as-file");
               return true;
             }
             if (!lastConverted.chipInserted) {
               event.preventDefault();
               lastConverted.canceled = true;
+              useFeatureSettingsStore
+                .getState()
+                .markHintLearned("paste-as-file");
+              view.dispatch(view.state.tr.insertText(lastConverted.insertText));
               return true;
             }
           }
@@ -565,11 +568,13 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 if (!tracked.canceled) {
                   showPasteHint(
                     "Pasted as file attachment",
-                    "Paste again or click the chip to convert back to text.",
+                    "Paste again to convert back to text.",
                   );
                 }
               } catch (_error) {
-                toast.error("Failed to convert pasted text to attachment");
+                if (!tracked.canceled) {
+                  toast.error("Failed to convert pasted text to attachment");
+                }
               }
             })();
 
