@@ -111,63 +111,64 @@ function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
   const clientRef = useRef<PostHogAPIClient>(client);
   clientRef.current = client;
 
-  const engine = useMemo(
-    () =>
-      new NotebookSyncEngine(
-        {
-          markdown: initialMarkdown,
-          version: notebook.version ?? 0,
-          nodeId: initialNodeId ?? globalThis.crypto.randomUUID(),
-        },
-        {
-          saveMarkdown: async (input) => {
-            const result = await service.markdownSave(
-              clientRef.current,
-              notebook.short_id,
-              input,
-            );
-            if (result.status === "saved") {
-              return {
-                status: "saved",
-                markdown:
-                  getMarkdownNotebookMarkdown(result.notebook.content) ??
-                  input.markdown,
-                version: result.notebook.version ?? input.version + 1,
-              };
-            }
-            return result;
-          },
-          reload: async () => {
-            const fresh = await service.getNotebook(
-              clientRef.current,
-              notebook.short_id,
-            );
-            return {
-              markdown: getMarkdownNotebookMarkdown(fresh.content) ?? "",
-              version: fresh.version ?? 0,
-              nodeId: getMarkdownNotebookNodeId(fresh.content),
-            };
-          },
-          onRemoteContent: setRemote,
-          onStatusChange: setStatus,
-        },
-      ),
-    // The route remounts this component per notebook (key=shortId), so the
-    // engine lives exactly as long as one open document.
-    [
-      initialMarkdown,
-      initialNodeId,
-      notebook.short_id,
-      notebook.version,
-      service,
-    ],
-  );
-
+  // The engine is created (and disposed) inside an effect rather than a
+  // useMemo: StrictMode's dev double-mount runs the cleanup once against the
+  // first mount, and a memoized engine would stay permanently disposed while
+  // the surviving render kept handing out its dead callbacks.
+  const [engine, setEngine] = useState<NotebookSyncEngine | null>(null);
   useEffect(() => {
+    const nextEngine = new NotebookSyncEngine(
+      {
+        markdown: initialMarkdown,
+        version: notebook.version ?? 0,
+        nodeId: initialNodeId ?? globalThis.crypto.randomUUID(),
+      },
+      {
+        saveMarkdown: async (input) => {
+          const result = await service.markdownSave(
+            clientRef.current,
+            notebook.short_id,
+            input,
+          );
+          if (result.status === "saved") {
+            return {
+              status: "saved",
+              markdown:
+                getMarkdownNotebookMarkdown(result.notebook.content) ??
+                input.markdown,
+              version: result.notebook.version ?? input.version + 1,
+            };
+          }
+          return result;
+        },
+        reload: async () => {
+          const fresh = await service.getNotebook(
+            clientRef.current,
+            notebook.short_id,
+          );
+          return {
+            markdown: getMarkdownNotebookMarkdown(fresh.content) ?? "",
+            version: fresh.version ?? 0,
+            nodeId: getMarkdownNotebookNodeId(fresh.content),
+          };
+        },
+        onRemoteContent: setRemote,
+        onStatusChange: setStatus,
+      },
+    );
+    setEngine(nextEngine);
     return () => {
-      engine.dispose({ flush: true });
+      nextEngine.dispose({ flush: true });
     };
-  }, [engine]);
+    // The route remounts this component per notebook (key=shortId) and the
+    // query data is stable while mounted, so this runs once per open document.
+  }, [
+    initialMarkdown,
+    initialNodeId,
+    notebook.short_id,
+    notebook.version,
+    service,
+  ]);
 
   const saveTitle = async (nextTitle: string) => {
     const trimmed = nextTitle.trim();
@@ -211,20 +212,22 @@ function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-4xl px-6 py-6">
-          <MarkdownNotebook
-            value={value}
-            onChange={(markdown) => {
-              setValue(markdown);
-              engine.handleChange(markdown);
-            }}
-            mode="edit"
-            registry={registry}
-            clientId={engine.clientId}
-            remoteValue={remote?.markdown}
-            remoteVersion={remote?.version}
-            placeholder="Start writing, or press / to insert…"
-            autoFocus
-          />
+          {engine ? (
+            <MarkdownNotebook
+              value={value}
+              onChange={(markdown) => {
+                setValue(markdown);
+                engine.handleChange(markdown);
+              }}
+              mode="edit"
+              registry={registry}
+              clientId={engine.clientId}
+              remoteValue={remote?.markdown}
+              remoteVersion={remote?.version}
+              placeholder="Start writing, or press / to insert…"
+              autoFocus
+            />
+          ) : null}
         </div>
       </ScrollArea>
     </Flex>

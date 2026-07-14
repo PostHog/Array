@@ -7,9 +7,7 @@
 // biome-ignore-all lint/correctness/useExhaustiveDependencies: vendored code, keep close to upstream
 // biome-ignore-all lint/a11y/noStaticElementInteractions: vendored code, keep close to upstream
 
-import { IconX } from "@posthog/icons";
 import clsx from "clsx";
-
 import type { JSX } from "react";
 import {
   type FormEvent,
@@ -52,6 +50,7 @@ import {
   parseMarkdownNotebook,
 } from "./markdown";
 import { LemonButton } from "./shims/lemon-ui";
+import { IconX } from "./shims/posthog-icons";
 import type {
   NotebookBlockNode,
   NotebookInlineNode,

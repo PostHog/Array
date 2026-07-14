@@ -8,9 +8,7 @@
 // biome-ignore-all lint/suspicious/noArrayIndexKey: vendored code, keep close to upstream
 // biome-ignore-all lint/a11y/noStaticElementInteractions: vendored code, keep close to upstream
 
-import { IconMinus, IconPlus } from "@posthog/icons";
 import clsx from "clsx";
-
 import type { JSX } from "react";
 import {
   type CSSProperties,
@@ -38,6 +36,7 @@ import {
   parseMarkdownNotebook,
 } from "./markdown";
 import { LemonButton } from "./shims/lemon-ui";
+import { IconMinus, IconPlus } from "./shims/posthog-icons";
 import {
   getTableColumnCount,
   makeEmptyTableRow,

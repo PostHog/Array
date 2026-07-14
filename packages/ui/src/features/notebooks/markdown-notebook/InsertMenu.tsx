@@ -8,6 +8,21 @@
 // biome-ignore-all lint/a11y/useHeadingContent: vendored code, keep close to upstream
 // biome-ignore-all lint/correctness/useExhaustiveDependencies: vendored code, keep close to upstream
 
+import clsx from "clsx";
+import type { JSX } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
+import {
+  INSERT_MENU_GAP,
+  INSERT_MENU_MAX_HEIGHT,
+  INSERT_MENU_MIN_HEIGHT,
+  INSERT_MENU_VIEWPORT_PADDING,
+  INSERT_MENU_WIDTH,
+  type InsertCommand,
+  type InsertMenuPosition,
+  type InsertMenuSelectionDirection,
+} from "./editorTypes";
+import { makeEmptyParagraph } from "./markdown";
+import { getMarkdownNotebookComponentDefaultProps } from "./registry";
 import {
   IconCode,
   IconCursor,
@@ -23,23 +38,7 @@ import {
   IconStickiness,
   IconTrends,
   IconUserPaths,
-} from "@posthog/icons";
-import clsx from "clsx";
-
-import type { JSX } from "react";
-import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
-import {
-  INSERT_MENU_GAP,
-  INSERT_MENU_MAX_HEIGHT,
-  INSERT_MENU_MIN_HEIGHT,
-  INSERT_MENU_VIEWPORT_PADDING,
-  INSERT_MENU_WIDTH,
-  type InsertCommand,
-  type InsertMenuPosition,
-  type InsertMenuSelectionDirection,
-} from "./editorTypes";
-import { makeEmptyParagraph } from "./markdown";
-import { getMarkdownNotebookComponentDefaultProps } from "./registry";
+} from "./shims/posthog-icons";
 import { ProductKey, Scene } from "./shims/stubs";
 import type {
   NotebookBlockNode,

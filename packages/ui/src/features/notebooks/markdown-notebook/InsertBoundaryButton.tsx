@@ -6,12 +6,11 @@
 // biome-ignore-all lint/style/noRestrictedImports: vendored code, keep close to upstream
 // biome-ignore-all lint/a11y/noStaticElementInteractions: vendored code, keep close to upstream
 
-import { IconPlus } from "@posthog/icons";
 import clsx from "clsx";
-
 import type { JSX } from "react";
 import { isInlineInsertMenuRow, isTextBlockNode } from "./documentModel";
 import { LemonButton } from "./shims/lemon-ui";
+import { IconPlus } from "./shims/posthog-icons";
 import type { NotebookBlockNode } from "./types";
 
 export function InsertBoundaryButton({

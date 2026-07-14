@@ -1776,6 +1776,53 @@ describe("PostHogAPIClient.notebookMarkdownSave", () => {
     ).resolves.toEqual({ status: "gone" });
   });
 
+  // The real shared fetcher (buildApiFetcher) throws on any non-2xx instead
+  // of returning the response — these cover the recovery path it exercises.
+  it("recovers a conflict from the fetcher's thrown 409 error", async () => {
+    const conflictBody = {
+      version: 7,
+      updates: [
+        { version: 6, diff: [{ start: 2, end: 2, text: "y" }], base_crc: 42 },
+      ],
+    };
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(`Failed request: [409] ${JSON.stringify(conflictBody)}`),
+      );
+    const client = makeClient(fetch);
+
+    await expect(
+      client.notebookMarkdownSave("abc123", saveBody),
+    ).resolves.toEqual({
+      status: "conflict",
+      serverVersion: 7,
+      updates: conflictBody.updates,
+    });
+  });
+
+  it("recovers gone from the fetcher's thrown 410 error", async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('Failed request: [410] {"detail":"gone"}'));
+    const client = makeClient(fetch);
+
+    await expect(
+      client.notebookMarkdownSave("abc123", saveBody),
+    ).resolves.toEqual({ status: "gone" });
+  });
+
+  it("rethrows non-protocol thrown failures", async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('Failed request: [500] {"error":"boom"}'));
+    const client = makeClient(fetch);
+
+    await expect(
+      client.notebookMarkdownSave("abc123", saveBody),
+    ).rejects.toThrow("[500]");
+  });
+
   it("throws on any other failure status", async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: false,

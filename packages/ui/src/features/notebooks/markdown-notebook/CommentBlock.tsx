@@ -5,15 +5,14 @@
  */
 // biome-ignore-all lint/style/noRestrictedImports: vendored code, keep close to upstream
 
-import { IconComment } from "@posthog/icons";
 import clsx from "clsx";
-
 import type { JSX } from "react";
 import { type KeyboardEvent, useState } from "react";
 import type { InsertMenuSelectionDirection } from "./editorTypes";
 import { wasNotebookNodeJustInserted } from "./freshlyInserted";
 import { LemonDropdown } from "./shims/LemonDropdown";
 import { LemonTextArea } from "./shims/lemon-ui";
+import { IconComment } from "./shims/posthog-icons";
 import type {
   NotebookBlockNode,
   NotebookComponentBlockNode,

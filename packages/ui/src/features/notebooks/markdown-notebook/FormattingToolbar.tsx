@@ -8,16 +8,7 @@
 // biome-ignore-all lint/a11y/useSemanticElements: vendored code, keep close to upstream
 // biome-ignore-all lint/correctness/useExhaustiveDependencies: vendored code, keep close to upstream
 
-import {
-  IconCode,
-  IconComment,
-  IconCopy,
-  IconExternal,
-  IconQuote,
-  IconSparkles,
-} from "@posthog/icons";
 import clsx from "clsx";
-
 import type { JSX } from "react";
 import {
   type CSSProperties,
@@ -38,6 +29,14 @@ import { getSelectedLinkHref } from "./inlineContent";
 import { sanitizeNotebookLinkHref } from "./markdown";
 import { IconBold, IconItalic, IconLink } from "./shims/icons";
 import { LemonButton, LemonInput } from "./shims/lemon-ui";
+import {
+  IconCode,
+  IconComment,
+  IconCopy,
+  IconExternal,
+  IconQuote,
+  IconSparkles,
+} from "./shims/posthog-icons";
 import type { NotebookInlineMark, NotebookTextBlockNode } from "./types";
 
 export const TEXT_BLOCK_STYLE_BUTTONS: {

@@ -155,6 +155,26 @@ export interface NotebookMarkdownUpdate {
   base_crc?: number | null;
 }
 
+/**
+ * Recover the HTTP status and JSON body from the shared fetcher's thrown
+ * `Failed request: [<status>] <body>` error, for endpoints where specific
+ * non-2xx statuses are protocol states rather than failures.
+ */
+function parseFailedRequestError(
+  error: unknown,
+): { status: number; body: unknown } | null {
+  if (!(error instanceof Error)) return null;
+  const match = error.message.match(/^Failed request: \[(\d{3})\] (.*)$/s);
+  if (!match) return null;
+  let body: unknown = null;
+  try {
+    body = JSON.parse(match[2]);
+  } catch {
+    body = null;
+  }
+  return { status: Number(match[1]), body };
+}
+
 /** Outcome of `notebookMarkdownSave`: 200 → saved, 409 → conflict, 410 → gone. */
 export type NotebookMarkdownSaveResponse =
   | { status: "saved"; notebook: Schemas.Notebook }
@@ -2018,20 +2038,47 @@ export class PostHogAPIClient {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/notebooks/${encodeURIComponent(shortId)}/collab/markdown_save/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url,
-      path: urlPath,
-      overrides: {
-        body: JSON.stringify(body),
-      },
-    });
+    let response: Response;
+    try {
+      response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path: urlPath,
+        overrides: {
+          body: JSON.stringify(body),
+        },
+      });
+    } catch (error) {
+      // The shared fetcher throws on any non-2xx as
+      // `Failed request: [<status>] <json body>` (see fetcher.ts), but for
+      // this endpoint 409/410 are protocol states, not failures — recover
+      // them from the error instead of surfacing a throw.
+      const parsed = parseFailedRequestError(error);
+      if (parsed?.status === 409) {
+        const conflict = parsed.body as {
+          updates?: NotebookMarkdownUpdate[];
+          version?: number;
+        } | null;
+        if (conflict && Array.isArray(conflict.updates)) {
+          return {
+            status: "conflict",
+            serverVersion: conflict.version ?? 0,
+            updates: conflict.updates,
+          };
+        }
+      }
+      if (parsed?.status === 410) {
+        return { status: "gone" };
+      }
+      throw error;
+    }
     if (response.ok) {
       return {
         status: "saved",
         notebook: (await response.json()) as Schemas.Notebook,
       };
     }
+    // Reached only when a caller supplies a non-throwing fetcher (tests).
     if (response.status === 409) {
       const conflict = (await response.json()) as {
         updates: NotebookMarkdownUpdate[];

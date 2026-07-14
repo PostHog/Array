@@ -5,6 +5,10 @@
  */
 // biome-ignore-all lint/style/noRestrictedImports: vendored code, keep close to upstream
 
+import type { JSX } from "react";
+import { useState } from "react";
+import { wasNotebookNodeJustInserted } from "./freshlyInserted";
+import { LemonButton, LemonInput, LemonTextArea } from "./shims/lemon-ui";
 import {
   IconCode,
   IconComment,
@@ -18,12 +22,7 @@ import {
   IconPeople,
   IconRewindPlay,
   IconUpload,
-} from "@posthog/icons";
-
-import type { JSX } from "react";
-import { useState } from "react";
-import { wasNotebookNodeJustInserted } from "./freshlyInserted";
-import { LemonButton, LemonInput, LemonTextArea } from "./shims/lemon-ui";
+} from "./shims/posthog-icons";
 import type {
   NotebookComponentBlockNode,
   NotebookComponentDefinition,

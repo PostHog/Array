@@ -7,8 +7,6 @@
 // biome-ignore-all lint/correctness/useExhaustiveDependencies: vendored code, keep close to upstream
 // biome-ignore-all lint/suspicious/noArrayIndexKey: vendored code, keep close to upstream
 
-import { IconCopy } from "@posthog/icons";
-
 import type { JSX } from "react";
 import {
   type FormEvent,
@@ -28,6 +26,7 @@ import {
 import type { TextSelectionPointerStartEvent } from "./editorTypes";
 import { copyToClipboard } from "./shims/copyToClipboard";
 import { LemonButton } from "./shims/lemon-ui";
+import { IconCopy } from "./shims/posthog-icons";
 import type {
   NotebookBlockNode,
   NotebookCodeBlockNode,

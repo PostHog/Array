@@ -15,8 +15,11 @@ export function useNotebook(shortId: string) {
     },
     enabled: client !== null,
     // The editing surface owns the document once loaded; background refetches
-    // would fight the sync engine's optimistic-concurrency baseline.
+    // would fight the sync engine's optimistic-concurrency baseline. Once the
+    // editor unmounts the cached copy is dropped immediately (gcTime 0) so
+    // reopening always starts from server truth.
     staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });

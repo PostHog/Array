@@ -8,9 +8,7 @@
 // biome-ignore-all lint/a11y/noAutofocus: vendored code, keep close to upstream
 // biome-ignore-all lint/correctness/useExhaustiveDependencies: vendored code, keep close to upstream
 
-import { IconSend, IconTrash } from "@posthog/icons";
 import clsx from "clsx";
-
 import type { JSX } from "react";
 import {
   type KeyboardEvent,
@@ -23,6 +21,7 @@ import {
 import { getNotebookStringProp, isPromptComponentNode } from "./documentModel";
 import type { RestoreSelectionRequest } from "./editorTypes";
 import { LemonButton } from "./shims/lemon-ui";
+import { IconSend, IconTrash } from "./shims/posthog-icons";
 import type {
   NotebookBlockNode,
   NotebookComponentBlockNode,

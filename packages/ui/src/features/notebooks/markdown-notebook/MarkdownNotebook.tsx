@@ -19,7 +19,6 @@ import type { JSX } from "react";
 
 import "./markdown-notebook.css";
 
-import { IconCode, IconComment, IconDrag } from "@posthog/icons";
 import clsx from "clsx";
 import {
   Component,
@@ -42,6 +41,7 @@ import {
 } from "react";
 import { downloadFile } from "./shims/dom";
 import { LemonButton } from "./shims/lemon-ui";
+import { IconCode, IconComment, IconDrag } from "./shims/posthog-icons";
 import { lazyWithRetry } from "./shims/retryImport";
 import { Spinner } from "./shims/Spinner";
 
