@@ -445,6 +445,12 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
         url,
         init,
       ),
+  getCloudContext: async () => {
+    const auth = ctx.get<AuthService>(AUTH_SERVICE);
+    const { apiHost } = await auth.getValidAccessToken();
+    const teamId = auth.getState().currentProjectId;
+    return teamId === null ? null : { apiHost, teamId };
+  },
 }));
 
 // SessionService is built from host-agnostic deps (host tRPC client + UI
