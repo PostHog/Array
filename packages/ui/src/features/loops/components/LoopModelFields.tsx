@@ -14,6 +14,7 @@ const ADAPTER_OPTIONS: {
 ];
 
 const AUTO_REASONING_VALUE = "auto";
+const DEFAULT_MODEL_VALUE = "__default__";
 
 const REASONING_EFFORT_OPTIONS: {
   value: LoopSchemas.LoopReasoningEffortEnum | typeof AUTO_REASONING_VALUE;
@@ -76,23 +77,28 @@ export function LoopModelFields({
     if (model) {
       ids.add(model);
     }
-    return Array.from(ids)
+    const catalogOptions = Array.from(ids)
       .sort((a, b) => a.localeCompare(b))
       .map((id) => ({ value: id, label: id }));
+    return [
+      { value: DEFAULT_MODEL_VALUE, label: "Default (recommended)" },
+      ...catalogOptions,
+    ];
   }, [catalog, model]);
 
   return (
     <Flex direction="column" gap="4">
       <Field
         label="Model"
-        required
-        hint="Validated against the available model catalog when the loop runs."
+        hint="Default lets PostHog pick the model each run; choose one to pin it."
       >
         <SettingsOptionSelect
-          value={model}
+          value={model || DEFAULT_MODEL_VALUE}
           options={modelOptions}
-          placeholder="Select a model"
-          onValueChange={onModelChange}
+          placeholder="Default (recommended)"
+          onValueChange={(value) =>
+            onModelChange(value === DEFAULT_MODEL_VALUE ? "" : value)
+          }
           disabled={disabled}
           ariaLabel="Model"
         />

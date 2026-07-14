@@ -117,11 +117,7 @@ export function formValuesToLoopWrite(
 }
 
 export function isLoopFormValid(values: LoopFormValues): boolean {
-  if (
-    !values.name.trim() ||
-    !values.instructions.trim() ||
-    !values.model.trim()
-  ) {
+  if (!values.name.trim() || !values.instructions.trim()) {
     return false;
   }
   return values.triggers.every((trigger) => isTriggerDraftValid(trigger));

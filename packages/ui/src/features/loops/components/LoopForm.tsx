@@ -1,4 +1,9 @@
-import { ArrowLeft, ArrowRight, Check } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CaretRight,
+  Check,
+} from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -59,6 +64,11 @@ export function LoopForm({ loop }: LoopFormProps) {
     return { ...emptyLoopFormValues(), ...(prefill ?? {}) };
   });
   const [step, setStep] = useState(0);
+  // Open when editing a loop that already pins a model, so the pinned value
+  // is visible without hunting for it.
+  const [showAdvanced, setShowAdvanced] = useState(
+    () => !!(loop && (loop.model || loop.reasoning_effort)),
+  );
 
   useEffect(() => {
     if (!loop) useLoopDraftStore.getState().setPrefill(null);
@@ -74,7 +84,7 @@ export function LoopForm({ loop }: LoopFormProps) {
   const stepComplete = [
     !!values.name.trim() && !!values.instructions.trim(),
     values.triggers.every(isTriggerDraftValid),
-    !!values.model.trim(),
+    true,
     isLoopFormValid(values),
   ];
   const isLastStep = step === STEPS.length - 1;
@@ -174,7 +184,7 @@ export function LoopForm({ loop }: LoopFormProps) {
           {step === 2 ? (
             <Step
               title="Options"
-              description="Who can see it, which model runs it, and how you hear about runs."
+              description="Who can see it and how you hear about runs."
             >
               <Field label="Visibility" className="max-w-[340px]">
                 <SettingsOptionSelect
@@ -189,20 +199,6 @@ export function LoopForm({ loop }: LoopFormProps) {
                   }
                 />
               </Field>
-
-              <Divider />
-
-              <LoopModelFields
-                adapter={values.runtimeAdapter}
-                model={values.model}
-                reasoningEffort={values.reasoningEffort}
-                disabled={isSubmitting}
-                onAdapterChange={(runtimeAdapter) => patch({ runtimeAdapter })}
-                onModelChange={(model) => patch({ model })}
-                onReasoningEffortChange={(reasoningEffort) =>
-                  patch({ reasoningEffort })
-                }
-              />
 
               <Divider />
 
@@ -241,6 +237,44 @@ export function LoopForm({ loop }: LoopFormProps) {
                   onChange={(notifications) => patch({ notifications })}
                 />
               </Field>
+
+              <Divider />
+
+              <Flex direction="column" gap="4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((open) => !open)}
+                  className="flex items-center gap-1.5 text-left"
+                >
+                  <CaretRight
+                    size={12}
+                    className={`text-gray-10 transition-transform ${
+                      showAdvanced ? "rotate-90" : ""
+                    }`}
+                  />
+                  <Text className="font-medium text-[12.5px] text-gray-11">
+                    Advanced
+                  </Text>
+                  <Text className="text-[11.5px] text-gray-9">
+                    Model and reasoning
+                  </Text>
+                </button>
+                {showAdvanced ? (
+                  <LoopModelFields
+                    adapter={values.runtimeAdapter}
+                    model={values.model}
+                    reasoningEffort={values.reasoningEffort}
+                    disabled={isSubmitting}
+                    onAdapterChange={(runtimeAdapter) =>
+                      patch({ runtimeAdapter })
+                    }
+                    onModelChange={(model) => patch({ model })}
+                    onReasoningEffortChange={(reasoningEffort) =>
+                      patch({ reasoningEffort })
+                    }
+                  />
+                ) : null}
+              </Flex>
             </Step>
           ) : null}
 
@@ -420,7 +454,7 @@ function ReviewList({ values }: { values: LoopFormValues }) {
       <ReviewRow
         label="Model"
         value={`${ADAPTER_LABELS[values.runtimeAdapter]} · ${
-          values.model || "Not selected"
+          values.model || "Default model"
         } · ${reasoning} reasoning`}
       />
       <ReviewRow
