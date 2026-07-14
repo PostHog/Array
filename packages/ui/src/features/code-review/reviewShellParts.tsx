@@ -14,6 +14,7 @@ import {
   splitFilePath,
   sumHunkStats,
 } from "@posthog/core/code-review/reviewShellGeometry";
+import { Badge } from "@posthog/quill";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { FileIcon } from "../../primitives/FileIcon";
@@ -385,13 +386,14 @@ export function DeferredDiffPlaceholder({
 function PrCommentCountBadge({ count }: { count: number }) {
   const label = `${count} comment${count === 1 ? "" : "s"}`;
   return (
-    <span
+    <Badge
+      variant="info"
       title={label}
-      className="inline-flex shrink-0 items-center gap-[3px] rounded-full bg-(--accent-3) px-[6px] py-[2px] text-(--accent-11) text-[11px] tabular-nums"
+      className="shrink-0 gap-[3px] text-[11px] tabular-nums"
     >
       <ChatCircle size={12} weight="fill" />
       {count}
       <span className="sr-only"> comment{count === 1 ? "" : "s"}</span>
-    </span>
+    </Badge>
   );
 }

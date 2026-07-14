@@ -3,7 +3,6 @@ import type { PrCommentThread } from "@posthog/core/code-review/types";
 import { isBinaryFile } from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { type ReactNode, useMemo } from "react";
-import { countPrCommentsForFile } from "../prCommentThreads";
 import { DeferredDiffPlaceholder, DiffFileHeader } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
 import { InteractiveFileDiff } from "./InteractiveFileDiff";
@@ -105,4 +104,20 @@ export function PatchedFileDiff({
       )}
     />
   );
+}
+
+function countPrCommentsForFile(
+  threads: Map<number, PrCommentThread> | undefined,
+  file: Pick<ChangedFile, "path" | "originalPath">,
+): number {
+  let count = 0;
+  for (const thread of threads?.values() ?? []) {
+    if (
+      thread.filePath === file.path ||
+      (file.originalPath != null && thread.filePath === file.originalPath)
+    ) {
+      count += thread.comments.length;
+    }
+  }
+  return count;
 }

@@ -1,10 +1,17 @@
 import { useHostTRPC } from "@posthog/host-router/react";
+import type { PrReviewThread } from "@posthog/shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { mapPrCommentThreads } from "../code-review/prCommentThreads";
+import type { PrCommentThread } from "../code-review/prCommentAnnotations";
 
 interface UsePrDetailsOptions {
   includeComments?: boolean;
+}
+
+function mapPrCommentThreads(
+  threads: PrReviewThread[],
+): Map<number, PrCommentThread> {
+  return new Map(threads.map((thread) => [thread.rootId, thread]));
 }
 
 export interface PrStateDetails {
