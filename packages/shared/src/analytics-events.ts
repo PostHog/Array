@@ -242,6 +242,32 @@ export interface CommandMenuActionProperties {
   channel_id?: string;
 }
 
+export type SidebarNavItem =
+  | "new_task"
+  | "home"
+  | "search"
+  | "inbox"
+  | "agents"
+  | "skills"
+  | "mcp_servers"
+  | "command_center"
+  | "contexts"
+  | "activity"
+  | "more"
+  | "customize_sidebar";
+
+export interface SidebarNavItemClickedProperties {
+  item: SidebarNavItem;
+  /** True when the row was clicked inside the expanded More section. */
+  in_more: boolean;
+}
+
+export interface SidebarCustomizedProperties {
+  item: SidebarNavItem;
+  /** True when the item was promoted to the top level, false when moved under More. */
+  visible: boolean;
+}
+
 export interface BrainrotActivatedProperties {
   /** Grid layout preset, e.g. "2x2". */
   layout: string;
@@ -1110,6 +1136,8 @@ export const ANALYTICS_EVENTS = {
   BRAINROT_ACTIVATED: "Brainrot activated",
   SKILL_BUTTON_TRIGGERED: "Skill button triggered",
   POSTHOG_WEB_OPENED: "PostHog web opened",
+  SIDEBAR_NAV_ITEM_CLICKED: "Sidebar nav item clicked",
+  SIDEBAR_CUSTOMIZED: "Sidebar customized",
 
   // Permission events
   PERMISSION_RESPONDED: "Permission responded",
@@ -1268,6 +1296,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
   [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
+  [ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED]: SidebarNavItemClickedProperties;
+  [ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED]: SidebarCustomizedProperties;
 
   // Permission events
   [ANALYTICS_EVENTS.PERMISSION_RESPONDED]: PermissionRespondedProperties;

@@ -2,7 +2,11 @@ import { ALL_WORKSPACE_MODES } from "@posthog/core/sidebar/buildSidebarData";
 import type { WorkspaceMode } from "@posthog/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { SIDEBAR_MIN_WIDTH } from "./constants";
+import {
+  MORE_NAV_ITEM_IDS,
+  type MoreNavItemId,
+  SIDEBAR_MIN_WIDTH,
+} from "./constants";
 
 interface SidebarStoreState {
   open: boolean;
@@ -21,6 +25,9 @@ interface SidebarStoreState {
   // the task list, Canvas nav item appears). Off by default — Code merged into
   // the Bluebird chrome ships with channels hidden until the user opts in.
   channelsEnabled: boolean;
+  // Nav items tucked under the collapsible More row. Everything moreable
+  // starts hidden; the Customize sidebar dialog promotes items back out.
+  hiddenNavItems: MoreNavItemId[];
 }
 
 interface SidebarStoreActions {
@@ -41,6 +48,7 @@ interface SidebarStoreActions {
   setShowInternal: (showInternal: boolean) => void;
   toggleTaskType: (mode: WorkspaceMode) => void;
   setChannelsEnabled: (channelsEnabled: boolean) => void;
+  setNavItemHidden: (item: MoreNavItemId, hidden: boolean) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -61,6 +69,7 @@ export const useSidebarStore = create<SidebarStore>()(
       showInternal: false,
       taskTypeFilter: [...ALL_WORKSPACE_MODES],
       channelsEnabled: false,
+      hiddenNavItems: [...MORE_NAV_ITEM_IDS],
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -118,6 +127,14 @@ export const useSidebarStore = create<SidebarStore>()(
             : [...state.taskTypeFilter, mode],
         })),
       setChannelsEnabled: (channelsEnabled) => set({ channelsEnabled }),
+      setNavItemHidden: (item, hidden) =>
+        set((state) => ({
+          hiddenNavItems: hidden
+            ? state.hiddenNavItems.includes(item)
+              ? state.hiddenNavItems
+              : [...state.hiddenNavItems, item]
+            : state.hiddenNavItems.filter((id) => id !== item),
+        })),
     }),
     {
       name: "sidebar-storage",
@@ -134,6 +151,7 @@ export const useSidebarStore = create<SidebarStore>()(
         showInternal: state.showInternal,
         taskTypeFilter: state.taskTypeFilter,
         channelsEnabled: state.channelsEnabled,
+        hiddenNavItems: state.hiddenNavItems,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -149,6 +167,7 @@ export const useSidebarStore = create<SidebarStore>()(
           showInternal?: boolean;
           taskTypeFilter?: WorkspaceMode[];
           channelsEnabled?: boolean;
+          hiddenNavItems?: MoreNavItemId[];
         };
         return {
           ...current,
@@ -171,6 +190,9 @@ export const useSidebarStore = create<SidebarStore>()(
             persistedState.taskTypeFilter ?? current.taskTypeFilter,
           channelsEnabled:
             persistedState.channelsEnabled ?? current.channelsEnabled,
+          hiddenNavItems: (
+            persistedState.hiddenNavItems ?? current.hiddenNavItems
+          ).filter((id) => MORE_NAV_ITEM_IDS.includes(id)),
         };
       },
     },

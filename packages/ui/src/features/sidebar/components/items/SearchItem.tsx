@@ -5,12 +5,13 @@ import { SidebarKbdHint } from "./SidebarKbdHint";
 
 interface SearchItemProps {
   onClick: () => void;
+  depth?: number;
 }
 
-export function SearchItem({ onClick }: SearchItemProps) {
+export function SearchItem({ onClick, depth = 0 }: SearchItemProps) {
   return (
     <SidebarItem
-      depth={0}
+      depth={depth}
       icon={<MagnifyingGlass size={16} />}
       label="Search"
       onClick={onClick}

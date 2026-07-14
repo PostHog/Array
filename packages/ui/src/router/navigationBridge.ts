@@ -177,6 +177,10 @@ export function navigateToEditLoop(loopId: string): void {
   });
 }
 
+export function navigateToAgents(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/agents" });
+}
+
 export function navigateToApproval(requestId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/code/agents/applications/approvals",
@@ -195,6 +199,14 @@ export function navigateToCommandCenter(): void {
   track(ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED);
 }
 
+export function navigateToSkills(): void {
+  void getRouterOrNull()?.navigate({ to: "/skills" });
+}
+
+export function navigateToMcpServers(): void {
+  void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
+}
+
 // Channels-space mirrors. These render the same shared views as their /code (or
 // top-level) counterparts but under /website, so navigating from the channels
 // sidebar keeps the channels chrome instead of switching back to Code. The
@@ -211,6 +223,14 @@ export function navigateToWebsiteHome(): void {
 // The Canvas workspace landing (the channels index, where canvases live).
 export function navigateToCanvas(): void {
   void getRouterOrNull()?.navigate({ to: "/website" });
+}
+
+export function navigateToWebsiteSkills(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/skills" });
+}
+
+export function navigateToWebsiteMcpServers(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/mcp-servers" });
 }
 
 export function navigateToWebsiteCommandCenter(): void {
