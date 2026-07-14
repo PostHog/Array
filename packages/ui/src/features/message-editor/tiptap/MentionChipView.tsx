@@ -64,12 +64,14 @@ function DefaultChip({
   type,
   id,
   label,
+  pastedText,
   selected,
   onRemove,
 }: {
   type: string;
   id: string;
   label: string;
+  pastedText: boolean;
   selected: boolean;
   onRemove: () => void;
 }) {
@@ -97,7 +99,11 @@ function DefaultChip({
   );
 
   if (isFile || isFolder) {
-    return <Tooltip content={id}>{chipContent}</Tooltip>;
+    return (
+      <Tooltip content={pastedText ? "Paste again to expand as text" : id}>
+        {chipContent}
+      </Tooltip>
+    );
   }
 
   return chipContent;
@@ -109,7 +115,7 @@ export function MentionChipView({
   editor,
   selected,
 }: NodeViewProps) {
-  const { type, id, label } = node.attrs as MentionChipAttrs;
+  const { type, id, label, pastedText } = node.attrs as MentionChipAttrs;
 
   const handleRemove = () => {
     const pos = getPos();
@@ -127,6 +133,7 @@ export function MentionChipView({
         type={type}
         id={id}
         label={label}
+        pastedText={pastedText}
         selected={selected}
         onRemove={handleRemove}
       />

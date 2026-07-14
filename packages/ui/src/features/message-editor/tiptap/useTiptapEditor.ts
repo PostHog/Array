@@ -568,7 +568,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 if (!tracked.canceled) {
                   showPasteHint(
                     "Pasted as file attachment",
-                    "Paste again to convert back to text.",
+                    "Paste again to expand as text.",
                   );
                 }
               } catch (_error) {
