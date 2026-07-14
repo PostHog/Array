@@ -6,6 +6,7 @@ import { usePreferencesStore } from "@/features/preferences/stores/preferencesSt
 import { logger } from "@/lib/logger";
 import {
   CloudCommandError,
+  cancelRun,
   getTask,
   runTaskInCloud,
   sendCloudCommand,
@@ -319,6 +320,10 @@ export interface TaskSession {
   // the running turn, which would abort an in-flight compaction, so queued
   // messages are held until compaction ends.
   isCompacting?: boolean;
+  // True once the user has requested the whole run be stopped, until the run
+  // reaches a terminal status. Hides the Stop control so it can't be tapped
+  // twice while the cancel is in flight.
+  stopRequested?: boolean;
 }
 
 interface TaskSessionStore {
@@ -345,6 +350,9 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  /** Cancel the whole cloud run. Optimistically marks the session stop-requested
+   *  and reverts on failure. Returns false if there is no session or the API fails. */
+  stopRun: (taskId: string) => Promise<boolean>;
   /** Send a prompt now, interrupting the running turn first if one is live. */
   sendInterrupting: (
     taskId: string,
@@ -800,6 +808,45 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       return true;
     } catch (error) {
       log.error("Failed to send cancel request", error);
+      return false;
+    }
+  },
+
+  stopRun: async (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (!session) return false;
+    const runId = session.taskRunId;
+
+    const previous = {
+      stopRequested: session.stopRequested,
+      isPromptPending: session.isPromptPending,
+    };
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [runId]: {
+          ...state.sessions[runId],
+          stopRequested: true,
+          isPromptPending: false,
+        },
+      },
+    }));
+
+    try {
+      await cancelRun(taskId, runId);
+      return true;
+    } catch (error) {
+      log.error("Failed to stop cloud run", error);
+      set((state) => {
+        const current = state.sessions[runId];
+        if (!current) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [runId]: { ...current, ...previous },
+          },
+        };
+      });
       return false;
     }
   },

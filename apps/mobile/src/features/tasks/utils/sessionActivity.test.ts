@@ -1,9 +1,39 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent } from "../types";
 import {
+  countUserMessages,
   getSessionActivityPhase,
   isSessionAwaitingUserInput,
 } from "./sessionActivity";
+
+function buildUserMessage(text: string): SessionEvent {
+  return {
+    type: "session_update",
+    ts: 1,
+    notification: {
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text },
+      },
+    },
+  } satisfies SessionEvent;
+}
+
+describe("countUserMessages", () => {
+  it("counts only user_message_chunk events", () => {
+    expect(
+      countUserMessages([
+        buildUserMessage("hello"),
+        buildQuestionToolCall("pending"),
+        buildUserMessage("again"),
+      ]),
+    ).toBe(2);
+  });
+
+  it("returns 0 for no events", () => {
+    expect(countUserMessages()).toBe(0);
+  });
+});
 
 function buildQuestionToolCall(
   status: "pending" | "in_progress" | "completed",
