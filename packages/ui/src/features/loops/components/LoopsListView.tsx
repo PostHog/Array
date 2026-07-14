@@ -65,7 +65,7 @@ export function LoopsListView() {
         <Flex
           direction="column"
           gap="8"
-          className="mx-auto max-w-3xl px-6 py-8"
+          className="mx-auto w-full max-w-5xl px-8 py-8"
         >
           <Flex align="start" justify="between" gap="3">
             <Flex direction="column" gap="1" className="min-w-0">
@@ -89,15 +89,14 @@ export function LoopsListView() {
             </Button>
           </Flex>
 
-          <Flex
-            direction="column"
-            gap="3"
-            className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) p-4"
-          >
+          <Flex direction="column" gap="2">
             <TextArea
               value={prompt}
+              variant="soft"
+              color="gray"
+              size="3"
               placeholder="What do you want automated?"
-              className="min-h-[76px] text-[13px] leading-relaxed"
+              className="min-h-[64px] text-[13px] leading-relaxed"
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -105,14 +104,14 @@ export function LoopsListView() {
                 }
               }}
             />
-            <Flex align="center" justify="between" gap="4">
+            <Flex align="center" justify="between" gap="3">
               <Flex gap="2" wrap="wrap" className="min-w-0 flex-1">
                 {EXAMPLE_PROMPTS.map((example) => (
                   <button
                     key={example}
                     type="button"
                     onClick={() => setPrompt(example)}
-                    className="rounded-full border border-border bg-(--gray-2) px-3 py-1.5 text-[12px] text-gray-11 leading-none transition-colors hover:border-(--gray-7) hover:text-gray-12"
+                    className="rounded-(--radius-2) bg-(--gray-a3) px-3 py-1.5 text-[12px] text-gray-11 leading-none transition-colors hover:bg-(--gray-a4) hover:text-gray-12"
                   >
                     {example}
                   </button>
@@ -125,7 +124,7 @@ export function LoopsListView() {
                 disabled={!prompt.trim()}
                 onClick={startFromPrompt}
               >
-                Create loop
+                Draft loop
                 <ArrowRightIcon size={13} />
               </Button>
             </Flex>
@@ -211,9 +210,14 @@ function TemplateCard({
       <Text className="text-[12px] text-gray-10 leading-snug">
         {template.description}
       </Text>
-      <Flex align="center" gap="1" className="text-gray-10">
-        <ClockIcon size={11} className="shrink-0" />
-        <Text className="text-[11px]">{template.triggerLabel}</Text>
+      <Flex direction="column" gap="0.5" className="text-gray-10">
+        <Flex align="center" gap="1">
+          <ClockIcon size={11} className="shrink-0" />
+          <Text className="text-[11px]">{template.triggerLabel}</Text>
+        </Flex>
+        <Text className="text-[11px]">
+          Works with {template.worksWith.join(" · ")}
+        </Text>
       </Flex>
     </button>
   );

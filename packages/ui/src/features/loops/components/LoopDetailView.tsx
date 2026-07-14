@@ -110,7 +110,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-6">
+      <div className="mx-auto w-full max-w-5xl px-8 py-6">
         <div className="h-24 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
       </div>
     );
@@ -135,7 +135,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-6">
+    <div className="mx-auto w-full max-w-5xl px-8 py-6">
       <Flex direction="column" gap="5">
         <Flex direction="column" gap="3">
           <button

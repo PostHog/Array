@@ -21,6 +21,8 @@ export interface LoopTemplate {
   description: string;
   /** Short, human phrase describing the trigger, shown on the card. */
   triggerLabel: string;
+  /** Integrations and surfaces the template works with, shown on the card. */
+  worksWith: string[];
   build: () => Partial<LoopFormValues>;
 }
 
@@ -52,6 +54,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
     description:
       "Summarize open pull requests, their review and CI status, and what needs attention.",
     triggerLabel: "Runs weekdays at 11:00",
+    worksWith: ["GitHub", "Slack"],
     build: () => ({
       name: "PR review digest",
       instructions:
@@ -66,6 +69,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
     description:
       "Digest the failing CI runs from the last day and post a summary to your team channel.",
     triggerLabel: "Runs daily at 9:00",
+    worksWith: ["GitHub", "Slack"],
     build: () => ({
       name: "CI failure summary",
       instructions:
@@ -80,6 +84,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
     description:
       "Find tests that pass and fail intermittently across recent CI runs, and open an issue.",
     triggerLabel: "Runs Mondays at 9:00",
+    worksWith: ["GitHub"],
     build: () => ({
       name: "Flaky test tracker",
       instructions:
@@ -94,6 +99,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
     description:
       "Scan for outdated packages, security patches, and breaking changes, then open a PR.",
     triggerLabel: "Runs Mondays at 11:30",
+    worksWith: ["GitHub"],
     build: () => ({
       name: "Dependency update check",
       instructions:
@@ -108,6 +114,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
     description:
       "Draft user-facing release notes each time a pull request merges to the main branch.",
     triggerLabel: "Triggered when a PR merges",
+    worksWith: ["GitHub"],
     build: () => ({
       name: "Release notes drafter",
       instructions:
@@ -122,6 +129,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
     description:
       "Review new issues, categorize bugs and feature requests, and flag likely duplicates.",
     triggerLabel: "Triggered by new issues",
+    worksWith: ["GitHub"],
     build: () => ({
       name: "Issue triage",
       instructions:
