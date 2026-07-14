@@ -250,6 +250,7 @@ export type SidebarNavItem =
   | "agents"
   | "skills"
   | "mcp_servers"
+  | "usage"
   | "command_center"
   | "contexts"
   | "activity"

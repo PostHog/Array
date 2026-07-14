@@ -1,4 +1,5 @@
 import {
+  CreditCard,
   type Icon,
   Lightbulb,
   MagnifyingGlass,
@@ -20,12 +21,14 @@ const ITEM_ICONS: Record<MoreNavItemId, Icon> = {
   search: MagnifyingGlass,
   skills: Lightbulb,
   "mcp-servers": Plugs,
+  usage: CreditCard,
 };
 
 const ITEM_ANALYTICS_IDS: Record<MoreNavItemId, SidebarNavItem> = {
   search: "search",
   skills: "skills",
   "mcp-servers": "mcp_servers",
+  usage: "usage",
 };
 
 interface CustomizeSidebarDialogProps {
@@ -37,8 +40,8 @@ export function CustomizeSidebarDialog({
   open,
   onOpenChange,
 }: CustomizeSidebarDialogProps) {
-  const hiddenNavItems = useSidebarStore((s) => s.hiddenNavItems);
-  const setNavItemHidden = useSidebarStore((s) => s.setNavItemHidden);
+  const promotedNavItems = useSidebarStore((s) => s.promotedNavItems);
+  const setNavItemVisible = useSidebarStore((s) => s.setNavItemVisible);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -52,7 +55,7 @@ export function CustomizeSidebarDialog({
         <Flex direction="column" gap="3" mt="4">
           {MORE_NAV_ITEMS.map(({ id, label }) => {
             const ItemIcon = ITEM_ICONS[id];
-            const visible = !hiddenNavItems.includes(id);
+            const visible = promotedNavItems.includes(id);
             return (
               <Text key={id} as="label" size="2">
                 <Flex gap="2" align="center">
@@ -60,7 +63,7 @@ export function CustomizeSidebarDialog({
                     checked={visible}
                     onCheckedChange={(checked) => {
                       const nextVisible = checked === true;
-                      setNavItemHidden(id, !nextVisible);
+                      setNavItemVisible(id, nextVisible);
                       track(ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED, {
                         item: ITEM_ANALYTICS_IDS[id],
                         visible: nextVisible,

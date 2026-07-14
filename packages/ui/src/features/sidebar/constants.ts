@@ -4,6 +4,7 @@ export const MORE_NAV_ITEMS = [
   { id: "search", label: "Search" },
   { id: "skills", label: "Skills" },
   { id: "mcp-servers", label: "MCP servers" },
+  { id: "usage", label: "Usage" },
 ] as const;
 
 export type MoreNavItemId = (typeof MORE_NAV_ITEMS)[number]["id"];

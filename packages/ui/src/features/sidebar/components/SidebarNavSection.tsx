@@ -11,6 +11,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import {
+  MORE_NAV_ITEM_IDS,
   MORE_NAV_ITEMS,
   type MoreNavItemId,
 } from "@posthog/ui/features/sidebar/constants";
@@ -24,6 +25,7 @@ import {
   navigateToInbox,
   navigateToLoops,
   navigateToMcpServers,
+  navigateToSettings,
   navigateToSkills,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
@@ -51,6 +53,7 @@ import { MoreItem } from "./items/MoreItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
+import { UsageItem } from "./items/UsageItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -70,9 +73,9 @@ interface SidebarNavSectionProps {
 // mirror (Home, Skills, MCP servers, Command Center) stay in that space;
 // Inbox, Agents and New task have no mirror yet and jump back to Code.
 // Configure opens the shared settings UI. Search opens the command menu in
-// place. Search, Skills and MCP servers are tucked under the collapsible More
-// row by default; the Customize sidebar dialog promotes them back to the top
-// level.
+// place. Search, Skills, MCP servers and Usage are tucked under the
+// collapsible More row by default; the Customize sidebar dialog promotes them
+// back to the top level.
 export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
 }: SidebarNavSectionProps = {}) {
@@ -167,17 +170,24 @@ export function SidebarNavSection({
       action();
     };
 
-  const hiddenNavItems = useSidebarStore((s) => s.hiddenNavItems);
-  const hidden = new Set<MoreNavItemId>(hiddenNavItems);
+  const promotedNavItems = useSidebarStore((s) => s.promotedNavItems);
+  const hidden = new Set<MoreNavItemId>(
+    MORE_NAV_ITEM_IDS.filter((id) => !promotedNavItems.includes(id)),
+  );
   const [moreExpanded, setMoreExpanded] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
 
+  const goUsage = () => navigateToSettings("plan-usage");
+
   // While More is collapsed, an active item hidden under it takes over the
-  // More row so the current page stays visible in the nav.
+  // More row so the current page stays visible in the nav. Search and Usage
+  // never take over: one opens the command menu in place, the other leaves
+  // for the settings chrome.
   const moreItemActive: Record<MoreNavItemId, boolean> = {
     search: false,
     skills: isSkillsActive,
     "mcp-servers": isMcpServersActive,
+    usage: false,
   };
   const activeHiddenItem = MORE_NAV_ITEMS.find(
     ({ id }) => hidden.has(id) && moreItemActive[id],
@@ -252,6 +262,12 @@ export function SidebarNavSection({
         </Box>
       )}
 
+      {!hidden.has("usage") && (
+        <Box>
+          <UsageItem onClick={withNavTrack("usage", goUsage)} />
+        </Box>
+      )}
+
       <Box>
         <CommandCenterItem
           isActive={isCommandCenterActive}
@@ -294,6 +310,12 @@ export function SidebarNavSection({
                 depth={1}
                 isActive={isMcpServersActive}
                 onClick={withNavTrack("mcp_servers", goMcpServers, true)}
+              />
+            )}
+            {hidden.has("usage") && (
+              <UsageItem
+                depth={1}
+                onClick={withNavTrack("usage", goUsage, true)}
               />
             )}
             <CustomizeSidebarItem

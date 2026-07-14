@@ -2,51 +2,52 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { MORE_NAV_ITEM_IDS } from "./constants";
 import { useSidebarStore } from "./sidebarStore";
 
-describe("sidebarStore hiddenNavItems", () => {
+describe("sidebarStore promotedNavItems", () => {
   beforeEach(() => {
-    useSidebarStore.setState({ hiddenNavItems: [...MORE_NAV_ITEM_IDS] });
+    useSidebarStore.setState({ promotedNavItems: [] });
   });
 
-  it("hides every moreable item by default", () => {
-    expect(useSidebarStore.getState().hiddenNavItems).toEqual([
+  it("keeps every moreable item under More by default", () => {
+    expect(useSidebarStore.getState().promotedNavItems).toEqual([]);
+    expect(MORE_NAV_ITEM_IDS).toEqual([
       "search",
       "skills",
       "mcp-servers",
+      "usage",
     ]);
   });
 
   it.each(MORE_NAV_ITEM_IDS)(
-    "setNavItemHidden(%s, false) promotes only that item",
+    "setNavItemVisible(%s, true) promotes only that item",
     (item) => {
-      useSidebarStore.getState().setNavItemHidden(item, false);
+      useSidebarStore.getState().setNavItemVisible(item, true);
 
-      const hidden = useSidebarStore.getState().hiddenNavItems;
-      expect(hidden).not.toContain(item);
-      expect(hidden).toHaveLength(MORE_NAV_ITEM_IDS.length - 1);
+      expect(useSidebarStore.getState().promotedNavItems).toEqual([item]);
     },
   );
 
   it.each(MORE_NAV_ITEM_IDS)(
-    "setNavItemHidden(%s, true) is idempotent",
+    "setNavItemVisible(%s, true) is idempotent",
     (item) => {
-      useSidebarStore.getState().setNavItemHidden(item, false);
-      useSidebarStore.getState().setNavItemHidden(item, true);
-      useSidebarStore.getState().setNavItemHidden(item, true);
+      useSidebarStore.getState().setNavItemVisible(item, true);
+      useSidebarStore.getState().setNavItemVisible(item, true);
 
-      const hidden = useSidebarStore.getState().hiddenNavItems;
-      expect(hidden.filter((id) => id === item)).toHaveLength(1);
+      expect(useSidebarStore.getState().promotedNavItems).toEqual([item]);
     },
   );
 
   it.each(MORE_NAV_ITEM_IDS)(
-    "promoting %s leaves the other items hidden",
+    "setNavItemVisible(%s, false) demotes only that item",
     (item) => {
-      useSidebarStore.getState().setNavItemHidden(item, false);
-
-      const hidden = useSidebarStore.getState().hiddenNavItems;
-      for (const other of MORE_NAV_ITEM_IDS) {
-        if (other !== item) expect(hidden).toContain(other);
+      for (const id of MORE_NAV_ITEM_IDS) {
+        useSidebarStore.getState().setNavItemVisible(id, true);
       }
+
+      useSidebarStore.getState().setNavItemVisible(item, false);
+
+      const promoted = useSidebarStore.getState().promotedNavItems;
+      expect(promoted).not.toContain(item);
+      expect(promoted).toHaveLength(MORE_NAV_ITEM_IDS.length - 1);
     },
   );
 });
