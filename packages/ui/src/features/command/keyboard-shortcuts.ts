@@ -212,7 +212,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Previous message",
     category: "panels",
     context: "Task detail",
-    alternateKeys: "up",
   },
   {
     id: "message-next",
@@ -220,7 +219,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "Next message",
     category: "panels",
     context: "Task detail",
-    alternateKeys: "down",
   },
   {
     id: "message-jump",
@@ -239,14 +237,14 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   {
     id: "prompt-history-prev",
     keys: "up",
-    description: "Previous prompt (when input is empty)",
+    description: "Recall previous prompt",
     category: "editor",
     context: "Message editor",
   },
   {
     id: "prompt-history-next",
     keys: "down",
-    description: "Next prompt (when input is empty)",
+    description: "Recall next prompt",
     category: "editor",
     context: "Message editor",
   },

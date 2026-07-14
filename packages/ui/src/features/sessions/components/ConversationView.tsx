@@ -17,9 +17,9 @@ import type {
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
 import {
-  type ComposerMessageNavigationHandler,
-  composerMessageNavigation,
-} from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
+  type PromptRecallHandler,
+  promptRecallStep,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
@@ -99,10 +99,10 @@ export interface ConversationViewProps {
    */
   scrollX?: boolean;
   /**
-   * Filled with the view's message navigation handler so the composer can
-   * forward plain Up/Down presses (caret at the input boundary) to it.
+   * Filled with the view's prompt recall handler so the composer can forward
+   * plain Up/Down presses (caret at the input boundary) to it.
    */
-  composerNavigationRef?: RefObject<ComposerMessageNavigationHandler | null>;
+  promptRecallRef?: RefObject<PromptRecallHandler | null>;
 }
 
 export function ConversationView({
@@ -116,7 +116,7 @@ export function ConversationView({
   compact = false,
   collapseMode: collapseModeProp,
   scrollX = true,
-  composerNavigationRef,
+  promptRecallRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -258,27 +258,20 @@ export function ConversationView({
     return result;
   }, [items]);
 
-  // Read by the composer navigation handler at keypress time, so it never
-  // acts on a stale snapshot (the ref registration effect runs after paint,
-  // and key repeats can outpace re-renders).
+  // Read by the recall handler at keypress time, so it never acts on a stale
+  // snapshot (the ref registration effect runs after paint, and key repeats
+  // can outpace re-renders).
   const userMessagesRef = useRef(userMessages);
   userMessagesRef.current = userMessages;
-  const keyboardFocusedMessageIdRef = useRef(keyboardFocusedMessageId);
-  keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
 
-  // A newly sent prompt resets recall, so the next Up starts from it.
-  // Adjusted during render, not in an effect, so a keypress landing right
-  // after the commit can't see the stale focus.
-  const [prevUserMessageCount, setPrevUserMessageCount] = useState(
-    userMessages.length,
-  );
-  if (userMessages.length !== prevUserMessageCount) {
-    setPrevUserMessageCount(userMessages.length);
-    if (userMessages.length > prevUserMessageCount) {
-      keyboardFocusedMessageIdRef.current = null;
-      setKeyboardFocusedMessageId(null);
-    }
+  // Recall position is invisible (no highlight, no scrolling), so a plain ref
+  // is enough. A newly sent prompt resets it so the next Up starts from it.
+  const recallMessageIdRef = useRef<string | null>(null);
+  const prevUserMessageCountRef = useRef(userMessages.length);
+  if (userMessages.length > prevUserMessageCountRef.current) {
+    recallMessageIdRef.current = null;
   }
+  prevUserMessageCountRef.current = userMessages.length;
 
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
@@ -358,38 +351,31 @@ export function ConversationView({
     setShowScrollButton(false);
   }, []);
 
-  const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
-    (direction) => {
-      const messages = userMessagesRef.current;
-      const action = composerMessageNavigation(
-        messages.map((message) => message.id),
-        keyboardFocusedMessageIdRef.current,
-        direction,
-      );
-      if (!action) return null;
-      if (action.kind === "exitToBottom") {
-        keyboardFocusedMessageIdRef.current = null;
-        setKeyboardFocusedMessageId(null);
-        scrollToBottom();
-        return { kind: "exitToBottom" };
-      }
-      const message = messages.find((entry) => entry.id === action.id);
-      if (!message) return null;
-      keyboardFocusedMessageIdRef.current = action.id;
-      setKeyboardFocusedMessageId(action.id);
-      scrollToUserMessage(action.id, message.index);
-      return { kind: "recall", text: message.content, fresh: action.fresh };
-    },
-    [scrollToUserMessage, scrollToBottom],
-  );
+  const recallFromComposer = useCallback<PromptRecallHandler>((direction) => {
+    const messages = userMessagesRef.current;
+    const action = promptRecallStep(
+      messages.map((message) => message.id),
+      recallMessageIdRef.current,
+      direction,
+    );
+    if (!action) return null;
+    if (action.kind === "exit") {
+      recallMessageIdRef.current = null;
+      return { kind: "exit" };
+    }
+    const message = messages.find((entry) => entry.id === action.id);
+    if (!message) return null;
+    recallMessageIdRef.current = action.id;
+    return { kind: "recall", text: message.content, fresh: action.fresh };
+  }, []);
 
   useEffect(() => {
-    if (!composerNavigationRef) return;
-    composerNavigationRef.current = navigateFromComposer;
+    if (!promptRecallRef) return;
+    promptRecallRef.current = recallFromComposer;
     return () => {
-      composerNavigationRef.current = null;
+      promptRecallRef.current = null;
     };
-  }, [composerNavigationRef, navigateFromComposer]);
+  }, [promptRecallRef, recallFromComposer]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {

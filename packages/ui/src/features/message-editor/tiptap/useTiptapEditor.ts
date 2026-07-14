@@ -20,7 +20,7 @@ import {
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
-import type { ComposerMessageNavigationHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
+import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -64,7 +64,7 @@ export interface UseTiptapEditorOptions {
   };
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
-  onNavigateMessages?: ComposerMessageNavigationHandler;
+  onPromptRecall?: PromptRecallHandler;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
   onBashCommand?: (command: string) => void;
@@ -230,7 +230,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     capabilities = {},
     clearOnSubmit = true,
     getPromptHistory,
-    onNavigateMessages,
+    onPromptRecall,
     onBeforeSubmit,
     onSubmit,
     onBashCommand,
@@ -271,13 +271,13 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const getPromptHistoryRef = useRef(getPromptHistory);
   getPromptHistoryRef.current = getPromptHistory;
 
-  const onNavigateMessagesRef = useRef(onNavigateMessages);
-  onNavigateMessagesRef.current = onNavigateMessages;
+  const onPromptRecallRef = useRef(onPromptRecall);
+  onPromptRecallRef.current = onPromptRecall;
 
   // Doc snapshot taken when arrow-key recall first replaces the input, so
   // arrowing back down past the newest prompt restores what was being typed
   // (kept as a ProseMirror node to preserve mention chips).
-  const messageNavDraftRef = useRef<ProseMirrorNode | null>(null);
+  const promptRecallDraftRef = useRef<ProseMirrorNode | null>(null);
 
   const prevBashModeRef = useRef(false);
   const prevIsEmptyRef = useRef(true);
@@ -410,8 +410,8 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               }
             }
 
-            const navigateMessages = onNavigateMessagesRef.current;
-            if (navigateMessages) {
+            const recallPrompt = onPromptRecallRef.current;
+            if (recallPrompt) {
               if (hasVisibleSuggestionPopup(sessionId)) return false;
 
               const { selection, doc } = view.state;
@@ -425,13 +425,13 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                   : selection.to >= doc.content.size - 1);
               if (!atBoundary) return false;
 
-              const result = navigateMessages(event.key === "ArrowUp" ? -1 : 1);
+              const result = recallPrompt(event.key === "ArrowUp" ? -1 : 1);
               if (!result) return false;
               event.preventDefault();
 
               if (result.kind === "recall") {
                 if (result.fresh) {
-                  messageNavDraftRef.current = view.state.doc;
+                  promptRecallDraftRef.current = view.state.doc;
                 }
                 const tr = view.state.tr
                   .delete(1, view.state.doc.content.size - 1)
@@ -445,8 +445,8 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 return true;
               }
 
-              const draft = messageNavDraftRef.current;
-              messageNavDraftRef.current = null;
+              const draft = promptRecallDraftRef.current;
+              promptRecallDraftRef.current = null;
               const tr = view.state.tr;
               if (draft) {
                 tr.replaceWith(0, view.state.doc.content.size, draft.content);
@@ -744,7 +744,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
     const text = editor.getText().trim();
 
-    messageNavDraftRef.current = null;
+    promptRecallDraftRef.current = null;
 
     const doClear = () => {
       if (!clearOnSubmit) return;

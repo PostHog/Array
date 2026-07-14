@@ -1,0 +1,41 @@
+export type PromptRecallDirection = -1 | 1;
+
+export type PromptRecallAction =
+  | { kind: "recall"; id: string; fresh: boolean }
+  | { kind: "exit" };
+
+export type PromptRecallResult =
+  | { kind: "recall"; text: string; fresh: boolean }
+  | { kind: "exit" };
+
+export type PromptRecallHandler = (
+  direction: PromptRecallDirection,
+) => PromptRecallResult | null;
+
+export function promptRecallStep(
+  sentPromptIds: string[],
+  currentId: string | null,
+  direction: PromptRecallDirection,
+): PromptRecallAction | null {
+  if (sentPromptIds.length === 0) return null;
+
+  const currentIndex = currentId ? sentPromptIds.indexOf(currentId) : -1;
+
+  if (direction === -1) {
+    const previousIndex =
+      currentIndex === -1
+        ? sentPromptIds.length - 1
+        : Math.max(0, currentIndex - 1);
+    const id = sentPromptIds[previousIndex];
+    return id ? { kind: "recall", id, fresh: currentIndex === -1 } : null;
+  }
+
+  // Down only cycles toward newer prompts while already recalling; otherwise
+  // the caret is just resting at the end of the input and the key stays inert.
+  if (currentIndex === -1) return null;
+  if (currentIndex >= sentPromptIds.length - 1) {
+    return { kind: "exit" };
+  }
+  const id = sentPromptIds[currentIndex + 1];
+  return id ? { kind: "recall", id, fresh: false } : null;
+}

@@ -42,9 +42,9 @@ import {
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import {
-  type ComposerMessageNavigationHandler,
-  composerMessageNavigation,
-} from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
+  type PromptRecallHandler,
+  promptRecallStep,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import {
   ToolGroup,
@@ -820,16 +820,16 @@ function ThreadKeyboardNav({
   setJumpPickerOpen,
   keyboardFocusedMessageId,
   setKeyboardFocusedMessageId,
-  composerNavigationRef,
+  promptRecallRef,
 }: {
   items: ConversationItem[];
   jumpPickerOpen: boolean;
   setJumpPickerOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
   keyboardFocusedMessageId: string | null;
   setKeyboardFocusedMessageId: (id: string | null) => void;
-  composerNavigationRef?: RefObject<ComposerMessageNavigationHandler | null>;
+  promptRecallRef?: RefObject<PromptRecallHandler | null>;
 }) {
-  const { scrollToMessage, scrollToEnd } = useChatMessageScroller();
+  const { scrollToMessage } = useChatMessageScroller();
 
   const userMessages = useMemo(
     () =>
@@ -901,41 +901,41 @@ function ThreadKeyboardNav({
   // can outpace re-renders).
   const userMessagesRef = useRef(userMessages);
   userMessagesRef.current = userMessages;
-  const keyboardFocusedMessageIdRef = useRef(keyboardFocusedMessageId);
-  keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
 
-  const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
-    (direction) => {
-      const messages = userMessagesRef.current;
-      const action = composerMessageNavigation(
-        messages.map((message) => message.id),
-        keyboardFocusedMessageIdRef.current,
-        direction,
-      );
-      if (!action) return null;
-      if (action.kind === "exitToBottom") {
-        keyboardFocusedMessageIdRef.current = null;
-        setKeyboardFocusedMessageId(null);
-        scrollToEnd({ behavior: "smooth" });
-        return { kind: "exitToBottom" };
-      }
-      const message = messages.find((entry) => entry.id === action.id);
-      if (!message) return null;
-      keyboardFocusedMessageIdRef.current = action.id;
-      setKeyboardFocusedMessageId(action.id);
-      scrollToMessage(action.id);
-      return { kind: "recall", text: message.content, fresh: action.fresh };
-    },
-    [setKeyboardFocusedMessageId, scrollToMessage, scrollToEnd],
-  );
+  // Recall position is invisible (no highlight, no scrolling), so a plain ref
+  // is enough. A newly sent prompt resets it so the next Up starts from it.
+  const recallMessageIdRef = useRef<string | null>(null);
+  const prevUserMessageCountRef = useRef(userMessages.length);
+  if (userMessages.length > prevUserMessageCountRef.current) {
+    recallMessageIdRef.current = null;
+  }
+  prevUserMessageCountRef.current = userMessages.length;
+
+  const recallFromComposer = useCallback<PromptRecallHandler>((direction) => {
+    const messages = userMessagesRef.current;
+    const action = promptRecallStep(
+      messages.map((message) => message.id),
+      recallMessageIdRef.current,
+      direction,
+    );
+    if (!action) return null;
+    if (action.kind === "exit") {
+      recallMessageIdRef.current = null;
+      return { kind: "exit" };
+    }
+    const message = messages.find((entry) => entry.id === action.id);
+    if (!message) return null;
+    recallMessageIdRef.current = action.id;
+    return { kind: "recall", text: message.content, fresh: action.fresh };
+  }, []);
 
   useEffect(() => {
-    if (!composerNavigationRef) return;
-    composerNavigationRef.current = navigateFromComposer;
+    if (!promptRecallRef) return;
+    promptRecallRef.current = recallFromComposer;
     return () => {
-      composerNavigationRef.current = null;
+      promptRecallRef.current = null;
     };
-  }, [composerNavigationRef, navigateFromComposer]);
+  }, [promptRecallRef, recallFromComposer]);
 
   const handleJumpToMessage = useCallback(
     (id: string) => {
@@ -1038,7 +1038,7 @@ export function ChatThread({
   repoPath,
   task,
   taskId,
-  composerNavigationRef,
+  promptRecallRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -1078,23 +1078,6 @@ export function ChatThread({
   const clearKeyboardFocus = useCallback(() => {
     setKeyboardFocusedMessageId(null);
   }, []);
-
-  // A newly sent prompt resets recall, so the next Up starts from it.
-  // Adjusted during render, not in an effect, so a keypress landing right
-  // after the commit can't see the stale focus.
-  const userMessageCount = useMemo(
-    () =>
-      items.reduce((n, item) => (item.type === "user_message" ? n + 1 : n), 0),
-    [items],
-  );
-  const [prevUserMessageCount, setPrevUserMessageCount] =
-    useState(userMessageCount);
-  if (userMessageCount !== prevUserMessageCount) {
-    setPrevUserMessageCount(userMessageCount);
-    if (userMessageCount > prevUserMessageCount) {
-      setKeyboardFocusedMessageId(null);
-    }
-  }
 
   const renderItem = useCallback(
     (item: ConversationItem) => {
@@ -1198,7 +1181,7 @@ export function ChatThread({
               setJumpPickerOpen={setJumpPickerOpen}
               keyboardFocusedMessageId={keyboardFocusedMessageId}
               setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
-              composerNavigationRef={composerNavigationRef}
+              promptRecallRef={promptRecallRef}
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>
