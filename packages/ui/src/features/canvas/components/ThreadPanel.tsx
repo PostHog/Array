@@ -388,7 +388,20 @@ function ThreadConversation({
     hasError,
     errorTitle,
   } = useSessionViewState(taskId, task);
-  useSessionConnection({ taskId, task, session, repoPath, isCloud });
+  // Reading a thread must never START agent work: for a local task with no
+  // run and no live session, reconcile would connect fresh and replay the
+  // task description as an initial prompt (task-detail's interrupted-creation
+  // recovery). Suspend the connection in that state — it resumes as soon as a
+  // run exists or a session is live.
+  const hasRunOrSession = Boolean(task.latest_run?.id) || Boolean(session);
+  useSessionConnection({
+    taskId,
+    task,
+    session,
+    repoPath,
+    isCloud,
+    isSuspended: !isCloud && !hasRunOrSession,
+  });
   const { items } = useConversationItems(events, isPromptPending);
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   useSessionCallbacks({
