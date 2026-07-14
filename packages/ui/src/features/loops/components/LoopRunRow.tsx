@@ -34,7 +34,7 @@ export function LoopRunRow({ run }: { run: LoopSchemas.LoopRun }) {
       gap="3"
       className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2.5"
     >
-      <Flex direction="column" gap="0.5" className="min-w-0">
+      <Flex direction="column" className="min-w-0 gap-0.5">
         <Flex align="center" gap="2">
           <Badge color={statusColor(run.status)}>{run.status}</Badge>
           <Text className="text-[12px] text-gray-11">

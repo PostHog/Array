@@ -23,6 +23,8 @@ export interface LoopTemplate {
   triggerLabel: string;
   /** Integrations and surfaces the template works with, shown on the card. */
   worksWith: string[];
+  /** Accent tone for the card's icon tile. */
+  tone: "blue" | "red" | "purple" | "teal" | "amber" | "green";
   build: () => Partial<LoopFormValues>;
 }
 
@@ -55,6 +57,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
       "Summarize open pull requests, their review and CI status, and what needs attention.",
     triggerLabel: "Runs weekdays at 11:00",
     worksWith: ["GitHub", "Slack"],
+    tone: "blue",
     build: () => ({
       name: "PR review digest",
       instructions:
@@ -70,6 +73,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
       "Digest the failing CI runs from the last day and post a summary to your team channel.",
     triggerLabel: "Runs daily at 9:00",
     worksWith: ["GitHub", "Slack"],
+    tone: "red",
     build: () => ({
       name: "CI failure summary",
       instructions:
@@ -85,6 +89,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
       "Find tests that pass and fail intermittently across recent CI runs, and open an issue.",
     triggerLabel: "Runs Mondays at 9:00",
     worksWith: ["GitHub"],
+    tone: "purple",
     build: () => ({
       name: "Flaky test tracker",
       instructions:
@@ -100,6 +105,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
       "Scan for outdated packages, security patches, and breaking changes, then open a PR.",
     triggerLabel: "Runs Mondays at 11:30",
     worksWith: ["GitHub"],
+    tone: "teal",
     build: () => ({
       name: "Dependency update check",
       instructions:
@@ -115,6 +121,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
       "Draft user-facing release notes each time a pull request merges to the main branch.",
     triggerLabel: "Triggered when a PR merges",
     worksWith: ["GitHub"],
+    tone: "amber",
     build: () => ({
       name: "Release notes drafter",
       instructions:
@@ -130,6 +137,7 @@ export const LOOP_TEMPLATES: LoopTemplate[] = [
       "Review new issues, categorize bugs and feature requests, and flag likely duplicates.",
     triggerLabel: "Triggered by new issues",
     worksWith: ["GitHub"],
+    tone: "green",
     build: () => ({
       name: "Issue triage",
       instructions:

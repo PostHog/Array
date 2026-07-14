@@ -25,7 +25,7 @@ export function LoopRow({ loop }: { loop: LoopSchemas.Loop }) {
     >
       <Flex align="center" gap="3" className="min-w-0">
         <RepeatIcon size={20} className="shrink-0 text-gray-11" />
-        <Flex direction="column" gap="0.5" className="min-w-0">
+        <Flex direction="column" className="min-w-0 gap-0.5">
           <Flex align="center" gap="2" className="min-w-0">
             <Text className="truncate font-medium text-[13px] text-gray-12">
               {loop.name}

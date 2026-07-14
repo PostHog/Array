@@ -55,7 +55,7 @@ export function SectionCard({
       gap="4"
       className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) p-4"
     >
-      <Flex align="center" gap="2.5">
+      <Flex align="center" className="gap-2.5">
         <Flex
           align="center"
           justify="center"

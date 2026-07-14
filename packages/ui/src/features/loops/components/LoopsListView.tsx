@@ -1,13 +1,15 @@
 import {
-  ArrowRightIcon,
+  ArrowUpIcon,
   ClockIcon,
+  LightningIcon,
+  PlugsIcon,
   PlusIcon,
   RepeatIcon,
 } from "@phosphor-icons/react";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
-import { Box, Flex, Text, TextArea } from "@radix-ui/themes";
+import { Flex, Heading, IconButton, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { useLoops } from "../hooks/useLoops";
 import { useLoopDraftStore } from "../loopDraftStore";
@@ -64,97 +66,58 @@ export function LoopsListView() {
       <div className="min-h-0 flex-1 overflow-auto">
         <Flex
           direction="column"
-          gap="8"
+          gap="6"
           className="mx-auto w-full max-w-5xl px-8 py-8"
         >
-          <Flex align="start" justify="between" gap="3">
+          <Flex align="center" justify="between" gap="3">
             <Flex direction="column" gap="1" className="min-w-0">
-              <Text className="font-semibold text-[18px] text-gray-12">
-                Loops
-              </Text>
-              <Text className="text-[12.5px] text-gray-10 leading-snug">
+              <Heading className="font-bold text-2xl">Loops</Heading>
+              <Text color="gray" className="text-sm">
                 Automations that run your instructions unattended, on a
                 schedule, a GitHub event, or an API call.
               </Text>
             </Flex>
-            <Button
-              variant="soft"
-              color="gray"
-              size="2"
-              className="shrink-0 gap-1.5"
-              onClick={startBlank}
-            >
-              <PlusIcon size={13} />
+            <Button variant="solid" size="2" onClick={startBlank}>
+              <PlusIcon size={14} />
               New loop
             </Button>
           </Flex>
 
-          <Flex direction="column" gap="2">
-            <TextArea
-              value={prompt}
-              variant="soft"
-              color="gray"
-              size="3"
-              placeholder="What do you want automated?"
-              className="min-h-[64px] text-[13px] leading-relaxed"
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  startFromPrompt();
-                }
-              }}
-            />
-            <Flex align="center" justify="between" gap="3">
-              <Flex gap="2" wrap="wrap" className="min-w-0 flex-1">
-                {EXAMPLE_PROMPTS.map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setPrompt(example)}
-                    className="rounded-(--radius-2) bg-(--gray-a3) px-3 py-1.5 text-[12px] text-gray-11 leading-none transition-colors hover:bg-(--gray-a4) hover:text-gray-12"
-                  >
-                    {example}
-                  </button>
-                ))}
-              </Flex>
-              <Button
-                variant="solid"
-                size="2"
-                className="shrink-0 gap-1.5"
-                disabled={!prompt.trim()}
-                onClick={startFromPrompt}
-              >
-                Draft loop
-                <ArrowRightIcon size={13} />
-              </Button>
-            </Flex>
-          </Flex>
-
-          <Section title="Your loops">
-            {isLoading ? (
-              <LoopsSkeleton />
-            ) : isError ? (
-              <Notice>
-                {error instanceof Error
+          {isLoading ? (
+            <LoopsSkeleton />
+          ) : isError ? (
+            <EmptyNotice
+              title="Couldn't load loops."
+              hint={
+                error instanceof Error
                   ? error.message
-                  : "The loops API returned an error."}
-              </Notice>
-            ) : allLoops.length === 0 ? (
-              <Notice>
-                No loops yet. Describe one above, or start from a template
-                below.
-              </Notice>
-            ) : (
+                  : "The loops API returned an error."
+              }
+            />
+          ) : allLoops.length > 0 ? (
+            <Flex direction="column" gap="3">
+              <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
+                Your loops
+              </Text>
               <Flex direction="column" gap="2">
                 {allLoops.map((loop) => (
                   <LoopRow key={loop.id} loop={loop} />
                 ))}
               </Flex>
-            )}
-          </Section>
+            </Flex>
+          ) : (
+            <EmptyNotice
+              icon={<RepeatIcon size={15} />}
+              title="No loops yet"
+              hint="Describe what you want automated below, or start from a template."
+            />
+          )}
 
-          <Section title="Start from a template">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Flex direction="column" gap="3">
+            <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
+              Start from a template
+            </Text>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {LOOP_TEMPLATES.map((template) => (
                 <TemplateCard
                   key={template.id}
@@ -163,29 +126,75 @@ export function LoopsListView() {
                 />
               ))}
             </div>
-          </Section>
+          </Flex>
+        </Flex>
+      </div>
+
+      <div className="shrink-0">
+        <Flex
+          direction="column"
+          gap="2"
+          className="mx-auto w-full max-w-5xl px-8 pb-6"
+        >
+          <Flex gap="2" wrap="wrap">
+            {EXAMPLE_PROMPTS.map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => setPrompt(example)}
+                className="rounded-full border border-gray-5 bg-gray-2 px-3 py-1 text-gray-11 text-xs transition-colors hover:border-gray-7 hover:bg-gray-3"
+              >
+                {example}
+              </button>
+            ))}
+          </Flex>
+          <Flex
+            direction="column"
+            gap="2"
+            className="rounded-(--radius-4) border border-border bg-(--color-panel-solid) p-3 transition-colors focus-within:border-(--gray-8)"
+          >
+            <textarea
+              value={prompt}
+              rows={2}
+              placeholder="What do you want automated?"
+              className="w-full resize-none bg-transparent text-[13px] text-gray-12 leading-relaxed outline-none placeholder:text-gray-9"
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  startFromPrompt();
+                }
+              }}
+            />
+            <Flex align="center" justify="between" gap="3">
+              <Text className="text-[11px] text-gray-9">
+                Drafts a loop you can review before it runs
+              </Text>
+              <IconButton
+                variant="solid"
+                size="1"
+                aria-label="Draft loop"
+                disabled={!prompt.trim()}
+                onClick={startFromPrompt}
+              >
+                <ArrowUpIcon size={13} weight="bold" />
+              </IconButton>
+            </Flex>
+          </Flex>
         </Flex>
       </div>
     </Flex>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Flex direction="column" gap="3">
-      <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
-        {title}
-      </Text>
-      {children}
-    </Flex>
-  );
-}
+const TONE_CLASSES: Record<LoopTemplate["tone"], string> = {
+  blue: "bg-(--blue-a3) text-(--blue-11)",
+  red: "bg-(--red-a3) text-(--red-11)",
+  purple: "bg-(--purple-a3) text-(--purple-11)",
+  teal: "bg-(--teal-a3) text-(--teal-11)",
+  amber: "bg-(--amber-a3) text-(--amber-11)",
+  green: "bg-(--green-a3) text-(--green-11)",
+};
 
 function TemplateCard({
   template,
@@ -195,39 +204,85 @@ function TemplateCard({
   onSelect: () => void;
 }) {
   const Icon = template.icon;
+  const TriggerIcon = template.triggerLabel.startsWith("Triggered")
+    ? LightningIcon
+    : ClockIcon;
   return (
     <button
       type="button"
       onClick={onSelect}
       className="flex flex-col gap-2 rounded-(--radius-3) border border-border bg-(--color-panel-solid) p-4 text-left transition-colors hover:border-(--gray-6) hover:bg-(--gray-2)"
     >
-      <Flex align="center" gap="2">
-        <Icon size={16} className="shrink-0 text-gray-11" />
-        <Text className="font-medium text-[13px] text-gray-12">
+      <Flex align="center" className="gap-2.5">
+        <Flex
+          align="center"
+          justify="center"
+          className={`size-7 shrink-0 rounded-(--radius-2) ${TONE_CLASSES[template.tone]}`}
+        >
+          <Icon size={15} />
+        </Flex>
+        <Text className="font-medium text-[14px] text-gray-12">
           {template.name}
         </Text>
       </Flex>
-      <Text className="text-[12px] text-gray-10 leading-snug">
+      <Text className="text-[12.5px] text-gray-11 leading-snug">
         {template.description}
       </Text>
-      <Flex direction="column" gap="0.5" className="text-gray-10">
-        <Flex align="center" gap="1">
-          <ClockIcon size={11} className="shrink-0" />
-          <Text className="text-[11px]">{template.triggerLabel}</Text>
+      <Flex
+        align="center"
+        justify="between"
+        gap="3"
+        className="mt-auto w-full text-gray-10"
+      >
+        <Flex align="center" className="min-w-0 gap-1.5">
+          <TriggerIcon size={12} className="shrink-0" />
+          <Text className="truncate text-[11.5px]">
+            {template.triggerLabel}
+          </Text>
         </Flex>
-        <Text className="text-[11px]">
-          Works with {template.worksWith.join(" · ")}
-        </Text>
+        <Flex align="center" className="shrink-0 gap-1.5">
+          <PlugsIcon size={12} className="shrink-0" />
+          <Text className="text-[11.5px]">
+            Works with {template.worksWith.join(" · ")}
+          </Text>
+        </Flex>
       </Flex>
     </button>
   );
 }
 
-function Notice({ children }: { children: React.ReactNode }) {
+function EmptyNotice({
+  icon,
+  title,
+  hint,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  hint: string;
+}) {
   return (
-    <Box className="rounded-(--radius-3) border border-(--gray-5) border-dashed px-4 py-6 text-center text-[12.5px] text-gray-10">
-      {children}
-    </Box>
+    <Flex
+      align="center"
+      justify="center"
+      direction="column"
+      gap="1"
+      py="6"
+      className="rounded border border-gray-6 border-dashed"
+    >
+      {icon ? (
+        <Flex
+          align="center"
+          justify="center"
+          className="mb-1 size-8 rounded-(--radius-2) bg-(--gray-3) text-gray-11"
+        >
+          {icon}
+        </Flex>
+      ) : null}
+      <Text className="font-medium text-sm">{title}</Text>
+      <Text color="gray" className="text-[13px]">
+        {hint}
+      </Text>
+    </Flex>
   );
 }
 
