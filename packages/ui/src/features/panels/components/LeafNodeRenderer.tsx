@@ -3,6 +3,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { Flex, Text } from "@radix-ui/themes";
 import type React from "react";
 import { useMemo } from "react";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { useTabInjection } from "../hooks/usePanelLayoutHooks";
 import type { SplitDirection } from "../panelLayoutStore";
@@ -41,12 +42,15 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
   onSplitPanel,
 }) => {
   const isCloud = useIsWorkspaceCloudRun(taskId);
+  const { localWorkspaces } = useHostCapabilities();
+  // Hide the terminal for cloud runs, and on cloud-only hosts (web).
+  const hideTerminal = isCloud || !localWorkspaces;
   const inputTabs = useMemo(
     () =>
-      isCloud
+      hideTerminal
         ? node.content.tabs.filter((t) => t.data.type !== "terminal")
         : node.content.tabs,
-    [node.content.tabs, isCloud],
+    [node.content.tabs, hideTerminal],
   );
   const tabs = useTabInjection(inputTabs, node.id, taskId, task, closeTab);
   const activeTabId = tabs.some((t) => t.id === node.content.activeTabId)
@@ -90,7 +94,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       onPanelFocus={onPanelFocus}
       draggingTabId={draggingTabId}
       draggingTabPanelId={draggingTabPanelId}
-      onAddTerminal={isCloud ? undefined : () => onAddTerminal(node.id)}
+      onAddTerminal={hideTerminal ? undefined : () => onAddTerminal(node.id)}
       onSplitPanel={(direction) => onSplitPanel(node.id, direction)}
       emptyState={cloudEmptyState}
     />
