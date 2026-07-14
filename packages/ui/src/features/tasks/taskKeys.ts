@@ -9,6 +9,8 @@ export const taskKeys = {
   all: ["tasks"] as const,
   lists: () => [...taskKeys.all, "list"] as const,
   list: (filters?: TaskListFilters) => [...taskKeys.lists(), filters] as const,
+  infiniteList: (filters?: TaskListFilters) =>
+    [...taskKeys.lists(), "infinite", filters] as const,
   // Extract the filters object from a `list` query key. Keeps knowledge of the
   // key's shape (filters live in the last slot) here, next to `list`, instead
   // of letting consumers reach in by positional index.

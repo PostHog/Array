@@ -4,6 +4,7 @@ import {
   Avatar,
   AvatarFallback,
   Button,
+  cn,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -16,6 +17,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
+import { ActivityTasksTab } from "@posthog/ui/features/canvas/components/ActivityTasksTab";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
@@ -125,8 +127,43 @@ function ActivityRow({
   );
 }
 
-// The Activity page: every channel-thread message that @-mentions the viewer,
-// newest first. Opening it clears the sidebar badge.
+type ActivityTab = "mentions" | "tasks";
+
+const TABS: { key: ActivityTab; label: string }[] = [
+  { key: "mentions", label: "Mentions" },
+  { key: "tasks", label: "Tasks" },
+];
+
+function ActivityTabBar({
+  activeTab,
+  onSelect,
+}: {
+  activeTab: ActivityTab;
+  onSelect: (tab: ActivityTab) => void;
+}) {
+  return (
+    <nav className="mt-3 flex items-center gap-px">
+      {TABS.map((tab) => {
+        const active = tab.key === activeTab;
+        return (
+          <Button
+            key={tab.key}
+            variant="default"
+            size="sm"
+            data-selected={active || undefined}
+            className={cn(active && "bg-fill-selected")}
+            onClick={() => onSelect(tab.key)}
+          >
+            {tab.label}
+          </Button>
+        );
+      })}
+    </nav>
+  );
+}
+
+// The Activity page: mentions of the viewer across channel threads, plus the
+// tasks they've recently worked on. Opening it clears the sidebar badge.
 export function ActivityView() {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
@@ -155,6 +192,7 @@ export function ActivityView() {
   const [seenAtOpen] = useState(
     () => useActivitySeenStore.getState().lastSeenAt,
   );
+  const [activeTab, setActiveTab] = useState<ActivityTab>("mentions");
 
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -176,10 +214,13 @@ export function ActivityView() {
           Activity
         </Text>
         <Text size="2" className="block text-muted-foreground">
-          Mentions of you across contexts.
+          Mentions and the tasks you've worked on.
         </Text>
+        <ActivityTabBar activeTab={activeTab} onSelect={setActiveTab} />
         <div className="mt-4">
-          {isLoading && items.length === 0 ? (
+          {activeTab === "tasks" ? (
+            <ActivityTasksTab />
+          ) : isLoading && items.length === 0 ? (
             <div className="flex justify-center py-16">
               <Spinner />
             </div>

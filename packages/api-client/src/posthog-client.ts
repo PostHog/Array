@@ -2379,6 +2379,48 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
+  // Offset-paginated task list for infinite-scroll surfaces (Activity feed).
+  // Unlike getTasks (which fetches a single large page and drops the envelope),
+  // this returns the full paginated response so callers can advance `offset`.
+  async getTasksPage(options?: {
+    repository?: string;
+    createdBy?: number;
+    originProduct?: string;
+    internal?: boolean;
+    channel?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<Schemas.PaginatedTaskList> {
+    const teamId = await this.getTeamId();
+    const params: Record<string, string | number | boolean> = {
+      limit: options?.limit ?? 30,
+    };
+
+    if (options?.offset) {
+      params.offset = options.offset;
+    }
+    if (options?.repository) {
+      params.repository = options.repository;
+    }
+    if (options?.createdBy) {
+      params.created_by = options.createdBy;
+    }
+    if (options?.originProduct) {
+      params.origin_product = options.originProduct;
+    }
+    if (options?.internal) {
+      params.internal = true;
+    }
+    if (options?.channel) {
+      params.channel = options.channel;
+    }
+
+    return this.api.get(`/api/projects/{project_id}/tasks/`, {
+      path: { project_id: teamId.toString() },
+      query: params,
+    }) as unknown as Promise<Schemas.PaginatedTaskList>;
+  }
+
   async getTaskSummaries(ids: string[]) {
     if (ids.length === 0) return [];
     const TASK_SUMMARIES_MAX_PAGES = 50;

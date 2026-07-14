@@ -1,9 +1,15 @@
 import type { Schemas } from "@posthog/api-client";
 import type { Task } from "@posthog/shared/domain-types";
+import { useAuthenticatedInfiniteQuery } from "@posthog/ui/hooks/useAuthenticatedInfiniteQuery";
 import { keepPreviousData } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useAuthenticatedQuery } from "../../hooks/useAuthenticatedQuery";
 import { useMeQuery } from "../auth/useMeQuery";
 import { taskKeys } from "./taskKeys";
+
+// Page size for the infinite Activity feed. Small enough that the first paint is
+// cheap; the sentinel fetches the next page well before the user hits bottom.
+const RECENT_TASKS_PAGE_SIZE = 30;
 
 // Full-task polls are heavy (~630KB per response at 100 tasks — descriptions
 // and latest_run blobs included), and idle-poll churn was the app's largest
@@ -44,6 +50,44 @@ export function useTasks(
       refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
     },
   );
+}
+
+// The current user's tasks, newest first, as an offset-paginated infinite
+// query — the data source for the Activity feed's Tasks tab. Scoped to the
+// signed-in user (their recent work), so it never fans out to the whole team.
+export function useRecentTasksInfinite(options?: { enabled?: boolean }) {
+  const { data: currentUser } = useMeQuery();
+  const createdBy = currentUser?.id;
+
+  const query = useAuthenticatedInfiniteQuery<
+    Schemas.PaginatedTaskList,
+    number
+  >(
+    taskKeys.infiniteList({ createdBy }),
+    (client, offset) =>
+      client.getTasksPage({
+        createdBy,
+        limit: RECENT_TASKS_PAGE_SIZE,
+        offset,
+      }),
+    {
+      enabled: (options?.enabled ?? true) && !!createdBy,
+      initialPageParam: 0,
+      getNextPageParam: (lastPage, allPages) => {
+        const loaded = allPages.reduce((n, p) => n + p.results.length, 0);
+        return loaded < lastPage.count ? loaded : undefined;
+      },
+      refetchInterval: TASK_LIST_POLL_INTERVAL_MS,
+    },
+  );
+
+  const tasks = useMemo(
+    () =>
+      (query.data?.pages.flatMap((p) => p.results) ?? []) as unknown as Task[],
+    [query.data?.pages],
+  );
+
+  return { ...query, tasks, totalCount: query.data?.pages[0]?.count ?? 0 };
 }
 
 export function useTaskSummaries(
