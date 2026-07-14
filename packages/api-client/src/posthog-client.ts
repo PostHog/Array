@@ -192,6 +192,15 @@ export type {
 
 export type Evaluation = Schemas.Evaluation;
 
+/** Server-resolved default AI run configuration for the current user + project. */
+export interface TaskRunDefaults {
+  runtimeAdapter: string;
+  model: string;
+  reasoningEffort: string | null;
+  /** Which preference level supplied the default: the user's own, or the project's. */
+  source: "user" | "team";
+}
+
 export interface UserGitHubIntegration {
   id: string;
   kind: "github";
@@ -2277,6 +2286,44 @@ export class PostHogAPIClient {
           `Failed to update external data schema: ${response.statusText}`,
       );
     }
+  }
+
+  /**
+   * The server-resolved default AI run triple for the current user in the current
+   * project: their per-project preference over the project-wide default, as
+   * resolved by the tasks backend. Returns null when no default is configured or
+   * the endpoint is unavailable (older servers) — defaults are a nicety and must
+   * never block task creation.
+   */
+  async getTaskRunDefaults(): Promise<TaskRunDefaults | null> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/my_config/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json().catch(() => null)) as {
+      resolved_ai_run_defaults?: {
+        runtime_adapter?: string | null;
+        model?: string | null;
+        reasoning_effort?: string | null;
+        source?: string;
+      };
+    } | null;
+    const resolved = data?.resolved_ai_run_defaults;
+    if (!resolved?.runtime_adapter || !resolved.model) {
+      return null;
+    }
+    return {
+      runtimeAdapter: resolved.runtime_adapter,
+      model: resolved.model,
+      reasoningEffort: resolved.reasoning_effort ?? null,
+      source: resolved.source === "user" ? "user" : "team",
+    };
   }
 
   async getTasks(options?: {

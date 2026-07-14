@@ -15,6 +15,7 @@ import {
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logger } from "../../../shell/logger";
+import { useOptionalAuthenticatedClient } from "../../auth/authClient";
 import { useAuthStateValue } from "../../auth/store";
 import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { useSettingsStore } from "../../settings/settingsStore";
@@ -47,6 +48,7 @@ function getOptionByCategory(
  */
 export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
+  const apiClient = useOptionalAuthenticatedClient();
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const apiHost = useMemo(
@@ -78,9 +80,23 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
     // as the current selection while the new adapter's config is loading.
     setConfigOptions([]);
 
-    hostClient.agent.getPreviewConfigOptions
-      .query({ apiHost, adapter }, { signal: abort.signal })
-      .then((serverOptions) => {
+    // The server-side team/user default is a per-project policy, so it wins over
+    // the device-local last-used model; failures resolve to null and fall back.
+    const serverDefaultsPromise = apiClient
+      ? apiClient.getTaskRunDefaults().catch((error: unknown) => {
+          log.warn("Failed to fetch task run defaults", { error });
+          return null;
+        })
+      : Promise.resolve(null);
+
+    Promise.all([
+      hostClient.agent.getPreviewConfigOptions.query(
+        { apiHost, adapter },
+        { signal: abort.signal },
+      ),
+      serverDefaultsPromise,
+    ])
+      .then(([serverOptions, serverDefaults]) => {
         if (abort.signal.aborted) return;
 
         const options = glmEnabled
@@ -106,12 +122,27 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
           adapter,
         );
 
-        // The server always returns its default model as the current value, so
-        // without this the user's last (default-eligible) pick is lost on every
-        // refetch/remount. Restore it through applyConfigChange so the
-        // dependent effort options are recomputed for the restored model.
+        const changeSettings = {
+          defaultInitialTaskMode: "",
+          lastUsedInitialTaskMode: undefined,
+          defaultReasoningEffort,
+          lastUsedReasoningEffort,
+        };
+
+        // Resolution order for the preselected model: the server-side team/user
+        // default (when it targets this adapter and the gateway still offers the
+        // model), else the device-local last-used pick, else the gateway default.
+        // Changing the picker afterwards affects only the current composition.
         const modelOpt = getOptionByCategory(initial, "model");
-        const restorableModel = defaultEligibleModel(lastUsedModel);
+        const serverDefaultModel =
+          serverDefaults?.runtimeAdapter === adapter &&
+          serverDefaults.model &&
+          modelOpt?.type === "select" &&
+          flattenConfigValues(modelOpt).includes(serverDefaults.model)
+            ? serverDefaults.model
+            : null;
+        const restorableModel =
+          serverDefaultModel ?? defaultEligibleModel(lastUsedModel);
         if (
           restorableModel &&
           modelOpt?.type === "select" &&
@@ -124,13 +155,29 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
             value: restorableModel,
             effortOptions:
               getReasoningEffortOptions(adapter, restorableModel) ?? undefined,
-            settings: {
-              defaultInitialTaskMode: "",
-              lastUsedInitialTaskMode: undefined,
-              defaultReasoningEffort,
-              lastUsedReasoningEffort,
-            },
+            settings: changeSettings,
           });
+        }
+
+        // The default triple's effort applies with its model; a stored effort the
+        // model doesn't support is simply not offered and stays on the recomputed
+        // default.
+        if (serverDefaultModel && serverDefaults?.reasoningEffort) {
+          const thoughtOpt = getOptionByCategory(initial, "thought_level");
+          if (
+            thoughtOpt?.type === "select" &&
+            flattenConfigValues(thoughtOpt).includes(
+              serverDefaults.reasoningEffort,
+            )
+          ) {
+            initial = applyConfigChange(initial, {
+              adapter,
+              configId: thoughtOpt.id,
+              value: serverDefaults.reasoningEffort,
+              effortOptions: undefined,
+              settings: changeSettings,
+            });
+          }
         }
 
         setConfigOptions(initial);
@@ -145,7 +192,7 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
     return () => {
       abort.abort();
     };
-  }, [adapter, apiHost, hostClient, hasHydrated, glmEnabled]);
+  }, [adapter, apiHost, hostClient, apiClient, hasHydrated, glmEnabled]);
 
   const setConfigOption = useCallback(
     (configId: string, value: string) => {

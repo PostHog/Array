@@ -1695,4 +1695,71 @@ describe("PostHogAPIClient", () => {
       });
     });
   });
+
+  describe("getTaskRunDefaults", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("maps the resolved defaults into the client shape", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ai_run_preferences: {},
+          resolved_ai_run_defaults: {
+            runtime_adapter: "claude",
+            model: "claude-opus-4-8",
+            reasoning_effort: "high",
+            source: "team",
+          },
+        }),
+      });
+      const client = makeClient(fetch);
+
+      await expect(client.getTaskRunDefaults()).resolves.toEqual({
+        runtimeAdapter: "claude",
+        model: "claude-opus-4-8",
+        reasoningEffort: "high",
+        source: "team",
+      });
+      expect(fetch.mock.calls[0][0].path).toBe(
+        "/api/projects/123/tasks/my_config/",
+      );
+    });
+
+    // Defaults are a nicety: an older server without the endpoint, or a project
+    // with nothing configured, must resolve to null rather than break task creation.
+    it.each([
+      ["endpoint missing on older servers", { ok: false, status: 404 }],
+      [
+        "no default configured",
+        {
+          ok: true,
+          json: async () => ({
+            ai_run_preferences: {},
+            resolved_ai_run_defaults: {
+              runtime_adapter: null,
+              model: null,
+              reasoning_effort: null,
+              source: "none",
+            },
+          }),
+        },
+      ],
+    ])("resolves to null when %s", async (_name, response) => {
+      const client = makeClient(vi.fn().mockResolvedValue(response));
+      await expect(client.getTaskRunDefaults()).resolves.toBeNull();
+    });
+  });
 });
