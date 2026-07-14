@@ -2728,6 +2728,13 @@ export class SessionService {
 
     if (session.isCloud) {
       const normalizedPrompt = await this.resolveCloudPrompt(prompt);
+      // Cloud normalization awaits, during which the message may have drained
+      // (a turn completed and sent it). Re-check against fresh state: without
+      // this, the store update below is a silent no-op yet we'd still report a
+      // successful save, so the caller wouldn't fall back to sending the edit
+      // as a fresh message and the edit would be lost.
+      const fresh = this.d.store.getSessionByTaskId(taskId);
+      if (!fresh?.messageQueue.some((m) => m.id === messageId)) return false;
       const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
       this.d.store.updateQueuedMessage(taskId, messageId, {
         content: transport.promptText,
@@ -2739,7 +2746,10 @@ export class SessionService {
       });
     }
 
-    if (session.editingQueuedId === messageId) {
+    // Read fresh: the cloud path awaited above, so the pre-await `session`
+    // snapshot may be stale for the edit-hold decision.
+    const latest = this.d.store.getSessionByTaskId(taskId);
+    if (latest?.editingQueuedId === messageId) {
       this.d.store.clearEditingQueuedMessage(taskId);
     }
     this.flushQueuedMessagesIfIdle(taskId);

@@ -5223,6 +5223,75 @@ describe("SessionService", () => {
     });
   });
 
+  describe("updateQueuedMessage cloud normalization race", () => {
+    const cloudSession = (
+      overrides: Partial<AgentSession> = {},
+    ): AgentSession =>
+      createMockSession({
+        isCloud: true,
+        cloudStatus: "in_progress",
+        status: "connected",
+        isPromptPending: true,
+        messageQueue: [
+          {
+            id: "q-1",
+            content: "old",
+            rawPrompt: [{ type: "text", text: "old" }],
+            queuedAt: 1,
+          },
+        ],
+        editingQueuedId: "q-1",
+        ...overrides,
+      });
+
+    it("returns false when the message drains while cloud normalization awaits", async () => {
+      const service = getSessionService();
+      // Present for the initial membership check, gone for the post-await
+      // re-check (a turn completed and drained it during normalization).
+      mockSessionStoreSetters.getSessionByTaskId
+        .mockReturnValueOnce(cloudSession())
+        .mockReturnValue(
+          cloudSession({ messageQueue: [], editingQueuedId: undefined }),
+        );
+
+      const updated = await service.updateQueuedMessage(
+        "task-123",
+        "q-1",
+        "edited",
+      );
+
+      // No-op store write must not be reported as a save, so the caller falls
+      // back to sending the edit as a fresh message instead of losing it.
+      expect(updated).toBe(false);
+      expect(
+        mockSessionStoreSetters.updateQueuedMessage,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockSessionStoreSetters.clearEditingQueuedMessage,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("updates in place when the message is still queued after normalization", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        cloudSession(),
+      );
+
+      const updated = await service.updateQueuedMessage(
+        "task-123",
+        "q-1",
+        "edited",
+      );
+
+      expect(updated).toBe(true);
+      expect(mockSessionStoreSetters.updateQueuedMessage).toHaveBeenCalledWith(
+        "task-123",
+        "q-1",
+        expect.objectContaining({ content: expect.any(String) }),
+      );
+    });
+  });
+
   describe("cancelPrompt", () => {
     it("returns false if no session exists", async () => {
       const service = getSessionService();
