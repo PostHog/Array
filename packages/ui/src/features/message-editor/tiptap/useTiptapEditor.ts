@@ -20,6 +20,10 @@ import {
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
+import {
+  formatHotkey,
+  SHORTCUTS,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
@@ -202,6 +206,16 @@ function hasVisibleSuggestionPopup(sessionId: string): boolean {
     document.querySelector(
       `[data-tippy-root] .tippy-box:not([data-state='hidden']) [data-suggestion-session="${CSS.escape(sessionId)}"]`,
     ) !== null
+  );
+}
+
+function showMessageNavHint(): void {
+  const store = useFeatureSettingsStore.getState();
+  if (!store.shouldShowHint("recall-message-nav")) return;
+  store.recordHintShown("recall-message-nav");
+  toast.info(
+    "Recalled a sent prompt",
+    `Use ${formatHotkey(SHORTCUTS.MESSAGE_PREV)} and ${formatHotkey(SHORTCUTS.MESSAGE_NEXT)} to jump between your messages in the conversation.`,
   );
 }
 
@@ -432,6 +446,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               if (result.kind === "recall") {
                 if (result.fresh) {
                   promptRecallDraftRef.current = view.state.doc;
+                  showMessageNavHint();
                 }
                 const tr = view.state.tr
                   .delete(1, view.state.doc.content.size - 1)

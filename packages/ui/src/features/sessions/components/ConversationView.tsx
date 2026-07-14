@@ -282,6 +282,7 @@ export function ConversationView({
 
   const handleNavigateMessage = useCallback(
     (direction: -1 | 1) => {
+      useSettingsStore.getState().markHintLearned("recall-message-nav");
       if (userMessages.length === 0) return;
 
       const currentIndex = keyboardFocusedMessageId
