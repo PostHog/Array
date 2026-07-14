@@ -10,6 +10,9 @@ interface UsageMeterProps {
 
 export function UsageMeter({ label, bucket, color }: UsageMeterProps) {
   const percentage = bucket.used_percent;
+  // used_percent can exceed 100 once a limit is blown; the text still shows the
+  // true figure, but Progress rejects values above its default max of 100.
+  const progressValue = Math.min(100, Math.max(0, percentage));
 
   const borderColor = color === "red" ? "var(--red-7)" : "var(--gray-5)";
 
@@ -28,7 +31,7 @@ export function UsageMeter({ label, bucket, color }: UsageMeterProps) {
         <Text className="font-medium text-sm">{percentage.toFixed(2)}%</Text>
       </Flex>
       <Progress
-        value={percentage}
+        value={progressValue}
         size="2"
         color={color === "red" ? "red" : undefined}
       />

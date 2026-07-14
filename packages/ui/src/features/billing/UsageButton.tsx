@@ -59,7 +59,10 @@ export function UsageButton() {
     usage.sustained.used_percent >= usage.burst.used_percent
       ? usage.sustained
       : usage.burst;
-  const usagePercent = Math.min(Math.round(dominant.used_percent), 100);
+  const usagePercent = Math.min(
+    Math.max(Math.round(dominant.used_percent), 0),
+    100,
+  );
   const resetLabel = formatResetTime(dominant.reset_at);
 
   const handleOpenChange = (nextOpen: boolean) => {

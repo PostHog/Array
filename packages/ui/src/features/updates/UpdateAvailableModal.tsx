@@ -72,7 +72,7 @@ export function UpdateAvailableModal() {
     enabled: isOpen || prefetchForActiveUpdate,
   });
 
-  const percent = Math.round(downloadPercent ?? 0);
+  const percent = Math.min(100, Math.max(0, Math.round(downloadPercent ?? 0)));
   const sizeLabel = formatSize(downloadSizeBytes);
   const isDownloading = status === "downloading";
   const isReady = status === "ready" || status === "installing";

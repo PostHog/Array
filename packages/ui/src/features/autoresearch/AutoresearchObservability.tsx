@@ -150,7 +150,12 @@ function TimeRow({
   value: number;
   total: number;
 }) {
-  const percentage = Math.round((value / total) * 100);
+  // Per-kind observed time can exceed the run's wall-clock duration, so clamp
+  // before handing the value to Progress (whose max defaults to 100).
+  const percentage =
+    total > 0
+      ? Math.min(100, Math.max(0, Math.round((value / total) * 100)))
+      : 0;
   return (
     <div>
       <div className="mb-1 flex items-center justify-between gap-3">
