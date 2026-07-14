@@ -387,7 +387,7 @@ function PrCommentCountBadge({ count }: { count: number }) {
   const label = `${count} comment${count === 1 ? "" : "s"}`;
   return (
     <Badge
-      variant="info"
+      variant="default"
       title={label}
       className="shrink-0 gap-[3px] text-[11px] tabular-nums"
     >
