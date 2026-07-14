@@ -94,7 +94,7 @@ only when no insight can express the metric.`;
 
 <canvas_generation_instructions>
 ${instructions}
-</canvas_generation_instructions>
 
-${buildAuthorizedWriteMarker({ subTool: FREEFORM_PUBLISH_TOOL, id: dashboardId })}`;
+${buildAuthorizedWriteMarker({ subTool: FREEFORM_PUBLISH_TOOL, id: dashboardId })}
+</canvas_generation_instructions>`;
 }
