@@ -1,10 +1,28 @@
 import { BASE_CATEGORY_ENUM } from "@posthog/core/setup/types";
 
-export const WIZARD_PROMPT = `/instrument-integration
+// Appended to every prompt that instruments an integration: writing env vars to
+// .env files does nothing for the deployed app, and the sandbox can never verify
+// the hosting provider's env, so the PR must always carry the checklist.
+export const DEPLOYMENT_ENV_VAR_PROMPT = `
 
-After the integration is wired up, also instrument error tracking and session replay (run \`/instrument-error-tracking\`, then add session replay if the framework's posthog-js config supports it).
+## Required: env var checklist in the PR body
 
-Run autonomously with sensible defaults — do not ask the user questions. If the PostHog API key isn't already in the project's env files and you can't read it from the PostHog MCP server, leave a placeholder env var and note it in the PR body rather than blocking.`;
+Adding env vars to \`.env\`, \`.env.local\` or \`.env.example\` only covers local development. It does not set them on the deployed app, so production will send no events until someone sets them in the hosting provider. You cannot read or set the hosting provider's env from here, so always assume they are missing and always include the section below.
+
+Detect the deployment target from repo-root markers: \`vercel.json\` or \`.vercel/\` → Vercel; \`netlify.toml\` → Netlify; \`wrangler.toml\` or \`wrangler.jsonc\` → Cloudflare; \`fly.toml\` → Fly.io. If nothing matches, call it "your hosting provider" and give the generic steps.
+
+Open the PR body — above the summary of changes — with a section titled "Before you merge: set environment variables in <provider>" containing:
+
+- Every env var key name the integration reads, exactly as it appears in the code (e.g. the PostHog public key and host vars for this framework).
+- Steps for the detected provider:
+  - Vercel: \`vercel env add <KEY> production\` per key, or Project Settings → Environment Variables.
+  - Netlify: \`netlify env:set <KEY> <value>\` per key, or Site configuration → Environment variables.
+  - Cloudflare: \`wrangler secret put <KEY>\` per key, or \`[vars]\` in the wrangler config for non-secret values.
+  - Fly.io: \`fly secrets set <KEY>=<value>\` per key.
+  - Unknown provider: instruct the user to add each key wherever their production environment defines env vars, and to redeploy.
+- A plain statement that until these are set in <provider>, the production deployment will send no events to PostHog.
+
+Never put secret values in the PR body — key names only. Point the user at their PostHog project settings for the value.`;
 
 const DISCOVERY_PROMPT_BASE = `You are analyzing this codebase to find the highest-value first tasks for the developer.
 

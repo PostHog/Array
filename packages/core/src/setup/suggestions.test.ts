@@ -67,12 +67,51 @@ describe("buildPosthogSetupSuggestion", () => {
   it("returns the install suggestion when not installed", () => {
     const task = buildPosthogSetupSuggestion("not_installed");
     expect(task.id).toBe("posthog-setup");
-    expect(task.prompt).toBe("/instrument-integration");
+    expect(task.prompt?.startsWith("/instrument-integration")).toBe(true);
   });
 
   it("returns the finish-init suggestion when installed but not initialized", () => {
     const task = buildPosthogSetupSuggestion("installed_no_init");
     expect(task.id).toBe("posthog-finish-init");
     expect(task.prompt).toContain("skip install steps");
+  });
+
+  it.each(["not_installed", "installed_no_init"] as const)(
+    "requires the hosting-provider env var checklist in the PR body (%s)",
+    (state) => {
+      const prompt = buildPosthogSetupSuggestion(state).prompt ?? "";
+      expect(prompt).toContain(
+        "Before you merge: set environment variables in <provider>",
+      );
+      expect(prompt).toContain("production will send no events");
+      expect(prompt).toContain("Never put secret values in the PR body");
+    },
+  );
+
+  it.each([
+    ["Vercel", "vercel env add <KEY> production"],
+    ["Netlify", "netlify env:set <KEY> <value>"],
+    ["Cloudflare", "wrangler secret put <KEY>"],
+    ["Fly.io", "fly secrets set <KEY>=<value>"],
+  ])("gives %s-specific env var steps", (provider, command) => {
+    const prompt = buildPosthogSetupSuggestion("not_installed").prompt ?? "";
+    expect(prompt).toContain(provider);
+    expect(prompt).toContain(command);
+  });
+
+  it.each([
+    ["vercel.json", "Vercel"],
+    ["netlify.toml", "Netlify"],
+    ["wrangler.toml", "Cloudflare"],
+    ["fly.toml", "Fly.io"],
+  ])("maps the %s marker to %s", (marker, provider) => {
+    const prompt = buildPosthogSetupSuggestion("not_installed").prompt ?? "";
+    expect(prompt).toContain(`\`${marker}\``);
+    expect(prompt).toContain(provider);
+  });
+
+  it("falls back to a generic provider when no marker matches", () => {
+    const prompt = buildPosthogSetupSuggestion("not_installed").prompt ?? "";
+    expect(prompt).toContain('call it "your hosting provider"');
   });
 });

@@ -1,3 +1,4 @@
+import { DEPLOYMENT_ENV_VAR_PROMPT } from "@posthog/core/setup/prompts";
 import type { DiscoveredTask } from "@posthog/core/setup/types";
 
 export interface StaleFlagPayload {
@@ -62,8 +63,8 @@ export function buildPosthogSetupSuggestion(
       impact:
         "Without PostHog wired in, you have no visibility into how users interact with the product, no error or session-replay coverage, and no way to gate releases behind feature flags.",
       recommendation:
-        'Click "Implement as new task" — the agent runs the bundled instrument-integration skill, sets up env vars, installs the SDK with your project\'s package manager, and opens a PR.',
-      prompt: "/instrument-integration",
+        'Click "Implement as new task" — the agent runs the bundled instrument-integration skill, sets up env vars, installs the SDK with your project\'s package manager, and opens a PR listing the env vars you still need to set in your hosting provider.',
+      prompt: `/instrument-integration${DEPLOYMENT_ENV_VAR_PROMPT}`,
     };
   }
   return {
@@ -76,8 +77,9 @@ export function buildPosthogSetupSuggestion(
     impact:
       "Until init runs, all PostHog calls are no-ops — you'll see no events in the project, no error reports, and no session replays despite the SDK being installed.",
     recommendation:
-      'Click "Implement as new task" — the agent adds the init call and provider component for your framework, sets up the public-token + host env vars, and opens a PR. The SDK package itself is left alone.',
-    prompt:
-      "/instrument-integration\n\nThe SDK is already declared in this repo — skip install steps and focus on adding the init call, provider, and env vars.",
+      'Click "Implement as new task" — the agent adds the init call and provider component for your framework, sets up the public-token + host env vars, and opens a PR listing the env vars you still need to set in your hosting provider. The SDK package itself is left alone.',
+    prompt: `/instrument-integration
+
+The SDK is already declared in this repo — skip install steps and focus on adding the init call, provider, and env vars.${DEPLOYMENT_ENV_VAR_PROMPT}`,
   };
 }
