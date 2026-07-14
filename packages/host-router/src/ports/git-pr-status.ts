@@ -13,4 +13,5 @@ export interface IGitPrStatus {
     cloudPrUrl: string | null,
   ): Promise<TaskPrStatus>;
   getCachedPrUrl(taskId: string): CachedPrUrlOutput;
+  setPrimaryPrUrl(taskId: string, prUrl: string): Promise<void>;
 }

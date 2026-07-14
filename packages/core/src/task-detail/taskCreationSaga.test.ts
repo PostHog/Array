@@ -153,6 +153,7 @@ describe("TaskCreationSaga", () => {
       model: "gpt-5.4",
       reasoningLevel: "high",
       cloudAutoPublish: true,
+      cloudRtkEnabled: false,
     });
 
     expect(result.success).toBe(true);
@@ -170,6 +171,7 @@ describe("TaskCreationSaga", () => {
       sandboxEnvironmentId: undefined,
       prAuthorshipMode: "user",
       autoPublish: true,
+      rtkEnabled: false,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
@@ -942,6 +944,25 @@ describe("TaskCreationSaga", () => {
         .invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(sessionService.connectToTask).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("creates the task without a repository when repo detection fails", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockRejectedValue(new TypeError("fetch failed"));
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ repository: undefined }),
     );
   });
 

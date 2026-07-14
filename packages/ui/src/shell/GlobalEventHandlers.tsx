@@ -4,9 +4,11 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
@@ -69,6 +71,16 @@ export function GlobalEventHandlers({
   const { data: allTasks = [] } = useTasks();
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
+
+  // With channels on, mod+1-9 belongs to the browser tab strip (it switches to
+  // the Nth tab). Yield those keys so task-switching only owns them in the Code
+  // nav; the strip's own handler is gated on the same flag.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
 
   const taskById = useMemo(() => {
     const map = new Map<string, Task>();
@@ -198,7 +210,8 @@ export function GlobalEventHandlers({
     [handleToggleFocus],
   );
 
-  // Task switching with mod+1-9
+  // Task switching with mod+1-9 — off when channels are on (the browser tab
+  // strip claims those keys to switch tabs by index).
   useHotkeys(
     SHORTCUTS.SWITCH_TASK,
     (event, handler) => {
@@ -209,7 +222,7 @@ export function GlobalEventHandlers({
       const index = parseInt(keyPressed, 10);
       handleSwitchTask(index);
     },
-    globalOptions,
+    { ...globalOptions, enabled: !channelsEnabled },
     [handleSwitchTask],
   );
 

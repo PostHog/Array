@@ -351,6 +351,8 @@ export default function NewTaskScreen() {
         model,
         reasoningEffort: supportsReasoning ? reasoning : undefined,
         initialPermissionMode: mode,
+        autoPublish: usePreferencesStore.getState().autoPublishCloudRuns,
+        rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         ...(signalReport
           ? {
               runSource: "signal_report" as const,

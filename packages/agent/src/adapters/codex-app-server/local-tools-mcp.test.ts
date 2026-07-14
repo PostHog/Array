@@ -43,7 +43,12 @@ describe("buildLocalToolsServer", () => {
 
     const server = buildLocalToolsServer(
       { cwd: "/repo" },
-      { environment: "cloud" },
+      {
+        environment: "cloud",
+        taskId: "task-1",
+        taskRunId: "run-1",
+        baseBranch: "master",
+      },
     );
 
     expect(server).not.toBeNull();
@@ -58,6 +63,13 @@ describe("buildLocalToolsServer", () => {
     // Token is forwarded to the child so its own git remote ops authenticate.
     expect(envNames).toContain("GH_TOKEN");
     expect(envNames).toContain("GITHUB_TOKEN");
+    // Codex strips ELECTRON_RUN_AS_NODE from its own env, and process.execPath
+    // is the app binary in packaged installs; without this the server boots
+    // the full desktop app instead of running the script.
+    expect(server?.env).toContainEqual({
+      name: "ELECTRON_RUN_AS_NODE",
+      value: "1",
+    });
 
     const ctxEntry = server?.env.find(
       (e) => e.name === "POSTHOG_LOCAL_TOOLS_CTX",
@@ -67,6 +79,9 @@ describe("buildLocalToolsServer", () => {
     );
     expect(ctx.cwd).toBe("/repo");
     expect(ctx.token).toBe("ghs_test");
+    expect(ctx.taskId).toBe("task-1");
+    expect(ctx.taskRunId).toBe("run-1");
+    expect(ctx.baseBranch).toBe("master");
   });
 
   it("returns a server but omits token env vars when no token is present", () => {
@@ -90,11 +105,22 @@ describe("buildLocalToolsServer", () => {
     ).toBeNull();
   });
 
-  it("returns null when no tool's gate passes (desktop run)", () => {
+  it("exposes only the always-on tools on a desktop run (no cloud-only tools)", () => {
     process.env.GH_TOKEN = "ghs_test";
 
-    expect(
-      buildLocalToolsServer({ cwd: "/repo" }, { environment: "local" }),
-    ).toBeNull();
+    const server = buildLocalToolsServer(
+      { cwd: "/repo" },
+      { environment: "local" },
+    );
+
+    expect(server).not.toBeNull();
+    const enabled =
+      server?.env.find((e) => e.name === "POSTHOG_LOCAL_TOOLS_ENABLED")
+        ?.value ?? "";
+    const names = enabled.split(",");
+    // `speak` is always on (narration works on desktop and cloud alike).
+    expect(names).toContain("speak");
+    // Signed-git tools are cloud-only and must not leak into a desktop run.
+    expect(names).not.toContain("git_signed_commit");
   });
 });

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reportCommitArtefacts } from "./signed-commit-artefacts";
+import {
+  reportCommitArtefacts,
+  reportTaskRunBranch,
+} from "./signed-commit-artefacts";
 
 const ENV = {
   POSTHOG_API_URL: "https://us.posthog.com",
@@ -141,5 +144,50 @@ describe("reportCommitArtefacts", () => {
 
     // Both commits attempted despite the first failing.
     expect(postCount).toBe(2);
+  });
+});
+
+describe("reportTaskRunBranch", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("persists the signed commit branch on the task run", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await reportTaskRunBranch({
+      taskId: "task-1",
+      taskRunId: "run-1",
+      branch: "posthog-code/fix-foo",
+      env: ENV,
+      envFilePath: NO_ENV_FILE,
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe(
+      "https://us.posthog.com/api/projects/7/tasks/task-1/runs/run-1/",
+    );
+    expect(init).toMatchObject({
+      method: "PATCH",
+      body: JSON.stringify({
+        branch: "posthog-code/fix-foo",
+        output: { head_branch: "posthog-code/fix-foo" },
+      }),
+    });
   });
 });

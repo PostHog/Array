@@ -21,7 +21,7 @@ interface MetricChartProps {
 }
 
 /**
- * Metric value per iteration (solid, with dots) plus the best-so-far
+ * Metric value per iteration, shown as a solid line with dots, plus the best
  * frontier (dashed) and the optional target line.
  */
 export function MetricChart({
@@ -32,7 +32,7 @@ export function MetricChart({
   unit,
 }: MetricChartProps) {
   const theme = useChartTheme();
-  // Canvas colors must be concrete — `var(--…)` strings don't paint. The
+  // Canvas colors must be concrete because CSS variable strings do not paint. The
   // theme's palette is already resolved from CSS variables.
   const valueColor = theme.colors[0] ?? "#1d4aff";
   const bestColor = theme.axisColor ?? "#8b8d98";
@@ -89,7 +89,7 @@ export function MetricChart({
             showCrosshair: true,
             yTickFormatter: (value) =>
               withMetricUnit(formatChartValue(value), unit),
-            // Keep an off-scale target visible instead of clipping it.
+            // Keep a target outside the current scale visible instead of clipping it.
             valueDomain:
               targetValue === null ? undefined : { include: [targetValue] },
           }}

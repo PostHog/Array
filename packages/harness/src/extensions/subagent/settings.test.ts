@@ -21,19 +21,18 @@ describe("applyAgentOverrides", () => {
     expect(effective.fallbackModels).toBeUndefined();
   });
 
-  it("falls back to settings.defaultModel when the agent has no model", () => {
-    const effective = applyAgentOverrides(agent, {
-      defaultModel: "anthropic/opus",
-    });
-    expect(effective.model).toBe("anthropic/opus");
-  });
-
-  it("prefers a per-agent override over settings.defaultModel", () => {
-    const effective = applyAgentOverrides(agent, {
-      defaultModel: "anthropic/opus",
+  it("prefers a per-agent override over the agent's own baked-in model", () => {
+    const pinned: AgentConfig = { ...agent, model: "anthropic/haiku" };
+    const effective = applyAgentOverrides(pinned, {
       agentOverrides: { worker: { model: "openai/gpt-5" } },
     });
     expect(effective.model).toBe("openai/gpt-5");
+  });
+
+  it("falls back to the agent's own baked-in model when there's no override", () => {
+    const pinned: AgentConfig = { ...agent, model: "anthropic/haiku" };
+    const effective = applyAgentOverrides(pinned, {});
+    expect(effective.model).toBe("anthropic/haiku");
   });
 
   it("parses a comma-separated tools override", () => {
@@ -99,7 +98,6 @@ describe("loadSubagentSettings", () => {
       path.join(userDir, "settings.json"),
       JSON.stringify({
         subagents: {
-          defaultModel: "anthropic/opus",
           agentOverrides: { scout: { model: "anthropic/haiku" } },
         },
       }),
@@ -117,7 +115,6 @@ describe("loadSubagentSettings", () => {
     );
 
     const trustedSettings = loadSubagentSettings(tmpProject, true);
-    expect(trustedSettings.defaultModel).toBe("anthropic/opus");
     expect(trustedSettings.agentOverrides?.scout?.model).toBe(
       "anthropic/haiku",
     );
@@ -126,7 +123,6 @@ describe("loadSubagentSettings", () => {
     // Untrusted (or omitted, default false): project settings are ignored
     // entirely, not merged — only the user-scope override survives.
     const untrustedSettings = loadSubagentSettings(tmpProject);
-    expect(untrustedSettings.defaultModel).toBe("anthropic/opus");
     expect(untrustedSettings.agentOverrides?.scout?.model).toBe(
       "anthropic/haiku",
     );

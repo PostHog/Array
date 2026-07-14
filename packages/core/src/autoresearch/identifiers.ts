@@ -40,7 +40,7 @@ export interface StoredAutoresearchRun {
  */
 export interface AutoresearchStorageClient {
   save(run: StoredAutoresearchRun): Promise<void>;
-  /** Runs not yet terminal — the ones worth resuming after a restart. */
+  /** Runs not yet terminal. These are worth resuming after a restart. */
   listOpen(): Promise<StoredAutoresearchRun[]>;
   listByTask(taskId: string): Promise<StoredAutoresearchRun[]>;
 }

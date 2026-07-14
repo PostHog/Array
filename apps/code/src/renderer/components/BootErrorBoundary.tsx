@@ -1,3 +1,4 @@
+import { DARK_APP_BACKGROUND_COLOR } from "@posthog/shared/constants";
 import { logger } from "@posthog/ui/shell/logger";
 import React, { useEffect, useRef } from "react";
 
@@ -15,7 +16,7 @@ const screenStyle: React.CSSProperties = {
   justifyContent: "center",
   gap: 16,
   padding: 24,
-  backgroundColor: "#0a0a0a",
+  backgroundColor: DARK_APP_BACKGROUND_COLOR,
   color: "#fafafa",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -39,7 +40,7 @@ const buttonStyle: React.CSSProperties = {
   padding: "6px 16px",
   fontSize: 13,
   fontWeight: 500,
-  color: "#0a0a0a",
+  color: DARK_APP_BACKGROUND_COLOR,
   backgroundColor: "#fafafa",
   border: "none",
   borderRadius: 6,

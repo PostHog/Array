@@ -115,6 +115,13 @@ export function resolveRepoSelectionForFolder({
 
 export interface UseInitialRepoSelectionParams {
   folderId: string | undefined;
+  /**
+   * Identifier of the navigation request that carried the folder prefill. Each
+   * "+" click issues a fresh id, so re-picking the same folder re-applies the
+   * prefill even when the screen stayed mounted (the once-per-request guards
+   * key on it). Without it, guards key on `folderId` alone.
+   */
+  requestId?: string;
   folders: RegisteredFolder[];
   /** Lower-cased `owner/repo` slugs the user can use in cloud mode. */
   repositories: string[];
@@ -145,6 +152,7 @@ export interface UseInitialRepoSelectionParams {
  */
 export function useInitialRepoSelectionFromFolderId({
   folderId,
+  requestId,
   folders,
   repositories,
   reposLoaded,
@@ -171,6 +179,9 @@ export function useInitialRepoSelectionFromFolderId({
       repoModeInitRef.current = undefined;
       return;
     }
+    // A fresh requestId makes this a new prefill request even for the same
+    // folder, so clicking a group's "+" always re-selects its directory.
+    const requestKey = `${requestId ?? ""}:${folderId}`;
     const folder = folders.find((f) => f.id === folderId);
     if (!folder) return;
 
@@ -183,23 +194,24 @@ export function useInitialRepoSelectionFromFolderId({
       mostRecentEnvironment,
     });
 
-    if (dirInitRef.current !== folderId) {
+    if (dirInitRef.current !== requestKey) {
       setSelectedDirectory(selection.directory);
-      dirInitRef.current = folderId;
+      dirInitRef.current = requestKey;
     }
 
     // Defer the cloud/mode decision until the integrations list has loaded.
-    if (reposLoaded && repoModeInitRef.current !== folderId) {
+    if (reposLoaded && repoModeInitRef.current !== requestKey) {
       if (selection.cloudRepository) {
         setSelectedRepository(selection.cloudRepository);
       }
       if (selection.nextMode && selection.nextMode !== currentModeRef.current) {
         switchWorkspaceMode(selection.nextMode);
       }
-      repoModeInitRef.current = folderId;
+      repoModeInitRef.current = requestKey;
     }
   }, [
     folderId,
+    requestId,
     folders,
     repositories,
     reposLoaded,

@@ -3,36 +3,30 @@ import {
   type SpawnOptions,
   spawn,
 } from "node:child_process";
-import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HARNESS_EXTENSION_NAMES } from "./extensions/registry";
 import { piCliInvocation, resolvePiCliEntry } from "./pi-cli";
 
 export { resolvePiCliEntry as resolvePiCli };
 
-/**
- * `pi-mcp-adapter` ships raw TypeScript with no compiled entry point or
- * `main`/`exports` field, so it can only be loaded by file path through
- * pi's own extension loader (the `-e` CLI flag, or `additionalExtensionPaths`
- * in the SDK) rather than statically imported. Resolve its declared
- * extension entry (`./index.ts`, per its `pi.extensions` manifest) from
- * wherever npm installed it.
- */
-export function mcpAdapterExtensionFile(): string {
-  const pkgJsonPath = fileURLToPath(
-    import.meta.resolve("pi-mcp-adapter/package.json"),
-  );
-  return join(dirname(pkgJsonPath), "index.ts");
+export interface HarnessExtensionFilesOptions {
+  /** Extension names to omit — e.g. `bin/hog.ts`'s standalone binary excludes
+   * `subagent`, which needs a real `node_modules` tree to resolve pi's CLI
+   * entry against, something a single compiled executable doesn't carry. */
+  exclude?: string[];
 }
 
-export function harnessExtensionFiles(): string[] {
+export function harnessExtensionFiles(
+  options: HarnessExtensionFilesOptions = {},
+): string[] {
+  const exclude = new Set(options.exclude ?? []);
   // `./index.js` (not `./extension.js`) so pi's startup banner shows each
   // extension by its directory name instead of `<name>/extension.js`; see
   // `src/extensions/<name>/index.ts`.
-  const localFiles = HARNESS_EXTENSION_NAMES.map((name) =>
-    fileURLToPath(new URL(`./extensions/${name}/index.js`, import.meta.url)),
+  return HARNESS_EXTENSION_NAMES.filter((name) => !exclude.has(name)).map(
+    (name) =>
+      fileURLToPath(new URL(`./extensions/${name}/index.js`, import.meta.url)),
   );
-  return [...localFiles, mcpAdapterExtensionFile()];
 }
 
 export interface SpawnPiOptions extends SpawnOptions {

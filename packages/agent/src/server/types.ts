@@ -1,5 +1,6 @@
 import type { Adapter } from "@posthog/shared";
 import type { AgentMode } from "../types";
+import type { RtkSavingsSummary } from "./rtk-savings";
 import type { RemoteMcpServer } from "./schemas";
 
 export interface ClaudeCodeConfig {
@@ -11,6 +12,7 @@ export interface ClaudeCodeConfig {
 
 export interface AgentServerConfig {
   port: number;
+  agentStateDir?: string;
   repositoryPath?: string;
   repoReadyFile?: string;
   apiUrl: string;
@@ -37,4 +39,5 @@ export interface AgentServerConfig {
   runtimeAdapter?: Adapter;
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  resolveRtkSavings?: () => Promise<RtkSavingsSummary | null>;
 }

@@ -4,7 +4,7 @@ import {
   CaretRightIcon,
 } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
-import { Button } from "@posthog/quill";
+import { Button, ButtonGroup } from "@posthog/quill";
 import {
   BILLING_FLAG,
   HOME_TAB_FLAG,
@@ -16,11 +16,12 @@ import { isContentlessTask } from "@posthog/shared/domain-types";
 import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { UsageButton } from "@posthog/ui/features/billing/UsageButton";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
 import { BrowserTabStrip } from "@posthog/ui/features/browser-tabs/BrowserTabStrip";
 import { BrowserTabsDndProvider } from "@posthog/ui/features/browser-tabs/BrowserTabsDnd";
-import { useTabsSnapshot } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
+import { useActiveTabIsBlank } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import {
@@ -41,7 +42,12 @@ import { useInboxDeepLink } from "@posthog/ui/features/inbox/hooks/useInboxDeepL
 import { useIntegrations } from "@posthog/ui/features/integrations/useIntegrations";
 import { useScoutDeepLink } from "@posthog/ui/features/scouts/hooks/useScoutDeepLink";
 import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery";
-import { MainSidebar } from "@posthog/ui/features/sidebar/components/MainSidebar";
+import {
+  beginSidebarPeek,
+  cancelSidebarPeek,
+  useSidebarPeekStore,
+} from "@posthog/ui/features/sidebar/sidebarPeekStore";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
 import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/components/ExistingWorktreeDialog";
@@ -55,15 +61,16 @@ import LogosLandscape from "@posthog/ui/primitives/Logo";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
+import { ContentHeader } from "@posthog/ui/shell/ContentHeader";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { GlobalEventHandlers } from "@posthog/ui/shell/GlobalEventHandlers";
-import { HeaderRow } from "@posthog/ui/shell/HeaderRow";
 import { HedgehogMode } from "@posthog/ui/shell/HedgehogMode";
 import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
+import { isWindows } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
@@ -71,10 +78,10 @@ import {
   createRootRoute,
   Outlet,
   useCanGoBack,
-  useNavigate,
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
+import { SidebarClose, SidebarOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 // The router devtools render their genuine floating overlay, mounted by the
@@ -83,18 +90,28 @@ import { useEffect, useRef, useState } from "react";
 
 const log = logger.scope("root-route");
 
+// On Windows the frameless window overlays the min/max/close controls on the
+// top-right of the title bar (see window.ts titleBarOverlay). Reserve that strip
+// so the tab strip / PostHog Web button never render under the native controls.
+const WINDOWS_TITLEBAR_INSET = 140;
+
 export const Route = createRootRoute({
   component: RootLayout,
 });
 
 function RootLayout() {
   const view = useAppView();
-  const navigate = useNavigate();
   const router = useRouter();
   const canGoBack = useCanGoBack();
   // Width of the Channels sidebar below — used to right-align the back/forward
   // buttons in the title bar with the sidebar's (and project switcher's) right edge.
   const channelsSidebarWidth = useChannelsSidebarStore((state) => state.width);
+  // Suppress the title-bar width transition during a live drag so it tracks
+  // the sidebar frame-for-frame; when the sidebar toggles open/closed, both
+  // animate with the same curve (see ResizableSidebar).
+  const sidebarIsResizing = useChannelsSidebarStore(
+    (state) => state.isResizing,
+  );
   // Forward availability isn't exposed by the router (and history.length counts
   // pre-app entries, so it can't be compared to __TSR_index). Track the newest
   // index we've reached: only a PUSH wipes the forward stack, so it resets the
@@ -115,9 +132,8 @@ function RootLayout() {
   }, [router]);
   const canGoForward = historyIndex < newestIndex;
 
-  // Feedback modal shown in the Channels title bar as an intercept before
-  // navigating away — "Exit" (mode "leaving") and "PostHog Web" (mode
-  // "posthog-web"), each of which routes once the modal is submitted or skipped.
+  // Feedback modal shown as an intercept before "PostHog Web" opens the web
+  // app, routing once the modal is submitted or skipped.
   const [feedbackMode, setFeedbackMode] = useState<FeedbackModalMode | null>(
     null,
   );
@@ -131,14 +147,12 @@ function RootLayout() {
     currentProjectId ? `/project/${currentProjectId}` : "/",
   );
 
-  // Both "Go back to Code" and "PostHog Web" open the feedback modal first and
-  // perform their navigation only once it's submitted or skipped.
+  // "PostHog Web" opens the feedback modal first and performs its navigation
+  // only once the modal is submitted or skipped.
   const handleFeedbackFinished = () => {
     const finishedMode = feedbackMode;
     setFeedbackMode(null);
-    if (finishedMode === "leaving") {
-      navigate({ to: "/code" });
-    } else if (finishedMode === "posthog-web" && posthogWebUrl) {
+    if (finishedMode === "posthog-web" && posthogWebUrl) {
       void openUrlInBrowser(posthogWebUrl);
     }
   };
@@ -166,6 +180,25 @@ function RootLayout() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
+  // "PostHog Web" is a channels-world affordance — show it only while the user
+  // is actually seeing channels (toggle on, which itself requires the flag).
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsToggleOn = useSidebarStore((s) => s.channelsEnabled);
+  const channelsEnabled = channelsToggleOn && bluebirdEnabled;
+  // When the sidebar is collapsed (Cmd+B) the title bar's left block shrinks to
+  // fit its own controls so the tab strip flushes left with the content pane.
+  const sidebarOpen = useSidebarStore((s) => s.open);
+  const toggleSidebar = useSidebarStore((s) => s.toggle);
+  const sidebarPeek = useSidebarPeekStore((s) => s.peek);
+  // Toggling makes any hover-peek redundant (opening replaces the overlay;
+  // closing must not leave it lingering under the pointer).
+  const handleToggleSidebar = (): void => {
+    cancelSidebarPeek();
+    toggleSidebar();
+  };
 
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
@@ -243,19 +276,25 @@ function RootLayout() {
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
 
-  // The canvas "Channels" space (gated by project-bluebird). It owns its own
-  // layout (channel sidebar + content via WebsiteLayout), so it drops the Code
-  // chrome (header / main sidebar / space-switcher) and shows only the app rail.
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
+  // The Bluebird chrome is the app shell for every non-settings route now. The
+  // /website (Channels) routes own their own in-pane header (WebsiteLayout), so
+  // the shared ContentHeader is mounted only outside that space.
   const onWebsitePath = useRouterState({
     select: (s) =>
       s.location.pathname === "/website" ||
       s.location.pathname.startsWith("/website/"),
   });
-  const isChannelsSpace = bluebirdEnabled && onWebsitePath;
+
+  // The /website (Channels) routes stay registered regardless of the flag, so a
+  // stale URL, a restored session, or a persisted channel browser tab could
+  // strand a flag-off user on the channel layout with no way back (the Channels
+  // toggle is hidden and ContentHeader is suppressed on /website). Once flags
+  // resolve, send them back to Code.
+  useEffect(() => {
+    if (flagsLoaded && !bluebirdEnabled && onWebsitePath) {
+      openTaskInput();
+    }
+  }, [flagsLoaded, bluebirdEnabled, onWebsitePath]);
 
   // A blank browser tab (the "+" new-tab page) shows an empty placeholder — but
   // ONLY on the channels index. Inside a channel (`/website/$channelId…`) the
@@ -264,136 +303,8 @@ function RootLayout() {
   const onChannelsIndex = useRouterState({
     select: (s) => s.location.pathname === "/website",
   });
-  const tabsSnapshot = useTabsSnapshot();
-  const activeTabIsBlank =
-    onChannelsIndex &&
-    (() => {
-      const w =
-        tabsSnapshot.windows.find((x) => x.isPrimary) ??
-        tabsSnapshot.windows[0];
-      if (!w?.activeTabId) return false;
-      const t = tabsSnapshot.tabs.find((x) => x.id === w.activeTabId);
-      return !!t && t.dashboardId == null && t.taskId == null;
-    })();
-
-  // The /website (Channels) routes stay registered regardless of the flag, so a
-  // stale URL or restored session could strand a flag-off user there (rendering
-  // the channel layout inside the Code chrome). Once flags resolve, redirect
-  // them back to Code so the off state is indistinguishable from before canvas.
-  useEffect(() => {
-    if (flagsLoaded && !bluebirdEnabled && onWebsitePath) {
-      openTaskInput();
-    }
-  }, [flagsLoaded, bluebirdEnabled, onWebsitePath]);
-
-  if (isChannelsSpace) {
-    return (
-      // DnD scope for the tab strip's drag-to-reorder (pill sortables live in
-      // the title bar; the provider must sit above them).
-      <BrowserTabsDndProvider>
-        <Flex direction="column" height="100%" className="bg-chrome">
-          {/* Full-width title bar: a window-drag region carrying the PostHog
-            mark. The left section matches the sidebar width so the tab strip
-            starts flush with the content pane; its padding clears the macOS
-            stoplights. */}
-          <Flex align="center" className="drag h-10 shrink-0">
-            <Flex
-              id="title-bar-left"
-              align="center"
-              justify="between"
-              gap="3"
-              className="shrink-0 pr-2 pl-[78px]"
-              style={{ width: channelsSidebarWidth }}
-            >
-              <Flex align="center" gap="2" className="no-drag">
-                <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
-                  <LogosLandscape code={false} />
-                </Box>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                      action_type: "leave_space",
-                      surface: "title_bar",
-                    });
-                    setFeedbackMode("leaving");
-                  }}
-                >
-                  Exit
-                </Button>
-              </Flex>
-              <Flex align="center" gap="2" className="no-drag">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Back"
-                  disabled={!canGoBack}
-                  onClick={() => router.history.back()}
-                >
-                  <CaretLeftIcon size={14} />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Forward"
-                  disabled={!canGoForward}
-                  onClick={() => router.history.forward()}
-                >
-                  <CaretRightIcon size={14} />
-                </Button>
-              </Flex>
-            </Flex>
-            <BrowserTabStrip />
-            <Flex align="center" className="no-drag ml-auto pr-3">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!posthogWebUrl}
-                onClick={handleOpenPostHogWeb}
-              >
-                <ArrowSquareOut size={14} />
-                PostHog Web
-              </Button>
-            </Flex>
-          </Flex>
-          <ConnectivityBanner />
-          <Flex flexGrow="1" overflow="hidden">
-            <ChannelsSidebar />
-            {/* Content sits in a bordered, rounded card inset from the window
-              edges — the framed pane from the design. */}
-            <Box flexGrow="1" className="overflow-hidden">
-              <Box className="h-full overflow-hidden rounded-tl-sm border-border border-t border-l bg-background">
-                {activeTabIsBlank ? <BlankTabView /> : <Outlet />}
-              </Box>
-            </Box>
-          </Flex>
-          <CommandMenu
-            open={commandMenuOpen}
-            onOpenChange={setCommandMenuOpen}
-          />
-          <GlobalFilePicker />
-          <KeyboardShortcutsSheet
-            open={shortcutsSheetOpen}
-            onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
-          />
-          <GlobalEventHandlers
-            onToggleCommandMenu={toggleCommandMenu}
-            onToggleShortcutsSheet={toggleShortcutsSheet}
-          />
-          {billingEnabled && <UsageLimitModal />}
-          <UpdateAvailableModal />
-          <WhatsNewModal />
-          <RemoteBranchCheckoutDialog />
-          <FeedbackModal
-            mode={feedbackMode}
-            onFinished={handleFeedbackFinished}
-          />
-          <ExistingWorktreeDialog />
-        </Flex>
-      </BrowserTabsDndProvider>
-    );
-  }
+  const activeTabBlank = useActiveTabIsBlank();
+  const showBlankTab = onChannelsIndex && activeTabBlank;
 
   if (isSettingsRoute) {
     return (
@@ -420,27 +331,141 @@ function RootLayout() {
   }
 
   return (
-    <Flex height="100%">
-      <Flex direction="column" flexGrow="1" overflow="hidden">
-        <HeaderRow />
+    // DnD scope for the tab strip's drag-to-reorder (pill sortables live in
+    // the title bar; the provider must sit above them).
+    <BrowserTabsDndProvider>
+      <Flex direction="column" height="100%" className="bg-chrome">
+        {/* Full-width title bar: a window-drag region carrying the PostHog
+            mark. The left section matches the sidebar width so the tab strip
+            starts flush with the content pane; its padding clears the macOS
+            stoplights. */}
+        <Flex
+          align="center"
+          className="drag h-10 shrink-0"
+          style={{
+            paddingRight: isWindows ? WINDOWS_TITLEBAR_INSET : undefined,
+          }}
+        >
+          <Flex
+            id="title-bar-left"
+            align="center"
+            justify="between"
+            gap="3"
+            className="shrink-0 pr-2 pl-[78px]"
+            style={{
+              width: sidebarOpen ? channelsSidebarWidth : undefined,
+              // Same curve/duration as ResizableSidebar's SLIDE_EASING so the
+              // title bar tracks the sidebar edge.
+              transition: sidebarIsResizing
+                ? "none"
+                : "width 0.2s cubic-bezier(0, 0, 0.2, 1)",
+            }}
+          >
+            <Flex align="center" gap="2" className="no-drag">
+              <Box className="h-[14px] w-[30px] overflow-hidden [&>svg]:h-[14px] [&>svg]:w-auto">
+                <LogosLandscape code={false} />
+              </Box>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Toggle sidebar"
+                onClick={handleToggleSidebar}
+                onMouseEnter={() => {
+                  if (!sidebarOpen) beginSidebarPeek();
+                }}
+              >
+                {sidebarOpen ? (
+                  <SidebarClose size={10} />
+                ) : (
+                  <SidebarOpen size={10} />
+                )}
+              </Button>
+            </Flex>
+            <Flex align="center" gap="2" className="no-drag">
+              <ButtonGroup className="no-drag">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Back"
+                  disabled={!canGoBack}
+                  onClick={() => router.history.back()}
+                >
+                  <CaretLeftIcon size={14} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Forward"
+                  disabled={!canGoForward}
+                  onClick={() => router.history.forward()}
+                >
+                  <CaretRightIcon size={14} />
+                </Button>
+              </ButtonGroup>
+            </Flex>
+          </Flex>
+          {/* Tabs work in both spaces: channel tabs under /website and plain
+              task tabs in the Code experience. The strip's route→tab effect
+              noops on param-less routes (inbox, agents, new-task), so it's safe
+              to mount everywhere. */}
+          <BrowserTabStrip />
+          {/* Gated so an empty right-side group can't claim a no-drag rect
+              in the title bar for nothing — every pixel without controls
+              should drag the window. */}
+          {(billingEnabled || channelsEnabled) && (
+            <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
+              <UsageButton />
+              {channelsEnabled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!posthogWebUrl}
+                  onClick={handleOpenPostHogWeb}
+                >
+                  <ArrowSquareOut size={14} />
+                  PostHog Web
+                </Button>
+              )}
+            </Flex>
+          )}
+        </Flex>
         <ConnectivityBanner />
-        <Flex flexGrow="1" overflow="hidden">
-          <MainSidebar />
-          <Box flexGrow="1" overflow="hidden">
-            <Outlet />
+        <Flex flexGrow="1" overflow="hidden" className="relative">
+          {/* Scrim under the peeked nav: dims the content while the overlay is
+              out. Purely visual (pointer-transparent) and paired with the
+              panel's slide — same 200ms ease-out — so they read as one unit. */}
+          {!sidebarOpen && (
+            <Box
+              aria-hidden
+              // The radix preset replaces Tailwind's palette, so plain
+              // `bg-black/*` doesn't exist — use the radix black-alpha scale
+              // (--black-a2 = 10%, --black-a5 = 30%).
+              className={`pointer-events-none absolute inset-0 z-40 bg-blackA-2 transition-opacity duration-200 ease-out motion-reduce:transition-none dark:bg-blackA-5 ${
+                sidebarPeek ? "opacity-100" : "opacity-0"
+              }`}
+            />
+          )}
+          <ChannelsSidebar />
+          {/* Content sits in a bordered, rounded card inset from the window
+              edges — the framed pane from the design. */}
+          <Box flexGrow="1" className="overflow-hidden">
+            <Box
+              className={`h-full overflow-hidden border-border border-t border-l bg-background ${
+                sidebarOpen ? "rounded-tl-sm" : ""
+              }`}
+            >
+              <Flex direction="column" height="100%">
+                {/* The /website space renders its own header (WebsiteLayout);
+                      everywhere else the shared header carries the view title
+                      and, on a task, its action row. */}
+                {!onWebsitePath && <ContentHeader />}
+                <Box flexGrow="1" overflow="hidden">
+                  {showBlankTab ? <BlankTabView /> : <Outlet />}
+                </Box>
+              </Flex>
+            </Box>
           </Box>
         </Flex>
-
-        <SpaceSwitcher
-          tasks={visualTaskOrder}
-          activeTaskId={activeTaskId}
-          allTasks={tasks ?? []}
-          isOnNewTask={
-            view.type === "task-input" || view.type === "task-pending"
-          }
-          onNavigateToTask={openTask}
-          onNewTask={openTaskInput}
-        />
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <GlobalFilePicker />
         <KeyboardShortcutsSheet
@@ -451,11 +476,26 @@ function RootLayout() {
           onToggleCommandMenu={toggleCommandMenu}
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
+        {/* Renders nothing — wires the ⌥↑/⌥↓ task-cycling shortcuts. */}
+        <SpaceSwitcher
+          tasks={visualTaskOrder}
+          activeTaskId={activeTaskId}
+          allTasks={tasks ?? []}
+          isOnNewTask={
+            view.type === "task-input" || view.type === "task-pending"
+          }
+          onNavigateToTask={openTask}
+          onNewTask={openTaskInput}
+        />
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
         <UpdateAvailableModal />
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
+        <FeedbackModal
+          mode={feedbackMode}
+          onFinished={handleFeedbackFinished}
+        />
         {approvalDeepLink.pending ? (
           <DeepLinkApprovalModal
             pending={approvalDeepLink.pending}
@@ -465,6 +505,6 @@ function RootLayout() {
         <ExistingWorktreeDialog />
         <HedgehogMode />
       </Flex>
-    </Flex>
+    </BrowserTabsDndProvider>
   );
 }

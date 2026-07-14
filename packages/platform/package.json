@@ -56,6 +56,10 @@
       "types": "./dist/notifier.d.ts",
       "import": "./dist/notifier.js"
     },
+    "./speech": {
+      "types": "./dist/speech.d.ts",
+      "import": "./dist/speech.js"
+    },
     "./notifications": {
       "types": "./dist/notifications.d.ts",
       "import": "./dist/notifications.js"

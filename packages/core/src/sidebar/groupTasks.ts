@@ -13,7 +13,10 @@ export interface TaskRepositoryInfo {
 
 export interface GroupableTask {
   repository: TaskRepositoryInfo | null;
+  originProduct?: string;
 }
+
+export const CUSTOM_IMAGES_GROUP_ID = "custom-images";
 
 export interface TaskGroup<T extends GroupableTask> {
   id: string;
@@ -60,6 +63,24 @@ export function folderGroupId(folder: {
   return folder.path;
 }
 
+/**
+ * Resolves the folder that represents a sidebar group. Several registered
+ * folders can share one group (a main clone plus linked worktrees of the same
+ * repo all have the same remote); the group is labeled by the main checkout,
+ * so prefer a folder that is not a linked worktree (`mainRepoPath` is set only
+ * on linked worktrees).
+ */
+export function findGroupFolder<
+  F extends {
+    path: string;
+    remoteUrl: string | null;
+    mainRepoPath?: string | null;
+  },
+>(folders: F[], groupId: string): F | undefined {
+  const matches = folders.filter((f) => folderGroupId(f) === groupId);
+  return matches.find((f) => !f.mainRepoPath) ?? matches[0];
+}
+
 export function groupByRepository<T extends GroupableTask>(
   tasks: T[],
   folderOrder: string[],
@@ -69,8 +90,13 @@ export function groupByRepository<T extends GroupableTask>(
 
   for (const task of tasks) {
     const repository = task.repository;
-    const groupId = repository?.fullPath ?? "other";
-    const groupName = repository?.name ?? "Other";
+    const isImageBuilder = task.originProduct === "image_builder";
+    const groupId = isImageBuilder
+      ? CUSTOM_IMAGES_GROUP_ID
+      : (repository?.fullPath ?? "other");
+    const groupName = isImageBuilder
+      ? "Custom images"
+      : (repository?.name ?? "Other");
 
     let group = groupMap.get(groupId);
     if (!group) {
@@ -106,25 +132,27 @@ export function groupByRepository<T extends GroupableTask>(
     }
   }
 
-  // The "other" group (tasks without a resolvable repository) always sorts to
-  // the bottom, regardless of the alphabetical or persisted folder order.
-  const pinOtherLast = (a: TaskGroup<T>, b: TaskGroup<T>): number | null => {
-    const aOther = a.id === "other";
-    const bOther = b.id === "other";
-    if (aOther && bOther) return 0;
-    if (aOther) return 1;
-    if (bOther) return -1;
-    return null;
+  // Custom-images and "other" always sort last, in that order.
+  const pinnedRank = (group: TaskGroup<T>): number => {
+    if (group.id === CUSTOM_IMAGES_GROUP_ID) return 1;
+    if (group.id === "other") return 2;
+    return 0;
+  };
+  const pinSpecialLast = (a: TaskGroup<T>, b: TaskGroup<T>): number | null => {
+    const aRank = pinnedRank(a);
+    const bRank = pinnedRank(b);
+    if (aRank === 0 && bRank === 0) return null;
+    return aRank - bRank;
   };
 
   if (folderOrder.length === 0) {
     return groups.sort(
-      (a, b) => pinOtherLast(a, b) ?? a.name.localeCompare(b.name),
+      (a, b) => pinSpecialLast(a, b) ?? a.name.localeCompare(b.name),
     );
   }
 
   return groups.sort((a, b) => {
-    const pinned = pinOtherLast(a, b);
+    const pinned = pinSpecialLast(a, b);
     if (pinned !== null) return pinned;
     const aIndex = folderOrder.indexOf(a.id);
     const bIndex = folderOrder.indexOf(b.id);

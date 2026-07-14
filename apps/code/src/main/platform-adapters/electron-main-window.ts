@@ -1,7 +1,7 @@
 import type { IMainWindow } from "@posthog/platform/main-window";
 import { app, type BrowserWindow } from "electron";
 import { injectable } from "inversify";
-import { applyZoom, ZOOM_STEP } from "../menu";
+import { adjustWindowZoom, ZOOM_STEP } from "../zoom";
 
 @injectable()
 export class ElectronMainWindow implements IMainWindow {
@@ -38,14 +38,17 @@ export class ElectronMainWindow implements IMainWindow {
   }
 
   public zoomIn(): void {
-    applyZoom(ZOOM_STEP);
+    const window = this.getBrowserWindow();
+    if (window) adjustWindowZoom(window, ZOOM_STEP);
   }
 
   public zoomOut(): void {
-    applyZoom(-ZOOM_STEP);
+    const window = this.getBrowserWindow();
+    if (window) adjustWindowZoom(window, -ZOOM_STEP);
   }
 
   public resetZoom(): void {
-    applyZoom("reset");
+    const window = this.getBrowserWindow();
+    if (window) adjustWindowZoom(window, "reset");
   }
 }

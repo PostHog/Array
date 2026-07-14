@@ -129,6 +129,29 @@ export function resolveRtkPrefix(env: NodeJS.ProcessEnv): string | undefined {
   return findOnPath("rtk", env);
 }
 
+/**
+ * Detects the rtk binary a session on this host could use. The on/off flag
+ * values of POSTHOG_RTK ("0"/"false"/"1"/"true"/unset) all mean auto-detect
+ * here, so the answer reflects installation, not the per-session toggle a
+ * previous session may have left in the environment. An explicit binary-path
+ * override mirrors the resolver: honored when it exists, otherwise no binary.
+ */
+export function detectRtkBinary(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env.POSTHOG_RTK?.trim();
+  const lowered = raw?.toLowerCase();
+  const isFlagValue =
+    !raw || ["0", "false", "1", "true"].includes(lowered ?? "");
+  if (!isFlagValue && raw) {
+    try {
+      if (fs.statSync(raw).isFile()) return raw;
+    } catch {
+      // Explicit path doesn't exist — sessions would get no rtk either.
+    }
+    return undefined;
+  }
+  return findOnPath("rtk", env);
+}
+
 export const createRtkRewriteHook =
   (rtkPrefix: string, logger: Logger): HookCallback =>
   async (input: HookInput, _toolUseID: string | undefined) => {

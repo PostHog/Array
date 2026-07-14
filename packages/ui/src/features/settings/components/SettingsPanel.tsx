@@ -46,6 +46,7 @@ import { WorkspacesSettings } from "@posthog/ui/features/settings/sections/Works
 import { WorktreesSettings } from "@posthog/ui/features/settings/sections/worktrees/WorktreesSettings";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
+import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import * as nav from "@posthog/ui/router/navigationBridge";
 import { Avatar, Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { type ReactNode, useMemo } from "react";
@@ -156,12 +157,13 @@ export function SettingsPanel({
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const logoutMutation = useLogoutMutation();
 
+  const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const sidebarItems = useMemo(
     () =>
-      billingEnabled
+      billingEnabled || spendAnalysisEnabled
         ? SIDEBAR_ITEMS
         : SIDEBAR_ITEMS.filter((item) => item.id !== "plan-usage"),
-    [billingEnabled],
+    [billingEnabled, spendAnalysisEnabled],
   );
 
   useHotkeys("escape", close, {

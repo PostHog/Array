@@ -45,12 +45,12 @@ export function deltaTone(
   return isImprovement(delta, 0, direction) ? "improved" : "worsened";
 }
 
-/** Signed delta with unit ("+1.5 kB"); "—" for the baseline iteration. */
+/** Signed delta with unit ("+1.5 kB"); "Baseline" for the first iteration. */
 export function formatMetricDelta(
   delta: number | null,
   unit: string | null,
 ): string {
-  if (delta === null) return "—";
+  if (delta === null) return "Baseline";
   return withMetricUnit(
     `${delta > 0 ? "+" : ""}${metricNumberFormat.format(delta)}`,
     unit,

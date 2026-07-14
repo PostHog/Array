@@ -1,9 +1,9 @@
 import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
-import type { PermissionMode } from "@posthog/agent/execution-mode";
 import type {
   Adapter,
   CloudRunSource,
+  ExecutionMode,
   PrAuthorshipMode,
   SeatData,
   StoredLogEntry,
@@ -12,6 +12,7 @@ import type {
 import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  resolveCloudInitialPermissionMode,
   SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
@@ -38,7 +39,14 @@ import type {
   AgentUsersListResponse,
   BundleFile,
   DecideApprovalRequest,
+  DryRunToolEnvelope,
+  DryRunToolRequest,
+  DryRunToolResult,
   ModelCatalog,
+  ToolCapabilities,
+  ToolCompileError,
+  WriteToolRequest,
+  WriteToolResult,
 } from "@posthog/shared/agent-platform-types";
 import type {
   ActionabilityJudgmentArtefact,
@@ -54,6 +62,7 @@ import type {
   PriorityJudgmentArtefact,
   RepoSelectionArtefact,
   SafetyJudgmentArtefact,
+  SandboxCustomImage,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -119,6 +128,13 @@ export class SeatPaymentFailedError extends Error {
   constructor(message?: string) {
     super(message ?? "Payment failed");
     this.name = "SeatPaymentFailedError";
+  }
+}
+
+export class SandboxCustomImagesDisabledError extends Error {
+  constructor(message?: string) {
+    super(message ?? "Custom sandbox images are not enabled");
+    this.name = "SandboxCustomImagesDisabledError";
   }
 }
 
@@ -242,6 +258,7 @@ export interface SignalSourceConfig {
     | "llm_analytics"
     | "github"
     | "linear"
+    | "jira"
     | "zendesk"
     | "conversations"
     | "error_tracking"
@@ -394,6 +411,86 @@ export interface ExternalDataSource {
   schemas?: ExternalDataSourceSchema[] | string;
 }
 
+/**
+ * Field-config variants for an external data source's connect form, as served
+ * by the `external_data_sources/wizard/` endpoint. Mirrors PostHog Cloud's
+ * `SourceFieldConfig` union (`posthog/schema.py`). The backend is the single
+ * source of truth for which credential fields a source needs, so forms can be
+ * rendered generically instead of hardcoded per source.
+ */
+export interface SourceFieldInputConfig {
+  type:
+    | "text"
+    | "email"
+    | "search"
+    | "url"
+    | "password"
+    | "time"
+    | "number"
+    | "textarea";
+  name: string;
+  label: string;
+  required: boolean;
+  placeholder?: string;
+  caption?: string | null;
+  /** Redacted from API responses; render as a password field. */
+  secret?: boolean;
+}
+
+export interface SourceFieldOauthConfig {
+  type: "oauth";
+  name: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  requiredScopes?: string;
+}
+
+export interface SourceFieldSelectConfigOption {
+  label: string;
+  value: string;
+  fields?: SourceFieldConfig[];
+}
+
+export interface SourceFieldSelectConfig {
+  type: "select";
+  name: string;
+  label: string;
+  required: boolean;
+  defaultValue?: string;
+  options: SourceFieldSelectConfigOption[];
+}
+
+export interface SourceFieldSwitchGroupConfig {
+  type: "switch-group";
+  name: string;
+  label: string;
+  caption?: string;
+  default?: boolean;
+  fields: SourceFieldConfig[];
+}
+
+/** Field types the generic renderer does not (yet) handle inline. */
+export interface SourceFieldUnsupportedConfig {
+  type: "ssh-tunnel" | "file-upload";
+  name: string;
+  label: string;
+}
+
+export type SourceFieldConfig =
+  | SourceFieldInputConfig
+  | SourceFieldOauthConfig
+  | SourceFieldSelectConfig
+  | SourceFieldSwitchGroupConfig
+  | SourceFieldUnsupportedConfig;
+
+export interface SourceConfig {
+  name: string;
+  label?: string;
+  caption?: string;
+  fields: SourceFieldConfig[];
+}
+
 export interface FolderInstructionsUser {
   id?: number;
   uuid?: string;
@@ -478,11 +575,14 @@ interface CloudRunOptions {
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   autoPublish?: boolean;
+  /** Only false is sent: opts the run out of rtk command-output compression. */
+  rtkEnabled?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
-  initialPermissionMode?: PermissionMode;
+  initialPermissionMode?: ExecutionMode;
   homeQuickAction?: string;
 }
 
@@ -537,6 +637,13 @@ function buildCloudRunRequestBody(
       }
       body.reasoning_effort = options.reasoningLevel;
     }
+    // The API rejects initial_permission_mode without runtime_adapter and validates it per adapter.
+    if (options.initialPermissionMode) {
+      body.initial_permission_mode = resolveCloudInitialPermissionMode(
+        options.adapter,
+        options.initialPermissionMode,
+      );
+    }
   }
   if (options?.resumeFromRunId) {
     body.resume_from_run_id = options.resumeFromRunId;
@@ -550,20 +657,23 @@ function buildCloudRunRequestBody(
   if (options?.sandboxEnvironmentId) {
     body.sandbox_environment_id = options.sandboxEnvironmentId;
   }
+  if (options?.customImageId) {
+    body.custom_image_id = options.customImageId;
+  }
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
   }
   if (options?.autoPublish) {
     body.auto_publish = options.autoPublish;
   }
+  if (options?.rtkEnabled === false) {
+    body.rtk_enabled = false;
+  }
   if (options?.runSource) {
     body.run_source = options.runSource;
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.initialPermissionMode) {
-    body.initial_permission_mode = options.initialPermissionMode;
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
@@ -597,6 +707,29 @@ function extractRequestErrorMessage(error: unknown, fallback: string): string {
     // Non-JSON body — fall through to the status-based fallback.
   }
   return `${fallback} (HTTP ${match[1]})`;
+}
+
+/**
+ * Parse the shared fetcher's `Failed request: [<status>] <json-body>` throw back
+ * into its status + parsed JSON body, so status-specific responses (422, 429,
+ * 500, 503) can be handled as data instead of a generic error. Returns null when
+ * the error isn't that shape (e.g. a network failure).
+ */
+function parseFailedRequest(
+  error: unknown,
+): { status: number; body: unknown } | null {
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/^Failed request: \[(\d+)\] (.*)$/s);
+  if (!match) {
+    return null;
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(match[2]);
+  } catch {
+    body = match[2];
+  }
+  return { status: Number(match[1]), body };
 }
 
 type AnyArtefact =
@@ -2094,6 +2227,30 @@ export class PostHogAPIClient {
       );
     }
     return response.data as unknown as ExternalDataSource;
+  }
+
+  /**
+   * Fetch the connect-form field schema for external data source types from the
+   * warehouse wizard endpoint. Pass `sourceType` (e.g. `"Jira"`) to scope to one
+   * source; omit to fetch every source's config. Returns a map keyed by the
+   * capitalized source type string.
+   */
+  async getExternalDataSourceConfigs(
+    projectId: number,
+    sourceType?: string,
+  ): Promise<Record<string, SourceConfig>> {
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${projectId}/external_data_sources/wizard/`,
+    );
+    if (sourceType) {
+      url.searchParams.set("source_type", sourceType);
+    }
+    const path = `/api/environments/${projectId}/external_data_sources/wizard/`;
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch source configs: ${response.statusText}`);
+    }
+    return (await response.json()) as Record<string, SourceConfig>;
   }
 
   async updateExternalDataSchema(
@@ -4463,6 +4620,155 @@ export class PostHogAPIClient {
     }
   }
 
+  async listSandboxCustomImages(): Promise<SandboxCustomImage[]> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/`,
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        const errorData = (await response.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new SandboxCustomImagesDisabledError(errorData.detail);
+      }
+      throw new Error(
+        `Failed to fetch sandbox custom images: ${response.statusText}`,
+      );
+    }
+    const data = (await response.json()) as {
+      results?: SandboxCustomImage[];
+    };
+    return data.results ?? [];
+  }
+
+  async createSandboxCustomImage(input: {
+    name: string;
+    description?: string;
+    repository?: string | null;
+    private?: boolean;
+  }): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to create sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async getSandboxCustomImage(id: string): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async ensureSandboxCustomImageBuilderTask(
+    id: string,
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/builder_task/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/builder_task/`,
+      overrides: {
+        body: JSON.stringify({}),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to open image builder session: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async buildSandboxCustomImage(
+    id: string,
+    specYaml?: string | null,
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/build/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/build/`,
+      overrides: {
+        body: JSON.stringify(
+          specYaml === undefined ? {} : { spec_yaml: specYaml },
+        ),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to build sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async deleteSandboxCustomImage(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to delete sandbox custom image: ${response.statusText}`,
+      );
+    }
+  }
+
   /** Find an exported asset by session recording ID. */
   async findExportBySessionRecordingId(
     projectId: number,
@@ -4537,11 +4843,18 @@ export class PostHogAPIClient {
    * Lists the team's LLM skills (latest versions, no bodies).
    * Returns null when the feature is unavailable for this org (the
    * llm-analytics-skills flag gates the endpoint server-side with a 403).
+   * `category` narrows to one exact server-owned category (e.g. "scout"
+   * for Signals scouts); omit it to list every category.
    */
-  async listLlmSkills(): Promise<LlmSkillListItem[] | null> {
+  async listLlmSkills(
+    options: { category?: string } = {},
+  ): Promise<LlmSkillListItem[] | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/environments/${teamId}/llm_skills/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options.category !== undefined) {
+      url.searchParams.set("category", options.category);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
@@ -5107,6 +5420,143 @@ export class PostHogAPIClient {
     }
     out.sort((a, b) => a.path.localeCompare(b.path));
     return out;
+  }
+
+  /**
+   * Author/compile one custom tool on a draft revision (PUT). Draft-only —
+   * ready/live/archived bundles are sealed and the server returns a conflict.
+   * A compile failure (HTTP 422) is returned as a typed `{ ok: false }` result
+   * carrying `errors`, so the caller renders diagnostics inline against the
+   * source rather than surfacing a generic failure; other non-2xx (400
+   * invalid_request, 409 sealed revision, …) still throw.
+   */
+  async putRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+    body: WriteToolRequest,
+  ): Promise<WriteToolResult> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "put",
+        url,
+        path,
+        overrides: { body: JSON.stringify(body) },
+      });
+      const data = (await response.json()) as {
+        tool_id: string;
+        capabilities: ToolCapabilities;
+      };
+      return {
+        ok: true,
+        tool_id: data.tool_id,
+        capabilities: data.capabilities,
+      };
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      if (
+        failure?.status === 422 &&
+        isObjectRecord(failure.body) &&
+        failure.body.error === "tool_compile_failed"
+      ) {
+        return {
+          ok: false,
+          error: "tool_compile_failed",
+          tool_id: optionalString(failure.body.tool_id) ?? toolId,
+          errors: Array.isArray(failure.body.errors)
+            ? (failure.body.errors as ToolCompileError[])
+            : [],
+        };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Remove one custom tool from a draft revision (draft-only). A 404
+   * (tool_not_found) is treated as success — the tool is already gone, which is
+   * the desired end state.
+   */
+  async deleteRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      await this.api.fetcher.fetch({ method: "delete", url, path });
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      if (failure?.status === 404) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Execute a persisted tool once in a sandbox (POST …/dry_run). The envelope's
+   * `ok` is authoritative: a tool-side failure is HTTP 200 with `ok: false`, so
+   * both 2xx and 500 return `{ outcome: "completed", envelope }` and the caller
+   * reads `error.code`/`message` from the body. Throttling (429) and an
+   * unconfigured backend (503) are returned as distinct outcomes — never thrown,
+   * never retried, since dry-run is interactive and process-capped.
+   */
+  async dryRunRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+    body: DryRunToolRequest,
+  ): Promise<DryRunToolResult> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/dry_run/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path,
+        overrides: { body: JSON.stringify(body) },
+      });
+      return {
+        outcome: "completed",
+        envelope: (await response.json()) as DryRunToolEnvelope,
+      };
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      // A 500 still carries the envelope (ok:false + error.code/duration_ms) —
+      // surface it as completed so infra failures read like any tool failure.
+      if (
+        failure?.status === 500 &&
+        isObjectRecord(failure.body) &&
+        "ok" in failure.body
+      ) {
+        return {
+          outcome: "completed",
+          envelope: failure.body as unknown as DryRunToolEnvelope,
+        };
+      }
+      if (failure?.status === 429) {
+        const max = isObjectRecord(failure.body)
+          ? failure.body.max_concurrent
+          : undefined;
+        // Omit rather than default to 0 — "0 runs in flight" would be a
+        // misleading count for a throttle.
+        return {
+          outcome: "throttled",
+          max_concurrent: typeof max === "number" ? max : undefined,
+        };
+      }
+      if (failure?.status === 503) {
+        return { outcome: "unavailable" };
+      }
+      throw error;
+    }
   }
 
   /**

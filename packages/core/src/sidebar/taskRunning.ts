@@ -1,3 +1,4 @@
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import type { TaskData } from "./sidebarData.types";
 
 // Drives the "Archive running task?" confirmation. Persisted run status is only
@@ -7,6 +8,8 @@ import type { TaskData } from "./sidebarData.types";
 export function isTaskActivelyRunning(task: TaskData): boolean {
   if (task.isGenerating) return true;
   return (
-    task.taskRunEnvironment === "cloud" && task.taskRunStatus === "in_progress"
+    task.taskRunEnvironment === "cloud" &&
+    task.taskRunStatus !== undefined &&
+    !isTerminalStatus(task.taskRunStatus)
   );
 }

@@ -34,7 +34,7 @@ describe("ChannelContextPanel", () => {
   it.each([
     {
       channelName: "project-bluebird",
-      expectedTitle: "#project-bluebird CONTEXT.md",
+      expectedTitle: "project-bluebird CONTEXT.md",
     },
     { channelName: undefined, expectedTitle: "CONTEXT.md" },
   ])(

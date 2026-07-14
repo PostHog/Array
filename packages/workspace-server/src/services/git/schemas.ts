@@ -167,6 +167,10 @@ export const discardFileChangesOutput = z.object({
 
 export type DiscardFileChangesOutput = z.infer<typeof discardFileChangesOutput>;
 
+export const discardAllChangesInput = z.object({
+  directoryPath: z.string(),
+});
+
 export const getGitSyncStatusInput = z.object({
   directoryPath: z.string(),
   /**
@@ -309,6 +313,7 @@ export const getPrDetailsByUrlOutput = z.object({
   merged: z.boolean(),
   draft: z.boolean(),
   headRefName: z.string().nullable(),
+  title: z.string().nullable(),
 });
 
 export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;

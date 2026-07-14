@@ -28,6 +28,7 @@ export interface ActionSelectorProps {
   currentStep?: number;
   steps?: StepInfo[];
   initialSelections?: string[];
+  initialCustomInput?: string;
   hideSubmitButton?: boolean;
   onSelect: (optionId: string, customInput?: string) => void;
   onMultiSelect?: (optionIds: string[], customInput?: string) => void;

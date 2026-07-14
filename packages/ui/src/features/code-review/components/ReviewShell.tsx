@@ -108,6 +108,7 @@ export function ReviewShell({
   onExpandAll,
   onCollapseAll,
   onRefresh,
+  onDiscardAll,
   effectiveSource,
   branchSourceAvailable,
   prSourceAvailable,
@@ -229,6 +230,7 @@ export function ReviewShell({
           onExpandAll={onExpandAll}
           onCollapseAll={onCollapseAll}
           onRefresh={onRefresh}
+          onDiscardAll={onDiscardAll}
           effectiveSource={effectiveSource}
           branchSourceAvailable={branchSourceAvailable}
           prSourceAvailable={prSourceAvailable}

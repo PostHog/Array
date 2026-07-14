@@ -18,18 +18,13 @@ import {
 import { captureSurveyResponse } from "@posthog/ui/shell/analytics";
 import { useState } from "react";
 
-export type FeedbackModalMode = "feedback" | "leaving" | "posthog-web";
+export type FeedbackModalMode = "feedback" | "posthog-web";
 
 /** Title + prompt shown for each way the modal can be opened. */
 const MODAL_COPY: Record<FeedbackModalMode, { title: string; prompt: string }> =
   {
     feedback: {
       title: "Leave feedback",
-      prompt:
-        "How's the Channels experience? Tell us what's working and what you'd change.",
-    },
-    leaving: {
-      title: "Before you go back to Code",
       prompt:
         "How's the Channels experience? Tell us what's working and what you'd change.",
     },
@@ -40,7 +35,7 @@ const MODAL_COPY: Record<FeedbackModalMode, { title: string; prompt: string }> =
   };
 
 export interface FeedbackModalProps {
-  /** `null` closes the modal. `"feedback"` shows a Cancel button; the navigation-intercept modes (`"leaving"`, `"posthog-web"`) show a Skip button. */
+  /** `null` closes the modal. `"feedback"` shows a Cancel button; the navigation-intercept mode (`"posthog-web"`) shows a Skip button. */
   mode: FeedbackModalMode | null;
   /** Called after the response is submitted, and when the modal is skipped/cancelled/dismissed. */
   onFinished: () => void;
@@ -50,8 +45,8 @@ export interface FeedbackModalProps {
  * Feedback modal for the Channels space. Submitting records the text as a
  * PostHog survey response (see {@link FEEDBACK_SURVEY_ID}) along with where the
  * modal was opened from. The secondary button reads "Skip" when the modal
- * intercepts a navigation (`"leaving"` / `"posthog-web"`) and "Cancel" when
- * opened directly by "Leave feedback".
+ * intercepts a navigation (`"posthog-web"`) and "Cancel" when opened directly
+ * by "Leave feedback".
  */
 export function FeedbackModal({ mode, onFinished }: FeedbackModalProps) {
   const open = mode !== null;

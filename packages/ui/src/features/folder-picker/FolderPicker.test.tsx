@@ -10,10 +10,14 @@ vi.mock("@posthog/host-router/react", () => ({
   useHostTRPCClient: () => ({
     os: { selectDirectory: { query: () => selectDirectoryQuery() } },
   }),
+  useHostTRPC: () => ({
+    git: { getCurrentBranch: { queryOptions: () => ({}) } },
+  }),
 }));
 
 vi.mock("@posthog/ui/features/folders/useFolders", () => ({
   useFolders: () => ({
+    folders: [],
     getRecentFolders: () => [],
     getFolderDisplayName: () => null,
     addFolder,
@@ -26,7 +30,12 @@ vi.mock("@posthog/di/react", () => ({
   useService: () => ({ error: vi.fn() }),
 }));
 
-import { FolderPicker } from "./FolderPicker";
+vi.mock("@tanstack/react-query", () => ({
+  useQueries: () => [],
+}));
+
+import type { RegisteredFolder } from "@posthog/ui/features/folders/types";
+import { buildFolderRows, FolderPicker } from "./FolderPicker";
 
 /** A promise we resolve by hand, to hold the picker open mid-flight. */
 function deferred<T>() {
@@ -86,5 +95,78 @@ describe("FolderPicker", () => {
 
     pending.resolve(null);
     await waitFor(() => expect(trigger).not.toBeDisabled());
+  });
+});
+
+describe("buildFolderRows", () => {
+  const folder = (
+    id: string,
+    path: string,
+    mainRepoPath: string | null = null,
+  ): RegisteredFolder => ({
+    id,
+    path,
+    name: id,
+    remoteUrl: "posthog/code",
+    lastAccessed: "2026-07-01T00:00:00Z",
+    createdAt: "2026-07-01T00:00:00Z",
+    mainRepoPath,
+  });
+
+  const main = folder("code", "/repos/code");
+  const wtA = folder("code-a", "/repos/code-a", "/repos/code");
+  const wtB = folder("code-b", "/repos/code-b", "/repos/code");
+  const standalone = folder("other", "/repos/other");
+
+  it.each<{
+    name: string;
+    recents: RegisteredFolder[];
+    all: RegisteredFolder[];
+    expected: Array<{ id: string; isWorktree: boolean; indented: boolean }>;
+  }>([
+    {
+      name: "a recent worktree pulls in its whole family, main first",
+      recents: [wtB],
+      all: [wtA, main, wtB, standalone],
+      expected: [
+        { id: "code", isWorktree: false, indented: false },
+        { id: "code-a", isWorktree: true, indented: true },
+        { id: "code-b", isWorktree: true, indented: true },
+      ],
+    },
+    {
+      name: "families are emitted once even when several members are recent",
+      recents: [wtA, main, standalone],
+      all: [wtA, main, wtB, standalone],
+      expected: [
+        { id: "code", isWorktree: false, indented: false },
+        { id: "code-a", isWorktree: true, indented: true },
+        { id: "code-b", isWorktree: true, indented: true },
+        { id: "other", isWorktree: false, indented: false },
+      ],
+    },
+    {
+      name: "worktrees without a registered main clone stay top-level",
+      recents: [wtA],
+      all: [wtA, wtB, standalone],
+      expected: [
+        { id: "code-a", isWorktree: true, indented: false },
+        { id: "code-b", isWorktree: true, indented: false },
+      ],
+    },
+    {
+      name: "standalone folders stay single rows",
+      recents: [standalone],
+      all: [wtA, main, standalone],
+      expected: [{ id: "other", isWorktree: false, indented: false }],
+    },
+  ])("$name", ({ recents, all, expected }) => {
+    expect(
+      buildFolderRows(recents, all).map((row) => ({
+        id: row.folder.id,
+        isWorktree: row.isWorktree,
+        indented: row.indented,
+      })),
+    ).toEqual(expected);
   });
 });

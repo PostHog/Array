@@ -36,6 +36,7 @@ export interface ArchiveOrchestrationDeps {
   ): void;
   getFocusedWorktreePath(): string | null | undefined;
   disableFocus(): Promise<void>;
+  stopCloudRun(taskId: string, runId?: string): Promise<boolean>;
   disconnectFromTask(taskId: string): Promise<void>;
   archive(taskId: string): Promise<void>;
   logError(message: string, error: unknown): void;
@@ -58,8 +59,13 @@ export async function archiveTask(
   deps: ArchiveOrchestrationDeps,
   options?: ArchiveTaskOptions,
 ): Promise<void> {
-  const optimistic = options?.optimistic ?? true;
   const workspace = await deps.getWorkspace(taskId);
+  const stopped = await deps.stopCloudRun(taskId);
+  if (!stopped) {
+    throw new Error("Couldn't stop the task. Try again in a moment.");
+  }
+
+  const optimistic = options?.optimistic ?? true;
   const pinnedTaskIds = await deps.getPinnedTaskIds();
   const wasPinned = pinnedTaskIds.includes(taskId);
 

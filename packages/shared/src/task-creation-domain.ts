@@ -35,6 +35,7 @@ export interface TaskCreationInput {
   reasoningLevel?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
   /**
@@ -42,6 +43,11 @@ export interface TaskCreationInput {
    * completion without waiting for an explicit ask (Settings → Advanced).
    */
   cloudAutoPublish?: boolean;
+  /**
+   * rtk command-output compression for the cloud run. Only false is
+   * meaningful: it opts the run out of the server-side default (enabled).
+   */
+  cloudRtkEnabled?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**

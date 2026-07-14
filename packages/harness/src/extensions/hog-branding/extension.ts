@@ -12,14 +12,15 @@ import {
   VERSION,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
+import {
+  HOG_APP_NAME as BRAND_NAME,
+  HOG_BRAND_TAGLINE as BRAND_TAGLINE,
+} from "./brand-env";
 
 export interface HogBrandingOptions {
   /** Override the version string shown in the header (defaults to the pi package version). */
   version?: string;
 }
-
-const BRAND_NAME = "hog";
-const BRAND_TAGLINE = "A Pi distribution by PostHog";
 
 type ExpandableHeaderComponent = Component & {
   setExpanded(expanded: boolean): void;
@@ -48,6 +49,12 @@ function createHeaderComponent(
     keyHint("app.tools.expand", "more"),
   ].join(theme.fg("muted", " · "));
 
+  // One hint per array entry, NOT joined into a single "\n"-separated
+  // string: `render()` must return one terminal line per array element, and
+  // handing back one big multi-line string as a single "line" makes the TUI
+  // measure the whole block's width as one line — tripping its overflow
+  // guard (`Rendered line N exceeds terminal width`) even though each
+  // individual hint easily fits.
   const expandedInstructions = [
     keyHint("app.interrupt", "to interrupt"),
     keyHint("app.clear", "to clear"),
@@ -64,7 +71,7 @@ function createHeaderComponent(
     rawKeyHint("/", "for commands"),
     rawKeyHint("!", "to run bash"),
     rawKeyHint("!!", "to run bash (no context)"),
-  ].join("\n");
+  ];
 
   const compactHint = theme.fg(
     "dim",
@@ -74,7 +81,7 @@ function createHeaderComponent(
   return {
     render(_width: number): string[] {
       return expanded
-        ? [logo, expandedInstructions]
+        ? [logo, ...expandedInstructions]
         : [logo, compactInstructions, compactHint];
     },
     invalidate(): void {},

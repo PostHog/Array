@@ -33,6 +33,8 @@ export type RenderItem =
       sessionUpdate: "status";
       status: string;
       isComplete?: boolean;
+      /** Epoch ms a `compacting` status began; drives the elapsed timer. */
+      startedAt?: number;
       /** Set when a status ends in failure (e.g. a failed compaction) so the row renders the error. */
       error?: string;
       /** Refusal statuses: display-only stop_details.explanation from the API. */
@@ -130,6 +132,7 @@ export const SessionUpdateView = memo(function SessionUpdateView({
         <StatusNotificationView
           status={item.status}
           isComplete={item.isComplete}
+          startedAt={item.startedAt}
           error={item.error}
           explanation={item.explanation}
           fromModel={item.fromModel}

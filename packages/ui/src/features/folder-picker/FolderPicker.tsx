@@ -4,11 +4,12 @@ import {
   Folder as FolderIcon,
   FolderOpen,
   GitBranch,
+  GitFork,
   X,
 } from "@phosphor-icons/react";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { useService } from "@posthog/di/react";
-import { useHostTRPCClient } from "@posthog/host-router/react";
+import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -25,11 +26,49 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import type { RegisteredFolder } from "@posthog/ui/features/folders/types";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { toast } from "@posthog/ui/primitives/toast";
 import { FIELD_TRIGGER_CLASS } from "@posthog/ui/styles/fieldTrigger";
 import { Flex, Text } from "@radix-ui/themes";
-import { type RefObject, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
+import { type RefObject, useMemo, useState } from "react";
+
+interface FolderRow {
+  folder: RegisteredFolder;
+  isWorktree: boolean;
+  /** Rendered nested under its main clone (which is also in the list). */
+  indented: boolean;
+}
+
+/**
+ * Groups recent folders into repo families: a recent checkout pulls in its
+ * main clone and every registered worktree of the same repo, main first,
+ * worktrees indented beneath it. Standalone folders stay single rows.
+ */
+export function buildFolderRows(
+  recentFolders: RegisteredFolder[],
+  allFolders: RegisteredFolder[],
+): FolderRow[] {
+  const familyKey = (f: RegisteredFolder) => f.mainRepoPath ?? f.path;
+  const emitted = new Set<string>();
+  const rows: FolderRow[] = [];
+  for (const recent of recentFolders) {
+    const key = familyKey(recent);
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    const members = allFolders.filter((f) => familyKey(f) === key);
+    const main = members.find((f) => !f.mainRepoPath);
+    const worktrees = members
+      .filter((f) => f.mainRepoPath)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (main) rows.push({ folder: main, isWorktree: false, indented: false });
+    for (const wt of worktrees) {
+      rows.push({ folder: wt, isWorktree: true, indented: !!main });
+    }
+  }
+  return rows;
+}
 
 interface FolderPickerProps {
   value: string;
@@ -47,8 +86,10 @@ export function FolderPicker({
   anchor,
 }: FolderPickerProps) {
   const trpcClient = useHostTRPCClient();
+  const trpc = useHostTRPC();
   const log = useService<RootLogger>(ROOT_LOGGER);
   const {
+    folders,
     getRecentFolders,
     getFolderDisplayName,
     addFolder,
@@ -63,6 +104,23 @@ export function FolderPicker({
 
   const [isOpening, setIsOpening] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const folderRows = useMemo(
+    () => buildFolderRows(recentFolders, folders),
+    [recentFolders, folders],
+  );
+
+  // Current branch per visible row, so the picker answers "what is checked
+  // out where?" before committing to a folder. Only queried while open.
+  const branchQueries = useQueries({
+    queries: folderRows.map((row) => ({
+      ...trpc.git.getCurrentBranch.queryOptions({
+        directoryPath: row.folder.path,
+      }),
+      enabled: menuOpen,
+      staleTime: 30_000,
+    })),
+  });
   const [pendingRemoval, setPendingRemoval] = useState<{
     id: string;
     name: string;
@@ -196,39 +254,49 @@ export function FolderPicker({
         }
       >
         <MenuLabel>Recent</MenuLabel>
-        {recentFolders.map((folder) => (
-          <DropdownMenuItem
-            key={folder.id}
-            onClick={() => handleSelect(folder.path)}
-            className="group"
-          >
-            <GitBranch size={12} className="shrink-0" />
-            <span
-              className="min-w-0 flex-1 truncate text-left"
-              title={folder.path}
+        {folderRows.map(({ folder, isWorktree, indented }, index) => {
+          const branch = branchQueries[index]?.data ?? null;
+          return (
+            <DropdownMenuItem
+              key={folder.id}
+              onClick={() => handleSelect(folder.path)}
+              className={indented ? "group pl-6" : "group"}
             >
-              {folder.name}
-            </span>
-            <button
-              type="button"
-              aria-label={`Remove ${folder.name} from recents`}
-              className="-mr-1 ml-1 shrink-0 rounded p-0.5 text-(--gray-9) opacity-0 hover:bg-(--gray-4) hover:text-(--gray-12) focus-visible:opacity-100 group-hover:opacity-100"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setMenuOpen(false);
-                setPendingRemoval({
-                  id: folder.id,
-                  name: folder.name,
-                  path: folder.path,
-                });
-              }}
-            >
-              <X size={12} />
-            </button>
-          </DropdownMenuItem>
-        ))}
+              {isWorktree ? (
+                <GitFork size={12} className="shrink-0" />
+              ) : (
+                <GitBranch size={12} className="shrink-0" />
+              )}
+              <span
+                className="min-w-0 flex-1 truncate text-left"
+                title={branch ? `${folder.path} — on ${branch}` : folder.path}
+              >
+                {folder.name}
+                {branch ? (
+                  <span className="ml-1 text-muted-foreground">· {branch}</span>
+                ) : null}
+              </span>
+              <button
+                type="button"
+                aria-label={`Remove ${folder.name} from recents`}
+                className="-mr-1 ml-1 shrink-0 rounded p-0.5 text-(--gray-9) opacity-0 hover:bg-(--gray-4) hover:text-(--gray-12) focus-visible:opacity-100 group-hover:opacity-100"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setMenuOpen(false);
+                  setPendingRemoval({
+                    id: folder.id,
+                    name: folder.name,
+                    path: folder.path,
+                  });
+                }}
+              >
+                <X size={12} />
+              </button>
+            </DropdownMenuItem>
+          );
+        })}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleOpenFilePicker}>
           <FolderOpen size={12} className="shrink-0" />

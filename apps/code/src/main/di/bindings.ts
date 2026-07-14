@@ -187,6 +187,10 @@ import type {
   SECURE_STORE_SERVICE,
 } from "@posthog/workspace-server/services/secure-store/identifiers";
 import type {
+  ISpeechSynthesizer,
+  SPEECH_SYNTHESIZER_SERVICE,
+} from "@posthog/workspace-server/services/speech/identifiers";
+import type {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
   SUSPENSION_SESSION_CANCELLER,
@@ -460,6 +464,7 @@ export interface MainBindings {
   [MAIN_SECURE_STORE_BACKEND]: typeof rendererStore;
   [MAIN_SECURE_STORE_SERVICE]: SecureStoreService;
   [SECURE_STORE_SERVICE]: ISecureStoreService;
+  [SPEECH_SYNTHESIZER_SERVICE]: ISpeechSynthesizer;
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;

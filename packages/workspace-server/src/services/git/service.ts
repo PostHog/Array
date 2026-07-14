@@ -37,6 +37,7 @@ import {
   ResetToDefaultBranchSaga,
   SwitchBranchSaga,
 } from "@posthog/git/sagas/branch";
+import { CleanWorkingTreeSaga } from "@posthog/git/sagas/clean";
 import { CloneSaga } from "@posthog/git/sagas/clone";
 import { CommitSaga } from "@posthog/git/sagas/commit";
 import { DiscardFileChangesSaga } from "@posthog/git/sagas/discard";
@@ -615,6 +616,23 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     return { success: true, state };
   }
 
+  async discardAllChanges(
+    directoryPath: string,
+  ): Promise<DiscardFileChangesOutput> {
+    const saga = new CleanWorkingTreeSaga();
+    const result = await saga.run({ baseDir: directoryPath });
+    if (!result.success) {
+      return { success: false };
+    }
+
+    const state = await this.getStateSnapshot(directoryPath, {
+      includeSyncStatus: false,
+      includeLatestCommit: false,
+    });
+
+    return { success: true, state };
+  }
+
   async push(
     directoryPath: string,
     remote = "origin",
@@ -977,7 +995,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         "api",
         `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`,
         "--jq",
-        "{state,merged,draft,headRefName: .head.ref}",
+        "{state,merged,draft,headRefName: .head.ref,title}",
       ]);
 
       if (result.exitCode !== 0) {
@@ -989,6 +1007,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         merged: boolean;
         draft: boolean;
         headRefName: string | null;
+        title: string | null;
       };
 
       return data;

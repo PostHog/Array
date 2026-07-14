@@ -13,6 +13,21 @@ const mockPty = vi.hoisted(() => ({
 
 vi.mock("node-pty", () => mockPty);
 
+const mockExec = vi.hoisted(() =>
+  vi.fn(
+    (
+      _command: string,
+      _options: unknown,
+      callback: (error: null, stdout: string, stderr: string) => void,
+    ) => callback(null, "", ""),
+  ),
+);
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:child_process")>();
+  return { ...original, exec: mockExec };
+});
+
 const mockGitQueries = vi.hoisted(() => ({
   getCurrentBranch: vi.fn(async () => "feature-branch"),
   getDefaultBranch: vi.fn(async () => "main"),
@@ -153,4 +168,62 @@ describe("ShellService.createSession workspace env", () => {
     expect(mockPty.spawn).toHaveBeenCalledTimes(1);
     expect(spawnedEnv().POSTHOG_CODE_WORKSPACE_PATH).toBeUndefined();
   });
+
+  it("strips the internal-child markers the workspace-server runs with", async () => {
+    // The workspace-server inherits both vars from apps/code (service.ts); a
+    // user terminal must inherit neither. ELECTRON_RUN_AS_NODE would make
+    // Electron CLIs run as node; POSTHOG_CODE_INTERNAL_CHILD would trip the
+    // bootstrap guard so a direct app-binary launch exits(1).
+    const saved = {
+      runAsNode: process.env.ELECTRON_RUN_AS_NODE,
+      internalChild: process.env.POSTHOG_CODE_INTERNAL_CHILD,
+    };
+    process.env.ELECTRON_RUN_AS_NODE = "1";
+    process.env.POSTHOG_CODE_INTERNAL_CHILD = "1";
+    try {
+      const { service } = createWorktreeTaskService("/does/not/exist");
+
+      await service.createSession({ sessionId: "session-1", taskId: "task-1" });
+
+      expect(spawnedEnv().ELECTRON_RUN_AS_NODE).toBeUndefined();
+      expect(spawnedEnv().POSTHOG_CODE_INTERNAL_CHILD).toBeUndefined();
+    } finally {
+      restoreEnv("ELECTRON_RUN_AS_NODE", saved.runAsNode);
+      restoreEnv("POSTHOG_CODE_INTERNAL_CHILD", saved.internalChild);
+    }
+  });
 });
+
+describe("ShellService.execute", () => {
+  it("runs commands with the sanitized shell env", async () => {
+    const saved = {
+      runAsNode: process.env.ELECTRON_RUN_AS_NODE,
+      internalChild: process.env.POSTHOG_CODE_INTERNAL_CHILD,
+    };
+    process.env.ELECTRON_RUN_AS_NODE = "1";
+    process.env.POSTHOG_CODE_INTERNAL_CHILD = "1";
+    try {
+      const { service } = createService();
+
+      await service.execute("/repo", "echo hi");
+
+      const options = mockExec.mock.calls[0][1] as {
+        env: Record<string, string>;
+      };
+      expect(options.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+      expect(options.env.POSTHOG_CODE_INTERNAL_CHILD).toBeUndefined();
+      expect(options.env.TERM_PROGRAM).toBe("PostHog Code");
+    } finally {
+      restoreEnv("ELECTRON_RUN_AS_NODE", saved.runAsNode);
+      restoreEnv("POSTHOG_CODE_INTERNAL_CHILD", saved.internalChild);
+    }
+  });
+});
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+}

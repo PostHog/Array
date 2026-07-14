@@ -201,6 +201,95 @@ export interface BundleFile {
   language: BundleFileLanguage;
 }
 
+// Custom-tool authoring on a draft revision (`agent_platform`): compile-on-save
+// (PUT …/tools/{id}), delete, and dry-run (POST …/tools/{id}/dry_run). Draft-only
+// for writes — ready/live/archived bundles are sealed.
+
+/** Discriminator for a custom-tool compile failure. Mirrors the backend AST/
+ *  transform checks; a failed compile returns one or more of these. */
+export type ToolCompileErrorKind =
+  | "parse_failed"
+  | "ast_no_default_export"
+  | "ast_default_not_object"
+  | "ast_missing_actions"
+  | "ast_actions_not_object"
+  | "ast_missing_default_action"
+  | "ast_default_action_not_callable"
+  | "ast_dynamic_export"
+  | "transform_failed";
+
+/** One diagnostic from a failed tool compile. `line`/`column` are 1-based. */
+export interface ToolCompileError {
+  kind: ToolCompileErrorKind;
+  message: string;
+  line?: number;
+  column?: number;
+}
+
+/** Static capabilities the compiler extracted from a tool's source. */
+export interface ToolCapabilities {
+  /** Secret names the tool references via `ctx.secrets.ref("NAME")`. */
+  secret_refs: string[];
+  /** True when the tool derives secret names dynamically (can't be enumerated). */
+  dynamic_secret_refs: boolean;
+}
+
+/** Body for PUT …/tools/{toolId} — author/compile a tool. */
+export interface WriteToolRequest {
+  description: string;
+  args_schema: Record<string, unknown>;
+  source: string;
+}
+
+/**
+ * Outcome of a tool write. A compile failure (HTTP 422) is a first-class result,
+ * NOT a thrown error, so the caller renders `errors` inline against the source.
+ * Other non-2xx (400 invalid_request, 409 sealed revision, …) still throw.
+ */
+export type WriteToolResult =
+  | { ok: true; tool_id: string; capabilities: ToolCapabilities }
+  | {
+      ok: false;
+      error: "tool_compile_failed";
+      tool_id: string;
+      errors: ToolCompileError[];
+    };
+
+/** Body for POST …/tools/{toolId}/dry_run. */
+export interface DryRunToolRequest {
+  /** Free-form JSON passed to the tool's `actions.default`; NOT validated
+   *  against `args_schema` (the author's responsibility). */
+  args: unknown;
+  /** `secretName -> placeholder` returned by `ctx.secrets.ref(name)` in the
+   *  sandbox; real secret values never leave the backend. */
+  mock_secrets?: Record<string, string>;
+}
+
+/**
+ * The dry-run response envelope (returned on HTTP 200 AND 500). A tool-side
+ * failure is an HTTP 200 with `ok: false` — read `ok` from HERE, not the status.
+ */
+export interface DryRunToolEnvelope {
+  ok: boolean;
+  tool_id: string;
+  result?: unknown;
+  /** `error.code` is one of sandbox_acquire_failed | sandbox_invoke_failed |
+   *  timeout | secret_not_provisioned | action_not_found | tool_not_found |
+   *  dry_run_unknown. */
+  error?: { code: string; message: string };
+  duration_ms: number;
+}
+
+/**
+ * A dry-run outcome. `throttled` (HTTP 429) and `unavailable` (HTTP 503) are
+ * distinct interactive states — surfaced as data, never thrown, and never
+ * retried (dry-run is process-capped).
+ */
+export type DryRunToolResult =
+  | { outcome: "completed"; envelope: DryRunToolEnvelope }
+  | { outcome: "throttled"; max_concurrent?: number }
+  | { outcome: "unavailable" };
+
 // `…/revisions/{id}/slack_manifest/` derives the Slack app manifest from the
 // revision's slack trigger + tools (scopes + event subscriptions computed).
 

@@ -48,6 +48,14 @@ export interface PromptInputProps {
     active: boolean;
     onToggle: () => void;
   };
+  /**
+   * When provided, the mode dropdown gains a "Canvas" toggle (channels
+   * composer only). `active` drives its checkmark and the trigger label.
+   */
+  canvas?: {
+    active: boolean;
+    onToggle: () => void;
+  };
   // capabilities
   enableBashMode?: boolean;
   enableCommands?: boolean;
@@ -103,6 +111,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onModeChange,
       allowBypassPermissions = false,
       autoresearch,
+      canvas,
       enableBashMode = false,
       enableCommands = true,
       modelSelector,
@@ -359,7 +368,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           <InputGroup
             onClick={handleContainerClick}
             onContextMenu={handleContextMenu}
-            className={`h-auto flex-1 cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:ring-1 focus-within:ring-purple-9"}`}
+            className={`h-auto flex-1 cursor-text bg-card ${isBashMode ? "ring-1 ring-blue-9" : "focus-within:border-ring/50 focus-within:ring-3 focus-within:ring-ring/30"}`}
             {...(tourTarget && {
               "data-tour": `${tourTarget}-editor`,
               "data-tour-ready": !isEmpty ? "true" : undefined,
@@ -405,6 +414,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                       allowBypassPermissions={allowBypassPermissions}
                       disabled={disabled}
                       autoresearch={autoresearch}
+                      canvas={canvas}
                     />
                   )}
                   {modelSelector && <span>{modelSelector}</span>}

@@ -12,6 +12,8 @@ import { persist } from "zustand/middleware";
 
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
+
+export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
 export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
@@ -26,6 +28,13 @@ export type DefaultReasoningEffort =
 export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
+
+// When spoken notifications are allowed to talk, relative to what's on screen:
+//   - always: speak regardless of what the user is looking at
+//   - unviewed_task: stay quiet for the task currently on screen
+//   - app_unfocused: only speak when PostHog Code isn't the focused app
+// (needs-input lines ignore this so a blocker is never missed.)
+export type SpokenFocusMode = "always" | "unviewed_task" | "app_unfocused";
 
 export type BuiltInCompletionSound =
   | "none"
@@ -70,6 +79,19 @@ export type TerminalFont =
 export interface HintState {
   count: number;
   learned: boolean;
+}
+
+/**
+ * Snapshot of the user-level AGENTS.md/CLAUDE.md that personalization syncs
+ * from. Runtime-only: the sync contribution re-reads the file on boot and
+ * whenever the toggle flips on.
+ */
+export interface SyncedCustomInstructions {
+  path: string;
+  /** Home-relative form of `path` (e.g. `~/.claude/CLAUDE.md`), for display. */
+  displayPath: string;
+  content: string;
+  truncated: boolean;
 }
 
 // ---------- Store shape ----------
@@ -134,13 +156,39 @@ interface SettingsStore {
   removeCustomSound: (id: string) => void;
   renameCustomSound: (id: string, name: string) => void;
 
+  // Spoken notifications
+  spokenNotifications: boolean;
+  spokenNotifyNeedsInput: boolean;
+  spokenNotifyCompletion: boolean;
+  spokenNotifyProgress: boolean;
+  spokenFocusMode: SpokenFocusMode;
+  elevenLabsVoiceId: string;
+  // Mirrors whether an ElevenLabs key is stored (the key itself lives in
+  // encrypted secure storage, never in this persisted blob).
+  elevenLabsKeyConfigured: boolean;
+  setSpokenNotifications: (enabled: boolean) => void;
+  setSpokenNotifyNeedsInput: (enabled: boolean) => void;
+  setSpokenNotifyCompletion: (enabled: boolean) => void;
+  setSpokenNotifyProgress: (enabled: boolean) => void;
+  setSpokenFocusMode: (mode: SpokenFocusMode) => void;
+  setElevenLabsVoiceId: (voiceId: string) => void;
+  setElevenLabsKeyConfigured: (configured: boolean) => void;
+
   // Composer / chat
   autoConvertLongText: AutoConvertLongText;
   sendMessagesWith: SendMessagesWith;
   customInstructions: string;
+  // When on, personalization mirrors the user-level AGENTS.md (or CLAUDE.md)
+  // instead of the hand-typed customInstructions above.
+  syncCustomInstructionsFromFile: boolean;
+  syncedCustomInstructions: SyncedCustomInstructions | null;
   setAutoConvertLongText: (value: AutoConvertLongText) => void;
   setSendMessagesWith: (mode: SendMessagesWith) => void;
   setCustomInstructions: (instructions: string) => void;
+  setSyncCustomInstructionsFromFile: (enabled: boolean) => void;
+  setSyncedCustomInstructions: (
+    synced: SyncedCustomInstructions | null,
+  ) => void;
 
   // Diff viewer
   diffOpenMode: DiffOpenMode;
@@ -153,10 +201,17 @@ interface SettingsStore {
   // When on, cloud runs push their work and open a draft PR on completion
   // without waiting for an explicit ask.
   autoPublishCloudRuns: boolean;
+  // When on, agent runs compress eligible command output through rtk before it
+  // reaches the model. Split by modality: local covers local and worktree
+  // sessions, cloud covers cloud runs.
+  rtkEnabledLocal: boolean;
+  rtkEnabledCloud: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
   setAutoPublishCloudRuns: (enabled: boolean) => void;
+  setRtkEnabledLocal: (enabled: boolean) => void;
+  setRtkEnabledCloud: (enabled: boolean) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -212,6 +267,13 @@ export const NOTIFICATION_DEFAULTS = {
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
   scaleSoundWithTaskLength: false,
+  spokenNotifications: false,
+  spokenNotifyNeedsInput: true,
+  spokenNotifyCompletion: true,
+  spokenNotifyProgress: false,
+  spokenFocusMode: "unviewed_task" as SpokenFocusMode,
+  elevenLabsVoiceId: "",
+  elevenLabsKeyConfigured: false,
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -221,7 +283,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultRunMode: "last_used",
       lastUsedRunMode: "local",
       lastUsedLocalWorkspaceMode: "local",
-      lastUsedWorkspaceMode: "local",
+      lastUsedWorkspaceMode: DEFAULT_WORKSPACE_MODE,
       lastUsedAdapter: "claude",
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
@@ -281,6 +343,18 @@ export const useSettingsStore = create<SettingsStore>()(
       setToastNotifications: (enabled) => set({ toastNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setSpokenNotifications: (enabled) =>
+        set({ spokenNotifications: enabled }),
+      setSpokenNotifyNeedsInput: (enabled) =>
+        set({ spokenNotifyNeedsInput: enabled }),
+      setSpokenNotifyCompletion: (enabled) =>
+        set({ spokenNotifyCompletion: enabled }),
+      setSpokenNotifyProgress: (enabled) =>
+        set({ spokenNotifyProgress: enabled }),
+      setSpokenFocusMode: (mode) => set({ spokenFocusMode: mode }),
+      setElevenLabsVoiceId: (voiceId) => set({ elevenLabsVoiceId: voiceId }),
+      setElevenLabsKeyConfigured: (configured) =>
+        set({ elevenLabsKeyConfigured: configured }),
       setScaleSoundWithTaskLength: (enabled) =>
         set({ scaleSoundWithTaskLength: enabled }),
       addCustomSound: (sound) =>
@@ -310,10 +384,16 @@ export const useSettingsStore = create<SettingsStore>()(
       autoConvertLongText: "2500",
       sendMessagesWith: "enter",
       customInstructions: "",
+      syncCustomInstructionsFromFile: false,
+      syncedCustomInstructions: null,
       setAutoConvertLongText: (value) => set({ autoConvertLongText: value }),
       setSendMessagesWith: (mode) => set({ sendMessagesWith: mode }),
       setCustomInstructions: (instructions) =>
         set({ customInstructions: instructions }),
+      setSyncCustomInstructionsFromFile: (enabled) =>
+        set({ syncCustomInstructionsFromFile: enabled }),
+      setSyncedCustomInstructions: (synced) =>
+        set({ syncedCustomInstructions: synced }),
 
       // Diff viewer
       diffOpenMode: "auto",
@@ -324,6 +404,8 @@ export const useSettingsStore = create<SettingsStore>()(
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
       autoPublishCloudRuns: true,
+      rtkEnabledLocal: true,
+      rtkEnabledCloud: true,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
@@ -331,6 +413,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
       setAutoPublishCloudRuns: (enabled) =>
         set({ autoPublishCloudRuns: enabled }),
+      setRtkEnabledLocal: (enabled) => set({ rtkEnabledLocal: enabled }),
+      setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -430,11 +514,19 @@ export const useSettingsStore = create<SettingsStore>()(
         completionVolume: state.completionVolume,
         scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         customSounds: state.customSounds,
+        spokenNotifications: state.spokenNotifications,
+        spokenNotifyNeedsInput: state.spokenNotifyNeedsInput,
+        spokenNotifyCompletion: state.spokenNotifyCompletion,
+        spokenNotifyProgress: state.spokenNotifyProgress,
+        spokenFocusMode: state.spokenFocusMode,
+        elevenLabsVoiceId: state.elevenLabsVoiceId,
+        elevenLabsKeyConfigured: state.elevenLabsKeyConfigured,
 
         // Composer / chat
         autoConvertLongText: state.autoConvertLongText,
         sendMessagesWith: state.sendMessagesWith,
         customInstructions: state.customInstructions,
+        syncCustomInstructionsFromFile: state.syncCustomInstructionsFromFile,
 
         // Diff viewer
         diffOpenMode: state.diffOpenMode,
@@ -444,6 +536,8 @@ export const useSettingsStore = create<SettingsStore>()(
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
         autoPublishCloudRuns: state.autoPublishCloudRuns,
+        rtkEnabledLocal: state.rtkEnabledLocal,
+        rtkEnabledCloud: state.rtkEnabledCloud,
 
         // Terminal
         terminalFont: state.terminalFont,
@@ -492,6 +586,26 @@ export const useSettingsStore = create<SettingsStore>()(
     },
   ),
 );
+
+/**
+ * The personalization to inject into sessions. Strictly either/or: while file
+ * sync is on, only the synced AGENTS.md/CLAUDE.md snapshot applies (empty when
+ * no file was found) and the hand-typed custom instructions are ignored.
+ */
+export function getEffectiveCustomInstructions(
+  state: Pick<
+    SettingsStore,
+    | "customInstructions"
+    | "syncCustomInstructionsFromFile"
+    | "syncedCustomInstructions"
+  >,
+): string {
+  if (state.syncCustomInstructionsFromFile) {
+    const content = state.syncedCustomInstructions?.content ?? "";
+    return content.trim() ? content : "";
+  }
+  return state.customInstructions;
+}
 
 /**
  * The repository a one-click cloud task should default to: the last-used cloud

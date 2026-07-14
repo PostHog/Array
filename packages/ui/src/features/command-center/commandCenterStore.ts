@@ -34,7 +34,11 @@ interface CommandCenterStoreActions {
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
   setBrainrotCell: (cellIndex: number) => void;
-  setTerminalCell: (cellIndex: number, terminalId: string) => void;
+  setTerminalCell: (
+    cellIndex: number,
+    terminalId: string,
+    cwd?: string,
+  ) => void;
   autofillCells: (taskIds: string[]) => void;
   clearCell: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
@@ -118,11 +122,11 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
           };
         }),
 
-      setTerminalCell: (cellIndex, terminalId) =>
+      setTerminalCell: (cellIndex, terminalId, cwd) =>
         set((state) => {
           if (cellIndex < 0 || cellIndex >= state.cells.length) return state;
           const cells = [...state.cells];
-          cells[cellIndex] = makeTerminalCellValue(terminalId);
+          cells[cellIndex] = makeTerminalCellValue(terminalId, cwd);
           return {
             cells,
             activeTaskId: null,

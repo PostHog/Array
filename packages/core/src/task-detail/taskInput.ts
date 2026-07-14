@@ -21,6 +21,7 @@ export interface PrepareTaskInputOptions {
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   additionalDirectories?: string[];
   channelContext?: string;
@@ -28,6 +29,7 @@ export interface PrepareTaskInputOptions {
   channelId?: string;
   customInstructions?: string;
   autoPublishCloudRuns?: boolean;
+  rtkEnabledCloud?: boolean;
   allowNoRepo?: boolean;
 }
 
@@ -57,11 +59,13 @@ export function prepareTaskInput(
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
+    customImageId: options.customImageId,
     cloudPrAuthorshipMode:
       options.signalReportId && isCloud ? "user" : undefined,
     cloudRunSource:
       options.signalReportId && isCloud ? "signal_report" : undefined,
     cloudAutoPublish: isCloud ? options.autoPublishCloudRuns : undefined,
+    cloudRtkEnabled: isCloud ? options.rtkEnabledCloud : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,

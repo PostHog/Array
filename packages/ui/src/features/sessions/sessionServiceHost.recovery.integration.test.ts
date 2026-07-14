@@ -197,11 +197,17 @@ const mockSettingsState = vi.hoisted(() => ({
   customInstructions: "",
 }));
 
-vi.mock("@posthog/ui/features/settings/settingsStore", () => ({
-  useSettingsStore: {
-    getState: () => mockSettingsState,
-  },
-}));
+vi.mock(
+  "@posthog/ui/features/settings/settingsStore",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@posthog/ui/features/settings/settingsStore")
+    >()),
+    useSettingsStore: {
+      getState: () => mockSettingsState,
+    },
+  }),
+);
 
 vi.mock("@posthog/ui/features/sidebar/taskMetaApi", () => ({
   taskViewedApi: {

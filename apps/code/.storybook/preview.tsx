@@ -25,13 +25,15 @@ const preview: Preview = {
     withAppProviders,
     (Story, context) => {
       const isDark = context.globals.theme !== "light";
+      // Mirror the app's ThemeWrapper (packages/ui/src/primitives/ThemeWrapper.tsx)
+      // so stories render with the shipped radius and accent colors.
       return (
         <Theme
           appearance={isDark ? "dark" : "light"}
-          accentColor={isDark ? "orange" : "yellow"}
+          accentColor={isDark ? "yellow" : "orange"}
           grayColor="slate"
           panelBackground="solid"
-          radius="none"
+          radius="medium"
           scaling="105%"
         >
           <Story />

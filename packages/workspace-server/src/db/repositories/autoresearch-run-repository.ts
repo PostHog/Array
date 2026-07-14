@@ -20,7 +20,7 @@ export interface AutoresearchRunUpsert {
 /**
  * Persisted autoresearch runs. The run itself is an opaque JSON blob owned
  * by @posthog/core; this repository only stores it and answers the two
- * queries the app needs — a task's history, and the still-open runs worth
+ * queries the app needs: a task history and the open runs worth
  * resuming after a restart.
  */
 export interface IAutoresearchRunRepository {
