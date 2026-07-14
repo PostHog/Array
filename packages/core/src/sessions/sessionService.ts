@@ -164,6 +164,7 @@ export interface SessionTrpc {
     unwatch: TrpcMutation;
     retry: TrpcMutation;
     sendCommand: TrpcMutation;
+    stop: TrpcMutation;
     onUpdate: TrpcSubscription;
   };
   handoff: {
@@ -3223,6 +3224,105 @@ export class SessionService {
       return true;
     } catch (error) {
       this.d.log.error("Failed to cancel cloud prompt", error);
+      return false;
+    }
+  }
+
+  async stopCloudRun(taskId: string, runId?: string): Promise<boolean> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    let taskRunId: string;
+    try {
+      const client = await this.d.getAuthenticatedClient();
+      if (!client) return false;
+      const task = (await client.getTask(taskId)) as Task;
+      const latestRun = task.latest_run;
+      if (!latestRun || latestRun.environment !== "cloud") {
+        return true;
+      }
+      if (isTerminalStatus(latestRun.status)) {
+        const rendererStillExpectsCompletion =
+          session?.isCloud === true &&
+          session.taskRunId === latestRun.id &&
+          !isTerminalStatus(session.cloudStatus);
+        if (!rendererStillExpectsCompletion) {
+          return true;
+        }
+      }
+      taskRunId = latestRun.id;
+      if (runId && runId !== taskRunId) {
+        this.d.log.warn("Refusing to stop a newer cloud run", {
+          taskId,
+          requestedRunId: runId,
+          taskRunId,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.d.log.error("Failed to resolve current cloud run", error);
+      return false;
+    }
+
+    const matchingSession =
+      session?.isCloud && session.taskRunId === taskRunId ? session : undefined;
+    const previousPromptState = matchingSession
+      ? {
+          isPromptPending: matchingSession.isPromptPending,
+          promptStartedAt: matchingSession.promptStartedAt,
+        }
+      : undefined;
+    if (matchingSession) {
+      this.d.store.updateSession(matchingSession.taskRunId, {
+        stopRequested: true,
+        isPromptPending: false,
+        promptStartedAt: null,
+      });
+    }
+
+    try {
+      const result = await this.d.trpc.cloudTask.stop.mutate({
+        taskId,
+        runId: taskRunId,
+      });
+
+      if (!result.success) {
+        if (matchingSession) {
+          this.d.store.updateSession(matchingSession.taskRunId, {
+            stopRequested: false,
+            ...previousPromptState,
+          });
+        }
+        this.d.log.warn("Cloud run stop failed", {
+          taskId,
+          error: result.error,
+          retryable: result.retryable,
+        });
+        return false;
+      }
+
+      const durationSeconds = matchingSession
+        ? Math.round((Date.now() - matchingSession.startedAt) / 1000)
+        : undefined;
+      const promptCount = matchingSession?.events.filter(
+        (e) => "method" in e.message && e.message.method === "session/prompt",
+      ).length;
+      this.d.track(ANALYTICS_EVENTS.TASK_RUN_STOPPED, {
+        task_id: taskId,
+        execution_type: "cloud",
+        ...(durationSeconds === undefined
+          ? {}
+          : { duration_seconds: durationSeconds }),
+        ...(promptCount === undefined ? {} : { prompts_sent: promptCount }),
+      });
+
+      return true;
+    } catch (error) {
+      if (matchingSession) {
+        this.d.store.updateSession(matchingSession.taskRunId, {
+          stopRequested: false,
+          ...previousPromptState,
+        });
+      }
+      this.d.log.error("Failed to stop cloud run", error);
       return false;
     }
   }

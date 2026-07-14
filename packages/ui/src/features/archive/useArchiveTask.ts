@@ -116,6 +116,11 @@ function makeOrchestrationDeps(
       log.info("Unfocusing workspace before archiving");
       await useFocusStore.getState().disableFocus();
     },
+    stopCloudRun: (taskId, runId) =>
+      resolveService<SessionService>(SESSION_SERVICE).stopCloudRun(
+        taskId,
+        runId,
+      ),
     disconnectFromTask: (taskId) =>
       resolveService<SessionService>(SESSION_SERVICE).disconnectFromTask(
         taskId,
