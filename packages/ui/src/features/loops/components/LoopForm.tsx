@@ -299,7 +299,7 @@ export function LoopForm({ loop }: LoopFormProps) {
                 disabled={!stepComplete[step] || isSubmitting}
                 onClick={() => setStep((s) => s + 1)}
               >
-                Next: {STEPS[step + 1]}
+                Next
                 <ArrowRight size={13} />
               </Button>
             )}
