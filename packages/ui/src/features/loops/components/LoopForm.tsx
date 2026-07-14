@@ -4,7 +4,7 @@ import {
   CaretRight,
   Check,
 } from "@phosphor-icons/react";
-import type { LoopSchemas } from "@posthog/api-client/loops";
+import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -125,6 +125,16 @@ export function LoopForm({ loop }: LoopFormProps) {
         navigateToLoopDetail(created.id);
       }
     } catch (error) {
+      const safetyLimit =
+        error instanceof LoopsApiError ? error.safetyLimit : null;
+      if (safetyLimit) {
+        // A safety/abuse ceiling, not a normal failure: tell the user plainly so they can
+        // course-correct (delete a loop, remove triggers) or contact support for a raise.
+        toast.error("Safety limit reached", {
+          description: safetyLimit.detail,
+        });
+        return;
+      }
       toast.error(isEdit ? "Failed to save loop" : "Failed to create loop", {
         description: error instanceof Error ? error.message : undefined,
       });

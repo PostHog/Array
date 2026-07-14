@@ -4,6 +4,7 @@ import {
   createLoop,
   destroyLoop,
   type LoopSchemas,
+  LoopsApiError,
   listLoopRuns,
   listLoops,
   partialUpdateLoop,
@@ -202,5 +203,44 @@ describe("loops client", () => {
     await expect(retrieveLoop(client, PROJECT_ID, "missing")).rejects.toThrow(
       "[404]",
     );
+  });
+
+  it("throws LoopsApiError carrying the parsed body on a rejected request", async () => {
+    const { fetcher } = fakeFetcher(
+      {
+        error: "loop_safety_limit",
+        code: "max_loops_per_team",
+        limit: 100,
+        detail: "This project has reached the limit of 100 loops.",
+      },
+      429,
+    );
+    const client = createApiClient(fetcher, BASE_URL);
+
+    const error = await createLoop(
+      client,
+      PROJECT_ID,
+      MINIMAL_LOOP_WRITE,
+    ).catch((e) => e);
+
+    expect(error).toBeInstanceOf(LoopsApiError);
+    expect((error as LoopsApiError).status).toBe(429);
+    const safetyLimit = (error as LoopsApiError).safetyLimit;
+    expect(safetyLimit?.code).toBe("max_loops_per_team");
+    expect(safetyLimit?.detail).toContain("100 loops");
+  });
+
+  it("leaves safetyLimit null for a generic (non-limit) error body", async () => {
+    const { fetcher } = fakeFetcher({ detail: "Something broke" }, 500);
+    const client = createApiClient(fetcher, BASE_URL);
+
+    const error = await createLoop(
+      client,
+      PROJECT_ID,
+      MINIMAL_LOOP_WRITE,
+    ).catch((e) => e);
+
+    expect(error).toBeInstanceOf(LoopsApiError);
+    expect((error as LoopsApiError).safetyLimit).toBeNull();
   });
 });

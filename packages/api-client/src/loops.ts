@@ -367,12 +367,63 @@ async function loopsRequest<T>(
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Loops API request failed: ${method.toUpperCase()} ${path} [${response.status}]`,
+    throw new LoopsApiError(
+      method,
+      path,
+      response.status,
+      await readBody(response),
     );
   }
 
   return (await parseResponseData(response)) as T;
+}
+
+/** Machine-readable body of a rejected loop safety/abuse limit (see the backend's
+ * `_loop_limit_response`). `error === "loop_safety_limit"` is the stable marker. */
+export interface LoopSafetyLimitBody {
+  error: "loop_safety_limit";
+  code: string;
+  limit: number;
+  detail: string;
+}
+
+/** Error thrown for any non-2xx loops response, carrying the status and parsed body so
+ * callers can distinguish a safety-limit rejection from a generic failure. */
+export class LoopsApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(method: string, path: string, status: number, body: unknown) {
+    super(
+      `Loops API request failed: ${method.toUpperCase()} ${path} [${status}]`,
+    );
+    this.name = "LoopsApiError";
+    this.status = status;
+    this.body = body;
+  }
+
+  /** The parsed safety-limit body when this is a limit rejection, otherwise null. */
+  get safetyLimit(): LoopSafetyLimitBody | null {
+    const body = this.body;
+    if (
+      body != null &&
+      typeof body === "object" &&
+      (body as { error?: unknown }).error === "loop_safety_limit"
+    ) {
+      return body as LoopSafetyLimitBody;
+    }
+    return null;
+  }
+}
+
+async function readBody(response: Response): Promise<unknown> {
+  // Only called on the error path, where nothing else consumes the body, so read
+  // it directly rather than cloning.
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function listLoops(
