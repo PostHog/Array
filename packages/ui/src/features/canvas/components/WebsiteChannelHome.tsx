@@ -1,5 +1,6 @@
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { ChannelFeedView } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
@@ -7,9 +8,13 @@ import {
   ChannelHomeComposer,
   type ChannelHomeComposerHandle,
 } from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
-import { ChannelIntro } from "@posthog/ui/features/canvas/components/ChannelIntro";
+import {
+  ChannelIntro,
+  type ContextMdState,
+} from "@posthog/ui/features/canvas/components/ChannelIntro";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
+import { CONTEXT_MD_TASK_TITLE_PREFIX } from "@posthog/ui/features/canvas/contextPrompt";
 import {
   channelFeedQueryKey,
   useChannelFeed,
@@ -47,7 +52,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const { fileTask } = useChannelTaskMutations();
 
-  const { data: instructions } = useFolderInstructions(channelId);
+  const { data: instructions, isLoading: isLoadingInstructions } =
+    useFolderInstructions(channelId);
   const channelContext = instructions?.content;
 
   // The folder channel maps onto a backend channel (by name; "me" → the
@@ -152,16 +158,33 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     : undefined;
 
   // The Slack-style intro pinned at the feed's start — public channels only;
-  // the personal channel keeps the welcome empty state below. The context.md
-  // card hides once the context has published instructions.
+  // the personal channel keeps the welcome empty state below.
   const isPersonal = channelName === PERSONAL_CHANNEL_NAME;
   const hasContextMd = (channelContext ?? "").trim().length > 0;
+  // An in-flight build is spotted by its plan task in this channel's feed (by
+  // title prefix — the only task↔context.md tie until the backend links them),
+  // so the intro card can show "Creating…" instead of a second "Create" CTA.
+  // Drafts with no run are ignored: a half-launched task shouldn't pin the
+  // card in the building state with no way to retry.
+  const isBuildingContextMd = tasks.some(
+    (t) =>
+      t.title?.startsWith(CONTEXT_MD_TASK_TITLE_PREFIX) &&
+      t.latest_run &&
+      !isTerminalStatus(t.latest_run.status),
+  );
+  const contextMdState: ContextMdState = hasContextMd
+    ? "created"
+    : isLoadingInstructions
+      ? "loading"
+      : isBuildingContextMd
+        ? "building"
+        : "none";
   const intro =
     !isPersonal && channelName && backendChannel ? (
       <ChannelIntro
         channel={backendChannel}
         channelName={channelName}
-        hasContextMd={hasContextMd}
+        contextMdState={contextMdState}
         onCreateContextMd={() => setContextMdDialogOpen(true)}
       />
     ) : undefined;

@@ -14,7 +14,10 @@ import { getCloudUrlFromRegion, type WorkspaceMode } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import { buildContextGenerationPrompt } from "@posthog/ui/features/canvas/contextPrompt";
+import {
+  buildContextGenerationPrompt,
+  contextMdTaskTitle,
+} from "@posthog/ui/features/canvas/contextPrompt";
 import { channelFeedQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { channelFeedMessagesQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
@@ -131,7 +134,7 @@ export function useGenerateContext() {
               channelId,
               description,
             }),
-            taskDescription: `Build CONTEXT.md for ${channelName}`,
+            taskDescription: contextMdTaskTitle(channelName),
             workspaceMode,
             adapter: adapter ?? "claude",
             channelId: backendChannelId,

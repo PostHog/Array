@@ -239,6 +239,7 @@ export type {
 export {
   formatRelativeTimeLong,
   formatRelativeTimeShort,
+  getLocalDayDiff,
   getRelativeDateGroup,
 } from "./time";
 export {

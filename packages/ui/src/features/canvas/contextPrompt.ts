@@ -8,6 +8,16 @@
 // the document, the user shapes it, and only once the plan is approved does the
 // agent publish. The user's own description of what the context is about seeds
 // that plan.
+// Title given to the plan task that builds a context's CONTEXT.md. The prefix
+// doubles as the marker surfaces use to spot an in-flight build in a channel's
+// task feed — the only task↔context.md tie we have until the backend links
+// them explicitly.
+export const CONTEXT_MD_TASK_TITLE_PREFIX = "Build CONTEXT.md";
+
+export function contextMdTaskTitle(channelName: string): string {
+  return `${CONTEXT_MD_TASK_TITLE_PREFIX} for ${channelName}`;
+}
+
 export function buildContextGenerationPrompt(input: {
   channelName: string;
   channelId: string;

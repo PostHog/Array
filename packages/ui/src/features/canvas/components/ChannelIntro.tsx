@@ -4,43 +4,43 @@ import {
   ItemDescription,
   ItemMedia,
   ItemTitle,
+  Spinner,
 } from "@posthog/quill";
+import { getLocalDayDiff } from "@posthog/shared";
 import type { TaskChannel } from "@posthog/shared/domain-types";
 import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { Heading, Text } from "@radix-ui/themes";
 import { FileCheckCorner, FilePlusCorner, Info } from "lucide-react";
 
-// "today" / "yesterday" / "on July 10th" for the intro's creation line.
+// "today" / "yesterday" / "on July 10" for the intro's creation line.
 function creationDatePhrase(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  const startOfDay = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  const days = getLocalDayDiff(date);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   return `on ${date.toLocaleDateString(undefined, { month: "long", day: "numeric" })}`;
 }
 
+/** The intro card's lifecycle: unknown while the instructions query loads, a
+ * create call to action, an in-flight plan session, or a published file. */
+export type ContextMdState = "loading" | "none" | "building" | "created";
+
 // The Slack-style intro pinned at the very start of a channel's feed: the
-// channel name, who created it and when, and (until the context has a
-// CONTEXT.md) a full-width card that starts the "Create your context.md" flow.
-// Derived entirely from the channel row, so it renders for every public
-// channel, not just freshly created ones.
+// channel name, who created it and when, and a context.md card that walks the
+// create → building → created lifecycle. Derived entirely from the channel row,
+// so it renders for every public channel, not just freshly created ones.
 export function ChannelIntro({
   channel,
   channelName,
-  hasContextMd,
+  contextMdState,
   onCreateContextMd,
 }: {
   /** The backend channel row (creator + creation time). */
   channel: TaskChannel | undefined;
   channelName: string;
-  /** Flips the card from the "Create a context.md" call to action to the
-   * inert "Created context.md" success state. */
-  hasContextMd: boolean;
+  contextMdState: ContextMdState;
   onCreateContextMd: () => void;
 }) {
   const creator = channel?.created_by;
@@ -62,23 +62,47 @@ export function ChannelIntro({
         )}
       </div>
       <div className="flex gap-2">
-        {hasContextMd ? (
+        {contextMdState === "created" && (
           <Item tone="success" className="w-full">
             <ItemMedia variant="icon">
               <FileCheckCorner size={18} />
             </ItemMedia>
             <ItemContent className="self-start">
               <ItemTitle>Created context.md</ItemTitle>
-              <ItemDescription>
+              <ItemDescription className="text-xs">
                 Used in all sessions within this context
               </ItemDescription>
             </ItemContent>
           </Item>
-        ) : (
+        )}
+        {contextMdState === "building" && (
+          <Item tone="info" className="w-full">
+            <ItemMedia variant="icon">
+              <Spinner className="size-4" />
+            </ItemMedia>
+            <ItemContent className="self-start">
+              <ItemTitle>Creating context.md</ItemTitle>
+              <ItemDescription className="text-xs">
+                A planning session is building it now. Open its task card below
+                to shape the result.
+              </ItemDescription>
+            </ItemContent>
+          </Item>
+        )}
+        {(contextMdState === "none" || contextMdState === "loading") && (
           <Item
             variant="pressable"
             className="w-full border-primary/50 bg-primary/10 hover:bg-primary/15"
-            render={<button type="button" onClick={onCreateContextMd} />}
+            // While the instructions query resolves we don't yet know whether a
+            // context.md exists; keep the layout stable but inert so a context
+            // that has one never flashes an actionable "Create" state.
+            render={
+              <button
+                type="button"
+                disabled={contextMdState === "loading"}
+                onClick={onCreateContextMd}
+              />
+            }
           >
             <ItemMedia variant="icon">
               <FilePlusCorner size={18} />

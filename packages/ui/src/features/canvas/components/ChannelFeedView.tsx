@@ -34,7 +34,7 @@ import {
   ThreadItemRepliesMeta,
   ThreadItemTimestamp,
 } from "@posthog/quill";
-import { formatRelativeTimeShort } from "@posthog/shared";
+import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
@@ -117,9 +117,7 @@ function ordinal(n: number): string {
 // year when it differs) further back so older separators stay unambiguous.
 function dayLabel(iso: string, now: Date): string {
   const date = new Date(iso);
-  const startOfDay = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  const days = getLocalDayDiff(date, now);
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
   const weekday = date.toLocaleDateString(undefined, { weekday: "long" });

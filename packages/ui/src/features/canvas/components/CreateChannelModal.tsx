@@ -12,6 +12,7 @@ import {
   FieldError,
   FieldLabel,
   Input,
+  Switch,
   Textarea,
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -37,12 +38,12 @@ interface CreateChannelModalProps {
 }
 
 // Two dialogs in one, split on `existingContext`:
-// - Create mode: name-only. Creates the context, posts the agent's welcome
-//   message into its feed (which carries the onboarding checklist), and lands
-//   the user in the channel. No session is started here — onboarding continues
-//   in the feed.
-// - Describe mode: the "Create your CONTEXT.md" dialog (opened from the welcome
-//   checklist or the CONTEXT.md empty state). A single textarea whose text seeds
+// - Create mode: names the context, creates it, and lands the user in its feed
+//   (the intro card there carries onboarding). An off-by-default toggle reveals
+//   the description textarea to also launch the context.md plan session at
+//   creation time.
+// - Describe mode: the "Create your context.md" dialog (opened from the intro
+//   card or the CONTEXT.md empty state). A single textarea whose text seeds
 //   a plan-mode session that builds the context's CONTEXT.md with the user.
 export function CreateChannelModal({
   open,
@@ -55,6 +56,8 @@ export function CreateChannelModal({
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  // Create mode's opt-in "also plan the context.md now" toggle.
+  const [withContextMd, setWithContextMd] = useState(false);
 
   // Reset the fields each time the modal opens so a previous draft never
   // lingers. Adjusted inline during render (prev-prop comparison) rather than in
@@ -65,6 +68,7 @@ export function CreateChannelModal({
     if (open) {
       setName("");
       setDescription("");
+      setWithContextMd(false);
     }
   }
 
@@ -73,14 +77,19 @@ export function CreateChannelModal({
   const remaining = MAX_CONTEXT_NAME_LENGTH - name.length;
   const nameError = isDescribeMode ? null : validateChannelName(trimmedName);
 
+  // The description textarea is live in describe mode and in create mode once
+  // the toggle is on; either way it must be filled to submit.
+  const needsDescription = isDescribeMode || withContextMd;
   const busy = isCreating || isStarting;
   const canSubmit =
     !busy &&
-    (isDescribeMode ? !!trimmedDescription : !!trimmedName && !nameError);
+    (isDescribeMode ? true : !!trimmedName && !nameError) &&
+    (!needsDescription || !!trimmedDescription);
 
   // Create mode: create the context, then land in the channel — its feed opens
   // with the intro (name, creation line, context.md card) and the "joined" row,
-  // both derived from the channel row.
+  // both derived from the channel row. With the toggle on, also launch the
+  // plan session that builds context.md, seeded by the description.
   const submitCreate = async () => {
     let contextId: string;
     try {
@@ -102,6 +111,21 @@ export function CreateChannelModal({
         description: error instanceof Error ? error.message : String(error),
       });
       return;
+    }
+
+    if (withContextMd && trimmedDescription) {
+      track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
+        action_type: "generate_started",
+        channel_id: contextId,
+      });
+      // Failure is fine to swallow here (generate() already toasted): the
+      // context exists, so land the user on it — the intro card offers the
+      // retry.
+      await generate({
+        channelId: contextId,
+        channelName: trimmedName,
+        description: trimmedDescription,
+      });
     }
 
     onOpenChange(false);
@@ -164,14 +188,55 @@ export function CreateChannelModal({
         )}
 
         <DialogBody className="flex flex-col gap-4">
-          {isDescribeMode ? (
+          {!isDescribeMode && (
+            <>
+              <Field>
+                <FieldLabel htmlFor="context-name">Name</FieldLabel>
+                <Input
+                  id="context-name"
+                  autoFocus
+                  value={name}
+                  placeholder="e.g. mobile"
+                  maxLength={MAX_CONTEXT_NAME_LENGTH}
+                  disabled={busy}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void submit();
+                    }
+                  }}
+                />
+                {nameError ? (
+                  <FieldError>{nameError}</FieldError>
+                ) : (
+                  <span className="text-gray-9 text-xs tabular-nums">
+                    {remaining} left
+                  </span>
+                )}
+              </Field>
+              <Field className="flex flex-row items-center gap-2">
+                <Switch
+                  id="context-with-md"
+                  checked={withContextMd}
+                  disabled={busy}
+                  onCheckedChange={(checked) => setWithContextMd(!!checked)}
+                />
+                <FieldLabel htmlFor="context-with-md" className="mb-0">
+                  Plan its context.md now
+                </FieldLabel>
+              </Field>
+            </>
+          )}
+
+          {needsDescription && (
             <Field>
               <FieldLabel htmlFor="context-description">
                 What's this context about?
               </FieldLabel>
               <Textarea
                 id="context-description"
-                autoFocus
+                autoFocus={isDescribeMode}
                 rows={4}
                 value={description}
                 placeholder={DESCRIPTION_PLACEHOLDER}
@@ -185,32 +250,6 @@ export function CreateChannelModal({
                   }
                 }}
               />
-            </Field>
-          ) : (
-            <Field>
-              <FieldLabel htmlFor="context-name">Name</FieldLabel>
-              <Input
-                id="context-name"
-                autoFocus
-                value={name}
-                placeholder="e.g. mobile"
-                maxLength={MAX_CONTEXT_NAME_LENGTH}
-                disabled={busy}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void submit();
-                  }
-                }}
-              />
-              {nameError ? (
-                <FieldError>{nameError}</FieldError>
-              ) : (
-                <span className="text-gray-9 text-xs tabular-nums">
-                  {remaining} left
-                </span>
-              )}
             </Field>
           )}
         </DialogBody>
@@ -229,7 +268,7 @@ export function CreateChannelModal({
             loading={busy}
             onClick={submit}
           >
-            Create
+            {needsDescription ? "Plan and create" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>
