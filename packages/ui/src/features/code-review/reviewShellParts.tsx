@@ -139,6 +139,7 @@ export function FileHeaderRow({
   deletions,
   collapsed,
   onToggle,
+  metadata,
   trailing,
 }: {
   dirPath: string;
@@ -147,6 +148,7 @@ export function FileHeaderRow({
   deletions: number;
   collapsed: boolean;
   onToggle: () => void;
+  metadata?: ReactNode;
   trailing?: ReactNode;
 }) {
   return (
@@ -176,6 +178,7 @@ export function FileHeaderRow({
           {dirPath}
         </span>
       </span>
+      {metadata}
       <span className="font-mono text-[10px]">
         {additions > 0 && (
           <span className="mr-[2px] text-(--green-9)">+{additions}</span>
@@ -210,6 +213,7 @@ export function DiffFileHeader({
   onDiscard,
   onStage,
   staged,
+  metadata,
   trailing,
 }: {
   fileDiff: FileDiffMetadata;
@@ -219,6 +223,7 @@ export function DiffFileHeader({
   onDiscard?: () => void;
   onStage?: () => void;
   staged?: boolean;
+  metadata?: ReactNode;
   /** Extra controls rendered after the action buttons (e.g. a "Viewed" toggle). */
   trailing?: ReactNode;
 }) {
@@ -237,6 +242,7 @@ export function DiffFileHeader({
       deletions={deletions}
       collapsed={collapsed}
       onToggle={onToggle}
+      metadata={metadata}
       trailing={
         (onStage || onDiscard || onOpenFile || trailing) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
@@ -299,6 +305,7 @@ export function DeferredDiffPlaceholder({
   onToggle,
   onShow,
   externalUrl,
+  headerMetadata,
   headerTrailing,
 }: {
   filePath: string;
@@ -309,6 +316,7 @@ export function DeferredDiffPlaceholder({
   onToggle: () => void;
   onShow?: () => void;
   externalUrl?: string;
+  headerMetadata?: ReactNode;
   /** Extra controls in the header row (e.g. a "Viewed" toggle). */
   headerTrailing?: ReactNode;
 }) {
@@ -323,6 +331,7 @@ export function DeferredDiffPlaceholder({
         deletions={linesRemoved}
         collapsed={collapsed}
         onToggle={onToggle}
+        metadata={headerMetadata}
         trailing={
           headerTrailing && (
             <span className="ml-auto inline-flex items-center">

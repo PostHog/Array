@@ -36,12 +36,13 @@ function findSpan(
   return found;
 }
 
-function renderHeader(path: string) {
+function renderHeader(path: string, metadata?: React.ReactNode) {
   const diff = render(
     <DiffFileHeader
       fileDiff={makeFileDiff(path)}
       collapsed={false}
       onToggle={() => {}}
+      metadata={metadata}
     />,
   );
   const deferred = render(
@@ -52,6 +53,7 @@ function renderHeader(path: string) {
       reason="line-limit"
       collapsed={false}
       onToggle={() => {}}
+      headerMetadata={metadata}
     />,
   );
   return { diff, deferred };
@@ -95,5 +97,16 @@ describe.each([
 
     expect(dirSpan.parentElement).toBe(fileSpan.parentElement);
     expect(dirSpan.parentElement?.classList.contains("flex")).toBe(true);
+  });
+
+  it("renders metadata before line changes", () => {
+    const rendered = renderHeader(
+      "src/ReviewShell.tsx",
+      <span>2 comments</span>,
+    )[which];
+    const text = rendered.container.querySelector("button")?.textContent ?? "";
+    const additions = which === "diff" ? "+3" : "+10";
+
+    expect(text.indexOf("2 comments")).toBeLessThan(text.indexOf(additions));
   });
 });

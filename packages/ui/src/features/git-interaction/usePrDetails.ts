@@ -1,25 +1,10 @@
 import { useHostTRPC } from "@posthog/host-router/react";
-import type { PrReviewThread } from "@posthog/shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import type { PrCommentThread } from "../code-review/prCommentAnnotations";
+import { mapPrCommentThreads } from "../code-review/prCommentThreads";
 
 interface UsePrDetailsOptions {
   includeComments?: boolean;
-}
-
-function threadsToMap(threads: PrReviewThread[]): Map<number, PrCommentThread> {
-  const map = new Map<number, PrCommentThread>();
-  for (const thread of threads) {
-    map.set(thread.rootId, {
-      rootId: thread.rootId,
-      nodeId: thread.nodeId,
-      isResolved: thread.isResolved,
-      comments: thread.comments,
-      filePath: thread.filePath,
-    });
-  }
-  return map;
 }
 
 export interface PrStateDetails {
@@ -80,7 +65,7 @@ export function usePrDetails(
   });
 
   const commentThreads = useMemo(
-    () => threadsToMap(commentsQuery.data ?? []),
+    () => mapPrCommentThreads(commentsQuery.data ?? []),
     [commentsQuery.data],
   );
 
