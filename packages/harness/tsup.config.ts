@@ -16,6 +16,10 @@ export default defineConfig({
     "src/extensions/posthog-provider/oauth.ts",
     "src/extensions/posthog-provider/gateway.ts",
     "src/extensions/posthog-provider/gateway-auth.ts",
+    "src/extensions/background-jobs/extension.ts",
+    "src/extensions/background-jobs/index.ts",
+    "src/extensions/background-jobs/jobs.ts",
+    "src/extensions/background-jobs/render.ts",
     "src/extensions/web-access/extension.ts",
     "src/extensions/web-access/index.ts",
     "src/extensions/web-access/web-search.ts",
@@ -35,6 +39,16 @@ export default defineConfig({
     "src/extensions/subagent/render.ts",
     "src/extensions/subagent/text-truncate.ts",
     "src/extensions/subagent/format.ts",
+    "src/extensions/subagent/status-registry.ts",
+    "src/extensions/subagent/status-footer.ts",
+    "src/extensions/subagent/status-editor.ts",
+    "src/extensions/subagent/status-overlay.ts",
+    "src/extensions/workflow/extension.ts",
+    "src/extensions/workflow/index.ts",
+    "src/extensions/workflow/runtime.ts",
+    "src/extensions/workflow/render.ts",
+    "src/extensions/workflow/status-registry.ts",
+    "src/extensions/workflow/status-overlay.ts",
     "src/extensions/mcp/extension.ts",
     "src/extensions/mcp/index.ts",
     "src/extensions/mcp/config.ts",
@@ -47,6 +61,12 @@ export default defineConfig({
     "src/extensions/mcp/callback-server.ts",
     "src/extensions/mcp/auth-flow.ts",
     "src/extensions/mcp/render.ts",
+    "src/extensions/footer-focus-demo/extension.ts",
+    "src/extensions/footer-focus-demo/index.ts",
+    "src/extensions/footer-focus-demo/inbox.ts",
+    "src/extensions/footer-focus-demo/footer.ts",
+    "src/extensions/footer-focus-demo/editor.ts",
+    "src/extensions/footer-focus-demo/overlay.ts",
     "src/pi-cli.ts",
   ],
   format: ["esm"],
@@ -78,5 +98,20 @@ export default defineConfig({
     await cp("src/extensions/mcp/skills", "dist/extensions/mcp/skills", {
       recursive: true,
     });
+    await cp(
+      "src/extensions/workflow/skills",
+      "dist/extensions/workflow/skills",
+      { recursive: true },
+    );
+    // The workflow extension imports `../subagent/agents`, and tsup
+    // (splitting: false) inlines that module into workflow's own bundle — so
+    // its `import.meta.url`-relative `./bundled-agents` lookup resolves under
+    // dist/extensions/workflow/, not dist/extensions/subagent/. Any bundle
+    // that inlines agents.ts needs its own copy of the asset directory.
+    await cp(
+      "src/extensions/subagent/bundled-agents",
+      "dist/extensions/workflow/bundled-agents",
+      { recursive: true },
+    );
   },
 });

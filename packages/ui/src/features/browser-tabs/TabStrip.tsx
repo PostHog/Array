@@ -42,7 +42,9 @@ export interface TabStripProps {
   activeTabId: string | null;
   onSelect: (tabId: string) => void;
   onClose: (tabId: string) => void;
-  onNewTab: () => void;
+  /** When omitted, the trailing new-tab button is hidden (e.g. on read-only
+   * cloud runs, where opening a tab makes no sense). */
+  onNewTab?: () => void;
   onTogglePin: (tabId: string) => void;
   onCloseOthers: (tabId: string) => void;
   onCloseToRight: (tabId: string) => void;
@@ -110,21 +112,23 @@ export function TabStrip({
             onCloseToLeft={onCloseToLeft}
           />
         ))}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-sm"
-                aria-label="New tab"
-                className="no-drag shrink-0"
-                onClick={onNewTab}
-              >
-                <PlusIcon size={14} />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">New tab</TooltipContent>
-        </Tooltip>
+        {onNewTab && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  aria-label="New tab"
+                  className="no-drag shrink-0"
+                  onClick={onNewTab}
+                >
+                  <PlusIcon size={14} />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">New tab</TooltipContent>
+          </Tooltip>
+        )}
       </Flex>
     </TooltipProvider>
   );

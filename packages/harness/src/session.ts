@@ -1,11 +1,5 @@
-import {
-  type AgentSession,
-  AuthStorage,
-  createAgentSession,
-  DefaultResourceLoader,
-  getAgentDir,
-  ModelRegistry,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { installHogBrandEnv } from "./extensions/hog-branding/brand-env";
 import { DEFAULT_MODEL } from "./extensions/posthog-provider/models";
 import {
   POSTHOG_PROVIDER_NAME,
@@ -21,6 +15,20 @@ export interface HarnessSessionOptions extends PosthogProviderOptions {
 export async function createHarnessSession(
   options: HarnessSessionOptions = {},
 ): Promise<AgentSession> {
+  // Must finish running before `@earendil-works/pi-coding-agent` is
+  // evaluated, so pi picks up "hog" branding when its config module first
+  // evaluates. Hence the dynamic import right below, rather than a static
+  // top-level one — see `./extensions/hog-branding/brand-env` for why a
+  // static import wouldn't reliably run first once bundled.
+  installHogBrandEnv();
+  const {
+    AuthStorage,
+    createAgentSession,
+    DefaultResourceLoader,
+    getAgentDir,
+    ModelRegistry,
+  } = await import("@earendil-works/pi-coding-agent");
+
   const cwd = options.cwd ?? process.cwd();
 
   const authStorage = AuthStorage.create();

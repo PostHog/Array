@@ -57,6 +57,25 @@ describe("buildSessionOptions", () => {
     },
   );
 
+  it("maps the custom auto mode to the SDK's default mode", () => {
+    const options = buildSessionOptions({
+      ...makeParams(),
+      permissionMode: "auto",
+    });
+    expect(options.permissionMode).toBe("default");
+  });
+
+  it.each(["default", "acceptEdits", "plan", "bypassPermissions"] as const)(
+    "passes native SDK mode %s through to options.permissionMode",
+    (mode) => {
+      const options = buildSessionOptions({
+        ...makeParams(),
+        permissionMode: mode,
+      });
+      expect(options.permissionMode).toBe(mode);
+    },
+  );
+
   it("preserves caller-provided agents alongside defaults", () => {
     const params = makeParams();
     const options = buildSessionOptions({

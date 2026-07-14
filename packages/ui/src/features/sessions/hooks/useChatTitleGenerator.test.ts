@@ -13,6 +13,9 @@ const mockSetQueriesData = vi.hoisted(() => vi.fn());
 const mockSetQueryData = vi.hoisted(() => vi.fn());
 const mockUpdateSessionTaskTitle = vi.hoisted(() => vi.fn());
 const mockPrompts = vi.hoisted(() => ({ value: [] as string[] }));
+const mockSessionSummary = vi.hoisted(() => ({
+  value: undefined as string | undefined,
+}));
 const mockSessionStoreSetters = vi.hoisted(() => ({ updateSession: vi.fn() }));
 const mockTitleAttachmentPaths = vi.hoisted(() => ({ value: [] as string[] }));
 const mockTitleAttachmentClear = vi.hoisted(() => vi.fn());
@@ -77,7 +80,14 @@ vi.mock("@posthog/ui/shell/titleAttachmentStore", () => ({
 vi.mock("@posthog/ui/features/sessions/sessionStore", () => {
   const state = {
     taskIdIndex: { "task-1": "run-1" },
-    sessions: { "run-1": { events: mockPrompts.value } },
+    get sessions() {
+      return {
+        "run-1": {
+          events: mockPrompts.value,
+          conversationSummary: mockSessionSummary.value,
+        },
+      };
+    },
   };
   const fn = Object.assign(
     (selector: (s: typeof state) => unknown) => selector(state),
@@ -89,6 +99,7 @@ vi.mock("@posthog/ui/features/sessions/sessionStore", () => {
   };
 });
 
+import { useTitleGenerationStore } from "@posthog/ui/features/sessions/titleGenerationStore";
 import { useChatTitleGenerator } from "./useChatTitleGenerator";
 
 const TASK_ID = "task-1";
@@ -113,11 +124,18 @@ function cacheTask(task: Task): void {
   mockGetQueriesData.mockReturnValue([[["tasks", "list"], [task]]]);
 }
 
+interface TitleAndSummaryResult {
+  title: string;
+  summary: string;
+}
+
 describe("useChatTitleGenerator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useTitleGenerationStore.setState({ byTaskId: {} });
     mockIsAuthenticated.value = true;
     mockPrompts.value = [];
+    mockSessionSummary.value = undefined;
     mockTitleAttachmentPaths.value = [];
     mockEnrichDescription.mockImplementation((desc: string) =>
       Promise.resolve(desc),
@@ -381,5 +399,90 @@ describe("useChatTitleGenerator", () => {
     renderHook(() => useChatTitleGenerator(createTask()));
 
     expect(mockGenerateTitle).not.toHaveBeenCalled();
+  });
+
+  it("does not regenerate when the chat view remounts after a generation", async () => {
+    mockGenerateTitle.mockResolvedValue({
+      title: "Fix login bug",
+      summary: "User is fixing a login issue",
+    });
+    mockPrompts.value = ["Fix the login bug"];
+
+    const first = renderHook(() =>
+      useChatTitleGenerator(createTask({ title: "Raw prompt title" })),
+    );
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalledTimes(1);
+    });
+    first.unmount();
+
+    renderHook(() =>
+      useChatTitleGenerator(createTask({ title: "Fix login bug" })),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockGenerateTitle).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one in-flight guard across simultaneously mounted views", async () => {
+    let resolveGeneration!: (value: TitleAndSummaryResult) => void;
+    mockGenerateTitle.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGeneration = resolve;
+      }),
+    );
+    mockPrompts.value = ["Fix the login bug"];
+
+    renderHook(() =>
+      useChatTitleGenerator(createTask({ title: "Raw prompt title" })),
+    );
+    renderHook(() =>
+      useChatTitleGenerator(createTask({ title: "Raw prompt title" })),
+    );
+
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalledTimes(1);
+    });
+
+    resolveGeneration({ title: "Fix login bug", summary: "" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockGenerateTitle).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips catch-up generation when the title is locked and a summary exists", async () => {
+    const lockedTask = createTask({
+      title: "Custom auth title",
+      description: "fix auth",
+      title_manually_set: true,
+    });
+    cacheTask(lockedTask);
+    mockSessionSummary.value = "User wants to fix auth";
+    mockPrompts.value = Array.from({ length: 8 }, (_, i) => `prompt ${i}`);
+
+    renderHook(() => useChatTitleGenerator(lockedTask));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockGenerateTitle).not.toHaveBeenCalled();
+  });
+
+  it("runs catch-up generation for a locked title when no summary exists yet", async () => {
+    const lockedTask = createTask({
+      title: "Custom auth title",
+      description: "fix auth",
+      title_manually_set: true,
+    });
+    cacheTask(lockedTask);
+    mockGenerateTitle.mockResolvedValue({
+      title: "Auto title",
+      summary: "User wants to fix auth",
+    });
+    mockPrompts.value = Array.from({ length: 8 }, (_, i) => `prompt ${i}`);
+
+    renderHook(() => useChatTitleGenerator(lockedTask));
+
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateTask).not.toHaveBeenCalled();
   });
 });

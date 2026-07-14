@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import {
   REPORT_MODEL_RESOLVER,
@@ -133,12 +134,16 @@ export function useGenerateContext() {
             taskDescription: `Build CONTEXT.md for ${channelName}`,
             workspaceMode,
             adapter: adapter ?? "claude",
-            model,
             channelId: backendChannelId,
             // Plan mode: the agent proposes the document and waits for approval
             // before publishing, so the user co-designs CONTEXT.md.
             executionMode: "plan",
             allowNoRepo: true,
+            // A cloud run pairs a runtime adapter with a model, and the API
+            // rejects one without the other. Since this flow lets the agent pick
+            // its repo at runtime, it never surfaces a model picker, so pin the
+            // default gateway model here to match the adapter the saga defaults to.
+            model: DEFAULT_GATEWAY_MODEL,
           },
           (output) => invalidateTasks(output.task),
         );

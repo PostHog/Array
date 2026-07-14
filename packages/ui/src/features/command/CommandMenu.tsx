@@ -4,6 +4,7 @@ import {
   ChartLine,
   EnvelopeSimple,
 } from "@phosphor-icons/react";
+import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
 import {
   HOST_TRPC_CLIENT,
@@ -28,6 +29,7 @@ import {
   type CommandMenuAction,
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
@@ -40,6 +42,7 @@ import {
 import { useFileSearchContext } from "@posthog/ui/features/command/useFileSearchContext";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { useProvisioningStore } from "@posthog/ui/features/provisioning/store";
 import {
   closeSettings,
   openSettings,
@@ -48,13 +51,13 @@ import { TaskIcon } from "@posthog/ui/features/sidebar/components/items/TaskIcon
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import {
   goBackInHistory,
   goForwardInHistory,
   navigateToChannel,
   navigateToCommandCenter,
   navigateToInbox,
-  navigateToUsage,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -152,6 +155,11 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     (state) => state.getReviewMode,
   );
   const { data: tasks = [] } = useTasks();
+  const archivedTaskIds = useArchivedTaskIds();
+  const { data: workspaces, isFetched: workspacesFetched } = useWorkspaces();
+  const provisioningTaskIds = useProvisioningStore(
+    (state) => state.activeTasks,
+  );
   const [query, setQuery] = useState("");
   const { repoPath } = useFileSearchContext();
   const canSearchFiles = !!repoPath;
@@ -271,15 +279,12 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         },
       },
       {
-        id: "usage",
-        label: "Usage",
-        keywords: "billing spend cost credits",
+        id: "plan-usage",
+        label: "Plan & usage",
+        keywords: "billing spend cost credits usage plan",
         icon: <ChartLine size={12} className="text-gray-11" />,
         action: "open-usage",
-        onRun: () => {
-          closeSettingsDialog();
-          navigateToUsage();
-        },
+        onRun: () => openSettingsDialog("plan-usage"),
       },
       {
         id: "go-back",
@@ -447,11 +452,19 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
-    if (tasks.length === 0) return [];
+    const workspaceIds = workspaceIdSet(workspaces);
+    const visibleTasks = tasks.filter(
+      (task) =>
+        !archivedTaskIds.has(task.id) &&
+        (!workspacesFetched ||
+          workspaceIds.has(task.id) ||
+          provisioningTaskIds.has(task.id)),
+    );
+    if (visibleTasks.length === 0) return [];
     return [
       {
         label: "Tasks",
-        items: tasks.map((task) => {
+        items: visibleTasks.map((task) => {
           const channel = taskChannelMap.get(task.id);
           return {
             id: `task-${task.id}`,
@@ -477,7 +490,16 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         }),
       },
     ];
-  }, [tasks, taskChannelMap, bluebirdEnabled, closeSettingsDialog]);
+  }, [
+    tasks,
+    archivedTaskIds,
+    workspaces,
+    workspacesFetched,
+    provisioningTaskIds,
+    taskChannelMap,
+    bluebirdEnabled,
+    closeSettingsDialog,
+  ]);
 
   const channelSections = useMemo<CommandSection[]>(() => {
     if (channels.length === 0) return [];

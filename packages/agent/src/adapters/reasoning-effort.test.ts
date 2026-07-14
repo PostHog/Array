@@ -15,12 +15,12 @@ describe("isSupportedReasoningEffort", () => {
     );
   });
 
-  it("accepts xhigh but not max for the codex gpt-5.6 family", () => {
+  it("accepts xhigh and max for the codex gpt-5.6 family", () => {
     expect(isSupportedReasoningEffort("codex", "gpt-5.6-luna", "xhigh")).toBe(
       true,
     );
     expect(isSupportedReasoningEffort("codex", "gpt-5.6-sol", "max")).toBe(
-      false,
+      true,
     );
   });
 

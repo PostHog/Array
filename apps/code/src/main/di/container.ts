@@ -419,6 +419,12 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
     ctx
       .get<AuthService>(MAIN_AUTH_SERVICE)
       .authenticatedFetch(fetch, url, init),
+  getCloudContext: async () => {
+    const auth = ctx.get<AuthService>(MAIN_AUTH_SERVICE);
+    const { apiHost } = await auth.getValidAccessToken();
+    const teamId = auth.getState().currentProjectId;
+    return teamId === null ? null : { apiHost, teamId };
+  },
 }));
 container.bind(MAIN_CLOUD_TASK_SERVICE).toService(CLOUD_TASK_SERVICE);
 container.load(contextMenuCoreModule);

@@ -131,6 +131,13 @@ export default defineConfig([
     format: ["esm"],
     dts: true,
     clean: false,
+    // noExternal inlines CJS deps (e.g. simple-git via @posthog/git) whose
+    // dynamic `require(...)` calls throw in ESM output unless a real require
+    // exists. Entries spawned directly by node (local-tools-mcp-server.js)
+    // crash at import time without this shim.
+    banner: {
+      js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+    },
     ...sharedOptions,
     onSuccess: async () => {
       copyAssets();

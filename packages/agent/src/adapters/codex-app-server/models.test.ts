@@ -4,6 +4,7 @@ import {
   formatCodexModelName,
   getReasoningEffortOptions,
   modelIdFromConfigOptions,
+  supportsMaxEffort,
   supportsXhighEffort,
 } from "./models";
 
@@ -30,8 +31,8 @@ describe("getReasoningEffortOptions", () => {
     "gpt-5.6-luna",
     "openai/gpt-5.6-sol",
     "GPT-5.6-SOL",
-  ])("offers Extra High for the gpt-5.6 family (%s)", (modelId) => {
-    expect(values(modelId)).toEqual(["low", "medium", "high", "xhigh"]);
+  ])("offers Max for the gpt-5.6 family (%s)", (modelId) => {
+    expect(values(modelId)).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
 
   it.each(["gpt-5.3-codex", "gpt-5.1", "o3"])(
@@ -54,6 +55,14 @@ describe("supportsXhighEffort", () => {
     expect(supportsXhighEffort("gpt-5.5-codex")).toBe(true);
     expect(supportsXhighEffort("GPT-5.5")).toBe(true);
     expect(supportsXhighEffort("gpt-5.3-codex")).toBe(false);
+  });
+});
+
+describe("supportsMaxEffort", () => {
+  it("is true only for the gpt-5.6 family", () => {
+    expect(supportsMaxEffort("gpt-5.6-sol")).toBe(true);
+    expect(supportsMaxEffort("GPT-5.6-LUNA")).toBe(true);
+    expect(supportsMaxEffort("gpt-5.5")).toBe(false);
   });
 });
 

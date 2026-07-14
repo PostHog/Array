@@ -8,7 +8,7 @@ import {
   tryResolveGatewayAuth,
 } from "../posthog-provider/gateway-auth";
 import type { PosthogProviderOptions } from "../posthog-provider/provider";
-import { renderWebFetchCall } from "./render";
+import { renderWebFetchCall, renderWebFetchResult } from "./render";
 
 const MAX_URL_LENGTH = 2000;
 const MAX_CONTENT_LENGTH = 10 * 1024 * 1024;
@@ -338,6 +338,9 @@ export function createWebFetchTool(options: PosthogProviderOptions = {}) {
     }),
     renderCall(args, theme) {
       return renderWebFetchCall(args, theme);
+    },
+    renderResult(result, options, theme, context) {
+      return renderWebFetchResult(result, options, theme, context.isError);
     },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const validation = validateUrl(params.url);

@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -441,6 +449,42 @@ describe("AgentServer HTTP Mode", () => {
         bootMs: expect.any(Number),
         sessionInitMs: expect.any(Number),
       });
+    }, 30000);
+
+    it("links native agent state before initializing the session", async () => {
+      const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      const originalCodexHome = process.env.CODEX_HOME;
+      const claudeConfigDir = join(repo.path, ".claude-test");
+      const codexHome = join(repo.path, ".codex-test");
+      const agentStateDir = join(repo.path, ".posthog", "agent-state");
+      process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+      process.env.CODEX_HOME = codexHome;
+
+      try {
+        await createServer({ agentStateDir }).start();
+
+        const claudeProjects = join(claudeConfigDir, "projects");
+        const codexSessions = join(codexHome, "sessions");
+        expect((await lstat(claudeProjects)).isSymbolicLink()).toBe(true);
+        expect((await lstat(codexSessions)).isSymbolicLink()).toBe(true);
+        expect(await readlink(claudeProjects)).toBe(
+          join(agentStateDir, "claude", "projects"),
+        );
+        expect(await readlink(codexSessions)).toBe(
+          join(agentStateDir, "codex", "sessions"),
+        );
+      } finally {
+        if (originalClaudeConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+        }
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
     }, 30000);
   });
 
@@ -956,6 +1000,123 @@ describe("AgentServer HTTP Mode", () => {
       },
     );
 
+    function createRetryTestServer(prompt: ReturnType<typeof vi.fn>) {
+      const testServer = createFailureTestServer();
+      testServer.session = {
+        acpSessionId: "acp-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine: vi.fn(), flush: vi.fn(async () => {}) },
+        clientConnection: { prompt },
+      };
+      return testServer as unknown as {
+        promptWithUpstreamRetry(request: {
+          sessionId: string;
+          prompt: ContentBlock[];
+        }): Promise<{ stopReason: string }>;
+      };
+    }
+
+    it("continues an unattended turn after a transient upstream stream death", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: terminated"))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt[0].text).toContain(
+          "interrupted by a transient connection error",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("re-sends the original prompt when the failure happened before the stream started", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: Connection error."))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt).toEqual([
+          { type: "text", text: "do the task" },
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not retry a genuine agent error", async () => {
+      const prompt = vi.fn().mockRejectedValue(new Error("boom"));
+      const testServer = createRetryTestServer(prompt);
+
+      await expect(
+        testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        }),
+      ).rejects.toThrow("boom");
+      expect(prompt).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops continuing once the bounded retry budget is exhausted", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValue(new Error("API Error: terminated"));
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        const assertion = expect(resultPromise).rejects.toThrow(
+          "API Error: terminated",
+        );
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        await assertion;
+        expect(prompt).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -1364,6 +1525,215 @@ describe("AgentServer HTTP Mode", () => {
       expect(sentMeta?.localSkillContext).toContain("LOCAL_SKILL_MARKER");
       expect(sentMeta?.localSkillContext).toContain("with context");
       expect(sentMeta?.localSkillName).toBe("local-test-skill");
+    }, 20000);
+
+    it("lists co-installed dependency skills with their paths in the skill context", async () => {
+      const makeBundle = (name: string, body: string) =>
+        zipSync({
+          "SKILL.md": new TextEncoder().encode(
+            [
+              "---",
+              `name: ${name}`,
+              `description: ${name}`,
+              "---",
+              "",
+              body,
+            ].join("\n"),
+          ),
+        });
+      const invokedBundle = makeBundle(
+        "parent-skill",
+        "Use /dep-skill for the review step.",
+      );
+      const depBundle = makeBundle("dep-skill", "Dependency instructions.");
+      const checksumOf = (bundle: Uint8Array) =>
+        createHash("sha256").update(Buffer.from(bundle)).digest("hex");
+
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(
+        async (_params: {
+          prompt: ContentBlock[];
+          _meta?: Record<string, unknown>;
+        }) => ({ stopReason: "cancelled" }) as { stopReason: string },
+      );
+      const downloadArtifact = vi.fn(
+        async (_taskId: string, _runId: string, storagePath: string) =>
+          exactArrayBuffer(
+            storagePath.includes("dep-skill") ? depBundle : invokedBundle,
+          ),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+        posthogAPI: { downloadArtifact: typeof downloadArtifact };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.posthogAPI.downloadArtifact = downloadArtifact;
+
+      const makeArtifact = (
+        id: string,
+        name: string,
+        bundle: Uint8Array,
+      ): Record<string, unknown> => ({
+        id,
+        name: `${name}.zip`,
+        type: "skill_bundle",
+        source: "posthog_code_skill",
+        storage_path: `tasks/artifacts/${name}.zip`,
+        content_type: "application/zip",
+        metadata: {
+          skill_name: name,
+          skill_source: "user",
+          content_sha256: checksumOf(bundle),
+          bundle_format: "zip",
+          schema_version: 1,
+        },
+      });
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "skill-command-deps",
+          method: "user_message",
+          params: {
+            content: "/parent-skill run it",
+            artifacts: [
+              makeArtifact(
+                "skill-artifact-parent",
+                "parent-skill",
+                invokedBundle,
+              ),
+              makeArtifact("skill-artifact-dep", "dep-skill", depBundle),
+            ],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(prompt).toHaveBeenCalledOnce();
+
+      const sentMeta = prompt.mock.calls[0]?.[0]._meta;
+      const context = sentMeta?.localSkillContext as string;
+      expect(sentMeta?.localSkillName).toBe("parent-skill");
+      expect(context).toContain('local skill "/parent-skill"');
+      expect(context).toContain("Other local skills installed for this run");
+      expect(context).toMatch(/- \/dep-skill: \S*dep-skill/);
+    }, 20000);
+
+    it("announces mid-message skill mentions via localSkillContext without a skill name", async () => {
+      const makeBundle = (name: string, body: string) =>
+        zipSync({
+          "SKILL.md": new TextEncoder().encode(
+            [
+              "---",
+              `name: ${name}`,
+              `description: ${name}`,
+              "---",
+              "",
+              body,
+            ].join("\n"),
+          ),
+        });
+      const mentionedBundle = makeBundle(
+        "mentioned-skill",
+        "MENTIONED_SKILL_MARKER instructions.",
+      );
+      const prefixBundle = makeBundle("mentioned", "PREFIX_SKILL_MARKER body.");
+      const checksumOf = (bundle: Uint8Array) =>
+        createHash("sha256").update(Buffer.from(bundle)).digest("hex");
+
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(
+        async (_params: {
+          prompt: ContentBlock[];
+          _meta?: Record<string, unknown>;
+        }) => ({ stopReason: "cancelled" }) as { stopReason: string },
+      );
+      const downloadArtifact = vi.fn(
+        async (_taskId: string, _runId: string, storagePath: string) =>
+          exactArrayBuffer(
+            storagePath.includes("mentioned-skill")
+              ? mentionedBundle
+              : prefixBundle,
+          ),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+        posthogAPI: { downloadArtifact: typeof downloadArtifact };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.posthogAPI.downloadArtifact = downloadArtifact;
+
+      const makeArtifact = (
+        id: string,
+        name: string,
+        bundle: Uint8Array,
+      ): Record<string, unknown> => ({
+        id,
+        name: `${name}.zip`,
+        type: "skill_bundle",
+        source: "posthog_code_skill",
+        storage_path: `tasks/artifacts/${name}.zip`,
+        content_type: "application/zip",
+        metadata: {
+          skill_name: name,
+          skill_source: "user",
+          content_sha256: checksumOf(bundle),
+          bundle_format: "zip",
+          schema_version: 1,
+        },
+      });
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "skill-mid-message",
+          method: "user_message",
+          params: {
+            content: "please use /mentioned-skill on the diff",
+            artifacts: [
+              makeArtifact(
+                "skill-artifact-mentioned",
+                "mentioned-skill",
+                mentionedBundle,
+              ),
+              makeArtifact("skill-artifact-prefix", "mentioned", prefixBundle),
+            ],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(prompt).toHaveBeenCalledOnce();
+
+      const sentPrompt = prompt.mock.calls[0]?.[0].prompt;
+      const sentMeta = prompt.mock.calls[0]?.[0]._meta;
+      const context = sentMeta?.localSkillContext as string;
+      // not a bare invocation, so nothing to strip and no localSkillName
+      expect(sentMeta?.localSkillName).toBeUndefined();
+      expect(context).toContain("MENTIONED_SKILL_MARKER");
+      // "mentioned" is a prefix of "/mentioned-skill" but was not itself
+      // mentioned: listed by path, not inlined
+      expect(context).not.toContain("PREFIX_SKILL_MARKER");
+      expect(context).toMatch(/- \/mentioned: \S*mentioned/);
+      const sentText = sentPrompt?.find(
+        (block): block is Extract<ContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )?.text;
+      expect(sentText).toBe("please use /mentioned-skill on the diff");
     }, 20000);
 
     it("ignores a redelivered user_message whose messageId was already accepted", async () => {

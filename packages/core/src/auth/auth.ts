@@ -487,12 +487,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private async ensureValidSession(
     forceRefresh = false,
   ): Promise<InMemorySession> {
+    const currentSession = this.session;
     if (
-      this.session &&
+      currentSession &&
       !forceRefresh &&
-      !this.isSessionExpiring(this.session)
+      !this.isSessionExpiring(currentSession)
     ) {
-      return this.session;
+      return currentSession;
     }
 
     if (this.refreshPromise) {
@@ -502,7 +503,24 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     const sessionInput = this.getSessionInputForRefresh();
 
     const refreshAndSync = async (): Promise<InMemorySession> => {
-      const session = await this.refreshSession(sessionInput);
+      let session: InMemorySession;
+      try {
+        session = await this.refreshSession(sessionInput);
+      } catch (error) {
+        if (
+          currentSession &&
+          this.session === currentSession &&
+          !forceRefresh &&
+          !this.isSessionExpired(currentSession)
+        ) {
+          this.logger.warn(
+            "Preemptive session refresh failed; using current access token",
+            { error },
+          );
+          return currentSession;
+        }
+        throw error;
+      }
       await this.syncAuthenticatedSession(session);
       return session;
     };
@@ -842,6 +860,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   }
   private isSessionExpiring(session: InMemorySession): boolean {
     return session.accessTokenExpiresAt - Date.now() <= TOKEN_EXPIRY_SKEW_MS;
+  }
+  private isSessionExpired(session: InMemorySession): boolean {
+    return session.accessTokenExpiresAt <= Date.now();
   }
   private async fetchUserContext(
     accessToken: string,

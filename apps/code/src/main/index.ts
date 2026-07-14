@@ -515,9 +515,21 @@ if (process.platform !== "win32") {
   process.on("SIGHUP", () => handleShutdownSignal("SIGHUP"));
 }
 
+// A deliberate Ctrl+C during an interactive prompt makes Node's readline
+// SIGINT trap reject the pending prompt with an AbortError (code ABORT_ERR).
+// It is user-initiated, not a crash, so don't report it as an uncaught error.
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.name === "AbortError" ||
+    (error as NodeJS.ErrnoException).code === "ABORT_ERR");
+
 process.on("uncaughtException", (error) => {
   if (error.message === "write EIO") {
     log.transports.console.level = false;
+    return;
+  }
+  if (isAbortError(error)) {
+    log.debug("Ignoring user-initiated abort", error);
     return;
   }
   log.error("Uncaught exception", error);
@@ -528,6 +540,10 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
+  if (isAbortError(reason)) {
+    log.debug("Ignoring user-initiated abort", reason);
+    return;
+  }
   log.error("Unhandled rejection", reason);
   const error = reason instanceof Error ? reason : new Error(String(reason));
   posthogNodeAnalytics.captureException(error, {

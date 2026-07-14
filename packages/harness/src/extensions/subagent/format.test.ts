@@ -5,6 +5,7 @@ import type { SingleRunResult } from "./run-agent";
 function baseResult(overrides: Partial<SingleRunResult> = {}): SingleRunResult {
   return {
     runId: "run-abc",
+    startedAt: Date.now(),
     agent: "scout",
     task: "find the auth code",
     exitCode: 0,

@@ -117,6 +117,28 @@ describe("workflowEditorStore", () => {
       expect(store().draft?.bindings.working[0].label).toBe("Review");
       expect(store().dirty).toBe(false);
     });
+
+    it("toggles the auto flag and marks dirty", () => {
+      store().beginEdit(makeConfig({ ci_failing: [makeAction({ id: "a" })] }));
+      store().updateAction("ci_failing", "a", { auto: true });
+      expect(store().draft?.bindings.ci_failing[0].auto).toBe(true);
+      expect(store().dirty).toBe(true);
+      store().updateAction("ci_failing", "a", { auto: false });
+      expect(store().draft?.bindings.ci_failing[0].auto).toBe(false);
+    });
+
+    it("clears dirty when auto is toggled on then back off", () => {
+      // The editor sends `checked || undefined`, so disabling clears the key
+      // rather than writing `auto: false`. That restores the exact baseline
+      // serialization (no `auto` key), so the dirty flag must return to false —
+      // otherwise an enable→disable round-trip falsely prompts an unsaved-changes save.
+      store().beginEdit(makeConfig({ ci_failing: [makeAction({ id: "a" })] }));
+      store().updateAction("ci_failing", "a", { auto: true });
+      expect(store().dirty).toBe(true);
+      store().updateAction("ci_failing", "a", { auto: undefined });
+      expect(store().draft?.bindings.ci_failing[0].auto).toBeUndefined();
+      expect(store().dirty).toBe(false);
+    });
   });
 
   describe("removeAction", () => {

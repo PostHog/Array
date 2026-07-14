@@ -35,6 +35,7 @@ import {
   emptyBaseline,
   estimateTokens,
 } from "../claude/context-breakdown";
+import { isLocalSkillCommandChunk } from "../local-skill";
 import {
   AppServerClient,
   type AppServerClientHandlers,
@@ -551,12 +552,48 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.planHandoffCancel?.();
     // Prepend _meta.prContext (host PR-follow-up / Slack runs) to the FORWARDED prompt,
     // else codex cloud follow-ups lose the PR-review context. The echo omits it.
-    const prContext = (params._meta as { prContext?: unknown } | undefined)
-      ?.prContext;
+    const meta = params._meta as
+      | {
+          prContext?: unknown;
+          localSkillContext?: unknown;
+          localSkillName?: unknown;
+        }
+      | undefined;
+    const prContext = meta?.prContext;
+    // Inline installed local skill definitions (mirrors the Claude adapter):
+    // codex's skill catalog is fixed at thread start, so mid-session installs
+    // are invisible without this. A bare `/name` command chunk is dropped —
+    // the injected context already carries the user's args.
+    const localSkillContext =
+      typeof meta?.localSkillContext === "string"
+        ? meta.localSkillContext
+        : null;
+    const localSkillName =
+      typeof meta?.localSkillName === "string" ? meta.localSkillName : null;
+    let forwarded = params.prompt;
+    if (localSkillContext) {
+      if (localSkillName) {
+        let skippedLocalSkillCommand = false;
+        forwarded = forwarded.filter((chunk) => {
+          if (
+            !skippedLocalSkillCommand &&
+            isLocalSkillCommandChunk(chunk, localSkillName)
+          ) {
+            skippedLocalSkillCommand = true;
+            return false;
+          }
+          return true;
+        });
+      }
+      forwarded = [
+        { type: "text" as const, text: localSkillContext },
+        ...forwarded,
+      ];
+    }
     const promptBlocks =
       typeof prContext === "string" && prContext.length > 0
-        ? [{ type: "text" as const, text: prContext }, ...params.prompt]
-        : params.prompt;
+        ? [{ type: "text" as const, text: prContext }, ...forwarded]
+        : forwarded;
     const input = toCodexInput(promptBlocks);
     if (input.length === 0) {
       // turn/start rejects empty input, so end the turn cleanly.
@@ -967,6 +1004,20 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       // Drop the late completion of an already-interrupted turn (else it cancels the follow-up).
       if (this.turns.shouldDropCompletion(turn?.id)) return;
       void this.finalizeTurn(mapTurnStopReason(turn?.status));
+    }
+
+    if (method === APP_SERVER_NOTIFICATIONS.MCP_STARTUP_STATUS) {
+      const startup = params as {
+        name?: string;
+        status?: string;
+        error?: string | null;
+      };
+      if (startup?.status === "failed") {
+        this.logger.warn("MCP server failed to start; its tools are absent", {
+          server: startup.name,
+          error: startup.error,
+        });
+      }
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.ERROR) {

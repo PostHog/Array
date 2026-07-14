@@ -418,6 +418,49 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("returns the redirect URL when authorizing an MCP installation", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        redirect_url: "https://auth.example.com/authorize?state=abc",
+      }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.authorizeMcpInstallation({
+        installation_id: "inst-123",
+        install_source: "posthog-code",
+        posthog_code_callback_url: "posthog-code://mcp-oauth-complete",
+      }),
+    ).resolves.toEqual({
+      redirect_url: "https://auth.example.com/authorize?state=abc",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "get",
+        path: "/api/environments/123/mcp_server_installations/authorize/",
+      }),
+    );
+    expect(fetch.mock.calls[0][0]).not.toHaveProperty("overrides");
+  });
+
   describe("warmTask", () => {
     function makeClient(fetch: ReturnType<typeof vi.fn>) {
       const client = new PostHogAPIClient(
