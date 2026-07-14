@@ -1,4 +1,5 @@
 import { RepeatIcon } from "@phosphor-icons/react";
+import { Badge } from "@posthog/quill";
 import { SidebarItem } from "../SidebarItem";
 
 interface LoopsItemProps {
@@ -14,6 +15,7 @@ export function LoopsItem({ isActive, onClick }: LoopsItemProps) {
       label="Loops"
       isActive={isActive}
       onClick={onClick}
+      endContent={<Badge variant="info">Alpha</Badge>}
     />
   );
 }
