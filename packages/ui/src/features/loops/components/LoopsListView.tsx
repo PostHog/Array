@@ -73,8 +73,8 @@ export function LoopsListView() {
             <Flex direction="column" gap="1" className="min-w-0">
               <Heading className="font-bold text-2xl">Loops</Heading>
               <Text color="gray" className="text-sm">
-                Automations that run your instructions unattended, on a
-                schedule, a GitHub event, or an API call.
+                Put your work on autopilot. Loops run on a schedule, on an API
+                call, or when something happens on GitHub.
               </Text>
             </Flex>
             <Button variant="solid" size="2" onClick={startBlank}>
