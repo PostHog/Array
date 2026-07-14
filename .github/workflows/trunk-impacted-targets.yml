@@ -22,8 +22,12 @@ on:
 
 concurrency:
   # Supersede in-flight uploads when the PR head moves; the last upload per head
-  # SHA wins on Trunk's side anyway.
-  group: trunk-impacted-targets-${{ github.head_ref || github.ref }}
+  # SHA wins on Trunk's side anyway. Key on the PR number, not head_ref: fork
+  # PRs frequently share a source branch name (many are opened from `main`), and
+  # keying on head_ref would put two such PRs in one group where one cancels the
+  # other's upload — leaving that head SHA without the upload it needs to enter
+  # the queue.
+  group: trunk-impacted-targets-${{ github.event.pull_request.number || github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
