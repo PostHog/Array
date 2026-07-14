@@ -77,14 +77,27 @@ describe("buildPosthogSetupSuggestion", () => {
   });
 
   it.each(["not_installed", "installed_no_init"] as const)(
-    "requires the hosting-provider env var checklist in the PR body (%s)",
+    "requires a hosting-provider env var checklist (%s)",
+    (state) => {
+      const prompt = buildPosthogSetupSuggestion(state).prompt ?? "";
+      expect(prompt).toContain("production will send no events");
+      expect(prompt).toContain("Never put secret values in a PR body");
+    },
+  );
+
+  // The prompt runs in cloud, worktree and local modes, and no mode opens a PR
+  // automatically — so it has to name a delivery target for both endings.
+  it.each(["not_installed", "installed_no_init"] as const)(
+    "routes the checklist to a PR body or the final message, per run type (%s)",
     (state) => {
       const prompt = buildPosthogSetupSuggestion(state).prompt ?? "";
       expect(prompt).toContain(
         "Before you merge: set environment variables in <provider>",
       );
-      expect(prompt).toContain("production will send no events");
-      expect(prompt).toContain("Never put secret values in the PR body");
+      expect(prompt).toContain(
+        "Before you deploy: set environment variables in <provider>",
+      );
+      expect(prompt).toContain("not opening a pull request");
     },
   );
 

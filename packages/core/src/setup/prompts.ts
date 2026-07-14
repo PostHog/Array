@@ -1,17 +1,23 @@
 import { BASE_CATEGORY_ENUM } from "@posthog/core/setup/types";
 
-// Appended to every prompt that instruments an integration: writing env vars to
-// .env files does nothing for the deployed app, and the sandbox can never verify
-// the hosting provider's env, so the PR must always carry the checklist.
+// Appended to every prompt that instruments an integration. Writing env vars to
+// .env files does nothing for the deployed app, and no run can read the hosting
+// provider's env, so the checklist is unconditional. Where it gets delivered is
+// not: these prompts run in cloud, worktree and local modes (WorkspaceMode), and
+// a PR is never opened automatically in any of them — hence the two-branch phrasing.
 export const DEPLOYMENT_ENV_VAR_PROMPT = `
 
-## Required: env var checklist in the PR body
+## Required: hand off an env var checklist
 
-Adding env vars to \`.env\`, \`.env.local\` or \`.env.example\` only covers local development. It does not set them on the deployed app, so production will send no events until someone sets them in the hosting provider. You cannot read or set the hosting provider's env from here, so always assume they are missing and always include the section below.
+Adding env vars to \`.env\`, \`.env.local\` or \`.env.example\` only covers local development. It does not set them on the deployed app, so production will send no events until someone sets them in the hosting provider. You cannot read or set the hosting provider's env from here, so always assume they are missing and always hand off the checklist below.
 
 Detect the deployment target from repo-root markers: \`vercel.json\` or \`.vercel/\` → Vercel; \`netlify.toml\` → Netlify; \`wrangler.toml\` or \`wrangler.jsonc\` → Cloudflare; \`fly.toml\` → Fly.io. If nothing matches, call it "your hosting provider" and give the generic steps.
 
-Open the PR body — above the summary of changes — with a section titled "Before you merge: set environment variables in <provider>" containing:
+Deliver it wherever this run ends:
+- If you open a pull request, its body must lead with the checklist — above the summary of changes — under the heading "Before you merge: set environment variables in <provider>".
+- If you are working against a local checkout and not opening a pull request, print the same checklist to the user as the final message of the run, under the heading "Before you deploy: set environment variables in <provider>".
+
+Either way the checklist contains:
 
 - Every env var key name the integration reads, exactly as it appears in the code (e.g. the PostHog public key and host vars for this framework).
 - Steps for the detected provider:
@@ -22,7 +28,7 @@ Open the PR body — above the summary of changes — with a section titled "Bef
   - Unknown provider: instruct the user to add each key wherever their production environment defines env vars, and to redeploy.
 - A plain statement that until these are set in <provider>, the production deployment will send no events to PostHog.
 
-Never put secret values in the PR body — key names only. Point the user at their PostHog project settings for the value.`;
+Never put secret values in a PR body — key names only. Point the user at their PostHog project settings for the value.`;
 
 const DISCOVERY_PROMPT_BASE = `You are analyzing this codebase to find the highest-value first tasks for the developer.
 
