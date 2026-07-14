@@ -111,6 +111,35 @@ describe("PrCommentThread", () => {
     );
   });
 
+  it("keeps a reply composer opened while a chat message is sending", async () => {
+    let resolveSend: ((success: boolean) => void) | undefined;
+    sendPromptToAgent.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    renderThread();
+
+    await user.click(screen.getByRole("button", { name: "Chat" }));
+    await user.type(
+      screen.getByPlaceholderText("Ask the agent about this comment..."),
+      "Check this",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await user.click(screen.getByRole("button", { name: "Close composer" }));
+    await user.click(screen.getByRole("button", { name: "Reply" }));
+    await user.type(screen.getByPlaceholderText("Write a reply..."), "Keep me");
+
+    resolveSend?.(true);
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Write a reply...")).toHaveValue(
+        "Keep me",
+      ),
+    );
+  });
+
   it("still posts replies without sending them to chat", async () => {
     const user = userEvent.setup();
     renderThread();

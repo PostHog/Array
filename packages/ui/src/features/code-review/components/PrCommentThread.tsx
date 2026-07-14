@@ -115,7 +115,11 @@ function ThreadActionBar({
             {isReply ? <ChatCircle /> : <Robot />}
             {submitLabel}
           </Button>
-          <Button size="icon-sm" onClick={onHideComposer}>
+          <Button
+            size="icon-sm"
+            aria-label="Close composer"
+            onClick={onHideComposer}
+          >
             <X />
           </Button>
         </Flex>
@@ -345,7 +349,11 @@ export function PrCommentThread({
         buildChatAboutPrCommentPrompt(filePath, endLine, side, comments, text),
       );
       setIsSendingChat(false);
-      if (success) setComposerMode(null);
+      if (success) {
+        setComposerMode((currentMode) =>
+          currentMode === "chat" ? null : currentMode,
+        );
+      }
       return;
     }
 
