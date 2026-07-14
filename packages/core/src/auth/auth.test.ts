@@ -64,8 +64,8 @@ function createPreferencePort(): IAuthPreferenceStore {
 }
 
 const identityCipher: IAuthTokenCipher = {
-  encrypt: (plaintext) => plaintext,
-  decrypt: (encrypted) => encrypted,
+  encrypt: (plaintext) => Promise.resolve(plaintext),
+  decrypt: (encrypted) => Promise.resolve(encrypted),
 };
 
 const mockLogger: RootLogger = {
