@@ -892,30 +892,34 @@ function ThreadKeyboardNav({
     THREAD_HOTKEY_OPTIONS,
   );
 
+  // Read at keypress time so the handler registered in the ref effect never
+  // acts on a stale snapshot (the effect runs after paint, and key repeats
+  // can outpace re-renders).
+  const userMessageIdsRef = useRef(userMessageIds);
+  userMessageIdsRef.current = userMessageIds;
+  const keyboardFocusedMessageIdRef = useRef(keyboardFocusedMessageId);
+  keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
+
   const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
     (direction) => {
       const action = composerMessageNavigation(
-        userMessageIds,
-        keyboardFocusedMessageId,
+        userMessageIdsRef.current,
+        keyboardFocusedMessageIdRef.current,
         direction,
       );
       if (!action) return false;
       if (action.kind === "exitToBottom") {
+        keyboardFocusedMessageIdRef.current = null;
         setKeyboardFocusedMessageId(null);
         scrollToEnd({ behavior: "smooth" });
         return true;
       }
+      keyboardFocusedMessageIdRef.current = action.id;
       setKeyboardFocusedMessageId(action.id);
       scrollToMessage(action.id);
       return true;
     },
-    [
-      userMessageIds,
-      keyboardFocusedMessageId,
-      setKeyboardFocusedMessageId,
-      scrollToMessage,
-      scrollToEnd,
-    ],
+    [setKeyboardFocusedMessageId, scrollToMessage, scrollToEnd],
   );
 
   useEffect(() => {

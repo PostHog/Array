@@ -258,6 +258,14 @@ export function ConversationView({
     return result;
   }, [items]);
 
+  // Read by the composer navigation handler at keypress time, so it never
+  // acts on a stale snapshot (the ref registration effect runs after paint,
+  // and key repeats can outpace re-renders).
+  const userMessagesRef = useRef(userMessages);
+  userMessagesRef.current = userMessages;
+  const keyboardFocusedMessageIdRef = useRef(keyboardFocusedMessageId);
+  keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
+
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
   const scrollToUserMessage = useCallback((id: string, itemIndex: number) => {
@@ -338,29 +346,27 @@ export function ConversationView({
 
   const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
     (direction) => {
+      const messages = userMessagesRef.current;
       const action = composerMessageNavigation(
-        userMessages.map((message) => message.id),
-        keyboardFocusedMessageId,
+        messages.map((message) => message.id),
+        keyboardFocusedMessageIdRef.current,
         direction,
       );
       if (!action) return false;
       if (action.kind === "exitToBottom") {
+        keyboardFocusedMessageIdRef.current = null;
         setKeyboardFocusedMessageId(null);
         scrollToBottom();
         return true;
       }
-      const message = userMessages.find((entry) => entry.id === action.id);
+      const message = messages.find((entry) => entry.id === action.id);
       if (!message) return false;
+      keyboardFocusedMessageIdRef.current = action.id;
       setKeyboardFocusedMessageId(action.id);
       scrollToUserMessage(action.id, message.index);
       return true;
     },
-    [
-      userMessages,
-      keyboardFocusedMessageId,
-      scrollToUserMessage,
-      scrollToBottom,
-    ],
+    [scrollToUserMessage, scrollToBottom],
   );
 
   useEffect(() => {
