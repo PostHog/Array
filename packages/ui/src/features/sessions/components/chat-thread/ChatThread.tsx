@@ -904,16 +904,6 @@ function ThreadKeyboardNav({
   const keyboardFocusedMessageIdRef = useRef(keyboardFocusedMessageId);
   keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
 
-  // A newly sent prompt resets recall, so the next Up starts from it.
-  const userMessageCountRef = useRef(userMessages.length);
-  useEffect(() => {
-    if (userMessages.length > userMessageCountRef.current) {
-      keyboardFocusedMessageIdRef.current = null;
-      setKeyboardFocusedMessageId(null);
-    }
-    userMessageCountRef.current = userMessages.length;
-  }, [userMessages.length, setKeyboardFocusedMessageId]);
-
   const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
     (direction) => {
       const messages = userMessagesRef.current;
@@ -1088,6 +1078,23 @@ export function ChatThread({
   const clearKeyboardFocus = useCallback(() => {
     setKeyboardFocusedMessageId(null);
   }, []);
+
+  // A newly sent prompt resets recall, so the next Up starts from it.
+  // Adjusted during render, not in an effect, so a keypress landing right
+  // after the commit can't see the stale focus.
+  const userMessageCount = useMemo(
+    () =>
+      items.reduce((n, item) => (item.type === "user_message" ? n + 1 : n), 0),
+    [items],
+  );
+  const [prevUserMessageCount, setPrevUserMessageCount] =
+    useState(userMessageCount);
+  if (userMessageCount !== prevUserMessageCount) {
+    setPrevUserMessageCount(userMessageCount);
+    if (userMessageCount > prevUserMessageCount) {
+      setKeyboardFocusedMessageId(null);
+    }
+  }
 
   const renderItem = useCallback(
     (item: ConversationItem) => {

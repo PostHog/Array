@@ -267,14 +267,18 @@ export function ConversationView({
   keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
 
   // A newly sent prompt resets recall, so the next Up starts from it.
-  const userMessageCountRef = useRef(userMessages.length);
-  useEffect(() => {
-    if (userMessages.length > userMessageCountRef.current) {
+  // Adjusted during render, not in an effect, so a keypress landing right
+  // after the commit can't see the stale focus.
+  const [prevUserMessageCount, setPrevUserMessageCount] = useState(
+    userMessages.length,
+  );
+  if (userMessages.length !== prevUserMessageCount) {
+    setPrevUserMessageCount(userMessages.length);
+    if (userMessages.length > prevUserMessageCount) {
       keyboardFocusedMessageIdRef.current = null;
       setKeyboardFocusedMessageId(null);
     }
-    userMessageCountRef.current = userMessages.length;
-  }, [userMessages.length]);
+  }
 
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
