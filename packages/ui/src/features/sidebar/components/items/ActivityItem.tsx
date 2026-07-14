@@ -9,12 +9,17 @@ import { SidebarCountBadge } from "./SidebarCountBadge";
 interface ActivityItemProps {
   isActive: boolean;
   onClick: () => void;
+  depth?: number;
 }
 
 // The Activity nav row with its unread-mentions dot. Owns the mentions
 // subscription so the query mounts once here; the badge counts thread mentions
 // newer than the last time the Activity page was opened.
-export function ActivityItem({ isActive, onClick }: ActivityItemProps) {
+export function ActivityItem({
+  isActive,
+  onClick,
+  depth = 0,
+}: ActivityItemProps) {
   const { items } = useMentionActivity();
   const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);
   const unseen = useMemo(
@@ -23,7 +28,7 @@ export function ActivityItem({ isActive, onClick }: ActivityItemProps) {
   );
   return (
     <SidebarItem
-      depth={0}
+      depth={depth}
       icon={<BellIcon size={16} weight={isActive ? "fill" : "regular"} />}
       label={
         <>

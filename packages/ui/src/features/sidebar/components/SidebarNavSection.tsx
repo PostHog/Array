@@ -11,6 +11,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import {
+  isNavItemVisible,
   MORE_NAV_ITEM_IDS,
   MORE_NAV_ITEMS,
   type MoreNavItemId,
@@ -170,9 +171,9 @@ export function SidebarNavSection({
       action();
     };
 
-  const promotedNavItems = useSidebarStore((s) => s.promotedNavItems);
+  const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
   const hidden = new Set<MoreNavItemId>(
-    MORE_NAV_ITEM_IDS.filter((id) => !promotedNavItems.includes(id)),
+    MORE_NAV_ITEM_IDS.filter((id) => !isNavItemVisible(navItemOverrides, id)),
   );
   const [moreExpanded, setMoreExpanded] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
@@ -180,20 +181,62 @@ export function SidebarNavSection({
   const goUsage = () => navigateToSettings("plan-usage");
 
   // While More is collapsed, an active item hidden under it takes over the
-  // More row so the current page stays visible in the nav. Search and Usage
-  // never take over: one opens the command menu in place, the other leaves
-  // for the settings chrome.
+  // More row so the current page stays visible in the nav. Search, Usage and
+  // Contexts never take over: Search opens the command menu in place, Usage
+  // leaves for the settings chrome and Contexts is a toggle, not a page.
   const moreItemActive: Record<MoreNavItemId, boolean> = {
     search: false,
+    agents: isAgentsActive,
     skills: isSkillsActive,
     "mcp-servers": isMcpServersActive,
     usage: false,
+    "command-center": isCommandCenterActive,
+    contexts: false,
+    activity: isActivityActive,
   };
   const activeHiddenItem = MORE_NAV_ITEMS.find(
     ({ id }) => hidden.has(id) && moreItemActive[id],
   );
   const takeoverLabel =
     !moreExpanded && activeHiddenItem ? activeHiddenItem.label : null;
+
+  const contextsToggle = (depth: 0 | 1) => (
+    <label
+      htmlFor="channels-toggle"
+      className="group flex w-full cursor-pointer items-center gap-2 rounded py-1 pr-2 text-[13px] leading-snug transition-colors hover:bg-fill-secondary"
+      style={{ paddingLeft: depth === 0 ? "8px" : "20px" }}
+    >
+      <span className="flex shrink-0 items-center opacity-80">
+        <HashIcon size={14} />
+      </span>
+      <span className="min-w-0 truncate font-medium">Channels</span>
+      <Badge variant="info">Alpha</Badge>
+      <Switch
+        id="channels-toggle"
+        size="sm"
+        className="ml-auto"
+        checked={channelsEnabled}
+        onCheckedChange={(checked) => {
+          setChannelsEnabled(checked);
+          track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
+            item: "contexts",
+            in_more: depth === 1,
+          });
+          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+            action_type: "toggle_channels",
+            surface: "nav",
+          });
+          // The unified sidebar removed the Code↔Channels space boundary;
+          // this toggle is its successor. Keep firing the legacy
+          // enter/leave events so space-adoption dashboards stay continuous.
+          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+            action_type: checked ? "enter_space" : "leave_space",
+            surface: "nav",
+          });
+        }}
+      />
+    </label>
+  );
 
   return (
     <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
@@ -237,12 +280,14 @@ export function SidebarNavSection({
         </Box>
       ) : null}
 
-      <Box>
-        <AgentsItem
-          isActive={isAgentsActive}
-          onClick={withNavTrack("agents", navigateToAgents)}
-        />
-      </Box>
+      {!hidden.has("agents") && (
+        <Box>
+          <AgentsItem
+            isActive={isAgentsActive}
+            onClick={withNavTrack("agents", navigateToAgents)}
+          />
+        </Box>
+      )}
 
       {!hidden.has("skills") && (
         <Box>
@@ -268,22 +313,41 @@ export function SidebarNavSection({
         </Box>
       )}
 
-      <Box>
-        <CommandCenterItem
-          isActive={isCommandCenterActive}
-          onClick={withNavTrack("command_center", goCommandCenter)}
-          activeCount={commandCenterActiveCount}
-        />
-      </Box>
+      {!hidden.has("command-center") && (
+        <Box>
+          <CommandCenterItem
+            isActive={isCommandCenterActive}
+            onClick={withNavTrack("command_center", goCommandCenter)}
+            activeCount={commandCenterActiveCount}
+          />
+        </Box>
+      )}
+
+      {/* "Channels" is a toggle laid out as a nav row: the # label and Alpha
+          badge on the left, a Switch on the right. It flips the channels
+          feature rather than routing — enabling it reveals the Activity row
+          and swaps the sidebar body to the channel tree. A <label> (not a
+          nav Button) so the Switch can live inside it without nesting
+          buttons — see contextsToggle above. */}
+      {bluebirdEnabled && !hidden.has("contexts") && contextsToggle(0)}
+
+      {/* Activity (the mentions feed) is a channels surface, so it only appears
+          once channels are enabled — sitting directly under the toggle that
+          reveals it. */}
+      {channelsEnabled && !hidden.has("activity") && (
+        <Box>
+          <ActivityItem
+            isActive={isActivityActive}
+            onClick={withNavTrack("activity", navigateToActivity)}
+          />
+        </Box>
+      )}
 
       {/* Everything the user shoved off the top level lives here, plus the
-          Customize entry point. Collapsed by default; when a hidden item is
+          Customize entry point. Always the last row, like the app switcher
+          pattern this mirrors. Collapsed by default; when a hidden item is
           the active page it takes over the More row (see takeoverLabel). */}
-      <Flex
-        direction="column"
-        className="gap-px"
-        mb={bluebirdEnabled ? undefined : "2"}
-      >
+      <Flex direction="column" className="gap-px">
         <MoreItem
           expanded={moreExpanded}
           activeItemLabel={takeoverLabel}
@@ -296,6 +360,13 @@ export function SidebarNavSection({
               <SearchItem
                 depth={1}
                 onClick={withNavTrack("search", openCommandMenu, true)}
+              />
+            )}
+            {hidden.has("agents") && (
+              <AgentsItem
+                depth={1}
+                isActive={isAgentsActive}
+                onClick={withNavTrack("agents", navigateToAgents, true)}
               />
             )}
             {hidden.has("skills") && (
@@ -318,6 +389,22 @@ export function SidebarNavSection({
                 onClick={withNavTrack("usage", goUsage, true)}
               />
             )}
+            {hidden.has("command-center") && (
+              <CommandCenterItem
+                depth={1}
+                isActive={isCommandCenterActive}
+                onClick={withNavTrack("command_center", goCommandCenter, true)}
+                activeCount={commandCenterActiveCount}
+              />
+            )}
+            {bluebirdEnabled && hidden.has("contexts") && contextsToggle(1)}
+            {channelsEnabled && hidden.has("activity") && (
+              <ActivityItem
+                depth={1}
+                isActive={isActivityActive}
+                onClick={withNavTrack("activity", navigateToActivity, true)}
+              />
+            )}
             <CustomizeSidebarItem
               depth={1}
               onClick={withNavTrack(
@@ -329,60 +416,6 @@ export function SidebarNavSection({
           </>
         )}
       </Flex>
-
-      {/* "Channels" is a toggle laid out as a nav row: the # label and Alpha
-          badge on the left, a Switch on the right. It flips the channels
-          feature rather than routing — enabling it reveals the Canvas row
-          below and swaps the sidebar body to the channel tree. A <label> (not a
-          nav Button) so the Switch can live inside it without nesting buttons. */}
-      {bluebirdEnabled && (
-        <label
-          htmlFor="channels-toggle"
-          className="group flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-[13px] leading-snug transition-colors hover:bg-fill-secondary"
-        >
-          <span className="flex shrink-0 items-center opacity-80">
-            <HashIcon size={14} />
-          </span>
-          <span className="min-w-0 truncate font-medium">Channels</span>
-          <Badge variant="info">Alpha</Badge>
-          <Switch
-            id="channels-toggle"
-            size="sm"
-            className="ml-auto"
-            checked={channelsEnabled}
-            onCheckedChange={(checked) => {
-              setChannelsEnabled(checked);
-              track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
-                item: "contexts",
-                in_more: false,
-              });
-              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                action_type: "toggle_channels",
-                surface: "nav",
-              });
-              // The unified sidebar removed the Code↔Channels space boundary;
-              // this toggle is its successor. Keep firing the legacy
-              // enter/leave events so space-adoption dashboards stay continuous.
-              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                action_type: checked ? "enter_space" : "leave_space",
-                surface: "nav",
-              });
-            }}
-          />
-        </label>
-      )}
-
-      {/* Activity (the mentions feed) is a channels surface, so it only appears
-          once channels are enabled — sitting directly under the toggle that
-          reveals it. */}
-      {channelsEnabled && (
-        <Box>
-          <ActivityItem
-            isActive={isActivityActive}
-            onClick={withNavTrack("activity", navigateToActivity)}
-          />
-        </Box>
-      )}
 
       <CustomizeSidebarDialog
         open={customizeOpen}

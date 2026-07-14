@@ -1,34 +1,49 @@
 import {
+  Bell,
   CreditCard,
-  type Icon,
   Lightbulb,
+  Lightning,
   MagnifyingGlass,
   Plugs,
+  Robot,
 } from "@phosphor-icons/react";
 import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
 import {
+  isNavItemVisible,
   MORE_NAV_ITEMS,
   type MoreNavItemId,
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { track } from "@posthog/ui/shell/analytics";
 import { Button, Checkbox, Dialog, Flex, Text } from "@radix-ui/themes";
+import { SquircleDashed } from "lucide-react";
 
-const ITEM_ICONS: Record<MoreNavItemId, Icon> = {
+const ITEM_ICONS: Record<
+  MoreNavItemId,
+  React.ComponentType<{ size?: number | string }>
+> = {
   search: MagnifyingGlass,
+  agents: Robot,
   skills: Lightbulb,
   "mcp-servers": Plugs,
   usage: CreditCard,
+  "command-center": Lightning,
+  contexts: SquircleDashed,
+  activity: Bell,
 };
 
 const ITEM_ANALYTICS_IDS: Record<MoreNavItemId, SidebarNavItem> = {
   search: "search",
+  agents: "agents",
   skills: "skills",
   "mcp-servers": "mcp_servers",
   usage: "usage",
+  "command-center": "command_center",
+  contexts: "contexts",
+  activity: "activity",
 };
 
 interface CustomizeSidebarDialogProps {
@@ -40,7 +55,7 @@ export function CustomizeSidebarDialog({
   open,
   onOpenChange,
 }: CustomizeSidebarDialogProps) {
-  const promotedNavItems = useSidebarStore((s) => s.promotedNavItems);
+  const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
   const setNavItemVisible = useSidebarStore((s) => s.setNavItemVisible);
 
   return (
@@ -55,7 +70,7 @@ export function CustomizeSidebarDialog({
         <Flex direction="column" gap="3" mt="4">
           {MORE_NAV_ITEMS.map(({ id, label }) => {
             const ItemIcon = ITEM_ICONS[id];
-            const visible = promotedNavItems.includes(id);
+            const visible = isNavItemVisible(navItemOverrides, id);
             return (
               <Text key={id} as="label" size="2">
                 <Flex gap="2" align="center">

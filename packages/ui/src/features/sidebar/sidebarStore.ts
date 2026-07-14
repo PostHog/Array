@@ -3,9 +3,10 @@ import type { WorkspaceMode } from "@posthog/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  MORE_NAV_ITEM_IDS,
   type MoreNavItemId,
+  type NavItemOverrides,
   SIDEBAR_MIN_WIDTH,
+  sanitizeNavItemOverrides,
 } from "./constants";
 
 interface SidebarStoreState {
@@ -25,10 +26,10 @@ interface SidebarStoreState {
   // the task list, Canvas nav item appears). Off by default — Code merged into
   // the Bluebird chrome ships with channels hidden until the user opts in.
   channelsEnabled: boolean;
-  // Moreable nav items the user promoted out of the More row via the
-  // Customize sidebar dialog. Persisting promotions (not hidden items) keeps
-  // any newly shipped moreable item under More by default.
-  promotedNavItems: MoreNavItemId[];
+  // Per-item visibility overrides from the Customize sidebar dialog. Items
+  // absent from the map follow their MORE_NAV_ITEMS defaultVisible, so newly
+  // shipped moreable items keep their intended default for existing users.
+  navItemOverrides: NavItemOverrides;
 }
 
 interface SidebarStoreActions {
@@ -70,7 +71,7 @@ export const useSidebarStore = create<SidebarStore>()(
       showInternal: false,
       taskTypeFilter: [...ALL_WORKSPACE_MODES],
       channelsEnabled: false,
-      promotedNavItems: [],
+      navItemOverrides: {},
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -130,11 +131,7 @@ export const useSidebarStore = create<SidebarStore>()(
       setChannelsEnabled: (channelsEnabled) => set({ channelsEnabled }),
       setNavItemVisible: (item, visible) =>
         set((state) => ({
-          promotedNavItems: visible
-            ? state.promotedNavItems.includes(item)
-              ? state.promotedNavItems
-              : [...state.promotedNavItems, item]
-            : state.promotedNavItems.filter((id) => id !== item),
+          navItemOverrides: { ...state.navItemOverrides, [item]: visible },
         })),
     }),
     {
@@ -152,7 +149,7 @@ export const useSidebarStore = create<SidebarStore>()(
         showInternal: state.showInternal,
         taskTypeFilter: state.taskTypeFilter,
         channelsEnabled: state.channelsEnabled,
-        promotedNavItems: state.promotedNavItems,
+        navItemOverrides: state.navItemOverrides,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -168,7 +165,7 @@ export const useSidebarStore = create<SidebarStore>()(
           showInternal?: boolean;
           taskTypeFilter?: WorkspaceMode[];
           channelsEnabled?: boolean;
-          promotedNavItems?: MoreNavItemId[];
+          navItemOverrides?: unknown;
         };
         return {
           ...current,
@@ -191,9 +188,9 @@ export const useSidebarStore = create<SidebarStore>()(
             persistedState.taskTypeFilter ?? current.taskTypeFilter,
           channelsEnabled:
             persistedState.channelsEnabled ?? current.channelsEnabled,
-          promotedNavItems: (
-            persistedState.promotedNavItems ?? current.promotedNavItems
-          ).filter((id) => MORE_NAV_ITEM_IDS.includes(id)),
+          navItemOverrides: sanitizeNavItemOverrides(
+            persistedState.navItemOverrides,
+          ),
         };
       },
     },

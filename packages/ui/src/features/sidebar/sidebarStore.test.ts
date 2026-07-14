@@ -1,53 +1,84 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { MORE_NAV_ITEM_IDS } from "./constants";
+import { isNavItemVisible, MORE_NAV_ITEMS } from "./constants";
 import { useSidebarStore } from "./sidebarStore";
 
-describe("sidebarStore promotedNavItems", () => {
+describe("sidebarStore navItemOverrides", () => {
   beforeEach(() => {
-    useSidebarStore.setState({ promotedNavItems: [] });
+    useSidebarStore.setState({ navItemOverrides: {} });
   });
 
-  it("keeps every moreable item under More by default", () => {
-    expect(useSidebarStore.getState().promotedNavItems).toEqual([]);
-    expect(MORE_NAV_ITEM_IDS).toEqual([
-      "search",
-      "skills",
-      "mcp-servers",
-      "usage",
-    ]);
+  it.each(
+    MORE_NAV_ITEMS.map((item) => [item.id, item.defaultVisible] as const),
+  )("%s is visible=%s by default", (id, defaultVisible) => {
+    const overrides = useSidebarStore.getState().navItemOverrides;
+    expect(isNavItemVisible(overrides, id)).toBe(defaultVisible);
   });
 
-  it.each(MORE_NAV_ITEM_IDS)(
-    "setNavItemVisible(%s, true) promotes only that item",
-    (item) => {
-      useSidebarStore.getState().setNavItemVisible(item, true);
+  it.each(MORE_NAV_ITEMS.map((item) => item.id))(
+    "setNavItemVisible(%s) overrides in both directions",
+    (id) => {
+      useSidebarStore.getState().setNavItemVisible(id, true);
+      expect(
+        isNavItemVisible(useSidebarStore.getState().navItemOverrides, id),
+      ).toBe(true);
 
-      expect(useSidebarStore.getState().promotedNavItems).toEqual([item]);
+      useSidebarStore.getState().setNavItemVisible(id, false);
+      expect(
+        isNavItemVisible(useSidebarStore.getState().navItemOverrides, id),
+      ).toBe(false);
     },
   );
 
-  it.each(MORE_NAV_ITEM_IDS)(
-    "setNavItemVisible(%s, true) is idempotent",
-    (item) => {
-      useSidebarStore.getState().setNavItemVisible(item, true);
-      useSidebarStore.getState().setNavItemVisible(item, true);
+  it("overriding one item leaves the others at their defaults", () => {
+    useSidebarStore.getState().setNavItemVisible("agents", false);
 
-      expect(useSidebarStore.getState().promotedNavItems).toEqual([item]);
+    const overrides = useSidebarStore.getState().navItemOverrides;
+    for (const item of MORE_NAV_ITEMS) {
+      if (item.id === "agents") continue;
+      expect(isNavItemVisible(overrides, item.id)).toBe(item.defaultVisible);
+    }
+  });
+
+  it.each([
+    ["a string", "corrupt"],
+    ["an array", ["search"]],
+    ["null", null],
+    ["a number", 7],
+  ])(
+    "rehydration falls back to defaults when persisted overrides are %s",
+    async (_label, corrupt) => {
+      localStorage.setItem(
+        "sidebar-storage",
+        JSON.stringify({ state: { navItemOverrides: corrupt }, version: 0 }),
+      );
+
+      await useSidebarStore.persist.rehydrate();
+
+      expect(useSidebarStore.getState().navItemOverrides).toEqual({});
+      localStorage.removeItem("sidebar-storage");
     },
   );
 
-  it.each(MORE_NAV_ITEM_IDS)(
-    "setNavItemVisible(%s, false) demotes only that item",
-    (item) => {
-      for (const id of MORE_NAV_ITEM_IDS) {
-        useSidebarStore.getState().setNavItemVisible(id, true);
-      }
+  it("rehydration drops unknown ids and non-boolean values", async () => {
+    localStorage.setItem(
+      "sidebar-storage",
+      JSON.stringify({
+        state: {
+          navItemOverrides: {
+            search: true,
+            "retired-item": true,
+            skills: "yes",
+          },
+        },
+        version: 0,
+      }),
+    );
 
-      useSidebarStore.getState().setNavItemVisible(item, false);
+    await useSidebarStore.persist.rehydrate();
 
-      const promoted = useSidebarStore.getState().promotedNavItems;
-      expect(promoted).not.toContain(item);
-      expect(promoted).toHaveLength(MORE_NAV_ITEM_IDS.length - 1);
-    },
-  );
+    expect(useSidebarStore.getState().navItemOverrides).toEqual({
+      search: true,
+    });
+    localStorage.removeItem("sidebar-storage");
+  });
 });
