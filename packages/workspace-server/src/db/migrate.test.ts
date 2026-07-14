@@ -175,6 +175,77 @@ describe("runMigrations", () => {
       expect(hasColumn(sqlite, "browser_tabs", "app_view")).toBe(true);
     });
 
+    // The one-shot repair can't help once it's in the ledger: a panes-branch
+    // build that runs AFTER 0020 rebuilds browser_tabs without its target
+    // columns, and nothing pending remains to heal it. The always-run
+    // ensureBrowserTabsSchema pass must restore the columns anyway.
+    it("heals a panes rebuild that postdates the 0020 repair", () => {
+      runMigrations(sqlite, MIGRATIONS_FOLDER);
+      // The panes build's table rebuild: targets move to browser_panes and
+      // the recreated browser_tabs drops every target column.
+      sqlite.exec(`
+        DROP TABLE browser_tabs;
+        CREATE TABLE browser_tabs (id text PRIMARY KEY NOT NULL,
+          window_id text NOT NULL, position integer NOT NULL,
+          created_at integer NOT NULL, last_active_at integer NOT NULL,
+          pane_id text, layout text, focused_pane_id text,
+          FOREIGN KEY (window_id) REFERENCES browser_windows(id) ON DELETE cascade);
+        CREATE TABLE browser_panes (id text PRIMARY KEY NOT NULL,
+          tab_id text NOT NULL, window_id text NOT NULL, dashboard_id text,
+          FOREIGN KEY (tab_id) REFERENCES browser_tabs(id) ON DELETE cascade);
+      `);
+      expect(hasColumn(sqlite, "browser_tabs", "dashboard_id")).toBe(false);
+
+      expect(() => runMigrations(sqlite, MIGRATIONS_FOLDER)).not.toThrow();
+      for (const column of [
+        "dashboard_id",
+        "task_id",
+        "channel_id",
+        "channel_section",
+        "app_view",
+        "scroll_state",
+      ]) {
+        expect(hasColumn(sqlite, "browser_tabs", column)).toBe(true);
+      }
+      // The other branch's additions survive at the schema level (its tables
+      // and columns are left alone; row-level fate is up to that branch).
+      expect(hasColumn(sqlite, "browser_tabs", "pane_id")).toBe(true);
+      expect(hasColumn(sqlite, "browser_panes", "tab_id")).toBe(true);
+    });
+
+    it("rebuilds a variant missing a structural NOT NULL column", () => {
+      runMigrations(sqlite, MIGRATIONS_FOLDER);
+      // A variant without window_id can't be healed additively — ALTER would
+      // have to fabricate a default, stamping rows with dangling '' FKs.
+      sqlite.exec(`
+        DROP TABLE browser_tabs;
+        CREATE TABLE browser_tabs (id text PRIMARY KEY NOT NULL,
+          position integer NOT NULL, created_at integer NOT NULL,
+          last_active_at integer NOT NULL);
+      `);
+
+      expect(() => runMigrations(sqlite, MIGRATIONS_FOLDER)).not.toThrow();
+      expect(hasColumn(sqlite, "browser_tabs", "window_id")).toBe(true);
+      expect(hasColumn(sqlite, "browser_tabs", "dashboard_id")).toBe(true);
+      const rows = sqlite
+        .prepare("SELECT COUNT(*) AS count FROM browser_tabs")
+        .get() as { count: number };
+      expect(rows.count).toBe(0);
+    });
+
+    it("does not inject browser tables into a custom-folder database", () => {
+      const dir = writeTempMigration("CREATE TABLE `unrelated` (`id` text);");
+      try {
+        expect(() => runMigrations(sqlite, dir)).not.toThrow();
+        const table = sqlite
+          .prepare("SELECT type FROM sqlite_master WHERE name = 'browser_tabs'")
+          .get();
+        expect(table).toBeUndefined();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     it("tolerates arbitrary statement failures in a best-effort migration", () => {
       // An unforeseen divergence must degrade to "still broken", never a
       // failed migration batch that kills boot.
