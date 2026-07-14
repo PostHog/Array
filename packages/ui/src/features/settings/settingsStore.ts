@@ -29,6 +29,13 @@ export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
 
+// When spoken notifications are allowed to talk, relative to what's on screen:
+//   - always: speak regardless of what the user is looking at
+//   - unviewed_task: stay quiet for the task currently on screen
+//   - app_unfocused: only speak when PostHog Code isn't the focused app
+// (needs-input lines ignore this so a blocker is never missed.)
+export type SpokenFocusMode = "always" | "unviewed_task" | "app_unfocused";
+
 export type BuiltInCompletionSound =
   | "none"
   | "guitar"
@@ -149,6 +156,24 @@ interface SettingsStore {
   removeCustomSound: (id: string) => void;
   renameCustomSound: (id: string, name: string) => void;
 
+  // Spoken notifications
+  spokenNotifications: boolean;
+  spokenNotifyNeedsInput: boolean;
+  spokenNotifyCompletion: boolean;
+  spokenNotifyProgress: boolean;
+  spokenFocusMode: SpokenFocusMode;
+  elevenLabsVoiceId: string;
+  // Mirrors whether an ElevenLabs key is stored (the key itself lives in
+  // encrypted secure storage, never in this persisted blob).
+  elevenLabsKeyConfigured: boolean;
+  setSpokenNotifications: (enabled: boolean) => void;
+  setSpokenNotifyNeedsInput: (enabled: boolean) => void;
+  setSpokenNotifyCompletion: (enabled: boolean) => void;
+  setSpokenNotifyProgress: (enabled: boolean) => void;
+  setSpokenFocusMode: (mode: SpokenFocusMode) => void;
+  setElevenLabsVoiceId: (voiceId: string) => void;
+  setElevenLabsKeyConfigured: (configured: boolean) => void;
+
   // Composer / chat
   autoConvertLongText: AutoConvertLongText;
   sendMessagesWith: SendMessagesWith;
@@ -242,6 +267,13 @@ export const NOTIFICATION_DEFAULTS = {
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
   scaleSoundWithTaskLength: false,
+  spokenNotifications: false,
+  spokenNotifyNeedsInput: true,
+  spokenNotifyCompletion: true,
+  spokenNotifyProgress: false,
+  spokenFocusMode: "unviewed_task" as SpokenFocusMode,
+  elevenLabsVoiceId: "",
+  elevenLabsKeyConfigured: false,
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -311,6 +343,18 @@ export const useSettingsStore = create<SettingsStore>()(
       setToastNotifications: (enabled) => set({ toastNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setSpokenNotifications: (enabled) =>
+        set({ spokenNotifications: enabled }),
+      setSpokenNotifyNeedsInput: (enabled) =>
+        set({ spokenNotifyNeedsInput: enabled }),
+      setSpokenNotifyCompletion: (enabled) =>
+        set({ spokenNotifyCompletion: enabled }),
+      setSpokenNotifyProgress: (enabled) =>
+        set({ spokenNotifyProgress: enabled }),
+      setSpokenFocusMode: (mode) => set({ spokenFocusMode: mode }),
+      setElevenLabsVoiceId: (voiceId) => set({ elevenLabsVoiceId: voiceId }),
+      setElevenLabsKeyConfigured: (configured) =>
+        set({ elevenLabsKeyConfigured: configured }),
       setScaleSoundWithTaskLength: (enabled) =>
         set({ scaleSoundWithTaskLength: enabled }),
       addCustomSound: (sound) =>
@@ -470,6 +514,13 @@ export const useSettingsStore = create<SettingsStore>()(
         completionVolume: state.completionVolume,
         scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         customSounds: state.customSounds,
+        spokenNotifications: state.spokenNotifications,
+        spokenNotifyNeedsInput: state.spokenNotifyNeedsInput,
+        spokenNotifyCompletion: state.spokenNotifyCompletion,
+        spokenNotifyProgress: state.spokenNotifyProgress,
+        spokenFocusMode: state.spokenFocusMode,
+        elevenLabsVoiceId: state.elevenLabsVoiceId,
+        elevenLabsKeyConfigured: state.elevenLabsKeyConfigured,
 
         // Composer / chat
         autoConvertLongText: state.autoConvertLongText,

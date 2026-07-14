@@ -134,6 +134,13 @@ export interface TaskRunCancelledProperties {
   prompts_sent: number;
 }
 
+export interface TaskRunStoppedProperties {
+  task_id: string;
+  execution_type: ExecutionType;
+  duration_seconds?: number;
+  prompts_sent?: number;
+}
+
 export interface PromptSentProperties {
   task_id: string;
   is_initial: boolean;
@@ -1068,6 +1075,7 @@ export const ANALYTICS_EVENTS = {
   TASK_RUN_STARTED: "Task run started",
   TASK_RUN_COMPLETED: "Task run completed",
   TASK_RUN_CANCELLED: "Task run cancelled",
+  TASK_RUN_STOPPED: "Task run stopped",
   PROMPT_SENT: "Prompt sent",
 
   // Claude Code session import
@@ -1228,6 +1236,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TASK_RUN_STARTED]: TaskRunStartedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_COMPLETED]: TaskRunCompletedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_CANCELLED]: TaskRunCancelledProperties;
+  [ANALYTICS_EVENTS.TASK_RUN_STOPPED]: TaskRunStoppedProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
 
   // Claude Code session import

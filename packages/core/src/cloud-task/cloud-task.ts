@@ -19,6 +19,8 @@ import {
   isTerminalStatus,
   type SendCommandInput,
   type SendCommandOutput,
+  type StopInput,
+  type StopOutput,
   type TaskRunStatus,
   type WatchInput,
 } from "./schemas";
@@ -517,6 +519,65 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         error: errorMessage,
       });
       return { success: false, error: errorMessage };
+    }
+  }
+
+  async stop(input: StopInput): Promise<StopOutput> {
+    try {
+      const context = await this.auth.getCloudContext();
+      if (!context) {
+        return { success: false, error: "No active cloud project" };
+      }
+      const url = `${context.apiHost}/api/projects/${context.teamId}/tasks/${input.taskId}/runs/${input.runId}/cancel/`;
+      const response = await this.auth.authenticatedFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input.reason ? { reason: input.reason } : {}),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        let errorMessage = `Stop failed with status ${response.status}`;
+        try {
+          const errorJson = JSON.parse(errorText) as { error?: unknown };
+          if (typeof errorJson.error === "string" && errorJson.error) {
+            errorMessage = errorJson.error;
+          }
+        } catch {
+          if (errorText) errorMessage = errorText;
+        }
+
+        this.log.warn("Cloud run stop failed", {
+          taskId: input.taskId,
+          runId: input.runId,
+          status: response.status,
+          error: errorMessage,
+        });
+        return {
+          success: false,
+          error: errorMessage,
+          retryable: response.status === 503 || response.status >= 500,
+        };
+      }
+
+      const data = (await response.json()) as { status?: string };
+      this.log.info("Cloud run stop accepted", {
+        taskId: input.taskId,
+        runId: input.runId,
+        runStatus: data.status,
+      });
+      return { success: true, runStatus: data.status };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      this.log.error("Cloud run stop error", {
+        taskId: input.taskId,
+        runId: input.runId,
+        error: errorMessage,
+      });
+      return { success: false, error: errorMessage, retryable: true };
     }
   }
 

@@ -58,10 +58,14 @@ function buildAgentBuilderContext(
 ): Record<string, unknown> {
   const agent = "slug" in page ? page.slug : undefined;
   const sessionId = page.kind === "agent-session" ? page.sessionId : undefined;
+  const revisionId = page.kind === "agent-config" ? page.revision : undefined;
   return {
     page: page.kind,
     agent,
     session_id: sessionId,
+    // The revision open in the configuration pane — the default target for
+    // revision-scoped punch-outs (`set_secret`, `connect_mcp`).
+    revision_id: revisionId,
     follow_enabled: followEnabled,
     // The project the user is currently in — the agent threads this into the
     // `project_id` arg of every `@posthog/*` tool (it's tenant-neutral and acts

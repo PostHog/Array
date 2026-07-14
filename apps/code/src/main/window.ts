@@ -26,11 +26,11 @@ import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import {
   saveFullScreenState,
-  saveZoomLevel,
   setRestoreFullScreenOnNextLaunch,
   type WindowStateSchema,
   windowStateStore,
 } from "./utils/store";
+import { setupWindowZoom } from "./zoom";
 
 const log = logger.scope("window");
 const trpcLog = logger.scope("host-trpc");
@@ -270,21 +270,7 @@ export function createWindow(): void {
   mainWindow.once("ready-to-show", showWindow);
   const showFallback = setTimeout(showWindow, 3000);
 
-  // Restore the zoom level once the renderer has loaded. Read the latest
-  // persisted value from the store (not the create-time snapshot) so zooming
-  // done during the session survives in-app reloads, which otherwise reset
-  // Chromium's per-webContents zoom.
-  mainWindow.webContents.on("did-finish-load", () => {
-    mainWindow?.webContents.setZoomLevel(windowStateStore.get("zoomLevel", 0));
-  });
-
-  // Persist mouse-wheel/pinch zoom. Menu-driven zoom is persisted by the
-  // menu items themselves (see buildViewMenu in menu.ts).
-  mainWindow.webContents.on("zoom-changed", () => {
-    if (mainWindow) {
-      saveZoomLevel(mainWindow.webContents.getZoomLevel());
-    }
-  });
+  setupWindowZoom(mainWindow);
 
   // Persist window state on changes
   mainWindow.on(

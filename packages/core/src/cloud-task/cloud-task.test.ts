@@ -26,6 +26,7 @@ import { CloudTaskService } from "./cloud-task";
 
 const mockAuthService = {
   authenticatedFetch: vi.fn(),
+  getCloudContext: vi.fn(),
 };
 
 function createJsonResponse(
@@ -114,6 +115,11 @@ describe("CloudTaskService", () => {
       ),
     );
     mockAuthService.authenticatedFetch.mockReset();
+    mockAuthService.getCloudContext.mockReset();
+    mockAuthService.getCloudContext.mockResolvedValue({
+      apiHost: "https://us.posthog.com",
+      teamId: 2,
+    });
     vi.stubGlobal("fetch", fetchRouter);
 
     mockAuthService.authenticatedFetch.mockImplementation(
@@ -2333,6 +2339,42 @@ describe("CloudTaskService", () => {
           (u as { kind?: string }).kind === "error",
       ),
     ).toBe(false);
+  });
+
+  it("stops a cloud run through the run cancel endpoint", async () => {
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse({ id: "run-1", status: "in_progress" }, 202),
+    );
+
+    const result = await service.stop({
+      taskId: "task-1",
+      runId: "run-1",
+    });
+
+    expect(result).toEqual({ success: true, runStatus: "in_progress" });
+    const [url, init] = mockNetFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://us.posthog.com/api/projects/2/tasks/task-1/runs/run-1/cancel/",
+    );
+    expect(init.method).toBe("POST");
+  });
+
+  it("surfaces the backend error and retryability when a stop fails", async () => {
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse(
+        { error: "Could not reach the run's workflow; try again" },
+        503,
+      ),
+    );
+
+    const result = await service.stop({
+      taskId: "task-1",
+      runId: "run-1",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Could not reach the run's workflow; try again");
+    expect(result.retryable).toBe(true);
   });
 
   it("does not let a stale backend-error count inflate a transport reconnect delay", async () => {

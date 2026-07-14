@@ -4,6 +4,7 @@ import { listReposTool } from "./tools/list-repos";
 import { signedCommitTool } from "./tools/signed-commit";
 import { signedMergeTool } from "./tools/signed-merge";
 import { signedRewriteTool } from "./tools/signed-rewrite";
+import { speakTool } from "./tools/speak";
 
 export {
   LOCAL_TOOLS_MCP_NAME,
@@ -21,6 +22,7 @@ export const LOCAL_TOOLS: LocalTool[] = [
   signedRewriteTool,
   listReposTool,
   cloneRepoTool,
+  speakTool,
 ];
 
 /** Tools whose gate passes for the given context — the set to actually expose. */
