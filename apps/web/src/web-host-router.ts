@@ -3,7 +3,11 @@ import type { TeamSkillsService } from "@posthog/core/skills/teamSkillsService";
 import { resolveService } from "@posthog/di/container";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
+import { canvasDataRouter } from "@posthog/host-router/routers/canvas-data.router";
+import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templates.router";
+import { channelTasksRouter } from "@posthog/host-router/routers/channel-tasks.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
+import { dashboardsRouter } from "@posthog/host-router/routers/dashboards.router";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import {
   type CloudRegion,
@@ -465,7 +469,14 @@ export const webHostRouter = router({
   archive: archiveStubRouter,
   auth: authRouter,
   browserTabs: browserTabsRouter,
+  // Canvas / Channels: real host-router routers over the host-agnostic canvas
+  // core services (bound via canvasCoreModule in web-container), which reach the
+  // PostHog desktop_file_system API through authenticatedFetch — no Node backend.
+  canvasData: canvasDataRouter,
+  canvasTemplates: canvasTemplatesRouter,
+  channelTasks: channelTasksRouter,
   cloudTask: cloudTaskRouter,
+  dashboards: dashboardsRouter,
   deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
   fs: fsStubRouter,

@@ -26,6 +26,7 @@ import {
   type IAuthSessionStore,
   type IAuthTokenCipher,
 } from "@posthog/core/auth/identifiers";
+import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
 import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
@@ -452,6 +453,12 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
     return teamId === null ? null : { apiHost, teamId };
   },
 }));
+
+// ── Canvas / Channels: host-agnostic dashboard + freeform canvas services ──
+// They only need AuthService + fetch (they reach the PostHog desktop_file_system
+// API), so the web host binds them by loading the same core module desktop does;
+// the web host router forwards its canvas routers to these.
+container.load(canvasCoreModule);
 
 // SessionService is built from host-agnostic deps (host tRPC client + UI
 // stores) — same construction the desktop renderer uses.
