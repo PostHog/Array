@@ -1,6 +1,11 @@
-import { ArrowLeft, Notebook as NotebookIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  Cpu,
+  Notebook as NotebookIcon,
+} from "@phosphor-icons/react";
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import {
+  buildMarkdownNotebookContent,
   getMarkdownNotebookMarkdown,
   getMarkdownNotebookNodeId,
   isMarkdownNotebookContent,
@@ -16,11 +21,20 @@ import {
   EmptyTitle,
   Spinner,
 } from "@posthog/quill";
-import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import {
+  useAuthenticatedClient,
+  useOptionalAuthenticatedClient,
+} from "@posthog/ui/features/auth/authClient";
 import { navigateToNotebooks } from "@posthog/ui/router/navigationBridge";
 import { Flex, IconButton, ScrollArea, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { KernelPanel } from "./cells/KernelPanel";
+import { NotebookCellContextProvider } from "./cells/NotebookCellContext";
+import {
+  convertNotebookContentToMarkdown,
+  type NotebookContentForMarkdownConversion,
+} from "./markdown-notebook/legacyConversion";
 import { MarkdownNotebook } from "./markdown-notebook/MarkdownNotebook";
 import type {
   MarkdownNotebookCaretPosition,
@@ -74,6 +88,53 @@ export function NotebookView({ shortId }: NotebookViewProps) {
   }
 
   if (!isMarkdownNotebookContent(notebook.content)) {
+    return <LegacyNotebookConverter notebook={notebook} />;
+  }
+
+  return <NotebookEditor notebook={notebook} />;
+}
+
+// Legacy (TipTap rich-text) notebooks are converted to markdown in place the
+// first time they're opened here: convert the content JSON client-side, PATCH
+// the notebook with the markdown envelope, then refetch so NotebookView
+// remounts the editor on the fresh (now-markdown) notebook.
+function LegacyNotebookConverter({ notebook }: { notebook: NotebookRecord }) {
+  const client = useOptionalAuthenticatedClient();
+  const queryClient = useQueryClient();
+  const [conversionError, setConversionError] = useState<string | null>(null);
+
+  // The conversion must fire exactly once per mount, even across StrictMode's
+  // dev double-effect and auth-state re-renders (the ref survives both).
+  const conversionStartedRef = useRef(false);
+  useEffect(() => {
+    if (!client || conversionStartedRef.current) {
+      return;
+    }
+    conversionStartedRef.current = true;
+    void (async () => {
+      try {
+        const markdown = convertNotebookContentToMarkdown(
+          notebook.content as NotebookContentForMarkdownConversion,
+        );
+        await client.patchNotebook(notebook.short_id, {
+          content: buildMarkdownNotebookContent(markdown),
+          text_content: markdown,
+          version: notebook.version ?? 0,
+        });
+        // Refetch so NotebookView re-renders with the markdown notebook (and
+        // its server-bumped version) and mounts the editor.
+        await queryClient.invalidateQueries({
+          queryKey: ["notebook", notebook.short_id],
+        });
+      } catch (error) {
+        setConversionError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    })();
+  }, [client, notebook, queryClient]);
+
+  if (conversionError) {
     return (
       <Flex align="center" justify="center" className="h-full flex-1">
         <Empty className="mx-auto max-w-md">
@@ -83,8 +144,8 @@ export function NotebookView({ shortId }: NotebookViewProps) {
             </EmptyMedia>
             <EmptyTitle>Legacy notebook format</EmptyTitle>
             <EmptyDescription>
-              This notebook uses the older rich-text format. Open it in PostHog
-              and convert it to a Markdown notebook to edit it here.
+              This notebook uses the older rich-text format and couldn&apos;t be
+              converted to Markdown automatically: {conversionError}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -92,7 +153,14 @@ export function NotebookView({ shortId }: NotebookViewProps) {
     );
   }
 
-  return <NotebookEditor notebook={notebook} />;
+  return (
+    <Flex align="center" justify="center" gap="2" className="h-full flex-1">
+      <Spinner className="size-5" />
+      <Text size="2" color="gray">
+        Converting notebook to Markdown…
+      </Text>
+    </Flex>
+  );
 }
 
 function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
@@ -111,6 +179,7 @@ function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
   const [status, setStatus] = useState<NotebookSyncStatus>("saved");
   const [title, setTitle] = useState(notebook.title ?? "");
   const [remoteCarets, setRemoteCarets] = useState<RemoteNotebookCaret[]>([]);
+  const [showKernelPanel, setShowKernelPanel] = useState(false);
   const [aiWritingNodeIndexes, setAiWritingNodeIndexes] = useState<number[]>(
     [],
   );
@@ -258,37 +327,53 @@ function NotebookEditor({ notebook }: { notebook: NotebookRecord }) {
         <Text size="1" color="gray" className="shrink-0">
           {STATUS_LABEL[status]}
         </Text>
+        <IconButton
+          variant={showKernelPanel ? "solid" : "ghost"}
+          color="gray"
+          size="1"
+          onClick={() => setShowKernelPanel((open) => !open)}
+          aria-label="Kernel info"
+        >
+          <Cpu size={14} />
+        </IconButton>
       </Flex>
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-4xl px-6 py-6">
+          {showKernelPanel ? (
+            <div className="mb-4">
+              <KernelPanel shortId={notebook.short_id} />
+            </div>
+          ) : null}
           {engine ? (
-            <MarkdownNotebook
-              value={value}
-              onChange={(markdown) => {
-                const previous = valueRef.current;
-                valueRef.current = markdown;
-                setValue(markdown);
-                engine.handleChange(markdown);
-                // Remap active AI response ranges through the edit (no-ops
-                // for the AI runner's own writes echoed back by the editor).
-                aiRef.current?.handleDocumentChange(previous, markdown);
-              }}
-              mode="edit"
-              registry={registry}
-              clientId={engine.clientId}
-              remoteValue={remote?.markdown}
-              remoteVersion={remote?.version}
-              remoteCarets={remoteCarets}
-              onCaretChange={(position: MarkdownNotebookCaretPosition | null) =>
-                streamRef.current?.publishCaret(position)
-              }
-              onAskAI={(request) => aiRef.current?.handleAskAI(request)}
-              aiWritingNodeIndexes={aiWritingNodeIndexes}
-              focusAIPromptRequest={focusAIPromptRequest}
-              placeholder="Start writing, or press / to insert…"
-              autoFocus
-            />
+            <NotebookCellContextProvider shortId={notebook.short_id}>
+              <MarkdownNotebook
+                value={value}
+                onChange={(markdown) => {
+                  const previous = valueRef.current;
+                  valueRef.current = markdown;
+                  setValue(markdown);
+                  engine.handleChange(markdown);
+                  // Remap active AI response ranges through the edit (no-ops
+                  // for the AI runner's own writes echoed back by the editor).
+                  aiRef.current?.handleDocumentChange(previous, markdown);
+                }}
+                mode="edit"
+                registry={registry}
+                clientId={engine.clientId}
+                remoteValue={remote?.markdown}
+                remoteVersion={remote?.version}
+                remoteCarets={remoteCarets}
+                onCaretChange={(
+                  position: MarkdownNotebookCaretPosition | null,
+                ) => streamRef.current?.publishCaret(position)}
+                onAskAI={(request) => aiRef.current?.handleAskAI(request)}
+                aiWritingNodeIndexes={aiWritingNodeIndexes}
+                focusAIPromptRequest={focusAIPromptRequest}
+                placeholder="Start writing, or press / to insert…"
+                autoFocus
+              />
+            </NotebookCellContextProvider>
           ) : null}
         </div>
       </ScrollArea>

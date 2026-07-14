@@ -1996,9 +1996,17 @@ export class PostHogAPIClient {
     return (await response.json()) as Schemas.Notebook;
   }
 
+  // A body carrying `content` MUST include `version` (the baseline the edit
+  // was derived from) — the backend 409s content updates whose version
+  // doesn't match the persisted notebook.
   async patchNotebook(
     shortId: string,
-    body: { title?: string },
+    body: {
+      title?: string;
+      content?: unknown;
+      text_content?: string | null;
+      version?: number;
+    },
   ): Promise<Schemas.Notebook> {
     const teamId = await this.getTeamId();
     return await this.api.patch(
@@ -2049,6 +2057,371 @@ export class PostHogAPIClient {
         body: "{}",
       },
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Notebook kernel + runnable SQL cells. These routes aren't in the generated
+  // OpenAPI client, so everything goes through the raw fetcher. Response
+  // interfaces (NotebookKernel*, NotebookSqlV2*) live at the bottom of this
+  // file. Base path: /api/projects/{teamId}/notebooks/{shortId}/…
+  // -------------------------------------------------------------------------
+
+  private async notebookActionUrl(
+    shortId: string,
+    action: string,
+  ): Promise<{ urlPath: string; url: URL }> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/notebooks/${encodeURIComponent(shortId)}/${action}`;
+    return { urlPath, url: new URL(`${this.api.baseUrl}${urlPath}`) };
+  }
+
+  /** Boot the notebook's Python kernel (503 propagates as a throw). */
+  async notebookKernelStart(
+    shortId: string,
+  ): Promise<{ id: string; status: string }> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/start",
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: { body: "{}" },
+    });
+    return (await response.json()) as { id: string; status: string };
+  }
+
+  async notebookKernelStop(shortId: string): Promise<{ stopped: boolean }> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/stop",
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: { body: "{}" },
+    });
+    return (await response.json()) as { stopped: boolean };
+  }
+
+  async notebookKernelRestart(
+    shortId: string,
+  ): Promise<{ id: string; status: string }> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/restart",
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: { body: "{}" },
+    });
+    return (await response.json()) as { id: string; status: string };
+  }
+
+  /** Kernel status; `backend === null` means no kernel exists yet. */
+  async notebookKernelStatus(shortId: string): Promise<NotebookKernelStatus> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/status",
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    return (await response.json()) as NotebookKernelStatus;
+  }
+
+  /** Persist the kernel compute profile; applied on the next start/restart. */
+  async notebookKernelConfig(
+    shortId: string,
+    body: {
+      cpu_cores?: number;
+      memory_gb?: number;
+      idle_timeout_seconds?: number;
+    },
+  ): Promise<Record<string, unknown>> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/config",
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: { body: JSON.stringify(body) },
+    });
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  /** Run code on the kernel (lazily boots it) and await the execution dict. */
+  async notebookKernelExecute(
+    shortId: string,
+    body: { code: string; return_variables?: boolean; timeout?: number },
+  ): Promise<NotebookKernelExecution> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/execute",
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: { body: JSON.stringify(body) },
+    });
+    return (await response.json()) as NotebookKernelExecution;
+  }
+
+  // Streamed kernel execution over SSE (POST body, unlike EventSource). Frames
+  // arrive as `event: stdout|stderr|result|error` with a JSON `data:` payload —
+  // stdout/stderr carry `{text}`, `result` the full execution dict (terminal),
+  // `error` `{error}`. Same hand-rolled SSE parsing as notebookCollabStream:
+  // the shared fetcher returns the raw Response on 2xx, so the body streams.
+  // Resolves when the server ends the stream; rejects on network errors and on
+  // abort (an `AbortError`).
+  async notebookKernelExecuteStream(
+    shortId: string,
+    body: { code: string; return_variables?: boolean; timeout?: number },
+    opts: {
+      signal: AbortSignal;
+      onEvent: (event: { event: string; data: string }) => void;
+    },
+  ): Promise<void> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/execute/stream",
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+        signal: opts.signal,
+      },
+    });
+    if (!response.body) {
+      throw new Error("Kernel execute stream has no response body");
+    }
+
+    // Minimal SSE parser (see notebookCollabStream): accumulate field lines,
+    // dispatch a frame on each blank line, ignore `:` keepalive comments. A
+    // partial frame at EOF is discarded, per the SSE spec.
+    let eventName: string | undefined;
+    let dataLines: string[] = [];
+    const dispatch = (): void => {
+      if (eventName === undefined && dataLines.length === 0) return;
+      opts.onEvent({
+        event: eventName ?? "message",
+        data: dataLines.join("\n"),
+      });
+      eventName = undefined;
+      dataLines = [];
+    };
+    const handleLine = (rawLine: string): void => {
+      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+      if (line === "") {
+        dispatch();
+        return;
+      }
+      if (line.startsWith(":")) return; // comment (keepalive)
+      const colon = line.indexOf(":");
+      const field = colon === -1 ? line : line.slice(0, colon);
+      let value = colon === -1 ? "" : line.slice(colon + 1);
+      if (value.startsWith(" ")) value = value.slice(1);
+      if (field === "event") eventName = value;
+      else if (field === "data") dataLines.push(value);
+    };
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline = buffer.indexOf("\n");
+        while (newline !== -1) {
+          handleLine(buffer.slice(0, newline));
+          buffer = buffer.slice(newline + 1);
+          newline = buffer.indexOf("\n");
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /** Page a live kernel dataframe variable (503 = kernel not running). */
+  async notebookKernelDataframe(
+    shortId: string,
+    params: { variableName: string; offset?: number; limit?: number },
+  ): Promise<NotebookKernelDataframePage> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "kernel/dataframe",
+    );
+    url.searchParams.set("variable_name", params.variableName);
+    url.searchParams.set("offset", String(params.offset ?? 0));
+    url.searchParams.set("limit", String(params.limit ?? 100));
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    const data = (await response.json()) as {
+      columns?: string[];
+      rows?: Record<string, unknown>[];
+      row_count?: number;
+    };
+    return {
+      columns: data.columns ?? [],
+      rows: data.rows ?? [],
+      row_count: data.row_count ?? 0,
+    };
+  }
+
+  // Plain HogQL execution — no kernel involved. The endpoint 400s on a bad
+  // query with `{error}`; that's a protocol state here, so it's recovered from
+  // the fetcher's thrown `Failed request: [400] {json}` and returned as
+  // `{error}` instead of surfacing a throw.
+  async notebookHogqlExecute(
+    shortId: string,
+    query: string,
+  ): Promise<NotebookHogqlExecuteResponse> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "hogql/execute",
+    );
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path: urlPath,
+        overrides: { body: JSON.stringify({ query }) },
+      });
+      return (await response.json()) as NotebookHogqlExecuteResponse;
+    } catch (error) {
+      const parsed = parseFailedRequestError(error);
+      if (parsed?.status === 400) {
+        const body = parsed.body as { error?: string } | null;
+        return { error: body?.error ?? "Query failed" };
+      }
+      throw error;
+    }
+  }
+
+  // SQL v2 runs are server-side gated: the routes 404 when the feature is
+  // disabled for the project. All three methods return a discriminated
+  // `{status: "disabled"}` on 404 instead of throwing so cells can render a
+  // "not enabled" hint.
+  async notebookSqlV2Run(
+    shortId: string,
+    body: { node_id: string; code: string; refs?: Record<string, string> },
+  ): Promise<NotebookSqlV2RunResponse> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      "sql_v2/run",
+    );
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path: urlPath,
+        overrides: { body: JSON.stringify({ refs: {}, ...body }) },
+      });
+      const data = (await response.json()) as { run_id: string };
+      return { status: "started", runId: data.run_id };
+    } catch (error) {
+      if (parseFailedRequestError(error)?.status === 404) {
+        return { status: "disabled" };
+      }
+      throw error;
+    }
+  }
+
+  async notebookSqlV2RunStatus(
+    shortId: string,
+    runId: string,
+  ): Promise<NotebookSqlV2RunStatusResponse> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      `sql_v2/runs/${encodeURIComponent(runId)}`,
+    );
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      const data = (await response.json()) as {
+        status: "running" | "done" | "failed";
+        result?: NotebookSqlV2ResultEnvelope | null;
+        error?: string | null;
+      };
+      if (data.status === "done") {
+        return { status: "done", result: data.result ?? null };
+      }
+      if (data.status === "failed") {
+        return { status: "failed", error: data.error ?? null };
+      }
+      return { status: "running" };
+    } catch (error) {
+      if (parseFailedRequestError(error)?.status === 404) {
+        return { status: "disabled" };
+      }
+      throw error;
+    }
+  }
+
+  // Page a finished SQL v2 run (needs a running kernel). 409 = the result was
+  // replaced by a newer run ("stale"), 429 = the kernel is busy — both are
+  // protocol states the pagination UI recovers from, so they come back as
+  // discriminated statuses rather than throws.
+  async notebookSqlV2RunPage(
+    shortId: string,
+    runId: string,
+    params: { offset: number; limit: number },
+  ): Promise<NotebookSqlV2PageResponse> {
+    const { urlPath, url } = await this.notebookActionUrl(
+      shortId,
+      `sql_v2/runs/${encodeURIComponent(runId)}/page`,
+    );
+    url.searchParams.set("offset", String(params.offset));
+    url.searchParams.set("limit", String(params.limit));
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      const data = (await response.json()) as {
+        columns?: string[];
+        types?: [string, string][];
+        rows?: (string | number | null)[][];
+        has_more?: boolean;
+      };
+      return {
+        status: "ok",
+        page: {
+          columns: data.columns ?? [],
+          types: data.types ?? [],
+          rows: data.rows ?? [],
+          has_more: data.has_more ?? false,
+        },
+      };
+    } catch (error) {
+      const status = parseFailedRequestError(error)?.status;
+      if (status === 404) return { status: "disabled" };
+      if (status === 409) return { status: "stale" };
+      if (status === 429) return { status: "busy" };
+      throw error;
+    }
   }
 
   // Notebooks soft-delete: the API's DELETE method is a 405, so deletion is a
@@ -6789,3 +7162,96 @@ export interface NotebookEmbedRecordingMeta {
   keypress_count?: number | null;
   console_error_count?: number | null;
 }
+
+// -----------------------------------------------------------------------------
+// Notebook kernel + SQL-cell response shapes (see the notebookKernel* /
+// notebookSqlV2* methods above).
+// -----------------------------------------------------------------------------
+
+export type NotebookKernelBackend = "docker" | "modal";
+
+export type NotebookKernelRunState =
+  | "running"
+  | "starting"
+  | "stopped"
+  | "timed_out"
+  | "discarded"
+  | "error";
+
+export interface NotebookKernelStatus {
+  /** `null` means no kernel exists for this notebook yet. */
+  backend: NotebookKernelBackend | null;
+  status: NotebookKernelRunState | null;
+  last_used_at?: string | null;
+  last_error?: string | null;
+  kernel_id?: string | null;
+  sandbox_id?: string | null;
+  cpu_cores?: number | null;
+  memory_gb?: number | null;
+  disk_size_gb?: number | null;
+  idle_timeout_seconds?: number | null;
+}
+
+/** The kernel execution dict returned by execute and the stream's `result` frame. */
+export interface NotebookKernelExecution {
+  status: "ok" | "error" | "running";
+  stdout?: string;
+  stderr?: string;
+  /** Mime-type map, e.g. `{"text/plain": "42", "image/png": "<base64>"}`. */
+  result?: Record<string, string> | null;
+  media?: { mime_type: string; data: string }[] | null;
+  execution_count?: number | null;
+  error_name?: string | null;
+  traceback?: string[];
+  variables?: Record<string, unknown> | null;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface NotebookKernelDataframePage {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  row_count: number;
+}
+
+/** 200 body of hogql/execute — a 400 comes back as just `{error}`. */
+export interface NotebookHogqlExecuteResponse {
+  columns?: string[];
+  results?: unknown[];
+  types?: unknown[];
+  error?: string;
+}
+
+export type NotebookSqlV2RunResponse =
+  | { status: "started"; runId: string }
+  | { status: "disabled" };
+
+export interface NotebookSqlV2ResultEnvelope {
+  status?: string;
+  columns?: string[];
+  types?: [string, string][];
+  row_count?: number;
+  has_more?: boolean;
+  first_page?: (string | number | null)[][];
+  result_id?: string;
+  error?: string | null;
+}
+
+export type NotebookSqlV2RunStatusResponse =
+  | { status: "running" }
+  | { status: "done"; result: NotebookSqlV2ResultEnvelope | null }
+  | { status: "failed"; error: string | null }
+  | { status: "disabled" };
+
+export interface NotebookSqlV2Page {
+  columns: string[];
+  types: [string, string][];
+  rows: (string | number | null)[][];
+  has_more: boolean;
+}
+
+export type NotebookSqlV2PageResponse =
+  | { status: "ok"; page: NotebookSqlV2Page }
+  | { status: "stale" }
+  | { status: "busy" }
+  | { status: "disabled" };
