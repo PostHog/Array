@@ -454,7 +454,12 @@ export function AgentConfigurationPane({
     ) : null;
 
   return (
-    <AgentDetailLayout idOrSlug={idOrSlug} activeTab="configuration" fill>
+    <AgentDetailLayout
+      idOrSlug={idOrSlug}
+      activeTab="configuration"
+      fill
+      configRevision={revisionId}
+    >
       {!revisionId ? (
         <div className="p-6">
           <AgentDetailEmptyState

@@ -449,6 +449,54 @@ describe("useChatTitleGenerator", () => {
     expect(mockGenerateTitle).toHaveBeenCalledTimes(1);
   });
 
+  it("does not rewrite an unlocked real title from later prompts, but still refreshes the summary", async () => {
+    // Auto-generated at creation: real title, title_manually_set false.
+    const unlockedTask = createTask({
+      title: "Fix login bug",
+      description: "the login page 500s for SSO users",
+    });
+    cacheTask(unlockedTask);
+    mockGenerateTitle.mockResolvedValue({
+      title: "Discuss deploy schedule",
+      summary: "User is coordinating a deploy",
+    });
+    mockPrompts.value = Array.from({ length: 8 }, (_, i) => `prompt ${i}`);
+
+    renderHook(() => useChatTitleGenerator(unlockedTask));
+
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-1",
+        { conversationSummary: "User is coordinating a deploy" },
+      );
+    });
+    expect(mockUpdateTask).not.toHaveBeenCalled();
+  });
+
+  it("replaces a placeholder title from later prompts", async () => {
+    const placeholderTask = createTask({
+      title: "Attached files: pasted-text.txt",
+      description: "Attached files: pasted-text.txt",
+    });
+    cacheTask(placeholderTask);
+    mockGenerateTitle.mockResolvedValue({
+      title: "Refactor auth flow",
+      summary: "",
+    });
+    mockPrompts.value = Array.from({ length: 8 }, (_, i) => `prompt ${i}`);
+
+    renderHook(() => useChatTitleGenerator(placeholderTask));
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
+        title: "Refactor auth flow",
+      });
+    });
+  });
+
   it("skips catch-up generation when the title is locked and a summary exists", async () => {
     const lockedTask = createTask({
       title: "Custom auth title",

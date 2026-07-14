@@ -446,6 +446,34 @@ export interface SourceFieldOauthConfig {
   requiredScopes?: string;
 }
 
+/**
+ * A picker whose options are the accounts/resources a connected OAuth integration exposes (loaded
+ * from the `oauth_accounts` endpoint using the integration's server-side token). Used e.g. for a
+ * GitHub repository or an ad account.
+ */
+export interface SourceFieldOauthAccountSelectConfig {
+  type: "oauth-account-select";
+  name: string;
+  label: string;
+  /** Name of the sibling OAuth id field this selector reads its integration id from. */
+  integrationField: string;
+  /** Integration kind used to validate the connected integration, e.g. "github". */
+  integrationKind: string;
+  placeholder?: string;
+  caption?: string;
+  required?: boolean;
+}
+
+/** A selectable account/resource an OAuth integration exposes (shared `IntegrationAccount` shape). */
+export interface IntegrationAccount {
+  value: string;
+  display_name: string;
+  is_primary: boolean;
+  badges: string[];
+  group: string | null;
+  secondary_text: string | null;
+}
+
 export interface SourceFieldSelectConfigOption {
   label: string;
   value: string;
@@ -480,6 +508,7 @@ export interface SourceFieldUnsupportedConfig {
 export type SourceFieldConfig =
   | SourceFieldInputConfig
   | SourceFieldOauthConfig
+  | SourceFieldOauthAccountSelectConfig
   | SourceFieldSelectConfig
   | SourceFieldSwitchGroupConfig
   | SourceFieldUnsupportedConfig;
@@ -2251,6 +2280,35 @@ export class PostHogAPIClient {
       throw new Error(`Failed to fetch source configs: ${response.statusText}`);
     }
     return (await response.json()) as Record<string, SourceConfig>;
+  }
+
+  /**
+   * List the accounts/resources a connected OAuth integration exposes for a source type (e.g. the
+   * repositories a GitHub integration can access), for an `oauth-account-select` field. The backend
+   * uses the integration's stored token; the client only passes the integration id. Pass `search`
+   * to filter server-side for large lists.
+   */
+  async getOauthAccounts(
+    projectId: number,
+    sourceType: string,
+    integrationId: number | string,
+    search?: string,
+  ): Promise<IntegrationAccount[]> {
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${projectId}/external_data_sources/oauth_accounts/`,
+    );
+    url.searchParams.set("source_type", sourceType);
+    url.searchParams.set("integration_id", String(integrationId));
+    if (search?.trim()) {
+      url.searchParams.set("search", search.trim());
+    }
+    const path = `/api/environments/${projectId}/external_data_sources/oauth_accounts/`;
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch accounts: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { accounts?: IntegrationAccount[] };
+    return data.accounts ?? [];
   }
 
   async updateExternalDataSchema(

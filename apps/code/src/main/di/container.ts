@@ -192,6 +192,7 @@ import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
 import { skillsModule } from "@posthog/workspace-server/services/skills/skills.module";
 import { skillsMarketplaceModule } from "@posthog/workspace-server/services/skills-marketplace/skills-marketplace.module";
+import { SPEECH_SYNTHESIZER_SERVICE } from "@posthog/workspace-server/services/speech/identifiers";
 import {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -258,6 +259,7 @@ import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
 import { settingsStore } from "../services/settingsStore";
+import { ElevenLabsSpeechService } from "../services/speech/service";
 import { WorkspaceServerService } from "../services/workspace-server/service";
 import { getUserDataDir, isDevBuild } from "../utils/env";
 import { logger } from "../utils/logger";
@@ -419,6 +421,12 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
     ctx
       .get<AuthService>(MAIN_AUTH_SERVICE)
       .authenticatedFetch(fetch, url, init),
+  getCloudContext: async () => {
+    const auth = ctx.get<AuthService>(MAIN_AUTH_SERVICE);
+    const { apiHost } = await auth.getValidAccessToken();
+    const teamId = auth.getState().currentProjectId;
+    return teamId === null ? null : { apiHost, teamId };
+  },
 }));
 container.bind(MAIN_CLOUD_TASK_SERVICE).toService(CLOUD_TASK_SERVICE);
 container.load(contextMenuCoreModule);
@@ -717,6 +725,10 @@ container
   .to(SecureStoreService)
   .inSingletonScope();
 container.bind(SECURE_STORE_SERVICE).toService(MAIN_SECURE_STORE_SERVICE);
+container
+  .bind(SPEECH_SYNTHESIZER_SERVICE)
+  .to(ElevenLabsSpeechService)
+  .inSingletonScope();
 container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
   const ws = ctx.get<WorkspaceClient>(MAIN_WORKSPACE_CLIENT);
   return {

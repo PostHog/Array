@@ -50,10 +50,11 @@ type TransitionContext = {
 export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private static readonly CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   private static readonly CHECK_TIMEOUT_MS = 60 * 1000; // 1 minute timeout for checks
-  // Must exceed AppLifecycleService.PENDING_CREATION_WAIT_MS (10s) plus
-  // teardown headroom, or the pending-creation wait inside partial shutdown
-  // gets cut off and quitAndInstall proceeds without any teardown at all.
-  private static readonly INSTALL_SHUTDOWN_TIMEOUT_MS = 15_000;
+  // Must exceed AppLifecycleService.PENDING_CREATION_WAIT_MS (10s) plus its
+  // LEAVE_FULLSCREEN_TIMEOUT_MS (3s) plus teardown headroom, or the waits
+  // inside partial shutdown get cut off and quitAndInstall proceeds without
+  // any teardown at all.
+  private static readonly INSTALL_SHUTDOWN_TIMEOUT_MS = 20_000;
 
   @inject(UPDATE_LIFECYCLE_SERVICE)
   private lifecycle!: IUpdateLifecycle;

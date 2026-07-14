@@ -67,11 +67,18 @@ describe("isTaskActivelyRunning", () => {
       expected: true,
     },
     {
-      name: "queued cloud run (not yet running)",
+      name: "queued cloud run",
       environment: "cloud",
       status: "queued",
       isGenerating: false,
-      expected: false,
+      expected: true,
+    },
+    {
+      name: "not-started cloud run",
+      environment: "cloud",
+      status: "not_started",
+      isGenerating: false,
+      expected: true,
     },
     {
       name: "completed cloud run",

@@ -10,6 +10,7 @@ import {
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskSelectionStore } from "@posthog/ui/features/sidebar/taskSelectionStore";
@@ -74,10 +75,10 @@ function SidebarMenuComponent() {
     activeView: view,
   });
 
-  const taskMap = new Map<string, Task>();
-  for (const task of allTasks) {
-    taskMap.set(task.id, task);
-  }
+  const taskMap = useMemo(
+    () => new Map<string, Task>(allTasks.map((task) => [task.id, task])),
+    [allTasks],
+  );
 
   const commandCenterCells = useCommandCenterStore((s) => s.cells);
   const assignTaskToCommandCenter = useCommandCenterStore((s) => s.assignTask);
@@ -107,6 +108,12 @@ function SidebarMenuComponent() {
   const [archiveConfirm, setArchiveConfirm] = useState<{
     taskId: string;
     taskTitle: string;
+    stopsCloudSandbox: boolean;
+  } | null>(null);
+  const [stopConfirm, setStopConfirm] = useState<{
+    taskId: string;
+    taskTitle: string;
+    runId?: string;
   } | null>(null);
 
   // Escape clears any bulk task selection (moved here from the retired
@@ -297,6 +304,7 @@ function SidebarMenuComponent() {
     const taskData = allSidebarTasks.find((t) => t.id === taskId);
     const task = taskMap.get(taskId) ?? taskData;
     if (task) {
+      const runId = taskMap.get(taskId)?.latest_run?.id;
       const workspace = workspaces[taskId];
       const isInCommandCenter = commandCenterCells.some(
         (id) => id === taskId && taskMap.has(id),
@@ -310,9 +318,19 @@ function SidebarMenuComponent() {
         folderPath: workspace?.folderPath ?? undefined,
         isPinned,
         isSuspended: taskData?.isSuspended,
+        canStop:
+          taskData?.taskRunEnvironment === "cloud" &&
+          isTaskActivelyRunning(taskData),
+        runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
         onTogglePin: () => handleTaskTogglePin(taskId),
+        onStop: (stopTaskId, taskTitle, stopRunId) =>
+          setStopConfirm({
+            taskId: stopTaskId,
+            taskTitle,
+            runId: stopRunId,
+          }),
         onArchive: handleTaskArchive,
         onArchivePrior: handleArchivePrior,
         onAddToCommandCenter: () => {
@@ -333,18 +351,25 @@ function SidebarMenuComponent() {
   // shows a spinner and ignores clicks/pins/right-clicks until it resolves.
   // Guards against repeated clicks: a second call while archiving is a no-op.
   const runArchive = useCallback(
-    (taskId: string) => {
+    async (taskId: string) => {
       const store = useArchivingTasksStore.getState();
-      if (store.isArchiving(taskId)) return;
+      if (store.isArchiving(taskId)) {
+        return {
+          success: false,
+          error: new Error("Task is already archiving"),
+        };
+      }
       store.startArchiving(taskId);
-      void archiveTask({ taskId })
-        .catch((error) => {
-          log.error("Failed to archive task", error);
-          toast.error("Failed to archive task");
-        })
-        .finally(() => {
-          useArchivingTasksStore.getState().stopArchiving(taskId);
-        });
+      try {
+        await archiveTask({ taskId });
+        return { success: true as const };
+      } catch (error) {
+        log.error("Failed to archive task", error);
+        toast.error("Failed to archive task");
+        return { success: false as const, error };
+      } finally {
+        useArchivingTasksStore.getState().stopArchiving(taskId);
+      }
     },
     [archiveTask],
   );
@@ -354,19 +379,28 @@ function SidebarMenuComponent() {
       if (useArchivingTasksStore.getState().isArchiving(taskId)) return;
       const task = allSidebarTasks.find((t) => t.id === taskId);
       if (task && isTaskActivelyRunning(task)) {
-        setArchiveConfirm({ taskId, taskTitle: task.title });
+        setArchiveConfirm({
+          taskId,
+          taskTitle: task.title,
+          stopsCloudSandbox: task.taskRunEnvironment === "cloud",
+        });
         return;
       }
-      runArchive(taskId);
+      void runArchive(taskId);
     },
     [allSidebarTasks, runArchive],
   );
 
-  const handleConfirmArchive = useCallback(() => {
+  const handleConfirmArchive = useCallback(async () => {
     if (!archiveConfirm) return;
     const { taskId } = archiveConfirm;
+    const result = await runArchive(taskId);
+    if (!result.success) {
+      throw result.error instanceof Error
+        ? result.error
+        : new Error("Couldn't archive the task. Try again in a moment.");
+    }
     setArchiveConfirm(null);
-    runArchive(taskId);
   }, [archiveConfirm, runArchive]);
 
   const handleTaskTogglePin = useCallback(
@@ -486,9 +520,23 @@ function SidebarMenuComponent() {
       <ArchiveRunningTaskDialog
         open={archiveConfirm !== null}
         taskTitle={archiveConfirm?.taskTitle ?? ""}
+        stopsCloudSandbox={Boolean(archiveConfirm?.stopsCloudSandbox)}
         onConfirm={handleConfirmArchive}
         onCancel={() => setArchiveConfirm(null)}
       />
+      {stopConfirm ? (
+        <StopCloudRunDialog
+          open
+          taskId={stopConfirm.taskId}
+          runId={stopConfirm.runId}
+          title={`Stop "${stopConfirm.taskTitle}"?`}
+          buttonLabel="Stop task"
+          onOpenChange={(open) => {
+            if (!open) setStopConfirm(null);
+          }}
+          onStopped={() => toast.success("Stop requested")}
+        />
+      ) : null}
     </Box>
   );
 }

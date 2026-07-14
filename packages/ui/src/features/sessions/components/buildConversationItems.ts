@@ -599,6 +599,7 @@ function handleNotification(
       sessionUpdate: "status",
       status: params.status,
       isComplete: params.isComplete,
+      startedAt: ts,
     });
     return;
   }
@@ -689,9 +690,15 @@ function markCompactingStatusComplete(b: ItemBuilder) {
     if (
       item.type === "session_update" &&
       item.update.sessionUpdate === "status" &&
-      item.update.status === "compacting"
+      item.update.status === "compacting" &&
+      !item.update.isComplete
     ) {
-      item.update.isComplete = true;
+      // Replace the row and its update with fresh objects rather than mutating
+      // in place. The incremental builder reuses item identity so memoized rows
+      // skip re-render; an in-place flip can be missed, leaving the finished row
+      // stuck with its spinner and a still-ticking timer. A new reference forces
+      // the completion to render (and the row to unmount).
+      b.items[i] = { ...item, update: { ...item.update, isComplete: true } };
       return;
     }
   }

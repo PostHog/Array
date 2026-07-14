@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
   TASK_SERVICE,
   type TaskService,
@@ -42,6 +43,11 @@ export function useGenerateContext(channelId: string, channelName: string) {
             // test a local build of these features before merging.
             workspaceMode,
             allowNoRepo: true,
+            // A cloud run pairs a runtime adapter with a model, and the API
+            // rejects one without the other. Since this flow lets the agent pick
+            // its repo at runtime, it never surfaces a model picker, so pin the
+            // default gateway model here to match the adapter the saga defaults to.
+            model: DEFAULT_GATEWAY_MODEL,
           },
           (output) => invalidateTasks(output.task),
         );

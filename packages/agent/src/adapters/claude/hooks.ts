@@ -8,6 +8,7 @@ import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../signed-commit-shared";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
 import type { TaskState } from "./conversion/task-state";
 import { gitSubcommand } from "./git-command";
+import { neutralizeUnprocessableImages } from "./image-sanitization";
 import {
   extractPostHogSubTool,
   isPostHogDestructiveSubTool,
@@ -61,6 +62,28 @@ function extractTextFromToolResponse(response: unknown): string | null {
  * `Object.assign` — our earlier update would be overwritten.
  */
 export type EnrichedReadCache = Map<string, string>;
+
+export const createReadImageGuardHook =
+  (): HookCallback => async (input: HookInput) => {
+    if (input.hook_event_name !== "PostToolUse" || input.tool_name !== "Read") {
+      return { continue: true };
+    }
+
+    const result = neutralizeUnprocessableImages(input.tool_response);
+    if (!result.changed) return { continue: true };
+
+    const updatedToolOutput = Array.isArray(input.tool_response)
+      ? { content: result.value }
+      : result.value;
+
+    return {
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse" as const,
+        updatedToolOutput,
+      },
+    };
+  };
 
 export const createReadEnrichmentHook =
   (deps: FileEnrichmentDeps, cache: EnrichedReadCache): HookCallback =>
