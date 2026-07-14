@@ -21,11 +21,13 @@ import { useLoopDraftStore } from "../loopDraftStore";
 import {
   emptyLoopFormValues,
   formValuesToLoopWrite,
+  isAutoFixEnabled,
   isLoopFormValid,
   isTriggerDraftValid,
   type LoopFormValues,
   loopToFormValues,
 } from "../loopFormTypes";
+import { LoopBehaviorFields } from "./LoopBehaviorFields";
 import { Field } from "./LoopFormPrimitives";
 import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
@@ -225,6 +227,16 @@ export function LoopForm({ loop }: LoopFormProps) {
                         : prev.repositories.slice(1),
                     }))
                   }
+                />
+              </Field>
+
+              <Divider />
+
+              <Field label="Behavior">
+                <LoopBehaviorFields
+                  behaviors={values.behaviors}
+                  disabled={isSubmitting}
+                  onChange={(behaviors) => patch({ behaviors })}
                 />
               </Field>
 
@@ -472,6 +484,10 @@ function ReviewList({ values }: { values: LoopFormValues }) {
             ? "Manual only"
             : values.triggers.map(describeTrigger).join(", ")
         }
+      />
+      <ReviewRow
+        label="Auto-fix PRs"
+        value={isAutoFixEnabled(values.behaviors) ? "On" : "Off"}
       />
       <ReviewRow
         label="Notifications"
