@@ -24,7 +24,12 @@ export interface LoopFormValues {
   runtimeAdapter: LoopSchemas.LoopRuntimeAdapterEnum;
   model: string;
   reasoningEffort: LoopSchemas.LoopReasoningEffortEnum | null;
-  repository: LoopSchemas.LoopRepositoryEntry | null;
+  /**
+   * Full desired repository list. The form's picker only edits the first
+   * entry; any additional entries are carried through untouched so saving an
+   * unrelated change never drops a loop's other repository associations.
+   */
+  repositories: LoopSchemas.LoopRepositoryEntry[];
   triggers: LoopTriggerDraft[];
   notifications: LoopSchemas.LoopNotifications;
 }
@@ -62,7 +67,7 @@ export function emptyLoopFormValues(): LoopFormValues {
     runtimeAdapter: "claude",
     model: "",
     reasoningEffort: null,
-    repository: null,
+    repositories: [],
     triggers: [],
     notifications: defaultLoopNotifications(),
   };
@@ -77,7 +82,7 @@ export function loopToFormValues(loop: LoopSchemas.Loop): LoopFormValues {
     runtimeAdapter: loop.runtime_adapter,
     model: loop.model,
     reasoningEffort: loop.reasoning_effort,
-    repository: loop.repositories[0] ?? null,
+    repositories: [...loop.repositories],
     triggers: loop.triggers.map((trigger) => ({
       key: trigger.id,
       id: trigger.id,
@@ -100,7 +105,7 @@ export function formValuesToLoopWrite(
     runtime_adapter: values.runtimeAdapter,
     model: values.model.trim(),
     reasoning_effort: values.reasoningEffort,
-    repositories: values.repository ? [values.repository] : [],
+    repositories: values.repositories,
     triggers: values.triggers.map((trigger) => ({
       id: trigger.id,
       type: trigger.type,

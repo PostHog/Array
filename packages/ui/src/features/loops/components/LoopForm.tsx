@@ -208,12 +208,27 @@ export function LoopForm({ loop }: LoopFormProps) {
 
               <Field
                 label="Repository"
-                hint="Optional. Leave empty for a report-only loop that works purely through connectors."
+                hint={
+                  values.repositories.length > 1
+                    ? `${values.repositories.length - 1} more ${
+                        values.repositories.length === 2
+                          ? "repository stays"
+                          : "repositories stay"
+                      } attached to this loop.`
+                    : "Optional. Leave empty for a report-only loop that works purely through connectors."
+                }
               >
                 <LoopRepositoryPicker
-                  value={values.repository}
+                  value={values.repositories[0] ?? null}
                   disabled={isSubmitting}
-                  onChange={(repository) => patch({ repository })}
+                  onChange={(repository) =>
+                    setValues((prev) => ({
+                      ...prev,
+                      repositories: repository
+                        ? [repository, ...prev.repositories.slice(1)]
+                        : prev.repositories.slice(1),
+                    }))
+                  }
                 />
               </Field>
 
@@ -410,7 +425,11 @@ function ReviewList({ values }: { values: LoopFormValues }) {
       />
       <ReviewRow
         label="Repository"
-        value={values.repository?.full_name ?? "None (report-only)"}
+        value={
+          values.repositories.length > 0
+            ? values.repositories.map((repo) => repo.full_name).join(", ")
+            : "None (report-only)"
+        }
       />
       <ReviewRow
         label="Triggers"
