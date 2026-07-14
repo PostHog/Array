@@ -41,6 +41,7 @@ import { shellRouter } from "./routers/shell.router";
 import { skillsRouter } from "./routers/skills.router";
 import { slackIntegrationRouter } from "./routers/slack-integration.router";
 import { sleepRouter } from "./routers/sleep.router";
+import { speechRouter } from "./routers/speech.router";
 import { suspensionRouter } from "./routers/suspension.router";
 import { uiRouter } from "./routers/ui.router";
 import { updatesRouter } from "./routers/updates.router";
@@ -87,6 +88,7 @@ export const hostRouter = router({
   provisioning: provisioningRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,
+  speech: speechRouter,
   skills: skillsRouter,
   slackIntegration: slackIntegrationRouter,
   sleep: sleepRouter,

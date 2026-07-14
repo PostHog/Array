@@ -2,6 +2,7 @@ import {
   ArrowCounterClockwise,
   ArrowSquareOut,
   CaretDown,
+  ChatCircle,
   CheckSquare,
   Minus,
   Plus,
@@ -15,6 +16,7 @@ import {
   splitFilePath,
   sumHunkStats,
 } from "@posthog/core/code-review/reviewShellGeometry";
+import { Badge } from "@posthog/quill";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { FileIcon } from "../../primitives/FileIcon";
@@ -205,6 +207,7 @@ export function FileHeaderRow({
   deletions,
   collapsed,
   onToggle,
+  commentCount,
   trailing,
   viewedKey,
 }: {
@@ -214,6 +217,7 @@ export function FileHeaderRow({
   deletions: number;
   collapsed: boolean;
   onToggle: () => void;
+  commentCount?: number;
   trailing?: ReactNode;
   viewedKey?: string;
 }) {
@@ -247,6 +251,9 @@ export function FileHeaderRow({
             {dirPath}
           </span>
         </span>
+        {commentCount != null && commentCount > 0 && (
+          <PrCommentCountBadge count={commentCount} />
+        )}
         <span className="font-mono text-[10px]">
           {additions > 0 && (
             <span className="mr-[2px] text-(--green-9)">+{additions}</span>
@@ -334,6 +341,7 @@ export function DiffFileHeader({
   onStage,
   staged,
   viewedKey,
+  commentCount,
   trailing,
 }: {
   fileDiff: FileDiffMetadata;
@@ -344,6 +352,7 @@ export function DiffFileHeader({
   onStage?: () => void;
   staged?: boolean;
   viewedKey?: string;
+  commentCount?: number;
   /** Extra controls rendered after the action buttons (e.g. a "Viewed" toggle). */
   trailing?: ReactNode;
 }) {
@@ -363,6 +372,7 @@ export function DiffFileHeader({
       collapsed={collapsed}
       onToggle={onToggle}
       viewedKey={viewedKey}
+      commentCount={commentCount}
       trailing={
         (onStage || onDiscard || onOpenFile || trailing) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
@@ -426,6 +436,7 @@ export function DeferredDiffPlaceholder({
   onShow,
   externalUrl,
   viewedKey,
+  commentCount,
   headerTrailing,
 }: {
   filePath: string;
@@ -437,6 +448,7 @@ export function DeferredDiffPlaceholder({
   onShow?: () => void;
   externalUrl?: string;
   viewedKey?: string;
+  commentCount?: number;
   /** Extra controls in the header row (e.g. a "Viewed" toggle). */
   headerTrailing?: ReactNode;
 }) {
@@ -452,6 +464,7 @@ export function DeferredDiffPlaceholder({
         collapsed={collapsed}
         onToggle={onToggle}
         viewedKey={viewedKey}
+        commentCount={commentCount}
         trailing={
           headerTrailing && (
             <span className="ml-auto inline-flex items-center">
@@ -496,5 +509,20 @@ export function DeferredDiffPlaceholder({
         </div>
       )}
     </div>
+  );
+}
+
+function PrCommentCountBadge({ count }: { count: number }) {
+  const label = `${count} comment${count === 1 ? "" : "s"}`;
+  return (
+    <Badge
+      variant="default"
+      title={label}
+      className="shrink-0 gap-[3px] border-(--gray-7) bg-(--gray-3) text-[11px] text-gray-12 tabular-nums"
+    >
+      <ChatCircle size={12} weight="fill" />
+      {count}
+      <span className="sr-only"> comment{count === 1 ? "" : "s"}</span>
+    </Badge>
   );
 }

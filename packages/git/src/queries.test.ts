@@ -13,6 +13,7 @@ import {
   getChangedFilesDetailed,
   getGitBusyState,
   getLinkedWorktreeMainPath,
+  listAllFiles,
   remoteBranchExists,
   splitUnifiedDiffByFile,
 } from "./queries";
@@ -595,5 +596,55 @@ describe("getLinkedWorktreeMainPath", () => {
       "gitdir: ../main-repo/.git/modules/child\n",
     );
     expect(getLinkedWorktreeMainPath(worktreeDir)).toBeNull();
+  });
+});
+
+describe("listAllFiles", () => {
+  let repoDir: string;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("combines tracked and untracked files uncapped by default", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "untracked.txt"), "content");
+
+    const files = await listAllFiles(repoDir);
+
+    expect(files.sort()).toEqual(["file.txt", "untracked.txt"]);
+  });
+
+  it("truncates to maxFiles", async () => {
+    repoDir = await setupRepo();
+    const git = createGitClient(repoDir);
+    await writeFile(path.join(repoDir, "b.txt"), "content");
+    await writeFile(path.join(repoDir, "c.txt"), "content");
+    await git.add(["b.txt", "c.txt"]);
+    await git.commit("add more files");
+
+    const files = await listAllFiles(repoDir, { maxFiles: 2 });
+
+    expect(files.length).toBe(2);
+  });
+
+  it("keeps tracked files over untracked ones when truncating", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "untracked.txt"), "content");
+
+    const files = await listAllFiles(repoDir, { maxFiles: 1 });
+
+    expect(files).toEqual(["file.txt"]);
+  });
+
+  it("returns tracked files when the untracked scan times out", async () => {
+    repoDir = await setupRepo();
+    await writeFile(path.join(repoDir, "untracked.txt"), "content");
+
+    const files = await listAllFiles(repoDir, { timeoutMs: 0 });
+
+    expect(files).toContain("file.txt");
   });
 });

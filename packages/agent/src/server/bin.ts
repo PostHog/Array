@@ -32,6 +32,7 @@ const envSchema = z.object({
   POSTHOG_CODE_REASONING_EFFORT: z
     .enum(["low", "medium", "high", "xhigh", "max"])
     .optional(),
+  POSTHOG_AGENT_STATE_DIR: z.string().startsWith("/").optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
   // Base URL for the event-ingest POST only; falls back to POSTHOG_API_URL when unset.
   POSTHOG_TASK_RUN_EVENT_INGEST_URL: z.url().optional(),
@@ -174,6 +175,7 @@ program
 
     const server = new AgentServer({
       port: parseInt(options.port, 10),
+      agentStateDir: env.POSTHOG_AGENT_STATE_DIR,
       jwtPublicKey: env.JWT_PUBLIC_KEY,
       eventIngestToken: env.POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN,
       eventIngestBaseUrl: env.POSTHOG_TASK_RUN_EVENT_INGEST_URL,

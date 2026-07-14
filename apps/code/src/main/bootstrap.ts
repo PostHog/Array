@@ -70,6 +70,12 @@ app.commandLine.appendSwitch("enable-logging", "file");
 app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
 
+// Allow programmatic audio playback without a prior user gesture. The agent
+// speaks (and completion sounds ring) autonomously, with no click at that
+// moment, so Chromium's default gesture requirement would silently reject
+// HTMLMediaElement.play(). Must be set before app "ready".
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
 // In dev, expose the renderer over CDP (:9222 by default) for the
 // test-electron-app skill. electron-vite launches Electron itself, so this is
 // set in-process rather than via a CLI flag. POSTHOG_CODE_CDP_PORT matches the

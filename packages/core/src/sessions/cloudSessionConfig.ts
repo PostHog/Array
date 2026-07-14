@@ -76,3 +76,39 @@ export function buildCloudDefaultConfigOptions(
     ...extra,
   ];
 }
+
+export function addMissingCloudRuntimeConfigOptions(
+  configOptions: SessionConfigOption[],
+  adapter: Adapter,
+  initialModel?: string,
+  initialReasoningEffort?: string,
+): SessionConfigOption[] {
+  const categories = new Set(configOptions.map((option) => option.category));
+  const extras: SessionConfigOption[] = [];
+
+  if (initialModel && !categories.has("model")) {
+    extras.push({
+      id: "model",
+      name: "Model",
+      type: "select",
+      currentValue: initialModel,
+      options: [{ value: initialModel, name: initialModel }],
+      category: "model",
+    });
+  }
+
+  if (initialReasoningEffort && !categories.has("thought_level")) {
+    extras.push({
+      id: adapter === "codex" ? "reasoning_effort" : "effort",
+      name: adapter === "codex" ? "Reasoning" : "Effort",
+      type: "select",
+      currentValue: initialReasoningEffort,
+      options: [
+        { value: initialReasoningEffort, name: initialReasoningEffort },
+      ],
+      category: "thought_level",
+    });
+  }
+
+  return extras.length > 0 ? [...configOptions, ...extras] : configOptions;
+}

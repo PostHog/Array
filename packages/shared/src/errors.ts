@@ -94,6 +94,10 @@ const FATAL_SESSION_ERROR_PATTERNS = [
 const UPSTREAM_TRANSIENT_ERROR_REGEXES = [
   /API Error:\s*terminated\b/i,
   /API Error:\s*Connection error\b/i,
+  /API Error:.*Connection closed mid-response/i,
+  // Raw transport-level socket death — wording varies by fetch
+  // implementation and doesn't always carry the "API Error:" prefix.
+  /socket connection (?:was )?closed/i,
   /API Error:.*\b(?:timed out|timeout)\b/i,
   /API Error:\s*(?:429|5\d\d)\b/i,
 ] as const;

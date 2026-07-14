@@ -1,55 +1,106 @@
-import { XIcon } from "@phosphor-icons/react";
 import { validateChannelName } from "@posthog/core/canvas/channelName";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Field,
+  FieldError,
+  FieldLabel,
+  Input,
+  Switch,
+  Textarea,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
-import { SquircleDashed } from "lucide-react";
 import { useState } from "react";
 
 // Matches Slack's "Create a channel" naming constraint.
-const MAX_CHANNEL_NAME_LENGTH = 80;
+const MAX_CONTEXT_NAME_LENGTH = 80;
+
+const DESCRIPTION_PLACEHOLDER =
+  "Grab all files relating to X feature, get all relevant pull requests, in this X repo(s)";
 
 interface CreateChannelModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // When set, the dialog is the "Create your CONTEXT.md" flow for an existing
+  // context: no name field, just a description that seeds the planning session.
+  existingContext?: { channelId: string; channelName: string };
 }
 
+// Two dialogs in one, split on `existingContext`:
+// - Create mode: names the context, creates it, and lands the user in its feed
+//   (the intro card there carries onboarding). An off-by-default toggle reveals
+//   the description textarea to also launch the context.md plan session at
+//   creation time.
+// - Describe mode: the "Create your context.md" dialog (opened from the intro
+//   card or the CONTEXT.md empty state). A single textarea whose text seeds
+//   a plan-mode session that builds the context's CONTEXT.md with the user.
 export function CreateChannelModal({
   open,
   onOpenChange,
+  existingContext,
 }: CreateChannelModalProps) {
+  const isDescribeMode = !!existingContext;
   const { createChannel, isCreating } = useChannelMutations();
+  const { generate, isStarting } = useGenerateContext();
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  // Create mode's opt-in "also plan the context.md now" toggle.
+  const [withContextMd, setWithContextMd] = useState(false);
 
-  // Reset the field each time the modal opens so a previous draft never lingers.
-  // Adjusted inline during render (prev-prop comparison) rather than in an
-  // effect, which would flash a stale value for one commit.
+  // Reset the fields each time the modal opens so a previous draft never
+  // lingers. Adjusted inline during render (prev-prop comparison) rather than in
+  // an effect, which would flash a stale value for one commit.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setName("");
+    if (open) {
+      setName("");
+      setDescription("");
+      setWithContextMd(false);
+    }
   }
 
-  const trimmed = name.trim();
-  const remaining = MAX_CHANNEL_NAME_LENGTH - name.length;
-  const validationError = validateChannelName(trimmed);
+  const trimmedName = name.trim();
+  const trimmedDescription = description.trim();
+  const remaining = MAX_CONTEXT_NAME_LENGTH - name.length;
+  const nameError = isDescribeMode ? null : validateChannelName(trimmedName);
 
-  const submit = async () => {
-    if (!trimmed || validationError || isCreating) return;
-    let channel: Awaited<ReturnType<typeof createChannel>>;
+  // The description textarea is live in describe mode and in create mode once
+  // the toggle is on; either way it must be filled to submit.
+  const needsDescription = isDescribeMode || withContextMd;
+  const busy = isCreating || isStarting;
+  const canSubmit =
+    !busy &&
+    (isDescribeMode ? true : !!trimmedName && !nameError) &&
+    (!needsDescription || !!trimmedDescription);
+
+  // Create mode: create the context, then land in the channel — its feed opens
+  // with the intro (name, creation line, context.md card) and the "joined" row,
+  // both derived from the channel row. With the toggle on, also launch the
+  // plan session that builds context.md, seeded by the description.
+  const submitCreate = async () => {
+    let contextId: string;
     try {
-      channel = await createChannel(trimmed);
+      const channel = await createChannel(trimmedName);
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "create",
         surface: "sidebar",
         channel_id: channel.id,
         success: true,
       });
+      contextId = channel.id;
     } catch (error) {
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "create",
@@ -61,93 +112,168 @@ export function CreateChannelModal({
       });
       return;
     }
+
+    if (withContextMd && trimmedDescription) {
+      track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
+        action_type: "generate_started",
+        channel_id: contextId,
+      });
+      // Failure is fine to swallow here (generate() already toasted): the
+      // context exists, so land the user on it — the intro card offers the
+      // retry.
+      await generate({
+        channelId: contextId,
+        channelName: trimmedName,
+        description: trimmedDescription,
+      });
+    }
+
     onOpenChange(false);
-    // Open the new channel's static homepage.
     void navigate({
       to: "/website/$channelId",
-      params: { channelId: channel.id },
+      params: { channelId: contextId },
     });
   };
 
+  // Describe mode: launch the plan-mode session that builds CONTEXT.md. On
+  // failure (generate() already toasted) the dialog stays open, state intact,
+  // for a clean retry.
+  const submitDescribe = async () => {
+    if (!existingContext) return;
+    track(ANALYTICS_EVENTS.CONTEXT_ACTION, {
+      action_type: "generate_started",
+      channel_id: existingContext.channelId,
+    });
+    const task = await generate({
+      channelId: existingContext.channelId,
+      channelName: existingContext.channelName,
+      description: trimmedDescription,
+    });
+    if (!task) return;
+
+    // Land on the context index (its feed), where the announcement and the plan
+    // task card show. The user clicks the card to open the session.
+    onOpenChange(false);
+    void navigate({
+      to: "/website/$channelId",
+      params: { channelId: existingContext.channelId },
+    });
+  };
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    if (isDescribeMode) {
+      await submitDescribe();
+    } else {
+      await submitCreate();
+    }
+  };
+
   return (
-    <Dialog.Root
+    <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!isCreating) onOpenChange(next);
+        if (!busy) onOpenChange(next);
       }}
     >
-      <Dialog.Content maxWidth="560px">
-        <Flex align="start" justify="between" gap="3">
-          <Dialog.Title>
-            <Text className="font-bold text-lg">Create a context</Text>
-          </Dialog.Title>
-          <Dialog.Close>
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="2"
-              aria-label="Close"
-              disabled={isCreating}
-            >
-              <XIcon size={18} />
-            </IconButton>
-          </Dialog.Close>
-        </Flex>
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+        {isDescribeMode ? (
+          // No visible header in describe mode — the textarea's label carries
+          // the dialog; the title stays for screen readers.
+          <DialogTitle className="sr-only">Create your context.md</DialogTitle>
+        ) : (
+          <DialogHeader>
+            <DialogTitle>Create a context</DialogTitle>
+          </DialogHeader>
+        )}
 
-        <Flex direction="column" gap="2" mt="4">
-          <Text
-            as="label"
-            htmlFor="channel-name"
-            className="font-medium text-sm"
-          >
-            Name
-          </Text>
-          <TextField.Root
-            id="channel-name"
-            autoFocus
-            size="3"
-            value={name}
-            placeholder="e.g. mobile"
-            maxLength={MAX_CHANNEL_NAME_LENGTH}
-            disabled={isCreating}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void submit();
-              }
-            }}
-          >
-            <TextField.Slot>
-              <SquircleDashed size={16} className="text-gray-10" />
-            </TextField.Slot>
-            <TextField.Slot side="right">
-              <Text className="text-gray-9 text-sm tabular-nums">
-                {remaining}
-              </Text>
-            </TextField.Slot>
-          </TextField.Root>
-          {validationError && (
-            <Text color="red" className="text-sm">
-              {validationError}
-            </Text>
+        <DialogBody viewportClassName="flex flex-col gap-4">
+          {!isDescribeMode && (
+            <>
+              <Field>
+                <FieldLabel htmlFor="context-name">Name</FieldLabel>
+                <Input
+                  id="context-name"
+                  autoFocus
+                  value={name}
+                  placeholder="e.g. mobile"
+                  maxLength={MAX_CONTEXT_NAME_LENGTH}
+                  disabled={busy}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void submit();
+                    }
+                  }}
+                />
+                {nameError ? (
+                  <FieldError>{nameError}</FieldError>
+                ) : (
+                  <span className="text-gray-9 text-xs tabular-nums">
+                    {remaining} left
+                  </span>
+                )}
+              </Field>
+              <label
+                htmlFor="context-with-md"
+                className="flex cursor-pointer items-center gap-2 text-sm"
+              >
+                <Switch
+                  id="context-with-md"
+                  className="shrink-0"
+                  checked={withContextMd}
+                  disabled={busy}
+                  onCheckedChange={(checked) => setWithContextMd(!!checked)}
+                />
+                Plan its context.md now
+              </label>
+            </>
           )}
-          <Text className="text-gray-10 text-sm">
-            Each context gets its own dashboards, tasks, and settings. Use a
-            name that's easy to find.
-          </Text>
-        </Flex>
 
-        <Flex gap="3" mt="5" justify="end">
+          {needsDescription && (
+            <Field>
+              <FieldLabel htmlFor="context-description">
+                What's this context about?
+              </FieldLabel>
+              <Textarea
+                id="context-description"
+                autoFocus={isDescribeMode}
+                rows={4}
+                value={description}
+                placeholder={DESCRIPTION_PLACEHOLDER}
+                disabled={busy}
+                onChange={(e) => setDescription(e.target.value)}
+                onKeyDown={(e) => {
+                  // ⌘/Ctrl+Enter submits; a bare Enter stays a newline.
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    void submit();
+                  }
+                }}
+              />
+            </Field>
+          )}
+        </DialogBody>
+
+        <DialogFooter>
+          <DialogClose
+            render={
+              <Button variant="outline" disabled={busy}>
+                Cancel
+              </Button>
+            }
+          />
           <Button
             variant="primary"
-            disabled={!trimmed || !!validationError || isCreating}
+            disabled={!canSubmit}
+            loading={busy}
             onClick={submit}
           >
-            Create
+            {needsDescription ? "Plan and create" : "Create"}
           </Button>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

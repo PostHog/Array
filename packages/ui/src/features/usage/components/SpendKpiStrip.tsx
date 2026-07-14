@@ -1,5 +1,6 @@
 import {
   formatUsd,
+  formatWindow,
   type SpendAnalysisFilledDay,
   windowDays,
 } from "@posthog/core/billing/spendAnalysisFormat";
@@ -33,14 +34,11 @@ interface SpendKpiStripProps {
 export function SpendKpiStrip({ data, filledDays }: SpendKpiStripProps) {
   const theme = useChartTheme();
   const { summary } = data;
-  const codeShare =
-    summary.total_cost_usd > 0
-      ? Math.round((summary.scoped_cost_usd / summary.total_cost_usd) * 100)
-      : 0;
   const labels = filledDays?.map((d) => spendDayLabel(d.day));
   const costSeries = filledDays?.map((d) => Math.max(0, d.cost_usd));
   const eventSeries = filledDays?.map((d) => d.event_count);
   const latestDay = filledDays?.at(-1);
+  const windowLabel = formatWindow(summary.date_from, summary.date_to);
 
   return (
     <Flex className="overflow-hidden rounded-(--radius-3) border border-(--gray-5) bg-(--color-panel-solid)">
@@ -63,7 +61,7 @@ export function SpendKpiStrip({ data, filledDays }: SpendKpiStripProps) {
           theme={theme}
           formatValue={formatUsd}
           change={null}
-          subtitle={costSeries ? undefined : `${codeShare}% of total`}
+          restingSubtitle={windowLabel}
           sparklineHeight={28}
         />
       </KpiCell>
@@ -76,6 +74,7 @@ export function SpendKpiStrip({ data, filledDays }: SpendKpiStripProps) {
           theme={theme}
           formatValue={(v) => v.toLocaleString()}
           change={null}
+          restingSubtitle={windowLabel}
           sparklineHeight={28}
         />
       </KpiCell>

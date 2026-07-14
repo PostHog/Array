@@ -5,6 +5,8 @@ import type {
   ContentBlock,
   RequestPermissionRequest,
   SessionConfigOption,
+  SessionConfigSelectGroup,
+  SessionConfigSelectOption,
   SessionUpdate,
 } from "@agentclientprotocol/sdk";
 import {
@@ -41,7 +43,12 @@ import {
   isTerminalStatus,
   type Task,
 } from "@posthog/shared/domain-types";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
+import type { SpeechKind, SpeechSource } from "../speech/identifiers";
+import {
+  isNotification,
+  POSTHOG_NOTIFICATIONS,
+  SPEAK_TOOL_QUALIFIED_NAME,
+} from "./acpNotifications";
 import { createAppendOnlyTracker } from "./appendOnlyTracker";
 import type {
   CloudArtifactClient,
@@ -57,6 +64,7 @@ import {
   getCloudRuntimeOptions,
 } from "./cloudRunOptions";
 import {
+  addMissingCloudRuntimeConfigOptions,
   buildCloudDefaultConfigOptions,
   extractLatestConfigOptionsFromEntries,
 } from "./cloudSessionConfig";
@@ -164,6 +172,7 @@ export interface SessionTrpc {
     unwatch: TrpcMutation;
     retry: TrpcMutation;
     sendCommand: TrpcMutation;
+    stop: TrpcMutation;
     onUpdate: TrpcSubscription;
   };
   handoff: {
@@ -281,6 +290,14 @@ export interface SessionServiceDeps {
   buildPermissionToolMetadata: (...args: any[]) => any;
   notifyPermissionRequest: (...args: any[]) => any;
   notifyPromptComplete: (...args: any[]) => any;
+  enqueueSpeech: (request: {
+    text: string;
+    taskTitle: string;
+    taskId?: string;
+    kind: SpeechKind;
+    source: SpeechSource;
+    addressByName?: boolean;
+  }) => void;
   getIsOnline: () => boolean;
   fetchAuthState: () => Promise<any>;
   getAuthenticatedClient: () => Promise<any>;
@@ -591,6 +608,26 @@ export class SessionService {
   private cloudRunIdleTracker: CloudRunIdleTracker;
   private nextCloudTaskWatchToken = 0;
   private supersededRunIds = new Set<string>();
+  // Spoken narration: the `speak` tool's { text, kind } args stream in across
+  // multiple tool_call_updates (partial input_json_delta), so early events carry
+  // a truncated text like "The quick b". Track speak tool calls by id and
+  // accumulate their latest args; enqueue once the call reaches a terminal
+  // status (full text), then delete the entry — which also dedupes re-fires.
+  // A `null` value means "identified as speak, args not streamed in yet".
+  // Keyed by taskRunId first so a session teardown can drop any of its
+  // still-streaming speak calls (see unsubscribeFromChannel); the inner map is
+  // keyed by toolCallId.
+  private speakCalls = new Map<
+    string,
+    Map<string, { text: string; kind: SpeechKind } | null>
+  >();
+  // When the agent last narrated `done`/`needs_input` per task run (event ts).
+  // The deterministic completion/needs-input backstops compare this against the
+  // turn's start so they don't double up on a moment the agent already voiced.
+  private agentSpokeAt = new Map<
+    string,
+    { needs_input: number; done: number }
+  >();
   private subscriptions = new Map<
     string,
     {
@@ -1716,6 +1753,10 @@ export class SessionService {
     subscription?.permission?.unsubscribe();
     this.subscriptions.delete(taskRunId);
     this.liveTurnContent.delete(taskRunId);
+    this.agentSpokeAt.delete(taskRunId);
+    // Drop any speak calls still mid-stream for this run (never reached a
+    // terminal status, so they were never enqueued or deleted above).
+    this.speakCalls.delete(taskRunId);
   }
 
   /**
@@ -1755,6 +1796,8 @@ export class SessionService {
     this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
+    this.speakCalls.clear();
+    this.agentSpokeAt.clear();
     this.cloudLogGapReconciler.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
@@ -1894,6 +1937,7 @@ export class SessionService {
                 session.taskId,
                 turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
+              this.speakDeterministic(taskRunId, session, "done");
             }
             this.d.taskViewedApi.markActivity(session.taskId);
             this.finalizeTurnContent(taskRunId, "turn_complete", acpMsg.ts);
@@ -1962,6 +2006,36 @@ export class SessionService {
     }
   }
 
+  /**
+   * Deterministic backstop for the two moments the user must not miss. Fired
+   * from the turn-complete and permission events (which happen every time),
+   * unless the agent already narrated that same moment this turn via the speak
+   * tool — in which case its expressive line stands. Routes through the same
+   * speech channel (focus + settings gating + serialized queue).
+   */
+  private speakDeterministic(
+    taskRunId: string,
+    session: {
+      taskTitle: string;
+      taskId: string;
+      promptStartedAt: number | null;
+    },
+    kind: "done" | "needs_input",
+  ): void {
+    const turnStart = session.promptStartedAt ?? 0;
+    const spokeAt = this.agentSpokeAt.get(taskRunId)?.[kind] ?? 0;
+    if (turnStart > 0 && spokeAt >= turnStart) return; // agent already voiced it
+    // Deterministic backstop stays plain — no "Hey <name>," greeting.
+    this.d.enqueueSpeech({
+      text: kind === "done" ? "finished" : "needs your input",
+      taskTitle: session.taskTitle,
+      taskId: session.taskId,
+      kind,
+      source: "backstop",
+      addressByName: false,
+    });
+  }
+
   private handleSessionEvent(taskRunId: string, acpMsg: AcpMessage): void {
     const session = this.d.store.getSessions()[taskRunId];
     if (!session) return;
@@ -2019,6 +2093,9 @@ export class SessionService {
           session.taskId,
           turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
         );
+        if (stopReason === "end_turn") {
+          this.speakDeterministic(taskRunId, session, "done");
+        }
       }
 
       this.d.taskViewedApi.markActivity(session.taskId);
@@ -2044,6 +2121,80 @@ export class SessionService {
         // Persist the updated config options
         this.d.setPersistedConfigOptions(taskRunId, configOptions);
         this.d.log.info("Session config options updated", { taskRunId });
+      }
+
+      // Spoken narration: the agent's `speak` tool call surfaces here. The
+      // initial tool_call names the tool but arrives with empty args; the
+      // assembled { text, kind } stream in on later tool_call_updates with the
+      // same toolCallId. So we remember speak toolCallIds, accumulate the latest
+      // args, and enqueue once the call completes (with the full text).
+      if (
+        params?.update?.sessionUpdate === "tool_call" ||
+        params?.update?.sessionUpdate === "tool_call_update"
+      ) {
+        const update = params.update as {
+          toolCallId?: string;
+          status?: string;
+          _meta?: {
+            claudeCode?: { toolName?: string; parentToolCallId?: string };
+          };
+          rawInput?: { text?: unknown; kind?: unknown };
+        };
+        const id = update.toolCallId;
+        if (id) {
+          const speakCalls = this.speakCalls.get(taskRunId);
+          // Only the top-level agent narrates. A `speak` from a sub-agent
+          // (spawned via the Task tool) carries a parentToolCallId; ignoring
+          // those prevents several sub-agents talking over each other.
+          if (
+            update._meta?.claudeCode?.toolName === SPEAK_TOOL_QUALIFIED_NAME &&
+            !update._meta.claudeCode.parentToolCallId &&
+            !speakCalls?.has(id)
+          ) {
+            const calls = speakCalls ?? new Map();
+            calls.set(id, null);
+            this.speakCalls.set(taskRunId, calls);
+          }
+          const calls = this.speakCalls.get(taskRunId);
+          if (calls?.has(id)) {
+            // Accumulate the latest args — text grows across streamed updates.
+            const text = update.rawInput?.text;
+            if (typeof text === "string" && text.trim().length > 0) {
+              const rawKind = update.rawInput?.kind;
+              const kind: SpeechKind =
+                rawKind === "needs_input" ||
+                rawKind === "done" ||
+                rawKind === "progress"
+                  ? rawKind
+                  : "progress";
+              calls.set(id, { text, kind });
+            }
+            // Speak only once the call is complete (full text). Deleting the
+            // entry both frees it and dedupes any later terminal event.
+            const pending = calls.get(id);
+            if (isTerminalStatus(update.status) && pending) {
+              calls.delete(id);
+              if (calls.size === 0) this.speakCalls.delete(taskRunId);
+              if (pending.kind !== "progress") {
+                const spoke = this.agentSpokeAt.get(taskRunId) ?? {
+                  needs_input: 0,
+                  done: 0,
+                };
+                spoke[pending.kind] = acpMsg.ts;
+                this.agentSpokeAt.set(taskRunId, spoke);
+              }
+              this.d.enqueueSpeech({
+                text: pending.text,
+                taskTitle: session.taskTitle,
+                taskId: session.taskId,
+                kind: pending.kind,
+                source: "agent",
+                // Agent-authored line: allowed to address the user by name.
+                addressByName: true,
+              });
+            }
+          }
+        }
       }
 
       // Handle context usage updates
@@ -2165,6 +2316,7 @@ export class SessionService {
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
     this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+    this.speakDeterministic(taskRunId, session, "needs_input");
   }
 
   private handleCloudPermissionRequest(
@@ -2222,6 +2374,7 @@ export class SessionService {
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
     this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+    this.speakDeterministic(taskRunId, session, "needs_input");
   }
 
   private surfacePersistedPendingPermissions(
@@ -3227,6 +3380,105 @@ export class SessionService {
     }
   }
 
+  async stopCloudRun(taskId: string, runId?: string): Promise<boolean> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    let taskRunId: string;
+    try {
+      const client = await this.d.getAuthenticatedClient();
+      if (!client) return false;
+      const task = (await client.getTask(taskId)) as Task;
+      const latestRun = task.latest_run;
+      if (!latestRun || latestRun.environment !== "cloud") {
+        return true;
+      }
+      if (isTerminalStatus(latestRun.status)) {
+        const rendererStillExpectsCompletion =
+          session?.isCloud === true &&
+          session.taskRunId === latestRun.id &&
+          !isTerminalStatus(session.cloudStatus);
+        if (!rendererStillExpectsCompletion) {
+          return true;
+        }
+      }
+      taskRunId = latestRun.id;
+      if (runId && runId !== taskRunId) {
+        this.d.log.warn("Refusing to stop a newer cloud run", {
+          taskId,
+          requestedRunId: runId,
+          taskRunId,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.d.log.error("Failed to resolve current cloud run", error);
+      return false;
+    }
+
+    const matchingSession =
+      session?.isCloud && session.taskRunId === taskRunId ? session : undefined;
+    const previousPromptState = matchingSession
+      ? {
+          isPromptPending: matchingSession.isPromptPending,
+          promptStartedAt: matchingSession.promptStartedAt,
+        }
+      : undefined;
+    if (matchingSession) {
+      this.d.store.updateSession(matchingSession.taskRunId, {
+        stopRequested: true,
+        isPromptPending: false,
+        promptStartedAt: null,
+      });
+    }
+
+    try {
+      const result = await this.d.trpc.cloudTask.stop.mutate({
+        taskId,
+        runId: taskRunId,
+      });
+
+      if (!result.success) {
+        if (matchingSession) {
+          this.d.store.updateSession(matchingSession.taskRunId, {
+            stopRequested: false,
+            ...previousPromptState,
+          });
+        }
+        this.d.log.warn("Cloud run stop failed", {
+          taskId,
+          error: result.error,
+          retryable: result.retryable,
+        });
+        return false;
+      }
+
+      const durationSeconds = matchingSession
+        ? Math.round((Date.now() - matchingSession.startedAt) / 1000)
+        : undefined;
+      const promptCount = matchingSession?.events.filter(
+        (e) => "method" in e.message && e.message.method === "session/prompt",
+      ).length;
+      this.d.track(ANALYTICS_EVENTS.TASK_RUN_STOPPED, {
+        task_id: taskId,
+        execution_type: "cloud",
+        ...(durationSeconds === undefined
+          ? {}
+          : { duration_seconds: durationSeconds }),
+        ...(promptCount === undefined ? {} : { prompts_sent: promptCount }),
+      });
+
+      return true;
+    } catch (error) {
+      if (matchingSession) {
+        this.d.store.updateSession(matchingSession.taskRunId, {
+          stopRequested: false,
+          ...previousPromptState,
+        });
+      }
+      this.d.log.error("Failed to stop cloud run", error);
+      return false;
+    }
+  }
+
   private async getCloudCommandAuth(): Promise<{
     apiHost: string;
     teamId: number;
@@ -3940,44 +4192,112 @@ export class SessionService {
     }
 
     const previewOptions = await entry.promise;
+    const session = this.d.store.getSessions()[taskRunId];
+    if (!session || session.adapter !== adapter) return;
+
+    const existingOptions = session.configOptions ?? [];
+    const existingModelOption = getConfigOptionByCategory(
+      existingOptions,
+      "model",
+    );
+    const existingReasoningOption = getConfigOptionByCategory(
+      existingOptions,
+      "thought_level",
+    );
+    const existingModel = existingModelOption?.currentValue;
+    const existingReasoningEffort = existingReasoningOption?.currentValue;
+    const preferredModel =
+      typeof existingModel === "string" ? existingModel : initialModel;
+    const preferredReasoningEffort =
+      typeof existingReasoningEffort === "string"
+        ? existingReasoningEffort
+        : initialReasoningEffort;
+    const applyPreferredValue = (
+      option: SessionConfigOption,
+      preferredValue: string | undefined,
+      existingOption: SessionConfigOption | undefined,
+    ): SessionConfigOption => {
+      if (option.type !== "select" || !preferredValue) return option;
+
+      const previewValues = flattenSelectOptions(option.options);
+      if (previewValues.some((value) => value.value === preferredValue)) {
+        return { ...option, currentValue: preferredValue };
+      }
+
+      const existingValues =
+        existingOption?.type === "select"
+          ? flattenSelectOptions(existingOption.options)
+          : [];
+      const reasoningLabels: Record<string, string> = {
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+        xhigh: "Extra High",
+        max: "Max",
+      };
+      const selectedValue = existingValues.find(
+        (value) => value.value === preferredValue,
+      ) ?? {
+        value: preferredValue,
+        name:
+          option.category === "thought_level"
+            ? (reasoningLabels[preferredValue] ?? preferredValue)
+            : preferredValue,
+      };
+
+      if (option.options.length > 0 && "group" in option.options[0]) {
+        return {
+          ...option,
+          currentValue: preferredValue,
+          options: [
+            ...(option.options as SessionConfigSelectGroup[]),
+            {
+              group: "selected",
+              name: "Selected",
+              options: [selectedValue],
+            },
+          ],
+        };
+      }
+
+      return {
+        ...option,
+        currentValue: preferredValue,
+        options: [
+          ...(option.options as SessionConfigSelectOption[]),
+          selectedValue,
+        ],
+      };
+    };
     const extras = previewOptions
       .filter(
         (opt) => opt.category === "model" || opt.category === "thought_level",
       )
       .map((opt) => {
-        if (
-          opt.category === "model" &&
-          opt.type === "select" &&
-          typeof initialModel === "string"
-        ) {
-          const flat = flattenSelectOptions(opt.options);
-          if (flat.some((o) => o.value === initialModel)) {
-            return { ...opt, currentValue: initialModel };
-          }
+        if (opt.category === "model") {
+          return applyPreferredValue(opt, preferredModel, existingModelOption);
         }
-        if (
-          opt.category === "thought_level" &&
-          opt.type === "select" &&
-          typeof initialReasoningEffort === "string"
-        ) {
-          const flat = flattenSelectOptions(opt.options);
-          if (flat.some((o) => o.value === initialReasoningEffort)) {
-            return { ...opt, currentValue: initialReasoningEffort };
-          }
+        if (opt.category === "thought_level") {
+          return applyPreferredValue(
+            opt,
+            preferredReasoningEffort,
+            existingReasoningOption,
+          );
         }
         return opt;
       });
 
     if (extras.length === 0) return;
 
-    const session = this.d.store.getSessions()[taskRunId];
-    if (!session) return;
+    const previewCategories = new Set(extras.map((option) => option.category));
+    const merged = [
+      ...existingOptions.filter(
+        (option) => !previewCategories.has(option.category),
+      ),
+      ...extras,
+    ];
 
-    const existingOptions = session.configOptions ?? [];
-    const existingIds = new Set(existingOptions.map((o) => o.id));
-    const newExtras = extras.filter((o) => !existingIds.has(o.id));
-    if (newExtras.length === 0) return;
-    const merged = [...existingOptions, ...newExtras];
+    if (JSON.stringify(existingOptions) === JSON.stringify(merged)) return;
 
     this.d.store.updateSession(taskRunId, { configOptions: merged });
   }
@@ -4036,8 +4356,23 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: buildCloudDefaultConfigOptions(currentMode, adapter),
+            configOptions: addMissingCloudRuntimeConfigOptions(
+              buildCloudDefaultConfigOptions(currentMode, adapter),
+              adapter,
+              initialModel,
+              initialReasoningEffort,
+            ),
           });
+        } else {
+          const configOptions = addMissingCloudRuntimeConfigOptions(
+            existing.configOptions ?? [],
+            adapter,
+            initialModel,
+            initialReasoningEffort,
+          );
+          if (configOptions !== existing.configOptions) {
+            this.d.store.updateSession(existing.taskRunId, { configOptions });
+          }
         }
         void this.fetchAndApplyCloudPreviewOptions(
           existing.taskRunId,
@@ -4122,9 +4457,11 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = buildCloudDefaultConfigOptions(
-        initialMode,
+      session.configOptions = addMissingCloudRuntimeConfigOptions(
+        buildCloudDefaultConfigOptions(initialMode, adapter),
         adapter,
+        initialModel,
+        initialReasoningEffort,
       );
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
@@ -4143,10 +4480,22 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = buildCloudDefaultConfigOptions(
-          currentMode,
+        updates.configOptions = addMissingCloudRuntimeConfigOptions(
+          buildCloudDefaultConfigOptions(currentMode, adapter),
           adapter,
+          initialModel,
+          initialReasoningEffort,
         );
+      } else {
+        const configOptions = addMissingCloudRuntimeConfigOptions(
+          existing.configOptions,
+          adapter,
+          initialModel,
+          initialReasoningEffort,
+        );
+        if (configOptions !== existing.configOptions) {
+          updates.configOptions = configOptions;
+        }
       }
       if (Object.keys(updates).length > 0) {
         this.d.store.updateSession(existing.taskRunId, updates);

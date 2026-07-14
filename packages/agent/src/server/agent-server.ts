@@ -51,6 +51,7 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
 import {
   findPrUrls,
@@ -124,6 +125,18 @@ const errorWithClassificationSchema = z.object({
 type MessageCallback = (message: unknown) => void;
 
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
+
+// Bounded per-turn retries for unattended (initial/resume) turns that hit a
+// transient upstream failure. Two covers a retry whose own attempt also gets
+// cut once, without letting a hard upstream outage loop forever.
+const MAX_UPSTREAM_TURN_RETRIES = 2;
+const UPSTREAM_TURN_RETRY_DELAY_MS = 5_000;
+const PENDING_ARTIFACT_MAX_ATTEMPTS = 4;
+const PENDING_ARTIFACT_RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 class NdJsonTap {
   private decoder = new TextDecoder();
@@ -277,7 +290,8 @@ function hiddenTextBlock(text: string): ContentBlock {
 }
 
 interface LocalSkillPromptContext {
-  skillName: string;
+  /** Set when the message is a bare `/skill` invocation the adapter should strip. */
+  skillName?: string;
   context: string;
 }
 
@@ -642,6 +656,10 @@ export class AgentServer {
   }
 
   async start(): Promise<void> {
+    if (this.config.agentStateDir) {
+      await configurePersistentAgentState(this.config.agentStateDir);
+    }
+
     await new Promise<void>((resolve) => {
       this.server = serve(
         {
@@ -1516,6 +1534,72 @@ export class AgentServer {
     return { classification: classifyAgentError(message), message };
   }
 
+  /**
+   * Send an initial/resume turn prompt, absorbing transient upstream
+   * failures with a bounded number of retries. These turns run unattended
+   * (no user watching who could retry), so without this a single transient
+   * transport cut fails the whole run. A stream that died mid-response has
+   * already delivered the original prompt into the session history, so that
+   * case retries with a hidden continuation; failures where the request may
+   * never have been processed re-send the original prompt instead.
+   */
+  private async promptWithUpstreamRetry(request: {
+    sessionId: string;
+    prompt: ContentBlock[];
+    _meta?: Record<string, unknown>;
+  }): Promise<PromptResponse> {
+    let retries = 0;
+    let continueInterruptedTurn = false;
+    for (;;) {
+      // Re-read the session on every attempt: it can be torn down or
+      // replaced while the retry delay is pending.
+      const session = this.session;
+      if (!session) {
+        throw new Error("Agent session ended before the turn could be sent");
+      }
+      const attempt = continueInterruptedTurn
+        ? {
+            sessionId: session.acpSessionId,
+            prompt: [
+              hiddenTextBlock(
+                "The previous response was interrupted by a transient connection error. " +
+                  "Continue from where you left off — do not repeat work that already completed.",
+              ),
+            ],
+          }
+        : { ...request, sessionId: session.acpSessionId };
+      try {
+        return await session.clientConnection.prompt(attempt);
+      } catch (error) {
+        const { classification, message } =
+          this.extractErrorClassification(error);
+        if (
+          !upstreamProviderFailureClassifications.has(classification) ||
+          retries >= MAX_UPSTREAM_TURN_RETRIES
+        ) {
+          throw error;
+        }
+        retries += 1;
+        // Only a mid-response stream death guarantees the prompt reached the
+        // model; connection/timeout/status failures re-send the original.
+        continueInterruptedTurn =
+          classification === "upstream_stream_terminated";
+        this.logger.warn(
+          "Turn hit a transient upstream failure; retrying after a short delay",
+          {
+            classification,
+            message,
+            attempt: retries,
+            continueInterruptedTurn,
+          },
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, UPSTREAM_TURN_RETRY_DELAY_MS),
+        );
+      }
+    }
+  }
+
   private async handleTurnFailure(
     payload: JwtPayload,
     phase: "initial" | "resume" | "followup",
@@ -1665,7 +1749,7 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.session.clientConnection.prompt({
+      const result = await this.promptWithUpstreamRetry({
         sessionId: this.session.acpSessionId,
         prompt: initialPrompt,
         ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
@@ -1877,7 +1961,7 @@ export class AgentServer {
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
 
-      const result = await this.session.clientConnection.prompt({
+      const result = await this.promptWithUpstreamRetry({
         sessionId: this.session.acpSessionId,
         prompt: builtPrompt.prompt,
         ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
@@ -1983,9 +2067,10 @@ export class AgentServer {
 
     // The run's artifact manifest can momentarily lag the pending-artifact ids
     // when a run starts right after the attachments were uploaded. If we were
-    // asked for artifacts the manifest doesn't list yet, refetch the run once so
-    // a transient gap doesn't drop the attachment and send the agent the bare
-    // "Attached files: …" description instead of the file it was promised.
+    // asked for artifacts the manifest doesn't list yet, poll the run with a
+    // short backoff so a transient gap doesn't drop the attachment and send the
+    // agent the bare "Attached files: …" description instead of the file it was
+    // promised.
     let manifest = taskRun.artifacts ?? [];
     let resolvedArtifacts = this.getArtifactsById(manifest, artifactIds, {
       warnOnMissing: false,
@@ -1994,11 +2079,13 @@ export class AgentServer {
       artifactIds.length > 0 &&
       resolvedArtifacts.length < artifactIds.length
     ) {
-      const refreshed = await this.refetchRunArtifacts(taskRun);
-      if (refreshed) {
-        manifest = refreshed;
-        resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
-      }
+      manifest =
+        (await this.resolvePendingArtifactManifest(
+          taskRun,
+          artifactIds,
+          manifest,
+        )) ?? manifest;
+      resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
     }
 
     const prompt = await this.buildPromptFromContentAndArtifacts({
@@ -2046,6 +2133,49 @@ export class AgentServer {
       blockTypes: prompt.prompt.map((block) => block.type),
     });
     return prompt.prompt.length > 0 ? prompt : null;
+  }
+
+  private async resolvePendingArtifactManifest(
+    taskRun: TaskRun,
+    artifactIds: string[],
+    initialManifest: TaskRunArtifact[],
+  ): Promise<TaskRunArtifact[] | null> {
+    let latestManifest = initialManifest;
+
+    for (let attempt = 1; attempt <= PENDING_ARTIFACT_MAX_ATTEMPTS; attempt++) {
+      const refreshed = await this.refetchRunArtifacts(taskRun);
+      if (refreshed) {
+        const mergedManifest = [...latestManifest];
+        for (const artifact of refreshed) {
+          const existingIndex = mergedManifest.findIndex(
+            (existing) =>
+              (artifact.id && existing.id === artifact.id) ||
+              (artifact.storage_path &&
+                existing.storage_path === artifact.storage_path),
+          );
+          if (existingIndex >= 0) {
+            mergedManifest[existingIndex] = artifact;
+          } else {
+            mergedManifest.push(artifact);
+          }
+        }
+        latestManifest = mergedManifest;
+        const resolvedArtifacts = this.getArtifactsById(
+          latestManifest,
+          artifactIds,
+          { warnOnMissing: false },
+        );
+        if (resolvedArtifacts.length === artifactIds.length) {
+          return latestManifest;
+        }
+      }
+
+      if (attempt < PENDING_ARTIFACT_MAX_ATTEMPTS) {
+        await sleep(PENDING_ARTIFACT_RETRY_DELAY_MS * attempt);
+      }
+    }
+
+    return latestManifest.length > 0 ? latestManifest : null;
   }
 
   // Best-effort refetch of a run's artifact manifest. Returns null on any error
@@ -2131,7 +2261,9 @@ export class AgentServer {
         ? {
             meta: {
               localSkillContext: localSkillContext.context,
-              localSkillName: localSkillContext.skillName,
+              ...(localSkillContext.skillName
+                ? { localSkillName: localSkillContext.skillName }
+                : {}),
             } satisfies Record<string, unknown>,
           }
         : {}),
@@ -2236,40 +2368,121 @@ export class AgentServer {
       (block): block is Extract<ContentBlock, { type: "text" }> =>
         block.type === "text" && block.text.trim().length > 0,
     );
-    if (textBlockIndex === -1) {
+    const textBlock =
+      textBlockIndex === -1 ? null : contentBlocks[textBlockIndex];
+    const invocation =
+      textBlock?.type === "text"
+        ? this.parseLocalSkillInvocation(textBlock.text)
+        : null;
+
+    if (invocation) {
+      const hasMatchingArtifact = artifacts.some(
+        (artifact) =>
+          artifact.type === "skill_bundle" &&
+          artifact.metadata?.skill_name === invocation.skillName,
+      );
+      const installedSkill = hasMatchingArtifact
+        ? this.installedSkillBundleInfo.get(
+            this.getInstalledSkillBundleInfoKey(runId, invocation.skillName),
+          )
+        : undefined;
+      if (installedSkill) {
+        return {
+          skillName: invocation.skillName,
+          context: this.buildInstalledSkillPrompt(
+            installedSkill,
+            invocation.args,
+            this.getCoInstalledSkillBundles(runId, invocation.skillName),
+          ),
+        };
+      }
+    }
+
+    const messageText = contentBlocks
+      .filter(
+        (block): block is Extract<ContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("\n");
+    return this.buildAttachedSkillsPromptContext(runId, artifacts, messageText);
+  }
+
+  /**
+   * Fallback for messages that install skill bundles without being a bare
+   * `/skill` invocation: a running session can't discover mid-session
+   * installs, so skills named in the message get their definition inlined
+   * and the rest are listed with their paths.
+   */
+  private buildAttachedSkillsPromptContext(
+    runId: string,
+    artifacts: TaskRunArtifact[],
+    messageText: string,
+  ): LocalSkillPromptContext | null {
+    const installed = artifacts
+      .filter((artifact) => artifact.type === "skill_bundle")
+      .map((artifact) => artifact.metadata?.skill_name)
+      .filter((name): name is string => typeof name === "string")
+      .map((name) =>
+        this.installedSkillBundleInfo.get(
+          this.getInstalledSkillBundleInfoKey(runId, name),
+        ),
+      )
+      .filter((skill): skill is InstalledSkillBundle => !!skill);
+    if (installed.length === 0) {
       return null;
     }
 
-    const textBlock = contentBlocks[textBlockIndex];
-    if (textBlock.type !== "text") {
-      return null;
-    }
+    const mentioned = installed.filter((skill) => {
+      // token-boundary match so "/foo" never matches inside "/foobar"
+      const escaped = skill.skillName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(
+        `(^|[\\s(\`"'\\[])/${escaped}(?![A-Za-z0-9_/-])`,
+        "m",
+      ).test(messageText);
+    });
+    const unmentioned = installed.filter((skill) => !mentioned.includes(skill));
 
-    const invocation = this.parseLocalSkillInvocation(textBlock.text);
-    if (!invocation) {
-      return null;
+    const sections: string[] = [
+      "The user's message references local skills that are now installed for this run. Apply a skill's instructions when the message calls for it.",
+    ];
+    for (const skill of mentioned) {
+      sections.push(
+        "",
+        `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
+        skill.skillDefinition.trim(),
+        `--- END LOCAL SKILL ${skill.skillName} ---`,
+        `Installed skill path: ${skill.skillRoot}`,
+      );
     }
-
-    const hasMatchingArtifact = artifacts.some(
-      (artifact) =>
-        artifact.type === "skill_bundle" &&
-        artifact.metadata?.skill_name === invocation.skillName,
-    );
-    if (!hasMatchingArtifact) {
-      return null;
+    if (unmentioned.length > 0) {
+      sections.push(
+        "",
+        "Other local skills installed for this run (read a skill's SKILL.md from its path when referenced):",
+        ...unmentioned.map(
+          (skill) => `- /${skill.skillName}: ${skill.skillRoot}`,
+        ),
+      );
     }
+    return { context: sections.join("\n") };
+  }
 
-    const installedSkill = this.installedSkillBundleInfo.get(
-      this.getInstalledSkillBundleInfoKey(runId, invocation.skillName),
-    );
-    if (!installedSkill) {
-      return null;
-    }
-
-    return {
-      skillName: invocation.skillName,
-      context: this.buildInstalledSkillPrompt(installedSkill, invocation.args),
-    };
+  /**
+   * Other skills already installed for this run (auto-bundled dependencies,
+   * skills from earlier messages), listed so the model can find them by path.
+   */
+  private getCoInstalledSkillBundles(
+    runId: string,
+    invokedSkillName: string,
+  ): InstalledSkillBundle[] {
+    const prefix = `${runId}:`;
+    return [...this.installedSkillBundleInfo.entries()]
+      .filter(
+        ([key, skill]) =>
+          key.startsWith(prefix) && skill.skillName !== invokedSkillName,
+      )
+      .map(([, skill]) => skill)
+      .sort((a, b) => a.skillName.localeCompare(b.skillName));
   }
 
   private parseLocalSkillInvocation(
@@ -2290,6 +2503,7 @@ export class AgentServer {
   private buildInstalledSkillPrompt(
     skill: InstalledSkillBundle,
     args: string | undefined,
+    coInstalledSkills: InstalledSkillBundle[] = [],
   ): string {
     return [
       `The user invoked the local skill "/${skill.skillName}". Apply these skill instructions for this turn.`,
@@ -2299,6 +2513,16 @@ export class AgentServer {
       `--- END LOCAL SKILL ${skill.skillName} ---`,
       "",
       `Installed skill path: ${skill.skillRoot}`,
+      ...(coInstalledSkills.length > 0
+        ? [
+            "",
+            "Other local skills installed for this run (when the skill above references one of these, read its SKILL.md from the listed path):",
+            ...coInstalledSkills.map(
+              (coInstalled) =>
+                `- /${coInstalled.skillName}: ${coInstalled.skillRoot}`,
+            ),
+          ]
+        : []),
       "",
       "User request:",
       args?.trim() || `Run /${skill.skillName}.`,

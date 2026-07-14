@@ -4,7 +4,12 @@ import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
-import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { type ISpeech, SPEECH_SERVICE } from "@posthog/platform/speech";
+import {
+  ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
+  SPOKEN_NARRATION_FLAG,
+} from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
@@ -14,8 +19,13 @@ import {
   type CompletionSound,
   type CustomSound,
   NOTIFICATION_DEFAULTS,
+  type SpokenFocusMode,
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
+import {
+  type ISpeechKeyStore,
+  SPEECH_KEY_STORE,
+} from "@posthog/ui/features/settings/speechKeyStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -67,6 +77,12 @@ export function NotificationsSettings() {
   // Canvases only exist behind the bluebird flag, so only mention them when on.
   const canvasEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+
+  // Spoken narration is behind a flag for a staged rollout; always on in dev.
+  const spokenNarrationEnabled = useFeatureFlag(
+    SPOKEN_NARRATION_FLAG,
     import.meta.env.DEV,
   );
 
@@ -360,6 +376,8 @@ export function NotificationsSettings() {
         </SettingRow>
       )}
 
+      {spokenNarrationEnabled && <SpokenNotificationsSection />}
+
       <NotificationTestHarness
         bus={bus}
         notifications={notifications}
@@ -367,6 +385,232 @@ export function NotificationsSettings() {
         canvasEnabled={canvasEnabled}
       />
     </Flex>
+  );
+}
+
+function SpeechSwitchRow({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <SettingRow label={label} description={description}>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        size="1"
+      />
+    </SettingRow>
+  );
+}
+
+// Voice narration: the agent speaks a short line when it needs the user or
+// finishes. The master toggle gates the whole feature; sub-controls disable
+// when it's off. The ElevenLabs key is written to encrypted host storage via an
+// injected capability (never kept in packages/ui or the persisted blob).
+function SpokenNotificationsSection() {
+  const {
+    spokenNotifications,
+    spokenNotifyNeedsInput,
+    spokenNotifyCompletion,
+    spokenNotifyProgress,
+    spokenFocusMode,
+    elevenLabsVoiceId,
+    elevenLabsKeyConfigured,
+    setSpokenNotifications,
+    setSpokenNotifyNeedsInput,
+    setSpokenNotifyCompletion,
+    setSpokenNotifyProgress,
+    setSpokenFocusMode,
+    setElevenLabsVoiceId,
+    setElevenLabsKeyConfigured,
+  } = useSettingsStore();
+
+  const keyStore = useServiceOptional<ISpeechKeyStore>(SPEECH_KEY_STORE);
+  const speech = useServiceOptional<ISpeech>(SPEECH_SERVICE);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+
+  const disabled = !spokenNotifications;
+
+  const saveKey = useCallback(async () => {
+    if (!keyStore || !keyDraft.trim()) return;
+    setSavingKey(true);
+    try {
+      await keyStore.save(keyDraft.trim());
+      setElevenLabsKeyConfigured(true);
+      setKeyDraft("");
+      toast.success("ElevenLabs key saved");
+    } catch {
+      toast.error("Couldn't save the key");
+    } finally {
+      setSavingKey(false);
+    }
+  }, [keyStore, keyDraft, setElevenLabsKeyConfigured]);
+
+  const clearKey = useCallback(async () => {
+    if (!keyStore) return;
+    try {
+      await keyStore.clear();
+      setElevenLabsKeyConfigured(false);
+      toast.success("ElevenLabs key removed");
+    } catch {
+      toast.error("Couldn't remove the key");
+    }
+  }, [keyStore, setElevenLabsKeyConfigured]);
+
+  const testVoice = useCallback(() => {
+    void speech?.speak(
+      "PostHog Code task 'demo' — [excited] this is my voice!",
+      { voiceId: elevenLabsVoiceId || undefined },
+    );
+  }, [speech, elevenLabsVoiceId]);
+
+  return (
+    <>
+      <Text className="mt-4 mb-1 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Spoken notifications
+      </Text>
+      <Text color="gray" className="mb-1 text-[13px]">
+        Have the agent say a short line out loud when it needs you or finishes,
+        so you hear it across parallel tasks without watching the screen. Lines
+        are serialized so agents never talk over each other.
+      </Text>
+
+      <SpeechSwitchRow
+        label="Enable spoken notifications"
+        description="Let the agent speak up out loud when it decides it's worth interrupting you."
+        checked={spokenNotifications}
+        onCheckedChange={setSpokenNotifications}
+      />
+
+      <SpeechSwitchRow
+        label="Speak when I'm needed"
+        description="Blocked on a question, decision, or confirmation. Always spoken — even for the task you're viewing."
+        checked={spokenNotifyNeedsInput}
+        onCheckedChange={setSpokenNotifyNeedsInput}
+        disabled={disabled}
+      />
+
+      <SpeechSwitchRow
+        label="Speak when a task finishes"
+        description="Announce completion so you can review and ship."
+        checked={spokenNotifyCompletion}
+        onCheckedChange={setSpokenNotifyCompletion}
+        disabled={disabled}
+      />
+
+      <SpeechSwitchRow
+        label="Speak on progress"
+        description="Narrate meaningful new phases too. Off by default — can get chatty."
+        checked={spokenNotifyProgress}
+        onCheckedChange={setSpokenNotifyProgress}
+        disabled={disabled}
+      />
+
+      <SettingRow
+        label="When to speak"
+        description="Choose how spoken lines behave relative to what's on screen. Needs-you lines always play."
+      >
+        <Select.Root
+          value={spokenFocusMode}
+          onValueChange={(v) => setSpokenFocusMode(v as SpokenFocusMode)}
+          disabled={disabled}
+          size="1"
+        >
+          <Select.Trigger className="min-w-[180px]" />
+          <Select.Content>
+            <Select.Item value="unviewed_task">
+              Quiet for the task I'm viewing
+            </Select.Item>
+            <Select.Item value="app_unfocused">
+              Only when app is in background
+            </Select.Item>
+            <Select.Item value="always">Always</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="ElevenLabs API key"
+        description={
+          elevenLabsKeyConfigured
+            ? "A key is saved — expressive Eleven v3 voice is on."
+            : "Optional. Add a key for an expressive Eleven v3 voice; otherwise your system voice is used."
+        }
+      >
+        {elevenLabsKeyConfigured ? (
+          <Flex align="center" gap="2">
+            <Text color="green" className="text-[13px]">
+              Key saved
+            </Text>
+            <Button
+              variant="soft"
+              size="1"
+              color="red"
+              onClick={clearKey}
+              disabled={!keyStore}
+            >
+              Remove
+            </Button>
+          </Flex>
+        ) : (
+          <Flex align="center" gap="2">
+            <TextField.Root
+              type="password"
+              placeholder="xi-…"
+              size="1"
+              className="w-[180px]"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.currentTarget.value)}
+              disabled={disabled || !keyStore}
+            />
+            <Button
+              variant="soft"
+              size="1"
+              onClick={saveKey}
+              disabled={disabled || !keyStore || !keyDraft.trim() || savingKey}
+            >
+              Save
+            </Button>
+          </Flex>
+        )}
+      </SettingRow>
+
+      <SettingRow
+        label="Voice"
+        description="Optional ElevenLabs voice id. Leave blank for the default voice."
+        noBorder
+      >
+        <Flex align="center" gap="2">
+          <TextField.Root
+            size="1"
+            className="w-[180px]"
+            placeholder="default"
+            value={elevenLabsVoiceId}
+            onChange={(e) => setElevenLabsVoiceId(e.currentTarget.value)}
+            disabled={disabled}
+          />
+          <Button
+            variant="soft"
+            size="1"
+            onClick={testVoice}
+            disabled={disabled || !speech}
+          >
+            <Play weight="fill" /> Test
+          </Button>
+        </Flex>
+      </SettingRow>
+    </>
   );
 }
 

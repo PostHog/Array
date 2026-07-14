@@ -13,12 +13,17 @@ const FOLDER_INSTRUCTIONS_QUERY_KEY = (folderId: string) =>
 const FOLDER_INSTRUCTIONS_VERSIONS_QUERY_KEY = (folderId: string) =>
   ["folder-instructions", folderId, "versions"] as const;
 
+// While a context has no published CONTEXT.md, `pollWhileEmpty` views refetch
+// on this cadence so an agent's mid-run publish (via the MCP) appears without
+// a manual reload. Polling stops as soon as content exists.
+const FOLDER_INSTRUCTIONS_EMPTY_POLL_INTERVAL_MS = 5_000;
+
 // Latest published version, or `null` when none exists yet. The latest
 // content is what the editor opens with; the editor never edits an old
 // version in-place, it republishes from current latest.
 export function useFolderInstructions(
   folderId: string | null,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; pollWhileEmpty?: boolean },
 ) {
   return useAuthenticatedQuery<FolderInstructions | null>(
     folderId
@@ -35,6 +40,12 @@ export function useFolderInstructions(
       // last-cached body.
       staleTime: 0,
       refetchOnMount: "always",
+      refetchInterval: options?.pollWhileEmpty
+        ? (query) =>
+            (query.state.data?.content ?? "").trim().length > 0
+              ? false
+              : FOLDER_INSTRUCTIONS_EMPTY_POLL_INTERVAL_MS
+        : undefined,
     },
   );
 }

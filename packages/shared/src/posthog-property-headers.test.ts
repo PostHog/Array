@@ -57,11 +57,57 @@ describe("buildPosthogPropertyHeaderRecord", () => {
     ).toEqual({ "x-posthog-property-task_title": "dontship" });
   });
 
-  it("keeps latin1 characters such as accents", () => {
-    expect(buildPosthogPropertyHeaderRecord({ task_title: "café" })).toEqual({
-      "x-posthog-property-task_title": "café",
+  it.each([
+    {
+      case: "precomposed accents (the incident title)",
+      title: "sono più di 48 ore, è tardi",
+      expected: "sono piu di 48 ore, e tardi",
+    },
+    {
+      case: "combining marks already decomposed in the input",
+      title: "cafe\u0301 al volo",
+      expected: "cafe al volo",
+    },
+    {
+      case: "NFKD compatibility forms (ligature, unit, fullwidth)",
+      title: "ﬁle ㎏ Ｆｕｌｌ",
+      expected: "file kg Full",
+    },
+    {
+      case: "letters with no ASCII decomposition are dropped",
+      title: "Ærøskøbing Straße",
+      expected: "rskbing Strae",
+    },
+    {
+      case: "fully non-Latin titles collapse to an empty value",
+      title: "東京🎉",
+      expected: "",
+    },
+  ])("$case", ({ title, expected }) => {
+    expect(buildPosthogPropertyHeaderRecord({ task_title: title })).toEqual({
+      "x-posthog-property-task_title": expected,
     });
   });
+
+  // The regression class from the incident: any non-ASCII byte in the value
+  // makes Bun's fetch (the Claude Code CLI) reject the whole request with
+  // "Header 'x-posthog-property-task_title' has invalid value".
+  it.each([
+    "sono più di 48 ore che non tracciamo trace in AI observability",
+    "perché non funziona più? è rotto da ieri",
+    "Größenänderung prüfen — Umlaute überall",
+    "vérifier l'intégration après déploiement",
+    "corrigir a validação do título",
+    "проверить трассировку в проде",
+    "タイトルのバグを修正する 🚀",
+    "mixed ‘smart’ quotes – dashes … and​zero-width",
+  ])(
+    "emits only printable ASCII a strict HTTP client accepts (%s)",
+    (title) => {
+      const record = buildPosthogPropertyHeaderRecord({ task_title: title });
+      expect(record["x-posthog-property-task_title"]).toMatch(/^[\x20-\x7e]*$/);
+    },
+  );
 });
 
 describe("buildPosthogPropertyHeaderLines", () => {

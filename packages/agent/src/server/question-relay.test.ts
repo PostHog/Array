@@ -730,7 +730,7 @@ describe("Question relay", () => {
       expect(promptSpy).not.toHaveBeenCalled();
     });
 
-    it("does not replay a transient upstream termination before any session activity", async () => {
+    it("replays a transient upstream termination with a continuation prompt", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -744,7 +744,8 @@ describe("Question relay", () => {
 
       const promptSpy = vi
         .fn()
-        .mockRejectedValueOnce(createTransientPromptError());
+        .mockRejectedValueOnce(createTransientPromptError())
+        .mockResolvedValueOnce({ stopReason: "cancelled" });
       const updateTaskRunSpy = vi
         .spyOn(server.posthogAPI, "updateTaskRun")
         .mockResolvedValue({} as TaskRun);
@@ -762,20 +763,26 @@ describe("Question relay", () => {
         },
       };
 
-      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+      vi.useFakeTimers();
+      try {
+        const sendPromise = server.sendInitialTaskMessage(TEST_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(5_000);
+        await sendPromise;
+      } finally {
+        vi.useRealTimers();
+      }
 
-      expect(promptSpy).toHaveBeenCalledTimes(1);
-      expect(updateTaskRunSpy).toHaveBeenCalledWith(
-        "test-task-id",
-        "test-run-id",
-        {
-          status: "failed",
-          error_message: UPSTREAM_PROVIDER_FAILURE_MESSAGE,
-        },
+      expect(promptSpy).toHaveBeenCalledTimes(2);
+      const continuation = promptSpy.mock.calls[1][0] as {
+        prompt: Array<{ type: string; text: string }>;
+      };
+      expect(continuation.prompt[0].text).toContain(
+        "interrupted by a transient connection error",
       );
+      expect(updateTaskRunSpy).not.toHaveBeenCalled();
     });
 
-    it("surfaces upstream provider failures with a retryable message", async () => {
+    it("re-sends the original prompt after an upstream provider failure", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -789,7 +796,8 @@ describe("Question relay", () => {
 
       const promptSpy = vi
         .fn()
-        .mockRejectedValueOnce(createUpstreamProviderFailureError());
+        .mockRejectedValueOnce(createUpstreamProviderFailureError())
+        .mockResolvedValueOnce({ stopReason: "cancelled" });
       const updateTaskRunSpy = vi
         .spyOn(server.posthogAPI, "updateTaskRun")
         .mockResolvedValue({} as TaskRun);
@@ -807,20 +815,24 @@ describe("Question relay", () => {
         },
       };
 
-      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+      vi.useFakeTimers();
+      try {
+        const sendPromise = server.sendInitialTaskMessage(TEST_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(5_000);
+        await sendPromise;
+      } finally {
+        vi.useRealTimers();
+      }
 
-      expect(promptSpy).toHaveBeenCalledTimes(1);
-      expect(updateTaskRunSpy).toHaveBeenCalledWith(
-        "test-task-id",
-        "test-run-id",
-        {
-          status: "failed",
-          error_message: UPSTREAM_PROVIDER_FAILURE_MESSAGE,
-        },
-      );
+      expect(promptSpy).toHaveBeenCalledTimes(2);
+      const retryRequest = promptSpy.mock.calls[1][0] as {
+        prompt: Array<{ type: string; text: string }>;
+      };
+      expect(retryRequest.prompt[0].text).toBe("original task description");
+      expect(updateTaskRunSpy).not.toHaveBeenCalled();
     });
 
-    it("surfaces upstream connection errors with the shared provider failure message", async () => {
+    it("surfaces the shared provider failure message once upstream retries are exhausted", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -832,7 +844,7 @@ describe("Question relay", () => {
         state: {},
       } as unknown as TaskRun);
 
-      const promptSpy = vi.fn().mockImplementationOnce(async () => {
+      const promptSpy = vi.fn().mockImplementation(async () => {
         throw createTransientConnectionError();
       });
       const updateTaskRunSpy = vi
@@ -852,9 +864,16 @@ describe("Question relay", () => {
         },
       };
 
-      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+      vi.useFakeTimers();
+      try {
+        const sendPromise = server.sendInitialTaskMessage(TEST_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(10_000);
+        await sendPromise;
+      } finally {
+        vi.useRealTimers();
+      }
 
-      expect(promptSpy).toHaveBeenCalledTimes(1);
+      expect(promptSpy).toHaveBeenCalledTimes(3);
       expect(updateTaskRunSpy).toHaveBeenCalledWith(
         "test-task-id",
         "test-run-id",

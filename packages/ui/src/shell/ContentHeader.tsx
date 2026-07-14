@@ -14,6 +14,7 @@ import { BranchSelector } from "@posthog/ui/features/git-interaction/components/
 import { CloudGitInteractionHeader } from "@posthog/ui/features/git-interaction/components/CloudGitInteractionHeader";
 import { TaskActionsMenu } from "@posthog/ui/features/git-interaction/components/TaskActionsMenu";
 import { HandoffConfirmDialog } from "@posthog/ui/features/sessions/components/HandoffConfirmDialog";
+import { StopCloudRunButton } from "@posthog/ui/features/sessions/components/StopCloudRunButton";
 import { useHandoffDialogStore } from "@posthog/ui/features/sessions/handoffDialogStore";
 import { useSessionCallbacks } from "@posthog/ui/features/sessions/hooks/useSessionCallbacks";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
@@ -197,10 +198,13 @@ export function ContentHeader() {
           <TaskDiffStatsBadge task={activeTask} />
 
           {isCloudTask ? (
-            <CloudGitInteractionHeader
-              taskId={activeTask.id}
-              task={activeTask}
-            />
+            <>
+              <StopCloudRunButton taskId={activeTask.id} />
+              <CloudGitInteractionHeader
+                taskId={activeTask.id}
+                task={activeTask}
+              />
+            </>
           ) : (
             <LocalHandoffButton taskId={activeTask.id} task={activeTask} />
           )}

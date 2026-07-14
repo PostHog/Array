@@ -36,12 +36,13 @@ function findSpan(
   return found;
 }
 
-function renderHeader(path: string) {
+function renderHeader(path: string, commentCount?: number) {
   const diff = render(
     <DiffFileHeader
       fileDiff={makeFileDiff(path)}
       collapsed={false}
       onToggle={() => {}}
+      commentCount={commentCount}
     />,
   );
   const deferred = render(
@@ -52,6 +53,7 @@ function renderHeader(path: string) {
       reason="line-limit"
       collapsed={false}
       onToggle={() => {}}
+      commentCount={commentCount}
     />,
   );
   return { diff, deferred };
@@ -95,5 +97,13 @@ describe.each([
 
     expect(dirSpan.parentElement).toBe(fileSpan.parentElement);
     expect(dirSpan.parentElement?.classList.contains("flex")).toBe(true);
+  });
+
+  it("renders metadata before line changes", () => {
+    const rendered = renderHeader("src/ReviewShell.tsx", 2)[which];
+    const text = rendered.container.querySelector("button")?.textContent ?? "";
+    const additions = which === "diff" ? "+3" : "+10";
+
+    expect(text.indexOf("2 comments")).toBeLessThan(text.indexOf(additions));
   });
 });

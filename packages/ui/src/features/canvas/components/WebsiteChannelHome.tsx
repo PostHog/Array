@@ -1,17 +1,32 @@
+import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
-import { ChannelFeedView } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import {
+  ChannelFeedView,
+  type PendingKickoff,
+} from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import {
   ChannelHomeComposer,
   type ChannelHomeComposerHandle,
 } from "@posthog/ui/features/canvas/components/ChannelHomeComposer";
+import {
+  ChannelIntro,
+  type ContextMdState,
+} from "@posthog/ui/features/canvas/components/ChannelIntro";
+import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
+import { CONTEXT_MD_TASK_TITLE_PREFIX } from "@posthog/ui/features/canvas/contextPrompt";
 import {
   channelFeedQueryKey,
   useChannelFeed,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
+import {
+  channelCreationMessage,
+  useChannelFeedMessages,
+} from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
@@ -28,7 +43,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -41,19 +56,56 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const { fileTask } = useChannelTaskMutations();
 
-  const { data: instructions } = useFolderInstructions(channelId);
+  // Poll while empty so the intro's context.md card flips to "created" when
+  // the agent publishes mid plan-session, without a manual reload.
+  const { data: instructions, isLoading: isLoadingInstructions } =
+    useFolderInstructions(channelId, { pollWhileEmpty: true });
   const channelContext = instructions?.content;
 
   // The folder channel maps onto a backend channel (by name; "me" → the
   // personal channel), which owns the task feed and threads.
   const { channel: backendChannel } = useBackendChannel(channelName);
   const { tasks, isLoading } = useChannelFeed(backendChannel?.id);
+  // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
+  // backend channel — the same id the feed tasks use, not the folder id.
+  const { messages: feedMessages } = useChannelFeedMessages(backendChannel?.id);
+  // The Slack-style "joined" opener, derived from the channel row so it renders
+  // (and sorts first) even where the feed endpoint isn't deployed.
+  const systemMessages = useMemo(() => {
+    const creation = channelCreationMessage(backendChannel);
+    return creation ? [creation, ...feedMessages] : feedMessages;
+  }, [backendChannel, feedMessages]);
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
   );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
+
+  // Optimistic kickoffs: the message a user just submitted, shown in the feed
+  // with a "Starting…" card while its task is created in the background. Each
+  // is tagged with the channel it was fired in and filtered to the current one,
+  // so a still-in-flight kickoff never bleeds into another channel's feed.
+  const [pending, setPending] = useState<
+    (PendingKickoff & { channelId: string })[]
+  >([]);
+  const addPending = useCallback(
+    (kickoff: PendingKickoff) => {
+      setPending((prev) => [...prev, { ...kickoff, channelId }]);
+    },
+    [channelId],
+  );
+  const removePending = useCallback((id: string) => {
+    setPending((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+  const visiblePending = useMemo(
+    () => pending.filter((p) => p.channelId === channelId),
+    [pending, channelId],
+  );
+
+  // The "Create your context.md" dialog, opened from the welcome message's
+  // onboarding checklist. Describe-mode: seeds a plan session for this context.
+  const [contextMdDialogOpen, setContextMdDialogOpen] = useState(false);
 
   const threadTaskId = useThreadPanelStore((s) => s.taskId);
   const openThread = useThreadPanelStore((s) => s.openThread);
@@ -84,6 +136,14 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const onTaskCreated = useCallback(
     (task: Task) => {
       queryClient.setQueryData(taskDetailQuery(task.id).queryKey, task);
+      // Splice the real card straight into the feed so it appears now rather
+      // than after the invalidate refetch (or the next 5s poll) lands. Seed a
+      // fresh list when the feed cache hasn't populated yet — insertTaskDedup
+      // no-ops on an undefined cache, which would otherwise drop the card.
+      queryClient.setQueryData<Task[]>(
+        channelFeedQueryKey(backendChannel?.id),
+        (old) => (old ? insertTaskDedup(old, task) : [task]),
+      );
       invalidateFeed();
       void fileTask(channelId, task.id, task.title)
         .then(() =>
@@ -108,7 +168,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           });
         });
     },
-    [channelId, fileTask, invalidateFeed, queryClient],
+    [backendChannel?.id, channelId, fileTask, invalidateFeed, queryClient],
   );
 
   // The task route's mount effect points the panel at the task, so navigating
@@ -131,6 +191,38 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const threadTask = threadTaskId
     ? tasks.find((t) => t.id === threadTaskId)
     : undefined;
+
+  // The Slack-style intro pinned at the feed's start — public channels only;
+  // the personal channel keeps the welcome empty state below.
+  const isPersonal = channelName === PERSONAL_CHANNEL_NAME;
+  const hasContextMd = (channelContext ?? "").trim().length > 0;
+  // An in-flight build is spotted by its plan task in this channel's feed (by
+  // title prefix — the only task↔context.md tie until the backend links them),
+  // so the intro card can show "Creating…" instead of a second "Create" CTA.
+  // Drafts with no run are ignored: a half-launched task shouldn't pin the
+  // card in the building state with no way to retry.
+  const isBuildingContextMd = tasks.some(
+    (t) =>
+      t.title?.startsWith(CONTEXT_MD_TASK_TITLE_PREFIX) &&
+      t.latest_run &&
+      !isTerminalStatus(t.latest_run.status),
+  );
+  const contextMdState: ContextMdState = hasContextMd
+    ? "created"
+    : isLoadingInstructions
+      ? "loading"
+      : isBuildingContextMd
+        ? "building"
+        : "none";
+  const intro =
+    !isPersonal && channelName && backendChannel ? (
+      <ChannelIntro
+        channel={backendChannel}
+        channelName={channelName}
+        contextMdState={contextMdState}
+        onCreateContextMd={() => setContextMdDialogOpen(true)}
+      />
+    ) : undefined;
 
   const emptyState = (
     <div className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center gap-6 px-4 py-10">
@@ -171,8 +263,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelFeedView
           tasks={tasks}
+          pending={visiblePending}
+          systemMessages={systemMessages}
           isLoading={isLoading}
           emptyState={emptyState}
+          intro={intro}
           onOpenTask={handleOpenTask}
           onOpenThread={handleOpenThread}
         />
@@ -184,6 +279,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             channelContext={channelContext}
             backendChannelId={backendChannel?.id}
             onTaskCreated={onTaskCreated}
+            onPendingStart={addPending}
+            onPendingEnd={removePending}
           />
         </div>
       </div>
@@ -193,6 +290,14 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           taskId={threadTaskId}
           task={threadTask}
           onClose={closeThread}
+        />
+      )}
+
+      {channelName && (
+        <CreateChannelModal
+          open={contextMdDialogOpen}
+          onOpenChange={setContextMdDialogOpen}
+          existingContext={{ channelId, channelName }}
         />
       )}
     </div>

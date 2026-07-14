@@ -24,7 +24,7 @@ vi.mock("@/lib/api", () => ({
     }),
 }));
 
-import { runTaskInCloud } from "./api";
+import { cancelRun, HttpError, runTaskInCloud } from "./api";
 
 function bodyOf(call: unknown): Record<string, unknown> {
   const [, init] = call as [string, RequestInit];
@@ -76,5 +76,58 @@ describe("runTaskInCloud", () => {
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(init.body).toBeUndefined();
+  });
+});
+
+describe("cancelRun", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it("POSTs to the run cancel endpoint with an empty body", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ status: "cancelled" }), { status: 200 }),
+    );
+
+    const result = await cancelRun("task-1", "run-1");
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://app.posthog.test/api/projects/42/tasks/task-1/runs/run-1/cancel/",
+    );
+    expect(init.method).toBe("POST");
+    expect(bodyOf(mockFetch.mock.calls[0])).toEqual({});
+    expect(result).toEqual({ status: "cancelled" });
+  });
+
+  it("forwards a reason when provided", async () => {
+    mockFetch.mockResolvedValue(new Response("{}", { status: 200 }));
+
+    await cancelRun("task-1", "run-1", "user requested");
+
+    expect(bodyOf(mockFetch.mock.calls[0])).toEqual({
+      reason: "user requested",
+    });
+  });
+
+  it("throws with the backend error message on failure", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ error: "Run already finished" }), {
+        status: 409,
+      }),
+    );
+
+    await expect(cancelRun("task-1", "run-1")).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("Run already finished"),
+    });
+  });
+
+  it("falls back to a generic message when the body has no error", async () => {
+    mockFetch.mockResolvedValue(new Response("boom", { status: 500 }));
+
+    await expect(cancelRun("task-1", "run-1")).rejects.toBeInstanceOf(
+      HttpError,
+    );
   });
 });

@@ -12,6 +12,7 @@ export interface ClaudeCodeConfig {
 
 export interface AgentServerConfig {
   port: number;
+  agentStateDir?: string;
   repositoryPath?: string;
   repoReadyFile?: string;
   apiUrl: string;

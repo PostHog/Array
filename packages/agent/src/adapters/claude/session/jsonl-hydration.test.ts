@@ -1390,6 +1390,156 @@ describe("sanitizeSessionJsonl", () => {
     expect(await fs.readFile(file, "utf8")).toBe(before);
   });
 
+  it("neutralizes an oversized image nested in a tool_result", async () => {
+    // A Read on a big image file lands its bytes inside a tool_result; on
+    // resume that block 400s every turn until it is replaced.
+    const oversized = "A".repeat(6 * 1024 * 1024 * (4 / 3));
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tc-1",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: oversized,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const user = lines[0].message as {
+      content: [{ content: unknown[] }];
+    };
+    expect(user.content[0].content).toEqual([
+      {
+        type: "text",
+        text: "[Removed unprocessable image: image exceeds the 5 MB per-image limit]",
+      },
+    ]);
+  });
+
+  it("neutralizes an unsupported top-level image mime type", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "look" },
+            { type: "image", data: "abc", mimeType: "image/tiff" },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const user = lines[0].message as { content: unknown };
+    expect(user.content).toEqual([
+      { type: "text", text: "look" },
+      {
+        type: "text",
+        text: "[Removed unprocessable image: unsupported image type image/tiff]",
+      },
+    ]);
+  });
+
+  it("neutralizes an image with empty base64 data", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "" },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const user = lines[0].message as { content: unknown };
+    expect(user.content).toEqual([
+      {
+        type: "text",
+        text: "[Removed unprocessable image: image data is empty]",
+      },
+    ]);
+  });
+
+  it("leaves a small, supported image untouched", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "abc" },
+            },
+          ],
+        },
+      },
+    ]);
+    const before = await fs.readFile(file, "utf8");
+
+    expect(await sanitizeSessionJsonl(file)).toBe(false);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+
+  it("leaves url-sourced images untouched", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "url", url: "https://example.com/x.png" },
+            },
+          ],
+        },
+      },
+    ]);
+    const before = await fs.readFile(file, "utf8");
+
+    expect(await sanitizeSessionJsonl(file)).toBe(false);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+
   it("returns false for missing files", async () => {
     expect(await sanitizeSessionJsonl("/nonexistent/dir/sess.jsonl")).toBe(
       false,
@@ -1464,7 +1614,7 @@ describe("hydrateSessionJsonl", () => {
         .getTaskRun,
     ).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith(
-      "Removed empty content blocks from existing session JSONL",
+      "Healed existing session JSONL (empty and/or unprocessable-image blocks)",
       expect.anything(),
     );
     expect(await fs.readFile(file, "utf8")).not.toContain('"text":""');

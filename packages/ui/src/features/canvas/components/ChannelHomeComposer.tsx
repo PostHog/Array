@@ -15,6 +15,7 @@ import { track } from "../../../shell/analytics";
 import { useOptionalAuthenticatedClient } from "../../auth/authClient";
 import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import { PromptInput } from "../../message-editor/components/PromptInput";
+import { contentToPlainText } from "../../message-editor/content";
 import { useDraftStore } from "../../message-editor/draftStore";
 import type { EditorHandle } from "../../message-editor/types";
 import { toastError } from "../../notifications/errorDetails";
@@ -44,6 +45,7 @@ import {
   normalizeChannelName,
   PERSONAL_CHANNEL_NAME,
 } from "../hooks/useTaskChannels";
+import type { PendingKickoff } from "./ChannelFeedView";
 
 export interface ChannelHomeComposerHandle {
   /** Drop a starter prompt into the editor and apply its mode, if any. */
@@ -58,6 +60,10 @@ interface ChannelHomeComposerProps {
   /** Backend channel UUID that will own the created task (its feed home). */
   backendChannelId?: string;
   onTaskCreated: (task: Task) => void;
+  /** Post an optimistic kickoff to the feed the instant a submit is accepted. */
+  onPendingStart: (kickoff: PendingKickoff) => void;
+  /** Drop that optimistic kickoff once the task is created (or creation fails). */
+  onPendingEnd: (id: string) => void;
 }
 
 // The prompt box at the bottom of a channel's homepage. A trimmed-down sibling
@@ -70,7 +76,15 @@ export const ChannelHomeComposer = forwardRef<
   ChannelHomeComposerHandle,
   ChannelHomeComposerProps
 >(function ChannelHomeComposer(
-  { channelId, channelName, channelContext, backendChannelId, onTaskCreated },
+  {
+    channelId,
+    channelName,
+    channelContext,
+    backendChannelId,
+    onTaskCreated,
+    onPendingStart,
+    onPendingEnd,
+  },
   ref,
 ) {
   const sessionId = `channel-home:${channelId}`;
@@ -242,6 +256,23 @@ export const ChannelHomeComposer = forwardRef<
     queryClient,
   ]);
 
+  // In-flight optimistic kickoff ids, oldest first. Submits are serialized
+  // (the composer is disabled while creating), so retiring the oldest on each
+  // task-ready callback matches create order and keeps adds/removes balanced —
+  // no row is ever orphaned, even if two creates briefly overlap.
+  const pendingIdsRef = useRef<string[]>([]);
+
+  const handleTaskCreated = useCallback(
+    (task: Task) => {
+      // onTaskCreated swaps the real card in; drop the matching "Starting…"
+      // row in the same tick so the two never show at once.
+      onTaskCreated(task);
+      const id = pendingIdsRef.current.shift();
+      if (id) onPendingEnd(id);
+    },
+    [onTaskCreated, onPendingEnd],
+  );
+
   const { isCreatingTask, canSubmit, handleSubmit } = useTaskCreation({
     editorRef,
     sessionId,
@@ -260,8 +291,37 @@ export const ChannelHomeComposer = forwardRef<
     channelContext,
     channelName,
     channelId: backendChannelId,
-    onTaskCreated,
+    onTaskCreated: handleTaskCreated,
   });
+
+  // Own the submit so the composer clears the instant a keystroke is accepted
+  // (not after the create round trip), which is what stops the "looks like it
+  // didn't take" double-submit. We snapshot the content and hand it to
+  // handleSubmit as an override so clearing early can't race the read.
+  const submit = useCallback(async () => {
+    const editor = editorRef.current;
+    if (!editor || !canSubmit) return;
+    const content = editor.getContent();
+    const prompt = contentToPlainText(content).trim();
+    if (!prompt) return;
+
+    editor.clear();
+    const id =
+      globalThis.crypto?.randomUUID?.() ??
+      `pending-${prompt.length}-${Date.now()}`;
+    pendingIdsRef.current.push(id);
+    onPendingStart({ id, prompt });
+
+    const created = await handleSubmit(content);
+    if (!created) {
+      // Creation failed — onTaskCreated never fired, so this id is still
+      // queued. Pull its row and give the full structured prompt (chips and
+      // attachments, not just flattened text) back so the user can retry.
+      pendingIdsRef.current = pendingIdsRef.current.filter((p) => p !== id);
+      onPendingEnd(id);
+      editor.insertEditorContent(content);
+    }
+  }, [canSubmit, handleSubmit, onPendingStart, onPendingEnd]);
 
   const handleModeChange = useCallback(
     (value: string) => {
@@ -307,7 +367,7 @@ export const ChannelHomeComposer = forwardRef<
 
   const hints = ["@ to add files", "/ for skills"].join(", ");
   const isBusy = isCreatingTask || isStartingCanvas;
-  const submitComposer = canvasArmed ? handleCanvasSubmit : handleSubmit;
+  const submitComposer = canvasArmed ? handleCanvasSubmit : submit;
 
   return (
     <div className="flex w-full flex-col">

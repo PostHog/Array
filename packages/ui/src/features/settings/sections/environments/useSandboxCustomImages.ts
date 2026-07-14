@@ -7,8 +7,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthenticatedMutation } from "../../../../hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "../../../../hooks/useAuthenticatedQuery";
 import { toast } from "../../../../primitives/toast";
+import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { watchImageBuild } from "./imageBuildWatcher";
 import { sandboxEnvKeys } from "./useSandboxEnvironments";
+
+const CUSTOM_IMAGES_FEATURE_FLAG = "tasks-modal-vm-sandbox";
 
 const sandboxCustomImageKeys = {
   list: ["sandbox-custom-images", "list"] as const,
@@ -30,6 +33,7 @@ export function useSandboxCustomImageDetail(imageId: string) {
 
 export function useSandboxCustomImages() {
   const queryClient = useQueryClient();
+  const customImagesFlagEnabled = useFeatureFlag(CUSTOM_IMAGES_FEATURE_FLAG);
 
   const {
     data: images,
@@ -39,6 +43,7 @@ export function useSandboxCustomImages() {
     sandboxCustomImageKeys.list,
     (client) => client.listSandboxCustomImages(),
     {
+      enabled: customImagesFlagEnabled,
       retry: (failureCount, error) =>
         !(error instanceof SandboxCustomImagesDisabledError) &&
         failureCount < 3,
@@ -56,7 +61,7 @@ export function useSandboxCustomImages() {
     },
   );
 
-  const customImagesEnabled = images !== undefined;
+  const customImagesEnabled = customImagesFlagEnabled && images !== undefined;
   const customImagesDisabled =
     error instanceof SandboxCustomImagesDisabledError;
 

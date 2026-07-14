@@ -114,8 +114,8 @@ describe("LlmGatewayService.prompt", () => {
         // literal "null" strings on the captured event.
         unused: null,
         skipped: undefined,
-        // Newlines and non-latin1 bytes are sanitized so an undici-backed
-        // fetch doesn't reject the request before it's sent.
+        // Newlines and non-ASCII characters are sanitized so no HTTP client
+        // (undici, Bun's fetch) rejects the request before it's sent.
         rich: "line one\nline two — done 🎉",
       },
     });

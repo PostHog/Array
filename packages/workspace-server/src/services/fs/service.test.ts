@@ -48,6 +48,35 @@ describe("FsService.listRepoFiles", () => {
       { path: "src/sub/c.ts", kind: "file" },
     ]);
   });
+
+  it("passes the file cap and timeout through to listAllFiles", async () => {
+    vi.mocked(getChangedFiles).mockResolvedValue(new Set());
+    vi.mocked(listAllFiles).mockResolvedValue([]);
+
+    const service = new FsService();
+    await service.listRepoFiles("/repo");
+
+    expect(listAllFiles).toHaveBeenCalledWith("/repo", {
+      maxFiles: 50_000,
+      timeoutMs: 8_000,
+    });
+  });
+
+  it("total entries can exceed the file cap when derived directories are included", async () => {
+    vi.mocked(getChangedFiles).mockResolvedValue(new Set());
+    const cappedList = Array.from(
+      { length: 50_000 },
+      (_, i) => `src/sub${i}/file.ts`,
+    );
+    vi.mocked(listAllFiles).mockResolvedValue(cappedList);
+
+    const service = new FsService();
+    const entries = await service.listRepoFiles("/repo");
+
+    const fileEntries = entries.filter((e) => e.kind === "file");
+    expect(fileEntries.length).toBe(50_000);
+    expect(entries.length).toBeGreaterThan(50_000);
+  });
 });
 
 describe("FsService repo file IO", () => {
