@@ -13,7 +13,12 @@ import { Flex, Heading, IconButton, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { useLoops } from "../hooks/useLoops";
 import { useLoopDraftStore } from "../loopDraftStore";
-import { LOOP_TEMPLATES, type LoopTemplate } from "../loopTemplates";
+import {
+  LOOP_TEMPLATE_CATEGORIES,
+  LOOP_TEMPLATES,
+  type LoopTemplate,
+  type LoopTemplateCategory,
+} from "../loopTemplates";
 import { LoopRow } from "./LoopRow";
 
 const EXAMPLE_PROMPTS = [
@@ -25,6 +30,8 @@ const EXAMPLE_PROMPTS = [
 export function LoopsListView() {
   const { data: loops, isLoading, isError, error } = useLoops();
   const [prompt, setPrompt] = useState("");
+  const [templateCategory, setTemplateCategory] =
+    useState<LoopTemplateCategory>("engineering");
 
   const headerContent = useMemo(
     () => (
@@ -114,11 +121,31 @@ export function LoopsListView() {
           )}
 
           <Flex direction="column" gap="3">
-            <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
-              Start from a template
-            </Text>
+            <Flex align="center" justify="between" gap="3">
+              <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
+                Start from a template
+              </Text>
+              <Flex className="gap-0.5 rounded-full border border-gray-5 bg-gray-2 p-0.5">
+                {LOOP_TEMPLATE_CATEGORIES.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setTemplateCategory(option.value)}
+                    className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                      templateCategory === option.value
+                        ? "bg-(--gray-4) text-gray-12"
+                        : "text-gray-10 hover:text-gray-12"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </Flex>
+            </Flex>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {LOOP_TEMPLATES.map((template) => (
+              {LOOP_TEMPLATES.filter(
+                (template) => template.category === templateCategory,
+              ).map((template) => (
                 <TemplateCard
                   key={template.id}
                   template={template}
