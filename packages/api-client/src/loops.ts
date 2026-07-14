@@ -155,6 +155,12 @@ export namespace LoopSchemas {
     behaviors: LoopBehaviors;
     connectors: LoopConnectors;
     notifications: LoopNotifications;
+    /** Backend-set: internal loops are hidden from the UI (never returned by the
+     * list/detail API), so this is effectively always false for loops a client can see. */
+    internal: boolean;
+    /** What created this loop: "user_created" for loops a person made, other values for
+     * loops created by a backend flow. Read-only. */
+    origin_product: string;
     last_run_at: string | null;
     last_run_status: string | null;
     last_error: string | null;
