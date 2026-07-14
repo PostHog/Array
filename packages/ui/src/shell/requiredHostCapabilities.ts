@@ -21,9 +21,11 @@ import { DIFF_WORKER_FACTORY } from "@posthog/ui/shell/diffWorkerHost";
  *
  * Each host passes this list to `assertHostCapabilities` at the end of its
  * composition root (see `apps/web/src/web-container.ts` and the desktop renderer
- * container) so a gap fails at startup, and `web-container.test.ts` locks it in
- * for CI. Add an entry whenever shared code starts resolving a new host-provided
- * token via service location.
+ * container) so a gap fails at startup rather than at the first navigation that
+ * needs it — which the web e2e boot test (`apps/web/tests/e2e`) turns into a CI
+ * gate: an unbound capability throws at container load, the app never mounts,
+ * and the boot spec fails. Add an entry whenever shared code starts resolving a
+ * new host-provided token via service location.
  *
  * Excluded on purpose: core-module services (they fail at module load, a
  * different and already-loud failure mode) and host-specific/local-only

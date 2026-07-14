@@ -23,19 +23,21 @@ to-do list for widening the web surface.
 ## Testing
 
 ```bash
-pnpm --filter @posthog/web test       # Vitest: web-container smoke test
 pnpm --filter @posthog/web test:e2e   # Playwright: happy-path browser e2e
 ```
 
-- **`web-container.test.ts`** imports the real composition root and asserts it
-  binds every capability the shared app resolves via service location
-  (`REQUIRED_HOST_CAPABILITIES`), so a missing binding fails in CI instead of at
-  the first navigation that needs it.
 - **`tests/e2e/`** drives stock Chromium against the Vite dev server (Playwright
   starts it). Scope is the hermetic happy path up to the OAuth wall — boot,
   container wiring, onboarding → sign-in card, and the `/callback` relay — since
-  real login needs PostHog cloud and a popup IdP. Both run in CI (`test.yml`),
+  real login needs PostHog cloud and a popup IdP. Runs in CI (`test.yml`),
   reusing the desktop suite's cached Chromium.
+- The boot spec doubles as the host-capability guard: `web-container.ts` runs
+  `assertHostCapabilities(REQUIRED_HOST_CAPABILITIES)` at container load, so an
+  unbound capability throws before the app mounts and fails the boot spec. (A
+  jsdom unit test that imported the whole composition root was tried but dropped
+  — evaluating the entire app graph took ~30s+ per run, and the e2e already
+  covers it.) The capability *mechanism* is unit-tested in
+  `@posthog/di` (`hostCapabilities.test.ts`).
 
 ## Auth
 

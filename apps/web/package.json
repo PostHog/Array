@@ -8,7 +8,6 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
     "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test --config=tests/e2e/playwright.config.ts --headed"
   },
@@ -42,10 +41,8 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.2.1",
-    "jsdom": "^26.0.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^6.0.7",
-    "vitest": "^4.1.8"
+    "vite": "^6.0.7"
   }
 }
