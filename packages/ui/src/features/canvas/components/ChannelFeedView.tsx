@@ -33,6 +33,7 @@ import {
   ThreadItemRepliesLabel,
   ThreadItemRepliesMeta,
   ThreadItemTimestamp,
+  useChatMessageScroller,
 } from "@posthog/quill";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
@@ -50,7 +51,14 @@ import {
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Text } from "@radix-ui/themes";
-import { Fragment, memo, type ReactNode, useMemo } from "react";
+import {
+  Fragment,
+  memo,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
 // shared query key means an open panel naturally speeds the row up too.
@@ -235,6 +243,18 @@ function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
     </div>
   );
 }
+
+// A kickoff a user just submitted, before its task exists on the backend. The
+// feed shows it optimistically so a submit reacts instantly instead of waiting
+// on the create round trip; it's swapped for the real card once created.
+export interface PendingKickoff {
+  id: string;
+  prompt: string;
+}
+
+// A stable empty default so the `pending` prop doesn't hand memoized children a
+// fresh array every render.
+const NO_PENDING: PendingKickoff[] = [];
 
 // The task the message kicked off, as a card everyone in the channel sees:
 // bold title + status up top, then run metadata.
@@ -471,6 +491,55 @@ function FeedRow({
   );
 }
 
+// The optimistic kickoff row: the user's message plus a "Starting…" card,
+// shown the moment they submit. Deliberately dumb — no per-task data hooks or
+// polls (there's no task id to query yet); it's replaced by a real FeedRow as
+// soon as the task is created.
+function PendingFeedRow({
+  pending,
+  createdAt,
+}: {
+  pending: PendingKickoff;
+  createdAt: string;
+}) {
+  return (
+    <ChatMessageScrollerItem
+      messageId={pending.id}
+      className="[contain-intrinsic-size:auto_13rem]"
+    >
+      <ThreadItem className="rounded-none py-4 pr-8">
+        <ThreadItemGutter>
+          <Avatar>
+            <AvatarFallback>
+              <Spinner className="size-4" />
+            </AvatarFallback>
+          </Avatar>
+        </ThreadItemGutter>
+        <ThreadItemContent className="min-w-0">
+          <ThreadItemHeader>
+            <ThreadItemAuthor>You</ThreadItemAuthor>
+            <ThreadItemTimestamp dateTime={createdAt}>now</ThreadItemTimestamp>
+          </ThreadItemHeader>
+          <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
+            {pending.prompt}
+          </ThreadItemBody>
+          <Card
+            size="sm"
+            className="mt-1.5 w-full max-w-[820px] rounded-sm py-0"
+          >
+            <CardContent className="py-2.5">
+              <Badge variant="info">
+                <Spinner className="size-2.5" />
+                Starting…
+              </Badge>
+            </CardContent>
+          </Card>
+        </ThreadItemContent>
+      </ThreadItem>
+    </ChatMessageScrollerItem>
+  );
+}
+
 // A card-less feed row for a synthetic announcement. Rows with an `author`
 // render as that user (initials avatar + name — e.g. "Adam L · joined mobile");
 // the rest render as "PostHog / Agent" (context lifecycle updates). Same chrome
@@ -509,6 +578,22 @@ function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
   );
 }
 
+// Follow the feed to the bottom when *this* user posts, but not when a
+// teammate's card arrives via polling — a new `pending` kickoff is only ever
+// added by the local composer, so it's the right signal. Must live inside the
+// scroller provider to reach `scrollToEnd`. Renders nothing.
+function FollowOwnPost({ latestPendingId }: { latestPendingId?: string }) {
+  const { scrollToEnd } = useChatMessageScroller();
+  const prevRef = useRef(latestPendingId);
+  useEffect(() => {
+    if (latestPendingId && latestPendingId !== prevRef.current) {
+      scrollToEnd();
+    }
+    prevRef.current = latestPendingId;
+  }, [latestPendingId, scrollToEnd]);
+  return null;
+}
+
 // A single feed entry, either a real task card or a synthetic system row, tagged
 // with the timestamp used to interleave the two.
 type FeedEntry =
@@ -526,6 +611,7 @@ type FeedEntry =
 // "PostHog agent" system rows (context lifecycle) are interleaved by timestamp.
 export function ChannelFeedView({
   tasks,
+  pending = NO_PENDING,
   systemMessages,
   isLoading,
   emptyState,
@@ -534,6 +620,7 @@ export function ChannelFeedView({
   onOpenThread,
 }: {
   tasks: Task[];
+  pending?: PendingKickoff[];
   systemMessages?: ChannelFeedSystemMessage[];
   isLoading: boolean;
   emptyState?: React.ReactNode;
@@ -572,7 +659,7 @@ export function ChannelFeedView({
     return merged;
   }, [tasks, systemMessages]);
 
-  if (isLoading && entries.length === 0) {
+  if (isLoading && entries.length === 0 && pending.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Spinner />
@@ -580,14 +667,16 @@ export function ChannelFeedView({
     );
   }
 
-  if (entries.length === 0 && !intro) {
+  if (entries.length === 0 && pending.length === 0 && !intro) {
     return <div className="flex-1 overflow-y-auto">{emptyState}</div>;
   }
 
   const now = new Date();
+  const latestPendingId = pending[pending.length - 1]?.id;
 
   return (
     <ChatMessageScrollerProvider defaultScrollPosition="end">
+      <FollowOwnPost latestPendingId={latestPendingId} />
       <ChatMessageScroller className="min-h-0 flex-1">
         <ChatMessageScrollerViewport>
           {/* Horizontal padding is load-bearing: ThreadItem's actions float at
@@ -621,6 +710,13 @@ export function ChannelFeedView({
                 </Fragment>
               );
             })}
+            {pending.map((p) => (
+              <PendingFeedRow
+                key={p.id}
+                pending={p}
+                createdAt={now.toISOString()}
+              />
+            ))}
           </ChatMessageScrollerContent>
         </ChatMessageScrollerViewport>
         <ChatMessageScrollerButton />

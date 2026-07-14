@@ -1,8 +1,12 @@
+import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
-import { ChannelFeedView } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import {
+  ChannelFeedView,
+  type PendingKickoff,
+} from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import {
   ChannelHomeComposer,
@@ -78,6 +82,27 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
+  // Optimistic kickoffs: the message a user just submitted, shown in the feed
+  // with a "Starting…" card while its task is created in the background. Each
+  // is tagged with the channel it was fired in and filtered to the current one,
+  // so a still-in-flight kickoff never bleeds into another channel's feed.
+  const [pending, setPending] = useState<
+    (PendingKickoff & { channelId: string })[]
+  >([]);
+  const addPending = useCallback(
+    (kickoff: PendingKickoff) => {
+      setPending((prev) => [...prev, { ...kickoff, channelId }]);
+    },
+    [channelId],
+  );
+  const removePending = useCallback((id: string) => {
+    setPending((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+  const visiblePending = useMemo(
+    () => pending.filter((p) => p.channelId === channelId),
+    [pending, channelId],
+  );
+
   // The "Create your context.md" dialog, opened from the welcome message's
   // onboarding checklist. Describe-mode: seeds a plan session for this context.
   const [contextMdDialogOpen, setContextMdDialogOpen] = useState(false);
@@ -111,6 +136,14 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const onTaskCreated = useCallback(
     (task: Task) => {
       queryClient.setQueryData(taskDetailQuery(task.id).queryKey, task);
+      // Splice the real card straight into the feed so it appears now rather
+      // than after the invalidate refetch (or the next 5s poll) lands. Seed a
+      // fresh list when the feed cache hasn't populated yet — insertTaskDedup
+      // no-ops on an undefined cache, which would otherwise drop the card.
+      queryClient.setQueryData<Task[]>(
+        channelFeedQueryKey(backendChannel?.id),
+        (old) => (old ? insertTaskDedup(old, task) : [task]),
+      );
       invalidateFeed();
       void fileTask(channelId, task.id, task.title)
         .then(() =>
@@ -135,7 +168,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           });
         });
     },
-    [channelId, fileTask, invalidateFeed, queryClient],
+    [backendChannel?.id, channelId, fileTask, invalidateFeed, queryClient],
   );
 
   // The task route's mount effect points the panel at the task, so navigating
@@ -230,6 +263,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelFeedView
           tasks={tasks}
+          pending={visiblePending}
           systemMessages={systemMessages}
           isLoading={isLoading}
           emptyState={emptyState}
@@ -245,6 +279,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             channelContext={channelContext}
             backendChannelId={backendChannel?.id}
             onTaskCreated={onTaskCreated}
+            onPendingStart={addPending}
+            onPendingEnd={removePending}
           />
         </div>
       </div>
