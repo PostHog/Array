@@ -22,7 +22,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { useHeaderStore } from "@posthog/ui/shell/headerStore";
+import { usePaneHeaderContent } from "@posthog/ui/shell/headerStore";
 import { Flex } from "@radix-ui/themes";
 import { useState } from "react";
 
@@ -135,7 +135,7 @@ function TaskDiffStatsBadge({ task }: { task: Task }) {
 // The /website space keeps its own header (WebsiteLayout), so this is mounted
 // only outside it.
 export function ContentHeader() {
-  const content = useHeaderStore((state) => state.content);
+  const content = usePaneHeaderContent();
   const view = useAppView();
 
   const activeTaskId = view.type === "task-detail" ? view.taskId : undefined;

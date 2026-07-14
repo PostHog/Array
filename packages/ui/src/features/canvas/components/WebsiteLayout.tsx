@@ -34,7 +34,7 @@ import {
 import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { useHeaderStore } from "@posthog/ui/shell/headerStore";
+import { usePaneHeaderContent } from "@posthog/ui/shell/headerStore";
 import { Box, Flex } from "@radix-ui/themes";
 import {
   Outlet,
@@ -295,7 +295,7 @@ export function WebsiteLayout() {
   // Command Center) are channel-less and push their title into the shared
   // header store. With no code HeaderRow here, surface that title in this bar so
   // the mirrored pages read the same as in Code.
-  const headerContent = useHeaderStore((s) => s.content);
+  const headerContent = usePaneHeaderContent();
 
   const channelId = params.channelId;
   const dashboardId = params.dashboardId;

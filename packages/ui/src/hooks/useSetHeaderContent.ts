@@ -1,14 +1,16 @@
-import { useHeaderStore } from "@posthog/ui/shell/headerStore";
+import { useHeaderStore, usePaneId } from "@posthog/ui/shell/headerStore";
 import { type ReactNode, useLayoutEffect } from "react";
 
 export function useSetHeaderContent(content: ReactNode) {
+  const paneId = usePaneId();
   const setContent = useHeaderStore((state) => state.setContent);
 
   useLayoutEffect(() => {
-    setContent(content);
+    if (!paneId) return;
+    setContent(paneId, content);
 
     return () => {
-      setContent(null);
+      setContent(paneId, null);
     };
-  }, [content, setContent]);
+  }, [paneId, content, setContent]);
 }
