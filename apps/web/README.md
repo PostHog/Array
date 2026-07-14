@@ -20,6 +20,23 @@ host-agnostic core code); the rest are stubs that return benign empties.
 Procedures outside the slice fail with NOT_FOUND at call time — that is the
 to-do list for widening the web surface.
 
+## Testing
+
+```bash
+pnpm --filter @posthog/web test       # Vitest: web-container smoke test
+pnpm --filter @posthog/web test:e2e   # Playwright: happy-path browser e2e
+```
+
+- **`web-container.test.ts`** imports the real composition root and asserts it
+  binds every capability the shared app resolves via service location
+  (`REQUIRED_HOST_CAPABILITIES`), so a missing binding fails in CI instead of at
+  the first navigation that needs it.
+- **`tests/e2e/`** drives stock Chromium against the Vite dev server (Playwright
+  starts it). Scope is the hermetic happy path up to the OAuth wall — boot,
+  container wiring, onboarding → sign-in card, and the `/callback` relay — since
+  real login needs PostHog cloud and a popup IdP. Both run in CI (`test.yml`),
+  reusing the desktop suite's cached Chromium.
+
 ## Auth
 
 `WebOAuthFlowService` (`web-oauth-flow.ts`) implements the core

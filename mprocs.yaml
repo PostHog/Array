@@ -1,5 +1,5 @@
 procs:
-  1-code:
+  01-code:
     shell: 'node scripts/wait-for-electron-exit.mjs && node scripts/pnpm-run.mjs --filter code run start'
     env:
       DEBUG: "false"
@@ -9,25 +9,40 @@ procs:
       - enricher
       - platform
 
-  2-agent:
+  02-agent:
     shell: 'node scripts/pnpm-run.mjs --filter agent run dev'
 
-  3-git:
+  03-git:
     shell: 'node scripts/pnpm-run.mjs --filter @posthog/git run dev'
 
-  platform:
-    shell: 'node scripts/pnpm-run.mjs --filter @posthog/platform run dev'
-
-  4-enricher:
+  04-enricher:
     shell: 'node scripts/pnpm-run.mjs --filter @posthog/enricher run dev'
 
-  5-storybook:
+  05-storybook:
     shell: 'node scripts/pnpm-run.mjs --filter code run storybook'
     autostart: false
 
-  6-mobile-ios:
+  06-mobile-ios:
     shell: 'node scripts/pnpm-run.mjs --filter @posthog/mobile run ios'
     autostart: false
 
-  7-chromium-log:
+  07-chromium-log:
     shell: 'tail -F ~/.posthog-code/logs-dev/chromium.log'
+
+  08-platform:
+    shell: 'node scripts/pnpm-run.mjs --filter @posthog/platform run dev'
+
+  09-web:
+    shell: 'node scripts/pnpm-run.mjs --filter @posthog/web run dev'
+    autostart: false
+
+  10-web-playwright:
+    shell: 'node scripts/pnpm-run.mjs --filter @posthog/web run test:e2e'
+    autostart: false
+
+  # The desktop e2e fixture launches the PACKAGED app from out/, so package
+  # first (matches CI) or it fails with "No packaged app found". Slow on first
+  # run; re-run test:e2e directly if the app is already packaged and unchanged.
+  11-desktop-playwright:
+    shell: 'node scripts/pnpm-run.mjs --filter code run package && node scripts/pnpm-run.mjs --filter code run test:e2e'
+    autostart: false

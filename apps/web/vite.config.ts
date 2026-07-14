@@ -69,7 +69,15 @@ export default defineConfig({
   resolve: {
     alias: posthogSrcAliases,
   },
-  server: { port: 5273 },
+  server: {
+    port: 5273,
+    // Playwright (tests/e2e) writes traces/reports under the app root while the
+    // dev server it drives is running; without this, each write triggers an HMR
+    // reload that can reload the page mid-navigation and flake a test.
+    watch: {
+      ignored: ["**/tests/playwright-results/**", "**/playwright-report/**"],
+    },
+  },
   build: {
     rollupOptions: { output: { manualChunks } },
   },
