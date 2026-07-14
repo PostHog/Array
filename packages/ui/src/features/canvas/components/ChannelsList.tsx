@@ -2,7 +2,8 @@ import {
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
-  HashIcon,
+  LinkIcon,
+  LockSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
   StarIcon,
@@ -30,7 +31,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
-  Separator,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -38,8 +38,8 @@ import {
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
-import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
+import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/createCanvasAnalytics";
 import {
   useChannelStars,
   useChannelStarToggle,
@@ -50,10 +50,16 @@ import {
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import {
+  PERSONAL_CHANNEL_NAME,
+  useTaskChannels,
+} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { SquircleDashed } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
 
@@ -70,7 +76,7 @@ type ChannelActionItem = {
   separatorBefore?: boolean;
 };
 
-// The channel actions (star, edit context, rename, delete) plus the rename-modal
+// The channel actions (star, copy link, rename, delete) plus the rename-modal
 // state they drive. Single source of truth so the dropdown and context menus
 // stay in lockstep — add an action here and both surfaces pick it up.
 function useChannelActions(channel: Channel): {
@@ -132,7 +138,7 @@ function useChannelActions(channel: Channel): {
         channel_id: channel.id,
         success: false,
       });
-      toast.error("Couldn't delete channel", {
+      toast.error("Couldn't delete context", {
         description: error instanceof Error ? error.message : String(error),
       });
       return false;
@@ -142,7 +148,7 @@ function useChannelActions(channel: Channel): {
   const actions: ChannelActionItem[] = [
     {
       key: "star",
-      label: isStarred ? "Unstar channel" : "Star channel",
+      label: isStarred ? "Unstar context" : "Star context",
       icon: <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />,
       onSelect: () => {
         track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -154,15 +160,21 @@ function useChannelActions(channel: Channel): {
       },
     },
     {
+      key: "copy-link",
+      label: "Copy link",
+      icon: <LinkIcon size={14} />,
+      onSelect: () => void copyChannelLink(channel.id, "sidebar"),
+    },
+    {
       key: "rename",
-      label: "Rename channel…",
+      label: "Rename context…",
       icon: <PencilSimpleIcon size={14} />,
       separatorBefore: true,
       onSelect: () => setRenameOpen(true),
     },
     {
       key: "delete",
-      label: "Delete channel…",
+      label: "Delete context…",
       icon: <TrashIcon size={14} />,
       variant: "destructive",
       onSelect: () => setConfirmDeleteOpen(true),
@@ -322,7 +334,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
               }}
               className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
-              <HashIcon size={14} className="shrink-0 text-gray-9" />
+              <SquircleDashed size={14} className="shrink-0 text-gray-9" />
               <span
                 className={cn(
                   "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
@@ -427,19 +439,19 @@ function ChannelSection({ channel }: { channel: Channel }) {
       >
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete #{channel.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {channel.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the channel and can’t be undone.
+              This permanently deletes the context and can’t be undone.
               <ul className="list-disc ps-4">
                 <li>
-                  The channel and its{" "}
+                  The context and its{" "}
                   <span className="font-medium">CONTEXT.md</span> are deleted.
                 </li>
                 <li>
-                  Every canvas saved in this channel is permanently deleted.
+                  Every canvas saved in this context is permanently deleted.
                 </li>
                 <li>
-                  Filed tasks are removed from the channel, but the tasks
+                  Filed tasks are removed from the context, but the tasks
                   themselves are not deleted.
                 </li>
               </ul>
@@ -458,7 +470,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
                 })
               }
             >
-              Delete channel
+              Delete context
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -467,14 +479,68 @@ function ChannelSection({ channel }: { channel: Channel }) {
   );
 }
 
-// The channel list — the Channels space sidebar body. Starred channels surface
-// in their own section at the top so the ones you use most stay in reach; the
-// rest sit under a "Channels" label with the "New" channel button.
+// The user's private "#me" channel, pinned above the shared channel list.
+// The feed and task ownership live on the per-user backend personal channel;
+// the "me" folder is the bridge that keeps the folder-keyed surfaces
+// (CONTEXT.md, artifacts) routable, created lazily on first open.
+function PersonalChannelRow() {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { channels } = useChannels();
+  const { createChannel, isCreating } = useChannelMutations();
+  // Listing backend channels lazily provisions the personal channel server-side.
+  useTaskChannels();
+
+  const meFolder = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+  const isActive =
+    !!meFolder &&
+    (pathname === `/website/${meFolder.id}` ||
+      pathname.startsWith(`/website/${meFolder.id}/`));
+
+  const open = async () => {
+    try {
+      const folder = meFolder ?? (await createChannel(PERSONAL_CHANNEL_NAME));
+      void navigate({
+        to: "/website/$channelId",
+        params: { channelId: folder.id },
+      });
+    } catch (error) {
+      toast.error("Couldn't open me", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <Button
+      variant="default"
+      size="default"
+      left
+      data-selected={isActive || undefined}
+      disabled={isCreating}
+      onClick={() => void open()}
+      className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+    >
+      <SquircleDashed size={14} className="shrink-0 text-gray-9" />
+      <span className="truncate font-medium text-[13px] text-gray-12">
+        {PERSONAL_CHANNEL_NAME}
+      </span>
+      <LockSimpleIcon size={12} className="ml-auto shrink-0 text-gray-9" />
+    </Button>
+  );
+}
+
+// The channel list — the Channels space sidebar body. The private "#me"
+// channel is pinned at the top; starred channels surface in their own section
+// so the ones you use most stay in reach; the rest sit under a "Channels"
+// label with the "New" channel button.
 export function ChannelsList() {
-  const { channels, isLoading } = useChannels();
+  const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
   const [modalOpen, setModalOpen] = useState(false);
 
+  // The "me" folder renders as the pinned personal row, not a shared channel.
+  const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
 
@@ -495,10 +561,8 @@ export function ChannelsList() {
     // One shared provider groups every row tooltip so that once one shows,
     // moving to the next row reveals its tooltip instantly (no re-delay).
     <TooltipProvider delay={600}>
-      <Flex direction="column" gap="px" className="px-2 pb-2">
-        <Box className="py-1.5">
-          <Separator className="bg-border" />
-        </Box>
+      <Flex direction="column" gap="px" className="px-2 pt-2 pb-2">
+        <PersonalChannelRow />
 
         {starred.length > 0 && (
           <>
@@ -519,8 +583,8 @@ export function ChannelsList() {
         <Box className={cn(starred.length > 0 && "mt-3")}>
           <MenuLabel className="group flex items-center justify-between uppercase">
             <span className="flex items-center gap-2">
-              <HashIcon size={14} className="text-gray-9" />
-              Channels
+              <SquircleDashed size={14} className="text-gray-9" />
+              Contexts
             </span>
             <Button
               variant="outline"
@@ -535,7 +599,7 @@ export function ChannelsList() {
 
         {!isLoading && channels.length === 0 && (
           <Text size="1" className="px-2 text-gray-9">
-            No channels yet. Create one to get started.
+            No contexts yet. Create one to get started.
           </Text>
         )}
 

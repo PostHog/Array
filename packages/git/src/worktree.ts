@@ -1,6 +1,11 @@
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import type { SagaLogger } from "@posthog/shared";
+import {
+  matchesExcludePatterns,
+  parseExcludePatterns,
+} from "./exclude-patterns";
 import { getCleanEnv, getGitOperationManager } from "./operation-manager";
 import {
   addToLocalExclude,
@@ -26,19 +31,58 @@ export interface WorktreeInfo {
 export interface WorktreeConfig {
   mainRepoPath: string;
   worktreeBasePath?: string;
+  logger?: SagaLogger;
 }
 
+const noopLogger: SagaLogger = {
+  info: () => {},
+  debug: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
 const WORKTREE_FOLDER_NAME = ".posthog-code";
+
+const WORKTREE_ADD_TIMEOUT_MS = 120_000;
+const POST_CHECKOUT_HOOK_TIMEOUT_MS = 300_000;
+const GIT_FETCH_TIMEOUT_MS = 120_000;
+export const KILL_GRACE_MS = 5_000;
+
+export function armProcessTimeout(
+  proc: ChildProcess,
+  timeoutMs: number,
+): { timedOut: () => boolean; clear: () => void } {
+  let timedOut = false;
+  let hardKillTimer: NodeJS.Timeout | undefined;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill("SIGTERM");
+    hardKillTimer = setTimeout(() => proc.kill("SIGKILL"), KILL_GRACE_MS);
+    hardKillTimer.unref();
+  }, timeoutMs);
+  timer.unref();
+  return {
+    timedOut: () => timedOut,
+    clear: () => {
+      clearTimeout(timer);
+      if (hardKillTimer) {
+        clearTimeout(hardKillTimer);
+      }
+    },
+  };
+}
 
 export class WorktreeManager {
   private mainRepoPath: string;
   private worktreeBasePath: string | null;
   private repoName: string;
+  private log: SagaLogger;
 
   constructor(config: WorktreeConfig) {
     this.mainRepoPath = config.mainRepoPath;
     this.worktreeBasePath = config.worktreeBasePath ?? null;
     this.repoName = path.basename(config.mainRepoPath);
+    this.log = config.logger ?? noopLogger;
   }
 
   private usesExternalPath(): boolean {
@@ -130,7 +174,11 @@ export class WorktreeManager {
     /** Base the worktree on `origin/<baseBranch>` after fetching; falls back to the local ref if the fetch fails. */
     fetchBeforeCreate?: boolean;
   }): Promise<WorktreeInfo> {
-    const manager = getGitOperationManager();
+    this.log.info("createWorktree started", {
+      mainRepoPath: this.mainRepoPath,
+      baseBranch: options?.baseBranch ?? null,
+      fetchBeforeCreate: options?.fetchBeforeCreate ?? false,
+    });
 
     const setupPromises: Promise<unknown>[] = [];
 
@@ -163,12 +211,16 @@ export class WorktreeManager {
       ? await this.resolveFreshBaseRef(baseBranch, options?.onOutput)
       : baseBranch;
 
-    options?.onOutput?.(`Creating worktree from ${baseRef}...\n`);
-    const output = await manager.executeWrite(this.mainRepoPath, async () => {
-      return this.spawnWorktreeAdd(["--detach", targetPath, baseRef], {
-        onOutput: options?.onOutput,
-      });
+    this.log.info("Resolved worktree target", {
+      worktreeName,
+      worktreePath,
+      baseRef,
     });
+    options?.onOutput?.(`Creating worktree from ${baseRef}...\n`);
+    const output = await this.runWorktreeAdd(
+      ["--detach", targetPath, baseRef],
+      options?.onOutput,
+    );
 
     await this.finalizeWorktree(worktreePath, options?.onOutput);
 
@@ -187,7 +239,11 @@ export class WorktreeManager {
     preferredName?: string,
     options?: { onOutput?: (data: string) => void },
   ): Promise<WorktreeInfo> {
-    const manager = getGitOperationManager();
+    this.log.info("createWorktreeForExistingBranch started", {
+      mainRepoPath: this.mainRepoPath,
+      branch,
+      preferredName: preferredName ?? null,
+    });
 
     const exists = await branchExists(this.mainRepoPath, branch);
     if (!exists) {
@@ -198,11 +254,15 @@ export class WorktreeManager {
     const { worktreePath, targetPath } =
       await this.prepareWorktreePath(worktreeName);
 
-    const output = await manager.executeWrite(this.mainRepoPath, async () => {
-      return this.spawnWorktreeAdd([targetPath, branch], {
-        onOutput: options?.onOutput,
-      });
+    this.log.info("Resolved worktree target", {
+      worktreeName,
+      worktreePath,
+      branch,
     });
+    const output = await this.runWorktreeAdd(
+      [targetPath, branch],
+      options?.onOutput,
+    );
 
     await this.finalizeWorktree(worktreePath, options?.onOutput);
 
@@ -226,14 +286,18 @@ export class WorktreeManager {
     preferredName?: string,
     options?: { onOutput?: (data: string) => void; remote?: string },
   ): Promise<WorktreeInfo> {
-    const manager = getGitOperationManager();
     const remote = options?.remote ?? "origin";
     const remoteRef = `${remote}/${branch}`;
 
+    this.log.info("createWorktreeForRemoteBranch started", {
+      mainRepoPath: this.mainRepoPath,
+      branch,
+      remote,
+      preferredName: preferredName ?? null,
+    });
+
     options?.onOutput?.(`Fetching ${remoteRef}...\n`);
-    const fetched = await manager.executeWrite(this.mainRepoPath, (git) =>
-      fetchRef(git, remote, branch),
-    );
+    const fetched = await this.fetchRefWithTimeout(remote, branch);
     if (!fetched) {
       throw new Error(`Failed to fetch branch '${branch}' from ${remote}`);
     }
@@ -257,13 +321,17 @@ export class WorktreeManager {
     const { worktreePath, targetPath } =
       await this.prepareWorktreePath(worktreeName);
 
+    this.log.info("Resolved worktree target", {
+      worktreeName,
+      worktreePath,
+      remoteRef,
+    });
     // `-b <branch> <remoteRef>` creates a local branch at the fetched remote ref
     // and sets it up to track the remote branch.
-    const output = await manager.executeWrite(this.mainRepoPath, async () => {
-      return this.spawnWorktreeAdd(["-b", branch, targetPath, remoteRef], {
-        onOutput: options?.onOutput,
-      });
-    });
+    const output = await this.runWorktreeAdd(
+      ["-b", branch, targetPath, remoteRef],
+      options?.onOutput,
+    );
 
     await this.finalizeWorktree(worktreePath, options?.onOutput);
 
@@ -297,6 +365,12 @@ export class WorktreeManager {
 
       if (isRegistered || existsOnDisk) {
         worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
+        this.log.warn("Preferred worktree name unavailable, generated new", {
+          preferredName,
+          isRegistered,
+          existsOnDisk,
+          worktreeName,
+        });
       }
     } else if (await this.worktreeExists(worktreeName)) {
       worktreeName = `${this.generateWorktreeName()}${Date.now()}`;
@@ -337,10 +411,33 @@ export class WorktreeManager {
     worktreePath: string,
     onOutput?: (data: string) => void,
   ): Promise<void> {
+    this.log.info("Finalizing worktree", { worktreePath });
     await this.symlinkClaudeConfig(worktreePath);
-    await processWorktreeLink(this.mainRepoPath, worktreePath, { onOutput });
-    await processWorktreeInclude(this.mainRepoPath, worktreePath, { onOutput });
-    await runPostCheckoutHook(this.mainRepoPath, worktreePath, { onOutput });
+    const linkWarnings = await processWorktreeLink(
+      this.mainRepoPath,
+      worktreePath,
+      { onOutput },
+    );
+    const includeWarnings = await processWorktreeInclude(
+      this.mainRepoPath,
+      worktreePath,
+      { onOutput },
+    );
+    for (const warning of [...linkWarnings, ...includeWarnings]) {
+      this.log.warn("Worktree setup warning", { worktreePath, ...warning });
+    }
+    const hookWarning = await runPostCheckoutHook(
+      this.mainRepoPath,
+      worktreePath,
+      { onOutput },
+    );
+    if (hookWarning) {
+      this.log.warn("post-checkout hook failed", {
+        worktreePath,
+        ...hookWarning,
+      });
+    }
+    this.log.info("Worktree finalized", { worktreePath });
   }
 
   async createDetachedWorktreeAtCommit(
@@ -348,17 +445,25 @@ export class WorktreeManager {
     preferredName?: string,
     options?: { onOutput?: (data: string) => void },
   ): Promise<WorktreeInfo> {
-    const manager = getGitOperationManager();
+    this.log.info("createDetachedWorktreeAtCommit started", {
+      mainRepoPath: this.mainRepoPath,
+      commit,
+      preferredName: preferredName ?? null,
+    });
 
     const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
     const { worktreePath, targetPath } =
       await this.prepareWorktreePath(worktreeName);
 
-    const output = await manager.executeWrite(this.mainRepoPath, async () => {
-      return this.spawnWorktreeAdd(["--detach", targetPath, commit], {
-        onOutput: options?.onOutput,
-      });
+    this.log.info("Resolved worktree target", {
+      worktreeName,
+      worktreePath,
+      commit,
     });
+    const output = await this.runWorktreeAdd(
+      ["--detach", targetPath, commit],
+      options?.onOutput,
+    );
 
     await this.finalizeWorktree(worktreePath, options?.onOutput);
 
@@ -385,11 +490,13 @@ export class WorktreeManager {
     const remoteRef = `${remote}/${baseBranch}`;
 
     onOutput?.(`Fetching ${remoteRef}...\n`);
-    const fetched = await manager.executeWrite(this.mainRepoPath, (git) =>
-      fetchRef(git, remote, baseBranch),
-    );
+    const fetched = await this.fetchRefWithTimeout(remote, baseBranch);
 
     if (!fetched) {
+      this.log.warn("Fetch failed, falling back to local ref", {
+        remoteRef,
+        baseBranch,
+      });
       onOutput?.(
         `Fetch failed for ${remoteRef}, falling back to local ${baseBranch}.\n`,
       );
@@ -401,6 +508,10 @@ export class WorktreeManager {
       (git) => hasRef(git, remoteRef),
     );
     if (!remoteRefExists) {
+      this.log.warn("Remote ref missing after fetch, falling back to local", {
+        remoteRef,
+        baseBranch,
+      });
       onOutput?.(
         `Remote ref ${remoteRef} not found after fetch, falling back to local ${baseBranch}.\n`,
       );
@@ -410,21 +521,89 @@ export class WorktreeManager {
     return remoteRef;
   }
 
+  /**
+   * Runs `git fetch <remote> <ref>` under the write lock with a hard timeout.
+   * The fetch (unlike `git worktree add`) runs through simple-git, so it can't
+   * use `armProcessTimeout`; instead we abort via the AbortSignal that
+   * `executeWrite` forwards to its scoped git client, which kills the fetch
+   * subprocess and releases the write lock. A blocked fetch (network stall,
+   * unreachable remote) would otherwise hold the lock forever and strand every
+   * later worktree creation for the repo. Returns false on failure or timeout
+   * so callers degrade gracefully rather than hang.
+   */
+  private async fetchRefWithTimeout(
+    remote: string,
+    ref: string,
+  ): Promise<boolean> {
+    const manager = getGitOperationManager();
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      this.log.warn("git fetch timed out, aborting", {
+        remote,
+        ref,
+        timeoutMs: GIT_FETCH_TIMEOUT_MS,
+      });
+      controller.abort();
+    }, GIT_FETCH_TIMEOUT_MS);
+    try {
+      return await manager.executeWrite(
+        this.mainRepoPath,
+        (git) =>
+          fetchRef(git, remote, ref, {
+            onError: (message) =>
+              this.log.warn("git fetch failed", {
+                remote,
+                ref,
+                error: message,
+              }),
+          }),
+        { signal: controller.signal },
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // The repo write lock has no timeout; log both sides of the wait so a create that queues forever is visible.
+  private async runWorktreeAdd(
+    args: string[],
+    onOutput?: (data: string) => void,
+  ): Promise<string> {
+    const manager = getGitOperationManager();
+    this.log.info("Waiting for repo write lock", {
+      mainRepoPath: this.mainRepoPath,
+    });
+    return manager.executeWrite(this.mainRepoPath, async () => {
+      this.log.info("Repo write lock acquired", {
+        mainRepoPath: this.mainRepoPath,
+      });
+      return this.spawnWorktreeAdd(args, { onOutput });
+    });
+  }
+
   private spawnWorktreeAdd(
     args: string[],
     options?: { onOutput?: (data: string) => void },
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const chunks: string[] = [];
-      const proc = spawn(
-        "git",
-        ["-c", "core.hooksPath=/dev/null", "worktree", "add", ...args],
-        {
-          cwd: this.mainRepoPath,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: getCleanEnv(),
-        },
-      );
+      const argv = [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "worktree",
+        "add",
+        ...args,
+      ];
+      this.log.info("Spawning git worktree add", {
+        cwd: this.mainRepoPath,
+        argv: argv.join(" "),
+      });
+      const startedAt = Date.now();
+      const proc = spawn("git", argv, {
+        cwd: this.mainRepoPath,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: getCleanEnv(),
+      });
 
       const handleData = (data: Buffer) => {
         const text = data.toString("utf-8");
@@ -435,9 +614,36 @@ export class WorktreeManager {
       proc.stdout.on("data", handleData);
       proc.stderr.on("data", handleData);
 
-      proc.on("error", (err) => reject(err));
+      const timeout = armProcessTimeout(proc, WORKTREE_ADD_TIMEOUT_MS);
+
+      proc.on("error", (err) => {
+        timeout.clear();
+        this.log.error("git worktree add failed to spawn", {
+          error: err.message,
+        });
+        reject(err);
+      });
       proc.on("close", (code) => {
+        timeout.clear();
+        const durationMs = Date.now() - startedAt;
+        if (timeout.timedOut()) {
+          this.log.error("git worktree add timed out", {
+            durationMs,
+            output: chunks.join(""),
+          });
+          reject(
+            new Error(
+              `git worktree add timed out after ${WORKTREE_ADD_TIMEOUT_MS}ms`,
+            ),
+          );
+          return;
+        }
         if (code !== 0) {
+          this.log.error("git worktree add failed", {
+            code,
+            durationMs,
+            output: chunks.join(""),
+          });
           reject(
             new Error(
               `git worktree add exited with code ${code}: ${chunks.join("")}`,
@@ -445,6 +651,7 @@ export class WorktreeManager {
           );
           return;
         }
+        this.log.info("git worktree add succeeded", { durationMs });
         resolve(chunks.join(""));
       });
     });
@@ -485,14 +692,90 @@ export class WorktreeManager {
       }
     }
 
-    await manager.executeWrite(this.mainRepoPath, async (git) => {
-      try {
-        await git.raw(["worktree", "remove", worktreePath, "--force"]);
-      } catch {
-        await forceRemove(worktreePath);
-        await git.raw(["worktree", "prune"]);
-      }
-    });
+    // Rename-to-trash and prune both run inside the write lock so the on-disk
+    // move and the git metadata update are atomic: if prune can't run (e.g. a
+    // persistent external index.lock) we roll the rename back rather than leave
+    // the worktree gone from disk but still registered (which would strand the
+    // branch). Only the slow recursive removal of the trashed copy happens
+    // outside the lock.
+    const trashedPath = await manager
+      .executeWrite(this.mainRepoPath, async (git) => {
+        const moved = await this.moveToTrash(resolvedWorktreePath);
+        if (!moved) return null;
+        try {
+          await git.raw(["worktree", "prune"]);
+          return moved;
+        } catch (pruneError) {
+          await fs.rename(moved, resolvedWorktreePath).catch(() => {});
+          throw pruneError;
+        }
+      })
+      // A null (rename couldn't happen) or a throw (prune failed, rename rolled
+      // back) both fall through to the in-place remove below.
+      .catch((error) => {
+        this.log.warn("Trash-based worktree delete failed, removing in place", {
+          worktreePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+
+    if (trashedPath) {
+      void forceRemove(trashedPath).catch(() => {});
+    } else {
+      await manager.executeWrite(this.mainRepoPath, async (git) => {
+        try {
+          await git.raw(["worktree", "remove", worktreePath, "--force"]);
+        } catch (removeError) {
+          this.log.warn("git worktree remove failed, force-removing", {
+            worktreePath,
+            error:
+              removeError instanceof Error
+                ? removeError.message
+                : String(removeError),
+          });
+          await forceRemove(worktreePath);
+          await git.raw(["worktree", "prune"]);
+        }
+      });
+    }
+
+    // Both branches leave the worktree's `<base>/<name>` parent empty; remove it
+    // so a deleted worktree never leaves a stray directory behind (best-effort:
+    // rmdir no-ops if it isn't empty).
+    await fs.rmdir(path.dirname(resolvedWorktreePath)).catch(() => {});
+  }
+
+  private getTrashFolderPath(): string {
+    return path.join(this.getWorktreeBaseFolderPath(), ".trash");
+  }
+
+  /**
+   * Renames a worktree into the trash folder so callers get an instant delete;
+   * the multi-gigabyte recursive removal then runs in the background (and
+   * `sweepTrash` mops up anything left behind by a crash). Returns null when
+   * the rename cannot work (path missing, or on a different volume), in which
+   * case the caller falls back to removing in place. Call inside the repo write
+   * lock so the move stays ordered with the follow-up `git worktree prune`.
+   */
+  private async moveToTrash(worktreePath: string): Promise<string | null> {
+    const trashDir = this.getTrashFolderPath();
+    const trashedPath = path.join(
+      trashDir,
+      `${path.basename(path.dirname(worktreePath))}-${Date.now()}`,
+    );
+    try {
+      await fs.mkdir(trashDir, { recursive: true });
+      await fs.rename(worktreePath, trashedPath);
+      return trashedPath;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Removes trashed worktrees left behind by interrupted background deletes. */
+  async sweepTrash(): Promise<void> {
+    await forceRemove(this.getTrashFolderPath());
   }
 
   async getWorktreeInfo(worktreePath: string): Promise<WorktreeInfo | null> {
@@ -523,7 +806,11 @@ export class WorktreeManager {
           baseBranch: "",
           createdAt: "",
         }));
-    } catch {
+    } catch (error) {
+      this.log.warn("git worktree list failed, returning empty list", {
+        mainRepoPath: this.mainRepoPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return [];
     }
   }
@@ -590,8 +877,47 @@ export class WorktreeManager {
 
 /**
  * get all gitignored paths matching patterns from an exclude file
+ *
+ * Fast path: list candidates with `--exclude-standard` (so git collapses
+ * standard-ignored trees) and re-apply the exclude file's patterns in-process.
+ * If that in-process matching ever throws, fall back to letting git do the
+ * whole match itself (`--exclude-from` only) — slower and does not collapse
+ * ignored trees, but it is git's own battle-tested ignore logic, so a bug in
+ * the hand-rolled matcher degrades to correct-but-slower rather than failing
+ * worktree setup or silently linking nothing.
  */
-function getIgnoredPathsFromExcludeFile(
+async function getIgnoredPathsFromExcludeFile(
+  mainRepoPath: string,
+  excludeFile: string,
+): Promise<string[]> {
+  let content: string;
+  try {
+    content = await fs.readFile(path.join(mainRepoPath, excludeFile), "utf-8");
+  } catch {
+    // No exclude file (the common case) — genuinely nothing to link/copy.
+    return [];
+  }
+
+  try {
+    const patterns = parseExcludePatterns(content);
+    if (patterns.length === 0) return [];
+
+    const candidates = await listExcludeCandidates(mainRepoPath, excludeFile);
+    return candidates
+      .filter((candidate) => matchesExcludePatterns(candidate, patterns))
+      .map((candidate) => candidate.replace(/\/$/, ""));
+  } catch {
+    return listIgnoredPathsViaGit(mainRepoPath, excludeFile);
+  }
+}
+
+/**
+ * Fallback matcher: git's own ignore matching over the exclude file, without
+ * `--exclude-standard`. This is the pre-fast-path behavior — correct but it
+ * walks standard-ignored trees instead of collapsing them. Used only when the
+ * in-process matcher throws.
+ */
+function listIgnoredPathsViaGit(
   mainRepoPath: string,
   excludeFile: string,
 ): Promise<string[]> {
@@ -617,6 +943,46 @@ function getIgnoredPathsFromExcludeFile(
             .split("\n")
             .filter((line) => line.length > 0)
             .map((line) => line.replace(/\/$/, "")),
+        );
+      },
+    );
+  });
+}
+
+/**
+ * Candidate untracked paths for exclude-file matching. `--exclude-standard`
+ * lets git collapse gitignored trees (node_modules et al) into a single entry
+ * instead of recursing through them — on a large repo that turns a multi-second
+ * walk into a sub-second one. The exclude file's own patterns are then
+ * re-applied in-process, which also stops matches buried inside standard-
+ * ignored directories (e.g. a stray .env deep in node_modules) from surfacing.
+ */
+function listExcludeCandidates(
+  mainRepoPath: string,
+  excludeFile: string,
+): Promise<string[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      [
+        "ls-files",
+        "--ignored",
+        "--others",
+        "--directory",
+        "--exclude-standard",
+        `--exclude-from=${excludeFile}`,
+      ],
+      { cwd: mainRepoPath },
+      (error, stdout) => {
+        if (error || !stdout) {
+          resolve([]);
+          return;
+        }
+        resolve(
+          stdout
+            .trim()
+            .split("\n")
+            .filter((line) => line.length > 0),
         );
       },
     );
@@ -775,14 +1141,34 @@ export async function runPostCheckoutHook(
 
     proc.stdout.on("data", handleData);
     proc.stderr.on("data", handleData);
-    proc.on("error", (err) => resolve({ path: hookPath, error: err.message }));
+
+    const timeout = armProcessTimeout(proc, POST_CHECKOUT_HOOK_TIMEOUT_MS);
+
+    const warn = (error: string): WorktreeSetupWarning => {
+      options?.onOutput?.(`Warning: ${error}\n`);
+      return { path: hookPath, error };
+    };
+
+    proc.on("error", (err) => {
+      timeout.clear();
+      resolve(warn(`post-checkout hook failed to spawn: ${err.message}`));
+    });
     proc.on("close", (code) => {
+      timeout.clear();
+      if (timeout.timedOut()) {
+        resolve(
+          warn(
+            `post-checkout hook timed out after ${POST_CHECKOUT_HOOK_TIMEOUT_MS}ms`,
+          ),
+        );
+        return;
+      }
       if (code !== 0) {
-        resolve({
-          path: hookPath,
-          error:
+        resolve(
+          warn(
             `post-checkout hook exited with code ${code}: ${chunks.join("")}`.trim(),
-        });
+          ),
+        );
         return;
       }
       resolve(null);

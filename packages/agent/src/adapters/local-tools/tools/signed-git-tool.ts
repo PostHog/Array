@@ -1,9 +1,11 @@
 import * as path from "node:path";
-import type { SignedCommitCtx } from "@posthog/git/signed-commit";
 import type { z } from "zod";
 import { isCloudRun } from "../../../utils/common";
 import { resolveGithubToken } from "../../../utils/github-token";
-import type { SignedCommitToolResult } from "../../signed-commit-shared";
+import type {
+  SignedCommitToolCtx,
+  SignedCommitToolResult,
+} from "../../signed-commit-shared";
 import { defineLocalTool, type LocalTool } from "../registry";
 
 /**
@@ -16,7 +18,7 @@ export function defineSignedGitTool<S extends z.ZodRawShape, R>(opts: {
   name: string;
   description: string;
   schema: S;
-  run: (ctx: SignedCommitCtx, input: R) => Promise<SignedCommitToolResult>;
+  run: (ctx: SignedCommitToolCtx, input: R) => Promise<SignedCommitToolResult>;
 }): LocalTool {
   return defineLocalTool({
     name: opts.name,
@@ -43,7 +45,13 @@ export function defineSignedGitTool<S extends z.ZodRawShape, R>(opts: {
       >;
       const cwd = argCwd ? path.resolve(ctx.cwd, argCwd) : ctx.cwd;
       return opts.run(
-        { cwd, token, taskId: ctx.taskId, baseBranch: ctx.baseBranch },
+        {
+          cwd,
+          token,
+          taskId: ctx.taskId,
+          taskRunId: ctx.taskRunId,
+          baseBranch: ctx.baseBranch,
+        },
         input as R,
       );
     },

@@ -17,6 +17,7 @@ const toastMock = vi.hoisted(() => ({
 vi.mock("@posthog/ui/primitives/toast", () => ({ toast: toastMock }));
 
 import { playCompletionSound } from "@posthog/ui/utils/sounds";
+import { useErrorDetailsStore } from "./errorDetails";
 import type {
   IActiveView,
   INotificationSettings,
@@ -171,6 +172,54 @@ describe("native tier settings gating (app unfocused)", () => {
     bus.notifyPromptComplete("x".repeat(80), "end_turn", TASK_ID);
     expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({ body: `"${"x".repeat(50)}..." finished` }),
+    );
+  });
+});
+
+describe("notifyError", () => {
+  const payload = { status: 500, message: "upstream exploded", body: { x: 1 } };
+
+  it("toasts a one-line summary, never the raw payload", () => {
+    const { bus } = makeBus({ hasFocus: true });
+    bus.notifyError("Sync failed", payload);
+    expect(toastMock.error).toHaveBeenCalledWith(
+      "Sync failed",
+      expect.objectContaining({ description: "upstream exploded" }),
+    );
+  });
+
+  it("attaches a Details action that opens the error details dialog", () => {
+    useErrorDetailsStore.getState().close();
+    const { bus } = makeBus({ hasFocus: true });
+    bus.notifyError("Sync failed", payload);
+    const options = toastMock.error.mock.calls[0]?.[1] as {
+      action?: { label: string; onClick: () => void };
+    };
+    expect(options.action?.label).toBe("Details");
+    options.action?.onClick();
+    const detail = useErrorDetailsStore.getState().detail;
+    expect(detail?.title).toBe("Sync failed");
+    expect(detail?.error).toBe(payload);
+    useErrorDetailsStore.getState().close();
+  });
+
+  it("the Details action wins over target navigation on error toasts", () => {
+    const { bus } = makeBus({ hasFocus: true });
+    bus.notifyError("Sync failed", payload, taskTarget(TASK_ID));
+    const options = toastMock.error.mock.calls[0]?.[1] as {
+      action?: { label: string };
+    };
+    expect(options.action?.label).toBe("Details");
+  });
+
+  it("app unfocused → native notification with the summary as body", () => {
+    const { bus, notify } = makeBus({ hasFocus: false });
+    bus.notifyError("Sync failed", payload);
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Sync failed",
+        body: "upstream exploded",
+      }),
     );
   });
 });

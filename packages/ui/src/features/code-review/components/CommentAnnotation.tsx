@@ -14,26 +14,41 @@ import { isSendMessageSubmitKey } from "../../../utils/sendMessageKey";
 import { sendPromptToAgent } from "../../sessions/sendPromptToAgent";
 import { useReviewDraftsStore } from "../reviewDraftsStore";
 
+function getSubmitTooltip(state: {
+  isEmpty: boolean;
+  addsToComposer: boolean;
+  isEditing: boolean;
+  isBatch: boolean;
+}): string {
+  if (state.isEmpty) return "Enter a comment";
+  if (state.addsToComposer) return "Add to chat";
+  if (state.isEditing) return "Save";
+  return state.isBatch ? "Add to review" : "Send to agent";
+}
+
 interface CommentAnnotationProps {
-  taskId: string;
+  taskId?: string;
   filePath: string;
   startLine: number;
   endLine: number;
-  side: AnnotationSide;
+  side?: AnnotationSide;
   onDismiss: () => void;
   initialText?: string;
   editingDraftId?: string;
+  /** When set, submit calls this instead of the review-draft / agent flow. */
+  onSubmitText?: (text: string) => void;
 }
 
 export function CommentAnnotation({
-  taskId,
+  taskId = "",
   filePath,
   startLine,
   endLine,
-  side,
+  side = "additions",
   onDismiss,
   initialText,
   editingDraftId,
+  onSubmitText,
 }: CommentAnnotationProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const addDraft = useReviewDraftsStore((s) => s.addDraft);
@@ -72,6 +87,12 @@ export function CommentAnnotation({
     const text = textareaRef.current?.value?.trim();
     if (!text) return;
 
+    if (onSubmitText) {
+      onSubmitText(text);
+      onDismiss();
+      return;
+    }
+
     if (editingDraftId) {
       updateDraft(taskId, editingDraftId, text);
       onDismiss();
@@ -99,6 +120,7 @@ export function CommentAnnotation({
     onDismiss,
     batch,
     editingDraftId,
+    onSubmitText,
     addDraft,
     updateDraft,
     setBatchEnabled,
@@ -118,13 +140,12 @@ export function CommentAnnotation({
     [handleSubmit, onDismiss],
   );
 
-  const submitTooltip = isEmpty
-    ? "Enter a comment"
-    : editingDraftId
-      ? "Save"
-      : batch
-        ? "Add to review"
-        : "Send to agent";
+  const submitTooltip = getSubmitTooltip({
+    isEmpty,
+    addsToComposer: !!onSubmitText,
+    isEditing: !!editingDraftId,
+    isBatch: batch,
+  });
 
   return (
     <div
@@ -151,7 +172,7 @@ export function CommentAnnotation({
             </InputGroupButton>
           </Tooltip>
           <div className="ml-auto flex items-center gap-3">
-            {!editingDraftId && (
+            {!editingDraftId && !onSubmitText && (
               <Text as="label" size="1" color="gray">
                 <span className="flex cursor-pointer items-center gap-2">
                   <Checkbox

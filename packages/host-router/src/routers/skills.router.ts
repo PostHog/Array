@@ -14,6 +14,8 @@ import {
   readSkillFileInput,
   readSkillFileOutput,
   renameSkillFileInput,
+  resolveSkillDependenciesInput,
+  resolveSkillDependenciesOutput,
   saveSkillFileInput,
   saveSkillManifestInput,
   skillContentsInput,
@@ -43,6 +45,14 @@ export const skillsRouter = router({
     .output(bundleLocalSkillOutput)
     .query(({ ctx, input }) =>
       ctx.container.get<SkillsService>(SKILLS_SERVICE).bundleLocalSkill(input),
+    ),
+  resolveDependencies: publicProcedure
+    .input(resolveSkillDependenciesInput)
+    .output(resolveSkillDependenciesOutput)
+    .query(({ ctx, input }) =>
+      ctx.container
+        .get<SkillsService>(SKILLS_SERVICE)
+        .resolveSkillBundleDependencies(input),
     ),
   contents: publicProcedure
     .input(skillContentsInput)

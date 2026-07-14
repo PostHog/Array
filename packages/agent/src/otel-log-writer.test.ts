@@ -8,10 +8,10 @@ const mockExport = vi.fn((_logs, callback) => {
 });
 
 vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
-  OTLPLogExporter: vi.fn().mockImplementation(() => ({
-    export: mockExport,
-    shutdown: vi.fn().mockResolvedValue(undefined),
-  })),
+  OTLPLogExporter: class {
+    export = mockExport;
+    shutdown = vi.fn().mockResolvedValue(undefined);
+  },
 }));
 
 describe("OtelLogWriter", () => {

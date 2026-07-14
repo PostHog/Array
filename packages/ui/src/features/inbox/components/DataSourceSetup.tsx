@@ -1,8 +1,8 @@
-import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
+import { DynamicSourceSetup } from "@posthog/ui/features/inbox/components/DynamicSourceSetup";
 import {
   describeGithubConnectError,
   useGithubConnect,
@@ -13,14 +13,14 @@ import {
 } from "@posthog/ui/features/integrations/useIntegrations";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text, TextField } from "@radix-ui/themes";
-import { useMutation } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-type DataSourceType = "github" | "linear" | "zendesk" | "pganalyze";
+type DataSourceType = "github" | "linear" | "jira" | "zendesk" | "pganalyze";
 
 const REQUIRED_SCHEMAS: Record<DataSourceType, string[]> = {
   github: ["issues"],
   linear: ["issues"],
+  jira: ["issues"],
   zendesk: ["tickets"],
   pganalyze: ["issues", "servers"],
 };
@@ -51,7 +51,25 @@ export function DataSourceSetup({
     case "github":
       return <GitHubSetup onComplete={onComplete} onCancel={onCancel} />;
     case "linear":
-      return <LinearSetup onComplete={onComplete} onCancel={onCancel} />;
+      return (
+        <DynamicSourceSetup
+          sourceType="Linear"
+          title="Connect Linear"
+          schemas={schemasPayload("linear")}
+          onComplete={onComplete}
+          onCancel={onCancel}
+        />
+      );
+    case "jira":
+      return (
+        <DynamicSourceSetup
+          sourceType="Jira"
+          title="Connect Jira"
+          schemas={schemasPayload("jira")}
+          onComplete={onComplete}
+          onCancel={onCancel}
+        />
+      );
     case "zendesk":
       return <ZendeskSetup onComplete={onComplete} onCancel={onCancel} />;
     case "pganalyze":
@@ -251,142 +269,6 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
             size="sm"
             onClick={handleSubmit}
             disabled={!repo || !selectedIntegrationId || loading}
-          >
-            {loading ? "Creating..." : "Create source"}
-          </Button>
-        </Flex>
-      </Flex>
-    </SetupFormContainer>
-  );
-}
-
-const POLL_INTERVAL_MS = 3_000;
-const POLL_TIMEOUT_MS = 5 * 60 * 1000;
-
-function LinearSetup({ onComplete }: SetupFormProps) {
-  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  const projectId = useAuthStateValue((state) => state.currentProjectId);
-  const client = useAuthenticatedClient();
-  const trpc = useHostTRPC();
-  const [loading, setLoading] = useState(false);
-  const [oauthConnected, setOauthConnected] = useState(false);
-  const [linearIntegrationId, setLinearIntegrationId] = useState<
-    number | string | null
-  >(null);
-  const [pollError, setPollError] = useState<string | null>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    if (pollTimeoutRef.current) {
-      clearTimeout(pollTimeoutRef.current);
-      pollTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => stopPolling, [stopPolling]);
-
-  const startLinearFlow = useMutation(
-    trpc.linearIntegration.startFlow.mutationOptions(),
-  );
-
-  const handleOAuthConnect = useCallback(async () => {
-    if (!cloudRegion || !projectId || !client) return;
-    setLoading(true);
-    setPollError(null);
-    try {
-      await startLinearFlow.mutateAsync({
-        region: cloudRegion,
-        projectId,
-      });
-
-      pollTimerRef.current = setInterval(async () => {
-        try {
-          const integrations =
-            await client.getIntegrationsForProject(projectId);
-          const linearIntegration = integrations.find(
-            (i: { kind: string }) => i.kind === "linear",
-          ) as { id: number | string } | undefined;
-          if (linearIntegration) {
-            stopPolling();
-            setLoading(false);
-            setOauthConnected(true);
-            setLinearIntegrationId(linearIntegration.id);
-            toast.success("Linear connected");
-          }
-        } catch {
-          // Ignore individual poll failures
-        }
-      }, POLL_INTERVAL_MS);
-
-      pollTimeoutRef.current = setTimeout(() => {
-        stopPolling();
-        setLoading(false);
-        setPollError("Connection timed out. Please try again.");
-      }, POLL_TIMEOUT_MS);
-    } catch (error) {
-      setLoading(false);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to connect Linear",
-      );
-    }
-  }, [cloudRegion, projectId, client, stopPolling, startLinearFlow]);
-
-  const handleSubmit = useCallback(async () => {
-    if (!projectId || !client || !linearIntegrationId) return;
-
-    setLoading(true);
-    try {
-      await client.createExternalDataSource(projectId, {
-        source_type: "Linear",
-        payload: {
-          linear_integration_id: linearIntegrationId,
-          schemas: schemasPayload("linear"),
-        },
-      });
-      toast.success("Linear data source created");
-      onComplete();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to create data source",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, client, linearIntegrationId, onComplete]);
-
-  return (
-    <SetupFormContainer title="Connect Linear">
-      <Flex direction="column" gap="3">
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          onClick={handleOAuthConnect}
-          disabled={loading || oauthConnected}
-        >
-          {oauthConnected
-            ? "Linear connected"
-            : loading
-              ? "Waiting for authorization..."
-              : "Log into Linear to continue"}
-        </Button>
-
-        {pollError && (
-          <Text className="text-(--red-11) text-sm">{pollError}</Text>
-        )}
-
-        <Flex gap="2" justify="end">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!oauthConnected || loading}
           >
             {loading ? "Creating..." : "Create source"}
           </Button>

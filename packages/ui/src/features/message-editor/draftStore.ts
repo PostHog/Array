@@ -22,6 +22,7 @@ interface DraftState {
   commands: Record<SessionId, EditorAvailableCommand[]>;
   focusRequested: Record<SessionId, number>;
   pendingContent: Record<SessionId, EditorContent>;
+  pendingInsert: Record<SessionId, EditorContent>;
   _hasHydrated: boolean;
 }
 
@@ -45,6 +46,9 @@ export interface DraftActions {
   clearFocusRequest: (sessionId: SessionId) => void;
   setPendingContent: (sessionId: SessionId, content: EditorContent) => void;
   clearPendingContent: (sessionId: SessionId) => void;
+  /** Insert content at the cursor (append), unlike setPendingContent which replaces. */
+  insertPendingContent: (sessionId: SessionId, content: EditorContent) => void;
+  clearPendingInsert: (sessionId: SessionId) => void;
 }
 
 type DraftStore = DraftState & { actions: DraftActions };
@@ -57,6 +61,7 @@ export const useDraftStore = create<DraftStore>()(
       commands: {},
       focusRequested: {},
       pendingContent: {},
+      pendingInsert: {},
       _hasHydrated: false,
 
       actions: {
@@ -138,6 +143,16 @@ export const useDraftStore = create<DraftStore>()(
         clearPendingContent: (sessionId) =>
           set((state) => {
             delete state.pendingContent[sessionId];
+          }),
+
+        insertPendingContent: (sessionId, content) =>
+          set((state) => {
+            state.pendingInsert[sessionId] = content;
+          }),
+
+        clearPendingInsert: (sessionId) =>
+          set((state) => {
+            delete state.pendingInsert[sessionId];
           }),
       },
     })),

@@ -9,6 +9,7 @@ import {
   GitPullRequest,
 } from "@phosphor-icons/react";
 import { getPrVisualConfig } from "@posthog/core/git-interaction/prStatus";
+import { parseGithubUrl } from "@posthog/git/utils";
 import {
   ButtonGroup,
   DropdownMenuContent,
@@ -24,15 +25,22 @@ import { ChevronDown } from "lucide-react";
 import { Tooltip } from "../../../primitives/Tooltip";
 import { toast } from "../../../primitives/toast";
 import { useLocalRepoPath } from "../../workspace/useLocalRepoPath";
-import { getPrActionIcon } from "../prIcon";
+import { getPrActionIcon, getPrVisualIcon } from "../prIcon";
+import { useCloudPrSummaries, useCloudPrUrls } from "../useCloudPrUrl";
 import {
   type GitMenuAction,
   type GitMenuActionId,
   useGitInteraction,
 } from "../useGitInteraction";
 import { usePrActions } from "../usePrActions";
-import { usePrDetails } from "../usePrDetails";
-import { useTaskPrUrl } from "../useTaskPrUrl";
+import {
+  type PrStateDetails,
+  usePrDetails,
+  usePrDetailsMap,
+} from "../usePrDetails";
+import { usePrSummaryBackfill } from "../usePrSummaryBackfill";
+import { useSetPrimaryPr } from "../useSetPrimaryPr";
+import { useTaskPrUrls } from "../useTaskPrUrl";
 import { CreatePrDialog } from "./CreatePrDialog";
 import {
   GitBranchDialog,
@@ -77,7 +85,12 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
     actions: gitActions,
   } = useGitInteraction(taskId, isCloud ? undefined : localRepoPath);
 
-  const prUrl = useTaskPrUrl(taskId, isCloud);
+  const { primaryUrl: prUrl, otherUrls } = useTaskPrUrls(taskId, isCloud);
+  const cloudPrUrls = useCloudPrUrls(taskId);
+  const prSummaries = useCloudPrSummaries(taskId);
+  const { mutate: setPrimaryPr } = useSetPrimaryPr(taskId);
+  usePrSummaryBackfill(taskId, cloudPrUrls, otherUrls.length > 0, prSummaries);
+  const otherPrDetails = usePrDetailsMap(otherUrls);
 
   const {
     meta: { state: prState, merged, draft, headRefName },
@@ -110,10 +123,17 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
             merged={merged}
             draft={draft}
             branchName={headRefName}
+            otherPrs={buildOtherPrItems(
+              pr.url,
+              otherUrls,
+              prSummaries,
+              otherPrDetails,
+            )}
             isPrPending={isPrActionPending}
             gitItems={gitItems}
             onGitSelect={gitActions.openAction}
             onPrSelect={executePrAction}
+            onOtherPrSelect={setPrimaryPr}
           />
         ) : (
           <GitActionControl
@@ -206,16 +226,53 @@ export function TaskActionsMenu({ taskId, isCloud }: TaskActionsMenuProps) {
 
 // --- Trigger when a PR exists: colored badge link + combined dropdown ---
 
+interface OtherPrItem {
+  url: string;
+  label: string;
+  summary: string | null;
+  repoLabel: string | null;
+  visual: ReturnType<typeof getPrVisualConfig> | null;
+}
+
+function buildOtherPrItems(
+  primaryUrl: string,
+  otherUrls: string[],
+  summaries: Record<string, string>,
+  details: Record<string, PrStateDetails>,
+): OtherPrItem[] {
+  const primary = parseGithubUrl(primaryUrl);
+  return otherUrls.map((url) => {
+    const parsed = parseGithubUrl(url);
+    const sameRepo =
+      !!parsed &&
+      !!primary &&
+      parsed.owner.toLowerCase() === primary.owner.toLowerCase() &&
+      parsed.repo.toLowerCase() === primary.repo.toLowerCase();
+    const detail = details[url];
+    return {
+      url,
+      label: parsed?.kind === "pr" ? `#${parsed.number}` : url,
+      summary: summaries[url] ?? null,
+      repoLabel: parsed && !sameRepo ? `${parsed.owner}/${parsed.repo}` : null,
+      visual: detail
+        ? getPrVisualConfig(detail.state, detail.merged, detail.draft)
+        : null,
+    };
+  });
+}
+
 interface PrBadgeControlProps {
   prUrl: string;
   prState: string;
   merged: boolean;
   draft: boolean;
   branchName: string | null;
+  otherPrs: OtherPrItem[];
   isPrPending: boolean;
   gitItems: GitMenuAction[];
   onGitSelect: (id: GitMenuActionId) => void;
   onPrSelect: (action: PrActionType) => void;
+  onOtherPrSelect: (url: string) => void;
 }
 
 function PrBadgeControl({
@@ -224,15 +281,17 @@ function PrBadgeControl({
   merged,
   draft,
   branchName,
+  otherPrs,
   isPrPending,
   gitItems,
   onGitSelect,
   onPrSelect,
+  onOtherPrSelect,
 }: PrBadgeControlProps) {
   const config = getPrVisualConfig(prState, merged, draft);
   const lifecycleItems = config.actions;
   const hasMenuItems = gitItems.length + lifecycleItems.length > 0;
-  const hasDropdown = hasMenuItems || !!branchName;
+  const hasDropdown = hasMenuItems || !!branchName || otherPrs.length > 0;
 
   const copyBranchName = async () => {
     if (!branchName) return;
@@ -296,9 +355,49 @@ function PrBadgeControl({
                 </Flex>
               </DropdownMenu.Item>
             ))}
-            {branchName && (
+            {otherPrs.length > 0 && (
               <>
                 {hasMenuItems && <DropdownMenu.Separator />}
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger>
+                    <Flex align="center" gap="2">
+                      <GitPullRequest size={12} weight="bold" />
+                      <Text size="1">Other PRs</Text>
+                    </Flex>
+                  </DropdownMenu.SubTrigger>
+                  <DropdownMenu.SubContent>
+                    {otherPrs.map((otherPr) => (
+                      <DropdownMenu.Item
+                        key={otherPr.url}
+                        onSelect={() => onOtherPrSelect(otherPr.url)}
+                      >
+                        <Flex align="center" gap="2">
+                          <OtherPrStateIcon visual={otherPr.visual} />
+                          <Text size="1">
+                            {otherPr.label}
+                            {otherPr.summary && <Text> {otherPr.summary}</Text>}
+                            {otherPr.visual && (
+                              <Text color={otherPr.visual.color}>
+                                {" "}
+                                · {otherPr.visual.label}
+                              </Text>
+                            )}
+                            {otherPr.repoLabel && (
+                              <Text color="gray"> · {otherPr.repoLabel}</Text>
+                            )}
+                          </Text>
+                        </Flex>
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.SubContent>
+                </DropdownMenu.Sub>
+              </>
+            )}
+            {branchName && (
+              <>
+                {(hasMenuItems || otherPrs.length > 0) && (
+                  <DropdownMenu.Separator />
+                )}
                 <DropdownMenu.Item onSelect={copyBranchName}>
                   <Flex align="center" gap="2">
                     <Copy size={12} weight="bold" />
@@ -311,6 +410,14 @@ function PrBadgeControl({
         </DropdownMenu.Root>
       )}
     </Flex>
+  );
+}
+
+function OtherPrStateIcon({ visual }: { visual: OtherPrItem["visual"] }) {
+  if (!visual) return <GitPullRequest size={12} weight="bold" />;
+  const StateIcon = getPrVisualIcon(visual.icon);
+  return (
+    <StateIcon size={12} weight="bold" color={`var(--${visual.color}-9)`} />
   );
 }
 

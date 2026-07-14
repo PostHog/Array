@@ -75,6 +75,7 @@ interface TaskRunResponse {
   status: TaskRunStatus;
   stage?: string | null;
   output?: Record<string, unknown> | null;
+  state?: Record<string, unknown> | null;
   error_message?: string | null;
   branch?: string | null;
   updated_at?: string;
@@ -86,6 +87,7 @@ interface TaskRunStateEvent {
   status?: TaskRunStatus;
   stage?: string | null;
   output?: Record<string, unknown> | null;
+  state?: Record<string, unknown> | null;
   error_message?: string | null;
   branch?: string | null;
   updated_at?: string | null;
@@ -117,11 +119,17 @@ interface WatcherState {
   // Leg that issued lastEventId, and the leg of the connection currently being read.
   lastEventIdLeg: StreamLeg | null;
   streamLeg: StreamLeg | null;
+  // Ids of log entries already ingested on the current leg. The durable stream
+  // re-sends the tail by id on reconnect/replay, so dropping a seen id here is
+  // what stops a re-delivered entry (e.g. a `turn_complete`) from being counted
+  // and emitted twice. Cleared on a leg switch, where the id space changes.
+  seenEventIds: Set<string>;
   lastStatus: TaskRunStatus | null;
   lastStage: string | null;
   lastOutput: Record<string, unknown> | null;
   lastErrorMessage: string | null;
   lastBranch: string | null;
+  lastSandboxAlive: boolean | null;
   lastStatusUpdatedAt: string | null;
   connStartedAt: number;
   connSentLastEventId: string | null;
@@ -303,6 +311,25 @@ function filterEntriesNotInFrequencyMap(
   });
 }
 
+function extractSandboxAlive(
+  state: Record<string, unknown> | null | undefined,
+): boolean | null | undefined {
+  if (!state || !Object.hasOwn(state, "sandbox_alive")) {
+    return undefined;
+  }
+
+  const sandboxAlive = state.sandbox_alive;
+  return typeof sandboxAlive === "boolean" ? sandboxAlive : null;
+}
+
+function sandboxAlivePayload(watcher: { lastSandboxAlive: boolean | null }): {
+  sandboxAlive?: boolean | null;
+} {
+  return watcher.lastSandboxAlive === null
+    ? {}
+    : { sandboxAlive: watcher.lastSandboxAlive };
+}
+
 @injectable()
 export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private watchers = new Map<string, WatcherState>();
@@ -355,7 +382,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
-  retry(taskId: string, runId: string): void {
+  async retry(taskId: string, runId: string): Promise<void> {
     const key = watcherKey(taskId, runId);
     const watcher = this.watchers.get(key);
     if (!watcher) return;
@@ -399,6 +426,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.lastEventId = null;
     watcher.lastEventIdLeg = null;
     watcher.streamLeg = null;
+    // The rebuild re-resolves the read leg, so a retained id could false-match a
+    // different entry on the next connection — and the leg-switch clear in
+    // connectSse can't catch it, since lastEventId was just nulled. The re-fetched
+    // snapshot re-delivers history, so no dedup state is lost.
+    watcher.seenEventIds.clear();
     watcher.totalEntryCount = 0;
     watcher.isBootstrapping = false;
     watcher.streamTargetResolved = false;
@@ -516,11 +548,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       lastEventId: null,
       lastEventIdLeg: null,
       streamLeg: null,
+      seenEventIds: new Set(),
       lastStatus: null,
       lastStage: null,
       lastOutput: null,
       lastErrorMessage: null,
       lastBranch: null,
+      lastSandboxAlive: null,
       lastStatusUpdatedAt: null,
       connStartedAt: 0,
       connSentLastEventId: null,
@@ -629,6 +663,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         output: watcher.lastOutput,
         errorMessage: watcher.lastErrorMessage,
         branch: watcher.lastBranch,
+        ...sandboxAlivePayload(watcher),
       });
       this.stopWatcher(key);
       return;
@@ -669,6 +704,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       output: watcher.lastOutput,
       errorMessage: watcher.lastErrorMessage,
       branch: watcher.lastBranch,
+      ...sandboxAlivePayload(watcher),
     });
 
     watcher.isBootstrapping = false;
@@ -718,6 +754,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       output: watcher.lastOutput,
       errorMessage: watcher.lastErrorMessage,
       branch: watcher.lastBranch,
+      ...sandboxAlivePayload(watcher),
     });
   }
 
@@ -764,6 +801,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       });
       watcher.lastEventId = null;
       watcher.lastEventIdLeg = null;
+      // Proxy and Django ids are unrelated, so a retained id could false-match a
+      // different entry on the new leg. Drop them; the snapshot covers the gap.
+      watcher.seenEventIds.clear();
     }
     watcher.streamLeg = leg;
 
@@ -1091,10 +1131,27 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
             output: watcher.lastOutput,
             errorMessage: watcher.lastErrorMessage,
             branch: watcher.lastBranch,
+            ...sandboxAlivePayload(watcher),
           });
         }
       }
       return null;
+    }
+
+    // Drop a re-delivered event by its stream id. The durable stream re-sends
+    // the tail on reconnect/replay: each re-sent log entry would otherwise be
+    // counted as a new entry (advancing totalEntryCount past the renderer's
+    // processedLineCount guard) and emitted again — the root cause of duplicate
+    // transcript entries and back-to-back completion notifications — and a
+    // re-sent permission_request frame would re-surface an already-answered
+    // question as a fresh pending card. Events without an id (legacy servers)
+    // fall through and are handled downstream.
+    const eventId = event.id;
+    if (eventId !== undefined) {
+      if (watcher.seenEventIds.has(eventId)) {
+        return null;
+      }
+      watcher.seenEventIds.add(eventId);
     }
 
     if (isPermissionRequestEvent(event.data)) {
@@ -1256,6 +1313,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       output: watcher.lastOutput,
       errorMessage: watcher.lastErrorMessage,
       branch: watcher.lastBranch,
+      ...sandboxAlivePayload(watcher),
     });
   }
 
@@ -1497,6 +1555,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           | "status"
           | "stage"
           | "output"
+          | "state"
           | "error_message"
           | "branch"
           | "updated_at"
@@ -1517,19 +1576,24 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const nextOutput = run.output ?? null;
     const nextErrorMessage = run.error_message ?? null;
     const nextBranch = run.branch ?? null;
+    const sandboxAlive = extractSandboxAlive(run.state);
+    const nextSandboxAlive =
+      sandboxAlive === undefined ? watcher.lastSandboxAlive : sandboxAlive;
 
     const changed =
       nextStatus !== watcher.lastStatus ||
       nextStage !== watcher.lastStage ||
       JSON.stringify(nextOutput) !== JSON.stringify(watcher.lastOutput) ||
       nextErrorMessage !== watcher.lastErrorMessage ||
-      nextBranch !== watcher.lastBranch;
+      nextBranch !== watcher.lastBranch ||
+      nextSandboxAlive !== watcher.lastSandboxAlive;
 
     watcher.lastStatus = nextStatus ?? null;
     watcher.lastStage = nextStage;
     watcher.lastOutput = nextOutput;
     watcher.lastErrorMessage = nextErrorMessage;
     watcher.lastBranch = nextBranch;
+    watcher.lastSandboxAlive = nextSandboxAlive;
     if (updatedAt) {
       watcher.lastStatusUpdatedAt = updatedAt;
     }

@@ -4,6 +4,7 @@ import {
   buildCloudTaskDescription,
   serializeCloudPrompt,
   stripAbsoluteFileTags,
+  stripTrailingAttachmentSummary,
 } from "@posthog/core/editor/cloud-prompt";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -61,6 +62,23 @@ describe("cloud-prompt", () => {
     expect(description).toBe(
       'review <file path="src/index.ts" /> and\n\nAttached files: test.txt',
     );
+  });
+
+  it.each([
+    [
+      "text + trailing summary",
+      "do this\n\nAttached files: a.png, b.txt",
+      "do this",
+    ],
+    ["summary only", "Attached files: a.png", ""],
+    ["no summary", "do this", "do this"],
+    [
+      "summary not at end",
+      "Attached files: a.png\n\nthen do this",
+      "Attached files: a.png\n\nthen do this",
+    ],
+  ])("stripTrailingAttachmentSummary: %s", (_label, input, expected) => {
+    expect(stripTrailingAttachmentSummary(input)).toBe(expected);
   });
 
   it("uses resource_link path references for text attachments", async () => {

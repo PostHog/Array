@@ -5,6 +5,7 @@ import {
   groupReleases,
   mergeReleaseNotes,
 } from "@posthog/ui/features/updates/releaseNotes";
+import { useHasActiveUpdate } from "@posthog/ui/features/updates/updateStore";
 import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import {
   Badge,
@@ -41,14 +42,22 @@ function ChangelogSkeleton() {
 export function WhatsNewModal() {
   const isOpen = useWhatsNewStore((state) => state.isOpen);
   const close = useWhatsNewStore((state) => state.close);
+  const prefetchForActiveUpdate = useHasActiveUpdate();
   const hostTRPC = useHostTRPC();
-  const { data, isLoading, isError } = useQuery({
-    ...hostTRPC.githubReleases.list.queryOptions(),
-    enabled: isOpen,
-  });
-  const { data: currentVersion } = useQuery(
+  const { data: currentVersion, isError: isVersionError } = useQuery(
     hostTRPC.os.getAppVersion.queryOptions(),
   );
+  const {
+    data,
+    isPending,
+    isError: isReleasesError,
+  } = useQuery({
+    ...hostTRPC.githubReleases.list.queryOptions(
+      currentVersion ? { expectVersion: currentVersion } : undefined,
+    ),
+    enabled: (isOpen || prefetchForActiveUpdate) && !!currentVersion,
+  });
+  const isError = isVersionError || isReleasesError;
 
   const groups = groupReleases(data?.releases ?? []);
 
@@ -76,12 +85,12 @@ export function WhatsNewModal() {
           </Dialog.Close>
         </Flex>
 
-        {isLoading ? (
-          <ChangelogSkeleton />
-        ) : isError ? (
+        {isError ? (
           <Text color="gray" size="2">
             Could not load releases. Please try again later.
           </Text>
+        ) : isPending ? (
+          <ChangelogSkeleton />
         ) : groups.length === 0 ? (
           <Text color="gray" size="2">
             No releases found.

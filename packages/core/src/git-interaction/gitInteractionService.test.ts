@@ -276,6 +276,7 @@ describe("GitInteractionService.runCreatePr", () => {
     expect(effects.attachPrUrlToTask).toHaveBeenCalledWith(
       "t",
       "https://example.test/pr/1",
+      undefined,
     );
     if (result.outcome === "success") {
       expect(result.linkedBranchName).toBe("feature-x");

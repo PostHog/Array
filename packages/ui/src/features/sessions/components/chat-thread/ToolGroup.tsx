@@ -4,6 +4,7 @@ import {
   ChatMarkerContent,
   ChatMarkerIcon,
   cn,
+  Spinner,
 } from "@posthog/quill";
 import type { ToolCall } from "@posthog/ui/features/sessions/types";
 import { memo } from "react";
@@ -57,7 +58,7 @@ function friendlyName(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 }
 
-function isToolActive(item: ToolGroupItem["tools"][number]): boolean {
+export function isToolActive(item: ToolGroupItem["tools"][number]): boolean {
   const { toolCall } = resolveTool(item);
   const incomplete =
     toolCall.status === "pending" || toolCall.status === "in_progress";
@@ -79,11 +80,20 @@ function isToolActive(item: ToolGroupItem["tools"][number]): boolean {
  */
 export const ToolGroup = memo(function ToolGroup({
   tools,
+  mayStillGrow = false,
 }: {
   tools: ToolGroupItem["tools"];
+  /**
+   * True when this run is the turn's trailing content and the turn is still
+   * streaming — more tool calls may append to it. Keeps the label on "Using"
+   * through the gaps between calls (every tool settled, next one not yet
+   * issued), where the group's own status alone would flip it to "Used"
+   * mid-turn and read as stalled.
+   */
+  mayStillGrow?: boolean;
 }) {
   const turnComplete = tools[0]?.turnContext.turnComplete ?? false;
-  const isActive = tools.some(isToolActive);
+  const isActive = tools.some(isToolActive) || mayStillGrow;
 
   // Uniform when every tool in the run shares the same name/kind — then we can name it.
   const keys = tools.map(toolKey);
@@ -113,9 +123,7 @@ export const ToolGroup = memo(function ToolGroup({
       ))}
       className="opacity-50 hover:opacity-100"
     >
-      <ChatMarkerIcon>
-        <LeadIcon />
-      </ChatMarkerIcon>
+      <ChatMarkerIcon>{isActive ? <Spinner /> : <LeadIcon />}</ChatMarkerIcon>
       <ChatMarkerContent
         className={cn("text-muted-foreground text-sm", isActive && "shimmer")}
       >

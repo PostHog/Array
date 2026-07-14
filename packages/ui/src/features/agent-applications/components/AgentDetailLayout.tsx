@@ -148,7 +148,7 @@ export function AgentDetailLayout({
           className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={13} />
-          Applications
+          Fleet
         </Link>
         <Flex align="center" gap="2" wrap="wrap" className="pr-44">
           <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">

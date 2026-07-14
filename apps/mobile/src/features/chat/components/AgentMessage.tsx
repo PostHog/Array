@@ -1,12 +1,11 @@
-import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
 import { Brain } from "phosphor-react-native";
-import { useCallback, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { formatRelativeTime } from "@/lib/format";
 import { useThemeColors } from "@/lib/theme";
 import { usePeriodicRerender } from "../hooks/usePeriodicRerender";
 import { getRandomThinkingMessage } from "../utils/thinkingMessages";
+import { CopyButton } from "./CopyButton";
 import { MarkdownText } from "./MarkdownText";
 import { ToolMessage } from "./ToolMessage";
 
@@ -85,14 +84,6 @@ export function AgentMessage({
   const hasContent = !!content;
   const isComplete = !isLoading && hasContent;
 
-  const handleLongPress = useCallback(() => {
-    if (!content) return;
-    Clipboard.setStringAsync(content).then(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Copied", "Message copied to clipboard.");
-    });
-  }, [content]);
-
   return (
     <View className="py-2">
       {toolCalls && toolCalls.length > 0 && (
@@ -124,19 +115,21 @@ export function AgentMessage({
         </View>
       )}
 
-      {/* Show final content — long-press to copy */}
       {content && (
-        <Pressable onLongPress={handleLongPress} delayLongPress={400}>
-          <View className="max-w-[95%] px-4 py-1">
-            <MarkdownText content={content} />
-          </View>
-        </Pressable>
+        <View className="max-w-[95%] px-4 py-1">
+          <MarkdownText content={content} />
+        </View>
       )}
 
-      {timestamp && !isLoading && (
-        <Text className="px-4 pt-1 font-mono text-[10px] text-gray-8">
-          {formatRelativeTime(timestamp)}
-        </Text>
+      {!isLoading && (hasContent || timestamp) && (
+        <View className="flex-row items-center gap-3 px-4 pt-1">
+          {isComplete && <CopyButton text={content} label="Copy message" />}
+          {timestamp && (
+            <Text className="font-mono text-[10px] text-gray-8">
+              {formatRelativeTime(timestamp)}
+            </Text>
+          )}
+        </View>
       )}
     </View>
   );

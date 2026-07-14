@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const suspendFn = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const destroyTaskTerminals = vi.hoisted(() => vi.fn());
 const workspaceClient = vi.hoisted(() => ({
   getAll: vi.fn().mockResolvedValue({}),
 }));
@@ -32,10 +33,8 @@ vi.mock("@posthog/host-router/react", () => ({
 vi.mock("@posthog/ui/features/focus/focusStore", () => ({
   useFocusStore: { getState: () => ({ session: null, disableFocus: vi.fn() }) },
 }));
-vi.mock("@posthog/ui/features/terminal/terminalStore", () => ({
-  useTerminalStore: {
-    getState: () => ({ clearTerminalStatesForTask: vi.fn() }),
-  },
+vi.mock("@posthog/ui/features/terminal/destroyTaskTerminals", () => ({
+  destroyTaskTerminals,
 }));
 vi.mock("@posthog/ui/shell/logger", () => ({
   logger: { scope: () => ({ info: vi.fn(), error: vi.fn() }) },
@@ -66,6 +65,7 @@ describe("useSuspendTask", () => {
       taskId: "t1",
       reason: "manual",
     });
+    expect(destroyTaskTerminals).toHaveBeenCalledWith("t1");
   });
 
   it("rolls back the optimistic suspended set when suspend fails", async () => {
@@ -86,5 +86,6 @@ describe("useSuspendTask", () => {
     );
     seen.push(queryClient.getQueryData<string[]>(SUSPENDED_TASK_IDS_KEY));
     expect(seen[0] ?? []).not.toContain("t1");
+    expect(destroyTaskTerminals).not.toHaveBeenCalled();
   });
 });

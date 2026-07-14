@@ -52,6 +52,10 @@ export function invalidateGitBranchQueries(repoPath: string) {
   queryClient.invalidateQueries(
     provider.gitPathFilter("getLocalBranchChangedFiles"),
   );
+  queryClient.invalidateQueries(provider.gitPathFilter("getPrChangedFiles"));
+  queryClient.invalidateQueries(
+    provider.gitPathFilter("getBranchChangedFiles"),
+  );
 }
 
 export function clearGitReviewQueries() {

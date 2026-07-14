@@ -499,6 +499,68 @@ describe("PosthogPluginService", () => {
     });
   });
 
+  describe("last-check persistence across restarts", () => {
+    const MARKER_PATH = "/mock/userData/.skills-last-check";
+
+    function restartService(): PosthogPluginService {
+      return new PosthogPluginService(
+        mockStoragePaths as unknown as IStoragePaths,
+        mockBundledResources as unknown as IBundledResources,
+        mockAnalytics as unknown as IAnalytics,
+        mockAppMeta as unknown as IAppMeta,
+        mockLog as unknown as RootLogger,
+      );
+    }
+
+    it("writes the last-check marker after a successful update", async () => {
+      simulateExtractZip();
+
+      await service.updateSkills();
+
+      expect(vol.existsSync(MARKER_PATH)).toBe(true);
+    });
+
+    it("skips the download on restart when the marker is still fresh", async () => {
+      setupBundledPlugin();
+      simulateExtractZip();
+      await service.updateSkills();
+      mockFetch.mockClear();
+
+      const restarted = restartService();
+      await (restarted as unknown as TestablePluginService).initialize();
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      restarted.cleanup();
+    });
+
+    it("re-downloads on restart once the interval has expired", async () => {
+      setupBundledPlugin();
+      simulateExtractZip();
+      await service.updateSkills();
+      mockFetch.mockClear();
+
+      vi.advanceTimersByTime(31 * 60 * 1000);
+      const restarted = restartService();
+      await (restarted as unknown as TestablePluginService).initialize();
+
+      expect(mockFetch).toHaveBeenCalled();
+      restarted.cleanup();
+    });
+
+    it("re-downloads on restart when the skills cache is missing despite a fresh marker", async () => {
+      setupBundledPlugin();
+      simulateExtractZip();
+      vol.mkdirSync("/mock/userData", { recursive: true });
+      vol.writeFileSync(MARKER_PATH, `${Date.now()}\n`);
+
+      const restarted = restartService();
+      await (restarted as unknown as TestablePluginService).initialize();
+
+      expect(mockFetch).toHaveBeenCalled();
+      restarted.cleanup();
+    });
+  });
+
   describe("copyBundledPlugin", () => {
     it("copies entire bundled dir to runtime dir", async () => {
       setupBundledPlugin();

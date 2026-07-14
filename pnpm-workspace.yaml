@@ -8,10 +8,8 @@ catalog:
   '@hono/trpc-server': ^0.3.4
   '@parcel/watcher': ^2.5.6
   '@phosphor-icons/react': ^2.1.10
-  '@posthog/quill': 0.3.0-beta.21
+  '@posthog/quill': 0.3.0-beta.22
   '@radix-ui/themes': ^3.2.1
-  '@tanstack/devtools-vite': ^0.7.0
-  '@tanstack/react-devtools': ^0.10.5
   '@tanstack/react-query': ^5.100.14
   '@tanstack/react-router': ^1.170.10
   '@tanstack/react-router-devtools': ^1.167.0
@@ -50,15 +48,17 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-win32-arm64'
   - '@anthropic-ai/claude-agent-sdk-win32-x64'
   - '@anthropic-ai/sdk'
+  - '@earendil-works/pi-agent-core'
+  - '@earendil-works/pi-ai'
+  - '@earendil-works/pi-coding-agent'
+  - '@earendil-works/pi-tui'
   - '@pierre/diffs'
   - '@pierre/theming'
   - '@posthog/quill'
   - '@posthog/quill-charts'
   - '@posthog/quill-tokens'
   - '@tanstack/devtools-core'
-  - '@tanstack/devtools-vite'
   - '@tanstack/history'
-  - '@tanstack/react-devtools'
   - '@tanstack/react-router'
   - '@tanstack/react-router-devtools'
   - '@tanstack/react-store'

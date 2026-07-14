@@ -1,8 +1,10 @@
+import type { HostRouter } from "@posthog/host-router/router";
 import { additionalDirectoriesRouter } from "@posthog/host-router/routers/additional-directories.router";
 import { agentRouter } from "@posthog/host-router/routers/agent.router";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { archiveRouter } from "@posthog/host-router/routers/archive.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
+import { autoresearchRouter } from "@posthog/host-router/routers/autoresearch.router";
 import { browserTabsRouter } from "@posthog/host-router/routers/browser-tabs.router";
 import { canvasDataRouter } from "@posthog/host-router/routers/canvas-data.router";
 import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templates.router";
@@ -31,6 +33,7 @@ import { mcpAppsRouter } from "@posthog/host-router/routers/mcp-apps.router";
 import { mcpCallbackRouter } from "@posthog/host-router/routers/mcp-callback.router";
 import { notificationRouter } from "@posthog/host-router/routers/notification.router";
 import { oauthRouter } from "@posthog/host-router/routers/oauth.router";
+import { onboardingImportRouter } from "@posthog/host-router/routers/onboarding-import.router";
 import { osRouter } from "@posthog/host-router/routers/os.router";
 import { processTrackingRouter } from "@posthog/host-router/routers/process-tracking.router";
 import { provisioningRouter } from "@posthog/host-router/routers/provisioning.router";
@@ -44,6 +47,7 @@ import { uiRouter } from "@posthog/host-router/routers/ui.router";
 import { updatesRouter } from "@posthog/host-router/routers/updates.router";
 import { usageMonitorRouter } from "@posthog/host-router/routers/usage-monitor.router";
 import { workspaceRouter } from "@posthog/host-router/routers/workspace.router";
+import { devRouter } from "./routers/dev";
 import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
 import { workspaceServerRouter } from "./routers/workspace-server";
@@ -55,6 +59,7 @@ export const trpcRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
+  autoresearch: autoresearchRouter,
   browserTabs: browserTabsRouter,
   canvasData: canvasDataRouter,
   canvasTemplates: canvasTemplatesRouter,
@@ -64,6 +69,7 @@ export const trpcRouter = router({
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
+  dev: devRouter,
   discordPresence: discordPresenceRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,
@@ -83,6 +89,7 @@ export const trpcRouter = router({
   mcpCallback: mcpCallbackRouter,
   notification: notificationRouter,
   oauth: oauthRouter,
+  onboardingImport: onboardingImportRouter,
   logs: logsRouter,
   os: osRouter,
   processTracking: processTrackingRouter,
@@ -102,3 +109,15 @@ export const trpcRouter = router({
 });
 
 export type TrpcRouter = typeof trpcRouter;
+
+/**
+ * The renderer and @posthog/ui are typed against HostRouter, so every route it
+ * declares must actually be served by this assembly — a route present in the
+ * type but missing here fails only at runtime with NOT_FOUND (#2442 dropped
+ * onboardingImport this way, silently breaking the onboarding import step).
+ * When this assignment errors, its expected type names the missing routes.
+ */
+type MissingHostRoutes = Exclude<keyof HostRouter, keyof TrpcRouter>;
+export const servesEveryHostRoute: [MissingHostRoutes] extends [never]
+  ? true
+  : MissingHostRoutes = true;

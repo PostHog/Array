@@ -67,6 +67,9 @@ describe("GitPrService.generateCommitMessage", () => {
     expect(messages[0].content).toContain("modified: x.ts");
     expect(messages[0].content).toContain("why context");
     expect(options.system).toContain("commit message generator");
+    expect(options.posthogProperties).toEqual({
+      $ai_span_name: "commit_message",
+    });
   });
 });
 
@@ -98,6 +101,10 @@ describe("GitPrService.generatePrTitleAndBody", () => {
     expect(result.title).toBe("feat: add widget");
     expect(result.body).toBe("TL;DR: adds a widget.");
     expect(diffSource.fetchFromRemote).toHaveBeenCalledWith("/repo");
+    const [, options] = (llm.prompt as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(options.posthogProperties).toEqual({
+      $ai_span_name: "pr_description",
+    });
   });
 });
 

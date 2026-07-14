@@ -18,9 +18,7 @@ class Harness {
     unpin: vi.fn().mockResolvedValue(undefined),
     togglePin: vi.fn().mockResolvedValue(undefined),
     navigateAwayFromTaskIfActive: vi.fn(),
-    snapshotTerminalStates: vi.fn().mockReturnValue({}),
     clearTerminalStates: vi.fn(),
-    restoreTerminalStates: vi.fn(),
     snapshotCommandCenter: vi
       .fn()
       .mockReturnValue({ index: -1, wasActive: false }),
@@ -102,6 +100,27 @@ describe("archiveTask", () => {
     expect(harness.ids).not.toContain(TASK_ID);
     expect(harness.list).toEqual([]);
     expect(harness.deps.togglePin).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("destroys terminals only after the archive succeeds", async () => {
+    let clearedWhenArchiveCalled = true;
+    harness.deps.archive = vi.fn().mockImplementation(async () => {
+      clearedWhenArchiveCalled =
+        vi.mocked(harness.deps.clearTerminalStates).mock.calls.length > 0;
+    });
+
+    await archiveTask(TASK_ID, harness.deps);
+
+    expect(clearedWhenArchiveCalled).toBe(false);
+    expect(harness.deps.clearTerminalStates).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("keeps terminals when archive fails", async () => {
+    harness.deps.archive = vi.fn().mockRejectedValue(new Error("boom"));
+
+    await expect(archiveTask(TASK_ID, harness.deps)).rejects.toThrow("boom");
+
+    expect(harness.deps.clearTerminalStates).not.toHaveBeenCalled();
   });
 });
 

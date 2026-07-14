@@ -1,3 +1,5 @@
+import type { Adapter } from "@posthog/shared";
+
 export const INBOX_BULK_ACTION_SERVICE = Symbol.for(
   "posthog.core.inbox.bulkActionService",
 );
@@ -25,7 +27,7 @@ export interface ReportModelResolver {
    */
   resolveDefaultModel(
     apiHost: string,
-    adapter: "claude" | "codex",
+    adapter: Adapter,
     preferredModel?: string | null,
   ): Promise<string | undefined>;
 }

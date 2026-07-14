@@ -31,7 +31,7 @@ const ADAPTER_ICONS: Record<AgentAdapter, React.ReactNode> = {
 };
 
 const ADAPTER_LABELS: Record<AgentAdapter, string> = {
-  claude: "Claude",
+  claude: "Claude Code",
   codex: "Codex",
 };
 

@@ -38,6 +38,18 @@ export function buildInlineCommentPrompt(
   return `In file <file path="${escapedPath}" />, ${lineRef} (${sideLabel}):\n\n${comment}`;
 }
 
+/** File + line-range reference with no diff side label (not a review comment). */
+export function buildFileLineReferencePrompt(
+  filePath: string,
+  startLine: number,
+  endLine: number,
+  comment: string,
+): string {
+  const lineRef = formatLineRef(startLine, endLine);
+  const escapedPath = escapeXmlAttr(filePath);
+  return `In file <file path="${escapedPath}" />, ${lineRef}:\n\n${comment}`;
+}
+
 export function buildBatchedInlineCommentsPrompt(
   drafts: DraftComment[],
 ): string {

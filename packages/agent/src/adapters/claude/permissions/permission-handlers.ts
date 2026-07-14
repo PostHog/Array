@@ -1,5 +1,6 @@
 import type {
   AgentSideConnection,
+  RequestPermissionRequest,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import type {
@@ -63,6 +64,77 @@ interface ToolHandlerContext {
   updateConfigOption: (configId: string, value: string) => Promise<void>;
   applySessionMode: (modeId: string) => Promise<void>;
   allowedDomains?: string[];
+  /** Shared with the streamed tool_use path; first emitter wins. */
+  emittedToolCalls?: Set<string>;
+  supportsTerminalOutput?: boolean;
+}
+
+// Task*/TodoWrite render as plans, never as standalone tool_calls.
+function shouldEmitToolCall(toolName: string): boolean {
+  return (
+    toolName !== "TodoWrite" &&
+    toolName !== "TaskCreate" &&
+    toolName !== "TaskUpdate" &&
+    toolName !== "TaskList" &&
+    toolName !== "TaskGet"
+  );
+}
+
+// The SDK can invoke canUseTool before the tool_use block streams; make
+// sure the tool_call exists before the client is asked to approve it.
+async function ensureToolCallEmitted(
+  context: ToolHandlerContext,
+): Promise<void> {
+  const { emittedToolCalls, toolName, toolUseID, toolInput } = context;
+  if (!emittedToolCalls || !shouldEmitToolCall(toolName)) {
+    return;
+  }
+  if (emittedToolCalls.has(toolUseID)) {
+    return;
+  }
+  emittedToolCalls.add(toolUseID);
+  const toolInfo = toolInfoFromToolUse(
+    { name: toolName, input: toolInput },
+    {
+      supportsTerminalOutput: context.supportsTerminalOutput,
+      toolUseId: toolUseID,
+      cachedFileContent: context.fileContentCache,
+      cwd: context.session.cwd,
+    },
+  );
+  await context.client.sessionUpdate({
+    sessionId: context.sessionId,
+    update: {
+      _meta: {
+        claudeCode: { toolName },
+        ...(toolName === "Bash" && context.supportsTerminalOutput
+          ? { terminal_info: { terminal_id: toolUseID } }
+          : {}),
+      },
+      toolCallId: toolUseID,
+      sessionUpdate: "tool_call",
+      rawInput: toolInput,
+      status: "pending",
+      ...toolInfo,
+    },
+  });
+}
+
+// The cancellationSignal lets a turn cancel dismiss the client's open
+// dialog ($/cancel_request) instead of leaving this await hanging.
+async function requestPermissionFromClient(
+  context: ToolHandlerContext,
+  params: RequestPermissionRequest,
+): Promise<RequestPermissionResponse> {
+  await ensureToolCallEmitted(context);
+  try {
+    return await context.client.requestPermission(params);
+  } catch (error) {
+    if (context.signal?.aborted) {
+      throw new Error("Tool use aborted", { cause: error });
+    }
+    throw error;
+  }
 }
 
 async function emitToolDenial(
@@ -159,14 +231,14 @@ async function requestPlanApproval(
   context: ToolHandlerContext,
   updatedInput: Record<string, unknown>,
 ): Promise<RequestPermissionResponse> {
-  const { client, sessionId, toolUseID, session } = context;
+  const { sessionId, toolUseID, session } = context;
 
   const toolInfo = toolInfoFromToolUse({
     name: context.toolName,
     input: updatedInput,
   });
 
-  return await client.requestPermission({
+  return await requestPermissionFromClient(context, {
     options: buildExitPlanModePermissionOptions(session.modeBeforePlan),
     sessionId,
     toolCall: {
@@ -281,7 +353,7 @@ async function handleAskUserQuestionTool(
     };
   }
 
-  const { client, sessionId, toolUseID, toolInput } = context;
+  const { sessionId, toolUseID, toolInput } = context;
   const firstQuestion = questions[0];
   const options = buildQuestionOptions(firstQuestion);
 
@@ -290,7 +362,7 @@ async function handleAskUserQuestionTool(
     input: toolInput,
   });
 
-  const response = await client.requestPermission({
+  const response = await requestPermissionFromClient(context, {
     options,
     sessionId,
     toolCall: {
@@ -305,14 +377,28 @@ async function handleAskUserQuestionTool(
     },
   });
 
+  // A cancelled outcome carrying a message is a deliberate "park the
+  // question" response (Slack relay, unattended cloud run) — deliver it to
+  // the model as a denial so it knows to wait for the user instead of
+  // deciding on its own. A bare cancel remains a tool-use abort.
+  const customMessage = (response._meta as Record<string, unknown> | undefined)
+    ?.message;
+  if (
+    !context.signal?.aborted &&
+    response.outcome?.outcome === "cancelled" &&
+    typeof customMessage === "string"
+  ) {
+    return {
+      behavior: "deny",
+      message: customMessage,
+    };
+  }
+
   if (context.signal?.aborted || response.outcome?.outcome === "cancelled") {
     throw new Error("Tool use aborted");
   }
 
   if (response.outcome?.outcome !== "selected") {
-    const customMessage = (
-      response._meta as Record<string, unknown> | undefined
-    )?.message;
     return {
       behavior: "deny",
       message:
@@ -342,15 +428,8 @@ async function handleAskUserQuestionTool(
 async function handleDefaultPermissionFlow(
   context: ToolHandlerContext,
 ): Promise<ToolPermissionResult> {
-  const {
-    session,
-    toolName,
-    toolInput,
-    toolUseID,
-    client,
-    sessionId,
-    suggestions,
-  } = context;
+  const { session, toolName, toolInput, toolUseID, sessionId, suggestions } =
+    context;
 
   const toolInfo = toolInfoFromToolUse(
     { name: toolName, input: toolInput },
@@ -370,7 +449,7 @@ async function handleDefaultPermissionFlow(
   // and just shows the bare tool name (e.g. "exec") with no context.
   const isMcpTool = toolName.startsWith("mcp__");
 
-  const response = await client.requestPermission({
+  const response = await requestPermissionFromClient(context, {
     options,
     sessionId,
     toolCall: {
@@ -432,7 +511,7 @@ function parseMcpToolName(toolName: string): {
 async function handleMcpApprovalFlow(
   context: ToolHandlerContext,
 ): Promise<ToolPermissionResult> {
-  const { toolName, toolInput, toolUseID, client, sessionId } = context;
+  const { toolName, toolInput, toolUseID, sessionId } = context;
 
   const { serverName, tool: displayTool } = parseMcpToolName(toolName);
   const metadata = getMcpToolMetadata(toolName);
@@ -440,7 +519,7 @@ async function handleMcpApprovalFlow(
     ? `\n\n${metadata.description}`
     : "";
 
-  const response = await client.requestPermission({
+  const response = await requestPermissionFromClient(context, {
     options: [
       { kind: "allow_once", name: "Yes", optionId: "allow" },
       {
@@ -503,10 +582,9 @@ async function handlePostHogExecApprovalFlow(
   context: ToolHandlerContext,
   subTool: string,
 ): Promise<ToolPermissionResult> {
-  const { toolName, toolInput, toolUseID, client, sessionId, session } =
-    context;
+  const { toolName, toolInput, toolUseID, sessionId, session } = context;
 
-  const response = await client.requestPermission({
+  const response = await requestPermissionFromClient(context, {
     options: [
       { kind: "allow_once", name: "Yes", optionId: "allow" },
       {

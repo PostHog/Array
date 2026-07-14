@@ -157,6 +157,7 @@ function createMockDependencies() {
     powerManager: {
       onResume: vi.fn(() => () => {}),
       preventSleep: vi.fn(() => () => {}),
+      hasBuiltInBattery: vi.fn(async () => false),
     },
     bundledResources: {
       resolve: vi.fn((rel: string) => `/mock/appPath/${rel}`),

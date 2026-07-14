@@ -1,4 +1,5 @@
 import type {
+  PromptResponse,
   SessionConfigOption,
   TerminalHandle,
   TerminalOutputResponse,
@@ -38,9 +39,16 @@ export type BackgroundTerminal =
       pendingOutput: TerminalOutputResponse;
     };
 
-export type PendingMessage = {
-  resolve: (cancelled: boolean) => void;
-  order: number;
+/** One in-flight `prompt()` call, settled by the session's consumer. */
+export type Turn = {
+  promptUuid: string;
+  isLocalOnlyCommand: boolean;
+  commandName?: string;
+  /** Invoked once at activation, matching the pre-consumer broadcast timing. */
+  broadcast: () => Promise<void>;
+  settled: boolean;
+  resolve: (response: PromptResponse) => void;
+  reject: (error: unknown) => void;
 };
 
 export type Session = BaseSession & {
@@ -66,6 +74,10 @@ export type Session = BaseSession & {
   lastPlanFilePath?: string;
   lastPlanContent?: string;
   effort?: EffortLevel;
+  /** User intent; retained while a non-fast model hides the "fast" option. */
+  fastModeEnabled: boolean;
+  /** Last title pushed via `session_info_update`, to dedupe turn-end polls. */
+  lastTitle?: string;
   configOptions: SessionConfigOption[];
   accumulatedUsage: AccumulatedUsage;
   /** PostHog products used during this session, derived from MCP exec calls.
@@ -79,11 +91,18 @@ export type Session = BaseSession & {
   contextSize?: number;
   /** Persists across prompt() calls so SDK-reported values survive turn boundaries */
   lastContextWindowSize?: number;
-  promptRunning: boolean;
+  /** FIFO of in-flight prompts; the SDK echoes them back in order. */
+  turnQueue: Turn[];
+  activeTurn: Turn | null;
+  /** Echo-less results still owed by turns cancelled while queued. */
+  pendingOrphanResults: number;
+  consumer?: Promise<void>;
+  /** Bumped by refreshSession so the retired consumer exits quietly. */
+  queryGeneration: number;
+  /** The query iterator ended and can't be revived; new prompts reject. */
+  queryClosed?: boolean;
   cancelController?: AbortController;
   forceCancelTimer?: ReturnType<typeof setTimeout>;
-  pendingMessages: Map<string, PendingMessage>;
-  nextPendingOrder: number;
   emitRawSDKMessages: boolean | SDKMessageFilter[];
   /** Refreshed at session init and on MCP/skill changes. */
   contextBreakdownBaseline?: ContextBreakdownBaseline;

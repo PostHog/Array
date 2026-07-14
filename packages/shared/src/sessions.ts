@@ -6,12 +6,13 @@ import type {
   SessionConfigSelectOption,
   SessionConfigSelectOptions,
 } from "@agentclientprotocol/sdk";
+import type { Adapter } from "./adapter";
 import type { SkillButtonId } from "./analytics-events";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
 import type { TaskRunStatus } from "./task";
 
-export type Adapter = "claude" | "codex";
+export type { Adapter };
 
 export type PermissionRequest = Omit<RequestPermissionRequest, "sessionId"> & {
   taskRunId: string;
@@ -64,7 +65,17 @@ export interface AgentSession {
   processedLineCount?: number;
   framework?: "claude";
   adapter?: Adapter;
+  model?: string;
+  executionMode?: ExecutionMode;
+  reasoningLevel?: string;
   configOptions?: SessionConfigOption[];
+  /**
+   * Adapter's negotiated steering capability (`_meta.posthog.steering` from
+   * initialize). "native" means a mid-turn message folds into the running turn
+   * (claude, codex); "interrupt-resend" (legacy) or undefined
+   * means the host must cancel + resend. Drives the steer-vs-resend decision.
+   */
+  steering?: string;
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
   messageQueue: QueuedMessage[];
@@ -159,4 +170,42 @@ export function getCurrentModeFromConfigOptions(
 ): ExecutionMode | undefined {
   const modeOption = getConfigOptionByCategory(configOptions, "mode");
   return modeOption?.currentValue as ExecutionMode | undefined;
+}
+
+/**
+ * The safe non-bypass mode to revert to when "Bypass permissions" is turned
+ * off, chosen from the session's OWN mode options so it's always valid for that
+ * adapter. Claude exposes "default"; codex has no "default" (its presets are
+ * plan/read-only/auto/full-access) so it falls back to "auto" — reverting codex
+ * to "default" would set an unknown mode (no approvalPolicy → an undefined
+ * approval state). Returns undefined when there is no usable mode option.
+ */
+export function resolveBypassRevertMode(
+  modeOption: SessionConfigOption | undefined,
+): string | undefined {
+  if (modeOption?.type !== "select") return undefined;
+  const opts = flattenSelectOptions(modeOption.options);
+  const isBypass = (v: string) =>
+    v === "bypassPermissions" || v === "full-access";
+  if (opts.some((o) => o.value === "default")) return "default";
+  if (opts.some((o) => o.value === "auto")) return "auto";
+  return opts.find((o) => !isBypass(o.value))?.value;
+}
+
+/**
+ * Whether a mid-turn message can be folded into the running turn (steered)
+ * rather than interrupt-and-resent. Decided by the adapter's negotiated
+ * `steering` capability: "native" folds (claude, codex app-server);
+ * "interrupt-resend" (legacy) does not. Cloud runs never steer locally.
+ *
+ * Fallback: if `steering` is unset (a start path that predates capability
+ * plumbing), Claude is still treated as native — it has always steered — so the
+ * capability rollout can never regress it.
+ */
+export function sessionSupportsNativeSteer(
+  session: Pick<AgentSession, "isCloud" | "steering" | "adapter">,
+): boolean {
+  if (session.isCloud) return false;
+  if (session.steering === "native") return true;
+  return session.steering == null && session.adapter === "claude";
 }

@@ -11,6 +11,7 @@ import {
   useFocusStore,
 } from "../focus/focusStore";
 import { showFocusSuccessToast } from "../focus/focusToast";
+import { toastError } from "../notifications/errorDetails";
 import { useTerminalStore } from "../terminal/terminalStore";
 import { useWorkspace } from "./useWorkspace";
 
@@ -54,9 +55,10 @@ export function useFocusWorkspace(taskId: string) {
           (hadStash ? "Your stashed changes were restored." : undefined),
       });
     } else {
-      toast.error(`Could not return to ${focusSession.originalBranch}`, {
-        description: result.error,
-      });
+      toastError(
+        `Could not return to ${focusSession.originalBranch}`,
+        result.error,
+      );
     }
   }, [focusSession, disableFocus, getFocusTerminalKey]);
 
@@ -76,9 +78,7 @@ export function useFocusWorkspace(taskId: string) {
     if (result.success) {
       showFocusSuccessToast(params.branch, result);
     } else {
-      toast.error("Could not edit workspace", {
-        description: result.error,
-      });
+      toastError("Could not edit workspace", result.error);
     }
   }, [workspace, enableFocus]);
 

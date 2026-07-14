@@ -86,6 +86,9 @@ export {
   usePendingPermissionsForTask,
   useQueuedMessagesForTask,
   useSessionForTask,
+  useSessionHandoffInProgress,
+  useSessionIsCloud,
+  useSessionSelector,
   useSessions,
   useThoughtLevelConfigOptionForTask,
 } from "./useSession";

@@ -6,6 +6,30 @@ import {
 } from "./sessionService";
 
 describe("derivePendingPermissionRequests", () => {
+  const sdkSession = (taskRunId: string): StoredLogEntry => ({
+    type: "notification",
+    notification: {
+      method: "_posthog/sdk_session",
+      params: { taskRunId, sessionId: "session-1", adapter: "claude" },
+    },
+  });
+  const runStarted = (taskRunId: string): StoredLogEntry => ({
+    type: "notification",
+    notification: {
+      method: "_posthog/run_started",
+      params: { runId: taskRunId, taskId: "task-1" },
+    },
+  });
+  const prompt = (content: string): StoredLogEntry => ({
+    type: "notification",
+    notification: {
+      method: "session/prompt",
+      params: {
+        sessionId: "session-1",
+        prompt: [{ type: "text", text: content }],
+      },
+    },
+  });
   const request = (requestId: string, toolCallId: string): StoredLogEntry => ({
     type: "notification",
     notification: {
@@ -64,6 +88,33 @@ describe("derivePendingPermissionRequests", () => {
     ]);
 
     expect(pending).toEqual([]);
+  });
+
+  it("ignores predecessor-run questions when deriving pending requests for a resumed run", () => {
+    const pending = derivePendingPermissionRequests(
+      [
+        sdkSession("run-before"),
+        runStarted("run-before"),
+        request("r1", "t1"),
+        sdkSession("run-after"),
+        runStarted("run-after"),
+        prompt(
+          "This is the user's selected answer to the AskUserQuestion prompt that was pending before this cloud run resumed.",
+        ),
+      ],
+      { taskRunId: "run-after" },
+    );
+
+    expect(pending).toEqual([]);
+  });
+
+  it("keeps current-run questions when scoped derivation matches the run", () => {
+    const pending = derivePendingPermissionRequests(
+      [sdkSession("run-1"), runStarted("run-1"), request("r1", "t1")],
+      { taskRunId: "run-1" },
+    );
+
+    expect(pending.map((p) => p.requestId)).toEqual(["r1"]);
   });
 });
 

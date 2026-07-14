@@ -395,6 +395,67 @@ describe("ArchiveService integration", () => {
         expect(archived.branchName).toBeNull();
         expect(ctx.archiveRepo.findAll()).toHaveLength(1);
       }));
+
+    it("archive succeeds when worktree has an in-progress merge conflict", () =>
+      withTestContext({}, async (ctx) => {
+        const { worktreePath } = await ctx.setupWorktree("detached");
+
+        const wt = (cmd: string) =>
+          execSync(`git ${cmd}`, {
+            cwd: worktreePath,
+            encoding: "utf8",
+            stdio: "pipe",
+          });
+
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "base\n");
+        wt("add c.txt");
+        wt("commit -m base");
+        wt("tag base_commit");
+
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "AAA\n");
+        wt("add c.txt");
+        wt("commit -m a");
+        wt("tag commit_a");
+
+        wt("reset --hard base_commit");
+        await fs.writeFile(path.join(worktreePath, "c.txt"), "BBB\n");
+        wt("add c.txt");
+        wt("commit -m b");
+
+        wt("merge commit_a || true");
+
+        const archived = await ctx.service.archiveTask(ctx.archiveInput());
+
+        expect(archived.checkpointId).toBeNull();
+        expect(await pathExists(worktreePath)).toBe(false);
+        expect(ctx.archiveRepo.findAll()).toHaveLength(1);
+      }));
+
+    it("archive succeeds and drops the checkpoint when worktree removal fails", () =>
+      withTestContext({}, async (ctx) => {
+        await ctx.setupWorktree("detached");
+
+        // Simulate git refusing to remove the worktree (e.g. a stale lock).
+        // Capture succeeded, so the checkpoint ref exists — but since the
+        // worktree stays registered, keeping the restore point would make a
+        // later unarchive fail to re-add it. The archive must still be recorded
+        // and its checkpoint dropped.
+        const deleteSpy = vi
+          .spyOn(WorktreeManager.prototype, "deleteWorktree")
+          .mockRejectedValue(new Error("worktree is locked"));
+
+        try {
+          const archived = await ctx.service.archiveTask(ctx.archiveInput());
+
+          expect(deleteSpy).toHaveBeenCalled();
+          expect(archived.checkpointId).toBeNull();
+          const records = ctx.archiveRepo.findAll();
+          expect(records).toHaveLength(1);
+          expect(records[0].checkpointId).toBeNull();
+        } finally {
+          deleteSpy.mockRestore();
+        }
+      }));
   });
 
   describe("local/cloud mode", () => {

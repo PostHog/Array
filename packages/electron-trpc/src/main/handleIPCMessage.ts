@@ -16,7 +16,7 @@ import type { IpcMainEvent } from "electron";
 import { ELECTRON_TRPC_CHANNEL } from "../constants";
 import type { ETRPCRequest } from "../types";
 import { Unpromise } from "../vendor/unpromise";
-import type { CreateContextOptions } from "./types";
+import type { CreateContextOptions, OnProcedureError } from "./types";
 import { isAsyncIterable, iteratorResource, run } from "./utils";
 
 export async function handleIPCMessage<TRouter extends AnyTRPCRouter>({
@@ -26,6 +26,7 @@ export async function handleIPCMessage<TRouter extends AnyTRPCRouter>({
   message,
   event,
   operations,
+  onError,
 }: {
   router: TRouter;
   createContext?: (
@@ -35,6 +36,7 @@ export async function handleIPCMessage<TRouter extends AnyTRPCRouter>({
   message: ETRPCRequest;
   event: IpcMainEvent;
   operations: Map<string, AbortController>;
+  onError?: OnProcedureError;
 }) {
   if (
     message.method === "subscription.stop" ||
@@ -155,6 +157,7 @@ export async function handleIPCMessage<TRouter extends AnyTRPCRouter>({
         }
         if (next instanceof Error) {
           const error = getTRPCErrorFromUnknown(next);
+          onError?.({ error, path, type, input });
           respond({
             id,
             error: getErrorShape({
@@ -205,6 +208,7 @@ export async function handleIPCMessage<TRouter extends AnyTRPCRouter>({
       operations.delete(internalId);
     }).catch((cause) => {
       const error = getTRPCErrorFromUnknown(cause);
+      onError?.({ error, path, type, input });
       respond({
         id,
         error: getErrorShape({
@@ -229,6 +233,7 @@ export async function handleIPCMessage<TRouter extends AnyTRPCRouter>({
   } catch (cause) {
     operations.delete(internalId);
     const error: TRPCError = getTRPCErrorFromUnknown(cause);
+    onError?.({ error, path, type, input });
 
     return respond({
       id,

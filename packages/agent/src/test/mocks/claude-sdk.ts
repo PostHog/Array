@@ -108,6 +108,8 @@ export function createMockQuery(
       .mockResolvedValue({}),
     reloadPlugins: vi.fn().mockResolvedValue(undefined),
     reloadSkills: vi.fn().mockResolvedValue(undefined),
+    setMcpPermissionModeOverride: vi.fn().mockResolvedValue({}),
+    reinitialize: vi.fn().mockResolvedValue({}),
     seedReadState: vi.fn().mockResolvedValue(undefined),
     readFile: vi.fn().mockResolvedValue(""),
     backgroundTasks: vi.fn().mockResolvedValue([]),

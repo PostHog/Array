@@ -20,12 +20,31 @@ export function getBackoffDelay(
 }
 
 /**
- * Sleep with exponential backoff delay
+ * Sleep with exponential backoff delay.
+ *
+ * Pass an AbortSignal to make the sleep cancelable: on abort the timer is
+ * cleared and the promise resolves immediately (it never rejects), so a
+ * retry loop can bail out on its own `signal.aborted` check.
  */
 export function sleepWithBackoff(
   attempt: number,
   options: BackoffOptions,
+  signal?: AbortSignal,
 ): Promise<void> {
   const delay = getBackoffDelay(attempt, options);
-  return new Promise((resolve) => setTimeout(resolve, delay));
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delay);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }

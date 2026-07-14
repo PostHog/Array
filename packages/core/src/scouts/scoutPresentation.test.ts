@@ -1,6 +1,7 @@
 import type { ScoutConfig, ScoutRun } from "@posthog/api-client/posthog-client";
 import { describe, expect, it } from "vitest";
 import {
+  buildScoutCreatorIndex,
   computeFleetSummary,
   computeScoutRollups,
   deriveRunFailureKind,
@@ -10,12 +11,16 @@ import {
   formatRunIntervalShort,
   getScoutOrigin,
   isRunStuck,
+  isScoutCreatedByUser,
+  listScoutCreatorOptions,
   normalizeRunStatus,
   prettifyScoutSkillName,
   runDurationSeconds,
   runMatchesFilter,
   type ScoutOrigin,
   type ScoutRunFilter,
+  scoutCreatorDisplayName,
+  scoutCreatorKey,
   scoutRunOutcomeLabel,
   scoutSkillNameFromSlug,
   scoutSkillSlug,
@@ -327,5 +332,166 @@ describe("intervals and ordering", () => {
       "signals-scout-surveys",
       "signals-scout-logs",
     ]);
+  });
+});
+
+describe("creators", () => {
+  it("indexes latest authored skills and skips canonical seeds", () => {
+    const index = buildScoutCreatorIndex([
+      {
+        name: "signals-scout-ad-spend",
+        created_by: { id: 7, email: "paul@example.com" },
+        is_latest: true,
+      },
+      // Canonical seeds carry no author.
+      {
+        name: "signals-scout-error-tracking",
+        created_by: null,
+        is_latest: true,
+      },
+      // Superseded versions must not shadow the latest author.
+      {
+        name: "signals-scout-ad-spend",
+        created_by: { id: 9, email: "someone@example.com" },
+        is_latest: false,
+      },
+    ]);
+    expect(index.get("signals-scout-ad-spend")).toEqual({
+      id: 7,
+      email: "paul@example.com",
+    });
+    expect(index.has("signals-scout-error-tracking")).toBe(false);
+  });
+
+  it.each<{
+    label: string;
+    creator: Parameters<typeof isScoutCreatedByUser>[0];
+    user: Parameters<typeof isScoutCreatedByUser>[1];
+    expected: boolean;
+  }>([
+    {
+      label: "matches on numeric id",
+      creator: { id: 7, email: "old@example.com" },
+      user: { id: 7, email: "new@example.com" },
+      expected: true,
+    },
+    {
+      label: "rejects a different id even when emails collide",
+      creator: { id: 7, email: "shared@example.com" },
+      user: { id: 8, email: "shared@example.com" },
+      expected: false,
+    },
+    {
+      label: "falls back to case-insensitive email when the id is absent",
+      creator: { email: "Paul@Example.com" },
+      user: { id: 7, email: "paul@example.com" },
+      expected: true,
+    },
+    {
+      label: "never matches an unauthored scout",
+      creator: undefined,
+      user: { id: 7, email: "paul@example.com" },
+      expected: false,
+    },
+    {
+      label: "never matches without a user",
+      creator: { id: 7 },
+      user: null,
+      expected: false,
+    },
+    {
+      label: "never matches on missing emails",
+      creator: { email: null },
+      user: { email: "" },
+      expected: false,
+    },
+  ])("$label", ({ creator, user, expected }) => {
+    expect(isScoutCreatedByUser(creator, user)).toBe(expected);
+  });
+
+  it("keys creators by numeric id, falling back to normalized email", () => {
+    expect(scoutCreatorKey({ id: 7, email: "x@example.com" })).toBe("id:7");
+    expect(scoutCreatorKey({ email: " Paul@Example.com " })).toBe(
+      "email:paul@example.com",
+    );
+    expect(scoutCreatorKey({})).toBeNull();
+    expect(scoutCreatorKey(null)).toBeNull();
+  });
+
+  it("prefers the full name for display, then the email", () => {
+    expect(
+      scoutCreatorDisplayName({
+        first_name: "Paul",
+        last_name: "Smith",
+        email: "p@example.com",
+      }),
+    ).toBe("Paul Smith");
+    expect(scoutCreatorDisplayName({ email: "p@example.com" })).toBe(
+      "p@example.com",
+    );
+    expect(scoutCreatorDisplayName({})).toBe("Unknown user");
+  });
+
+  describe("listScoutCreatorOptions", () => {
+    const index = buildScoutCreatorIndex([
+      {
+        name: "signals-scout-ad-spend",
+        created_by: { id: 7, first_name: "Paul", email: "paul@example.com" },
+        is_latest: true,
+      },
+      {
+        name: "signals-scout-checkout",
+        created_by: { id: 9, first_name: "Zoe", email: "zoe@example.com" },
+        is_latest: true,
+      },
+      {
+        name: "signals-scout-digest",
+        created_by: { id: 8, first_name: "Amy", email: "amy@example.com" },
+        is_latest: true,
+      },
+      // A second skill by an existing author must not duplicate the option.
+      {
+        name: "signals-scout-uptime",
+        created_by: { id: 9, first_name: "Zoe", email: "zoe@example.com" },
+        is_latest: true,
+      },
+    ]);
+
+    it("pins the current user first and sorts the rest alphabetically", () => {
+      const options = listScoutCreatorOptions(index, {
+        id: 7,
+        email: "paul@example.com",
+      });
+      expect(options.map((option) => option.label)).toEqual([
+        "Paul (you)",
+        "Amy",
+        "Zoe",
+      ]);
+      expect(options[0]).toMatchObject({ key: "id:7", isCurrentUser: true });
+    });
+
+    it("still offers the current user when they authored nothing", () => {
+      const options = listScoutCreatorOptions(index, {
+        id: 1,
+        first_name: "New",
+        email: "new@example.com",
+      });
+      expect(options[0]).toEqual({
+        key: "id:1",
+        label: "New (you)",
+        isCurrentUser: true,
+      });
+      expect(options).toHaveLength(4);
+    });
+
+    it("lists plain authors when the current user is unknown", () => {
+      const options = listScoutCreatorOptions(index, null);
+      expect(options.map((option) => option.label)).toEqual([
+        "Amy",
+        "Paul",
+        "Zoe",
+      ]);
+      expect(options.every((option) => !option.isCurrentUser)).toBe(true);
+    });
   });
 });

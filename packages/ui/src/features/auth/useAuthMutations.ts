@@ -1,6 +1,7 @@
 import { useService } from "@posthog/di/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import type { CloudRegion } from "@posthog/shared";
+import { clearCapturedLogs } from "@posthog/ui/shell/logCapture";
 import { useMutation } from "@tanstack/react-query";
 import { clearAuthScopedQueries, refreshAuthStateQuery } from "./authQueries";
 import { AUTH_SIDE_EFFECTS, type IAuthSideEffects } from "./identifiers";
@@ -71,6 +72,10 @@ export function useLogoutMutation() {
       await hostClient.auth.logout.mutate();
       return previous;
     },
-    onSuccess: (previous) => fx.onLogout(previous.cloudRegion),
+    onSuccess: (previous) => {
+      // Privacy boundary: error bundles must never export another account's logs.
+      clearCapturedLogs();
+      fx.onLogout(previous.cloudRegion);
+    },
   });
 }

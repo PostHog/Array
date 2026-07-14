@@ -28,6 +28,7 @@ const mockWorktreeRepo = vi.hoisted(() => ({
 const mockWorktreeManager = vi.hoisted(() => ({
   deleteWorktree: vi.fn(),
   cleanupOrphanedWorktrees: vi.fn(),
+  sweepTrash: vi.fn(),
 }));
 const mockInitRepositorySaga = vi.hoisted(() => ({
   run: vi.fn(),
@@ -52,12 +53,14 @@ vi.mock("@posthog/git/worktree", () => ({
   WorktreeManager: class MockWorktreeManager {
     deleteWorktree = mockWorktreeManager.deleteWorktree;
     cleanupOrphanedWorktrees = mockWorktreeManager.cleanupOrphanedWorktrees;
+    sweepTrash = mockWorktreeManager.sweepTrash;
   },
 }));
 
 vi.mock("@posthog/git/queries", () => ({
   isGitRepository: vi.fn(() => Promise.resolve(true)),
   getRemoteUrl: vi.fn(() => Promise.resolve(null)),
+  getLinkedWorktreeMainPath: vi.fn(() => null),
 }));
 
 vi.mock("@posthog/git/sagas/init", () => ({
@@ -67,7 +70,11 @@ vi.mock("@posthog/git/sagas/init", () => ({
 }));
 
 import type { RootLogger } from "@posthog/di/logger";
-import { getRemoteUrl, isGitRepository } from "@posthog/git/queries";
+import {
+  getLinkedWorktreeMainPath,
+  getRemoteUrl,
+  isGitRepository,
+} from "@posthog/git/queries";
 import type { IDialog } from "@posthog/platform/dialog";
 import type { IWorkspaceSettings } from "@posthog/platform/workspace-settings";
 import type { IRepositoryRepository } from "../../db/repositories/repository-repository";
@@ -273,9 +280,35 @@ describe("FoldersService", () => {
           remoteUrl: null,
           lastAccessed: "2024-01-01T00:00:00.000Z",
           createdAt: "2024-01-01T00:00:00.000Z",
+          mainRepoPath: null,
           exists: true,
         },
       ]);
+    });
+
+    it("surfaces the main checkout path for a registered linked worktree", async () => {
+      const repos = [
+        {
+          id: "folder-1",
+          path: "/home/user/project-wt",
+          remoteUrl: "posthog/project",
+          lastAccessedAt: "2024-01-01T00:00:00.000Z",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          updatedAt: "2024-01-01T00:00:00.000Z",
+        },
+      ];
+      mockRepositoryRepo.findAll.mockReturnValue(repos);
+      mockExistsSync.mockReturnValue(true);
+      vi.mocked(getLinkedWorktreeMainPath).mockReturnValue(
+        "/home/user/project",
+      );
+
+      const result = await service.getFolders();
+
+      expect(getLinkedWorktreeMainPath).toHaveBeenCalledWith(
+        "/home/user/project-wt",
+      );
+      expect(result[0].mainRepoPath).toBe("/home/user/project");
     });
 
     it("strips .git suffix from remote repo name in display name (defensive against legacy data)", async () => {

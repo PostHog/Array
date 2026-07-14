@@ -4,10 +4,11 @@ import { BROWSER_TABS_SERVICE } from "@posthog/workspace-server/di/tokens";
 import {
   browserTabsSnapshotOutput,
   closeTabInput,
+  closeTabsInput,
   newBlankTabInput,
   openOrFocusTabInput,
-  reorderTabInput,
   setActiveTabInput,
+  setTabOrderInput,
   setTabTargetInput,
 } from "@posthog/workspace-server/services/browser-tabs/schemas";
 import type { IBrowserTabsService } from "@posthog/workspace-server/services/browser-tabs/service";
@@ -45,10 +46,17 @@ export const browserTabsRouter = router({
     .output(browserTabsSnapshotOutput)
     .mutation(({ ctx, input }) => svc(ctx.container).close(input.tabId)),
 
-  reorder: publicProcedure
-    .input(reorderTabInput)
+  closeMany: publicProcedure
+    .input(closeTabsInput)
     .output(browserTabsSnapshotOutput)
-    .mutation(({ ctx, input }) => svc(ctx.container).reorder(input)),
+    .mutation(({ ctx, input }) =>
+      svc(ctx.container).closeMany(input.tabIds, input.focusTabId),
+    ),
+
+  setOrder: publicProcedure
+    .input(setTabOrderInput)
+    .output(browserTabsSnapshotOutput)
+    .mutation(({ ctx, input }) => svc(ctx.container).setOrder(input)),
 
   setActiveTab: publicProcedure
     .input(setActiveTabInput)

@@ -12,6 +12,7 @@ export {
   parseOptionIndex,
   SUBMIT_OPTION_ID,
 } from "./action-selector/constants";
+export { InlineEditableText } from "./action-selector/InlineEditableText";
 export type {
   ActionSelectorProps,
   SelectorOption,

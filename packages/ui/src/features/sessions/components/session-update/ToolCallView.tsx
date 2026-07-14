@@ -114,7 +114,9 @@ export function ToolCallView({
     >
       {displayText && <ToolTitle>{displayText}</ToolTitle>}
       {inputPreview && (
-        <ToolTitle>
+        // `min-w-0 shrink` overrides the title's default `shrink-0`: the input preview is the
+        // flexible piece of the header, so it gives way (and truncates) instead of overflowing.
+        <ToolTitle className="min-w-0 shrink">
           <span
             className={
               chatChrome

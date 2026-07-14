@@ -31,7 +31,7 @@ The feature is deliberately split so the rules are portable and testable:
 - **`@posthog/shared` (`browser-tabs.ts`, `browser-tabs-schemas.ts`)** — pure,
   host-neutral logic: the domain shapes (`BrowserTab` / `BrowserWindow` /
   `TabsSnapshot` / `TabTarget`), the transforms (`openOrFocusTab`, `newBlankTab`,
-  `setTabTarget`, `closeTab`, `reorderTab`), `decideTabNavigation` (what a
+  `setTabTarget`, `closeTab`, `closeTabs`, `setTabOrder`), `decideTabNavigation` (what a
   location change means for the strip), and the snapshot predicates
   (`primaryWindow`, `activeTabIsBlank`, `primaryWindowHasNoTabs`) the `/website`
   index uses to choose the new-tab screen over a first-channel redirect. No
@@ -50,8 +50,17 @@ The feature is deliberately split so the rules are portable and testable:
 - **this folder (`@posthog/ui`)** — `BrowserTabStrip` (container; mounted in the
   Channels title bar in `router/routes/__root.tsx`), `TabStrip` (presentational),
   `BlankTabView` (the new-tab placeholder), `TaskTabIcon` (sidebar-parity status
-  icon for task tabs), the client facade, and the boot contribution that seeds +
-  subscribes the store.
+  icon for task tabs), the client facade, the boot contribution that seeds +
+  subscribes the store, and **`tabsSync.ts` — the local-first sync policy**:
+  every operation applies its shared pure transform to the renderer mirror
+  synchronously (interactions are instant; new tabs mint their id client-side
+  so no navigation ever waits on IPC), server writes are background persistence,
+  and while any write is in flight remote snapshot pushes are dropped because
+  they may predate newer local state. If a push was dropped, the renderer
+  re-fetches the authoritative snapshot after the write batch settles so a real
+  mutation from another window is retained; otherwise the last settling write
+  applies its returned snapshot. This makes rapid tab switching race-free
+  without losing cross-window updates.
 
 One source of truth: any window mutates → service writes sqlite + emits → every
 window's store updates. No window talks to another directly. The same shape ports
@@ -94,6 +103,47 @@ differ. Desktop ships first.
   last tab of the **primary** window empties the strip and lands on the
   **new-tab screen** at `/website` — it does *not* jump to the first channel
   (see Gotchas).
+
+### Context menu & pinning
+- Right-click on a pill opens a quill `ContextMenu`: **Pin/Unpin tab**, then
+  **Close tab / Close other tabs / Close tabs to the right / to the left**.
+  Bulk items disable when they would close nothing.
+- Bulk closes go through one `closeMany` procedure backed by the `closeTabs`
+  transform, which **composes `closeTab`** so the per-window succession rules
+  live in one place. The UI computes the id list from the strip's **displayed**
+  (pinned-first) order and passes the right-clicked tab as the `focusTabId`
+  anchor; when the active tab is among those closed, focus follows the anchor
+  rather than `closeTab`'s stored-order neighbour (which could be a pinned tab
+  at the far end of the strip).
+- **Pinned tabs are view state, not domain state**: ids live in
+  `pinnedTabsStore` (zustand `persist` → localStorage). Pinned tabs collapse to
+  an **icon-only** pill (label moves to the tooltip; the `#channel / home`
+  hover still applies), sort to the front of the strip, hide the hover close,
+  and are skipped by every bulk close. Stale pins are pruned against the live
+  snapshot; unpinning re-homes the tab to the front of the unpinned block
+  (`frontOfUnpinnedOrder`), applied optimistically so it doesn't double-jump.
+- **Single-renderer assumption.** Pins are per-origin: the desktop app is
+  single-window, so there is no live cross-window sync of pins. For the web
+  host (multiple browser tabs share the origin) a `storage`-event listener
+  keeps renderers roughly in step, but the pin-protection on bulk close is a
+  renderer-side filter — the `closeMany`/`closeTabs` service layer is
+  pin-agnostic (pins never leave the renderer). The canonical tab **order**
+  stays pin-agnostic in SQLite; only rendering applies the pinned-first
+  partition.
+
+### Drag to reorder
+- Pills are `@dnd-kit/react` sortables (x-axis–locked, full-opacity preview),
+  split into two sortable groups so a drag can't cross the pinned boundary.
+- The in-flight preview lives in a **transient view store** (`tabReorderStore`),
+  never in the domain snapshot mirror: `dragover` reorders the previewed
+  *stored* order **within the dragged tab's pin group only** (`reorderWithinGroup`
+  — the other group's stored slots are untouched, so the pinned-first partition
+  is never baked into stored positions), and the strip renders it. `dragend`
+  persists the final stored order via `setOrder`/`setTabOrder` (identity-
+  preserving) after optimistically applying it; a cancel just drops the
+  preview. Keeping the preview out of the mirror means a concurrent server
+  snapshot push mid-drag can't clobber it and the app shell doesn't re-render
+  per `dragover`.
 
 ### Back / forward (the action timeline)
 - Every router history entry is **tagged with the tab it belongs to** (`tabId` in
@@ -151,17 +201,21 @@ differ. Desktop ships first.
   index for a couple of frames **after** the URL has already left `/website`
   (the `__root` Outlet un-suppresses on the way to `/website/$channelId` before
   the matched leaf settles), and that stale render must not redirect.
-- **Closing the last tab writes the snapshot synchronously.** `handleClose`
-  calls `browserTabsStore.setSnapshot(next)` before navigating to `/website`.
-  The store otherwise lags a subscription round-trip, so the index would render
-  against the still-has-tabs snapshot and redirect (re-opening a tab) before the
-  empty strip arrives.
+- **All writes are local-first (`tabsSync.ts`).** Close/open/new/reorder apply
+  their shared transform to the mirror and navigate in the same tick; the
+  `/website` index therefore always renders against post-mutation state and
+  can't redirect (re-opening a tab) mid-flight. Mutation results and
+  subscription pushes are never applied while writes are in flight — only the
+  last settle reconciles. Don't add a mutation `onSuccess` that calls
+  `setSnapshot`; route new writes through `applyLocalTransform` +
+  `persistWrite`.
 
 ## Testing
 
 - **Pure behaviour** is tested in `@posthog/shared` (`browser-tabs.test.ts`):
-  open/dedup, close (neighbour / secondary-window / primary-landing), reorder,
-  `newBlankTab`, `setTabTarget` (canvas + task), and
+  open/dedup, close (neighbour / secondary-window / primary-landing),
+  `closeTabs` (bulk close + anchor focus), `setTabOrder`, `newBlankTab`,
+  `setTabTarget` (canvas + task), and
   **`decideTabNavigation`** — which encodes the activate / replace / open /
   stamp / noop decision the strip makes on every navigation (including "back
   returns to the previous tab" and the inherited-tag in-tab case) — plus the
@@ -174,14 +228,56 @@ differ. Desktop ships first.
 - Full back/forward integration across the real router belongs in an E2E
   (Playwright) spec, not a unit test.
 
+## Split view (parked — how to approach it)
+
+A working prototype (July 2026, since removed — recoverable from git history)
+let a pill be dragged off the strip onto right/bottom drop zones over the
+content area, splitting the scene into a resizable two-pane
+`react-resizable-panels` group. What we learned, for whoever picks it up:
+
+- **The constraint:** one TanStack Router = one location = one `<Outlet>`.
+  Two panes can't both be routes. Three ways out, in order of preference:
+  1. **Router-less target pane** (what the prototype did): the secondary pane
+     renders the tab's target directly by id. `WebsiteDashboard` already takes
+     `dashboardId` as a prop and `TaskDetail` takes a `task` (replicate the
+     cache-first fetch from `routes/website/$channelId/tasks/$taskId.tsx`) —
+     both mount standalone today. **Channel views (inbox/artifacts/…) are the
+     blocker**: they read route params/loaders throughout, so they need a
+     props-parameterization pass before they can render in a pane. That
+     refactor is most of the remaining work.
+  2. **Second router over memory history** — renders any route, but needs a
+     chrome-less root and confuses the tab-strip navigation effect
+     (`decideTabNavigation` assumes one router).
+  3. **Tear-off to a second OS window** — the tabs data model already supports
+     it (`browser_windows`, secondary-window close semantics in
+     `closeTab`/`closeTabs`); Electron-only.
+- **Wiring that already exists and stays:** `BrowserTabsDndProvider` wraps the
+  channels chrome, so drop zones over the content area just register
+  `useDroppable` targets in the same scope; pill drag data is
+  `{ type: "browser-tab", tabId }`. The prototype's pieces were a persisted
+  `splitViewStore` (identity + direction + transient `isDraggingTab`), a
+  `TabSplitLayout` wrapper around the outlet box in `__root.tsx`, and a
+  split-zone branch in the provider's `dragend`.
+- **UX decisions already settled:** zones are right 35% / bottom 35%
+  (non-overlapping), a second drop replaces the split, a blank tab is
+  rejected, the split persists across relaunch, and a header X closes it.
+- **Open questions for the real version:** should the split pane get its own
+  tab strip (it probably wants the panels feature's tree model instead of a
+  single-pane store); how does the active-tab highlight relate to the
+  secondary pane; and whether in-pane navigation should be possible at all
+  without a router.
+
 ## Known rough edges / follow-ups
 
 - Content is rendered by the route `<Outlet>` while the strip's active tab is
   store state. An in-tab content replace followed by `back` can briefly show a
   route/tab mismatch. Tightening this means rendering the target by the active
   tab's id rather than the route.
-- Drag-to-reorder within the strip and tab tear-off to a new OS window are not
-  yet wired (the `reorderTab` transform exists; tear-off is menu-driven later).
+- Drag-to-reorder is wired (see **Drag to reorder** above). Tear-off to a new
+  OS window is still unwired.
+- Many pinned tabs overflow the strip: pinned pills are incompressible and the
+  tablist only `overflow-hidden`s (so they clip within the strip rather than
+  overlap the title bar). A scrollable / overflow-menu strip is a follow-up.
 - Scroll restoration (the reserved `scrollState`) is unwired.
 
 ## Dev note

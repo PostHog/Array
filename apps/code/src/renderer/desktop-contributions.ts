@@ -1,4 +1,5 @@
 import { agentChatCoreModule } from "@posthog/core/agent-chat/agentChat.module";
+import { autoresearchCoreModule } from "@posthog/core/autoresearch/autoresearch.module";
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
@@ -17,6 +18,7 @@ import { fileWatcherUiModule } from "@posthog/ui/features/file-watcher/file-watc
 import { focusUiModule } from "@posthog/ui/features/focus/focus.module";
 import { notificationsUiModule } from "@posthog/ui/features/notifications/notifications.module";
 import { provisioningUiModule } from "@posthog/ui/features/provisioning/provisioning.module";
+import { settingsUiModule } from "@posthog/ui/features/settings/settings.module";
 import { setupUiModule } from "@posthog/ui/features/setup/setup.module";
 import { workspaceUiModule } from "@posthog/ui/features/workspace/workspace.module";
 import {
@@ -30,6 +32,7 @@ export function registerDesktopContributions(): void {
     agentChatCoreModule,
     agentUiModule,
     authUiModule,
+    autoresearchCoreModule,
     billingUiModule,
     billingCoreModule,
     browserTabsUiModule,
@@ -43,6 +46,7 @@ export function registerDesktopContributions(): void {
     notificationsUiModule,
     onboardingModule,
     provisioningUiModule,
+    settingsUiModule,
     setupCoreModule,
     setupUiModule,
     skillsCoreModule,

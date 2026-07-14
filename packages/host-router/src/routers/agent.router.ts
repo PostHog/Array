@@ -21,6 +21,7 @@ import {
   reconnectSessionInput,
   recordActivityInput,
   respondToPermissionInput,
+  rtkStatusOutput,
   sessionResponseSchema,
   setConfigOptionInput,
   startSessionInput,
@@ -64,6 +65,12 @@ export const agentRouter = router({
       ctx.container
         .get<AgentService>(AGENT_SERVICE)
         .cancelPrompt(input.sessionId, input.reason),
+    ),
+
+  rtkStatus: publicProcedure
+    .output(rtkStatusOutput)
+    .query(({ ctx }) =>
+      ctx.container.get<AgentService>(AGENT_SERVICE).getRtkStatus(),
     ),
 
   reconnect: publicProcedure

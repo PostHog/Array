@@ -2,7 +2,7 @@ import type {
   CompletionSound,
   CustomSound,
 } from "@posthog/ui/features/settings/settingsStore";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { playbackRateForTaskDuration, resolveSoundUrl } from "./sounds";
 
 const customs: CustomSound[] = [
@@ -38,6 +38,41 @@ describe("resolveSoundUrl", () => {
   it("returns null when the custom id is no longer installed", () => {
     // e.g. the active sound was deleted from the library.
     expect(resolveSoundUrl("custom:gone", customs)).toBeNull();
+  });
+
+  describe("random modes", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("'random-all' with no custom sounds picks a built-in asset", () => {
+      const url = resolveSoundUrl("random-all", []);
+      expect(url).toBeTruthy();
+      expect(url).not.toMatch(/^data:/);
+    });
+
+    it("'random-custom' with a single custom sound picks it", () => {
+      expect(resolveSoundUrl("random-custom", customs)).toBe(
+        "data:audio/wav;base64,AAAA",
+      );
+    });
+
+    it("'random-custom' with no custom sounds returns null", () => {
+      expect(resolveSoundUrl("random-custom", [])).toBeNull();
+    });
+
+    it.each([
+      ["lowest roll picks a built-in", 0, false],
+      ["highest roll picks a custom sound", 0.999999, true],
+    ])(
+      "'random-all' spans built-ins and customs: %s",
+      (_label, roll, expectCustom) => {
+        vi.spyOn(Math, "random").mockReturnValue(roll);
+        const url = resolveSoundUrl("random-all", customs);
+        expect(url === "data:audio/wav;base64,AAAA").toBe(expectCustom);
+        expect(url).toBeTruthy();
+      },
+    );
   });
 });
 

@@ -26,7 +26,7 @@
     "@types/react": "catalog:",
     "react": "catalog:",
     "typescript": "catalog:",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.8"
   },
   "files": [
     "src/**/*"

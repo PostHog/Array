@@ -17,6 +17,7 @@ import {
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { formatDurationSeconds } from "@posthog/ui/utils/customSound";
@@ -38,6 +39,7 @@ export function NotificationsSettings() {
     desktopNotifications,
     dockBadgeNotifications,
     dockBounceNotifications,
+    toastNotifications,
     completionSound,
     completionVolume,
     scaleSoundWithTaskLength,
@@ -45,6 +47,7 @@ export function NotificationsSettings() {
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
+    setToastNotifications,
     setCompletionSound,
     setCompletionVolume,
     setScaleSoundWithTaskLength,
@@ -103,6 +106,18 @@ export function NotificationsSettings() {
     [desktopNotifications, setDesktopNotifications],
   );
 
+  const handleToastNotificationsChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "toast_notifications",
+        new_value: checked,
+        old_value: toastNotifications,
+      });
+      setToastNotifications(checked);
+    },
+    [toastNotifications, setToastNotifications],
+  );
+
   const handleCompletionSoundChange = useCallback(
     (value: CompletionSound) => {
       // Don't leak generated custom-sound ids into analytics.
@@ -135,6 +150,7 @@ export function NotificationsSettings() {
     setDesktopNotifications(NOTIFICATION_DEFAULTS.desktopNotifications);
     setDockBadgeNotifications(NOTIFICATION_DEFAULTS.dockBadgeNotifications);
     setDockBounceNotifications(NOTIFICATION_DEFAULTS.dockBounceNotifications);
+    setToastNotifications(NOTIFICATION_DEFAULTS.toastNotifications);
     setCompletionSound(NOTIFICATION_DEFAULTS.completionSound);
     setCompletionVolume(NOTIFICATION_DEFAULTS.completionVolume);
     setScaleSoundWithTaskLength(NOTIFICATION_DEFAULTS.scaleSoundWithTaskLength);
@@ -143,6 +159,7 @@ export function NotificationsSettings() {
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
+    setToastNotifications,
     setCompletionSound,
     setCompletionVolume,
     setScaleSoundWithTaskLength,
@@ -199,6 +216,17 @@ export function NotificationsSettings() {
       </SettingRow>
 
       <SettingRow
+        label="In-app toasts"
+        description="Show an in-app toast when the agent finishes a task or needs your input, and for other in-app confirmations. Error messages always show."
+      >
+        <Switch
+          checked={toastNotifications}
+          onCheckedChange={handleToastNotificationsChange}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
         label="Sound effect"
         description="Play a sound when the agent finishes a task or needs your input"
         noBorder={completionSound === "none"}
@@ -214,6 +242,10 @@ export function NotificationsSettings() {
             <Select.Trigger className="min-w-[100px]" />
             <Select.Content>
               <Select.Item value="none">None</Select.Item>
+              <Select.Item value="random-all">Random (all)</Select.Item>
+              {customSounds.length > 0 && (
+                <Select.Item value="random-custom">Random (custom)</Select.Item>
+              )}
               <Select.Item value="guitar">Guitar solo</Select.Item>
               <Select.Item value="danilo">I'm ready</Select.Item>
               <Select.Item value="revi">Cute noise</Select.Item>
@@ -241,44 +273,54 @@ export function NotificationsSettings() {
             </Select.Content>
           </Select.Root>
           {completionSound !== "none" && (
-            <Button
-              variant="soft"
-              size="1"
-              onClick={() =>
-                playCompletionSound(
-                  completionSound,
-                  completionVolume,
-                  customSounds,
-                )
-              }
-            >
-              Test
-            </Button>
+            <Tooltip content="Test sound">
+              <IconButton
+                variant="soft"
+                size="1"
+                aria-label="Test sound"
+                onClick={() =>
+                  playCompletionSound(
+                    completionSound,
+                    completionVolume,
+                    customSounds,
+                  )
+                }
+              >
+                <Play weight="fill" />
+              </IconButton>
+            </Tooltip>
           )}
-          <Button variant="soft" size="1" onClick={() => setAddSoundOpen(true)}>
+        </Flex>
+      </SettingRow>
+
+      <SettingRow
+        label="Custom sounds"
+        description={
+          customSounds.length > 0
+            ? "Sounds you recorded or imported. Rename or remove them here."
+            : "Record or import your own sound to play when an agent finishes a task or needs your input."
+        }
+      >
+        <Flex direction="column" gap="2" className="w-full max-w-[260px]">
+          {customSounds.map((sound) => (
+            <CustomSoundRow
+              key={sound.id}
+              sound={sound}
+              volume={completionVolume}
+              onRename={renameCustomSound}
+              onRemove={removeCustomSound}
+            />
+          ))}
+          <Button
+            variant="soft"
+            size="1"
+            className="self-start"
+            onClick={() => setAddSoundOpen(true)}
+          >
             <Plus /> Add
           </Button>
         </Flex>
       </SettingRow>
-
-      {customSounds.length > 0 && (
-        <SettingRow
-          label="Custom sounds"
-          description="Sounds you recorded or imported. Rename or remove them here."
-        >
-          <Flex direction="column" gap="2" className="w-full max-w-[260px]">
-            {customSounds.map((sound) => (
-              <CustomSoundRow
-                key={sound.id}
-                sound={sound}
-                volume={completionVolume}
-                onRename={renameCustomSound}
-                onRemove={removeCustomSound}
-              />
-            ))}
-          </Flex>
-        </SettingRow>
-      )}
 
       <AddCustomSoundDialog
         open={addSoundOpen}
@@ -355,16 +397,6 @@ function CustomSoundRow({
 
   return (
     <Flex align="center" gap="2">
-      <IconButton
-        variant="soft"
-        size="1"
-        aria-label={`Play ${sound.name}`}
-        onClick={() =>
-          playCompletionSound(`custom:${sound.id}`, volume, [sound])
-        }
-      >
-        <Play weight="fill" />
-      </IconButton>
       <TextField.Root
         key={sound.name}
         className="flex-1"
@@ -379,6 +411,18 @@ function CustomSoundRow({
       <Text color="gray" className="text-[12px] tabular-nums">
         {formatDurationSeconds(sound.durationMs)}
       </Text>
+      <Tooltip content={`Play ${sound.name}`}>
+        <IconButton
+          variant="soft"
+          size="1"
+          aria-label={`Play ${sound.name}`}
+          onClick={() =>
+            playCompletionSound(`custom:${sound.id}`, volume, [sound])
+          }
+        >
+          <Play weight="fill" />
+        </IconButton>
+      </Tooltip>
       <IconButton
         variant="ghost"
         color="gray"

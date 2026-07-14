@@ -43,7 +43,7 @@ const tileTitle = (label: string): ReactNode => (
  * HogQL and shapes the data; this renders one of loading / error / empty /
  * populated.
  *
- * `scope` "overview" is the fleet board blended into the Applications landing
+ * `scope` "overview" is the fleet board blended into the Fleet landing
  * (KPIs + spend-by-agent + cost-by-model; the agent list below carries the
  * per-agent breakdown). "agent" is the per-agent Observability tab (KPIs +
  * cost-by-model + tool reliability — spend-by-agent is meaningless for one).

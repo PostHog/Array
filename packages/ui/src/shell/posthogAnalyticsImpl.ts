@@ -3,9 +3,10 @@ import posthog from "posthog-js/dist/module.full.no-external";
 // The module.full.no-external bundle includes rrweb but not the initSessionRecording function
 // posthog-recorder (vs lazy-recorder) ensures recording is ready immediately
 import "posthog-js/dist/posthog-recorder";
-import type {
-  EventPropertyMap,
-  UserIdentifyProperties,
+import {
+  type EventPropertyMap,
+  isInboxAnalyticsEvent,
+  type UserIdentifyProperties,
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import type { FeatureFlags } from "@posthog/ui/features/feature-flags/identifiers";
@@ -17,6 +18,12 @@ import type {
 import { logger } from "@posthog/ui/shell/logger";
 
 const log = logger.scope("analytics");
+
+// Client discriminator stamped on every inbox analytics event so the shared
+// PostHog project can be sliced by surface (this desktop host = "code";
+// mobile sends "mobile"; the PostHog web frontend sends "cloud"). Mirrors
+// posthog's frontend/src/scenes/inbox/inboxAnalytics.ts.
+const INBOX_CLIENT = "code" as const;
 
 let isInitialized = false;
 
@@ -65,6 +72,13 @@ export function initializePostHog(sessionId?: string) {
     // and rely on explicit instrumentation instead.
     capture_pageview: false,
     disable_session_recording: false,
+    // Never let the project's remote canvasRecording config apply here: our
+    // canvases are xterm terminals (secrets show up as pixels, bypassing text
+    // masking) and decorative WebGL (hedgehog, confetti). Capturing them costs
+    // an image encode per canvas at canvasFps for the whole app lifetime.
+    session_recording: {
+      captureCanvas: { recordCanvas: false },
+    },
     session_idle_timeout_seconds: SESSION_IDLE_TIMEOUT_SECONDS,
     ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
     capture_exceptions: import.meta.env.DEV
@@ -230,7 +244,13 @@ export function track<K extends keyof EventPropertyMap>(
     return;
   }
 
-  posthog.capture(eventName, args[0]);
+  // Stamp inbox events with the client discriminator. Spread first so a caller
+  // could override it, matching posthog's inboxAnalytics.ts (none do today).
+  const properties = isInboxAnalyticsEvent(eventName)
+    ? { inbox_client: INBOX_CLIENT, ...args[0] }
+    : args[0];
+
+  posthog.capture(eventName, properties);
 }
 
 /**

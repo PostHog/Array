@@ -1,5 +1,6 @@
 import { Terminal } from "@phosphor-icons/react";
 import { compactHomePath } from "@posthog/shared";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import { ToolRow } from "./ToolRow";
 import {
@@ -35,11 +36,14 @@ export function ExecuteToolView({
 
   const executeInput = rawInput as ExecuteRawInput | undefined;
   const command = executeInput?.command ?? "";
-  const description =
-    executeInput?.description ?? (command ? undefined : title);
+  // Header text shown when there's no command to display: an explicit description, else the tool
+  // call title. Guarantees the row is never label-less (the empty-marker bug) even for execute
+  // tools whose rawInput carries no `command`.
+  const headerText = executeInput?.description ?? (command ? undefined : title);
 
-  // New thread hides the inline command chip (the ChatMarker title carries it); the legacy thread
-  // keeps showing it so ConversationView is unchanged when the chat thread is toggled off.
+  // The command renders in both chromes but styled differently: the new thread shows it as plain
+  // mono text carried by the ChatMarker title; the legacy thread keeps the bordered inline chip so
+  // ConversationView is unchanged when the chat thread is toggled off.
   const chatChrome = useChatThreadChrome();
 
   const output = stripCodeFences(getContentText(content) ?? "").replace(
@@ -47,6 +51,12 @@ export function ExecuteToolView({
     "",
   );
   const hasOutput = output.trim().length > 0;
+
+  const commandTooltip = (
+    <span className="block max-w-md whitespace-pre-wrap break-all font-mono text-xs">
+      {compactHomePath(command)}
+    </span>
+  );
 
   return (
     <ToolRow
@@ -57,17 +67,25 @@ export function ExecuteToolView({
       defaultOpen={expanded}
       content={hasOutput ? <ContentPre>{output}</ContentPre> : undefined}
     >
-      {description && <ToolTitle>{description}</ToolTitle>}
-      {!chatChrome && command && (
-        <ToolTitle className="min-w-0 truncate">
-          <span
-            className="block truncate border border-border bg-gray-5 font-mono"
-            title={command}
-          >
-            {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
-          </span>
-        </ToolTitle>
-      )}
+      {headerText && <ToolTitle>{headerText}</ToolTitle>}
+      {command &&
+        (chatChrome ? (
+          <ToolTitle className="min-w-0 shrink truncate font-mono">
+            <Tooltip content={commandTooltip}>
+              <span className="block truncate">
+                {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
+              </span>
+            </Tooltip>
+          </ToolTitle>
+        ) : (
+          <ToolTitle className="min-w-0 shrink truncate">
+            <Tooltip content={commandTooltip}>
+              <span className="block truncate border border-border bg-gray-5 font-mono">
+                {truncateText(compactHomePath(command), MAX_COMMAND_LENGTH)}
+              </span>
+            </Tooltip>
+          </ToolTitle>
+        ))}
     </ToolRow>
   );
 }

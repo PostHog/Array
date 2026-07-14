@@ -104,10 +104,11 @@
   "author": "PostHog",
   "license": "MIT",
   "scripts": {
-    "build": "node ../../scripts/rimraf.mjs dist && tsup",
+    "build": "node ../../scripts/rimraf.mjs dist && tsup && node build/verify-local-tools-mcp-server.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "typecheck": "pnpm exec tsc --noEmit",
     "prepublishOnly": "pnpm run build",
     "clean": "node ../../scripts/rimraf.mjs dist .turbo"
@@ -125,13 +126,14 @@
     "tsup": "^8.5.1",
     "tsx": "^4.20.6",
     "typescript": "^5.5.0",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.8"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "0.25.0",
-    "@anthropic-ai/claude-agent-sdk": "0.3.170",
-    "@anthropic-ai/sdk": "0.104.1",
+    "@agentclientprotocol/sdk": "1.1.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.197",
+    "@anthropic-ai/sdk": "0.109.0",
     "@hono/node-server": "^1.19.9",
+    "@openai/codex": "0.140.0",
     "@opentelemetry/api-logs": "^0.208.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.208.0",
     "@opentelemetry/resources": "^2.0.0",
@@ -152,8 +154,7 @@
   "files": [
     "dist/**/*",
     "src/**/*",
-    "README.md",
-    "CLAUDE.md"
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -32,6 +32,7 @@ const SKILLS_ZIP_URL = process.env.SKILLS_ZIP_URL ?? "";
 const CONTEXT_MILL_ZIP_URL = process.env.CONTEXT_MILL_ZIP_URL ?? "";
 const UPDATE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const CODEX_CLEANUP_MARKER = ".codex-mirror-cleanup-done";
+const LAST_CHECK_MARKER = ".skills-last-check";
 
 interface PosthogPluginEvents {
   skillsUpdated: true;
@@ -75,6 +76,31 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
     return this.bundledResources.resolve(".vite/build/plugins/posthog");
   }
 
+  private get lastCheckMarkerPath(): string {
+    return join(this.storagePaths.appDataPath, LAST_CHECK_MARKER);
+  }
+
+  private async loadPersistedLastCheck(): Promise<number> {
+    if (!existsSync(this.runtimeSkillsDir)) return 0;
+    try {
+      const raw = await readFile(this.lastCheckMarkerPath, "utf-8");
+      const ts = Number.parseInt(raw.trim(), 10);
+      return Number.isFinite(ts) ? ts : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private async persistLastCheck(timestampMs: number): Promise<void> {
+    try {
+      await writeFile(this.lastCheckMarkerPath, `${timestampMs}\n`);
+    } catch (err) {
+      this.log.warn("Failed to persist skills last-check marker", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   @postConstruct()
   init(): void {
     this.initialize().catch((err) => {
@@ -97,6 +123,8 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
     await overlayDownloadedSkills(this.runtimeSkillsDir, this.runtimePluginDir);
 
     await this.cleanupLegacyCodexMirrorOnce();
+
+    this.lastCheckAt = await this.loadPersistedLastCheck();
 
     // Start periodic updates
     this.intervalId = setInterval(() => {
@@ -183,6 +211,7 @@ export class PosthogPluginService extends TypedEventEmitter<PosthogPluginEvents>
       });
 
       if (result.success) {
+        await this.persistLastCheck(now);
         // Only signal listeners when the cache actually changed; an empty
         // download cycle succeeds as a no-op (result.data.updated === false).
         if (result.data.updated) {

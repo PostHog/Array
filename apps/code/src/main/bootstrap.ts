@@ -21,6 +21,18 @@ import os from "node:os";
 import path from "node:path";
 import { app, crashReporter, protocol } from "electron";
 import { fixPath } from "./utils/fixPath";
+import { shouldRefuseInternalChildBoot } from "./utils/internal-child-guard";
+
+// The internal-child marker means a workspace-server descendant stripped
+// ELECTRON_RUN_AS_NODE and ran `node` or process.execPath; booting a full app
+// here would race the single-instance lock and open phantom windows.
+if (shouldRefuseInternalChildBoot(app.isPackaged, process.env)) {
+  process.stderr.write(
+    "[posthog-code] Refusing to start the desktop app from inside its own " +
+      "child process tree (expected ELECTRON_RUN_AS_NODE=1).\n",
+  );
+  process.exit(1);
+}
 
 const isDev = !app.isPackaged;
 
@@ -58,11 +70,15 @@ app.commandLine.appendSwitch("enable-logging", "file");
 app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
 
-// In dev, expose the renderer over CDP (:9222) for the test-electron-app skill.
-// electron-vite launches Electron itself, so this is set in-process rather than
-// via a CLI flag.
+// In dev, expose the renderer over CDP (:9222 by default) for the
+// test-electron-app skill. electron-vite launches Electron itself, so this is
+// set in-process rather than via a CLI flag. POSTHOG_CODE_CDP_PORT matches the
+// port resolution in scripts/electron-cdp.mjs, for when :9222 is taken.
 if (isDev) {
-  app.commandLine.appendSwitch("remote-debugging-port", "9222");
+  app.commandLine.appendSwitch(
+    "remote-debugging-port",
+    process.env.POSTHOG_CODE_CDP_PORT ?? "9222",
+  );
 }
 
 crashReporter.start({ uploadToServer: false });

@@ -1,3 +1,4 @@
+import { buildPrOutput, mergePrUrls, readPrUrls } from "@posthog/shared";
 import {
   createAcpConnection,
   type InProcessAcpConnection,
@@ -167,8 +168,13 @@ export class Agent {
       throw error;
     }
 
+    const freshOutput = await this.posthogAPI
+      .getTaskRun(taskId, this.taskRunId)
+      .then((run) => run.output)
+      .catch(() => null);
+    const urls = mergePrUrls(readPrUrls(freshOutput), [prUrl]);
     const updates: TaskRunUpdate = {
-      output: { pr_url: prUrl },
+      output: buildPrOutput(freshOutput, urls),
     };
     if (branchName) {
       updates.branch = branchName;

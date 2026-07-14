@@ -29,6 +29,12 @@ export function UpdatesSettings() {
   const setDownloadUpdatesAutomatically = useSettingsStore(
     (state) => state.setDownloadUpdatesAutomatically,
   );
+  const dismissibleUpdateBanners = useSettingsStore(
+    (state) => state.dismissibleUpdateBanners,
+  );
+  const setDismissibleUpdateBanners = useSettingsStore(
+    (state) => state.setDismissibleUpdateBanners,
+  );
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const [updatesDisabled, setUpdatesDisabled] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<{
@@ -80,6 +86,18 @@ export function UpdatesSettings() {
     [setDownloadUpdatesAutomatically],
   );
 
+  const handleDismissibleBannersChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "dismissible_update_banners",
+        new_value: checked,
+        old_value: !checked,
+      });
+      setDismissibleUpdateBanners(checked);
+    },
+    [setDismissibleUpdateBanners],
+  );
+
   useEffect(() => {
     if (!hasCheckedRef.current) {
       hasCheckedRef.current = true;
@@ -119,16 +137,28 @@ export function UpdatesSettings() {
       </SettingRow>
 
       {updatesEnabled?.enabled ? (
-        <SettingRow
-          label="Download updates automatically"
-          description="Download new versions in the background and install them on the next quit. When off, you choose when to download each update."
-        >
-          <Switch
-            checked={downloadUpdatesAutomatically}
-            onCheckedChange={handleAutoDownloadChange}
-            size="1"
-          />
-        </SettingRow>
+        <>
+          <SettingRow
+            label="Download updates automatically"
+            description="Download new versions in the background and install them on the next quit. When off, you choose when to download each update."
+          >
+            <Switch
+              checked={downloadUpdatesAutomatically}
+              onCheckedChange={handleAutoDownloadChange}
+              size="1"
+            />
+          </SettingRow>
+          <SettingRow
+            label="Dismissible update banners"
+            description="Reveal a dismiss button when hovering update banners. A dismissed banner stays hidden until a new update arrives or the app restarts."
+          >
+            <Switch
+              checked={dismissibleUpdateBanners}
+              onCheckedChange={handleDismissibleBannersChange}
+              size="1"
+            />
+          </SettingRow>
+        </>
       ) : null}
 
       <SettingRow

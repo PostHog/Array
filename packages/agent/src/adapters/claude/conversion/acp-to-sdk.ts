@@ -4,6 +4,7 @@ import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { isClaudeImageMimeType, isImageFile } from "@posthog/shared";
+import { isLocalSkillCommandChunk } from "../../local-skill";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
 
@@ -78,18 +79,6 @@ function transformMcpCommand(text: string): string {
     return `/${server}:${command} (MCP)${args || ""}`;
   }
   return text;
-}
-
-function isLocalSkillCommandChunk(
-  chunk: PromptRequest["prompt"][number],
-  skillName: string,
-): boolean {
-  if (chunk.type !== "text") {
-    return false;
-  }
-
-  const match = chunk.text.trim().match(/^\/([^\s]+)(?:\s+[\s\S]*)?$/);
-  return match?.[1] === skillName;
 }
 
 function processPromptChunk(

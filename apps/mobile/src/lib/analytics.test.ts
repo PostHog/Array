@@ -2,8 +2,11 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ANALYTICS_EVENTS,
   computeReportAgeHours,
+  INBOX_ANALYTICS_EVENT_NAMES,
   useActiveTaskAnalyticsContext,
+  useAnalytics,
 } from "./analytics";
 
 const mockPosthog = {
@@ -92,5 +95,56 @@ describe("useActiveTaskAnalyticsContext", () => {
     expect(mockPosthog.register).not.toHaveBeenCalled();
     expect(mockPosthog.unregister).not.toHaveBeenCalled();
     hook.unmount();
+  });
+});
+
+function renderTrack() {
+  let track!: ReturnType<typeof useAnalytics>["track"];
+  function Wrapper() {
+    track = useAnalytics().track;
+    return null;
+  }
+  act(() => {
+    create(createElement(Wrapper));
+  });
+  return track;
+}
+
+describe("useAnalytics track", () => {
+  beforeEach(() => {
+    mockPosthog.capture.mockClear();
+  });
+
+  it.each([...INBOX_ANALYTICS_EVENT_NAMES])(
+    "stamps inbox_client=mobile on %s",
+    (eventName) => {
+      const track = renderTrack();
+      track(eventName as never, { foo: "bar" } as never);
+      expect(mockPosthog.capture).toHaveBeenCalledWith(
+        eventName,
+        expect.objectContaining({ inbox_client: "mobile", foo: "bar" }),
+      );
+    },
+  );
+
+  it("does not stamp inbox_client on non-inbox events", () => {
+    const track = renderTrack();
+    track(ANALYTICS_EVENTS.PROMPT_SENT as never, { foo: "bar" } as never);
+    const [, properties] = mockPosthog.capture.mock.calls[0];
+    expect(properties).not.toHaveProperty("inbox_client");
+  });
+
+  it("lets a caller-provided inbox_client win over the default", () => {
+    const track = renderTrack();
+    track(
+      ANALYTICS_EVENTS.INBOX_VIEWED as never,
+      {
+        inbox_client: "cloud",
+      } as never,
+    );
+    expect(mockPosthog.capture).toHaveBeenCalledWith(
+      ANALYTICS_EVENTS.INBOX_VIEWED,
+      expect.objectContaining({ inbox_client: "cloud" }),
+    );
   });
 });

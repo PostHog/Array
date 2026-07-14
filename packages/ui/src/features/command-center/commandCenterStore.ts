@@ -1,7 +1,9 @@
 import {
+  BRAINROT_CELL,
   clampZoom,
   getCellCount,
   type LayoutPreset,
+  makeTerminalCellValue,
   resizeCells,
   ZOOM_STEP,
 } from "@posthog/core/command-center/grid";
@@ -31,8 +33,14 @@ interface CommandCenterStoreActions {
   setActiveTask: (taskId: string | null) => void;
   setActiveCell: (cellIndex: number | null) => void;
   assignTask: (cellIndex: number, taskId: string) => void;
+  setBrainrotCell: (cellIndex: number) => void;
+  setTerminalCell: (
+    cellIndex: number,
+    terminalId: string,
+    cwd?: string,
+  ) => void;
   autofillCells: (taskIds: string[]) => void;
-  removeTask: (cellIndex: number) => void;
+  clearCell: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
   clearAll: () => void;
   setZoom: (zoom: number) => void;
@@ -100,6 +108,34 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
           };
         }),
 
+      setBrainrotCell: (cellIndex) =>
+        set((state) => {
+          if (cellIndex < 0 || cellIndex >= state.cells.length) return state;
+          const cells = [...state.cells];
+          cells[cellIndex] = BRAINROT_CELL;
+          return {
+            cells,
+            activeTaskId: null,
+            activeCellIndex: cellIndex,
+            creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
+            hasAutofilled: true,
+          };
+        }),
+
+      setTerminalCell: (cellIndex, terminalId, cwd) =>
+        set((state) => {
+          if (cellIndex < 0 || cellIndex >= state.cells.length) return state;
+          const cells = [...state.cells];
+          cells[cellIndex] = makeTerminalCellValue(terminalId, cwd);
+          return {
+            cells,
+            activeTaskId: null,
+            activeCellIndex: cellIndex,
+            creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
+            hasAutofilled: true,
+          };
+        }),
+
       autofillCells: (taskIds) =>
         set((state) => {
           // Grid already full: nothing to place, but the bootstrap is done.
@@ -117,7 +153,7 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
           return { cells, hasAutofilled: true };
         }),
 
-      removeTask: (cellIndex) =>
+      clearCell: (cellIndex) =>
         set((state) => {
           const cells = [...state.cells];
           const removedTaskId = cells[cellIndex];

@@ -10,6 +10,7 @@ interface TaskRunEventStreamSenderConfig {
   apiUrl: string;
   // Base URL for the event-ingest POST only; falls back to apiUrl (Django path) when unset.
   eventIngestBaseUrl?: string;
+  keepProxyStreamOpen?: boolean;
   projectId: number;
   taskId: string;
   runId: string;
@@ -70,6 +71,7 @@ export class TaskRunEventStreamSender {
   private readonly stopTimeoutMs: number;
   private readonly streamWindowMs: number;
   private readonly usingProxy: boolean;
+  private readonly keepProxyStreamOpen: boolean;
   private readonly createStreamingUpload: StreamingUploadFactory;
   private readonly encoder = new TextEncoder();
   private sequence = 0;
@@ -114,6 +116,7 @@ export class TaskRunEventStreamSender {
     this.stopTimeoutMs = config.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
     this.streamWindowMs = config.streamWindowMs ?? DEFAULT_STREAM_WINDOW_MS;
     this.usingProxy = usingProxy;
+    this.keepProxyStreamOpen = config.keepProxyStreamOpen ?? false;
     this.createStreamingUpload =
       config.createStreamingUpload ?? createNodeStreamingUpload;
   }
@@ -210,14 +213,9 @@ export class TaskRunEventStreamSender {
 
     try {
       await flushPromise;
-      // On the proxy path, deliver the drained batch now instead of holding one
-      // long-lived upload. The ingress in front of the proxy buffers the ingest
-      // request body and only forwards it once the request closes, so a
-      // long-lived upload strands events; closing per batch forwards each within
-      // a round-trip. Gated to the proxy write leg so the Django path keeps its
-      // existing long-lived upload. The stop path leaves closing to drainForStop
-      // so the completion line rides the final upload.
-      if (!this.stopped && this.usingProxy) {
+      // The ingress ahead of the agent-proxy only forwards the request body once the
+      // upload closes, so close per drained batch to avoid stranding buffered events.
+      if (!this.stopped && this.usingProxy && !this.keepProxyStreamOpen) {
         await this.closeActiveStream();
       }
       return this.bufferedEvents.length < previousBufferLength;

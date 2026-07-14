@@ -5,6 +5,13 @@ import {
 } from "../mcp/tool-metadata";
 import { canUseTool } from "./permission-handlers";
 
+function createClient(response: Record<string, unknown>) {
+  return {
+    sessionUpdate: vi.fn().mockResolvedValue(undefined),
+    requestPermission: vi.fn().mockResolvedValue(response),
+  };
+}
+
 function createContext(
   toolName: string,
   overrides: Record<string, unknown> = {},
@@ -22,12 +29,9 @@ function createContext(
     toolUseID: "test-tool-use-id",
     suggestions: undefined,
     signal: undefined,
-    client: {
-      sessionUpdate: vi.fn().mockResolvedValue(undefined),
-      requestPermission: vi.fn().mockResolvedValue({
-        outcome: { outcome: "selected", optionId: "allow" },
-      }),
-    },
+    client: createClient({
+      outcome: { outcome: "selected", optionId: "allow" },
+    }),
     sessionId: "test-session",
     fileContentCache: {},
     logger: {
@@ -252,12 +256,9 @@ describe("canUseTool MCP approval enforcement", () => {
           addPostHogExecApproval: addApproval,
         },
       },
-      client: {
-        sessionUpdate: vi.fn().mockResolvedValue(undefined),
-        requestPermission: vi.fn().mockResolvedValue({
-          outcome: { outcome: "selected", optionId: "allow_always" },
-        }),
-      },
+      client: createClient({
+        outcome: { outcome: "selected", optionId: "allow_always" },
+      }),
     });
     const result = await canUseTool(context);
 
@@ -287,12 +288,9 @@ describe("canUseTool MCP approval enforcement", () => {
           addPostHogExecApproval: addApproval,
         },
       },
-      client: {
-        sessionUpdate: vi.fn().mockResolvedValue(undefined),
-        requestPermission: vi.fn().mockResolvedValue({
-          outcome: { outcome: "selected", optionId: "allow" },
-        }),
-      },
+      client: createClient({
+        outcome: { outcome: "selected", optionId: "allow" },
+      }),
     });
     const result = await canUseTool(context);
 
@@ -343,5 +341,93 @@ describe("canUseTool MCP approval enforcement", () => {
         }),
       }),
     );
+  });
+});
+
+describe("canUseTool auto mode hands-off approval", () => {
+  beforeEach(() => {
+    clearMcpToolMetadataCache();
+  });
+
+  // Auto mode advertises hands-off approval; it must not prompt for the write
+  // and shell tools that drive every real task.
+  it.each(["Bash", "BashOutput", "KillShell", "Edit", "Write", "NotebookEdit"])(
+    "auto-allows %s in auto mode without prompting",
+    async (toolName) => {
+      const context = createContext(toolName, {
+        session: {
+          permissionMode: "auto",
+          settingsManager: {
+            getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          },
+        },
+      });
+
+      const result = await canUseTool(context);
+
+      expect(result.behavior).toBe("allow");
+      expect(context.client.requestPermission).not.toHaveBeenCalled();
+    },
+  );
+
+  // Guard against the fix leaking into default mode, where these tools should
+  // still go through the manual permission prompt.
+  it.each(["Bash", "Edit", "Write"])(
+    "still prompts for %s in default mode",
+    async (toolName) => {
+      const context = createContext(toolName, {
+        session: {
+          permissionMode: "default",
+          settingsManager: {
+            getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          },
+        },
+      });
+
+      await canUseTool(context);
+
+      expect(context.client.requestPermission).toHaveBeenCalled();
+    },
+  );
+});
+
+describe("AskUserQuestion cancelled outcomes", () => {
+  const QUESTION_INPUT = {
+    question: "Which license should I use?",
+    options: [{ label: "MIT" }, { label: "Apache 2.0" }],
+  };
+
+  it("denies with the parked-question message when cancelled carries one", async () => {
+    const context = createContext("AskUserQuestion", {
+      toolInput: QUESTION_INPUT,
+      client: {
+        sessionUpdate: vi.fn().mockResolvedValue(undefined),
+        requestPermission: vi.fn().mockResolvedValue({
+          outcome: { outcome: "cancelled" },
+          _meta: { message: "Waiting for the user to answer." },
+        }),
+      },
+    });
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("deny");
+    if (result.behavior === "deny") {
+      expect(result.message).toBe("Waiting for the user to answer.");
+    }
+  });
+
+  it("aborts the tool use on a bare cancelled outcome", async () => {
+    const context = createContext("AskUserQuestion", {
+      toolInput: QUESTION_INPUT,
+      client: {
+        sessionUpdate: vi.fn().mockResolvedValue(undefined),
+        requestPermission: vi.fn().mockResolvedValue({
+          outcome: { outcome: "cancelled" },
+        }),
+      },
+    });
+
+    await expect(canUseTool(context)).rejects.toThrow("Tool use aborted");
   });
 });

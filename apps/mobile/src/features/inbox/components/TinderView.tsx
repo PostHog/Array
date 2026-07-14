@@ -16,6 +16,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import { DEFAULT_MODEL } from "@/features/tasks/composer/options";
 import type {
@@ -256,6 +257,7 @@ export function TinderView({
           initialPermissionMode: "plan",
           runSource: "signal_report",
           signalReportId: report.id,
+          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         });
 
         acceptReport(report.id);

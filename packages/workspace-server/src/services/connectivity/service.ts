@@ -14,7 +14,7 @@ const CHECK_TIMEOUT_MS = 5_000;
 const OFFLINE_CONFIRM_THRESHOLD = 2;
 const MIN_POLL_INTERVAL_MS = 3_000;
 const MAX_POLL_INTERVAL_MS = 10_000;
-const ONLINE_POLL_INTERVAL_MS = 3_000;
+const ONLINE_POLL_INTERVAL_MS = 30_000;
 const OFFLINE_BACKOFF_MULTIPLIER = 1.5;
 
 @injectable()
@@ -27,8 +27,7 @@ export class ConnectivityService extends TypedEventEmitter<ConnectivityEvents> {
   constructor() {
     super();
     this.setMaxListeners(0);
-    void this.checkConnectivity();
-    this.startPolling();
+    void this.checkConnectivity().finally(() => this.startPolling());
   }
 
   getStatus(): ConnectivityStatusOutput {
@@ -76,14 +75,15 @@ export class ConnectivityService extends TypedEventEmitter<ConnectivityEvents> {
   }
 
   private async verifyWithHttp(): Promise<boolean> {
-    try {
-      // Resolves as soon as the first host responds reachably; rejects only
-      // when every host fails.
-      await Promise.any(CHECK_URLS.map((url) => this.probe(url)));
-      return true;
-    } catch {
-      return false;
+    // Sequential on purpose: one request per check in the common case, at the
+    // cost of up to CHECK_TIMEOUT_MS extra latency when the first host is blocked.
+    for (const url of CHECK_URLS) {
+      try {
+        await this.probe(url);
+        return true;
+      } catch {}
     }
+    return false;
   }
 
   private async probe(url: string): Promise<void> {
@@ -103,8 +103,11 @@ export class ConnectivityService extends TypedEventEmitter<ConnectivityEvents> {
   }
 
   private schedulePoll(): void {
+    // Poll rarely while healthy, quickly while confirming a suspected outage.
     const interval = this.isOnline
-      ? ONLINE_POLL_INTERVAL_MS
+      ? this.consecutiveFailures > 0
+        ? MIN_POLL_INTERVAL_MS
+        : ONLINE_POLL_INTERVAL_MS
       : Math.min(
           MIN_POLL_INTERVAL_MS *
             OFFLINE_BACKOFF_MULTIPLIER ** this.offlinePollAttempt,

@@ -9,10 +9,18 @@ export default defineConfig({
   // configs (playwright.update*.config.ts), never in the general suite.
   testIgnore: "**/update*.spec.ts",
   timeout: 60000,
-  retries: isCI ? 2 : 0,
+  // No retries: Trunk Flaky Tests needs raw pass/fail results to detect flakes.
+  retries: 0,
   // Must run serially - Electron app has single instance lock
   workers: 1,
-  reporter: isCI ? [["github"], ["html", { open: "never" }]] : [["list"]],
+  // junit.xml (resolved next to this config) is uploaded to Trunk in CI.
+  reporter: isCI
+    ? [
+        ["junit", { outputFile: "junit.xml" }],
+        ["github"],
+        ["html", { open: "never" }],
+      ]
+    : [["junit", { outputFile: "junit.xml" }], ["list"]],
   outputDir: "../playwright-results",
   use: {
     trace: "retain-on-failure",

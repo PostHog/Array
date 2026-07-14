@@ -1,4 +1,4 @@
-import type { AcpMessage } from "@posthog/shared";
+import type { AcpMessage, Adapter } from "@posthog/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useSessionStore } from "../../sessions/sessionStore";
 import { useDraftStore } from "../draftStore";
@@ -19,7 +19,7 @@ function seedSessionContext(taskId: string | undefined) {
 
 function seedSessionAvailableCommands(
   commands: { name: string; description: string }[],
-  adapter?: "claude" | "codex",
+  adapter?: Adapter,
 ) {
   const events: AcpMessage[] = [
     {
@@ -69,7 +69,7 @@ interface Scenario {
   name: string;
   contextTaskId?: string;
   sessionCommands?: { name: string; description: string }[];
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   draftCommands?: EditorAvailableCommand[];
   expectContains: string[];
   expectNotContains?: string[];

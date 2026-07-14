@@ -613,3 +613,138 @@ describe("skill mutations", () => {
     expect(skills.find((s) => s.path === skillPath)).toBeUndefined();
   });
 });
+
+describe("resolveSkillBundleDependencies", () => {
+  function ref(name: string, skillPath: string) {
+    return { name, source: "repo" as const, path: skillPath };
+  }
+
+  function withDeps(name: string, deps: string[]): string {
+    return `---\nname: ${name}\ndescription: about ${name}\ndependencies:\n${deps
+      .map((dep) => `  - ${dep}`)
+      .join("\n")}\n---\nbody`;
+  }
+
+  it("expands prose references (/name and [[name]]) into dependencies", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "prose-parent",
+      `---\nname: prose-parent\ndescription: parent\n---\nRun /prose-dep first, then see [[prose-wiki-dep]]. Ignore /usr/bin and /unknown-skill.`,
+    );
+    const slashDep = await createSkill(repoSkillsDir, "prose-dep");
+    const wikiDep = await createSkill(repoSkillsDir, "prose-wiki-dep");
+    const service = makeService();
+
+    const resolved = await service.resolveSkillBundleDependencies([
+      ref("prose-parent", primary),
+    ]);
+
+    expect(resolved.map((r) => r.name)).toEqual([
+      "prose-parent",
+      "prose-dep",
+      "prose-wiki-dep",
+    ]);
+    expect(resolved.map((r) => r.path)).toEqual([primary, slashDep, wikiDep]);
+  });
+
+  it("prefers a dependency beside the referencing skill over a same-named skill elsewhere", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "scoped-parent",
+      withDeps("scoped-parent", ["helper"]),
+    );
+    const repoHelper = await createSkill(repoSkillsDir, "helper");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    await createSkill(userSkillsHome.dir, "helper");
+    const service = makeService();
+
+    const resolved = await service.resolveSkillBundleDependencies([
+      ref("scoped-parent", primary),
+    ]);
+
+    expect(resolved.map((r) => r.path)).toEqual([primary, repoHelper]);
+  });
+
+  it("expands a tagged skill to include its transitive dependencies", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "rs-self-review",
+      withDeps("rs-self-review", ["rs-adversarial-review"]),
+    );
+    const dep = await createSkill(
+      repoSkillsDir,
+      "rs-adversarial-review",
+      withDeps("rs-adversarial-review", ["rs-shared"]),
+    );
+    const transitive = await createSkill(repoSkillsDir, "rs-shared");
+    const service = makeService();
+
+    const resolved = await service.resolveSkillBundleDependencies([
+      ref("rs-self-review", primary),
+    ]);
+
+    expect(resolved.map((r) => r.name)).toEqual([
+      "rs-self-review",
+      "rs-adversarial-review",
+      "rs-shared",
+    ]);
+    expect(resolved.map((r) => r.path)).toEqual([primary, dep, transitive]);
+  });
+
+  it("does not bundle a dependency that resolves to a built-in skill", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "needs-builtin",
+      withDeps("needs-builtin", ["bundled-skill"]),
+    );
+    await createSkill(path.join(pluginPath, "skills"), "bundled-skill");
+    const service = makeService();
+
+    const resolved = await service.resolveSkillBundleDependencies([
+      ref("needs-builtin", primary),
+    ]);
+
+    expect(resolved.map((r) => r.name)).toEqual(["needs-builtin"]);
+  });
+
+  it("terminates on a dependency cycle without duplicating skills", async () => {
+    const a = await createSkill(
+      repoSkillsDir,
+      "cycle-a",
+      withDeps("cycle-a", ["cycle-b"]),
+    );
+    const b = await createSkill(
+      repoSkillsDir,
+      "cycle-b",
+      withDeps("cycle-b", ["cycle-a"]),
+    );
+    const service = makeService();
+
+    const resolved = await service.resolveSkillBundleDependencies([
+      ref("cycle-a", a),
+    ]);
+
+    expect(resolved.map((r) => r.name).sort()).toEqual(["cycle-a", "cycle-b"]);
+    expect(resolved.map((r) => r.path).sort()).toEqual([a, b].sort());
+  });
+
+  it("throws instead of silently truncating an oversized dependency graph", async () => {
+    // A linear chain longer than the 50-skill ceiling.
+    const chainLength = 55;
+    let firstPath = "";
+    for (let i = 0; i < chainLength; i++) {
+      const deps = i < chainLength - 1 ? [`chain-${i + 1}`] : [];
+      const skillPath = await createSkill(
+        repoSkillsDir,
+        `chain-${i}`,
+        withDeps(`chain-${i}`, deps),
+      );
+      if (i === 0) firstPath = skillPath;
+    }
+    const service = makeService();
+
+    await expect(
+      service.resolveSkillBundleDependencies([ref("chain-0", firstPath)]),
+    ).rejects.toThrow(/exceeds the 50-skill limit/);
+  });
+});

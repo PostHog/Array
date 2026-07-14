@@ -9,13 +9,14 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import type { Adapter } from "@posthog/shared";
 import { useRef, useState } from "react";
 import { flattenSelectOptions } from "../sessionStore";
 import { useRetainedConfigOption } from "../useRetainedConfigOption";
 
 interface ReasoningLevelSelectorProps {
   thoughtOption?: SessionConfigOption;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   onChange?: (value: string) => void;
   disabled?: boolean;
   isLoading?: boolean;
