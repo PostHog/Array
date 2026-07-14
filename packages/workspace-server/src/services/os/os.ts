@@ -59,6 +59,20 @@ const USER_AGENT_INSTRUCTIONS_CANDIDATES: ReadonlyArray<[string, string]> = [
   [".claude", "CLAUDE.md"],
 ];
 
+// Claude Code follows `@path` imports up to four hops deep; we match that so a
+// stub CLAUDE.md that only `@`-imports its real rules still syncs those rules.
+const USER_AGENT_INSTRUCTIONS_MAX_IMPORT_DEPTH = 4;
+const AGENT_IMPORT_PATTERN_SOURCE = "(^|\\s)@(\\S+)";
+// Up to 3 leading spaces per CommonMark; 4+ is an indented code line, not a fence.
+const FENCE_LINE_PATTERN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const INDENTED_CODE_PATTERN = /^( {4}|\t)/;
+
+function backtickRunEnd(line: string, start: number): number {
+  let end = start;
+  while (end < line.length && line[end] === "`") end++;
+  return end;
+}
+
 @injectable()
 export class OsService {
   constructor(
@@ -108,17 +122,218 @@ export class OsService {
         continue;
       }
       if (!content.trim()) continue;
-      const truncated = content.length > USER_AGENT_INSTRUCTIONS_MAX_LENGTH;
+
+      const realPath = await this.realpathOrSelf(filePath);
+      const expanded = await this.expandAgentImports(
+        content,
+        path.dirname(realPath),
+        1,
+        new Set([realPath]),
+      );
+      const truncated = expanded.length > USER_AGENT_INSTRUCTIONS_MAX_LENGTH;
       return {
         path: filePath,
         displayPath: `~/${dir}/${file}`,
         content: truncated
-          ? content.slice(0, USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
-          : content,
+          ? expanded.slice(0, USER_AGENT_INSTRUCTIONS_MAX_LENGTH)
+          : expanded,
         truncated,
       };
     }
     return null;
+  }
+
+  private async realpathOrSelf(filePath: string): Promise<string> {
+    try {
+      return await fsPromises.realpath(filePath);
+    } catch {
+      return filePath;
+    }
+  }
+
+  private async expandAgentImports(
+    content: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string> {
+    if (depth > USER_AGENT_INSTRUCTIONS_MAX_IMPORT_DEPTH) return content;
+
+    const lines = content.split("\n");
+    const expandedLines: string[] = [];
+    let fence: { char: string; length: number } | null = null;
+    let inIndentedCode = false;
+    let prevBlank = true;
+
+    for (const line of lines) {
+      const isBlank = line.trim() === "";
+      const fenceLine = line.match(FENCE_LINE_PATTERN);
+
+      if (fence !== null) {
+        // A closing fence must match the opening character, be at least as
+        // long, and carry no info string; anything else is fence content.
+        if (
+          fenceLine &&
+          fenceLine[1][0] === fence.char &&
+          fenceLine[1].length >= fence.length &&
+          fenceLine[2].trim() === ""
+        ) {
+          fence = null;
+        }
+        expandedLines.push(line);
+      } else if (
+        fenceLine &&
+        (fenceLine[1][0] === "~" || !fenceLine[2].includes("`"))
+      ) {
+        // A backtick fence's info string may not contain a backtick — that
+        // guard keeps prose like ```@x``` from opening an unterminated fence.
+        fence = { char: fenceLine[1][0], length: fenceLine[1].length };
+        inIndentedCode = false;
+        expandedLines.push(line);
+      } else if (
+        inIndentedCode &&
+        (isBlank || INDENTED_CODE_PATTERN.test(line))
+      ) {
+        expandedLines.push(line);
+      } else if (
+        !inIndentedCode &&
+        prevBlank &&
+        !isBlank &&
+        INDENTED_CODE_PATTERN.test(line)
+      ) {
+        // Indented code blocks only start after a blank line; a 4-space line
+        // mid-paragraph or under a list item is continuation text whose
+        // imports should still expand.
+        inIndentedCode = true;
+        expandedLines.push(line);
+      } else {
+        inIndentedCode = false;
+        expandedLines.push(
+          await this.expandImportsInLine(line, baseDir, depth, visited),
+        );
+      }
+      prevBlank = isBlank;
+    }
+
+    return expandedLines.join("\n");
+  }
+
+  private async expandImportsInLine(
+    line: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string> {
+    // Imports inside code spans stay literal. Per CommonMark, a span opens
+    // with a backtick run and closes on the next run of exactly the same
+    // length; runs of other lengths are span content, and an unmatched run
+    // is plain text.
+    let result = "";
+    let textStart = 0;
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] !== "`") {
+        i++;
+        continue;
+      }
+      const openEnd = backtickRunEnd(line, i);
+      const runLength = openEnd - i;
+      let j = openEnd;
+      let closeStart = -1;
+      while (j < line.length) {
+        if (line[j] !== "`") {
+          j++;
+          continue;
+        }
+        const runEnd = backtickRunEnd(line, j);
+        if (runEnd - j === runLength) {
+          closeStart = j;
+          break;
+        }
+        j = runEnd;
+      }
+      if (closeStart === -1) {
+        i = openEnd;
+        continue;
+      }
+      result += await this.expandImportsInSegment(
+        line.slice(textStart, i),
+        baseDir,
+        depth,
+        visited,
+      );
+      result += line.slice(i, closeStart + runLength);
+      textStart = closeStart + runLength;
+      i = textStart;
+    }
+    result += await this.expandImportsInSegment(
+      line.slice(textStart),
+      baseDir,
+      depth,
+      visited,
+    );
+    return result;
+  }
+
+  private async expandImportsInSegment(
+    segment: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string> {
+    const pattern = new RegExp(AGENT_IMPORT_PATTERN_SOURCE, "g");
+    let result = "";
+    let lastIndex = 0;
+    for (const match of segment.matchAll(pattern)) {
+      const [full, lead, importPath] = match;
+      const matchIndex = match.index ?? 0;
+      result += segment.slice(lastIndex, matchIndex) + lead;
+      const imported = await this.resolveAgentImport(
+        importPath,
+        baseDir,
+        depth,
+        visited,
+      );
+      result += imported ?? `@${importPath}`;
+      lastIndex = matchIndex + full.length;
+    }
+    result += segment.slice(lastIndex);
+    return result;
+  }
+
+  private async resolveAgentImport(
+    importPath: string,
+    baseDir: string,
+    depth: number,
+    visited: Set<string>,
+  ): Promise<string | null> {
+    const resolved = importPath.startsWith("~")
+      ? path.join(os.homedir(), importPath.slice(1))
+      : path.resolve(baseDir, importPath);
+
+    let realPath: string;
+    try {
+      realPath = await fsPromises.realpath(resolved);
+    } catch {
+      return null;
+    }
+    if (visited.has(realPath)) return null;
+
+    let imported: string;
+    try {
+      imported = await fsPromises.readFile(realPath, "utf-8");
+    } catch {
+      return null;
+    }
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(realPath);
+    return this.expandAgentImports(
+      imported,
+      path.dirname(realPath),
+      depth + 1,
+      nextVisited,
+    );
   }
 
   async selectDirectory(): Promise<string | null> {
