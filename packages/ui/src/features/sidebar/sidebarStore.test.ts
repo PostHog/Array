@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { isNavItemVisible, MORE_NAV_ITEMS } from "./constants";
+import { CUSTOMIZABLE_NAV_ITEMS, isNavItemVisible } from "./constants";
 import { useSidebarStore } from "./sidebarStore";
 
 describe("sidebarStore navItemOverrides", () => {
@@ -8,13 +8,15 @@ describe("sidebarStore navItemOverrides", () => {
   });
 
   it.each(
-    MORE_NAV_ITEMS.map((item) => [item.id, item.defaultVisible] as const),
+    CUSTOMIZABLE_NAV_ITEMS.map(
+      (item) => [item.id, item.defaultVisible] as const,
+    ),
   )("%s is visible=%s by default", (id, defaultVisible) => {
     const overrides = useSidebarStore.getState().navItemOverrides;
     expect(isNavItemVisible(overrides, id)).toBe(defaultVisible);
   });
 
-  it.each(MORE_NAV_ITEMS.map((item) => item.id))(
+  it.each(CUSTOMIZABLE_NAV_ITEMS.map((item) => item.id))(
     "setNavItemVisible(%s) overrides in both directions",
     (id) => {
       useSidebarStore.getState().setNavItemVisible(id, true);
@@ -33,7 +35,7 @@ describe("sidebarStore navItemOverrides", () => {
     useSidebarStore.getState().setNavItemVisible("agents", false);
 
     const overrides = useSidebarStore.getState().navItemOverrides;
-    for (const item of MORE_NAV_ITEMS) {
+    for (const item of CUSTOMIZABLE_NAV_ITEMS) {
       if (item.id === "agents") continue;
       expect(isNavItemVisible(overrides, item.id)).toBe(item.defaultVisible);
     }

@@ -1,6 +1,7 @@
 import {
   Bell,
   CreditCard,
+  EnvelopeSimple,
   Lightbulb,
   Lightning,
   MagnifyingGlass,
@@ -12,9 +13,9 @@ import {
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
 import {
+  CUSTOMIZABLE_NAV_ITEMS,
+  type CustomizableNavItemId,
   isNavItemVisible,
-  MORE_NAV_ITEMS,
-  type MoreNavItemId,
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { track } from "@posthog/ui/shell/analytics";
@@ -22,10 +23,11 @@ import { Button, Checkbox, Dialog, Flex, Text } from "@radix-ui/themes";
 import { SquircleDashed } from "lucide-react";
 
 const ITEM_ICONS: Record<
-  MoreNavItemId,
+  CustomizableNavItemId,
   React.ComponentType<{ size?: number | string }>
 > = {
   search: MagnifyingGlass,
+  inbox: EnvelopeSimple,
   agents: Robot,
   skills: Lightbulb,
   "mcp-servers": Plugs,
@@ -35,8 +37,9 @@ const ITEM_ICONS: Record<
   activity: Bell,
 };
 
-const ITEM_ANALYTICS_IDS: Record<MoreNavItemId, SidebarNavItem> = {
+const ITEM_ANALYTICS_IDS: Record<CustomizableNavItemId, SidebarNavItem> = {
   search: "search",
+  inbox: "inbox",
   agents: "agents",
   skills: "skills",
   "mcp-servers": "mcp_servers",
@@ -68,7 +71,7 @@ export function CustomizeSidebarDialog({
         </Dialog.Description>
 
         <Flex direction="column" gap="3" mt="4">
-          {MORE_NAV_ITEMS.map(({ id, label }) => {
+          {CUSTOMIZABLE_NAV_ITEMS.map(({ id, label }) => {
             const ItemIcon = ITEM_ICONS[id];
             const visible = isNavItemVisible(navItemOverrides, id);
             return (

@@ -1,29 +1,34 @@
 export const SIDEBAR_MIN_WIDTH = 240;
 
-export const MORE_NAV_ITEMS = [
+export const CUSTOMIZABLE_NAV_ITEMS = [
   { id: "search", label: "Search", defaultVisible: false },
+  { id: "inbox", label: "Inbox", defaultVisible: true },
   { id: "agents", label: "Agents", defaultVisible: true },
-  { id: "skills", label: "Skills", defaultVisible: false },
-  { id: "mcp-servers", label: "MCP servers", defaultVisible: false },
+  { id: "skills", label: "Skills", defaultVisible: true },
+  { id: "mcp-servers", label: "MCP servers", defaultVisible: true },
   { id: "usage", label: "Usage", defaultVisible: false },
   { id: "command-center", label: "Command Center", defaultVisible: true },
   { id: "contexts", label: "Contexts", defaultVisible: true },
   { id: "activity", label: "Activity", defaultVisible: true },
 ] as const;
 
-export type MoreNavItemId = (typeof MORE_NAV_ITEMS)[number]["id"];
+export type CustomizableNavItemId =
+  (typeof CUSTOMIZABLE_NAV_ITEMS)[number]["id"];
 
-export const MORE_NAV_ITEM_IDS = MORE_NAV_ITEMS.map((item) => item.id);
+export const CUSTOMIZABLE_NAV_ITEM_IDS = CUSTOMIZABLE_NAV_ITEMS.map(
+  (item) => item.id,
+);
 
-export type NavItemOverrides = Partial<Record<MoreNavItemId, boolean>>;
+export type NavItemOverrides = Partial<Record<CustomizableNavItemId, boolean>>;
 
-const DEFAULT_VISIBILITY: Record<MoreNavItemId, boolean> = Object.fromEntries(
-  MORE_NAV_ITEMS.map((item) => [item.id, item.defaultVisible]),
-) as Record<MoreNavItemId, boolean>;
+const DEFAULT_VISIBILITY: Record<CustomizableNavItemId, boolean> =
+  Object.fromEntries(
+    CUSTOMIZABLE_NAV_ITEMS.map((item) => [item.id, item.defaultVisible]),
+  ) as Record<CustomizableNavItemId, boolean>;
 
 export function isNavItemVisible(
   overrides: NavItemOverrides,
-  id: MoreNavItemId,
+  id: CustomizableNavItemId,
 ): boolean {
   return overrides[id] ?? DEFAULT_VISIBILITY[id];
 }
@@ -35,7 +40,7 @@ export function sanitizeNavItemOverrides(value: unknown): NavItemOverrides {
     return {};
   }
   const overrides: NavItemOverrides = {};
-  for (const id of MORE_NAV_ITEM_IDS) {
+  for (const id of CUSTOMIZABLE_NAV_ITEM_IDS) {
     const entry = (value as Record<string, unknown>)[id];
     if (typeof entry === "boolean") overrides[id] = entry;
   }

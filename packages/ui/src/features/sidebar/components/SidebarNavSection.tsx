@@ -11,10 +11,10 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import {
+  CUSTOMIZABLE_NAV_ITEM_IDS,
+  CUSTOMIZABLE_NAV_ITEMS,
+  type CustomizableNavItemId,
   isNavItemVisible,
-  MORE_NAV_ITEM_IDS,
-  MORE_NAV_ITEMS,
-  type MoreNavItemId,
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -172,8 +172,10 @@ export function SidebarNavSection({
     };
 
   const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
-  const hidden = new Set<MoreNavItemId>(
-    MORE_NAV_ITEM_IDS.filter((id) => !isNavItemVisible(navItemOverrides, id)),
+  const hidden = new Set<CustomizableNavItemId>(
+    CUSTOMIZABLE_NAV_ITEM_IDS.filter(
+      (id) => !isNavItemVisible(navItemOverrides, id),
+    ),
   );
   const [moreExpanded, setMoreExpanded] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
@@ -184,8 +186,9 @@ export function SidebarNavSection({
   // More row so the current page stays visible in the nav. Search, Usage and
   // Contexts never take over: Search opens the command menu in place, Usage
   // leaves for the settings chrome and Contexts is a toggle, not a page.
-  const moreItemActive: Record<MoreNavItemId, boolean> = {
+  const moreItemActive: Record<CustomizableNavItemId, boolean> = {
     search: false,
+    inbox: isInboxActive,
     agents: isAgentsActive,
     skills: isSkillsActive,
     "mcp-servers": isMcpServersActive,
@@ -194,7 +197,7 @@ export function SidebarNavSection({
     contexts: false,
     activity: isActivityActive,
   };
-  const activeHiddenItem = MORE_NAV_ITEMS.find(
+  const activeHiddenItem = CUSTOMIZABLE_NAV_ITEMS.find(
     ({ id }) => hidden.has(id) && moreItemActive[id],
   );
   const takeoverLabel =
@@ -262,13 +265,15 @@ export function SidebarNavSection({
         </Box>
       )}
 
-      <Box>
-        <InboxItem
-          isActive={isInboxActive}
-          onClick={withNavTrack("inbox", navigateToInbox)}
-          pullRequestCount={inboxPullRequestCount}
-        />
-      </Box>
+      {!hidden.has("inbox") && (
+        <Box>
+          <InboxItem
+            isActive={isInboxActive}
+            onClick={withNavTrack("inbox", navigateToInbox)}
+            pullRequestCount={inboxPullRequestCount}
+          />
+        </Box>
+      )}
 
       <Box>
         <ConfigureItem onClick={() => openSettings("agents")} />
@@ -360,6 +365,14 @@ export function SidebarNavSection({
               <SearchItem
                 depth={1}
                 onClick={withNavTrack("search", openCommandMenu, true)}
+              />
+            )}
+            {hidden.has("inbox") && (
+              <InboxItem
+                depth={1}
+                isActive={isInboxActive}
+                onClick={withNavTrack("inbox", navigateToInbox, true)}
+                pullRequestCount={inboxPullRequestCount}
               />
             )}
             {hidden.has("agents") && (

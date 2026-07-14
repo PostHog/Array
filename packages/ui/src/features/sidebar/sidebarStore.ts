@@ -3,7 +3,7 @@ import type { WorkspaceMode } from "@posthog/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  type MoreNavItemId,
+  type CustomizableNavItemId,
   type NavItemOverrides,
   SIDEBAR_MIN_WIDTH,
   sanitizeNavItemOverrides,
@@ -27,7 +27,7 @@ interface SidebarStoreState {
   // the Bluebird chrome ships with channels hidden until the user opts in.
   channelsEnabled: boolean;
   // Per-item visibility overrides from the Customize sidebar dialog. Items
-  // absent from the map follow their MORE_NAV_ITEMS defaultVisible, so newly
+  // absent from the map follow their CUSTOMIZABLE_NAV_ITEMS defaultVisible, so newly
   // shipped moreable items keep their intended default for existing users.
   navItemOverrides: NavItemOverrides;
 }
@@ -50,7 +50,7 @@ interface SidebarStoreActions {
   setShowInternal: (showInternal: boolean) => void;
   toggleTaskType: (mode: WorkspaceMode) => void;
   setChannelsEnabled: (channelsEnabled: boolean) => void;
-  setNavItemVisible: (item: MoreNavItemId, visible: boolean) => void;
+  setNavItemVisible: (item: CustomizableNavItemId, visible: boolean) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
