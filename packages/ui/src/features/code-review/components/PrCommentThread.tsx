@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   buildAskAboutPrCommentPrompt,
+  buildChatAboutPrCommentPrompt,
   buildFixPrCommentPrompt,
 } from "@posthog/core/code-review/reviewPrompts";
 import { Button } from "@posthog/quill";
@@ -40,6 +41,7 @@ const ghRehypePlugins: PluggableList = [
 ];
 
 const MAX_COMMENT_HEIGHT = 120;
+type ComposerMode = "reply" | "chat";
 
 /** Strip markdown noise to a single-line preview for the collapsed header. */
 function toPreview(body: string): string {
@@ -61,11 +63,12 @@ interface ThreadActionBarProps {
   comments: PrReviewComment[];
   isResolved: boolean;
   onResolveToggle: () => void;
-  showReplyBox: boolean;
+  composerMode: ComposerMode | null;
   pendingReply: string | null;
-  onShowReplyBox: () => void;
-  onHideReplyBox: () => void;
-  onSubmitReply: () => void;
+  isSendingChat: boolean;
+  onShowComposer: (mode: ComposerMode) => void;
+  onHideComposer: () => void;
+  onSubmitComposer: () => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   textareaRefCallback: (el: HTMLTextAreaElement | null) => void;
 }
@@ -79,20 +82,26 @@ function ThreadActionBar({
   comments,
   isResolved,
   onResolveToggle,
-  showReplyBox,
+  composerMode,
   pendingReply,
-  onShowReplyBox,
-  onHideReplyBox,
-  onSubmitReply,
+  isSendingChat,
+  onShowComposer,
+  onHideComposer,
+  onSubmitComposer,
   onKeyDown,
   textareaRefCallback,
 }: ThreadActionBarProps) {
-  if (showReplyBox) {
+  if (composerMode) {
+    const isReply = composerMode === "reply";
+    const isSending = isSendingChat || (isReply && !!pendingReply);
+    const submitLabel = isSending ? "Sending..." : isReply ? "Reply" : "Send";
     return (
       <div className="mt-1.5 border-[var(--gray-4)] border-t pt-1.5">
         <textarea
           ref={textareaRefCallback}
-          placeholder="Write a reply..."
+          placeholder={
+            isReply ? "Write a reply..." : "Ask the agent about this comment..."
+          }
           onKeyDown={onKeyDown}
           className="min-h-[48px] w-full resize-none rounded border border-[var(--gray-6)] bg-[var(--color-background)] p-1.5 text-[13px] text-[var(--gray-12)] leading-normal outline-none"
         />
@@ -100,13 +109,17 @@ function ThreadActionBar({
           <Button
             variant="primary"
             size="sm"
-            onClick={onSubmitReply}
-            disabled={!!pendingReply}
+            onClick={onSubmitComposer}
+            disabled={isSending}
           >
-            <ChatCircle />
-            {pendingReply ? "Sending..." : "Reply"}
+            {isReply ? <ChatCircle /> : <Robot />}
+            {submitLabel}
           </Button>
-          <Button size="icon-sm" onClick={onHideReplyBox}>
+          <Button
+            size="icon-sm"
+            aria-label="Close composer"
+            onClick={onHideComposer}
+          >
             <X />
           </Button>
         </Flex>
@@ -121,7 +134,7 @@ function ThreadActionBar({
       className="mt-1 border-[var(--gray-4)] border-t pt-1.5"
     >
       {prUrl && (
-        <Button size="sm" onClick={onShowReplyBox}>
+        <Button size="sm" onClick={() => onShowComposer("reply")}>
           <ChatCircle />
           Reply
         </Button>
@@ -167,6 +180,11 @@ function ThreadActionBar({
       >
         <Robot />
         Ask
+      </Button>
+
+      <Button size="sm" onClick={() => onShowComposer("chat")}>
+        <Robot />
+        Chat
       </Button>
     </Flex>
   );
@@ -296,8 +314,9 @@ export function PrCommentThread({
   } = metadata;
   const side = annotationSide === "deletions" ? "old" : "new";
   const { reply, resolve } = usePrCommentActions(prUrl);
-  const [showReplyBox, setShowReplyBox] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode | null>(null);
   const [pendingReply, setPendingReply] = useState<string | null>(null);
+  const [isSendingChat, setIsSendingChat] = useState(false);
   const [isResolved, setIsResolved] = useState(initialIsResolved);
   // Resolved/outdated threads add up — start them collapsed.
   const [isCollapsed, setIsCollapsed] = useState(
@@ -319,30 +338,54 @@ export function PrCommentThread({
     prevLastCommentIdRef.current = lastCommentId;
   }, [lastCommentId, pendingReply]);
 
-  const handleReplySubmit = useCallback(async () => {
+  const handleComposerSubmit = useCallback(async () => {
     const text = textareaRef.current?.value?.trim();
-    if (text) {
-      setPendingReply(text);
-      setShowReplyBox(false);
-      const success = await reply(threadId, text);
-      if (!success) {
-        setPendingReply(null);
+    if (!text || !composerMode) return;
+
+    if (composerMode === "chat") {
+      setIsSendingChat(true);
+      const success = await sendPromptToAgent(
+        taskId,
+        buildChatAboutPrCommentPrompt(filePath, endLine, side, comments, text),
+      );
+      setIsSendingChat(false);
+      if (success) {
+        setComposerMode((currentMode) =>
+          currentMode === "chat" ? null : currentMode,
+        );
       }
+      return;
     }
-  }, [reply, threadId]);
+
+    setPendingReply(text);
+    setComposerMode(null);
+    const success = await reply(threadId, text);
+    if (!success) {
+      setPendingReply(null);
+    }
+  }, [
+    comments,
+    composerMode,
+    endLine,
+    filePath,
+    reply,
+    side,
+    taskId,
+    threadId,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (isSendMessageSubmitKey(e)) {
         e.preventDefault();
-        handleReplySubmit();
+        handleComposerSubmit();
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        setShowReplyBox(false);
+        setComposerMode(null);
       }
     },
-    [handleReplySubmit],
+    [handleComposerSubmit],
   );
 
   const setTextareaRefCallback = useCallback(
@@ -497,11 +540,12 @@ export function PrCommentThread({
                   comments={comments}
                   isResolved={isResolved}
                   onResolveToggle={handleResolveToggle}
-                  showReplyBox={showReplyBox}
+                  composerMode={composerMode}
                   pendingReply={pendingReply}
-                  onShowReplyBox={() => setShowReplyBox(true)}
-                  onHideReplyBox={() => setShowReplyBox(false)}
-                  onSubmitReply={handleReplySubmit}
+                  isSendingChat={isSendingChat}
+                  onShowComposer={setComposerMode}
+                  onHideComposer={() => setComposerMode(null)}
+                  onSubmitComposer={handleComposerSubmit}
                   onKeyDown={handleKeyDown}
                   textareaRefCallback={setTextareaRefCallback}
                 />
