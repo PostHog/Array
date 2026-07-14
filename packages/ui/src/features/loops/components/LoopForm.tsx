@@ -370,9 +370,8 @@ function Stepper({
       {STEPS.map((label, index) => {
         const isCurrent = index === current;
         const isDone = index < current && complete[index];
-        // Free navigation back to any earlier step; forward only into the step
-        // immediately after a completed one, so you can't skip required fields.
-        const reachable = index <= current || complete[index - 1];
+        // Steps navigate freely in both directions; skipping ahead is safe
+        // because Next stays gated per step and Create on the whole form.
         return (
           <Flex
             key={label}
@@ -381,9 +380,8 @@ function Stepper({
           >
             <button
               type="button"
-              disabled={!reachable}
               onClick={() => onSelect(index)}
-              className="flex min-w-0 items-center gap-2 disabled:cursor-not-allowed"
+              className="flex min-w-0 cursor-pointer items-center gap-2"
             >
               <Flex
                 align="center"
