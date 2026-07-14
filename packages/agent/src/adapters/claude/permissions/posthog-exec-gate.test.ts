@@ -81,4 +81,27 @@ describe("isPostHogDestructiveSubTool", () => {
     expect(isPostHogDestructiveSubTool("get-updated-events")).toBe(false);
     expect(isPostHogDestructiveSubTool("deleter-test")).toBe(false);
   });
+
+  it("exempts sanctioned first-party desktop-file-system writes", () => {
+    // A channel's CONTEXT.md and freeform canvases are the app's own artifacts,
+    // not PostHog product data — they publish without the destructive gate.
+    expect(
+      isPostHogDestructiveSubTool(
+        "desktop-file-system-instructions-partial-update",
+      ),
+    ).toBe(false);
+    expect(
+      isPostHogDestructiveSubTool("desktop-file-system-canvas-partial-update"),
+    ).toBe(false);
+  });
+
+  it("still gates broader desktop-file-system mutations (exact-match, not prefix)", () => {
+    // These rename/delete whole channels and must stay gated.
+    expect(
+      isPostHogDestructiveSubTool("desktop-file-system-partial-update"),
+    ).toBe(true);
+    expect(isPostHogDestructiveSubTool("desktop-file-system-destroy")).toBe(
+      true,
+    );
+  });
 });
