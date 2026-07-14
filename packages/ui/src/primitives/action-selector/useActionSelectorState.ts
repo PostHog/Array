@@ -259,6 +259,7 @@ export function useActionSelectorState({
 
   const selectCurrent = useCallback(() => {
     const selected = allOptions[selectedIndex];
+    if (!selected) return;
 
     if (isSubmitOption(selected.id)) {
       if (!showSubmitButton) {

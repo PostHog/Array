@@ -1,4 +1,5 @@
 import { destroyShellTerminal } from "@posthog/ui/features/terminal/destroyShellTerminal";
+import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import {
@@ -132,7 +133,12 @@ function GridCell({
           zoom: zoom !== 1 ? zoom : undefined,
         }}
       >
-        <CommandCenterPanel cell={cell} isActiveSession={isActive} />
+        <ErrorBoundary
+          name="command-center-cell"
+          resetKey={cell.taskId ?? cell.terminalId ?? cell.cellIndex}
+        >
+          <CommandCenterPanel cell={cell} isActiveSession={isActive} />
+        </ErrorBoundary>
       </div>
       {isActive && (
         <div className="pointer-events-none absolute inset-0 border-2 border-accent-9" />
