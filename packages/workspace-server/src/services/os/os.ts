@@ -63,7 +63,15 @@ const USER_AGENT_INSTRUCTIONS_CANDIDATES: ReadonlyArray<[string, string]> = [
 // stub CLAUDE.md that only `@`-imports its real rules still syncs those rules.
 const USER_AGENT_INSTRUCTIONS_MAX_IMPORT_DEPTH = 4;
 const AGENT_IMPORT_PATTERN_SOURCE = "(^|\\s)@(\\S+)";
-const FENCE_PATTERN = /^\s*(`{3,}|~{3,})/;
+// Up to 3 leading spaces per CommonMark; 4+ is an indented code line, not a fence.
+const FENCE_LINE_PATTERN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const INDENTED_CODE_PATTERN = /^( {4}|\t)/;
+
+function backtickRunEnd(line: string, start: number): number {
+  let end = start;
+  while (end < line.length && line[end] === "`") end++;
+  return end;
+}
 
 @injectable()
 export class OsService {
@@ -153,24 +161,58 @@ export class OsService {
 
     const lines = content.split("\n");
     const expandedLines: string[] = [];
-    let fenceMarker: string | null = null;
+    let fence: { char: string; length: number } | null = null;
+    let inIndentedCode = false;
+    let prevBlank = true;
 
     for (const line of lines) {
-      const fence = line.match(FENCE_PATTERN);
-      if (fence) {
-        const marker = fence[1][0];
-        if (fenceMarker === null) fenceMarker = marker;
-        else if (marker === fenceMarker) fenceMarker = null;
+      const isBlank = line.trim() === "";
+      const fenceLine = line.match(FENCE_LINE_PATTERN);
+
+      if (fence !== null) {
+        // A closing fence must match the opening character, be at least as
+        // long, and carry no info string; anything else is fence content.
+        if (
+          fenceLine &&
+          fenceLine[1][0] === fence.char &&
+          fenceLine[1].length >= fence.length &&
+          fenceLine[2].trim() === ""
+        ) {
+          fence = null;
+        }
         expandedLines.push(line);
-        continue;
-      }
-      if (fenceMarker !== null) {
+      } else if (
+        fenceLine &&
+        (fenceLine[1][0] === "~" || !fenceLine[2].includes("`"))
+      ) {
+        // A backtick fence's info string may not contain a backtick — that
+        // guard keeps prose like ```@x``` from opening an unterminated fence.
+        fence = { char: fenceLine[1][0], length: fenceLine[1].length };
+        inIndentedCode = false;
         expandedLines.push(line);
-        continue;
+      } else if (
+        inIndentedCode &&
+        (isBlank || INDENTED_CODE_PATTERN.test(line))
+      ) {
+        expandedLines.push(line);
+      } else if (
+        !inIndentedCode &&
+        prevBlank &&
+        !isBlank &&
+        INDENTED_CODE_PATTERN.test(line)
+      ) {
+        // Indented code blocks only start after a blank line; a 4-space line
+        // mid-paragraph or under a list item is continuation text whose
+        // imports should still expand.
+        inIndentedCode = true;
+        expandedLines.push(line);
+      } else {
+        inIndentedCode = false;
+        expandedLines.push(
+          await this.expandImportsInLine(line, baseDir, depth, visited),
+        );
       }
-      expandedLines.push(
-        await this.expandImportsInLine(line, baseDir, depth, visited),
-      );
+      prevBlank = isBlank;
     }
 
     return expandedLines.join("\n");
@@ -182,17 +224,55 @@ export class OsService {
     depth: number,
     visited: Set<string>,
   ): Promise<string> {
-    // Odd-indexed segments sit inside single-backtick code spans, where
-    // Claude Code treats `@path` as literal text rather than an import.
-    const segments = line.split("`");
-    const rebuilt = await Promise.all(
-      segments.map((segment, index) =>
-        index % 2 === 0
-          ? this.expandImportsInSegment(segment, baseDir, depth, visited)
-          : Promise.resolve(segment),
-      ),
+    // Imports inside code spans stay literal. Per CommonMark, a span opens
+    // with a backtick run and closes on the next run of exactly the same
+    // length; runs of other lengths are span content, and an unmatched run
+    // is plain text.
+    let result = "";
+    let textStart = 0;
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] !== "`") {
+        i++;
+        continue;
+      }
+      const openEnd = backtickRunEnd(line, i);
+      const runLength = openEnd - i;
+      let j = openEnd;
+      let closeStart = -1;
+      while (j < line.length) {
+        if (line[j] !== "`") {
+          j++;
+          continue;
+        }
+        const runEnd = backtickRunEnd(line, j);
+        if (runEnd - j === runLength) {
+          closeStart = j;
+          break;
+        }
+        j = runEnd;
+      }
+      if (closeStart === -1) {
+        i = openEnd;
+        continue;
+      }
+      result += await this.expandImportsInSegment(
+        line.slice(textStart, i),
+        baseDir,
+        depth,
+        visited,
+      );
+      result += line.slice(i, closeStart + runLength);
+      textStart = closeStart + runLength;
+      i = textStart;
+    }
+    result += await this.expandImportsInSegment(
+      line.slice(textStart),
+      baseDir,
+      depth,
+      visited,
     );
-    return rebuilt.join("`");
+    return result;
   }
 
   private async expandImportsInSegment(

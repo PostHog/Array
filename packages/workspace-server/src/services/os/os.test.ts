@@ -323,6 +323,153 @@ describe("OsService.getUserAgentInstructions @-import expansion", () => {
       },
       expected: "```\n@./engineering.md\n```",
     },
+    {
+      label: "a shorter fence line does not close a longer fence",
+      files: {
+        [claudePath]: "````\n```\n@./engineering.md\n```\n````",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "````\n```\n@./engineering.md\n```\n````",
+    },
+    {
+      label: "a longer fence line closes a shorter fence",
+      files: {
+        [claudePath]: "```\n@./engineering.md\n````\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n@./engineering.md\n````\nengineering rules",
+    },
+    {
+      label: "a backtick fence line does not close a tilde fence",
+      files: {
+        [claudePath]: "~~~\n```\n@./engineering.md\n~~~",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "~~~\n```\n@./engineering.md\n~~~",
+    },
+    {
+      label: "a tilde fence line does not close a backtick fence",
+      files: {
+        [claudePath]: "```\n~~~\n@./engineering.md\n```",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n~~~\n@./engineering.md\n```",
+    },
+    {
+      label: "expands after a normally closed fence",
+      files: {
+        [claudePath]: "```\n@./engineering.md\n```\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n@./engineering.md\n```\nengineering rules",
+    },
+    {
+      label: "a fence line with an info string is not a closer",
+      files: {
+        [claudePath]: "```\n@./engineering.md\n``` js\n@./engineering.md\n```",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n@./engineering.md\n``` js\n@./engineering.md\n```",
+    },
+    {
+      label:
+        "a backtick run with backticks in its info string is a span, not a fence",
+      files: {
+        [claudePath]: "```@x```\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```@x```\nengineering rules",
+    },
+    {
+      label: "keeps an indented code line after a blank line literal",
+      files: {
+        [claudePath]: "intro\n\n    @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n    @./engineering.md",
+    },
+    {
+      label: "keeps a tab-indented code line after a blank line literal",
+      files: {
+        [claudePath]: "intro\n\n\t@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n\t@./engineering.md",
+    },
+    {
+      label: "expands an indented list continuation without a preceding blank",
+      files: {
+        [claudePath]: "- see:\n    @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "- see:\n    engineering rules",
+    },
+    {
+      label:
+        "an indented code block survives internal blanks and ends on dedent",
+      files: {
+        [claudePath]:
+          "intro\n\n    @./engineering.md\n\nafter @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n    @./engineering.md\n\nafter engineering rules",
+    },
+    {
+      label: "a three-space indent is not an indented code block",
+      files: {
+        [claudePath]: "intro\n\n   @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n   engineering rules",
+    },
+    {
+      label: "a four-space-indented fence line is indented code, not a fence",
+      files: {
+        [claudePath]: "intro\n\n    ````\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n    ````\nengineering rules",
+    },
+    {
+      label: "does not expand imports inside double-backtick code spans",
+      files: {
+        [claudePath]: "see `` @./engineering.md `` then @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "see `` @./engineering.md `` then engineering rules",
+    },
+    {
+      label: "a double-backtick span may contain a single backtick",
+      files: {
+        [claudePath]: "`` a`b `` @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "`` a`b `` engineering rules",
+    },
+    {
+      label: "expands after an unmatched backtick run",
+      files: {
+        [claudePath]: "a lone ` backtick then @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "a lone ` backtick then engineering rules",
+    },
+    {
+      label: "expands outside a span at the start of a line",
+      files: {
+        [claudePath]: "`@./engineering.md` and @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "`@./engineering.md` and engineering rules",
+    },
+    {
+      label: "expands between two code spans",
+      files: {
+        [claudePath]: "`a` @./engineering.md `b`",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "`a` engineering rules `b`",
+    },
   ])("$label", async ({ files, expected }) => {
     const { service } = createService();
     givenFiles(files);
