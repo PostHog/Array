@@ -1,6 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
 import {
+  canApplyTitleFromPrompts,
   decideTitleGeneration,
   formatPromptsForTitleInput,
   getFallbackTaskTitle,
@@ -180,6 +181,32 @@ describe("decideTitleGeneration", () => {
       expect(decision.shouldGenerateFromPrompts).toBe(expected);
     },
   );
+});
+
+describe("canApplyTitleFromPrompts", () => {
+  it("allows the first-prompt fire to write the title", () => {
+    expect(
+      canApplyTitleFromPrompts(1, { title: "Custom", description: "d" }),
+    ).toBe(true);
+  });
+
+  it("blocks later fires from rewriting a real title", () => {
+    expect(
+      canApplyTitleFromPrompts(1 + REGENERATE_INTERVAL, {
+        title: "Fix login bug",
+        description: "the login page 500s",
+      }),
+    ).toBe(false);
+  });
+
+  it("allows later fires to replace a placeholder title", () => {
+    expect(
+      canApplyTitleFromPrompts(1 + REGENERATE_INTERVAL, {
+        title: "Fix login",
+        description: "Fix login",
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("selectPromptsForTitle", () => {

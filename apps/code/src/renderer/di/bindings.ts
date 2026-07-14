@@ -98,6 +98,12 @@ import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { SKILLS_WORKSPACE_CLIENT } from "@posthog/core/skills/identifiers";
 import type { SkillsWorkspaceClient } from "@posthog/core/skills/teamSkillsService";
 import {
+  SPEECH_SETTINGS_PROVIDER,
+  SPEECH_USER_NAME_PROVIDER,
+  type SpeechSettingsProvider,
+  type UserNameProvider,
+} from "@posthog/core/speech/identifiers";
+import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
   WORKSPACE_SETUP_SAGA,
@@ -137,6 +143,7 @@ import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
+import { type ISpeech, SPEECH_SERVICE } from "@posthog/platform/speech";
 import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
@@ -188,7 +195,9 @@ import {
   ACTIVE_VIEW_PROVIDER,
   type IActiveView,
   type INotificationSettings,
+  type ISpeechNotifySettings,
   NOTIFICATION_SETTINGS_PROVIDER,
+  SPEECH_NOTIFY_SETTINGS,
 } from "@posthog/ui/features/notifications/identifiers";
 import {
   AGENT_PROMPT_SENDER,
@@ -202,6 +211,10 @@ import {
   DEV_MODE_CLIENT,
   type DevModeClient,
 } from "@posthog/ui/features/settings/devModeClient";
+import {
+  type ISpeechKeyStore,
+  SPEECH_KEY_STORE,
+} from "@posthog/ui/features/settings/speechKeyStore";
 import {
   SHELL_CLIENT,
   type ShellClient,
@@ -316,6 +329,11 @@ export interface RendererBindings {
   [NOTIFICATIONS_SERVICE]: INotifications;
   [NOTIFICATION_SETTINGS_PROVIDER]: INotificationSettings;
   [ACTIVE_VIEW_PROVIDER]: IActiveView;
+  [SPEECH_SERVICE]: ISpeech;
+  [SPEECH_SETTINGS_PROVIDER]: SpeechSettingsProvider;
+  [SPEECH_USER_NAME_PROVIDER]: UserNameProvider;
+  [SPEECH_NOTIFY_SETTINGS]: ISpeechNotifySettings;
+  [SPEECH_KEY_STORE]: ISpeechKeyStore;
   [FILE_WATCHER_CLIENT]: FileWatcherClient;
   [FEATURE_FLAGS]: FeatureFlags;
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;

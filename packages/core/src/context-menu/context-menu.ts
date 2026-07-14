@@ -114,6 +114,7 @@ export class ContextMenuService {
       folderPath,
       isPinned,
       isSuspended,
+      canStop,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
       channels,
@@ -141,6 +142,9 @@ export class ContextMenuService {
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
       this.item("Rename", { type: "rename" }),
+      ...(canStop
+        ? [this.separator(), this.item("Stop task", { type: "stop" as const })]
+        : []),
       ...(worktreePath
         ? [
             this.separator(),

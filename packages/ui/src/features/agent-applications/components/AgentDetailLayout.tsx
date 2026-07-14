@@ -13,6 +13,7 @@ import { useAgentApplication } from "../hooks/useAgentApplication";
 function tabToAgentBuilderPage(
   tab: AgentDetailTab,
   slug: string,
+  configRevision?: string,
 ): AgentBuilderPageContext {
   switch (tab) {
     case "chat":
@@ -20,7 +21,7 @@ function tabToAgentBuilderPage(
     case "sessions":
       return { kind: "agent-sessions", slug };
     case "configuration":
-      return { kind: "agent-config", slug };
+      return { kind: "agent-config", slug, revision: configRevision };
     case "memory":
       return { kind: "agent-memory", slug };
     case "approvals":
@@ -104,11 +105,18 @@ export function AgentDetailLayout({
    * scrolling document column.
    */
   fill = false,
+  /**
+   * Resolved revision the Configuration pane is showing. Threaded into the
+   * agent-builder page context so revision-scoped punch-outs (`set_secret`,
+   * `connect_mcp`) target the revision the user is looking at.
+   */
+  configRevision,
 }: {
   idOrSlug: string;
   activeTab: AgentDetailTab;
   children: ReactNode;
   fill?: boolean;
+  configRevision?: string | null;
 }) {
   const {
     data: application,
@@ -132,7 +140,11 @@ export function AgentDetailLayout({
     [title],
   );
   useSetHeaderContent(headerContent);
-  const pageContext = tabToAgentBuilderPage(activeTab, idOrSlug);
+  const pageContext = tabToAgentBuilderPage(
+    activeTab,
+    idOrSlug,
+    configRevision ?? undefined,
+  );
   useSetAgentBuilderPage(pageContext);
 
   return (

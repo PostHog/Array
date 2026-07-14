@@ -1,7 +1,9 @@
 import type {
+  IntegrationAccount,
   SourceConfig,
   SourceFieldConfig,
   SourceFieldInputConfig,
+  SourceFieldOauthAccountSelectConfig,
   SourceFieldOauthConfig,
 } from "@posthog/api-client/posthog-client";
 import { useHostTRPC } from "@posthog/host-router/react";
@@ -98,6 +100,14 @@ function missingRequiredFields(
         if (field.required && !values[field.name]) {
           missing.push(field.name);
         }
+      } else if (field.type === "oauth-account-select") {
+        const value = values[field.name];
+        if (
+          field.required &&
+          (typeof value !== "string" || value.trim().length === 0)
+        ) {
+          missing.push(field.name);
+        }
       } else if (isInputField(field) && field.required) {
         const value = values[field.name];
         if (typeof value !== "string" || value.trim().length === 0) {
@@ -134,6 +144,11 @@ function buildPayload(
       } else if (field.type === "oauth") {
         const value = values[field.name];
         if (value !== undefined && value !== "") out[field.name] = value;
+      } else if (field.type === "oauth-account-select") {
+        const value = values[field.name];
+        if (typeof value === "string" && value.trim() !== "") {
+          out[field.name] = value.trim();
+        }
       } else if (isInputField(field)) {
         const value = values[field.name];
         if (typeof value === "string") out[field.name] = value.trim();
@@ -219,6 +234,7 @@ export function DynamicSourceSetup({
               values={values}
               setValue={setValue}
               providerName={title.replace(/^Connect\s+/i, "")}
+              sourceType={sourceType}
             />
           ))}
           {hasUnsupportedField && (
@@ -257,11 +273,13 @@ function SourceField({
   values,
   setValue,
   providerName,
+  sourceType,
 }: {
   field: SourceFieldConfig;
   values: FieldValues;
   setValue: (name: string, value: FieldValue) => void;
   providerName: string;
+  sourceType: string;
 }) {
   if (field.type === "switch-group") {
     const enabled = !!values[field.name];
@@ -285,6 +303,7 @@ function SourceField({
               values={values}
               setValue={setValue}
               providerName={providerName}
+              sourceType={sourceType}
             />
           ))}
       </Flex>
@@ -298,6 +317,18 @@ function SourceField({
         value={values[field.name]}
         setValue={setValue}
         providerName={providerName}
+      />
+    );
+  }
+
+  if (field.type === "oauth-account-select") {
+    return (
+      <AccountSelectField
+        field={field}
+        value={values[field.name]}
+        setValue={setValue}
+        sourceType={sourceType}
+        integrationId={values[field.integrationField]}
       />
     );
   }
@@ -328,6 +359,7 @@ function SourceField({
             values={values}
             setValue={setValue}
             providerName={providerName}
+            sourceType={sourceType}
           />
         ))}
       </Flex>
@@ -480,6 +512,141 @@ function OAuthSourceField({
             : `Log into ${providerName} to continue`}
       </Button>
       {error && <Text className="text-(--red-11) text-sm">{error}</Text>}
+    </Flex>
+  );
+}
+
+/**
+ * Renders an `oauth-account-select` field: a searchable picker whose options are the accounts/
+ * resources a connected OAuth integration exposes (e.g. GitHub repositories), fetched from the
+ * backend using the integration's server-side token (the client only passes the integration id).
+ * Search is server-side (debounced) so large lists work. Falls back to a free-text input until a
+ * valid integration id is present in the form.
+ */
+function AccountSelectField({
+  field,
+  value,
+  setValue,
+  sourceType,
+  integrationId,
+}: {
+  field: SourceFieldOauthAccountSelectConfig;
+  value: FieldValue | undefined;
+  setValue: (name: string, value: FieldValue) => void;
+  sourceType: string;
+  integrationId: FieldValue | undefined;
+}) {
+  const projectId = useAuthStateValue((state) => state.currentProjectId);
+  const client = useAuthenticatedClient();
+  const [query, setQuery] = useState(typeof value === "string" ? value : "");
+  const [accounts, setAccounts] = useState<IntegrationAccount[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const hasIntegration =
+    integrationId !== undefined &&
+    integrationId !== "" &&
+    integrationId !== false;
+
+  // Reset any prior selection when the backing integration changes. An account
+  // chosen (or fallback text typed) for one integration must not survive into
+  // another — otherwise the form could submit an account that was never
+  // selected for the active integration.
+  const prevIntegrationId = useRef(integrationId);
+  useEffect(() => {
+    if (prevIntegrationId.current === integrationId) return;
+    prevIntegrationId.current = integrationId;
+    setQuery("");
+    setValue(field.name, "");
+  }, [integrationId, field.name, setValue]);
+
+  useEffect(() => {
+    if (!projectId || !client || !hasIntegration) return;
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const results = await client.getOauthAccounts(
+          projectId,
+          sourceType,
+          integrationId as number | string,
+          query,
+        );
+        if (!cancelled) setAccounts(results);
+      } catch {
+        if (!cancelled) setAccounts([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [projectId, client, sourceType, integrationId, hasIntegration, query]);
+
+  if (!hasIntegration) {
+    return (
+      <Flex direction="column" gap="1">
+        <Text className="text-gray-12 text-sm">{field.label}</Text>
+        <TextField.Root
+          placeholder={field.placeholder || field.label}
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => setValue(field.name, e.target.value)}
+        />
+        {field.caption && (
+          <Text className="text-[13px] text-gray-11">{field.caption}</Text>
+        )}
+      </Flex>
+    );
+  }
+
+  return (
+    <Flex direction="column" gap="1">
+      <Text className="text-gray-12 text-sm">{field.label}</Text>
+      <TextField.Root
+        placeholder={field.placeholder || field.label}
+        value={query}
+        onChange={(e) => {
+          // Typing only filters the list; it does not commit a value. The
+          // submitted account is set solely by picking an option, so editing
+          // the text after a selection clears it rather than silently mutating
+          // the underlying (possibly opaque) account id.
+          setQuery(e.target.value);
+          setValue(field.name, "");
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && (loading || accounts.length > 0) && (
+        <Box className="max-h-48 overflow-y-auto rounded-(--radius-2) border border-border bg-(--color-panel-solid)">
+          {loading ? (
+            <Text className="block px-2 py-1 text-[13px] text-gray-11">
+              Loading…
+            </Text>
+          ) : (
+            accounts.map((account) => (
+              <button
+                key={account.value}
+                type="button"
+                className="block w-full px-2 py-1 text-left text-gray-12 text-sm hover:bg-(--gray-3)"
+                onClick={() => {
+                  // Commit the account's opaque value to the form, but show the
+                  // human-readable name in the input.
+                  setValue(field.name, account.value);
+                  setQuery(account.display_name);
+                  setOpen(false);
+                }}
+              >
+                {account.display_name}
+              </button>
+            ))
+          )}
+        </Box>
+      )}
+      {field.caption && (
+        <Text className="text-[13px] text-gray-11">{field.caption}</Text>
+      )}
     </Flex>
   );
 }

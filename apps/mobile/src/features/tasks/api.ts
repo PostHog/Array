@@ -540,6 +540,36 @@ export async function getTaskRun(
   return await response.json();
 }
 
+export async function cancelRun(
+  taskId: string,
+  runId: string,
+  reason?: string,
+): Promise<{ status?: string }> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/cancel/`,
+    {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: unknown;
+    } | null;
+    const message =
+      typeof payload?.error === "string" && payload.error
+        ? payload.error
+        : "Failed to stop run";
+    throw new HttpError(response.status, response.statusText, message);
+  }
+
+  return (await response.json().catch(() => ({}))) as { status?: string };
+}
+
 export async function appendTaskRunLog(
   taskId: string,
   runId: string,

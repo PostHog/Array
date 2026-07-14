@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
   GitHandoffCheckpoint,
@@ -26,6 +25,7 @@ export interface GitHandoffArtifactFile {
 
 export interface GitHandoffCaptureResult {
   checkpoint: GitHandoffCheckpoint;
+  artifactDirectory: string;
   headPack?: GitHandoffArtifactFile;
   indexFile: GitHandoffArtifactFile;
   totalBytes: number;
@@ -92,7 +92,7 @@ export class GitHandoffTracker {
 
     const checkpoint = result.data;
     const git = createGitClient(this.repositoryPath);
-    const tempDir = await this.createTempDir(checkpoint.checkpointId);
+    const tempDir = await this.createTempDir(git, checkpoint.checkpointId);
     const checkpointRef = `${CHECKPOINT_REF_PREFIX}${checkpoint.checkpointId}`;
 
     try {
@@ -104,22 +104,24 @@ export class GitHandoffTracker {
         checkpoint.checkpointId,
       );
 
-      const packBaseline = localGitState?.upstreamHead ?? null;
+      const tracking = await getTrackingMetadata(git, checkpoint.branch);
+      const baselineRefs = localGitState?.upstreamHead
+        ? [localGitState.upstreamHead]
+        : await this.resolveDefaultPackBaseline(git, tracking);
       const packRefs = [
         checkpoint.head,
         reconciledIndex.indexTree,
         checkpoint.worktreeTree,
-        packBaseline ? `^${packBaseline}` : null,
+        ...baselineRefs.map((ref) => `^${ref}`),
       ].filter((ref): ref is string => !!ref);
       const headRef = checkpoint.head
         ? `${HANDOFF_HEAD_REF_PREFIX}${checkpoint.checkpointId}`
         : undefined;
       const packPrefix = path.join(tempDir, checkpoint.checkpointId);
 
-      const [headPack, indexFile, tracking] = await Promise.all([
+      const [headPack, indexFile] = await Promise.all([
         this.captureObjectPack(packPrefix, packRefs),
         this.statFileArtifact(reconciledIndex.indexFilePath),
-        getTrackingMetadata(git, checkpoint.branch),
       ]);
 
       return {
@@ -137,10 +139,14 @@ export class GitHandoffTracker {
           upstreamMergeRef: tracking.upstreamMergeRef,
           remoteUrl: tracking.remoteUrl,
         },
+        artifactDirectory: tempDir,
         headPack,
         indexFile,
         totalBytes: (headPack?.rawBytes ?? 0) + indexFile.rawBytes,
       };
+    } catch (error) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw error;
     } finally {
       await deleteCheckpoint(git, checkpoint.checkpointId).catch(() => {});
     }
@@ -206,6 +212,50 @@ export class GitHandoffTracker {
       indexBytes,
       totalBytes: packBytes + indexBytes,
     };
+  }
+
+  /**
+   * Without local handoff state the pack baseline must stay limited to
+   * objects the apply side is able to restore: the branch's upstream
+   * tracking ref (which ensureBaselineForApply fetches before unpacking),
+   * or failing that the remote's default branch, which any fresh clone of
+   * the repository already contains. Excluding broader refs (e.g. every
+   * remote-tracking ref) risks producing a pack that omits objects the
+   * resume repository cannot fetch. Without any baseline, a capture with no
+   * local handoff state packs the entire repo snapshot, which for large
+   * repos exceeds artifact upload limits.
+   */
+  private async resolveDefaultPackBaseline(
+    git: GitClient,
+    tracking: GitTrackingMetadata,
+  ): Promise<string[]> {
+    if (tracking.upstreamRemote && tracking.upstreamMergeRef) {
+      const branchName = tracking.upstreamMergeRef.replace(
+        /^refs\/heads\//,
+        "",
+      );
+      const upstreamHead = await this.revparseOrNull(
+        git,
+        `refs/remotes/${tracking.upstreamRemote}/${branchName}`,
+      );
+      if (upstreamHead) {
+        return [upstreamHead];
+      }
+    }
+
+    const defaultHead = await this.revparseOrNull(
+      git,
+      "refs/remotes/origin/HEAD",
+    );
+    return defaultHead ? [defaultHead] : [];
+  }
+
+  private async revparseOrNull(
+    git: GitClient,
+    ref: string,
+  ): Promise<string | null> {
+    const value = await git.revparse([ref]).catch(() => null);
+    return value ? value.trim() : null;
   }
 
   private async captureObjectPack(
@@ -544,8 +594,27 @@ export class GitHandoffTracker {
     return exitCode === 0;
   }
 
-  private async createTempDir(checkpointId: string): Promise<string> {
-    return mkdtemp(joinTempPrefix(checkpointId));
+  private async createTempDir(
+    git: GitClient,
+    checkpointId: string,
+  ): Promise<string> {
+    // Git stages packs in the object store, so the destination must share its filesystem.
+    const gitCommonDir = await this.resolveGitCommonDir(git);
+    return mkdtemp(
+      path.join(gitCommonDir, `posthog-code-handoff-${checkpointId}-`),
+    );
+  }
+
+  private async resolveGitCommonDir(git: GitClient): Promise<string> {
+    const raw = await git.raw([
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]);
+    const resolved = raw.trim() || ".git";
+    return path.isAbsolute(resolved)
+      ? resolved
+      : path.resolve(this.repositoryPath, resolved);
   }
 
   private async getGitPath(git: GitClient, gitPath: string): Promise<string> {
@@ -667,10 +736,6 @@ export class GitHandoffTracker {
       child.stdin.end(input);
     });
   }
-}
-
-function joinTempPrefix(checkpointId: string): string {
-  return path.join(tmpdir(), `posthog-code-handoff-${checkpointId}-`);
 }
 
 export async function readHandoffLocalGitState(

@@ -99,6 +99,14 @@ export function isSessionAwaitingUserInput(
   return awaitingUserInput;
 }
 
+export function countUserMessages(events: SessionEvent[] = []): number {
+  return events.filter(
+    (e) =>
+      e.type === "session_update" &&
+      e.notification.update?.sessionUpdate === "user_message_chunk",
+  ).length;
+}
+
 export function getSessionActivityPhase(args: {
   retrying: boolean;
   session?: SessionActivityState | null;

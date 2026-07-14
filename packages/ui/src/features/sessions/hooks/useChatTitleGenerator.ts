@@ -1,5 +1,6 @@
 import type { Schemas } from "@posthog/api-client";
 import {
+  canApplyTitleFromPrompts,
   decideTitleGeneration,
   formatPromptsForTitleInput,
   isAutoTitleLocked,
@@ -120,6 +121,17 @@ export function useChatTitleGenerator(task: Task): void {
 
           if (title && isTitleLocked()) {
             log.debug("Skipping auto-title, user renamed task", { taskId });
+          } else if (
+            title &&
+            !canApplyTitleFromPrompts(
+              promptCount,
+              getCachedTask(queryClient, taskId) ?? task,
+            )
+          ) {
+            log.debug("Skipping auto-title, keeping original-context title", {
+              taskId,
+              promptCount,
+            });
           } else if (title) {
             if (client) {
               await client.updateTask(taskId, { title });

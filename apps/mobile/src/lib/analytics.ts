@@ -16,6 +16,7 @@ export const ANALYTICS_EVENTS = {
   SIGN_IN_COMPLETED: "Sign in completed",
   SIGN_IN_FAILED: "Sign in failed",
   PROMPT_SENT: "Prompt sent",
+  TASK_RUN_STOPPED: "Task run stopped",
 } as const;
 
 export type SignInMethod = "oauth" | "dev_api_key" | "qr_scan";
@@ -172,6 +173,12 @@ export interface PromptSentProperties {
   is_steer: boolean;
 }
 
+export interface TaskRunStoppedProperties {
+  task_id: string;
+  execution_type: "cloud";
+  prompts_sent?: number;
+}
+
 export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_VIEWED]: InboxViewedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_OPENED]: InboxReportOpenedProperties;
@@ -182,6 +189,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.SIGN_IN_COMPLETED]: SignInCompletedProperties;
   [ANALYTICS_EVENTS.SIGN_IN_FAILED]: SignInFailedProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
+  [ANALYTICS_EVENTS.TASK_RUN_STOPPED]: TaskRunStoppedProperties;
 };
 
 export interface Analytics {

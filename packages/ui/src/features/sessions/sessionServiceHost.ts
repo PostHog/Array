@@ -23,6 +23,7 @@ import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
+import { SpeechNotifier } from "@posthog/ui/features/notifications/speechNotifier";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
@@ -95,6 +96,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         taskId,
         durationMs,
       ),
+    enqueueSpeech: (request) => resolveService(SpeechNotifier).speak(request),
     getIsOnline,
     fetchAuthState,
     getAuthenticatedClient,

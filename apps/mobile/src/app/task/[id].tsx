@@ -18,6 +18,7 @@ import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
+import { StopRunButton } from "@/features/tasks/components/StopRunButton";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
 import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
@@ -49,7 +50,14 @@ import {
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
-import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
+import {
+  confirmStopRun,
+  isTaskRunning,
+} from "@/features/tasks/utils/archiveGuard";
+import {
+  countUserMessages,
+  getSessionActivityPhase,
+} from "@/features/tasks/utils/sessionActivity";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
   ANALYTICS_EVENTS,
@@ -101,6 +109,7 @@ export default function TaskDetailScreen() {
     getSessionForTask,
     setFocusedTaskId,
     steerQueuedMessage,
+    stopRun,
   } = useTaskSessionStore();
 
   useEffect(() => {
@@ -471,6 +480,37 @@ export default function TaskDetailScreen() {
     cancelPrompt(taskId).catch(() => {});
   }, [taskId, cancelPrompt]);
 
+  const handleStopRun = useCallback(() => {
+    if (!taskId) return;
+    confirmStopRun(() => {
+      const promptsSent = countUserMessages(getSessionForTask(taskId)?.events);
+      stopRun(taskId)
+        .then((ok) => {
+          if (ok) {
+            analytics.track(ANALYTICS_EVENTS.TASK_RUN_STOPPED, {
+              task_id: taskId,
+              execution_type: "cloud",
+              prompts_sent: promptsSent,
+            });
+          } else {
+            Alert.alert(
+              "Couldn't stop",
+              "The run could not be stopped. Please try again.",
+            );
+          }
+        })
+        .catch(() => {});
+    });
+  }, [taskId, stopRun, analytics, getSessionForTask]);
+
+  const canStopRun =
+    !!task &&
+    !!session &&
+    !session.terminalStatus &&
+    !session.stopRequested &&
+    task.latest_run?.environment !== "local" &&
+    isTaskRunning(task);
+
   const handleRetry = useCallback(async () => {
     if (!taskId || !task) return;
     try {
@@ -587,7 +627,9 @@ export default function TaskDetailScreen() {
         title={showLoading ? "Loading..." : task?.title || "Task"}
         subtitle={task?.repository ?? undefined}
         rightSlot={
-          prUrl ? (
+          canStopRun ? (
+            <StopRunButton onPress={handleStopRun} />
+          ) : prUrl ? (
             <>
               <PrDiffStatsBadge prUrl={prUrl} />
               <PrStatusBadge prUrl={prUrl} />
