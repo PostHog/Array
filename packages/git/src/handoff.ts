@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
   GitHandoffCheckpoint,
@@ -26,6 +25,7 @@ export interface GitHandoffArtifactFile {
 
 export interface GitHandoffCaptureResult {
   checkpoint: GitHandoffCheckpoint;
+  artifactDirectory: string;
   headPack?: GitHandoffArtifactFile;
   indexFile: GitHandoffArtifactFile;
   totalBytes: number;
@@ -92,7 +92,7 @@ export class GitHandoffTracker {
 
     const checkpoint = result.data;
     const git = createGitClient(this.repositoryPath);
-    const tempDir = await this.createTempDir(checkpoint.checkpointId);
+    const tempDir = await this.createTempDir(git, checkpoint.checkpointId);
     const checkpointRef = `${CHECKPOINT_REF_PREFIX}${checkpoint.checkpointId}`;
 
     try {
@@ -139,10 +139,14 @@ export class GitHandoffTracker {
           upstreamMergeRef: tracking.upstreamMergeRef,
           remoteUrl: tracking.remoteUrl,
         },
+        artifactDirectory: tempDir,
         headPack,
         indexFile,
         totalBytes: (headPack?.rawBytes ?? 0) + indexFile.rawBytes,
       };
+    } catch (error) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw error;
     } finally {
       await deleteCheckpoint(git, checkpoint.checkpointId).catch(() => {});
     }
@@ -590,8 +594,27 @@ export class GitHandoffTracker {
     return exitCode === 0;
   }
 
-  private async createTempDir(checkpointId: string): Promise<string> {
-    return mkdtemp(joinTempPrefix(checkpointId));
+  private async createTempDir(
+    git: GitClient,
+    checkpointId: string,
+  ): Promise<string> {
+    // Git stages packs in the object store, so the destination must share its filesystem.
+    const gitCommonDir = await this.resolveGitCommonDir(git);
+    return mkdtemp(
+      path.join(gitCommonDir, `posthog-code-handoff-${checkpointId}-`),
+    );
+  }
+
+  private async resolveGitCommonDir(git: GitClient): Promise<string> {
+    const raw = await git.raw([
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]);
+    const resolved = raw.trim() || ".git";
+    return path.isAbsolute(resolved)
+      ? resolved
+      : path.resolve(this.repositoryPath, resolved);
   }
 
   private async getGitPath(git: GitClient, gitPath: string): Promise<string> {
@@ -713,10 +736,6 @@ export class GitHandoffTracker {
       child.stdin.end(input);
     });
   }
-}
-
-function joinTempPrefix(checkpointId: string): string {
-  return path.join(tmpdir(), `posthog-code-handoff-${checkpointId}-`);
 }
 
 export async function readHandoffLocalGitState(

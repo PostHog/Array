@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   type GitHandoffBranchDivergence,
   type GitHandoffCheckpoint,
@@ -149,12 +149,10 @@ export class HandoffCheckpointTracker {
         indexArtifactPath: uploads.index?.storagePath,
       };
     } finally {
-      const tempDir = capture.headPack?.path
-        ? dirname(capture.headPack.path)
-        : dirname(capture.indexFile.path);
-      await this.removeIfPresent(capture.headPack?.path);
-      await this.removeIfPresent(capture.indexFile.path);
-      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      await rm(capture.artifactDirectory, {
+        recursive: true,
+        force: true,
+      }).catch(() => {});
     }
   }
 

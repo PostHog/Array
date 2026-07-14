@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeHandoffArtifact,
@@ -222,6 +224,18 @@ describe("HandoffCheckpointTracker", () => {
     expect(checkpoint).not.toBeNull();
     if (!checkpoint) return;
     expect(Object.keys(store.artifacts).length).toBeGreaterThan(0);
+    const gitCommonDirRaw = await cloudRepo.git([
+      "rev-parse",
+      "--git-common-dir",
+    ]);
+    const gitCommonDir = path.isAbsolute(gitCommonDirRaw)
+      ? gitCommonDirRaw
+      : path.resolve(cloudRepo.path, gitCommonDirRaw);
+    expect(
+      (await readdir(gitCommonDir)).filter((entry) =>
+        entry.startsWith("posthog-code-handoff-"),
+      ),
+    ).toEqual([]);
 
     const applyTracker = createTracker(localRepo.path, apiClient);
     await applyTracker.applyFromHandoff(checkpoint);

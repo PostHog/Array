@@ -103,10 +103,9 @@ async function makeCloudChanges(
 }
 
 async function cleanupCapture(capture: GitHandoffCaptureResult): Promise<void> {
-  if (capture.headPack?.path) {
-    await rm(capture.headPack.path, { force: true }).catch(() => {});
-  }
-  await rm(capture.indexFile.path, { force: true }).catch(() => {});
+  await rm(capture.artifactDirectory, { recursive: true, force: true }).catch(
+    () => {},
+  );
 }
 
 async function captureAndApply(
@@ -145,6 +144,41 @@ async function captureAndApply(
 }
 
 describe("GitHandoffTracker", () => {
+  it("stores capture artifacts beside the git object store", async () => {
+    await withRepos(async (repos) => {
+      await makeCloudChanges(repos.cloudRepo, repos.cloudGit);
+
+      const captureTracker = new GitHandoffTracker({
+        repositoryPath: repos.cloudRepo,
+      });
+      const capture = await captureTracker.captureForHandoff(
+        repos.localGitState,
+      );
+      const gitCommonDir = (
+        await repos.cloudGit.raw([
+          "rev-parse",
+          "--path-format=absolute",
+          "--git-common-dir",
+        ])
+      ).trim();
+
+      try {
+        expect(path.dirname(capture.artifactDirectory)).toBe(gitCommonDir);
+        expect(path.dirname(path.dirname(capture.indexFile.path))).toBe(
+          gitCommonDir,
+        );
+        if (!capture.headPack) {
+          throw new Error("Expected handoff capture to include a pack file");
+        }
+        expect(path.dirname(path.dirname(capture.headPack.path))).toBe(
+          gitCommonDir,
+        );
+      } finally {
+        await cleanupCapture(capture);
+      }
+    });
+  }, 15000);
+
   it("captures and reapplies head, worktree, and index state from local files", async () => {
     await withRepos(async (repos) => {
       await makeCloudChanges(repos.cloudRepo, repos.cloudGit);
