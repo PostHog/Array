@@ -187,7 +187,7 @@ export function CreateChannelModal({
           </DialogHeader>
         )}
 
-        <DialogBody className="flex flex-col gap-4">
+        <DialogBody viewportClassName="flex flex-col gap-4">
           {!isDescribeMode && (
             <>
               <Field>
