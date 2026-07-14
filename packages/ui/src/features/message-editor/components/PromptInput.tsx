@@ -3,6 +3,7 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import type { ComposerMessageNavigationHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
@@ -76,9 +77,9 @@ export interface PromptInputProps {
   hideDefaultToolbar?: boolean;
   // prompt history provider
   getPromptHistory?: () => string[];
-  // plain Up/Down at the caret boundary; return true when the conversation
-  // view consumed the keypress
-  onNavigateMessages?: (direction: -1 | 1) => boolean;
+  // plain Up/Down at the caret boundary; recalls sent prompts and keeps the
+  // conversation view in sync
+  onNavigateMessages?: ComposerMessageNavigationHandler;
   // callbacks
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;

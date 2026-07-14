@@ -831,15 +831,19 @@ function ThreadKeyboardNav({
 }) {
   const { scrollToMessage, scrollToEnd } = useChatMessageScroller();
 
-  const userMessageIds = useMemo(
+  const userMessages = useMemo(
     () =>
       items
         .filter(
           (item): item is Extract<ConversationItem, { type: "user_message" }> =>
             item.type === "user_message",
         )
-        .map((item) => item.id),
+        .map((item) => ({ id: item.id, content: item.content })),
     [items],
+  );
+  const userMessageIds = useMemo(
+    () => userMessages.map((message) => message.id),
+    [userMessages],
   );
 
   useHotkeys(
@@ -895,29 +899,42 @@ function ThreadKeyboardNav({
   // Read at keypress time so the handler registered in the ref effect never
   // acts on a stale snapshot (the effect runs after paint, and key repeats
   // can outpace re-renders).
-  const userMessageIdsRef = useRef(userMessageIds);
-  userMessageIdsRef.current = userMessageIds;
+  const userMessagesRef = useRef(userMessages);
+  userMessagesRef.current = userMessages;
   const keyboardFocusedMessageIdRef = useRef(keyboardFocusedMessageId);
   keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
 
+  // A newly sent prompt resets recall, so the next Up starts from it.
+  const userMessageCountRef = useRef(userMessages.length);
+  useEffect(() => {
+    if (userMessages.length > userMessageCountRef.current) {
+      keyboardFocusedMessageIdRef.current = null;
+      setKeyboardFocusedMessageId(null);
+    }
+    userMessageCountRef.current = userMessages.length;
+  }, [userMessages.length, setKeyboardFocusedMessageId]);
+
   const navigateFromComposer = useCallback<ComposerMessageNavigationHandler>(
     (direction) => {
+      const messages = userMessagesRef.current;
       const action = composerMessageNavigation(
-        userMessageIdsRef.current,
+        messages.map((message) => message.id),
         keyboardFocusedMessageIdRef.current,
         direction,
       );
-      if (!action) return false;
+      if (!action) return null;
       if (action.kind === "exitToBottom") {
         keyboardFocusedMessageIdRef.current = null;
         setKeyboardFocusedMessageId(null);
         scrollToEnd({ behavior: "smooth" });
-        return true;
+        return { kind: "exitToBottom" };
       }
+      const message = messages.find((entry) => entry.id === action.id);
+      if (!message) return null;
       keyboardFocusedMessageIdRef.current = action.id;
       setKeyboardFocusedMessageId(action.id);
       scrollToMessage(action.id);
-      return true;
+      return { kind: "recall", text: message.content, fresh: action.fresh };
     },
     [setKeyboardFocusedMessageId, scrollToMessage, scrollToEnd],
   );

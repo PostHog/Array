@@ -1,12 +1,16 @@
 export type ComposerNavigationDirection = -1 | 1;
 
 export type ComposerNavigationAction =
-  | { kind: "focus"; id: string }
+  | { kind: "focus"; id: string; fresh: boolean }
+  | { kind: "exitToBottom" };
+
+export type ComposerNavigationResult =
+  | { kind: "recall"; text: string; fresh: boolean }
   | { kind: "exitToBottom" };
 
 export type ComposerMessageNavigationHandler = (
   direction: ComposerNavigationDirection,
-) => boolean;
+) => ComposerNavigationResult | null;
 
 export function composerMessageNavigation(
   userMessageIds: string[],
@@ -23,7 +27,7 @@ export function composerMessageNavigation(
         ? userMessageIds.length - 1
         : Math.max(0, currentIndex - 1);
     const id = userMessageIds[previousIndex];
-    return id ? { kind: "focus", id } : null;
+    return id ? { kind: "focus", id, fresh: currentIndex === -1 } : null;
   }
 
   // Down only means "toward newer" while already navigating; otherwise the
@@ -33,5 +37,5 @@ export function composerMessageNavigation(
     return { kind: "exitToBottom" };
   }
   const id = userMessageIds[currentIndex + 1];
-  return id ? { kind: "focus", id } : null;
+  return id ? { kind: "focus", id, fresh: false } : null;
 }

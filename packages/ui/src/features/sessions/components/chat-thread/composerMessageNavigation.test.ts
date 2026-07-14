@@ -15,28 +15,28 @@ describe("composerMessageNavigation", () => {
     expected: ComposerNavigationAction | null;
   }>([
     {
-      name: "up with no focus jumps to the newest user message",
+      name: "up with no focus starts fresh on the newest user message",
       focusedId: null,
       direction: -1,
-      expected: { kind: "focus", id: "m3" },
+      expected: { kind: "focus", id: "m3", fresh: true },
     },
     {
       name: "up from the middle focuses the previous message",
       focusedId: "m2",
       direction: -1,
-      expected: { kind: "focus", id: "m1" },
+      expected: { kind: "focus", id: "m1", fresh: false },
     },
     {
       name: "up at the oldest message stays on it",
       focusedId: "m1",
       direction: -1,
-      expected: { kind: "focus", id: "m1" },
+      expected: { kind: "focus", id: "m1", fresh: false },
     },
     {
-      name: "up with an unknown focus id falls back to the newest message",
+      name: "up with an unknown focus id starts fresh on the newest message",
       focusedId: "gone",
       direction: -1,
-      expected: { kind: "focus", id: "m3" },
+      expected: { kind: "focus", id: "m3", fresh: true },
     },
     {
       name: "down with no focus does nothing",
@@ -48,7 +48,7 @@ describe("composerMessageNavigation", () => {
       name: "down from the middle focuses the next message",
       focusedId: "m2",
       direction: 1,
-      expected: { kind: "focus", id: "m3" },
+      expected: { kind: "focus", id: "m3", fresh: false },
     },
     {
       name: "down at the newest message exits back to the bottom",

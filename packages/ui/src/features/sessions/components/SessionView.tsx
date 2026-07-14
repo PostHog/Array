@@ -327,8 +327,8 @@ export function SessionView({
   const composerNavigationRef = useRef<ComposerMessageNavigationHandler | null>(
     null,
   );
-  const handleNavigateMessages = useCallback(
-    (direction: -1 | 1) => composerNavigationRef.current?.(direction) ?? false,
+  const handleNavigateMessages = useCallback<ComposerMessageNavigationHandler>(
+    (direction) => composerNavigationRef.current?.(direction) ?? null,
     [],
   );
   const dragCounterRef = useRef(0);

@@ -20,10 +20,13 @@ import {
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
+import type { ComposerMessageNavigationHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerMessageNavigation";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { isSendMessageSubmitKey } from "@posthog/ui/utils/sendMessageKey";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEditor } from "@tiptap/react";
 import type React from "react";
@@ -61,7 +64,7 @@ export interface UseTiptapEditorOptions {
   };
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
-  onNavigateMessages?: (direction: -1 | 1) => boolean;
+  onNavigateMessages?: ComposerMessageNavigationHandler;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
   onBashCommand?: (command: string) => void;
@@ -271,6 +274,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const onNavigateMessagesRef = useRef(onNavigateMessages);
   onNavigateMessagesRef.current = onNavigateMessages;
 
+  // Doc snapshot taken when arrow-key recall first replaces the input, so
+  // arrowing back down past the newest prompt restores what was being typed
+  // (kept as a ProseMirror node to preserve mention chips).
+  const messageNavDraftRef = useRef<ProseMirrorNode | null>(null);
+
   const prevBashModeRef = useRef(false);
   const prevIsEmptyRef = useRef(true);
   const submitRef = useRef<() => void>(() => {});
@@ -409,19 +417,45 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               const { selection, doc } = view.state;
               // Arrows move the caret as usual; only a press that can't
               // travel further (caret already at the first or last position)
-              // hands off to conversation message navigation.
+              // hands off to sent-prompt recall.
               const atBoundary =
                 selection.empty &&
                 (event.key === "ArrowUp"
                   ? selection.from <= 1
                   : selection.to >= doc.content.size - 1);
-              if (
-                atBoundary &&
-                navigateMessages(event.key === "ArrowUp" ? -1 : 1)
-              ) {
-                event.preventDefault();
+              if (!atBoundary) return false;
+
+              const result = navigateMessages(event.key === "ArrowUp" ? -1 : 1);
+              if (!result) return false;
+              event.preventDefault();
+
+              if (result.kind === "recall") {
+                if (result.fresh) {
+                  messageNavDraftRef.current = view.state.doc;
+                }
+                const tr = view.state.tr
+                  .delete(1, view.state.doc.content.size - 1)
+                  .insertText(result.text, 1);
+                // Recalling up parks the caret at the start so the next Up
+                // press keeps cycling; recalling down parks it at the end.
+                if (event.key === "ArrowUp") {
+                  tr.setSelection(TextSelection.create(tr.doc, 1));
+                }
+                view.dispatch(tr);
                 return true;
               }
+
+              const draft = messageNavDraftRef.current;
+              messageNavDraftRef.current = null;
+              const tr = view.state.tr;
+              if (draft) {
+                tr.replaceWith(0, view.state.doc.content.size, draft.content);
+                tr.setSelection(TextSelection.atEnd(tr.doc));
+              } else {
+                tr.delete(1, view.state.doc.content.size - 1);
+              }
+              view.dispatch(tr);
+              return true;
             }
           }
 
@@ -709,6 +743,8 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     if (isContentEmpty(content)) return;
 
     const text = editor.getText().trim();
+
+    messageNavDraftRef.current = null;
 
     const doClear = () => {
       if (!clearOnSubmit) return;

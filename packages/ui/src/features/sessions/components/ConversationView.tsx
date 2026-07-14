@@ -248,11 +248,11 @@ export function ConversationView({
   >(null);
 
   const userMessages = useMemo(() => {
-    const result: Array<{ id: string; index: number }> = [];
+    const result: Array<{ id: string; index: number; content: string }> = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item.type === "user_message") {
-        result.push({ id: item.id, index: i });
+        result.push({ id: item.id, index: i, content: item.content });
       }
     }
     return result;
@@ -265,6 +265,16 @@ export function ConversationView({
   userMessagesRef.current = userMessages;
   const keyboardFocusedMessageIdRef = useRef(keyboardFocusedMessageId);
   keyboardFocusedMessageIdRef.current = keyboardFocusedMessageId;
+
+  // A newly sent prompt resets recall, so the next Up starts from it.
+  const userMessageCountRef = useRef(userMessages.length);
+  useEffect(() => {
+    if (userMessages.length > userMessageCountRef.current) {
+      keyboardFocusedMessageIdRef.current = null;
+      setKeyboardFocusedMessageId(null);
+    }
+    userMessageCountRef.current = userMessages.length;
+  }, [userMessages.length]);
 
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
@@ -352,19 +362,19 @@ export function ConversationView({
         keyboardFocusedMessageIdRef.current,
         direction,
       );
-      if (!action) return false;
+      if (!action) return null;
       if (action.kind === "exitToBottom") {
         keyboardFocusedMessageIdRef.current = null;
         setKeyboardFocusedMessageId(null);
         scrollToBottom();
-        return true;
+        return { kind: "exitToBottom" };
       }
       const message = messages.find((entry) => entry.id === action.id);
-      if (!message) return false;
+      if (!message) return null;
       keyboardFocusedMessageIdRef.current = action.id;
       setKeyboardFocusedMessageId(action.id);
       scrollToUserMessage(action.id, message.index);
-      return true;
+      return { kind: "recall", text: message.content, fresh: action.fresh };
     },
     [scrollToUserMessage, scrollToBottom],
   );
