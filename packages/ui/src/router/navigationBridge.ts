@@ -181,6 +181,17 @@ export function navigateToSkills(): void {
   void getRouterOrNull()?.navigate({ to: "/skills" });
 }
 
+export function navigateToNotebooks(): void {
+  void getRouterOrNull()?.navigate({ to: "/notebooks" });
+}
+
+export function navigateToNotebook(shortId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/notebooks/$shortId",
+    params: { shortId },
+  });
+}
+
 export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
 }

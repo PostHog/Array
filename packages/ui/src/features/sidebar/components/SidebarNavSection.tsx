@@ -14,6 +14,7 @@ import {
   navigateToHome,
   navigateToInbox,
   navigateToMcpServers,
+  navigateToNotebooks,
   navigateToSkills,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
@@ -34,6 +35,7 @@ import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
 import { McpServersItem } from "./items/McpServersItem";
 import { NewTaskItem } from "./items/NewTaskItem";
+import { NotebooksItem } from "./items/NotebooksItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
 
@@ -98,6 +100,7 @@ export function SidebarNavSection({
   const isAgentsActive = view.type === "agents";
   const isCommandCenterActive = view.type === "command-center";
   const isSkillsActive = view.type === "skills";
+  const isNotebooksActive = view.type === "notebooks";
   const isMcpServersActive = view.type === "mcp-servers";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
@@ -163,6 +166,13 @@ export function SidebarNavSection({
 
       <Box>
         <SkillsItem isActive={isSkillsActive} onClick={goSkills} />
+      </Box>
+
+      <Box>
+        <NotebooksItem
+          isActive={isNotebooksActive}
+          onClick={navigateToNotebooks}
+        />
       </Box>
 
       <Box>

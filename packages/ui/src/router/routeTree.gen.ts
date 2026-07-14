@@ -17,6 +17,7 @@ import { Route as CommandCenterRouteImport } from './routes/command-center'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as NotebooksIndexRouteImport } from './routes/notebooks/index'
 import { Route as CodeIndexRouteImport } from './routes/code/index'
 import { Route as WebsiteSkillsRouteImport } from './routes/website/skills'
 import { Route as WebsiteNewRouteImport } from './routes/website/new'
@@ -25,6 +26,7 @@ import { Route as WebsiteHomeRouteImport } from './routes/website/home'
 import { Route as WebsiteCommandCenterRouteImport } from './routes/website/command-center'
 import { Route as WebsiteActivityRouteImport } from './routes/website/activity'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
+import { Route as NotebooksShortIdRouteImport } from './routes/notebooks/$shortId'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodePrRouteImport } from './routes/code/pr'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
@@ -116,6 +118,11 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   path: '/settings/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NotebooksIndexRoute = NotebooksIndexRouteImport.update({
+  id: '/notebooks/',
+  path: '/notebooks/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CodeIndexRoute = CodeIndexRouteImport.update({
   id: '/code/',
   path: '/code/',
@@ -154,6 +161,11 @@ const WebsiteActivityRoute = WebsiteActivityRouteImport.update({
 const SettingsCategoryRoute = SettingsCategoryRouteImport.update({
   id: '/settings/$category',
   path: '/settings/$category',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotebooksShortIdRoute = NotebooksShortIdRouteImport.update({
+  id: '/notebooks/$shortId',
+  path: '/notebooks/$shortId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FoldersFolderIdRoute = FoldersFolderIdRouteImport.update({
@@ -442,6 +454,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox': typeof CodeInboxRouteWithChildren
   '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
+  '/notebooks/$shortId': typeof NotebooksShortIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
@@ -450,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
+  '/notebooks/': typeof NotebooksIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/code/agents/applications': typeof CodeAgentsApplicationsRouteWithChildren
@@ -507,6 +521,7 @@ export interface FileRoutesByTo {
   '/code/home': typeof CodeHomeRoute
   '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
+  '/notebooks/$shortId': typeof NotebooksShortIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
@@ -515,6 +530,7 @@ export interface FileRoutesByTo {
   '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code': typeof CodeIndexRoute
+  '/notebooks': typeof NotebooksIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
@@ -568,6 +584,7 @@ export interface FileRoutesById {
   '/code/inbox': typeof CodeInboxRouteWithChildren
   '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
+  '/notebooks/$shortId': typeof NotebooksShortIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
@@ -576,6 +593,7 @@ export interface FileRoutesById {
   '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
+  '/notebooks/': typeof NotebooksIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
   '/code/agents/applications': typeof CodeAgentsApplicationsRouteWithChildren
@@ -638,6 +656,7 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/code/pr'
     | '/folders/$folderId'
+    | '/notebooks/$shortId'
     | '/settings/$category'
     | '/website/activity'
     | '/website/command-center'
@@ -646,6 +665,7 @@ export interface FileRouteTypes {
     | '/website/new'
     | '/website/skills'
     | '/code/'
+    | '/notebooks/'
     | '/settings/'
     | '/website/'
     | '/code/agents/applications'
@@ -703,6 +723,7 @@ export interface FileRouteTypes {
     | '/code/home'
     | '/code/pr'
     | '/folders/$folderId'
+    | '/notebooks/$shortId'
     | '/settings/$category'
     | '/website/activity'
     | '/website/command-center'
@@ -711,6 +732,7 @@ export interface FileRouteTypes {
     | '/website/new'
     | '/website/skills'
     | '/code'
+    | '/notebooks'
     | '/settings'
     | '/website'
     | '/code/inbox/agents'
@@ -763,6 +785,7 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/code/pr'
     | '/folders/$folderId'
+    | '/notebooks/$shortId'
     | '/settings/$category'
     | '/website/activity'
     | '/website/command-center'
@@ -771,6 +794,7 @@ export interface FileRouteTypes {
     | '/website/new'
     | '/website/skills'
     | '/code/'
+    | '/notebooks/'
     | '/settings/'
     | '/website/'
     | '/code/agents/applications'
@@ -832,8 +856,10 @@ export interface RootRouteChildren {
   CodeInboxRoute: typeof CodeInboxRouteWithChildren
   CodePrRoute: typeof CodePrRoute
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
+  NotebooksShortIdRoute: typeof NotebooksShortIdRoute
   SettingsCategoryRoute: typeof SettingsCategoryRoute
   CodeIndexRoute: typeof CodeIndexRoute
+  NotebooksIndexRoute: typeof NotebooksIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   CodeTasksTaskIdRoute: typeof CodeTasksTaskIdRoute
   CodeTasksPendingKeyRoute: typeof CodeTasksPendingKeyRoute
@@ -897,6 +923,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notebooks/': {
+      id: '/notebooks/'
+      path: '/notebooks'
+      fullPath: '/notebooks/'
+      preLoaderRoute: typeof NotebooksIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/code/': {
       id: '/code/'
       path: '/code'
@@ -951,6 +984,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/$category'
       fullPath: '/settings/$category'
       preLoaderRoute: typeof SettingsCategoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notebooks/$shortId': {
+      id: '/notebooks/$shortId'
+      path: '/notebooks/$shortId'
+      fullPath: '/notebooks/$shortId'
+      preLoaderRoute: typeof NotebooksShortIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/folders/$folderId': {
@@ -1540,8 +1580,10 @@ const rootRouteChildren: RootRouteChildren = {
   CodeInboxRoute: CodeInboxRouteWithChildren,
   CodePrRoute: CodePrRoute,
   FoldersFolderIdRoute: FoldersFolderIdRoute,
+  NotebooksShortIdRoute: NotebooksShortIdRoute,
   SettingsCategoryRoute: SettingsCategoryRoute,
   CodeIndexRoute: CodeIndexRoute,
+  NotebooksIndexRoute: NotebooksIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   CodeTasksTaskIdRoute: CodeTasksTaskIdRoute,
   CodeTasksPendingKeyRoute: CodeTasksPendingKeyRoute,

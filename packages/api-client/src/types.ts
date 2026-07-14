@@ -8,3 +8,6 @@ export type McpAuthType = Schemas.MCPAuthTypeEnum;
 export type McpRecommendedServer = Schemas.MCPServerTemplate;
 export type McpServerInstallation = Schemas.MCPServerInstallation;
 export type McpInstallationTool = Schemas.MCPServerInstallationTool;
+
+export type Notebook = Schemas.Notebook;
+export type NotebookMinimal = Schemas.NotebookMinimal;

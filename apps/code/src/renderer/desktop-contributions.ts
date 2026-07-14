@@ -3,6 +3,7 @@ import { autoresearchCoreModule } from "@posthog/core/autoresearch/autoresearch.
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
+import { notebooksCoreModule } from "@posthog/core/notebooks/notebooks.module";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import { skillsCoreModule } from "@posthog/core/skills/skills.module";
@@ -44,6 +45,7 @@ export function registerDesktopContributions(): void {
     focusUiModule,
     githubConnectModule,
     inboxCoreModule,
+    notebooksCoreModule,
     notificationsUiModule,
     onboardingModule,
     provisioningUiModule,

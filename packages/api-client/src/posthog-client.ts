@@ -138,6 +138,33 @@ export class SandboxCustomImagesDisabledError extends Error {
   }
 }
 
+/**
+ * A text splice on a notebook's markdown string, as replayed by collab saves.
+ * Offsets are UTF-16 code units; spans are ascending and non-overlapping
+ * (matches the backend's MarkdownDiff and the markdown editor's TextChange).
+ */
+export interface NotebookTextChange {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface NotebookMarkdownUpdate {
+  version: number;
+  diff: NotebookTextChange[];
+  base_crc?: number | null;
+}
+
+/** Outcome of `notebookMarkdownSave`: 200 → saved, 409 → conflict, 410 → gone. */
+export type NotebookMarkdownSaveResponse =
+  | { status: "saved"; notebook: Schemas.Notebook }
+  | {
+      status: "conflict";
+      serverVersion: number;
+      updates: NotebookMarkdownUpdate[];
+    }
+  | { status: "gone" };
+
 export type UsageLimitType = "burst" | "sustained" | null;
 
 // Stable message so callers recognize this after a saga reduces the error to a string.
@@ -1893,6 +1920,197 @@ export class PostHogAPIClient {
       throw new Error(`Workflow request failed: ${response.status}`);
     }
     return response.json();
+  }
+
+  // Notebooks — the PostHog notebooks REST resource. Retrieve/patch go through
+  // the generated client; list needs `order` (not in the OpenAPI query params),
+  // create needs a partial body (the generated body type requires read-only
+  // fields), and collab markdown_save isn't in the spec at all, so those use
+  // the raw fetcher.
+  async listNotebooks(): Promise<Schemas.NotebookMinimal[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/notebooks/?limit=100&order=-last_modified_at`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch notebooks: ${response.statusText}`);
+    }
+    const page =
+      (await response.json()) as Schemas.PaginatedNotebookMinimalList;
+    return page.results;
+  }
+
+  async getNotebook(shortId: string): Promise<Schemas.Notebook> {
+    const teamId = await this.getTeamId();
+    return await this.api.get(
+      "/api/projects/{project_id}/notebooks/{short_id}/",
+      {
+        path: { project_id: teamId.toString(), short_id: shortId },
+      },
+    );
+  }
+
+  async createNotebook(body: {
+    title?: string;
+    content?: unknown;
+    text_content?: string;
+  }): Promise<Schemas.Notebook> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/notebooks/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to create notebook: ${response.statusText}`);
+    }
+    return (await response.json()) as Schemas.Notebook;
+  }
+
+  async patchNotebook(
+    shortId: string,
+    body: { title?: string },
+  ): Promise<Schemas.Notebook> {
+    const teamId = await this.getTeamId();
+    return await this.api.patch(
+      "/api/projects/{project_id}/notebooks/{short_id}/",
+      {
+        path: { project_id: teamId.toString(), short_id: shortId },
+        body,
+      },
+    );
+  }
+
+  // Notebooks soft-delete: the API's DELETE method is a 405, so deletion is a
+  // PATCH of `deleted: true`, same as the PostHog web app.
+  async deleteNotebook(shortId: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    await this.api.patch("/api/projects/{project_id}/notebooks/{short_id}/", {
+      path: { project_id: teamId.toString(), short_id: shortId },
+      body: { deleted: true },
+    });
+  }
+
+  // Save a markdown-notebook edit through the collab endpoint. `version` is
+  // the baseline notebook version the edit was derived from; the server
+  // rebases concurrent saves onto it. 200 → saved (bumped version), 409 →
+  // conflict (body carries the missed remote updates to replay), 410 → the
+  // missed range is unrecoverable and the caller must reload the notebook.
+  async notebookMarkdownSave(
+    shortId: string,
+    body: {
+      client_id: string;
+      version: number;
+      content: unknown;
+      text_content?: string;
+      title?: string;
+    },
+  ): Promise<NotebookMarkdownSaveResponse> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/notebooks/${encodeURIComponent(shortId)}/collab/markdown_save/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+    if (response.ok) {
+      return {
+        status: "saved",
+        notebook: (await response.json()) as Schemas.Notebook,
+      };
+    }
+    if (response.status === 409) {
+      const conflict = (await response.json()) as {
+        updates: NotebookMarkdownUpdate[];
+        version: number;
+      };
+      return {
+        status: "conflict",
+        serverVersion: conflict.version,
+        updates: conflict.updates,
+      };
+    }
+    if (response.status === 410) {
+      return { status: "gone" };
+    }
+    throw new Error(`Failed to save notebook: ${response.statusText}`);
+  }
+
+  // Run a typed query node ({ kind: "TrendsQuery" | "HogQLQuery" | … })
+  // against the project's query endpoint. `refresh: "blocking"` serves a
+  // fresh cached result or computes one — the same numbers the PostHog UI
+  // shows. The response shape depends on the query kind, so callers coerce.
+  async runQueryNode(
+    query: Record<string, unknown>,
+    opts?: { refresh?: string },
+  ): Promise<unknown> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/query/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({
+          query,
+          refresh: opts?.refresh ?? "blocking",
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Query failed (${response.status})`);
+    }
+    return await response.json();
+  }
+
+  // Fetch a saved insight by short id, returning its stored query and cached
+  // result from the insights list endpoint (the same cache the PostHog UI
+  // reads). Throws on an unknown short id.
+  async getInsightByShortId(
+    shortId: string,
+  ): Promise<{ name?: string | null; query?: unknown; result?: unknown }> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/insights/?short_id=${encodeURIComponent(shortId)}&refresh=blocking`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch insight (${response.status})`);
+    }
+    const body = (await response.json()) as {
+      results?: {
+        name?: string | null;
+        derived_name?: string | null;
+        query?: unknown;
+        result?: unknown;
+      }[];
+    };
+    const insight = body.results?.[0];
+    if (!insight) {
+      throw new Error(`Insight ${shortId} not found`);
+    }
+    return {
+      name: insight.name ?? insight.derived_name,
+      query: insight.query,
+      result: insight.result,
+    };
   }
 
   async listSignalSourceConfigs(

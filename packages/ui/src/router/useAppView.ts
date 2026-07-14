@@ -18,6 +18,7 @@ export type AppViewType =
   | "archived"
   | "command-center"
   | "skills"
+  | "notebooks"
   | "mcp-servers"
   | "settings";
 
@@ -80,6 +81,9 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/skills":
     case "/website/skills":
       return { type: "skills" };
+    case "/notebooks/":
+    case "/notebooks/$shortId":
+      return { type: "notebooks" };
     case "/mcp-servers":
     case "/website/mcp-servers":
       return { type: "mcp-servers" };

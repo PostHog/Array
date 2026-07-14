@@ -1696,3 +1696,97 @@ describe("PostHogAPIClient", () => {
     });
   });
 });
+
+describe("PostHogAPIClient.notebookMarkdownSave", () => {
+  function makeClient(fetch: ReturnType<typeof vi.fn>) {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+    return client;
+  }
+
+  const saveBody = {
+    client_id: "client-1",
+    version: 3,
+    content: { type: "doc", content: [] },
+    text_content: "# Hi",
+  };
+
+  it("maps 200 to saved with the updated notebook", async () => {
+    const updated = { short_id: "abc123", version: 4 };
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => updated,
+    });
+    const client = makeClient(fetch);
+
+    const result = await client.notebookMarkdownSave("abc123", saveBody);
+
+    expect(result).toEqual({ status: "saved", notebook: updated });
+    const call = fetch.mock.calls[0][0];
+    expect(call.method).toBe("post");
+    expect(call.path).toBe(
+      "/api/projects/123/notebooks/abc123/collab/markdown_save/",
+    );
+    expect(JSON.parse(call.overrides.body)).toEqual(saveBody);
+  });
+
+  it("maps 409 to conflict with the server version and missed updates", async () => {
+    const conflictBody = {
+      version: 5,
+      updates: [
+        { version: 4, diff: [{ start: 0, end: 1, text: "x" }], base_crc: null },
+      ],
+    };
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => conflictBody,
+    });
+    const client = makeClient(fetch);
+
+    const result = await client.notebookMarkdownSave("abc123", saveBody);
+
+    expect(result).toEqual({
+      status: "conflict",
+      serverVersion: 5,
+      updates: conflictBody.updates,
+    });
+  });
+
+  it("maps 410 to gone", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 410,
+      json: async () => ({}),
+    });
+    const client = makeClient(fetch);
+
+    await expect(
+      client.notebookMarkdownSave("abc123", saveBody),
+    ).resolves.toEqual({ status: "gone" });
+  });
+
+  it("throws on any other failure status", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      json: async () => ({}),
+    });
+    const client = makeClient(fetch);
+
+    await expect(
+      client.notebookMarkdownSave("abc123", saveBody),
+    ).rejects.toThrow("Failed to save notebook");
+  });
+});
