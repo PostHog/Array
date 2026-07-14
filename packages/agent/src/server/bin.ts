@@ -32,6 +32,7 @@ const envSchema = z.object({
   POSTHOG_CODE_REASONING_EFFORT: z
     .enum(["low", "medium", "high", "xhigh", "max"])
     .optional(),
+  POSTHOG_AGENT_STATE_DIR: z.string().startsWith("/").optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
   // Base URL for the event-ingest POST only; falls back to POSTHOG_API_URL when unset.
   POSTHOG_TASK_RUN_EVENT_INGEST_URL: z.url().optional(),
@@ -106,6 +107,10 @@ program
     "MCP servers config as JSON array (ACP McpServer[] format)",
   )
   .option("--createPr <boolean>", "Whether this run may publish changes")
+  .option(
+    "--autoPublish <boolean>",
+    "Whether this run should push and open a draft PR on completion without an explicit ask",
+  )
   .option("--baseBranch <branch>", "Base branch for PR creation")
   .option(
     "--claudeCodeConfig <json>",
@@ -130,6 +135,10 @@ program
 
     const mode = options.mode === "background" ? "background" : "interactive";
     const createPr = parseBooleanOption(options.createPr, "--createPr");
+    const autoPublish = parseBooleanOption(
+      options.autoPublish,
+      "--autoPublish",
+    );
 
     const mcpServers = parseJsonOption(
       options.mcpServers,
@@ -166,6 +175,7 @@ program
 
     const server = new AgentServer({
       port: parseInt(options.port, 10),
+      agentStateDir: env.POSTHOG_AGENT_STATE_DIR,
       jwtPublicKey: env.JWT_PUBLIC_KEY,
       eventIngestToken: env.POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN,
       eventIngestBaseUrl: env.POSTHOG_TASK_RUN_EVENT_INGEST_URL,
@@ -182,6 +192,7 @@ program
       taskId: options.taskId,
       runId: options.runId,
       createPr,
+      autoPublish,
       mcpServers,
       baseBranch: options.baseBranch,
       claudeCode,

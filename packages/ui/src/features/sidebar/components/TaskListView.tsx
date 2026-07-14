@@ -1,9 +1,9 @@
 import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
-import { GitBranch } from "@phosphor-icons/react";
+import { GitBranch, Wrench } from "@phosphor-icons/react";
 import {
-  folderGroupId,
+  findGroupFolder,
   groupTasksByRelativeDate,
 } from "@posthog/core/sidebar/groupTasks";
 import { mostRecentRunEnvironment } from "@posthog/core/sidebar/runEnvironment";
@@ -12,6 +12,7 @@ import type {
   TaskGroup,
 } from "@posthog/core/sidebar/sidebarData.types";
 import { MenuLabel } from "@posthog/quill";
+import { getFileName } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
@@ -89,9 +90,32 @@ function TaskRow({
   depth?: number;
 }) {
   const workspace = useWorkspace(task.id);
+  const { folders } = useFolders();
   const effectiveMode =
     workspace?.mode ??
     (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
+
+  // Chip identifying the checkout the task runs in: app-managed worktrees
+  // (worktree mode) and local tasks whose registered folder is itself a
+  // linked worktree of the group's main clone.
+  const worktreeCheckout = useMemo(() => {
+    if (workspace?.worktreePath) {
+      return {
+        name: workspace.worktreeName ?? getFileName(workspace.worktreePath),
+        path: workspace.worktreePath,
+      };
+    }
+    if (workspace?.mode === "local" && workspace.folderPath) {
+      const folder = folders.find((f) => f.path === workspace.folderPath);
+      if (folder?.mainRepoPath) {
+        return {
+          name: getFileName(workspace.folderPath),
+          path: workspace.folderPath,
+        };
+      }
+    }
+    return null;
+  }, [workspace, folders]);
   const { prState, hasDiff } = useTaskPrStatus(task);
   const isArchiving = useArchivingTasksStore((s) =>
     s.archivingTaskIds.has(task.id),
@@ -108,7 +132,8 @@ function TaskRow({
       hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}
-      worktreePath={workspace?.worktreePath ?? undefined}
+      worktreeName={worktreeCheckout?.name}
+      worktreePath={worktreeCheckout?.path}
       isSuspended={task.isSuspended}
       isGenerating={task.isGenerating}
       isUnread={task.isUnread}
@@ -277,7 +302,7 @@ export function TaskListView({
           <Flex direction="column">
             {groupedTasks.map((group, index) => {
               const isExpanded = !collapsedSections.has(group.id);
-              const folder = folders.find((f) => folderGroupId(f) === group.id);
+              const folder = findGroupFolder(folders, group.id);
               const groupFolderId =
                 folder?.id ?? group.tasks.find((t) => t.folderId)?.folderId;
               return (
@@ -285,7 +310,13 @@ export function TaskListView({
                   <SidebarSection
                     id={group.id}
                     label={folder?.name ?? group.name}
-                    icon={<GitBranch size={14} className="text-gray-10" />}
+                    icon={
+                      group.id === "custom-images" ? (
+                        <Wrench size={14} className="text-gray-10" />
+                      ) : (
+                        <GitBranch size={14} className="text-gray-10" />
+                      )
+                    }
                     isExpanded={isExpanded}
                     onToggle={() => toggleSection(group.id)}
                     addSpacingBefore={false}
@@ -373,18 +404,21 @@ export function TaskListView({
               ))}
             </Fragment>
           ))}
-          {hasMore && (
-            <div className="px-2 py-2">
-              <button
-                type="button"
-                className="w-full rounded-md px-2 py-1 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
-                onClick={loadMoreHistory}
-              >
-                Show more
-              </button>
-            </div>
-          )}
         </Flex>
+      )}
+
+      {/* Rendered for both organize modes: "by-project" caps each group and
+          "chronological" caps the flat list, so either can have more to load. */}
+      {hasMore && (
+        <div className="px-2 py-2">
+          <button
+            type="button"
+            className="w-full rounded-md px-2 py-1 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
+            onClick={loadMoreHistory}
+          >
+            Show more
+          </button>
+        </div>
       )}
     </Flex>
   );

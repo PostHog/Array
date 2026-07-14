@@ -1,3 +1,4 @@
+import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
   TASK_SERVICE,
   type TaskService,
@@ -8,8 +9,8 @@ import type { WorkspaceMode } from "@posthog/shared";
 import { buildContextGenerationPrompt } from "@posthog/ui/features/canvas/contextPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderGenerationTaskMutation } from "@posthog/ui/features/canvas/hooks/useFolderGenerationTask";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
-import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
@@ -42,14 +43,17 @@ export function useGenerateContext(channelId: string, channelName: string) {
             // test a local build of these features before merging.
             workspaceMode,
             allowNoRepo: true,
+            // A cloud run pairs a runtime adapter with a model, and the API
+            // rejects one without the other. Since this flow lets the agent pick
+            // its repo at runtime, it never surfaces a model picker, so pin the
+            // default gateway model here to match the adapter the saga defaults to.
+            model: DEFAULT_GATEWAY_MODEL,
           },
           (output) => invalidateTasks(output.task),
         );
 
         if (!result.success) {
-          toast.error("Couldn't start CONTEXT.md generation", {
-            description: result.error,
-          });
+          toastError("Couldn't start CONTEXT.md generation", result.error);
           return null;
         }
 

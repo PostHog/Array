@@ -26,6 +26,7 @@ import { CloudTaskService } from "./cloud-task";
 
 const mockAuthService = {
   authenticatedFetch: vi.fn(),
+  getCloudContext: vi.fn(),
 };
 
 function createJsonResponse(
@@ -114,6 +115,11 @@ describe("CloudTaskService", () => {
       ),
     );
     mockAuthService.authenticatedFetch.mockReset();
+    mockAuthService.getCloudContext.mockReset();
+    mockAuthService.getCloudContext.mockResolvedValue({
+      apiHost: "https://us.posthog.com",
+      teamId: 2,
+    });
     vi.stubGlobal("fetch", fetchRouter);
 
     mockAuthService.authenticatedFetch.mockImplementation(
@@ -133,6 +139,62 @@ describe("CloudTaskService", () => {
     service.unwatchAll();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("emits a replayed permission_request frame only once", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: "run-1",
+          status: "in_progress",
+          stage: "build",
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      )
+      .mockResolvedValue(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      );
+
+    const frame =
+      'id: 5\ndata: {"type":"permission_request","requestId":"req-1","toolCall":{"toolCallId":"tool-1"},"options":[]}\n\n';
+    const trailingEntry =
+      'id: 6\ndata: {"type":"notification","timestamp":"2026-01-01T00:00:02Z","notification":{"jsonrpc":"2.0","method":"_posthog/console","params":{"sessionId":"run-1","level":"info","message":"after replay"}}}\n\n';
+    // The durable stream re-sends the tail on reconnect/replay — the same
+    // frame arriving twice must not re-surface the question a second time.
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(frame + frame + trailingEntry),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some((u) => (u as { kind?: string }).kind === "logs"),
+    );
+
+    const permissionUpdates = updates.filter(
+      (u) => (u as { kind?: string }).kind === "permission_request",
+    );
+    expect(permissionUpdates).toEqual([
+      {
+        taskId: "task-1",
+        runId: "run-1",
+        kind: "permission_request",
+        requestId: "req-1",
+        toolCall: { toolCallId: "tool-1" },
+        options: [],
+      },
+    ]);
   });
 
   it("bootstraps paged backlog for active runs and drains deduped live SSE entries", async () => {
@@ -2277,6 +2339,42 @@ describe("CloudTaskService", () => {
           (u as { kind?: string }).kind === "error",
       ),
     ).toBe(false);
+  });
+
+  it("stops a cloud run through the run cancel endpoint", async () => {
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse({ id: "run-1", status: "in_progress" }, 202),
+    );
+
+    const result = await service.stop({
+      taskId: "task-1",
+      runId: "run-1",
+    });
+
+    expect(result).toEqual({ success: true, runStatus: "in_progress" });
+    const [url, init] = mockNetFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://us.posthog.com/api/projects/2/tasks/task-1/runs/run-1/cancel/",
+    );
+    expect(init.method).toBe("POST");
+  });
+
+  it("surfaces the backend error and retryability when a stop fails", async () => {
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse(
+        { error: "Could not reach the run's workflow; try again" },
+        503,
+      ),
+    );
+
+    const result = await service.stop({
+      taskId: "task-1",
+      runId: "run-1",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Could not reach the run's workflow; try again");
+    expect(result.retryable).toBe(true);
   });
 
   it("does not let a stale backend-error count inflate a transport reconnect delay", async () => {

@@ -28,6 +28,7 @@ import {
 import { ANALYTICS_EVENTS, TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
+  DATABASE_SERVICE,
   REPOSITORY_REPOSITORY,
   WORKSPACE_REPOSITORY,
   WORKTREE_REPOSITORY,
@@ -35,6 +36,7 @@ import {
 import type { IRepositoryRepository } from "../../db/repositories/repository-repository";
 import type { IWorkspaceRepository } from "../../db/repositories/workspace-repository";
 import type { IWorktreeRepository } from "../../db/repositories/worktree-repository";
+import type { DatabaseService } from "../../db/service";
 import {
   IMPORTED_SESSION_CLEANER,
   type ImportedSessionCleaner,
@@ -125,6 +127,8 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   private readonly log: ScopedLogger;
 
   constructor(
+    @inject(DATABASE_SERVICE)
+    private readonly databaseService: DatabaseService,
     @inject(WORKSPACE_AGENT)
     private readonly agent: WorkspaceAgent,
     @inject(PROCESS_TRACKING_SERVICE)
@@ -328,6 +332,12 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     branchName: string | null;
   }): Promise<void> {
     if (!branchName) return;
+
+    // This runs from a fire-and-forget emit on the agent side, so it can land
+    // during the startup/teardown window when the DB is closed or not yet
+    // initialized. Bail gracefully — branch association is best-effort — rather
+    // than letting the synchronous repo read throw into an unhandled rejection.
+    if (!this.databaseService.isInitialized()) return;
 
     const dbRow = this.workspaceRepo.findByTaskId(taskId);
     if (!dbRow || dbRow.mode !== "local") return;
@@ -1447,6 +1457,19 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       branch: wt.branch,
       taskIds: this.getWorktreeTasks(wt.worktreePath).map((t) => t.taskId),
     }));
+  }
+
+  /**
+   * Every other checkout of the repo `repoPath` belongs to — the main clone
+   * and all linked worktrees (app-managed or user-created), each with its
+   * checked-out branch. Unlike listGitWorktrees this is plain
+   * `git worktree list` scope, minus `repoPath` itself.
+   */
+  async listRepoCheckouts(
+    repoPath: string,
+  ): Promise<Array<{ path: string; branch: string | null }>> {
+    const others = await listLinkedWorktrees(repoPath);
+    return others.map((wt) => ({ path: wt.worktreePath, branch: wt.branch }));
   }
 
   async deleteWorktree(

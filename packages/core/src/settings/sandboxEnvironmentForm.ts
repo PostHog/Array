@@ -15,6 +15,7 @@ export interface SandboxEnvironmentFormState {
   include_default_domains: boolean;
   environment_variables_text: string;
   private: boolean;
+  custom_image_id: string | null;
 }
 
 export function isValidDomain(domain: string): boolean {
@@ -71,6 +72,7 @@ export function emptyForm(): SandboxEnvironmentFormState {
     include_default_domains: true,
     environment_variables_text: "",
     private: true,
+    custom_image_id: null,
   };
 }
 
@@ -84,6 +86,7 @@ export function formFromEnv(
     include_default_domains: env.include_default_domains,
     environment_variables_text: "",
     private: env.private,
+    custom_image_id: env.custom_image_id ?? null,
   };
 }
 
@@ -100,6 +103,7 @@ export function buildSandboxEnvironmentInput(
     include_default_domains: isCustom ? form.include_default_domains : false,
     private: form.private,
     repositories: [],
+    custom_image_id: form.custom_image_id,
     ...(form.environment_variables_text.trim()
       ? { environment_variables: envVars }
       : {}),

@@ -5,6 +5,13 @@ import {
 } from "../mcp/tool-metadata";
 import { canUseTool } from "./permission-handlers";
 
+function createClient(response: Record<string, unknown>) {
+  return {
+    sessionUpdate: vi.fn().mockResolvedValue(undefined),
+    requestPermission: vi.fn().mockResolvedValue(response),
+  };
+}
+
 function createContext(
   toolName: string,
   overrides: Record<string, unknown> = {},
@@ -22,12 +29,9 @@ function createContext(
     toolUseID: "test-tool-use-id",
     suggestions: undefined,
     signal: undefined,
-    client: {
-      sessionUpdate: vi.fn().mockResolvedValue(undefined),
-      requestPermission: vi.fn().mockResolvedValue({
-        outcome: { outcome: "selected", optionId: "allow" },
-      }),
-    },
+    client: createClient({
+      outcome: { outcome: "selected", optionId: "allow" },
+    }),
     sessionId: "test-session",
     fileContentCache: {},
     logger: {
@@ -252,12 +256,9 @@ describe("canUseTool MCP approval enforcement", () => {
           addPostHogExecApproval: addApproval,
         },
       },
-      client: {
-        sessionUpdate: vi.fn().mockResolvedValue(undefined),
-        requestPermission: vi.fn().mockResolvedValue({
-          outcome: { outcome: "selected", optionId: "allow_always" },
-        }),
-      },
+      client: createClient({
+        outcome: { outcome: "selected", optionId: "allow_always" },
+      }),
     });
     const result = await canUseTool(context);
 
@@ -287,12 +288,9 @@ describe("canUseTool MCP approval enforcement", () => {
           addPostHogExecApproval: addApproval,
         },
       },
-      client: {
-        sessionUpdate: vi.fn().mockResolvedValue(undefined),
-        requestPermission: vi.fn().mockResolvedValue({
-          outcome: { outcome: "selected", optionId: "allow" },
-        }),
-      },
+      client: createClient({
+        outcome: { outcome: "selected", optionId: "allow" },
+      }),
     });
     const result = await canUseTool(context);
 

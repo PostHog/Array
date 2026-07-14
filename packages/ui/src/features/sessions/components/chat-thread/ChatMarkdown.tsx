@@ -1,3 +1,4 @@
+import { Check, Copy } from "@phosphor-icons/react";
 import {
   Heading,
   Separator,
@@ -13,11 +14,47 @@ import {
   parseOpenFence,
   splitMarkdownBlocks,
 } from "@posthog/ui/features/editor/components/splitMarkdownBlocks";
+import {
+  BareFileLink,
+  hasDirectoryPath,
+  InlineFileLink,
+  looksLikeBareFilename,
+} from "@posthog/ui/features/sessions/components/session-update/fileLinkChips";
 import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
-import { memo, useMemo } from "react";
+import { useCopy } from "@posthog/ui/primitives/useCopy";
+import { IconButton } from "@radix-ui/themes";
+import { memo, type ReactNode, useMemo } from "react";
 import Markdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+
+function ChatCodeBlock({
+  code,
+  children,
+}: {
+  code: string;
+  children: ReactNode;
+}) {
+  const { copied, copy } = useCopy();
+
+  return (
+    <div className="group relative">
+      <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 pr-10 text-sm leading-[1.5]">
+        {children}
+      </pre>
+      <IconButton
+        size="1"
+        variant="ghost"
+        color={copied ? "green" : "gray"}
+        onClick={() => copy(code)}
+        className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+        aria-label="Copy code"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </IconButton>
+    </div>
+  );
+}
 
 /**
  * The chat thread's own markdown renderer — intentionally separate from the app-wide
@@ -47,29 +84,40 @@ const components: Components = {
   ),
   li: ({ children }) => <li className="text-sm">{children}</li>,
   code: ({ className, children }) => {
+    const text = String(children).replace(/\n$/, "");
     const match = /language-(\w+)/.exec(className ?? "");
-    if (match) {
-      // Fenced block with a language → Shiki-highlighted (theme-aware). The `pre` renderer
-      // below provides the box; HighlightedCode renders the colored <code> inside it.
+    // Fenced blocks (carry a language, or span multiple lines) render as a boxed, copyable
+    // block; short inline spans stay inline. `pre` below is a passthrough so the box lives here,
+    // where the raw code string is in hand.
+    if (match || text.includes("\n")) {
       return (
-        <HighlightedCode
-          code={String(children).replace(/\n$/, "")}
-          language={match[1]}
-          className="rounded-sm bg-muted/50 text-xs"
-        />
+        <ChatCodeBlock code={text}>
+          {match ? (
+            <HighlightedCode
+              code={text}
+              language={match[1]}
+              className="text-xs"
+            />
+          ) : (
+            <code className="font-mono text-xs">{text}</code>
+          )}
+        </ChatCodeBlock>
       );
     }
-    return (
+    const fallback = (
       <code className="rounded rounded-sm border border-border bg-muted/50 px-1 font-mono text-xs">
         {children}
       </code>
     );
+    if (hasDirectoryPath(text)) {
+      return <InlineFileLink text={text} />;
+    }
+    if (looksLikeBareFilename(text)) {
+      return <BareFileLink text={text} fallback={fallback} />;
+    }
+    return fallback;
   },
-  pre: ({ children }) => (
-    <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-sm leading-[1.5]">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => <>{children}</>,
   h1: ({ children }) => (
     <Heading size="xl" className="font-bold">
       {children}
@@ -153,9 +201,9 @@ export const ChatStreamingMarkdown = memo(function ChatStreamingMarkdown({
               {openFence.before.trim() ? (
                 <ChatMarkdown content={openFence.before} />
               ) : null}
-              <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-sm leading-[1.5]">
+              <ChatCodeBlock code={openFence.code}>
                 <code className="font-mono text-xs">{openFence.code}</code>
-              </pre>
+              </ChatCodeBlock>
             </div>
           );
         }

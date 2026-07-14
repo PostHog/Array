@@ -87,13 +87,20 @@ export function IterationsTable({
               </Text>
             </Table.Cell>
             <Table.Cell className="max-w-[320px]">
-              <Text
-                size="1"
-                className="block truncate"
-                title={iteration.summary ?? undefined}
-              >
-                {iteration.summary ?? "—"}
-              </Text>
+              <div className="flex min-w-0 items-center gap-2">
+                {iteration.approach && (
+                  <Badge color="gray" size="1" variant="soft">
+                    {iteration.approach}
+                  </Badge>
+                )}
+                <Text
+                  size="1"
+                  className="block truncate"
+                  title={iteration.summary ?? undefined}
+                >
+                  {iteration.summary ?? "None"}
+                </Text>
+              </div>
             </Table.Cell>
             <Table.Cell>
               <Text size="1" color="gray">

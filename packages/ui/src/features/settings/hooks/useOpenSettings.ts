@@ -18,6 +18,18 @@ export function openSettings(
   category: SettingsCategory = "general",
   contextOrAction?: SettingsContext | string,
 ): void {
+  prepareSettingsPage(contextOrAction);
+  nav.navigateToSettings(category);
+}
+
+/**
+ * Reset/pin the settings page store without navigating — for `<Link>` CTAs
+ * that own the navigation themselves (the render={<Link …/>} convention) but
+ * must not carry stale context or a one-shot action into the page.
+ */
+export function prepareSettingsPage(
+  contextOrAction?: SettingsContext | string,
+): void {
   const store = useSettingsPageStore.getState();
   if (typeof contextOrAction === "string") {
     store.setContext({});
@@ -27,7 +39,6 @@ export function openSettings(
     store.setInitialAction(null);
   }
   store.setFormMode(false);
-  nav.navigateToSettings(category);
 }
 
 /**

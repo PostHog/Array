@@ -193,7 +193,7 @@ export function useOpenHomeCanvas(): (channel: {
         });
       } catch (error) {
         log.error("Failed to open home canvas", { error });
-        toast.error("Couldn't open channel home", {
+        toast.error("Couldn't open context home", {
           description: error instanceof Error ? error.message : String(error),
         });
       }

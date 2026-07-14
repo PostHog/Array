@@ -152,6 +152,17 @@ pnpm --filter code test
 
 - **Single session.** The agent owns one `this.session` (from `BaseAcpAgent`), not a `sessions` map.
   Upstream's per-session refactors usually collapse to "just use `this.session`".
+- **Prompt loop is a persistent consumer** (since the v0.54.1 sync, upstream #780): `prompt()`
+  enqueues a `Turn` deferred; `runConsumer` drains the query stream for the session's life, settles
+  turns at their terminal `result`, and captures `query` + `session.queryGeneration` so the
+  fork-only `refreshSession()` can retire it (bump generation → abort wake-up → end input). Steer
+  mode, `interruptReason`, per-turn broadcast-at-activation and the unsupported-slash-command gate
+  all live inside it — port upstream prompt-loop changes into the consumer, not a per-prompt loop.
+- **ACP connection classes are the deprecated ones on purpose.** The fork stays on
+  `AgentSideConnection`/`ClientSideConnection` (still shipped in ACP 1.x) because they carry the
+  `extMethod`/`extNotification` surface `_posthog/*` uses; permission requests reach the client via
+  the class's generic `request(..., { cancellationSignal })`. Don't port the `agent()` builder
+  without a plan for the extension surface.
 - **Renderer uses config options only.** Model/mode/effort selection is `SessionConfigOption` end to
   end; the renderer never reads the legacy `models` response field or calls `unstable_setSessionModel`.
   That's why upstream's ACP-0.24/0.25 model-state removals are safe to follow.

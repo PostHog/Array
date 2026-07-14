@@ -12,13 +12,13 @@ export type AppViewType =
   | "task-input"
   | "folder-settings"
   | "home"
+  | "activity"
   | "inbox"
   | "agents"
   | "archived"
   | "command-center"
   | "skills"
   | "mcp-servers"
-  | "usage"
   | "settings";
 
 export interface AppView {
@@ -66,6 +66,8 @@ function deriveFromMatches(matches: Match[]): AppView {
     // active-state highlighting works identically in either space.
     case "/website/home":
       return { type: "home" };
+    case "/website/activity":
+      return { type: "activity" };
     case "/code/inbox":
       return { type: "inbox" };
     case "/code/agents":
@@ -81,8 +83,6 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/mcp-servers":
     case "/website/mcp-servers":
       return { type: "mcp-servers" };
-    case "/usage":
-      return { type: "usage" };
     case "/settings/$category":
     case "/settings/":
       return { type: "settings" };

@@ -304,6 +304,7 @@ export default function TaskDetailScreen() {
           model: composerModel,
           reasoningEffort: supportsReasoning ? composerReasoning : undefined,
           initialPermissionMode: composerMode,
+          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         });
         setTask(updatedTask);
         await connectToTask(updatedTask);
@@ -478,6 +479,7 @@ export default function TaskDetailScreen() {
 
       const updatedTask = await runTaskInCloud(taskId, {
         resumeFromRunId: task.latest_run?.id,
+        rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
       });
       setTask(updatedTask);
       await connectToTask(updatedTask);

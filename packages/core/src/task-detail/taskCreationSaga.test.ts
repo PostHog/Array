@@ -152,6 +152,8 @@ describe("TaskCreationSaga", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      cloudAutoPublish: true,
+      cloudRtkEnabled: false,
     });
 
     expect(result.success).toBe(true);
@@ -168,6 +170,8 @@ describe("TaskCreationSaga", () => {
       reasoningLevel: "high",
       sandboxEnvironmentId: undefined,
       prAuthorshipMode: "user",
+      autoPublish: true,
+      rtkEnabled: false,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
@@ -555,6 +559,7 @@ describe("TaskCreationSaga", () => {
       repository: "posthog/posthog",
       workspaceMode: "cloud",
       branch: "main",
+      cloudAutoPublish: true,
     });
 
     expect(result.success).toBe(true);
@@ -578,6 +583,8 @@ describe("TaskCreationSaga", () => {
         branch: "main",
         pending_user_message: "/my-skill do it",
         pending_user_artifact_ids: ["skill-artifact-1"],
+        // Warm activation skips run creation, so the choice must ride along here.
+        auto_publish: true,
       }),
     );
     // Warm-activated at create time: no fresh run is created or started.
@@ -937,6 +944,25 @@ describe("TaskCreationSaga", () => {
         .invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(sessionService.connectToTask).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("creates the task without a repository when repo detection fails", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockRejectedValue(new TypeError("fetch failed"));
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ repository: undefined }),
     );
   });
 

@@ -1,10 +1,10 @@
 /**
- * Versioned on-disk run artifacts, written for every run (foreground and
- * background alike) so background/fleet monitoring (this phase) and any
- * future external observability tooling can read a run's state without
- * needing the parent process's in-memory state.
+ * Versioned on-disk run artifacts, written for every subagent run so its
+ * final state and transcript are inspectable after the fact without the
+ * parent process's in-memory state.
  *
- * Layout: `<runsDir>/<runId>/status.json`, `<runId>/events.jsonl`.
+ * Layout: `<runsDir>/<runId>/status.json`, `<runId>/events.jsonl`,
+ * `<runId>/transcript.md`.
  */
 
 import { randomUUID } from "node:crypto";
@@ -15,7 +15,7 @@ import { truncateUtf8 } from "./text-truncate";
 
 export const LIFECYCLE_ARTIFACT_VERSION = 1;
 
-export type RunMode = "single" | "parallel" | "chain";
+export type RunMode = "single" | "parallel";
 export type RunState = "running" | "completed" | "failed" | "aborted";
 
 export interface RunStatus {
@@ -32,16 +32,8 @@ export interface RunStatus {
   totalCost?: number;
   model?: string;
   error?: string;
-  /** Truncated final output text, for a quick fleet-view summary without replaying the full transcript. */
+  /** Truncated final output text, for a quick summary without replaying the full transcript. */
   resultSummary?: string;
-  /**
-   * For a job-level record (a `background-runner.ts` wrapper around
-   * parallel/chain/single dispatch), the runIds of the individual
-   * `runAgent()` calls it fanned out to — each of those has its own
-   * `RunStatus` + `transcript.md` under `runDirectory(childRunId)`. Absent on
-   * a per-agent-call record itself.
-   */
-  childRunIds?: string[];
 }
 
 export interface RunEvent {
@@ -107,7 +99,6 @@ export interface EndRunExtra {
   totalCost?: number;
   model?: string;
   resultSummary?: string;
-  childRunIds?: string[];
 }
 
 export function endRun(
@@ -128,18 +119,6 @@ export function endRun(
   writeStatus(finalStatus);
   appendEvent(status.runId, { type: state, timestamp: endedAt, error });
   return finalStatus;
-}
-
-export function readStatus(runId: string): RunStatus | undefined {
-  try {
-    const raw = fs.readFileSync(
-      path.join(runDirectory(runId), "status.json"),
-      "utf-8",
-    );
-    return JSON.parse(raw) as RunStatus;
-  } catch {
-    return undefined;
-  }
 }
 
 export function transcriptPath(runId: string): string {
@@ -170,30 +149,4 @@ export function writeTranscript(
     filePath,
     `${text}\n\n[transcript truncated: exceeded ${maxBytes} bytes; ${omittedBytes} bytes omitted]\n`,
   );
-}
-
-export function readTranscript(runId: string): string | undefined {
-  try {
-    return fs.readFileSync(transcriptPath(runId), "utf-8");
-  } catch {
-    return undefined;
-  }
-}
-
-export function listRuns(): RunStatus[] {
-  const dir = runsDirectory();
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  const runs: RunStatus[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const status = readStatus(entry.name);
-    if (status) runs.push(status);
-  }
-  return runs.sort((a, b) => b.startedAt - a.startedAt);
 }

@@ -119,6 +119,7 @@ export interface ReviewShellProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onRefresh?: () => void;
+  onDiscardAll?: () => void;
   effectiveSource?: ResolvedDiffSource;
   branchSourceAvailable?: boolean;
   prSourceAvailable?: boolean;

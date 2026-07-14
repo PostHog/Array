@@ -15,14 +15,17 @@ import {
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
-import { useBackendChannel } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import {
+  PERSONAL_CHANNEL_NAME,
+  useBackendChannel,
+} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { Text } from "@radix-ui/themes";
+import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -100,7 +103,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             task_id: task.id,
             success: false,
           });
-          toast.error("Couldn't file task to channel", {
+          toast.error("Couldn't file task to context", {
             description: error instanceof Error ? error.message : String(error),
           });
         });
@@ -131,12 +134,17 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
 
   const emptyState = (
     <div className="mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center gap-6 px-4 py-10">
-      <div className="text-center">
-        <h1 className="font-semibold text-2xl text-gray-12 tracking-tight">
-          {channelName ? `Welcome to #${channelName}` : "Welcome"}
-        </h1>
-        <Text className="mt-2 block text-[13px] text-gray-10">
-          Every message kicks off a task the whole channel can follow.
+      <div className="flex flex-col items-center gap-2 text-center">
+        <Heading className="font-bold text-2xl">
+          {channelName === PERSONAL_CHANNEL_NAME
+            ? "Welcome to your own personal context"
+            : channelName
+              ? `Welcome to ${channelName}`
+              : "Welcome"}
+        </Heading>
+        <Text>
+          Contexts are for areas of work. Context.md is self-updating, so start
+          some work and the context file will update itself.
         </Text>
       </div>
       <div className="flex flex-col gap-2">
@@ -168,7 +176,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           onOpenTask={handleOpenTask}
           onOpenThread={handleOpenThread}
         />
-        <div className="mx-auto w-full max-w-[820px] px-4 pb-4">
+        <div className="mx-auto w-full px-4 pb-4">
           <ChannelHomeComposer
             ref={composerRef}
             channelId={channelId}

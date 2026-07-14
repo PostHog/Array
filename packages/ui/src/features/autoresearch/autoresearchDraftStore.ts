@@ -2,7 +2,7 @@ import type { AutoresearchDraftConfig } from "@posthog/core/autoresearch/schemas
 import { create } from "zustand";
 
 /**
- * Autoresearch mode armed on a new-task composer, keyed by the composer's
+ * Autoresearch mode armed on a new task composer, keyed by the composer
  * draft session id. Submitting the composer turns the draft into a run.
  */
 interface AutoresearchDraftState {

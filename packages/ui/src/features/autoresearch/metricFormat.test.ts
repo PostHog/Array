@@ -16,7 +16,7 @@ describe("deltaTone", () => {
 
 describe("formatMetricDelta", () => {
   it.each([
-    [null, "kB", "—"],
+    [null, "kB", "Baseline"],
     [10.5, "kB", "+10.5 kB"],
     [-3, null, "-3"],
     [2, "%", "+2%"],

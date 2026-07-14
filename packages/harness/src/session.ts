@@ -1,18 +1,11 @@
-import {
-  type AgentSession,
-  AuthStorage,
-  createAgentSession,
-  DefaultResourceLoader,
-  getAgentDir,
-  ModelRegistry,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { installHogBrandEnv } from "./extensions/hog-branding/brand-env";
 import { DEFAULT_MODEL } from "./extensions/posthog-provider/models";
 import {
   POSTHOG_PROVIDER_NAME,
   type PosthogProviderOptions,
   resolvePosthogProvider,
 } from "./extensions/posthog-provider/provider";
-import { mcpAdapterExtensionFile } from "./spawn";
 
 export interface HarnessSessionOptions extends PosthogProviderOptions {
   cwd?: string;
@@ -22,6 +15,20 @@ export interface HarnessSessionOptions extends PosthogProviderOptions {
 export async function createHarnessSession(
   options: HarnessSessionOptions = {},
 ): Promise<AgentSession> {
+  // Must finish running before `@earendil-works/pi-coding-agent` is
+  // evaluated, so pi picks up "hog" branding when its config module first
+  // evaluates. Hence the dynamic import right below, rather than a static
+  // top-level one — see `./extensions/hog-branding/brand-env` for why a
+  // static import wouldn't reliably run first once bundled.
+  installHogBrandEnv();
+  const {
+    AuthStorage,
+    createAgentSession,
+    DefaultResourceLoader,
+    getAgentDir,
+    ModelRegistry,
+  } = await import("@earendil-works/pi-coding-agent");
+
   const cwd = options.cwd ?? process.cwd();
 
   const authStorage = AuthStorage.create();
@@ -39,11 +46,10 @@ export async function createHarnessSession(
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: getAgentDir(),
+    // The bundled MCP extension owns long-lived server processes and
+    // interactive OAuth flows, so it is only loaded by the CLI/TUI extension
+    // registry and not by embedded SDK sessions.
     extensionFactories: [],
-    // `pi-mcp-adapter` ships raw TypeScript with no compiled entry point, so
-    // it must be loaded by file path (see mcpAdapterExtensionFile) rather
-    // than as an extension factory.
-    additionalExtensionPaths: [mcpAdapterExtensionFile()],
   });
   await resourceLoader.reload();
 

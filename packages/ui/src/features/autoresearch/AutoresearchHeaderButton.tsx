@@ -18,7 +18,7 @@ interface AutoresearchHeaderButtonProps {
 
 /**
  * Task-header shortcut to the autoresearch dashboard. Only rendered for
- * tasks that have a run — autoresearch tasks are created from the composer,
+ * tasks that have a run. Autoresearch tasks are created from the composer,
  * not retrofitted onto existing tasks.
  */
 export function AutoresearchHeaderButton({

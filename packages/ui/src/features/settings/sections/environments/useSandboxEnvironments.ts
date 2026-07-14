@@ -4,7 +4,7 @@ import { useAuthenticatedMutation } from "../../../../hooks/useAuthenticatedMuta
 import { useAuthenticatedQuery } from "../../../../hooks/useAuthenticatedQuery";
 import { toast } from "../../../../primitives/toast";
 
-const sandboxEnvKeys = {
+export const sandboxEnvKeys = {
   list: ["sandbox-environments", "list"] as const,
 };
 

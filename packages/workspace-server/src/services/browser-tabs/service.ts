@@ -6,6 +6,7 @@ import {
   openOrFocusTab,
   setTabOrder,
   setTabTarget,
+  setWindowActiveTab,
   type TabsSnapshot,
   type TabTarget,
   TypedEventEmitter,
@@ -26,14 +27,17 @@ export interface IBrowserTabsService {
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
+      tabId?: string;
     },
   ): TabsSnapshot;
-  newBlankTab(input: { windowId: string }): TabsSnapshot;
+  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot;
   setTabTarget(
     input: TabTarget & {
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot;
   close(tabId: string): TabsSnapshot;
@@ -66,7 +70,7 @@ export class BrowserTabsService
     super();
     this.setMaxListeners(0);
     const loaded = this.repo.load();
-    const seeded = this.ensurePrimaryWindow(loaded);
+    const seeded = this.ensureAtLeastOneTab(this.ensurePrimaryWindow(loaded));
     if (seeded !== loaded) this.repo.save(seeded);
     this.snapshot = seeded;
   }
@@ -81,6 +85,28 @@ export class BrowserTabsService
       activeTabId: null,
     };
     return { ...snapshot, windows: [primary, ...snapshot.windows] };
+  }
+
+  /** The strip must never boot empty: seed a blank tab when none survived. */
+  private ensureAtLeastOneTab(snapshot: TabsSnapshot): TabsSnapshot {
+    if (snapshot.tabs.length > 0) return snapshot;
+    const primary = snapshot.windows.find((w) => w.isPrimary);
+    if (!primary) return snapshot;
+    return newBlankTab(snapshot, { windowId: primary.id, makeId, now })
+      .snapshot;
+  }
+
+  /** Creation targets heal a stale window id (a mirror seeded before a schema
+   * repair, or another window's since-closed id) to the primary window rather
+   * than appending into a window that doesn't exist. Deliberately creation-only:
+   * a desynced mirror's reorder (`setOrder`) or focus (`setActiveTab`) carries
+   * stale TAB ids too, so retargeting those at the primary window would apply
+   * wrong state — the shared transforms no-op safely instead, and the snapshot
+   * reconcile heals the mirror. Creating a tab is window-independent intent. */
+  private resolveWindowId(windowId: string): string {
+    return this.snapshot.windows.some((w) => w.id === windowId)
+      ? windowId
+      : this.getPrimaryWindowId();
   }
 
   getSnapshot(): TabsSnapshot {
@@ -99,20 +125,33 @@ export class BrowserTabsService
       windowId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
+      tabId?: string;
     },
   ): TabsSnapshot {
+    // Honor a renderer-minted id so the caller's optimistic apply and this
+    // persisted state agree on the id. Dedup-by-identity still applies first,
+    // so a replay of the same open focuses the existing tab.
+    const providedId = input.tabId;
     const { snapshot } = openOrFocusTab(this.snapshot, {
       ...input,
-      makeId,
+      windowId: this.resolveWindowId(input.windowId),
+      makeId: providedId ? () => providedId : makeId,
       now,
     });
     return this.commit(snapshot);
   }
 
-  newBlankTab(input: { windowId: string }): TabsSnapshot {
+  newBlankTab(input: { windowId: string; tabId?: string }): TabsSnapshot {
+    const providedId = input.tabId;
+    // Idempotent on the renderer-minted id: a replay of the same call (blank
+    // tabs have no identity to dedup on) must not append a second tab.
+    if (providedId && this.snapshot.tabs.some((t) => t.id === providedId)) {
+      return this.snapshot;
+    }
     const { snapshot } = newBlankTab(this.snapshot, {
-      windowId: input.windowId,
-      makeId,
+      windowId: this.resolveWindowId(input.windowId),
+      makeId: providedId ? () => providedId : makeId,
       now,
     });
     return this.commit(snapshot);
@@ -123,6 +162,7 @@ export class BrowserTabsService
       tabId: string;
       channelId: string | null;
       channelSection?: string | null;
+      appView?: string | null;
     },
   ): TabsSnapshot {
     return this.commit(setTabTarget(this.snapshot, { ...input, now }));
@@ -147,12 +187,12 @@ export class BrowserTabsService
     windowId: string;
     tabId: string | null;
   }): TabsSnapshot {
-    const next: TabsSnapshot = {
-      ...this.snapshot,
-      windows: this.snapshot.windows.map((w) =>
-        w.id === input.windowId ? { ...w, activeTabId: input.tabId } : w,
-      ),
-    };
+    // Validated: a tabId that doesn't exist in the window (a stale history tag
+    // replayed after the tab closed) is ignored rather than persisted as a
+    // dangling activeTabId — that dangle makes every later navigation look like
+    // "no active tab" and silently open new tabs.
+    const next = setWindowActiveTab(this.snapshot, input.windowId, input.tabId);
+    if (next === this.snapshot) return this.snapshot;
     return this.commit(next);
   }
 

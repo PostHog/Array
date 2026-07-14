@@ -23,6 +23,7 @@ vi.mock("../api", () => ({
   sendCloudCommand: vi.fn(),
 }));
 
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getTask, runTaskInCloud } from "../api";
 import type {
   CloudTaskUpdatePayload,
@@ -155,6 +156,7 @@ describe("_resumeCloudRun", () => {
     vi.clearAllMocks();
     useTaskStore.setState({ composerConfigByTaskId: {} });
     useTaskSessionStore.setState({ sessions: {} });
+    usePreferencesStore.setState({ rtkEnabledCloud: true });
     mockRunTaskInCloud.mockResolvedValue({
       id: "t1",
       latest_run: { id: "new-run" },
@@ -180,7 +182,22 @@ describe("_resumeCloudRun", () => {
       pendingUserMessage: "hi",
       reasoningEffort: "low",
       initialPermissionMode: "acceptEdits",
+      rtkEnabled: true,
     });
+  });
+
+  it("forwards the rtk compression opt-out so resume preserves it", async () => {
+    usePreferencesStore.setState({ rtkEnabledCloud: false });
+    mockGetTask.mockResolvedValue(previousTask({ branch: "feature" }));
+
+    await useTaskSessionStore
+      .getState()
+      ._resumeCloudRun("t1", "prev-run", "hi");
+
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "t1",
+      expect.objectContaining({ rtkEnabled: false }),
+    );
   });
 
   it("prefers the composer's current selection over the previous run", async () => {

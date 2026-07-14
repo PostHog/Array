@@ -104,7 +104,7 @@
   "author": "PostHog",
   "license": "MIT",
   "scripts": {
-    "build": "node ../../scripts/rimraf.mjs dist && tsup",
+    "build": "node ../../scripts/rimraf.mjs dist && tsup && node build/verify-local-tools-mcp-server.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -129,9 +129,9 @@
     "vitest": "^4.1.8"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "0.25.0",
-    "@anthropic-ai/claude-agent-sdk": "0.3.170",
-    "@anthropic-ai/sdk": "0.104.1",
+    "@agentclientprotocol/sdk": "1.1.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.197",
+    "@anthropic-ai/sdk": "0.109.0",
     "@hono/node-server": "^1.19.9",
     "@openai/codex": "0.140.0",
     "@opentelemetry/api-logs": "^0.208.0",

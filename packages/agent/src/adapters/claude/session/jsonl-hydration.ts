@@ -195,17 +195,14 @@ export function rebuildConversation(
             // Bare streaming updates carry no name; the opening tool_call
             // always does, so the call exists by the time they arrive.
             if (!toolName) break;
-            toolCall = { toolCallId, toolName, input: undefined };
+            toolCall = { toolCallId, toolName, input: {} };
             currentToolCalls.push(toolCall);
           }
 
           const input = update.rawInput ?? meta?.toolInput;
           // The opening tool_call ships rawInput: {} — don't clobber an
           // already-streamed input with it.
-          if (
-            input !== undefined &&
-            !(isEmptyRecord(input) && toolCall.input !== undefined)
-          ) {
+          if (input !== undefined && !isEmptyRecord(input)) {
             toolCall.input = capToolPayload(input);
           }
           const result = update.rawOutput ?? meta?.toolResponse;
@@ -244,9 +241,12 @@ export function rebuildConversation(
   return turns;
 }
 
-const CHARS_PER_TOKEN = 4;
-const DEFAULT_MAX_TOKENS = 150_000;
-const LARGE_CONTEXT_MAX_TOKENS = 800_000;
+// JSON-heavy tool payloads tokenize at ~2.5-3 chars/token, so estimate low.
+const CHARS_PER_TOKEN = 3;
+// Target ~half the context window, leaving headroom for the system prompt,
+// tools, skills, estimation error, and the resumed run's own work.
+const DEFAULT_MAX_TOKENS = 80_000;
+const LARGE_CONTEXT_MAX_TOKENS = 400_000;
 
 function estimateTurnTokens(turn: ConversationTurn): number {
   let chars = 0;
@@ -496,7 +496,8 @@ export function conversationTurnsToJsonlEntries(
             type: "tool_use",
             id: tc.toolCallId,
             name: tc.toolName,
-            input: tc.input,
+            // undefined would be dropped on stringify; the API requires input
+            input: tc.input ?? {},
           });
         }
       }
@@ -594,8 +595,9 @@ interface HydrationLog {
   warn: (msg: string, data?: unknown) => void;
 }
 
-// Heals JSONL files written before the empty-block filters existed; without
-// this an already-poisoned transcript keeps 400ing on every resume.
+// Heals JSONL files written before the empty-block and missing-tool_use-input
+// fixes existed; without this an already-poisoned transcript keeps 400ing on
+// every resume.
 export async function sanitizeSessionJsonl(
   jsonlPath: string,
 ): Promise<boolean> {
@@ -619,10 +621,20 @@ export async function sanitizeSessionJsonl(
     }
     const message = parsed.message as { content?: unknown } | undefined;
     if (!message || !Array.isArray(message.content)) return line;
+    let lineChanged = false;
     const kept = message.content.filter((block) => !isEmptyContentBlock(block));
-    if (kept.length === message.content.length) return line;
+    if (kept.length !== message.content.length) {
+      lineChanged = true;
+      message.content = kept.length > 0 ? kept : [{ type: "text", text: " " }];
+    }
+    for (const block of message.content as (Record<string, unknown> | null)[]) {
+      if (block?.type === "tool_use" && block.input == null) {
+        block.input = {};
+        lineChanged = true;
+      }
+    }
+    if (!lineChanged) return line;
     changed = true;
-    message.content = kept.length > 0 ? kept : [{ type: "text", text: " " }];
     return JSON.stringify(parsed);
   });
 

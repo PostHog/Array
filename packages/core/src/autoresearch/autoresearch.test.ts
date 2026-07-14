@@ -142,6 +142,14 @@ function reportText(value: number, summary = "tweak"): string {
   return `Done.\n\`\`\`autoresearch\nmetric: ${value}\nsummary: ${summary}\n\`\`\``;
 }
 
+function researchText(
+  summary = "Mapped the execution path",
+  finding = "The metric is computed in the workspace server.",
+  nextStep = "Trace the benchmark command",
+): string {
+  return `Investigated.\n\`\`\`autoresearch\ntype: research\nsummary: ${summary}\nfinding: ${finding}\nnext: ${nextStep}\n\`\`\``;
+}
+
 /** A session `model` config option (and optional `thought_level`). */
 function modelConfig(
   currentValue: string,
@@ -202,6 +210,14 @@ function completeTurn(text: string, taskRunId = TASK_RUN_ID): void {
   });
 }
 
+function streamTurnText(text: string, taskRunId = TASK_RUN_ID): void {
+  const events = sessionStore.getState().sessions[taskRunId]?.events ?? [];
+  sessionStoreSetters.updateSession(taskRunId, {
+    isPromptPending: true,
+    events: [...events, agentChunkEvent(text)],
+  });
+}
+
 function runTurn(text: string, taskRunId = TASK_RUN_ID): void {
   beginTurn(taskRunId);
   completeTurn(text, taskRunId);
@@ -251,6 +267,7 @@ function makeRun(
     phase: null,
     originalModel: null,
     originalEffort: null,
+    researchFindings: [],
     iterations: [],
     startedAt: 1_000,
     endedAt: null,
@@ -350,7 +367,7 @@ describe("AutoresearchService", () => {
   });
 
   describe("registerRun", () => {
-    it("registers without sending — the kickoff rode the task's initial prompt", () => {
+    it("registers without sending because the kickoff rode the task initial prompt", () => {
       const run = service.registerRun(baseConfig);
 
       expect(run.status).toBe("running");
@@ -367,6 +384,47 @@ describe("AutoresearchService", () => {
       expect(sentPrompts[0].prompt).toContain("iteration 2");
     });
 
+    it("tracks reports from an initial prompt already in progress", () => {
+      beginTurn();
+      service.registerRun(baseConfig);
+
+      streamTurnText(`${reportText(10, "baseline")}\nIteration 2 starts now.`);
+      streamTurnText(
+        `${reportText(12, "iteration 2")}\nIteration 3 starts now.`,
+      );
+      streamTurnText(
+        `${reportText(14, "iteration 3")}\nIteration 4 starts now.`,
+      );
+
+      expect(activeRun().iterations).toEqual([
+        expect.objectContaining({ index: 1, value: 10 }),
+        expect.objectContaining({ index: 2, value: 12 }),
+        expect.objectContaining({ index: 3, value: 14 }),
+      ]);
+      expect(sentPrompts).toHaveLength(0);
+
+      completeTurn("Continuing after the reported iterations.");
+
+      expect(activeRun().iterations).toHaveLength(3);
+      expect(sentPrompts).toHaveLength(1);
+      expect(sentPrompts[0].prompt).toContain("iteration 4");
+    });
+
+    it("recovers when an active prompt was incorrectly marked handled", () => {
+      beginTurn();
+      const run = service.registerRun(baseConfig);
+      const internals = service as unknown as {
+        promptCursor: Map<string, number>;
+      };
+      internals.promptCursor.set(run.id, 1);
+
+      streamTurnText(`${reportText(10, "baseline")}\nIteration 2 starts now.`);
+
+      expect(activeRun().iterations).toEqual([
+        expect.objectContaining({ index: 1, value: 10 }),
+      ]);
+    });
+
     it("shares the one-live-run-per-task guard with startRun", () => {
       service.registerRun(baseConfig);
       expect(() => service.startRun(baseConfig)).toThrow(/already running/);
@@ -374,6 +432,97 @@ describe("AutoresearchService", () => {
   });
 
   describe("iteration loop", () => {
+    it("records a metric block after the next iteration starts", () => {
+      service.startRun(baseConfig);
+      beginTurn();
+      streamTurnText(`${reportText(10, "baseline")}\nIteration 2 starts now.`);
+
+      expect(activeRun().iterations).toEqual([
+        expect.objectContaining({ index: 1, value: 10, summary: "baseline" }),
+      ]);
+      expect(sentPrompts).toHaveLength(1);
+
+      streamTurnText("Continuing to inspect the next change.");
+      expect(activeRun().iterations).toHaveLength(1);
+
+      completeTurn("Finished the turn.");
+      expect(activeRun().iterations).toHaveLength(1);
+      expect(sentPrompts).toHaveLength(2);
+      expect(sentPrompts.at(-1)?.prompt).toContain(
+        "Then make the next focused change",
+      );
+    });
+
+    it("keeps the tail report provisional until the turn ends", () => {
+      service.startRun({ ...baseConfig, maxIterations: 1 });
+      beginTurn();
+      streamTurnText(reportText(10, "draft baseline"));
+
+      expect(activeRun().iterations).toHaveLength(0);
+      expect(activeRun().status).toBe("running");
+
+      streamTurnText(reportText(12, "corrected baseline"));
+      expect(activeRun().iterations).toHaveLength(0);
+
+      completeTurn("Finalized the corrected report.");
+
+      expect(activeRun().iterations).toEqual([
+        expect.objectContaining({
+          index: 1,
+          value: 12,
+          summary: "corrected baseline",
+        }),
+      ]);
+      expect(activeRun().status).toBe("completed");
+      expect(activeRun().endReason).toBe("max-iterations");
+    });
+
+    it("records prebaseline research without consuming an iteration", () => {
+      service.startRun(baseConfig);
+      runTurn(researchText());
+
+      const researchingRun = activeRun();
+      expect(researchingRun.researchFindings).toEqual([
+        expect.objectContaining({
+          index: 1,
+          summary: "Mapped the execution path",
+          finding: "The metric is computed in the workspace server.",
+          nextStep: "Trace the benchmark command",
+        }),
+      ]);
+      expect(researchingRun.iterations).toHaveLength(0);
+      expect(sentPrompts.at(-1)?.prompt).toContain(
+        "Continue investigating the codebase or establish the baseline measurement",
+      );
+
+      runTurn(reportText(10, "baseline"));
+
+      expect(activeRun().iterations).toEqual([
+        expect.objectContaining({ index: 1, value: 10, summary: "baseline" }),
+      ]);
+    });
+
+    it("does not accept research checkpoints after the baseline", async () => {
+      service.startRun(baseConfig);
+      runTurn(reportText(10, "baseline"));
+      runTurn(researchText());
+      await passReminderGrace();
+
+      expect(activeRun().researchFindings).toHaveLength(0);
+      expect(activeRun().iterations).toHaveLength(1);
+      expect(sentPrompts.at(-1)?.prompt).toContain("did not include");
+    });
+
+    it("prefers a metric when a prebaseline reply contains both report types", () => {
+      service.startRun(baseConfig);
+      runTurn(`${researchText()}\n${reportText(10, "baseline")}`);
+
+      expect(activeRun().researchFindings).toHaveLength(0);
+      expect(activeRun().iterations).toEqual([
+        expect.objectContaining({ index: 1, value: 10, summary: "baseline" }),
+      ]);
+    });
+
     it("records an iteration and sends a continuation prompt", () => {
       service.startRun(baseConfig);
       runTurn(reportText(10, "baseline"));
@@ -534,7 +683,7 @@ describe("AutoresearchService", () => {
       );
       expect(activeRun().metricUnit).toBe("kB");
 
-      // First unit wins, like the name — a stable unit keeps values readable.
+      // First unit wins, like the name. A stable unit keeps values readable.
       runTurn("```autoresearch\nmetric: 400000\nunit: bytes\n```");
       expect(activeRun().metricUnit).toBe("kB");
     });
@@ -572,7 +721,7 @@ describe("AutoresearchService", () => {
       expect(modelSwitches).toEqual([
         { taskId: TASK_ID, model: "claude-opus-4-8" },
       ]);
-      expect(sentPrompts.at(-1)?.prompt).toContain("implementation phase");
+      expect(sentPrompts.at(-1)?.prompt).toContain("Implementation phase");
       expect(sentPrompts.at(-1)?.prompt).toContain(
         "Do NOT run the measurement",
       );
@@ -610,7 +759,7 @@ describe("AutoresearchService", () => {
 
       expect(activeRun().iterations).toHaveLength(2);
       expect(activeRun().phase).toBe("implement");
-      expect(sentPrompts.at(-1)?.prompt).toContain("implementation phase");
+      expect(sentPrompts.at(-1)?.prompt).toContain("Implementation phase");
     });
 
     it("still fails a measure turn that never reports", async () => {
@@ -988,6 +1137,9 @@ describe("AutoresearchService", () => {
             bestValue: 10,
             delta: null,
             summary: "baseline",
+            hypothesis: null,
+            plan: null,
+            approach: null,
             at: 1_000,
           },
         ],
@@ -1024,7 +1176,7 @@ describe("AutoresearchService", () => {
         ]);
       await service.rehydrate();
 
-      // No session exists for task-9 yet — recovery asks the host to
+      // No session exists for task 9 yet. Recovery asks the host to
       // reconnect it.
       await passRecoveryDelay();
       expect(reconnectCalls).toEqual(["task-9"]);
@@ -1074,7 +1226,7 @@ describe("AutoresearchService", () => {
       // The in-memory run (with its recorded iteration) wins over the row.
       expect(state.runs[live.id]?.iterations).toHaveLength(1);
       expect(state.runs["ar-past"]?.status).toBe("completed");
-      // The live run stays the active one — it started later.
+      // The live run stays active because it started later.
       expect(state.activeRunIdByTask[TASK_ID]).toBe(live.id);
     });
 
@@ -1203,7 +1355,9 @@ describe("AutoresearchService", () => {
 
       // No phase alternation: the next prompt is a plain continuation.
       expect(activeRun().phase).toBeNull();
-      expect(sentPrompts.at(-1)?.prompt).toContain("Continue:");
+      expect(sentPrompts.at(-1)?.prompt).toContain(
+        "Then make the next focused change",
+      );
     });
   });
 

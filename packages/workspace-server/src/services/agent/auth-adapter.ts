@@ -1,4 +1,3 @@
-import { delimiter } from "node:path";
 import {
   type McpToolApprovalState,
   type McpToolApprovals,
@@ -48,9 +47,10 @@ export type McpToolInstallations = Record<string, McpToolInstallationRef>;
 
 interface ConfigureProcessEnvInput {
   credentials: Credentials;
-  mockNodeDir: string;
   proxyUrl: string;
   claudeCliPath: string;
+  /** rtk command-output compression for the session; false opts out. */
+  rtkEnabled?: boolean;
 }
 
 @injectable()
@@ -140,21 +140,24 @@ export class AgentAuthAdapter {
 
   async configureProcessEnv({
     credentials,
-    mockNodeDir,
     proxyUrl,
     claudeCliPath,
+    rtkEnabled,
   }: ConfigureProcessEnvInput): Promise<void> {
     await this.getValidToken();
-
-    const currentPath = process.env.PATH || "";
-    if (!currentPath.split(delimiter).includes(mockNodeDir)) {
-      process.env.PATH = `${mockNodeDir}${delimiter}${currentPath}`;
-    }
 
     process.env.LLM_GATEWAY_URL = proxyUrl;
     process.env.CLAUDE_CODE_EXECUTABLE = claudeCliPath;
     process.env.POSTHOG_API_URL = credentials.apiHost;
     process.env.POSTHOG_PROJECT_ID = String(credentials.projectId);
+    // The agent auto-detects rtk on PATH; an explicit opt-out from settings
+    // pins it off for sessions this process spawns. Deleting on the enabled
+    // path restores auto-detection after a re-enable without a restart.
+    if (rtkEnabled === false) {
+      process.env.POSTHOG_RTK = "0";
+    } else {
+      delete process.env.POSTHOG_RTK;
+    }
   }
 
   private syncTokenEnvironment(token: string): void {

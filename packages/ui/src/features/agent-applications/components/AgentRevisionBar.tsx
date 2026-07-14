@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { useAgentRevisionLifecycle } from "../hooks/useAgentRevisionLifecycle";
 import { useCreateAgentDraftFromRevision } from "../hooks/useCreateAgentDraftFromRevision";
 import { revisionStateColor } from "../utils/format";
+import { AgentBundleImportDialog } from "./AgentBundleImportDialog";
 
 type LifecycleAction = "freeze" | "promote" | "archive";
 
@@ -116,6 +117,7 @@ export function AgentRevisionBar({
     action: LifecycleAction;
     revision: AgentRevision;
   } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const selected =
     revisions.find((r) => r.id === selectedRevisionId) ?? revisions[0] ?? null;
@@ -123,6 +125,19 @@ export function AgentRevisionBar({
   const actions = selected
     ? lifecycleActionsFor(selected.state, isLive, !!agent.live_revision)
     : [];
+  // Skill ids already declared on the selected revision — drives the
+  // new / update badge in the bulk-import preview.
+  const existingSkillIds = useMemo<string[]>(() => {
+    const skills = selected?.spec?.skills;
+    if (!Array.isArray(skills)) return [];
+    return skills.flatMap((s) => {
+      const id =
+        s && typeof s === "object" && "id" in s
+          ? (s as { id?: unknown }).id
+          : undefined;
+      return typeof id === "string" ? [id] : [];
+    });
+  }, [selected]);
 
   const visible = useMemo(
     () =>
@@ -293,6 +308,22 @@ export function AgentRevisionBar({
             Clone to draft
           </Button>
         ) : null}
+        {/*
+         * Paste markdown bundle — bulk import for the multi-file migration
+         * case (e.g. porting an existing growth-review agent in one paste).
+         * Per-file edit lives in the configuration pane; this is the hatch
+         * when there are several files to seed at once.
+         */}
+        {selected.state === "draft" ? (
+          <Button
+            size="1"
+            variant="soft"
+            color="gray"
+            onClick={() => setImportOpen(true)}
+          >
+            Paste markdown bundle…
+          </Button>
+        ) : null}
         {actions.map((a) => (
           <Button
             key={a.action}
@@ -305,6 +336,16 @@ export function AgentRevisionBar({
           </Button>
         ))}
       </Flex>
+
+      {selected.state === "draft" ? (
+        <AgentBundleImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          idOrSlug={idOrSlug}
+          revisionId={selected.id}
+          existingSkillIds={existingSkillIds}
+        />
+      ) : null}
 
       <AlertDialog.Root
         open={!!pending}

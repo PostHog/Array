@@ -91,7 +91,10 @@ export function openTaskInput(
       ? { folderId: folderIdOrOptions }
       : (folderIdOrOptions ?? {});
 
+  // folderId counts as transient state: each "+" click must get a fresh
+  // requestId so re-picking the same folder re-applies the prefill.
   const hasTransientState =
+    !!options.folderId ||
     !!options.initialPrompt ||
     !!options.initialCloudRepository ||
     !!options.initialModel ||

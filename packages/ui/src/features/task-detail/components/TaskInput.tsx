@@ -37,6 +37,7 @@ import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnable
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
+import { useFeatureFlagsLoaded } from "../../feature-flags/useFeatureFlagsLoaded";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
 import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
@@ -72,9 +73,11 @@ import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSele
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
+  DEFAULT_WORKSPACE_MODE,
   useSettingsStore,
 } from "../../settings/settingsStore";
 import { useSkills } from "../../skills/useSkills";
+import { useCloudModeEnabled } from "../hooks/useCloudModeEnabled";
 import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
@@ -82,6 +85,7 @@ import {
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
+import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
@@ -229,6 +233,9 @@ export function TaskInput({
   const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
     null,
   );
+  const [selectedCustomImageId, setSelectedCustomImageId] = useState<
+    string | null
+  >(null);
   const [activeReportAssociation, setActiveReportAssociation] = useState(
     reportAssociation ?? null,
   );
@@ -310,19 +317,59 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
+  const cloudModeEnabled = useCloudModeEnabled();
+  const flagsLoaded = useFeatureFlagsLoaded();
+  const reposReady = areReposReady({
+    isLoadingRepos,
+    repositoriesCount: repositories.length,
+    hasGithubIntegration,
+  });
+
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
-    return lastUsedWorkspaceMode || "local";
+    return resolveWorkspaceModePreference({
+      preferredMode: lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE,
+      cloudModeEnabled,
+      hasGithubIntegration,
+      lastUsedLocalWorkspaceMode,
+    });
   });
+
+  // A positive flag or integration signal is final, but a negative one may
+  // just mean the async flag fetch or integrations query hasn't landed yet, so
+  // a cloud preference only resolves once each negative signal is settled.
+  const cloudSignalsSettled =
+    (cloudModeEnabled || flagsLoaded) &&
+    (hasGithubIntegration || !isLoadingRepos);
 
   const didResolveWorkspaceModeRef = useRef(false);
   useEffect(() => {
     if (didResolveWorkspaceModeRef.current) return;
     if (!settingsHydrated) return;
+    if (initialCloudRepository) {
+      didResolveWorkspaceModeRef.current = true;
+      return;
+    }
+    const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
+    if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
-    if (initialCloudRepository) return;
-    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
-  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+    setWorkspaceModeState(
+      resolveWorkspaceModePreference({
+        preferredMode,
+        cloudModeEnabled,
+        hasGithubIntegration,
+        lastUsedLocalWorkspaceMode,
+      }),
+    );
+  }, [
+    settingsHydrated,
+    lastUsedWorkspaceMode,
+    initialCloudRepository,
+    cloudSignalsSettled,
+    cloudModeEnabled,
+    hasGithubIntegration,
+    lastUsedLocalWorkspaceMode,
+  ]);
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     didResolveWorkspaceModeRef.current = true;
@@ -564,13 +611,10 @@ export function TaskInput({
 
   useInitialRepoSelectionFromFolderId({
     folderId: view.folderId,
+    requestId: view.taskInputRequestId,
     folders,
     repositories,
-    reposLoaded: areReposReady({
-      isLoadingRepos,
-      repositoriesCount: repositories.length,
-      hasGithubIntegration,
-    }),
+    reposLoaded: reposReady,
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
     mostRecentEnvironment: view.folderRunEnvironment,
@@ -688,12 +732,9 @@ export function TaskInput({
       implementEffort: currentReasoningLevel ?? null,
       measureEffort: currentReasoningLevel ?? null,
     });
-    // The loop iterates unattended, so a permission prompt would stall it.
-    // Default to the most hands-off mode available: bypass when the user has
-    // enabled it, otherwise accept-edits.
-    const autonomousMode = allowBypassPermissions
-      ? "bypassPermissions"
-      : "acceptEdits";
+    // Autoresearch needs to apply edits without stopping for each change, but
+    // it should not silently inherit the broader bypass-permissions mode.
+    const autonomousMode = "acceptEdits";
     if (modeOption && isValidConfigValue(modeOption, autonomousMode)) {
       setConfigOption(modeOption.id, autonomousMode);
     }
@@ -705,7 +746,6 @@ export function TaskInput({
     sessionId,
     currentModel,
     currentReasoningLevel,
-    allowBypassPermissions,
     modeOption,
     setConfigOption,
     workspaceMode,
@@ -781,6 +821,10 @@ export function TaskInput({
     sandboxEnvironmentId:
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
         ? selectedCloudEnvId
+        : undefined,
+    customImageId:
+      effectiveWorkspaceMode === "cloud" && selectedCustomImageId
+        ? selectedCustomImageId
         : undefined,
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
@@ -1017,6 +1061,8 @@ export function TaskInput({
                   onChange={setWorkspaceMode}
                   selectedCloudEnvironmentId={selectedCloudEnvId}
                   onCloudEnvironmentChange={setSelectedCloudEnvId}
+                  selectedCustomImageId={selectedCustomImageId}
+                  onCustomImageChange={setSelectedCustomImageId}
                   size="1"
                 />
                 {!allowNoRepo && workspaceMode === "worktree" && (
@@ -1144,7 +1190,7 @@ export function TaskInput({
 
               <Flex direction="column" gap="0">
                 {autoresearchDraft && (
-                  <div className="mb-2 rounded-md border border-violet-6 bg-violet-2 px-2.5 py-1.5">
+                  <div className="mb-3 rounded-md border border-gray-6 bg-gray-2 px-3.5 py-3">
                     <AutoresearchComposerControls
                       draft={autoresearchDraft}
                       modelOptions={autoresearchModelOptions}
@@ -1168,7 +1214,7 @@ export function TaskInput({
                   sessionId={promptSessionId}
                   placeholder={
                     autoresearchDraft
-                      ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
+                      ? "Example: Reduce memory usage measured by `pnpm bench:memory` without changing behavior."
                       : `What do you want to ship? ${hints}`
                   }
                   editorHeight="large"
@@ -1289,7 +1335,7 @@ export function TaskInput({
                         <button
                           type="button"
                           onClick={() => setChannelContextDismissed(true)}
-                          aria-label="Remove channel context from prompt"
+                          aria-label="Remove context from prompt"
                           className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
                         >
                           <X size={12} />

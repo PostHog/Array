@@ -625,6 +625,46 @@ describe("resolveSkillBundleDependencies", () => {
       .join("\n")}\n---\nbody`;
   }
 
+  it("expands prose references (/name and [[name]]) into dependencies", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "prose-parent",
+      `---\nname: prose-parent\ndescription: parent\n---\nRun /prose-dep first, then see [[prose-wiki-dep]]. Ignore /usr/bin and /unknown-skill.`,
+    );
+    const slashDep = await createSkill(repoSkillsDir, "prose-dep");
+    const wikiDep = await createSkill(repoSkillsDir, "prose-wiki-dep");
+    const service = makeService();
+
+    const resolved = await service.resolveSkillBundleDependencies([
+      ref("prose-parent", primary),
+    ]);
+
+    expect(resolved.map((r) => r.name)).toEqual([
+      "prose-parent",
+      "prose-dep",
+      "prose-wiki-dep",
+    ]);
+    expect(resolved.map((r) => r.path)).toEqual([primary, slashDep, wikiDep]);
+  });
+
+  it("prefers a dependency beside the referencing skill over a same-named skill elsewhere", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "scoped-parent",
+      withDeps("scoped-parent", ["helper"]),
+    );
+    const repoHelper = await createSkill(repoSkillsDir, "helper");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    await createSkill(userSkillsHome.dir, "helper");
+    const service = makeService();
+
+    const resolved = await service.resolveSkillBundleDependencies([
+      ref("scoped-parent", primary),
+    ]);
+
+    expect(resolved.map((r) => r.path)).toEqual([primary, repoHelper]);
+  });
+
   it("expands a tagged skill to include its transitive dependencies", async () => {
     const primary = await createSkill(
       repoSkillsDir,

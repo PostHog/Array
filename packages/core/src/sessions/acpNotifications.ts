@@ -3,6 +3,7 @@ export const POSTHOG_NOTIFICATIONS = {
   RUN_STARTED: "_posthog/run_started",
   TASK_COMPLETE: "_posthog/task_complete",
   TURN_COMPLETE: "_posthog/turn_complete",
+  BACKGROUND_TURN_COMPLETE: "_posthog/background_turn_complete",
   ERROR: "_posthog/error",
   CONSOLE: "_posthog/console",
   SDK_SESSION: "_posthog/sdk_session",

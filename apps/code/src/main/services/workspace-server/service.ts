@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import path from "node:path";
 import { TypedEventEmitter } from "@posthog/shared";
+import { POSTHOG_CODE_INTERNAL_CHILD_ENV } from "@posthog/shared/constants";
 import type { WorkspaceConnection } from "@posthog/workspace-client/client";
 import { injectable } from "inversify";
 import { logger } from "../../utils/logger.js";
@@ -191,6 +192,7 @@ export class WorkspaceServerService extends TypedEventEmitter<WorkspaceServerEve
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: "1",
+        [POSTHOG_CODE_INTERNAL_CHILD_ENV]: "1",
         WORKSPACE_SERVER_SECRET: secret,
         WORKSPACE_SERVER_PORT: String(port),
         WORKSPACE_SERVER_PARENT_PID: String(process.pid),

@@ -1,16 +1,5 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
 
 const { runAgentMock, runPoolMock } = vi.hoisted(() => ({
   runAgentMock: vi.fn(),
@@ -32,7 +21,8 @@ function successResult(
 ): SingleRunResult {
   return {
     runId: "test-run-id",
-    agent: "scout",
+    startedAt: Date.now(),
+    agent: "Explore",
     task: "look around",
     exitCode: 0,
     messages: [
@@ -99,7 +89,7 @@ describe("subagent tool", () => {
     const execute = await getExecute();
     const result = (await execute(
       "id",
-      { agent: "scout", task: "x", tasks: [{ agent: "scout", task: "y" }] },
+      { agent: "Explore", task: "x", tasks: [{ agent: "Explore", task: "y" }] },
       undefined,
       undefined,
       fakeCtx,
@@ -126,7 +116,7 @@ describe("subagent tool", () => {
   it("errors when parallel tasks exceed the max count", async () => {
     const execute = await getExecute();
     const tasks = Array.from({ length: 9 }, () => ({
-      agent: "scout",
+      agent: "Explore",
       task: "x",
     }));
     const result = (await execute(
@@ -150,7 +140,7 @@ describe("subagent tool", () => {
       "id",
       {
         tasks: [
-          { agent: "scout", task: "x" },
+          { agent: "Explore", task: "x" },
           { agent: "not-real", task: "y" },
         ],
       },
@@ -168,7 +158,7 @@ describe("subagent tool", () => {
     const execute = await getExecute();
     const result = (await execute(
       "id",
-      { agent: "scout", task: "find auth code" },
+      { agent: "Explore", task: "find auth code" },
       undefined,
       undefined,
       fakeCtx,
@@ -188,7 +178,7 @@ describe("subagent tool", () => {
     const execute = await getExecute();
     const result = (await execute(
       "id",
-      { agent: "scout", task: "x" },
+      { agent: "Explore", task: "x" },
       undefined,
       undefined,
       fakeCtx,
@@ -200,64 +190,10 @@ describe("subagent tool", () => {
     expect(result.content[0].text).toMatch(/boom/);
   });
 
-  it("errors when chain has more steps than the max", async () => {
-    const execute = await getExecute();
-    const chain = Array.from({ length: 9 }, () => ({
-      agent: "scout",
-      task: "x",
-    }));
-    const result = (await execute(
-      "id",
-      { chain },
-      undefined,
-      undefined,
-      fakeCtx,
-    )) as { isError?: boolean; content: Array<{ text: string }> };
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/Too many chain steps/);
-  });
-
-  it("dispatches chain mode sequentially with {previous} substitution", async () => {
-    runAgentMock
-      .mockImplementationOnce(async ({ task }: { task: string }) =>
-        successResult({ task, agent: "scout" }),
-      )
-      .mockImplementationOnce(async ({ task }: { task: string }) =>
-        successResult({
-          task,
-          agent: "planner",
-          messages: [
-            {
-              role: "assistant",
-              content: [{ type: "text", text: task }],
-            } as never,
-          ],
-        }),
-      );
-
-    const execute = await getExecute();
-    const result = (await execute(
-      "id",
-      {
-        chain: [
-          { agent: "scout", task: "look around" },
-          { agent: "planner", task: "plan for: {previous}" },
-        ],
-      },
-      undefined,
-      undefined,
-      fakeCtx,
-    )) as { isError?: boolean; content: Array<{ text: string }> };
-
-    expect(runAgentMock).toHaveBeenCalledTimes(2);
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toBe("plan for: done");
-  });
-
   it("dispatches parallel mode through runPool", async () => {
     const tasks = [
-      { agent: "scout", task: "a" },
-      { agent: "reviewer", task: "b" },
+      { agent: "Explore", task: "a" },
+      { agent: "Plan", task: "b" },
     ];
     runPoolMock.mockImplementation(
       async (
@@ -290,104 +226,5 @@ describe("subagent tool", () => {
     expect(runAgentMock).toHaveBeenCalledTimes(2);
     expect(result.isError).toBeUndefined();
     expect(result.content[0].text).toMatch(/Parallel: 2\/2 succeeded/);
-  });
-
-  it("background: true returns immediately with a runId instead of waiting for completion", async () => {
-    const originalHome = process.env.HOME;
-    const tmpHome = fs.mkdtempSync(
-      path.join(os.tmpdir(), "posthog-subagent-ext-bg-"),
-    );
-    process.env.HOME = tmpHome;
-
-    try {
-      const gate = deferred<void>();
-      runAgentMock.mockImplementation(async () => {
-        await gate.promise;
-        return successResult();
-      });
-
-      const execute = await getExecute();
-      const result = (await execute(
-        "id",
-        { agent: "scout", task: "find auth code", background: true },
-        undefined,
-        undefined,
-        fakeCtx,
-      )) as { content: Array<{ text: string }>; details: { runId?: string } };
-
-      expect(result.content[0].text).toMatch(/Started in background as run/);
-      expect(result.details.runId).toBeTruthy();
-
-      gate.resolve();
-    } finally {
-      process.env.HOME = originalHome;
-      fs.rmSync(tmpHome, { recursive: true, force: true });
-    }
-  });
-
-  it("wires a live onSupervisorRequest through to ctx.ui.input in foreground single mode", async () => {
-    fakeCtx.ui.input.mockClear();
-    runAgentMock.mockImplementation(
-      async ({
-        onSupervisorRequest,
-      }: {
-        onSupervisorRequest?: (r: {
-          reason: string;
-          message: string;
-        }) => Promise<string>;
-      }) => {
-        const reply = await onSupervisorRequest?.({
-          reason: "need_decision",
-          message: "proceed?",
-        });
-        expect(reply).toBe("human reply");
-        return successResult();
-      },
-    );
-
-    const execute = await getExecute();
-    await execute(
-      "id",
-      { agent: "scout", task: "x" },
-      undefined,
-      undefined,
-      fakeCtx,
-    );
-
-    expect(fakeCtx.ui.input).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not pass onSupervisorRequest through for background runs", async () => {
-    const originalHome = process.env.HOME;
-    const tmpHome = fs.mkdtempSync(
-      path.join(os.tmpdir(), "posthog-subagent-ext-bg-sup-"),
-    );
-    process.env.HOME = tmpHome;
-    fakeCtx.ui.input.mockClear();
-
-    try {
-      const gate = deferred<void>();
-      runAgentMock.mockImplementation(
-        async ({ onSupervisorRequest }: { onSupervisorRequest?: unknown }) => {
-          expect(onSupervisorRequest).toBeUndefined();
-          await gate.promise;
-          return successResult();
-        },
-      );
-
-      const execute = await getExecute();
-      await execute(
-        "id",
-        { agent: "scout", task: "x", background: true },
-        undefined,
-        undefined,
-        fakeCtx,
-      );
-      gate.resolve();
-      expect(fakeCtx.ui.input).not.toHaveBeenCalled();
-    } finally {
-      process.env.HOME = originalHome;
-      fs.rmSync(tmpHome, { recursive: true, force: true });
-    }
   });
 });

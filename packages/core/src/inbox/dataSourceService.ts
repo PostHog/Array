@@ -2,11 +2,17 @@ import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import { inject, injectable } from "inversify";
 import { LINEAR_OAUTH_FLOW, type LinearOAuthFlow } from "./identifiers";
 
-export type DataSourceType = "github" | "linear" | "zendesk" | "pganalyze";
+export type DataSourceType =
+  | "github"
+  | "linear"
+  | "jira"
+  | "zendesk"
+  | "pganalyze";
 
 const REQUIRED_SCHEMAS: Record<DataSourceType, string[]> = {
   github: ["issues"],
   linear: ["issues"],
+  jira: ["issues"],
   zendesk: ["tickets"],
   pganalyze: ["issues", "servers"],
 };

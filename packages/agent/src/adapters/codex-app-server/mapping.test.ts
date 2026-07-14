@@ -42,6 +42,22 @@ describe("mapAppServerNotification", () => {
     });
   });
 
+  it("streams a plan delta as an ACP agent_message_chunk", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.PLAN_DELTA,
+      { itemId: "p1", delta: "## Plan\n" },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "## Plan\n" },
+      },
+    });
+  });
+
   it("returns null when the delta is missing or empty", () => {
     expect(
       mapAppServerNotification(
@@ -525,6 +541,21 @@ describe("mapHistoryItem", () => {
     ]);
   });
 
+  it("replays a persisted plan item as an agent_message_chunk", () => {
+    expect(
+      mapHistoryItem("s-1", { type: "plan", id: "p1", text: "# The plan" }),
+    ).toEqual([
+      {
+        sessionId: "s-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "# The plan" },
+        },
+      },
+    ]);
+    expect(mapHistoryItem("s-1", { type: "plan", id: "p1" })).toEqual([]);
+  });
+
   it("replays an agentMessage as an agent_message_chunk", () => {
     expect(
       mapHistoryItem("s-1", { type: "agentMessage", id: "a1", text: "done" }),
@@ -583,11 +614,8 @@ describe("mapHistoryItem", () => {
     });
   });
 
-  it("does not replay ephemeral reasoning/plan items", () => {
+  it("does not replay ephemeral reasoning items", () => {
     expect(mapHistoryItem("s-1", { type: "reasoning", id: "r1" })).toEqual([]);
-    expect(
-      mapHistoryItem("s-1", { type: "plan", id: "p1", text: "the plan" }),
-    ).toEqual([]);
   });
 });
 

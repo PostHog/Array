@@ -171,21 +171,22 @@ export function GeneratingIndicator({
     <Flex
       align="center"
       gap="2"
-      className="select-none select-none"
+      className="min-w-0 select-none"
       style={{ WebkitUserSelect: "none" }}
     >
-      <Brain size={12} className="ph-pulse" />
-      <Text className="text-[13px] text-accent-11">{activity}...</Text>
-      <Text color="gray" className="text-[13px]">
+      <Brain size={12} className="ph-pulse shrink-0" />
+      <Text className="truncate text-[13px] text-accent-11">{activity}...</Text>
+      {/* The hint shrinks (and truncates) well before the activity word does. */}
+      <Text color="gray" className="shrink-[8] truncate text-[13px]">
         (Esc to stop
-      </Text>
-      <Circle size={4} weight="fill" className="mx-[2px] my-0 text-gray-9" />
-      <Text
-        color="gray"
-        style={{ fontVariantNumeric: "tabular-nums" }}
-        className="text-[13px]"
-      >
-        {formatDuration(elapsed, 1)})
+        <Circle
+          size={4}
+          weight="fill"
+          className="mx-1 inline-block align-middle text-gray-9"
+        />
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {formatDuration(elapsed, 1)})
+        </span>
       </Text>
     </Flex>
   );

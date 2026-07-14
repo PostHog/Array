@@ -12,6 +12,8 @@ import { persist } from "zustand/middleware";
 
 export type DefaultRunMode = "local" | "cloud" | "last_used";
 export type LocalWorkspaceMode = "worktree" | "local";
+
+export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
 export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
@@ -77,6 +79,19 @@ export type TerminalFont =
 export interface HintState {
   count: number;
   learned: boolean;
+}
+
+/**
+ * Snapshot of the user-level AGENTS.md/CLAUDE.md that personalization syncs
+ * from. Runtime-only: the sync contribution re-reads the file on boot and
+ * whenever the toggle flips on.
+ */
+export interface SyncedCustomInstructions {
+  path: string;
+  /** Home-relative form of `path` (e.g. `~/.claude/CLAUDE.md`), for display. */
+  displayPath: string;
+  content: string;
+  truncated: boolean;
 }
 
 // ---------- Store shape ----------
@@ -163,9 +178,17 @@ interface SettingsStore {
   autoConvertLongText: AutoConvertLongText;
   sendMessagesWith: SendMessagesWith;
   customInstructions: string;
+  // When on, personalization mirrors the user-level AGENTS.md (or CLAUDE.md)
+  // instead of the hand-typed customInstructions above.
+  syncCustomInstructionsFromFile: boolean;
+  syncedCustomInstructions: SyncedCustomInstructions | null;
   setAutoConvertLongText: (value: AutoConvertLongText) => void;
   setSendMessagesWith: (mode: SendMessagesWith) => void;
   setCustomInstructions: (instructions: string) => void;
+  setSyncCustomInstructionsFromFile: (enabled: boolean) => void;
+  setSyncedCustomInstructions: (
+    synced: SyncedCustomInstructions | null,
+  ) => void;
 
   // Diff viewer
   diffOpenMode: DiffOpenMode;
@@ -175,9 +198,20 @@ interface SettingsStore {
   allowBypassPermissions: boolean;
   preventSleepWhileRunning: boolean;
   debugLogsCloudRuns: boolean;
+  // When on, cloud runs push their work and open a draft PR on completion
+  // without waiting for an explicit ask.
+  autoPublishCloudRuns: boolean;
+  // When on, agent runs compress eligible command output through rtk before it
+  // reaches the model. Split by modality: local covers local and worktree
+  // sessions, cloud covers cloud runs.
+  rtkEnabledLocal: boolean;
+  rtkEnabledCloud: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
+  setAutoPublishCloudRuns: (enabled: boolean) => void;
+  setRtkEnabledLocal: (enabled: boolean) => void;
+  setRtkEnabledCloud: (enabled: boolean) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -249,7 +283,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultRunMode: "last_used",
       lastUsedRunMode: "local",
       lastUsedLocalWorkspaceMode: "local",
-      lastUsedWorkspaceMode: "local",
+      lastUsedWorkspaceMode: DEFAULT_WORKSPACE_MODE,
       lastUsedAdapter: "claude",
       lastUsedModel: null,
       lastUsedReasoningEffort: null,
@@ -350,10 +384,16 @@ export const useSettingsStore = create<SettingsStore>()(
       autoConvertLongText: "2500",
       sendMessagesWith: "enter",
       customInstructions: "",
+      syncCustomInstructionsFromFile: false,
+      syncedCustomInstructions: null,
       setAutoConvertLongText: (value) => set({ autoConvertLongText: value }),
       setSendMessagesWith: (mode) => set({ sendMessagesWith: mode }),
       setCustomInstructions: (instructions) =>
         set({ customInstructions: instructions }),
+      setSyncCustomInstructionsFromFile: (enabled) =>
+        set({ syncCustomInstructionsFromFile: enabled }),
+      setSyncedCustomInstructions: (synced) =>
+        set({ syncedCustomInstructions: synced }),
 
       // Diff viewer
       diffOpenMode: "auto",
@@ -363,11 +403,18 @@ export const useSettingsStore = create<SettingsStore>()(
       allowBypassPermissions: false,
       preventSleepWhileRunning: false,
       debugLogsCloudRuns: false,
+      autoPublishCloudRuns: true,
+      rtkEnabledLocal: true,
+      rtkEnabledCloud: true,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
         set({ preventSleepWhileRunning: enabled }),
       setDebugLogsCloudRuns: (enabled) => set({ debugLogsCloudRuns: enabled }),
+      setAutoPublishCloudRuns: (enabled) =>
+        set({ autoPublishCloudRuns: enabled }),
+      setRtkEnabledLocal: (enabled) => set({ rtkEnabledLocal: enabled }),
+      setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -479,6 +526,7 @@ export const useSettingsStore = create<SettingsStore>()(
         autoConvertLongText: state.autoConvertLongText,
         sendMessagesWith: state.sendMessagesWith,
         customInstructions: state.customInstructions,
+        syncCustomInstructionsFromFile: state.syncCustomInstructionsFromFile,
 
         // Diff viewer
         diffOpenMode: state.diffOpenMode,
@@ -487,6 +535,9 @@ export const useSettingsStore = create<SettingsStore>()(
         allowBypassPermissions: state.allowBypassPermissions,
         preventSleepWhileRunning: state.preventSleepWhileRunning,
         debugLogsCloudRuns: state.debugLogsCloudRuns,
+        autoPublishCloudRuns: state.autoPublishCloudRuns,
+        rtkEnabledLocal: state.rtkEnabledLocal,
+        rtkEnabledCloud: state.rtkEnabledCloud,
 
         // Terminal
         terminalFont: state.terminalFont,
@@ -535,6 +586,26 @@ export const useSettingsStore = create<SettingsStore>()(
     },
   ),
 );
+
+/**
+ * The personalization to inject into sessions. Strictly either/or: while file
+ * sync is on, only the synced AGENTS.md/CLAUDE.md snapshot applies (empty when
+ * no file was found) and the hand-typed custom instructions are ignored.
+ */
+export function getEffectiveCustomInstructions(
+  state: Pick<
+    SettingsStore,
+    | "customInstructions"
+    | "syncCustomInstructionsFromFile"
+    | "syncedCustomInstructions"
+  >,
+): string {
+  if (state.syncCustomInstructionsFromFile) {
+    const content = state.syncedCustomInstructions?.content ?? "";
+    return content.trim() ? content : "";
+  }
+  return state.customInstructions;
+}
 
 /**
  * The repository a one-click cloud task should default to: the last-used cloud

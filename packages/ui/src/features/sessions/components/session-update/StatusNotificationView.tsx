@@ -6,11 +6,16 @@ import {
 } from "@phosphor-icons/react";
 import { ChatMarker, ChatMarkerContent } from "@posthog/quill";
 import { Box, Callout, Flex, Text } from "@radix-ui/themes";
+import { useEffect, useState } from "react";
 import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
+import { formatDuration } from "../GeneratingIndicator";
 
 interface StatusNotificationViewProps {
   status: string;
   isComplete?: boolean;
+  /** Epoch ms when a `compacting` status began; anchors the elapsed timer so it
+   *  survives unmount/remount in the virtualized list instead of resetting. */
+  startedAt?: number;
   /** Failure reason, set on a `compacting_failed` status. */
   error?: string;
   /** Refusal statuses: display-only stop_details.explanation from the API. */
@@ -24,6 +29,7 @@ interface StatusNotificationViewProps {
 export function StatusNotificationView({
   status,
   isComplete,
+  startedAt,
   error,
   explanation,
   fromModel,
@@ -107,16 +113,7 @@ export function StatusNotificationView({
     if (isComplete) {
       return null;
     }
-    return (
-      <Box className="my-1 border-blue-6 border-l-2 py-1 pl-3 dark:border-blue-8">
-        <Flex align="center" gap="2">
-          <Spinner size={14} className="animate-spin text-blue-9" />
-          <Text className="text-[13px] text-gray-11">
-            Compacting conversation history...
-          </Text>
-        </Flex>
-      </Box>
-    );
+    return <CompactingStatusView startedAt={startedAt} />;
   }
 
   // Generic status display for other statuses
@@ -125,6 +122,46 @@ export function StatusNotificationView({
       <Flex align="center" gap="2">
         <Text className="text-[13px] text-gray-11">Status: {status}</Text>
       </Flex>
+    </Box>
+  );
+}
+
+/**
+ * In-flight compaction row. Compaction is a single streaming summarization call
+ * with no measurable percentage, so we pair the spinner with an indeterminate
+ * progress bar (constant motion, so it never reads as frozen) and a live
+ * elapsed-time counter, which is the one honest progress signal we have.
+ */
+function CompactingStatusView({ startedAt }: { startedAt?: number }) {
+  const [elapsed, setElapsed] = useState(() =>
+    startedAt ? Date.now() - startedAt : 0,
+  );
+
+  useEffect(() => {
+    // Anchor to the persisted compaction start time so remounting this row
+    // (e.g. scrolling it out of and back into the virtualized list while
+    // compaction runs) keeps counting from when compaction began rather than
+    // resetting to zero. Fall back to mount time only if it's missing.
+    const start = startedAt ?? Date.now();
+    const tick = () => setElapsed(Date.now() - start);
+    tick();
+    const interval = setInterval(tick, 100);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  return (
+    <Box className="my-1 border-blue-6 border-l-2 px-3 py-1 dark:border-blue-8">
+      <Flex align="center" gap="2">
+        <Spinner size={14} className="animate-spin text-blue-9" />
+        <Text className="text-[13px] text-gray-11">
+          Compacting conversation history...
+        </Text>
+        <Text className="text-[13px] text-gray-10 tabular-nums">
+          {formatDuration(elapsed, 1)}
+        </Text>
+      </Flex>
+      {/* Decorative: the spinner and the text above carry the accessible status. */}
+      <div className="compacting-progress mt-1.5" aria-hidden="true" />
     </Box>
   );
 }

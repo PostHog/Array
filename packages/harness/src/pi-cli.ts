@@ -7,6 +7,7 @@
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withHogBrandEnv } from "./extensions/hog-branding/brand-env";
 
 export function resolvePiCliEntry(): string {
   const mainEntry = fileURLToPath(
@@ -46,6 +47,9 @@ export function piCliInvocation(
   return {
     command: process.execPath,
     args: [resolvePiCliEntry(), ...args],
-    env: nodeCompatibleSpawnEnv(env),
+    // `withHogBrandEnv` sets `PI_PACKAGE_DIR` so the spawned pi process
+    // (a separate Node process, so it doesn't inherit our in-process
+    // `installHogBrandEnv()`) also picks up "hog" branding.
+    env: nodeCompatibleSpawnEnv(withHogBrandEnv(env)),
   };
 }

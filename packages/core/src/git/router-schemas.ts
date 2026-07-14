@@ -384,6 +384,7 @@ export const getPrDetailsByUrlOutput = z.object({
   merged: z.boolean(),
   draft: z.boolean(),
   headRefName: z.string().nullable(),
+  title: z.string().nullable(),
 });
 export type PrDetailsByUrlOutput = z.infer<typeof getPrDetailsByUrlOutput>;
 
@@ -494,6 +495,15 @@ export const generatePrTitleAndBodyInput = z.object({
 export const generatePrTitleAndBodyOutput = z.object({
   title: z.string(),
   body: z.string(),
+});
+
+export const generatePrShortSummaryInput = z.object({
+  conversationContext: z.string().optional(),
+  prTitle: z.string().optional(),
+});
+
+export const generatePrShortSummaryOutput = z.object({
+  summary: z.string(),
 });
 
 export const gitStateSnapshotSchema = z.object({

@@ -16,17 +16,23 @@ export function useTaskThread(
   options?: {
     /** Poll cadence override; feed rows poll slower than the open panel. */
     pollIntervalMs?: number;
+    /**
+     * Gate the fetch/poll. Feed rows pass `inView` so only near-viewport rows
+     * hit the network; off-screen rows keep any cached messages but idle.
+     */
+    enabled?: boolean;
   },
 ): {
   messages: TaskThreadMessage[];
   isLoading: boolean;
 } {
   const pollIntervalMs = options?.pollIntervalMs ?? THREAD_POLL_INTERVAL_MS;
+  const enabled = options?.enabled ?? true;
   const query = useAuthenticatedQuery<TaskThreadMessage[]>(
     taskThreadQueryKey(taskId),
     (client) => client.getTaskThreadMessages(taskId as string),
     {
-      enabled: !!taskId,
+      enabled: !!taskId && enabled,
       refetchInterval: pollIntervalMs,
       // Fresh-within-the-poll-window so focus/remount doesn't refire every
       // feed row's thread query on top of the interval.

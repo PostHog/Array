@@ -35,8 +35,19 @@ export interface TaskCreationInput {
   reasoningLevel?: string;
   environmentId?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   cloudPrAuthorshipMode?: PrAuthorshipMode;
   cloudRunSource?: CloudRunSource;
+  /**
+   * When true, the cloud run agent pushes its work and opens a draft PR on
+   * completion without waiting for an explicit ask (Settings → Advanced).
+   */
+  cloudAutoPublish?: boolean;
+  /**
+   * rtk command-output compression for the cloud run. Only false is
+   * meaningful: it opts the run out of the server-side default (enabled).
+   */
+  cloudRtkEnabled?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**

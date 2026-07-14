@@ -1,4 +1,4 @@
-import fs, { mkdirSync, symlinkSync } from "node:fs";
+import fs from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import {
+  detectRtkBinary,
   isMcpToolReadOnly,
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -38,7 +39,11 @@ import {
   isOpenAIModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -103,6 +108,7 @@ import {
   type InterruptReason,
   type PromptOutput,
   type ReconnectSessionInput,
+  type RtkStatus,
   type SessionResponse,
   type StartSessionInput,
 } from "./schemas";
@@ -111,13 +117,6 @@ export type { InterruptReason };
 
 function isDevBuild(): boolean {
   return process.env.POSTHOG_CODE_IS_DEV === "true";
-}
-
-const MOCK_NODE_DIR_PREFIX = "agent-node";
-
-function getMockNodeDir(): string {
-  const suffix = isDevBuild() ? "dev" : "prod";
-  return join(tmpdir(), `${MOCK_NODE_DIR_PREFIX}-${suffix}`);
 }
 
 /** Mark all content blocks as hidden so the renderer doesn't show a duplicate user message on retry */
@@ -283,6 +282,8 @@ interface SessionConfig {
    * replayed to the client. Claude adapter only.
    */
   importedSessionId?: string;
+  /** rtk command-output compression for this session; false opts out. */
+  rtkEnabled?: boolean;
 }
 
 /** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
@@ -317,9 +318,11 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
-  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
-  prAttributed: boolean;
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL;
+  // `prAttachChain` serializes attach writes so concurrent fetch-merge-patch
+  // cycles can't drop each other's URLs from the accumulated list.
   evaluatedPrUrls: Set<string>;
+  prAttachChain: Promise<void>;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -362,7 +365,6 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
-  private mockNodeReady = false;
   private idleTimeouts = new Map<
     string,
     { handle: ReturnType<typeof setTimeout>; deadline: number }
@@ -424,6 +426,15 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     // (copyClaudeExecutable plugin).
     const binary = process.platform === "win32" ? "claude.exe" : "claude";
     return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
+  }
+
+  /** Whether an rtk binary is installed on this host, independent of the toggle. */
+  getRtkStatus(): RtkStatus {
+    const binaryPath = detectRtkBinary(process.env);
+    return {
+      available: binaryPath !== undefined,
+      binaryPath: binaryPath ?? null,
+    };
   }
 
   private getCodexBinaryPath(): string {
@@ -754,15 +765,14 @@ If a repository IS genuinely required, attach one in this priority order:
     }
 
     const channel = `agent-event:${taskRunId}`;
-    const mockNodeDir = this.setupMockNodeEnvironment();
     const proxyUrl = await this.agentAuthAdapter.ensureGatewayProxy(
       credentials.apiHost,
     );
     await this.agentAuthAdapter.configureProcessEnv({
       credentials,
-      mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
+      rtkEnabled: config.rtkEnabled,
     });
 
     const isPreview = taskId === "__preview__";
@@ -1090,8 +1100,8 @@ If a repository IS genuinely required, attach one in this priority order:
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
-        prAttributed: false,
         evaluatedPrUrls: new Set(),
+        prAttachChain: Promise.resolve(),
       };
 
       this.sessions.set(taskRunId, session);
@@ -1589,31 +1599,6 @@ For git operations while detached:
     this.log.info("All agent sessions cleaned up");
   }
 
-  private setupMockNodeEnvironment(): string {
-    const mockNodeDir = getMockNodeDir();
-    if (!this.mockNodeReady) {
-      try {
-        mkdirSync(mockNodeDir, { recursive: true });
-        const nodeSymlinkPath = join(mockNodeDir, "node");
-        try {
-          symlinkSync(process.execPath, nodeSymlinkPath);
-        } catch (err) {
-          if (
-            !(err instanceof Error) ||
-            !("code" in err) ||
-            err.code !== "EEXIST"
-          ) {
-            throw err;
-          }
-        }
-        this.mockNodeReady = true;
-      } catch (err) {
-        this.log.warn("Failed to setup mock node environment", err);
-      }
-    }
-    return mockNodeDir;
-  }
-
   private cancelInFlightMcpToolCalls(session: ManagedSession): void {
     for (const [toolCallId, toolKey] of session.inFlightMcpToolCalls) {
       this.mcpAppsService.notifyToolCancelled(toolKey, toolCallId);
@@ -1992,6 +1977,7 @@ For git operations while detached:
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
       importedSessionId:
         "importedSessionId" in params ? params.importedSessionId : undefined,
+      rtkEnabled: "rtkEnabled" in params ? params.rtkEnabled : undefined,
     };
   }
 
@@ -2052,11 +2038,14 @@ For git operations while detached:
     session: ManagedSession | undefined,
     update: unknown,
   ): void {
-    if (!session || session.prAttributed) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || session.evaluatedPrUrls.has(prUrl)) return;
-    session.evaluatedPrUrls.add(prUrl);
-    void this.attachPrIfCreatedThisRun(taskRunId, session, prUrl);
+    if (!session) return;
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (session.evaluatedPrUrls.has(prUrl)) continue;
+      session.evaluatedPrUrls.add(prUrl);
+      session.prAttachChain = session.prAttachChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(taskRunId, session, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -2064,33 +2053,30 @@ For git operations while detached:
     session: ManagedSession,
     prUrl: string,
   ): Promise<void> {
-    if (session.prAttributed) return;
+    const [attribution, ghLogin] = await Promise.all([
+      this.fetchPrAttribution(session.repoPath, prUrl),
+      this.fetchGhLogin(session.repoPath),
+    ]);
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
-    const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: another URL may have attributed while we waited.
-    if (session.prAttributed) return;
-
-    session.prAttributed = true;
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
-    session.agent
-      .attachPullRequestToTask(session.taskId, prUrl)
-      .then(() => {
-        this.log.info("PR URL attached to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-        });
-      })
-      .catch((err) => {
-        this.log.error("Failed to attach PR URL to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-          error: err,
-        });
+    try {
+      await session.agent.attachPullRequestToTask(session.taskId, prUrl);
+      this.log.info("PR URL attached to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
       });
+    } catch (err) {
+      this.log.error("Failed to attach PR URL to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
+        error: err,
+      });
+    }
 
     // The user-initiated PR-creation flow links the current branch to the
     // workspace atomically (see GitService.createPr). PRs created via bash —
@@ -2105,24 +2091,51 @@ For git operations while detached:
     });
   }
 
-  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
-  private async fetchPrCreatedAt(
+  /** PR `createdAt` (ISO) and author login via the GitHub CLI; nulls if unresolvable. */
+  private async fetchPrAttribution(
     cwd: string,
     prUrl: string,
-  ): Promise<string | null> {
+  ): Promise<{ createdAt: string | null; author: string | null }> {
     try {
-      const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
-        cwd,
-        timeoutMs: 10_000,
-      });
-      if (res.exitCode !== 0) return null;
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      const res = await execGh(
+        ["pr", "view", prUrl, "--json", "createdAt,author"],
+        {
+          cwd,
+          timeoutMs: 10_000,
+        },
       );
+      if (res.exitCode !== 0) return { createdAt: null, author: null };
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
     } catch (err) {
-      this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
-      return null;
+      this.log.debug("Failed to resolve PR attribution", { prUrl, error: err });
+      return { createdAt: null, author: null };
     }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(cwd: string): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+      cwd,
+      timeoutMs: 10_000,
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   /**

@@ -22,7 +22,7 @@ import {
 } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 import claudeMark from "../../../assets/services/claude.svg";
-import { toast } from "../../../primitives/toast";
+import { toastError } from "../../notifications/errorDetails";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useClaudeCliSessions } from "../hooks/useClaudeCliSessions";
 import { SuggestedTasksPanel } from "./SuggestedTasksPanel";
@@ -349,9 +349,7 @@ export function NewTaskSuggestions({
           session_status: session.status,
           failed_step: result.failedStep,
         });
-        toast.error("Couldn't continue Claude Code session", {
-          description: result.error,
-        });
+        toastError("Couldn't continue Claude Code session", result.error);
       }
     } finally {
       setRunningId(null);

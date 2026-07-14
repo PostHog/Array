@@ -40,6 +40,10 @@ export function navigateToTaskPending(key: string): void {
   });
 }
 
+export function navigateToActivity(): void {
+  void getRouterOrNull()?.navigate({ to: "/website/activity" });
+}
+
 export function navigateToChannel(channelId: string): void {
   void getRouterOrNull()?.navigate({
     to: "/website/$channelId",
@@ -179,10 +183,6 @@ export function navigateToSkills(): void {
 
 export function navigateToMcpServers(): void {
   void getRouterOrNull()?.navigate({ to: "/mcp-servers" });
-}
-
-export function navigateToUsage(): void {
-  void getRouterOrNull()?.navigate({ to: "/usage" });
 }
 
 // Channels-space mirrors. These render the same shared views as their /code (or

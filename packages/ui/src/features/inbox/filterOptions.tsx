@@ -18,6 +18,7 @@ import type {
   SignalReportPriority,
   SourceProduct,
 } from "@posthog/shared/types";
+import { JiraIcon } from "@posthog/ui/features/inbox/components/utils/JiraIcon";
 import { PgAnalyzeIcon } from "@posthog/ui/features/inbox/components/utils/PgAnalyzeIcon";
 import type { ReactNode } from "react";
 
@@ -93,6 +94,7 @@ export const INBOX_SOURCE_OPTIONS: {
   },
   { value: "github", label: "GitHub", icon: <GithubLogoIcon size={14} /> },
   { value: "linear", label: "Linear", icon: <KanbanIcon size={14} /> },
+  { value: "jira", label: "Jira", icon: <JiraIcon size={14} /> },
   { value: "zendesk", label: "Zendesk", icon: <TicketIcon size={14} /> },
   {
     value: "conversations",

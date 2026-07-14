@@ -30,6 +30,7 @@ export {
   primaryWindowHasNoTabs,
   setTabOrder,
   setTabTarget,
+  setWindowActiveTab,
   type TabNavDecision,
   type TabTarget,
 } from "./browser-tabs";
@@ -76,6 +77,7 @@ export {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,
@@ -84,6 +86,7 @@ export type { ExecutionMode } from "./exec-types";
 export {
   CODEX_MODE_PRESETS,
   type CodexModePreset,
+  resolveCloudInitialPermissionMode,
 } from "./execution-modes";
 export * from "./flags";
 export * from "./git-domain";
@@ -121,6 +124,13 @@ export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export {
+  formatMention,
+  type MentionSegment,
+  mentionsToPlainText,
+  splitMentionSegments,
+} from "./mentions";
+export { defaultEligibleModel } from "./models";
+export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
   OAUTH_SCOPES,
@@ -139,6 +149,13 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export {
+  buildPrOutput,
+  mergePrUrls,
+  promotePrUrl,
+  readPrSummaries,
+  readPrUrls,
+} from "./pr-urls";
 export {
   type CloudRegion,
   formatRegionBadge,

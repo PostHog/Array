@@ -20,7 +20,7 @@ export function normalizeChannelName(name: string): string {
  * folder "channels" stay on the desktop file system for CONTEXT.md and
  * artifacts). Listing also lazily provisions the requester's #me channel.
  */
-export function useTaskChannels(): {
+export function useTaskChannels(options?: { enabled?: boolean }): {
   channels: TaskChannel[];
   personalChannel: TaskChannel | undefined;
   isLoading: boolean;
@@ -28,7 +28,10 @@ export function useTaskChannels(): {
   const query = useAuthenticatedQuery<TaskChannel[]>(
     TASK_CHANNELS_QUERY_KEY,
     (client) => client.getTaskChannels(),
-    { refetchInterval: TASK_CHANNELS_POLL_INTERVAL_MS },
+    {
+      enabled: options?.enabled ?? true,
+      refetchInterval: TASK_CHANNELS_POLL_INTERVAL_MS,
+    },
   );
   const channels = useMemo(() => query.data ?? [], [query.data]);
   const personalChannel = useMemo(
