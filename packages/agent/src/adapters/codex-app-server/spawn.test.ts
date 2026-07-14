@@ -42,6 +42,20 @@ describe("buildAppServerArgs", () => {
     );
   });
 
+  it("lets a caller override the reviewer pin without emitting a shadowed duplicate", () => {
+    const args = buildAppServerArgs({
+      binaryPath: "/bundle/codex",
+      apiBaseUrl: "https://gateway.example/v1",
+      configOverrides: { approvals_reviewer: "auto_review" },
+    });
+
+    // codex's `-c` is last-wins, so the default pin must not be emitted alongside
+    // the caller's value — exactly one reviewer entry, and it's the caller's.
+    expect(args.filter((arg) => arg.startsWith("approvals_reviewer="))).toEqual(
+      ['approvals_reviewer="auto_review"'],
+    );
+  });
+
   it("forwards http headers as a quoted TOML inline table on the posthog provider", () => {
     const args = buildAppServerArgs({
       binaryPath: "/bundle/codex",
