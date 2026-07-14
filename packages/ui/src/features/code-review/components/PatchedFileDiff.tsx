@@ -49,6 +49,7 @@ export function PatchedFileDiff({
     }
     return null;
   }, [fileDiff, fallback, file.path]);
+  const commentCount = countPrCommentsForFile(commentThreads, file);
 
   // Branch/PR diffs have no reliable local working-tree file to preview (the
   // checkout may be on a different ref, and GitHub omits binary patches), so
@@ -63,6 +64,7 @@ export function PatchedFileDiff({
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}
+        commentCount={commentCount}
         headerTrailing={headerTrailing}
       />
     );
@@ -78,6 +80,7 @@ export function PatchedFileDiff({
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}
+        commentCount={commentCount}
         headerTrailing={headerTrailing}
       />
     );
@@ -95,9 +98,26 @@ export function PatchedFileDiff({
           fileDiff={fd}
           collapsed={collapsed}
           onToggle={onToggle}
+          commentCount={commentCount}
           trailing={headerTrailing}
         />
       )}
     />
   );
+}
+
+function countPrCommentsForFile(
+  threads: Map<number, PrCommentThread> | undefined,
+  file: Pick<ChangedFile, "path" | "originalPath">,
+): number {
+  let count = 0;
+  for (const thread of threads?.values() ?? []) {
+    if (
+      thread.filePath === file.path ||
+      (file.originalPath != null && thread.filePath === file.originalPath)
+    ) {
+      count += thread.comments.length;
+    }
+  }
+  return count;
 }
