@@ -40,6 +40,7 @@ import {
   type VirtualizedListHandle,
 } from "@posthog/ui/features/sessions/components/VirtualizedList";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { createConversationDiffPoolOptions } from "@posthog/ui/features/sessions/conversationDiffPoolOptions";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
@@ -102,14 +103,7 @@ export function ConversationView({
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
-    () => ({
-      workerFactory: () => diffWorkerFactory(),
-      totalASTLRUCacheSize: 200,
-      // Each pooled highlighter worker is a full V8 isolate with shiki
-      // grammars loaded (~40MB RSS); the library default of 8 costs hundreds
-      // of MB for parallelism conversation diffs don't need.
-      poolSize: 2,
-    }),
+    () => createConversationDiffPoolOptions(diffWorkerFactory),
     [diffWorkerFactory],
   );
 

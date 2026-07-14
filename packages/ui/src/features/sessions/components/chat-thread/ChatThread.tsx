@@ -61,6 +61,7 @@ import {
 import { SessionUpdateView } from "@posthog/ui/features/sessions/components/session-update/SessionUpdateView";
 import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { createConversationDiffPoolOptions } from "@posthog/ui/features/sessions/conversationDiffPoolOptions";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import {
@@ -990,10 +991,7 @@ export function ChatThread({
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
-    () => ({
-      workerFactory: () => diffWorkerFactory(),
-      totalASTLRUCacheSize: 200,
-    }),
+    () => createConversationDiffPoolOptions(diffWorkerFactory),
     [diffWorkerFactory],
   );
 
