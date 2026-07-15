@@ -228,6 +228,10 @@ export function createWindow(): void {
           // buttons (40px bar, 24px buttons → centre at y=20; 12px dots → top at 14).
           // x mirrors y so the inset from the top and the left match.
           trafficLightPosition: { x: 14, y: 14 },
+          // Exposes the titlebar-area-* CSS env vars so the renderer can
+          // clear the traffic lights exactly; their size varies by macOS
+          // version (bigger on Tahoe), so it must not hardcode a width.
+          titleBarOverlay: true,
         }
       : process.platform === "win32"
         ? {
