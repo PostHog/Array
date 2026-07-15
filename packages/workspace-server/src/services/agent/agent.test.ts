@@ -347,6 +347,36 @@ describe("AgentService", () => {
     });
   });
 
+  describe("session meta", () => {
+    it.each([{ spokenNarration: true }, { spokenNarration: false }])(
+      "threads spokenNarration $spokenNarration into newSession meta",
+      async ({ spokenNarration }) => {
+        await service.startSession({
+          ...baseSessionParams,
+          adapter: "claude",
+          spokenNarration,
+        });
+
+        expect(mockNewSession).toHaveBeenCalledTimes(1);
+        expect(mockNewSession.mock.calls[0][0]._meta).toMatchObject({
+          spokenNarration,
+        });
+      },
+    );
+
+    it("omits spokenNarration from newSession meta when unset", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "claude",
+      });
+
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+      expect(mockNewSession.mock.calls[0][0]._meta).not.toHaveProperty(
+        "spokenNarration",
+      );
+    });
+  });
+
   describe("idle timeout", () => {
     function injectSession(
       svc: AgentService,
