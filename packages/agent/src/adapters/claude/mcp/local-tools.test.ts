@@ -20,10 +20,10 @@ describe("createLocalToolsMcpServer", () => {
     }
   });
 
-  it("exposes only the always-on tools on a desktop run (no cloud-only tools)", async () => {
+  it("exposes speak on a desktop run with narration on (no cloud-only tools)", async () => {
     const server = createLocalToolsMcpServer(
       { cwd: "/repo", token: "ghs_x" },
-      undefined,
+      { environment: "local", spokenNarration: true },
     );
     if (!server) {
       throw new Error("expected the local-tools server to be registered");
@@ -37,12 +37,19 @@ describe("createLocalToolsMcpServer", () => {
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
-    // `speak` is always on (narration works on desktop and cloud alike).
     expect(names).toContain("speak");
     // Signed-git tools are cloud-only and must not leak into a desktop run.
     expect(names).not.toContain("git_signed_commit");
 
     await client.close();
+  });
+
+  it("registers no server on a desktop run with narration off (no tools pass their gate)", () => {
+    const server = createLocalToolsMcpServer(
+      { cwd: "/repo", token: "ghs_x" },
+      undefined,
+    );
+    expect(server).toBeUndefined();
   });
 
   it("exposes git_signed_commit over MCP in a cloud run with a token", async () => {
@@ -66,6 +73,9 @@ describe("createLocalToolsMcpServer", () => {
     expect(names).toContain("git_signed_commit");
     expect(names).toContain("git_signed_merge");
     expect(names).toContain("git_signed_rewrite");
+    // The adapter resolves spokenNarration before building the server; without
+    // an explicit true here the speak tool stays gated off.
+    expect(names).not.toContain("speak");
 
     await client.close();
   });

@@ -1,6 +1,7 @@
 import type { UploadableSkillSource } from "@posthog/shared";
 import { mergeAttributes, Node } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { findChipRangeById } from "./chipRange";
 import { MentionChipView } from "./MentionChipView";
 
 export type ChipType =
@@ -103,39 +104,22 @@ export const MentionChipNode = Node.create({
       replaceMentionChipById:
         (chipId: string, attrs: Partial<MentionChipAttrs>) =>
         ({ tr, state, dispatch }) => {
-          let found = false;
-          state.doc.descendants((node, pos) => {
-            if (found) return false;
-            if (node.type.name !== "mentionChip") return;
-            if (node.attrs.chipId !== chipId) return;
-            found = true;
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs });
-            return false;
-          });
-          if (found && dispatch) dispatch(tr);
-          return found;
+          const range = findChipRangeById(state.doc, chipId);
+          if (!range) return false;
+          const node = state.doc.nodeAt(range.from);
+          if (!node) return false;
+          tr.setNodeMarkup(range.from, undefined, { ...node.attrs, ...attrs });
+          if (dispatch) dispatch(tr);
+          return true;
         },
       removeMentionChipById:
         (chipId: string) =>
         ({ tr, state, dispatch }) => {
-          let found = false;
-          state.doc.descendants((node, pos) => {
-            if (found) return false;
-            if (node.type.name !== "mentionChip") return;
-            if (node.attrs.chipId !== chipId) return;
-            found = true;
-            const from = pos;
-            const to = pos + node.nodeSize;
-            // Also swallow a trailing single space the suggestion adds.
-            const after = state.doc.textBetween(
-              to,
-              Math.min(to + 1, state.doc.content.size),
-            );
-            tr.delete(from, after === " " ? to + 1 : to);
-            return false;
-          });
-          if (found && dispatch) dispatch(tr);
-          return found;
+          const range = findChipRangeById(state.doc, chipId);
+          if (!range) return false;
+          tr.delete(range.from, range.to);
+          if (dispatch) dispatch(tr);
+          return true;
         },
     };
   },

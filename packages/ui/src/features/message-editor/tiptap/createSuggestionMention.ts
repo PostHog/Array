@@ -12,6 +12,8 @@ import { SuggestionList, type SuggestionListRef } from "./SuggestionList";
 
 export interface SuggestionMentionConfig<T extends SuggestionItem> {
   name: string;
+  /** Tags the popup so keydown checks can tell this editor's popup apart. */
+  sessionId: string;
   char: string;
   chipType: ChipType;
   startOfLine?: boolean;
@@ -35,6 +37,7 @@ export function createSuggestionMention<T extends SuggestionItem>(
 ) {
   const {
     name,
+    sessionId,
     char,
     chipType,
     startOfLine = false,
@@ -97,6 +100,7 @@ export function createSuggestionMention<T extends SuggestionItem>(
             },
             editor: props.editor,
           });
+          renderer.element.setAttribute("data-suggestion-session", sessionId);
 
           if (!props.clientRect) return;
 

@@ -27,9 +27,9 @@ export function HomeItem({
           />
         </>
       }
+      badge={<Badge variant="info">Alpha</Badge>}
       isActive={isActive}
       onClick={onClick}
-      endContent={<Badge variant="warning">Alpha</Badge>}
     />
   );
 }

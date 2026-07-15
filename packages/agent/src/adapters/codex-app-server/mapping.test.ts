@@ -230,6 +230,74 @@ describe("mapAppServerNotification", () => {
     });
   });
 
+  it("maps a spawned Codex agent to an explicit subagent tool call", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_STARTED,
+      {
+        item: {
+          type: "collabAgentToolCall",
+          id: "spawn-1",
+          tool: "spawnAgent",
+          status: "inProgress",
+          senderThreadId: "main-thread",
+          receiverThreadIds: ["child-thread"],
+          prompt: "Review the authentication changes\nFocus on security.",
+          model: "gpt-5.5",
+          reasoningEffort: "high",
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "spawn-1",
+        title: "Review the authentication changes",
+        kind: "other",
+        status: "in_progress",
+        rawInput: {
+          prompt: "Review the authentication changes\nFocus on security.",
+          receiverThreadIds: ["child-thread"],
+          model: "gpt-5.5",
+          reasoningEffort: "high",
+        },
+        _meta: { posthog: { toolName: "spawn_agent" } },
+      },
+    });
+  });
+
+  it("keeps a completed spawn tool call terminal while its subagent is running", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED,
+      {
+        item: {
+          type: "collabAgentToolCall",
+          id: "spawn-1",
+          tool: "spawnAgent",
+          status: "completed",
+          senderThreadId: "main-thread",
+          receiverThreadIds: ["child-thread"],
+          prompt: "Review the authentication changes",
+          agentsStates: {
+            "child-thread": { status: "running", message: null },
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "spawn-1",
+        status: "completed",
+      },
+    });
+  });
+
   it("drops agent message items (their deltas already streamed)", () => {
     expect(
       mapAppServerNotification("s-1", APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED, {

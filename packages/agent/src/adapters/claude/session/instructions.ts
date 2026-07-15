@@ -63,10 +63,13 @@ How to phrase the line:
 - Be theatrical: use expressive audio tags in [square brackets] — [laughs], [sighs], [groans], [excited], [whispers], [clears throat] — 1-3 per line, matched to the moment. The system-voice fallback strips tags automatically, so they never hurt.
 `;
 
-export const APPENDED_INSTRUCTIONS =
-  BRANCH_NAMING +
-  PULL_REQUEST_LINKS +
-  PLAN_MODE +
-  MCP_TOOLS +
-  SHELL_EFFICIENCY +
-  SPOKEN_NARRATION;
+const BASE_INSTRUCTIONS =
+  BRANCH_NAMING + PULL_REQUEST_LINKS + PLAN_MODE + MCP_TOOLS + SHELL_EFFICIENCY;
+
+export function buildAppendedInstructions(opts: {
+  spokenNarration: boolean;
+}): string {
+  return opts.spokenNarration
+    ? BASE_INSTRUCTIONS + SPOKEN_NARRATION
+    : BASE_INSTRUCTIONS;
+}

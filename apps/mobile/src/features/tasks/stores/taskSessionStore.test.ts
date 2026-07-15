@@ -141,6 +141,80 @@ describe("steerQueuedMessage", () => {
   });
 });
 
+describe("flushQueuedMessagesIfIdle", () => {
+  beforeEach(() => {
+    useMessageQueueStore.setState(
+      { queuesByTaskId: {}, editingByTaskId: {} },
+      false,
+    );
+    useTaskSessionStore.setState({ sessions: {} });
+  });
+
+  it("sends the queue when the agent is idle", async () => {
+    seedSession({ isPromptPending: false });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+    useMessageQueueStore.getState().enqueue("t1", "a", []);
+    useMessageQueueStore.getState().enqueue("t1", "b", []);
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await vi.waitFor(() => expect(sendInterrupting).toHaveBeenCalled());
+
+    expect(sendInterrupting).toHaveBeenCalledWith("t1", "a\n\nb", []);
+    expect(useMessageQueueStore.getState().getQueue("t1")).toEqual([]);
+  });
+
+  it("sends only the messages before the one being edited", async () => {
+    seedSession({ isPromptPending: false });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+    useMessageQueueStore.getState().enqueue("t1", "a", []);
+    useMessageQueueStore.getState().enqueue("t1", "b", []);
+    useMessageQueueStore.getState().enqueue("t1", "c", []);
+    const edited = useMessageQueueStore.getState().getQueue("t1")[1];
+    useMessageQueueStore.getState().setEditing("t1", edited.id);
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await vi.waitFor(() => expect(sendInterrupting).toHaveBeenCalled());
+
+    expect(sendInterrupting).toHaveBeenCalledWith("t1", "a", []);
+    expect(
+      useMessageQueueStore
+        .getState()
+        .getQueue("t1")
+        .map((m) => m.content),
+    ).toEqual(["b", "c"]);
+  });
+
+  it.each([
+    { name: "a turn is running", overrides: { isPromptPending: true } },
+    { name: "the run is terminal", overrides: { terminalStatus: "completed" } },
+    { name: "the agent is compacting", overrides: { isCompacting: true } },
+  ] as const)("no-ops when $name", async ({ overrides }) => {
+    seedSession({ isPromptPending: false, ...overrides });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+    useMessageQueueStore.getState().enqueue("t1", "a", []);
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await Promise.resolve();
+
+    expect(sendInterrupting).not.toHaveBeenCalled();
+    expect(useMessageQueueStore.getState().getQueue("t1")).toHaveLength(1);
+  });
+
+  it("no-ops when the queue is empty", async () => {
+    seedSession({ isPromptPending: false });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await Promise.resolve();
+
+    expect(sendInterrupting).not.toHaveBeenCalled();
+  });
+});
+
 describe("_resumeCloudRun", () => {
   const mockGetTask = vi.mocked(getTask);
   const mockRunTaskInCloud = vi.mocked(runTaskInCloud);

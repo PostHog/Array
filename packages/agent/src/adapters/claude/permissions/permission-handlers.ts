@@ -9,6 +9,8 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { text } from "../../../utils/acp-content";
 import type { Logger } from "../../../utils/logger";
+import { qualifiedLocalToolName } from "../../local-tools";
+import { SPEAK_TOOL_NAME } from "../../local-tools/tools/speak";
 import { toolInfoFromToolUse } from "../conversion/tool-use-to-acp";
 import {
   getMcpToolApprovalState,
@@ -37,6 +39,8 @@ import {
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
 } from "./posthog-exec-gate";
+
+const SPEAK_TOOL_ID = qualifiedLocalToolName(SPEAK_TOOL_NAME);
 
 export type ToolPermissionResult =
   | {
@@ -755,6 +759,16 @@ export async function canUseTool(
         "This tool has been blocked. To re-enable it, go to Settings > MCP Servers in PostHog Code.";
       await emitToolDenial(context, message);
       return { behavior: "deny", message, interrupt: false };
+    }
+
+    // Narration is a fire-and-forget no-op on the agent side; a permission
+    // prompt for it interrupts the user to approve a line they may never hear.
+    // An explicit do_not_use block above still wins.
+    if (toolName === SPEAK_TOOL_ID) {
+      return {
+        behavior: "allow",
+        updatedInput: toolInput as Record<string, unknown>,
+      };
     }
 
     if (approvalState === "needs_approval") {

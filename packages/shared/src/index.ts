@@ -210,6 +210,7 @@ export {
   type QueuedMessage,
   resolveBypassRevertMode,
   type SessionStatus,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
 } from "./sessions";
 export type {

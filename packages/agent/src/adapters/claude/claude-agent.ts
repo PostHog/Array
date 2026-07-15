@@ -75,7 +75,7 @@ import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
-import { resolveTaskId } from "../session-meta";
+import { resolveSpokenNarration, resolveTaskId } from "../session-meta";
 import {
   buildBreakdown,
   emptyBaseline,
@@ -1891,6 +1891,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // needs so the session doesn't pin the whole meta object.
     const baseBranch = meta?.baseBranch;
     const environment = meta?.environment;
+    const spokenNarration = resolveSpokenNarration(meta);
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
@@ -1903,7 +1904,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           taskRunId: meta?.taskRunId,
           baseBranch,
         },
-        { environment },
+        { environment, spokenNarration },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
     };
@@ -1923,7 +1924,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ...initialInProcess,
     };
 
-    const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
+    const systemPrompt = buildSystemPrompt(meta?.systemPrompt, {
+      spokenNarration,
+    });
 
     if (meta?.mcpToolApprovals) {
       setMcpToolApprovalStates(meta.mcpToolApprovals);

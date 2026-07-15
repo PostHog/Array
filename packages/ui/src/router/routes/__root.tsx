@@ -70,7 +70,7 @@ import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
-import { isWindows } from "@posthog/ui/utils/platform";
+import { isMac, isWindows } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
@@ -338,7 +338,9 @@ function RootLayout() {
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left section matches the sidebar width so the tab strip
             starts flush with the content pane; its padding clears the macOS
-            stoplights. */}
+            stoplights via env(titlebar-area-x), the system-reported right
+            edge of the traffic-light strip (see titleBarOverlay in
+            window.ts). */}
         <Flex
           align="center"
           className="drag h-10 shrink-0"
@@ -351,8 +353,12 @@ function RootLayout() {
             align="center"
             justify="between"
             gap="3"
-            className="shrink-0 pr-2 pl-[78px]"
+            className="shrink-0 pr-2"
             style={{
+              // Traffic-light size varies by macOS version, so a fixed inset
+              // over- or under-shoots; the env var fallback covers hosts
+              // without Window Controls Overlay.
+              paddingLeft: isMac ? "env(titlebar-area-x, 78px)" : "78px",
               width: sidebarOpen ? channelsSidebarWidth : undefined,
               // Same curve/duration as ResizableSidebar's SLIDE_EASING so the
               // title bar tracks the sidebar edge.

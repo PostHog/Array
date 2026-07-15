@@ -194,6 +194,12 @@ export type NewSessionMeta = {
    * runtime whether it needs a repo and clones one only if so.
    */
   channelMode?: boolean;
+  /**
+   * The user's spoken-narration setting at session start. Gates the speak
+   * tool and its prompt instructions. Unset falls back by environment: cloud
+   * emits always (consumers gate playback), local stays silent.
+   */
+  spokenNarration?: boolean;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
   claudeCode?: {
