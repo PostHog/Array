@@ -328,11 +328,13 @@ describe("buildSessionOptions", () => {
           "x-posthog-property-team_id: 42",
           "x-posthog-property-$ai_git_branch: feat/thing",
           "x-posthog-property-$ai_git_repo: PostHog/posthog",
+          "x-posthog-property-$ai_purpose: authoring",
         ].join("\n"),
         expected: [
           "x-posthog-property-team_id: 42",
           "x-posthog-property-$ai_git_branch: feat/thing",
           "x-posthog-property-$ai_git_repo: PostHog/posthog",
+          "x-posthog-property-$ai_purpose: authoring",
           "x-posthog-use-bedrock-fallback: true",
         ].join("\n"),
       },

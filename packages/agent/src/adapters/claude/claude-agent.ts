@@ -1850,8 +1850,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   /**
    * Build the per-session `x-posthog-property-*` header lines the gateway lifts
    * onto each $ai_generation event: `team_id` (team attribution) plus
-   * `$ai_git_branch`/`$ai_git_repo` (LLM-spend-to-PR rollup). One builder call
-   * so team_id shares the shared value sanitization. The branch is read fresh
+   * `$ai_git_branch`/`$ai_git_repo` (LLM-spend-to-PR rollup) and `$ai_purpose`
+   * (`authoring` — coding sessions author repo changes; a review agent would
+   * stamp `review`). One builder call so team_id shares the shared value
+   * sanitization. The branch is read fresh
    * from `cwd` so it reflects a mid-run switch; the remote is cached. Best-effort
    * per header: a failing branch or remote read omits only its own value rather
    * than discarding the other.
@@ -1887,6 +1889,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       team_id: projectId,
       $ai_git_branch: branch,
       $ai_git_repo: parseRepoSlug(remoteUrl),
+      $ai_purpose: "authoring",
     });
   }
 
