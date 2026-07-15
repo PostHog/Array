@@ -3522,6 +3522,100 @@ describe("SessionService", () => {
       },
     );
 
+    it("does not merge inherited live chunks over coalesced resume history", async () => {
+      const service = getSessionService();
+      const persistedAgentMessage = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "session/update",
+          params: {
+            update: {
+              sessionUpdate: "agent_message",
+              content: { type: "text", text: "answer once" },
+            },
+          },
+        },
+      };
+      const inheritedLiveChunk = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "session/update",
+          params: {
+            sessionId: "parent-session",
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: "answer once" },
+            },
+          },
+        },
+      };
+      const newerLiveEvent = {
+        type: "acp_message" as const,
+        ts: 1700000120,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "_posthog/usage_update",
+          params: { used: 42 },
+        },
+      };
+      const resumedSession = createMockSession({
+        taskRunId: "run-456",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        events: [inheritedLiveChunk, newerLiveEvent],
+        processedLineCount: 1,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        resumedSession,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-456": resumedSession,
+      });
+      const parentEntry = {
+        timestamp: "2024-01-01T00:01:00Z",
+        notification: {},
+      };
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
+        .mockResolvedValueOnce({ entries: [parentEntry], complete: true })
+        .mockResolvedValueOnce({ entries: [parentEntry], complete: true });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([
+        persistedAgentMessage,
+      ]);
+
+      service.watchCloudTask(
+        "task-123",
+        "run-456",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-456",
+        undefined,
+        "claude",
+        undefined,
+        undefined,
+        undefined,
+        "in_progress",
+        undefined,
+        { resume_from_run_id: "run-123" },
+      );
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-456",
+          expect.objectContaining({
+            events: [persistedAgentMessage, newerLiveEvent],
+          }),
+        );
+      });
+    });
+
     it("keeps immediate-resume watcher counts leaf-local while flushing buffered updates", async () => {
       const service = getSessionService();
       const ancestorEvent = {

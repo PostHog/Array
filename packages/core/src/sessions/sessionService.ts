@@ -4627,13 +4627,21 @@ export class SessionService {
 
     let events = convertStoredEntriesToEvents(rawEntries);
     if (isResumeRun && session.events.length > 0) {
+      // Persisted resume history is authoritative through its newest event;
+      // live watcher updates stay buffered until hydration finishes.
+      const latestHydratedEventTs = events.reduce(
+        (latest, event) => Math.max(latest, event.ts),
+        Number.NEGATIVE_INFINITY,
+      );
       const eventKeys = new Set(
         events.map((event) => JSON.stringify([event.ts, event.message])),
       );
       events = [
         ...events,
         ...session.events.filter(
-          (event) => !eventKeys.has(JSON.stringify([event.ts, event.message])),
+          (event) =>
+            event.ts > latestHydratedEventTs &&
+            !eventKeys.has(JSON.stringify([event.ts, event.message])),
         ),
       ];
       const watcher = this.cloudTaskWatchers.get(taskId);
