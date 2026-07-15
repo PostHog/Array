@@ -119,6 +119,7 @@ import { STORAGE_PATHS_SERVICE } from "@posthog/platform/storage-paths";
 import { UPDATER_SERVICE } from "@posthog/platform/updater";
 import { URL_LAUNCHER_SERVICE } from "@posthog/platform/url-launcher";
 import { WORKSPACE_SETTINGS_SERVICE } from "@posthog/platform/workspace-settings";
+import { getCloudUrlFromRegion } from "@posthog/shared";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
 import { databaseModule } from "@posthog/workspace-server/db/db.module";
 import {
@@ -155,6 +156,8 @@ import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/a
 import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
 import { browserTabsModule } from "@posthog/workspace-server/services/browser-tabs/browser-tabs.module";
 import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
+import { embeddedAppProxyModule } from "@posthog/workspace-server/services/embedded-app-proxy/embedded-app-proxy.module";
+import { EMBEDDED_APP_PROXY_AUTH } from "@posthog/workspace-server/services/embedded-app-proxy/identifiers";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
 import {
   ENRICHMENT_AUTH,
@@ -379,6 +382,18 @@ container.bind(AUTH_PROXY_AUTH).toDynamicValue((ctx) => ({
     ctx
       .get<AuthService>(MAIN_AUTH_SERVICE)
       .authenticatedFetch(fetch, url, init),
+}));
+// EXPERIMENT (embedded webapp): local same-origin proxy for the iframe'd app
+container.load(embeddedAppProxyModule);
+container.bind(EMBEDDED_APP_PROXY_AUTH).toDynamicValue((ctx) => ({
+  authenticatedFetch: (url: string, init?: RequestInit) =>
+    ctx
+      .get<AuthService>(MAIN_AUTH_SERVICE)
+      .authenticatedFetch(fetch, url, init),
+  getUpstreamUrl: async () => {
+    const state = ctx.get<AuthService>(MAIN_AUTH_SERVICE).getState();
+    return getCloudUrlFromRegion(state.cloudRegion ?? "us");
+  },
 }));
 container.load(mcpProxyModule);
 container.bind(MCP_PROXY_AUTH).toDynamicValue((ctx) => {

@@ -14,6 +14,7 @@ import { connectivityRouter } from "./routers/connectivity.router";
 import { contextMenuRouter } from "./routers/context-menu.router";
 import { dashboardsRouter } from "./routers/dashboards.router";
 import { deepLinkRouter } from "./routers/deep-link.router";
+import { embeddedAppRouter } from "./routers/embedded-app.router";
 import { enrichmentRouter } from "./routers/enrichment.router";
 import { environmentRouter } from "./routers/environment.router";
 import { externalAppsRouter } from "./routers/external-apps.router";
@@ -64,6 +65,7 @@ export const hostRouter = router({
   contextMenu: contextMenuRouter,
   dashboards: dashboardsRouter,
   deepLink: deepLinkRouter,
+  embeddedApp: embeddedAppRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,
   externalApps: externalAppsRouter,

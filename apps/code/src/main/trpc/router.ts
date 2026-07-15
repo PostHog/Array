@@ -15,6 +15,7 @@ import { connectivityRouter } from "@posthog/host-router/routers/connectivity.ro
 import { contextMenuRouter } from "@posthog/host-router/routers/context-menu.router";
 import { dashboardsRouter } from "@posthog/host-router/routers/dashboards.router";
 import { deepLinkRouter } from "@posthog/host-router/routers/deep-link.router";
+import { embeddedAppRouter } from "@posthog/host-router/routers/embedded-app.router";
 import { enrichmentRouter } from "@posthog/host-router/routers/enrichment.router";
 import { environmentRouter } from "@posthog/host-router/routers/environment.router";
 import { externalAppsRouter } from "@posthog/host-router/routers/external-apps.router";
@@ -72,6 +73,7 @@ export const trpcRouter = router({
   contextMenu: contextMenuRouter,
   dev: devRouter,
   discordPresence: discordPresenceRouter,
+  embeddedApp: embeddedAppRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,
   encryption: encryptionRouter,

@@ -37,7 +37,11 @@ if (shouldRefuseInternalChildBoot(app.isPackaged, process.env)) {
 const isDev = !app.isPackaged;
 
 // Set app name for single-instance lock, crashReporter, etc
-const appName = isDev ? "posthog-code-dev" : "posthog-code";
+// POSTHOG_CODE_APP_NAME (dev only) isolates userData + the single-instance
+// lock so a second dev instance can run beside another checkout's app.
+const appName = isDev
+  ? (process.env.POSTHOG_CODE_APP_NAME ?? "posthog-code-dev")
+  : "posthog-code";
 app.setName(isDev ? "PostHog Code (Development)" : "PostHog Code");
 
 // Set userData path for @posthog/code

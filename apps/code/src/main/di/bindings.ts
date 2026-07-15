@@ -150,6 +150,10 @@ import type {
 import type { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
 import type { AuthProxyAuth } from "@posthog/workspace-server/services/auth-proxy/ports";
 import type {
+  EMBEDDED_APP_PROXY_AUTH,
+  EmbeddedAppProxyAuth,
+} from "@posthog/workspace-server/services/embedded-app-proxy/identifiers";
+import type {
   ENRICHMENT_AUTH,
   ENRICHMENT_FILE_READER,
 } from "@posthog/workspace-server/services/enrichment/identifiers";
@@ -361,6 +365,8 @@ export interface MainBindings {
   // Auth proxy / mcp proxy
   [AUTH_PROXY_AUTH]: AuthProxyAuth;
   [MCP_PROXY_AUTH]: McpProxyAuth;
+  // EXPERIMENT (embedded webapp)
+  [EMBEDDED_APP_PROXY_AUTH]: EmbeddedAppProxyAuth;
 
   // Archive / suspension host ports
   [ARCHIVE_SESSION_CANCELLER]: SessionCanceller;

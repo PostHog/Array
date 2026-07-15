@@ -13,6 +13,7 @@ import { Route as WebsiteRouteImport } from './routes/website'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as McpServersRouteImport } from './routes/mcp-servers'
+import { Route as EmbeddedAppRouteImport } from './routes/embedded-app'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
@@ -96,6 +97,11 @@ const SkillsRoute = SkillsRouteImport.update({
 const McpServersRoute = McpServersRouteImport.update({
   id: '/mcp-servers',
   path: '/mcp-servers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmbeddedAppRoute = EmbeddedAppRouteImport.update({
+  id: '/embedded-app',
+  path: '/embedded-app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CommandCenterRoute = CommandCenterRouteImport.update({
@@ -444,6 +450,7 @@ const CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
+  '/embedded-app': typeof EmbeddedAppRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
@@ -514,6 +521,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
+  '/embedded-app': typeof EmbeddedAppRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
@@ -574,6 +582,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
+  '/embedded-app': typeof EmbeddedAppRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
@@ -646,6 +655,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/command-center'
+    | '/embedded-app'
     | '/mcp-servers'
     | '/skills'
     | '/usage'
@@ -716,6 +726,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/command-center'
+    | '/embedded-app'
     | '/mcp-servers'
     | '/skills'
     | '/usage'
@@ -775,6 +786,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/command-center'
+    | '/embedded-app'
     | '/mcp-servers'
     | '/skills'
     | '/usage'
@@ -846,6 +858,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CommandCenterRoute: typeof CommandCenterRoute
+  EmbeddedAppRoute: typeof EmbeddedAppRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
   UsageRoute: typeof UsageRoute
@@ -893,6 +906,13 @@ declare module '@tanstack/react-router' {
       path: '/mcp-servers'
       fullPath: '/mcp-servers'
       preLoaderRoute: typeof McpServersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/embedded-app': {
+      id: '/embedded-app'
+      path: '/embedded-app'
+      fullPath: '/embedded-app'
+      preLoaderRoute: typeof EmbeddedAppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/command-center': {
@@ -1570,6 +1590,7 @@ const CodeInboxRouteWithChildren = CodeInboxRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
+  EmbeddedAppRoute: EmbeddedAppRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
   UsageRoute: UsageRoute,
