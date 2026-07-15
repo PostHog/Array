@@ -112,10 +112,13 @@ export class WebOAuthFlowService implements IAuthOAuthFlowService {
         kind === "signup" ? buildSignupUrl(region, authUrl) : authUrl;
 
       // Open before any network round-trip so the click's transient activation
-      // still permits the popup.
+      // still permits the popup. The window name is unique per flow: a fixed
+      // name lets a concurrent sign-in in another tab reuse (and navigate away)
+      // this flow's popup, stranding it until the timeout — its own callback
+      // never fires and the shared channel only carries the other flow's state.
       const popup = window.open(
         target.toString(),
-        "posthog-code-oauth",
+        `posthog-code-oauth-${state}`,
         POPUP_FEATURES,
       );
       if (!popup) {
