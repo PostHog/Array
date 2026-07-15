@@ -3,7 +3,9 @@ import { create } from "zustand";
 // Ephemeral hover-peek state for the collapsed sidebar: hovering the left
 // gutter or the title-bar toggle slides the sidebar out as an overlay, and
 // leaving hides it. Re-entering any trigger before the hide fires keeps the
-// peek alive. Not persisted.
+// peek alive. A "hold" keeps it open regardless of pointer position while a
+// menu spawned from the sidebar (e.g. the ProjectSwitcher dropdown) is open, so
+// moving the pointer toward the menu can't slide the anchor away. Not persisted.
 interface SidebarPeekStore {
   peek: boolean;
   setPeek: (peek: boolean) => void;
@@ -18,6 +20,12 @@ export const useSidebarPeekStore = create<SidebarPeekStore>()((set) => ({
 // panel itself) so re-entering any of them keeps the peek alive.
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
+// While a sidebar-spawned menu is open the peek is "held": endSidebarPeek is a
+// no-op so a pointer that leaves the panel (e.g. toward a submenu flyout) can't
+// collapse it and strand the open menu's portal anchor. Module-level to match
+// hideTimer.
+let held = false;
+
 const clearHideTimer = (): void => {
   if (hideTimer) {
     clearTimeout(hideTimer);
@@ -30,7 +38,21 @@ export function beginSidebarPeek(): void {
   useSidebarPeekStore.getState().setPeek(true);
 }
 
+// Pin the peek open while a menu spawned from the sidebar is open, and release
+// it when that menu closes. Paired open/close calls keep this balanced;
+// releasing hands control back to the hover logic, which collapses the peek on
+// the next pointer move outside the panel.
+export function holdSidebarPeek(): void {
+  held = true;
+  clearHideTimer();
+}
+
+export function releaseSidebarPeek(): void {
+  held = false;
+}
+
 export function endSidebarPeek(delayMs = 0): void {
+  if (held) return;
   clearHideTimer();
   hideTimer = setTimeout(() => {
     hideTimer = null;
@@ -39,6 +61,7 @@ export function endSidebarPeek(delayMs = 0): void {
 }
 
 export function cancelSidebarPeek(): void {
+  held = false;
   clearHideTimer();
   useSidebarPeekStore.getState().setPeek(false);
 }
