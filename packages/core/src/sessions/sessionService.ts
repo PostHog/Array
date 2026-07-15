@@ -4488,8 +4488,10 @@ export class SessionService {
   ): () => void {
     const taskRunId = runId;
     const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
+    const persistedAdapter = this.d.adapterStore.getAdapter(taskRunId);
     const buildInitialConfigOptions = (
       mode: string | undefined,
+      configAdapter: Adapter | undefined = persistedAdapter,
     ): SessionConfigOption[] => {
       const defaults = addMissingCloudRuntimeConfigOptions(
         buildCloudDefaultConfigOptions(mode, adapter),
@@ -4498,6 +4500,7 @@ export class SessionService {
         initialReasoningEffort,
       );
       if (!persistedConfigOptions?.length) return defaults;
+      if (configAdapter && configAdapter !== adapter) return defaults;
 
       const defaultIds = new Set(defaults.map((option) => option.id));
       const completeOptions = [
@@ -4510,6 +4513,7 @@ export class SessionService {
     };
 
     if (this.supersededRunIds.has(runId)) return () => {};
+    this.d.adapterStore.setAdapter(taskRunId, adapter);
 
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
@@ -4537,7 +4541,10 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: buildInitialConfigOptions(currentMode),
+            configOptions: buildInitialConfigOptions(
+              currentMode,
+              existing.adapter,
+            ),
           });
         } else {
           const configOptions = addMissingCloudRuntimeConfigOptions(
@@ -4633,7 +4640,10 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = buildInitialConfigOptions(initialMode);
+      session.configOptions = buildInitialConfigOptions(
+        initialMode,
+        existing?.taskRunId === taskRunId ? existing.adapter : persistedAdapter,
+      );
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
       // until `hydrateCloudTaskSessionFromLogs` confirms there's no prior
@@ -4651,7 +4661,10 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = buildInitialConfigOptions(currentMode);
+        updates.configOptions = buildInitialConfigOptions(
+          currentMode,
+          existing.adapter,
+        );
       } else {
         const configOptions = addMissingCloudRuntimeConfigOptions(
           existing.configOptions,

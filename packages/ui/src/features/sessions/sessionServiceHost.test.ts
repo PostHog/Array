@@ -432,6 +432,8 @@ describe("SessionService", () => {
     mockGetConfigOptionByCategory.mockReturnValue(undefined);
     mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
     mockAuthenticatedClient.getTaskRunSessionLogs.mockResolvedValue([]);
+    mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue(undefined);
+    mockAdapterFns.getAdapter.mockReturnValue(undefined);
     mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
     mockSessionStoreSetters.getSessions.mockReturnValue({});
     mockAuth.fetchAuthState.mockResolvedValue({
@@ -1070,6 +1072,85 @@ describe("SessionService", () => {
         undefined,
       );
       mockSessionConfigStore.setPersistedConfigOptions.mockReset();
+    });
+
+    it("drops persisted options when the cloud adapter changes", () => {
+      const service = getSessionService();
+      mockAdapterFns.getAdapter.mockReturnValue("claude");
+      mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue([
+        {
+          id: "mode",
+          name: "Mode",
+          type: "select",
+          category: "mode",
+          currentValue: "acceptEdits",
+          options: [],
+        },
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "claude-opus-4-8",
+          options: [],
+        },
+        {
+          id: "effort",
+          name: "Effort",
+          type: "select",
+          category: "thought_level",
+          currentValue: "high",
+          options: [],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-adapter-change",
+        "run-adapter-change",
+        "https://api.example.com",
+        123,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.5",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adapter: "codex",
+          configOptions: expect.arrayContaining([
+            expect.objectContaining({
+              category: "mode",
+              currentValue: "auto",
+            }),
+            expect.objectContaining({
+              category: "model",
+              currentValue: "gpt-5.5",
+            }),
+            expect.objectContaining({
+              category: "thought_level",
+              currentValue: "max",
+            }),
+          ]),
+        }),
+      );
+      const session = mockSessionStoreSetters.setSession.mock.calls.at(-1)?.[0];
+      expect(session?.configOptions).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ currentValue: "acceptEdits" }),
+          expect.objectContaining({ currentValue: "claude-opus-4-8" }),
+          expect.objectContaining({ id: "effort" }),
+        ]),
+      );
+      expect(mockAdapterFns.setAdapter).toHaveBeenCalledWith(
+        "run-adapter-change",
+        "codex",
+      );
     });
 
     it("shows the selected cloud model and reasoning before preview config loads", () => {

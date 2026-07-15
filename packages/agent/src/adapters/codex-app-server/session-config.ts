@@ -268,7 +268,7 @@ export class SessionConfigState {
       if (configId === "model") this._model = value;
       else if (configId === "effort") this._effort = value;
       else if (configId === "mode") {
-        this._mode = value;
+        this._mode = resolveInitialMode(value);
         modeChanged = true;
       }
     }

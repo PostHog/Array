@@ -7,6 +7,7 @@ import {
   DEFAULT_EFFORTS,
   modeApprovalPolicy,
   resolveInitialMode,
+  SessionConfigState,
   sandboxPolicyFor,
 } from "./session-config";
 
@@ -117,6 +118,21 @@ describe("resolveInitialMode", () => {
     [undefined, "auto"],
   ])("maps initial permission mode %s to %s", (mode, expected) => {
     expect(resolveInitialMode(mode)).toBe(expected);
+  });
+});
+
+describe("SessionConfigState", () => {
+  it("canonicalizes bypassPermissions during a live mode update", () => {
+    const config = new SessionConfigState("gpt-5.5");
+
+    config.setOption("mode", "bypassPermissions");
+
+    expect(config.mode).toBe("full-access");
+    expect(config.approvalPolicy()).toBe("never");
+    expect(config.sandboxPolicy()).toEqual({ type: "dangerFullAccess" });
+    expect(
+      config.options.find((option) => option.category === "mode")?.currentValue,
+    ).toBe("full-access");
   });
 });
 
