@@ -134,7 +134,7 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
-  it("ignores subagent updates and child turn completion", async () => {
+  it("nests subagent updates and ignores child turn completion", async () => {
     const stub = makeStubRpc({
       initialize: {},
       "thread/start": { thread: { id: "thr_1" } },
@@ -186,7 +186,14 @@ describe("CodexAppServerAgent", () => {
 
     await Promise.resolve();
     expect(promptSettled).toBe(false);
-    expect(JSON.stringify(sessionUpdates)).not.toContain("I found an issue.");
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "I found an issue." },
+        _meta: { posthog: { parentToolCallId: "spawn-1" } },
+      },
+    });
 
     stub.emit("turn/completed", {
       threadId: "thr_1",

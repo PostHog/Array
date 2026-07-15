@@ -12,6 +12,8 @@ export interface PosthogToolMeta {
   toolName: string;
   /** Set only for MCP tool calls — the originating server + tool. */
   mcp?: { server: string; tool: string };
+  /** Parent tool call when this update belongs to a delegated agent. */
+  parentToolCallId?: string;
 }
 
 /** `_meta` fragment for adapters to spread onto a tool_call update. */
@@ -19,6 +21,12 @@ export function posthogToolMeta(meta: PosthogToolMeta): {
   posthog: PosthogToolMeta;
 } {
   return { posthog: meta };
+}
+
+export function parentToolCallMeta(parentToolCallId: string): {
+  posthog: Pick<PosthogToolMeta, "parentToolCallId">;
+} {
+  return { posthog: { parentToolCallId } };
 }
 
 /** Build the canonical `mcp__<server>__<tool>` key. */
@@ -43,9 +51,9 @@ export function parseMcpToolName(
 }
 
 interface ToolCallMeta {
-  posthog?: PosthogToolMeta;
+  posthog?: Partial<PosthogToolMeta>;
   /** Legacy Claude-adapter channel, read only as a fallback. */
-  claudeCode?: { toolName?: string };
+  claudeCode?: { toolName?: string; parentToolCallId?: string };
 }
 
 function asToolCallMeta(meta: unknown): ToolCallMeta | undefined {
@@ -56,6 +64,11 @@ function asToolCallMeta(meta: unknown): ToolCallMeta | undefined {
 export function readAgentToolName(meta: unknown): string | undefined {
   const m = asToolCallMeta(meta);
   return m?.posthog?.toolName ?? m?.claudeCode?.toolName;
+}
+
+export function readParentToolCallId(meta: unknown): string | undefined {
+  const m = asToolCallMeta(meta);
+  return m?.posthog?.parentToolCallId ?? m?.claudeCode?.parentToolCallId;
 }
 
 /**

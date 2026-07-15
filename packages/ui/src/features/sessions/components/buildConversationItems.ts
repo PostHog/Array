@@ -12,6 +12,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  readParentToolCallId,
   type UserShellExecuteParams,
 } from "@posthog/shared";
 import {
@@ -747,10 +748,7 @@ function extractUserPrompt(params: unknown): {
 }
 
 function getParentToolCallId(update: SessionUpdate): string | undefined {
-  const meta = (update as Record<string, unknown>)?._meta as
-    | { claudeCode?: { parentToolCallId?: string } }
-    | undefined;
-  return meta?.claudeCode?.parentToolCallId;
+  return readParentToolCallId((update as Record<string, unknown>)?._meta);
 }
 
 function pushChildItem(b: ItemBuilder, parentId: string, update: RenderItem) {
