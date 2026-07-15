@@ -1,5 +1,5 @@
-import { Theme } from "@radix-ui/themes";
 import type { Task } from "@posthog/shared/domain-types";
+import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -45,22 +45,31 @@ vi.mock("@posthog/ui/features/code-review/hooks/useDiffStatsToggle", () => ({
     toggle: vi.fn(),
   }),
 }));
-vi.mock("@posthog/ui/features/skill-buttons/components/SkillButtonsMenu", () => ({
-  SkillButtonsMenu: () => null,
-}));
+vi.mock(
+  "@posthog/ui/features/skill-buttons/components/SkillButtonsMenu",
+  () => ({
+    SkillButtonsMenu: () => null,
+  }),
+);
 vi.mock("@posthog/ui/features/autoresearch/AutoresearchHeaderButton", () => ({
   AutoresearchHeaderButton: () => null,
 }));
-vi.mock("@posthog/ui/features/git-interaction/components/BranchSelector", () => ({
-  BranchSelector: () => null,
-}));
+vi.mock(
+  "@posthog/ui/features/git-interaction/components/BranchSelector",
+  () => ({
+    BranchSelector: () => null,
+  }),
+);
 vi.mock(
   "@posthog/ui/features/git-interaction/components/CloudGitInteractionHeader",
   () => ({ CloudGitInteractionHeader: () => <div>cloud actions</div> }),
 );
-vi.mock("@posthog/ui/features/git-interaction/components/TaskActionsMenu", () => ({
-  TaskActionsMenu: () => <div>task menu</div>,
-}));
+vi.mock(
+  "@posthog/ui/features/git-interaction/components/TaskActionsMenu",
+  () => ({
+    TaskActionsMenu: () => <div>task menu</div>,
+  }),
+);
 vi.mock("@posthog/ui/features/sessions/components/StopCloudRunButton", () => ({
   StopCloudRunButton: () => <div>stop cloud run</div>,
 }));
