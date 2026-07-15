@@ -1,17 +1,14 @@
 import {
   Bell,
-  CreditCard,
   EnvelopeSimple,
+  HashIcon,
   Lightbulb,
   Lightning,
   MagnifyingGlass,
   Plugs,
   Robot,
 } from "@phosphor-icons/react";
-import {
-  ANALYTICS_EVENTS,
-  type SidebarNavItem,
-} from "@posthog/shared/analytics-events";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
   CUSTOMIZABLE_NAV_ITEMS,
   type CustomizableNavItemId,
@@ -20,7 +17,6 @@ import {
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { track } from "@posthog/ui/shell/analytics";
 import { Button, Checkbox, Dialog, Flex, Text } from "@radix-ui/themes";
-import { SquircleDashed } from "lucide-react";
 
 const ITEM_ICONS: Record<
   CustomizableNavItemId,
@@ -31,22 +27,9 @@ const ITEM_ICONS: Record<
   agents: Robot,
   skills: Lightbulb,
   "mcp-servers": Plugs,
-  usage: CreditCard,
   "command-center": Lightning,
-  contexts: SquircleDashed,
+  contexts: HashIcon,
   activity: Bell,
-};
-
-const ITEM_ANALYTICS_IDS: Record<CustomizableNavItemId, SidebarNavItem> = {
-  search: "search",
-  inbox: "inbox",
-  agents: "agents",
-  skills: "skills",
-  "mcp-servers": "mcp_servers",
-  usage: "usage",
-  "command-center": "command_center",
-  contexts: "contexts",
-  activity: "activity",
 };
 
 interface CustomizeSidebarDialogProps {
@@ -71,7 +54,7 @@ export function CustomizeSidebarDialog({
         </Dialog.Description>
 
         <Flex direction="column" gap="3" mt="4">
-          {CUSTOMIZABLE_NAV_ITEMS.map(({ id, label }) => {
+          {CUSTOMIZABLE_NAV_ITEMS.map(({ id, label, analyticsId }) => {
             const ItemIcon = ITEM_ICONS[id];
             const visible = isNavItemVisible(navItemOverrides, id);
             return (
@@ -83,7 +66,7 @@ export function CustomizeSidebarDialog({
                       const nextVisible = checked === true;
                       setNavItemVisible(id, nextVisible);
                       track(ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED, {
-                        item: ITEM_ANALYTICS_IDS[id],
+                        item: analyticsId,
                         visible: nextVisible,
                       });
                     }}
@@ -98,7 +81,9 @@ export function CustomizeSidebarDialog({
 
         <Flex mt="4" justify="end">
           <Dialog.Close>
-            <Button variant="solid">Done</Button>
+            <Button size="1" variant="solid">
+              Done
+            </Button>
           </Dialog.Close>
         </Flex>
       </Dialog.Content>

@@ -1,5 +1,3 @@
-import { HashIcon } from "@phosphor-icons/react";
-import { Badge, Switch } from "@posthog/quill";
 import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
@@ -26,7 +24,6 @@ import {
   navigateToInbox,
   navigateToLoops,
   navigateToMcpServers,
-  navigateToSettings,
   navigateToSkills,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
@@ -39,12 +36,13 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
-import { useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { CustomizeSidebarDialog } from "./CustomizeSidebarDialog";
 import { ActivityItem } from "./items/ActivityItem";
 import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
+import { ContextsItem } from "./items/ContextsItem";
 import { CustomizeSidebarItem } from "./items/CustomizeSidebarItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
@@ -54,7 +52,6 @@ import { MoreItem } from "./items/MoreItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
-import { UsageItem } from "./items/UsageItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -74,9 +71,8 @@ interface SidebarNavSectionProps {
 // mirror (Home, Skills, MCP servers, Command Center) stay in that space;
 // Inbox, Agents and New task have no mirror yet and jump back to Code.
 // Configure opens the shared settings UI. Search opens the command menu in
-// place. Search, Skills, MCP servers and Usage are tucked under the
-// collapsible More row by default; the Customize sidebar dialog promotes them
-// back to the top level.
+// place and defaults to the collapsible More row; the Customize sidebar
+// dialog controls which items show at the top level.
 export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
 }: SidebarNavSectionProps = {}) {
@@ -159,14 +155,13 @@ export function SidebarNavSection({
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
 
-  // Every nav row reports which item was clicked so per-item usage is
-  // measurable; in_more distinguishes clicks inside the expanded More section.
+  // depth 1 means the row was clicked inside the expanded More section.
   const withNavTrack =
-    (item: SidebarNavItem, action: () => void, inMore = false) =>
+    (item: SidebarNavItem, action: () => void, depth: 0 | 1 = 0) =>
     () => {
       track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
         item,
-        in_more: inMore,
+        in_more: depth === 1,
       });
       action();
     };
@@ -180,65 +175,127 @@ export function SidebarNavSection({
   const [moreExpanded, setMoreExpanded] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
 
-  const goUsage = () => navigateToSettings("plan-usage");
-
   // While More is collapsed, an active item hidden under it takes over the
-  // More row so the current page stays visible in the nav. Search, Usage and
-  // Contexts never take over: Search opens the command menu in place, Usage
-  // leaves for the settings chrome and Contexts is a toggle, not a page.
+  // More row so the current page stays visible. Search and Contexts never do:
+  // neither is a routed page.
   const moreItemActive: Record<CustomizableNavItemId, boolean> = {
     search: false,
     inbox: isInboxActive,
     agents: isAgentsActive,
     skills: isSkillsActive,
     "mcp-servers": isMcpServersActive,
-    usage: false,
     "command-center": isCommandCenterActive,
     contexts: false,
     activity: isActivityActive,
   };
+
+  const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
+    search: true,
+    inbox: true,
+    agents: true,
+    skills: true,
+    "mcp-servers": true,
+    "command-center": true,
+    contexts: bluebirdEnabled,
+    // Activity (the mentions feed) is a channels surface, so it only appears
+    // once channels are enabled.
+    activity: channelsEnabled,
+  };
+
   const activeHiddenItem = CUSTOMIZABLE_NAV_ITEMS.find(
-    ({ id }) => hidden.has(id) && moreItemActive[id],
+    ({ id }) => navItemAvailable[id] && hidden.has(id) && moreItemActive[id],
   );
   const takeoverLabel =
     !moreExpanded && activeHiddenItem ? activeHiddenItem.label : null;
 
-  const contextsToggle = (depth: 0 | 1) => (
-    <label
-      htmlFor="channels-toggle"
-      className="group flex w-full cursor-pointer items-center gap-2 rounded py-1 pr-2 text-[13px] leading-snug transition-colors hover:bg-fill-secondary"
-      style={{ paddingLeft: depth === 0 ? "8px" : "20px" }}
-    >
-      <span className="flex shrink-0 items-center opacity-80">
-        <HashIcon size={14} />
-      </span>
-      <span className="min-w-0 truncate font-medium">Channels</span>
-      <Badge variant="info">Alpha</Badge>
-      <Switch
-        id="channels-toggle"
-        size="sm"
-        className="ml-auto"
-        checked={channelsEnabled}
-        onCheckedChange={(checked) => {
-          setChannelsEnabled(checked);
-          track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
-            item: "contexts",
-            in_more: depth === 1,
-          });
-          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-            action_type: "toggle_channels",
-            surface: "nav",
-          });
-          // The unified sidebar removed the Code↔Channels space boundary;
-          // this toggle is its successor. Keep firing the legacy
-          // enter/leave events so space-adoption dashboards stay continuous.
-          track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-            action_type: checked ? "enter_space" : "leave_space",
-            surface: "nav",
-          });
-        }}
+  const handleChannelsToggle = (depth: 0 | 1) => (checked: boolean) => {
+    setChannelsEnabled(checked);
+    track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
+      item: "contexts",
+      in_more: depth === 1,
+    });
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "toggle_channels",
+      surface: "nav",
+    });
+    // This toggle replaced the old Code/Channels space boundary; keep firing
+    // the legacy enter/leave events so space-adoption dashboards stay continuous.
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: checked ? "enter_space" : "leave_space",
+      surface: "nav",
+    });
+  };
+
+  // One renderer per customizable item, used for both the top level (depth 0)
+  // and the expanded More section (depth 1) so the two never drift apart.
+  const renderNavItem: Record<
+    CustomizableNavItemId,
+    (depth: 0 | 1) => ReactNode
+  > = {
+    search: (depth) => (
+      <SearchItem
+        depth={depth}
+        onClick={withNavTrack("search", openCommandMenu, depth)}
       />
-    </label>
+    ),
+    inbox: (depth) => (
+      <InboxItem
+        depth={depth}
+        isActive={isInboxActive}
+        onClick={withNavTrack("inbox", navigateToInbox, depth)}
+        pullRequestCount={inboxPullRequestCount}
+      />
+    ),
+    agents: (depth) => (
+      <AgentsItem
+        depth={depth}
+        isActive={isAgentsActive}
+        onClick={withNavTrack("agents", navigateToAgents, depth)}
+      />
+    ),
+    skills: (depth) => (
+      <SkillsItem
+        depth={depth}
+        isActive={isSkillsActive}
+        onClick={withNavTrack("skills", goSkills, depth)}
+      />
+    ),
+    "mcp-servers": (depth) => (
+      <McpServersItem
+        depth={depth}
+        isActive={isMcpServersActive}
+        onClick={withNavTrack("mcp_servers", goMcpServers, depth)}
+      />
+    ),
+    "command-center": (depth) => (
+      <CommandCenterItem
+        depth={depth}
+        isActive={isCommandCenterActive}
+        onClick={withNavTrack("command_center", goCommandCenter, depth)}
+        activeCount={commandCenterActiveCount}
+      />
+    ),
+    contexts: (depth) => (
+      <ContextsItem
+        depth={depth}
+        checked={channelsEnabled}
+        onCheckedChange={handleChannelsToggle(depth)}
+      />
+    ),
+    activity: (depth) => (
+      <ActivityItem
+        depth={depth}
+        isActive={isActivityActive}
+        onClick={withNavTrack("activity", navigateToActivity, depth)}
+      />
+    ),
+  };
+
+  const topLevelItems = CUSTOMIZABLE_NAV_ITEMS.filter(
+    ({ id }) => navItemAvailable[id] && !hidden.has(id),
+  );
+  const moreItems = CUSTOMIZABLE_NAV_ITEMS.filter(
+    ({ id }) => navItemAvailable[id] && hidden.has(id),
   );
 
   return (
@@ -259,21 +316,9 @@ export function SidebarNavSection({
         </Box>
       )}
 
-      {!hidden.has("search") && (
-        <Box>
-          <SearchItem onClick={withNavTrack("search", openCommandMenu)} />
-        </Box>
-      )}
-
-      {!hidden.has("inbox") && (
-        <Box>
-          <InboxItem
-            isActive={isInboxActive}
-            onClick={withNavTrack("inbox", navigateToInbox)}
-            pullRequestCount={inboxPullRequestCount}
-          />
-        </Box>
-      )}
+      {topLevelItems.map(({ id }) => (
+        <Box key={id}>{renderNavItem[id](0)}</Box>
+      ))}
 
       <Box>
         <ConfigureItem onClick={() => openSettings("agents")} />
@@ -285,73 +330,8 @@ export function SidebarNavSection({
         </Box>
       ) : null}
 
-      {!hidden.has("agents") && (
-        <Box>
-          <AgentsItem
-            isActive={isAgentsActive}
-            onClick={withNavTrack("agents", navigateToAgents)}
-          />
-        </Box>
-      )}
-
-      {!hidden.has("skills") && (
-        <Box>
-          <SkillsItem
-            isActive={isSkillsActive}
-            onClick={withNavTrack("skills", goSkills)}
-          />
-        </Box>
-      )}
-
-      {!hidden.has("mcp-servers") && (
-        <Box>
-          <McpServersItem
-            isActive={isMcpServersActive}
-            onClick={withNavTrack("mcp_servers", goMcpServers)}
-          />
-        </Box>
-      )}
-
-      {!hidden.has("usage") && (
-        <Box>
-          <UsageItem onClick={withNavTrack("usage", goUsage)} />
-        </Box>
-      )}
-
-      {!hidden.has("command-center") && (
-        <Box>
-          <CommandCenterItem
-            isActive={isCommandCenterActive}
-            onClick={withNavTrack("command_center", goCommandCenter)}
-            activeCount={commandCenterActiveCount}
-          />
-        </Box>
-      )}
-
-      {/* "Channels" is a toggle laid out as a nav row: the # label and Alpha
-          badge on the left, a Switch on the right. It flips the channels
-          feature rather than routing — enabling it reveals the Activity row
-          and swaps the sidebar body to the channel tree. A <label> (not a
-          nav Button) so the Switch can live inside it without nesting
-          buttons — see contextsToggle above. */}
-      {bluebirdEnabled && !hidden.has("contexts") && contextsToggle(0)}
-
-      {/* Activity (the mentions feed) is a channels surface, so it only appears
-          once channels are enabled — sitting directly under the toggle that
-          reveals it. */}
-      {channelsEnabled && !hidden.has("activity") && (
-        <Box>
-          <ActivityItem
-            isActive={isActivityActive}
-            onClick={withNavTrack("activity", navigateToActivity)}
-          />
-        </Box>
-      )}
-
-      {/* Everything the user shoved off the top level lives here, plus the
-          Customize entry point. Always the last row, like the app switcher
-          pattern this mirrors. Collapsed by default; when a hidden item is
-          the active page it takes over the More row (see takeoverLabel). */}
+      {/* Hidden items plus the Customize entry live under More, always the
+          last row, like the app switcher pattern this mirrors. */}
       <Flex direction="column" className="gap-px">
         <MoreItem
           expanded={moreExpanded}
@@ -361,69 +341,15 @@ export function SidebarNavSection({
 
         {moreExpanded && (
           <>
-            {hidden.has("search") && (
-              <SearchItem
-                depth={1}
-                onClick={withNavTrack("search", openCommandMenu, true)}
-              />
-            )}
-            {hidden.has("inbox") && (
-              <InboxItem
-                depth={1}
-                isActive={isInboxActive}
-                onClick={withNavTrack("inbox", navigateToInbox, true)}
-                pullRequestCount={inboxPullRequestCount}
-              />
-            )}
-            {hidden.has("agents") && (
-              <AgentsItem
-                depth={1}
-                isActive={isAgentsActive}
-                onClick={withNavTrack("agents", navigateToAgents, true)}
-              />
-            )}
-            {hidden.has("skills") && (
-              <SkillsItem
-                depth={1}
-                isActive={isSkillsActive}
-                onClick={withNavTrack("skills", goSkills, true)}
-              />
-            )}
-            {hidden.has("mcp-servers") && (
-              <McpServersItem
-                depth={1}
-                isActive={isMcpServersActive}
-                onClick={withNavTrack("mcp_servers", goMcpServers, true)}
-              />
-            )}
-            {hidden.has("usage") && (
-              <UsageItem
-                depth={1}
-                onClick={withNavTrack("usage", goUsage, true)}
-              />
-            )}
-            {hidden.has("command-center") && (
-              <CommandCenterItem
-                depth={1}
-                isActive={isCommandCenterActive}
-                onClick={withNavTrack("command_center", goCommandCenter, true)}
-                activeCount={commandCenterActiveCount}
-              />
-            )}
-            {bluebirdEnabled && hidden.has("contexts") && contextsToggle(1)}
-            {channelsEnabled && hidden.has("activity") && (
-              <ActivityItem
-                depth={1}
-                isActive={isActivityActive}
-                onClick={withNavTrack("activity", navigateToActivity, true)}
-              />
-            )}
+            {moreItems.map(({ id }) => (
+              <Fragment key={id}>{renderNavItem[id](1)}</Fragment>
+            ))}
             <CustomizeSidebarItem
               depth={1}
               onClick={withNavTrack(
                 "customize_sidebar",
                 () => setCustomizeOpen(true),
-                true,
+                1,
               )}
             />
           </>
