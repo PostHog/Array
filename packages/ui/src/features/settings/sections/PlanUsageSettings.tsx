@@ -4,7 +4,10 @@ import {
   Info,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { PRO_USAGE_MULTIPLIER } from "@posthog/core/billing/usageDisplay";
+import {
+  isCodeUsageUnbilled,
+  PRO_USAGE_MULTIPLIER,
+} from "@posthog/core/billing/usageDisplay";
 import type { UsageOutput } from "@posthog/core/usage/schemas";
 import {
   Empty,
@@ -108,13 +111,12 @@ export function PlanUsageSettings() {
   });
 
   useEffect(() => {
-    // Seats are retired under usage-based billing — provisioning one would
-    // error against the retired seat API.
-    if (!usageBillingEnabled) void fetchSeat({ autoProvision: true });
+    // No-ops once seats are retired — the seat store owns that gate.
+    void fetchSeat({ autoProvision: true });
     // refetchUsage is a refresh mutation, so it bypasses useUsage's `enabled`
     // gate — skip it for spend-only users.
     if (billingEnabled) void refetchUsage();
-  }, [fetchSeat, refetchUsage, billingEnabled, usageBillingEnabled]);
+  }, [fetchSeat, refetchUsage, billingEnabled]);
 
   useTrackUsageViewed({
     isLoading: billingEnabled && (isLoading || usageLoading),
@@ -526,8 +528,9 @@ function UsageBasedPlanUsage({
   billingUrl,
   onOpenBilling,
 }: UsageBasedPlanUsageProps) {
-  // Absent on gateways predating the field — treat as unknown, not free.
-  const billed = usage?.code_usage_billed;
+  // Tri-state: unknown (absent field) must render as billed, never as free.
+  const unbilled = isCodeUsageUnbilled(usage);
+  const billed = usage?.code_usage_billed === true;
   const orgLimitReached = usage?.ai_credits?.exhausted === true;
 
   return (
@@ -568,15 +571,15 @@ function UsageBasedPlanUsage({
         <Flex align="center" justify="between">
           <Flex direction="column" gap="1">
             <Text className="font-bold text-base">
-              {billed === false ? "Free tier" : "Usage-based billing"}
+              {unbilled ? "Free tier" : "Usage-based billing"}
             </Text>
             <Text className="text-(--gray-11) text-sm">
-              {billed === false
+              {unbilled
                 ? "Your organization's first $20 of usage each month is included, with access to open models. Add a payment method to unlock premium models — you only pay for what you use."
                 : "Your organization pays for PostHog Code usage at cost — no seats, no subscriptions. The first $20 each month is included."}
             </Text>
           </Flex>
-          {billed === true && (
+          {billed && (
             <Badge variant="soft" color="green" radius="full">
               Active
             </Badge>
@@ -584,14 +587,12 @@ function UsageBasedPlanUsage({
         </Flex>
         <Button
           size="1"
-          variant={billed === false ? "solid" : "outline"}
+          variant={unbilled ? "solid" : "outline"}
           disabled={!billingUrl}
           onClick={onOpenBilling}
           className="self-start"
         >
-          {billed === false
-            ? "Add payment method"
-            : "Manage billing and spend limits"}
+          {unbilled ? "Add payment method" : "Manage billing and spend limits"}
           <ArrowSquareOut size={12} />
         </Button>
       </Flex>
@@ -607,7 +608,7 @@ function UsageBasedPlanUsage({
           >
             <Spinner size="2" />
           </Flex>
-        ) : billed === false && usage ? (
+        ) : unbilled && usage ? (
           <Flex direction="column" gap="3">
             <UsageMeter
               label="Monthly free usage"

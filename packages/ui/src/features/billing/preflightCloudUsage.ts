@@ -17,20 +17,18 @@ import {
 const log = logger.scope("preflight-cloud-usage");
 
 function usageLimitArgs(usage: UsageOutput): UsageLimitShowArgs {
-  // Prefer the bucket that's actually exceeded (burst/daily takes priority).
-  // If neither is flagged, is_rate_limited came from the org's credit bucket
-  // (allocation or billing limit exhausted) — say so, with the monthly reset
-  // as the best available timing hint.
-  if (!usage.burst.exceeded && !usage.sustained.exceeded) {
-    return {
-      bucket: "sustained",
-      resetAt: usage.sustained.reset_at,
-      isPro: usage.is_pro,
-      cause: "org_limit",
-    };
-  }
+  // Prefer the bucket that's actually exceeded (burst/daily takes priority);
+  // otherwise fall back to the monthly bucket for the reset hint. If neither
+  // is flagged, is_rate_limited came from the org's credit bucket (allocation
+  // or billing limit exhausted) — name that cause.
   const bucket: UsageLimitBucket = usage.burst.exceeded ? "burst" : "sustained";
-  return { bucket, resetAt: usage[bucket].reset_at, isPro: usage.is_pro };
+  const orgLimited = !usage.burst.exceeded && !usage.sustained.exceeded;
+  return {
+    bucket,
+    resetAt: usage[bucket].reset_at,
+    isPro: usage.is_pro,
+    ...(orgLimited ? { cause: "org_limit" as const } : {}),
+  };
 }
 
 async function fetchUsageSnapshot(): Promise<UsageOutput | null> {

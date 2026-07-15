@@ -1,37 +1,31 @@
+import { electronStorage } from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
-
-const STORAGE_KEY = "posthog-code-usage-billing-acknowledged";
-
-function readAcknowledged(): boolean {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
+import { persist } from "zustand/middleware";
 
 interface BillingAnnouncementState {
   acknowledged: boolean;
-}
-
-interface BillingAnnouncementActions {
+  // Hydration is async (Electron storage over IPC); the announcement must not
+  // flash open before a persisted acknowledgment has been read back.
+  _hasHydrated: boolean;
   acknowledge: () => void;
+  setHasHydrated: (hydrated: boolean) => void;
 }
 
-type BillingAnnouncementStore = BillingAnnouncementState &
-  BillingAnnouncementActions;
-
-export const useBillingAnnouncementStore = create<BillingAnnouncementStore>()(
-  (set) => ({
-    acknowledged: readAcknowledged(),
-    acknowledge: () => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, "true");
-      } catch {
-        // Persistence failing only means the announcement shows again next
-        // launch; the acknowledgment event still records on the person.
-      }
-      set({ acknowledged: true });
+export const useBillingAnnouncementStore = create<BillingAnnouncementState>()(
+  persist(
+    (set) => ({
+      acknowledged: false,
+      _hasHydrated: false,
+      acknowledge: () => set({ acknowledged: true }),
+      setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
+    }),
+    {
+      name: "posthog-code-usage-billing-acknowledged",
+      storage: electronStorage,
+      partialize: (state) => ({ acknowledged: state.acknowledged }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     },
-  }),
+  ),
 );

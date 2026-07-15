@@ -78,12 +78,26 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 // the callers fall through to `return []`.
 const GATEWAY_FETCH_TIMEOUT_MS = 10_000;
 
-let gatewayModelsCache: {
-  models: GatewayModel[];
+// Authed and anonymous responses differ (free-tier marks are only present on
+// authed fetches), so cached entries are keyed on auth presence: a cached
+// anonymous list must not serve an authed caller or vice versa.
+interface ModelsCache<T> {
+  models: T[];
   expiry: number;
   url: string;
   authed: boolean;
-} | null = null;
+}
+
+function readModelsCache<T>(
+  cache: ModelsCache<T> | null,
+  url: string,
+  authed: boolean,
+): T[] | null {
+  if (!cache || cache.url !== url || cache.authed !== authed) return null;
+  return Date.now() < cache.expiry ? cache.models : null;
+}
+
+let gatewayModelsCache: ModelsCache<GatewayModel> | null = null;
 
 function authHeaders(authToken?: string): Record<string, string> | undefined {
   return authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
@@ -97,18 +111,9 @@ export async function fetchGatewayModels(
     return [];
   }
 
-  // Authed and anonymous responses differ (free-tier marks are only present
-  // on authed fetches), so a cached anonymous list must not serve an authed
-  // caller or vice versa.
   const authed = Boolean(options?.authToken);
-  if (
-    gatewayModelsCache &&
-    gatewayModelsCache.url === gatewayUrl &&
-    gatewayModelsCache.authed === authed &&
-    Date.now() < gatewayModelsCache.expiry
-  ) {
-    return gatewayModelsCache.models;
-  }
+  const cached = readModelsCache(gatewayModelsCache, gatewayUrl, authed);
+  if (cached) return cached;
 
   const modelsUrl = `${gatewayUrl}/v1/models`;
 
@@ -175,12 +180,7 @@ export interface ModelInfo {
   restriction_reason?: string | null;
 }
 
-let modelsListCache: {
-  models: ModelInfo[];
-  expiry: number;
-  url: string;
-  authed: boolean;
-} | null = null;
+let modelsListCache: ModelsCache<ModelInfo> | null = null;
 
 export async function fetchModelsList(
   options?: FetchGatewayModelsOptions,
@@ -191,14 +191,8 @@ export async function fetchModelsList(
   }
 
   const authed = Boolean(options?.authToken);
-  if (
-    modelsListCache &&
-    modelsListCache.url === gatewayUrl &&
-    modelsListCache.authed === authed &&
-    Date.now() < modelsListCache.expiry
-  ) {
-    return modelsListCache.models;
-  }
+  const cached = readModelsCache(modelsListCache, gatewayUrl, authed);
+  if (cached) return cached;
 
   try {
     const modelsUrl = `${gatewayUrl}/v1/models`;

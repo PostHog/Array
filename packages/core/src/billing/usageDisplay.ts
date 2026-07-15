@@ -9,6 +9,17 @@ export function isUsageExceeded(usage: UsageOutput): boolean {
   );
 }
 
+/**
+ * The org is confirmed on the free tier (not billed for Code usage). False
+ * when billed OR when the state is unknown — `code_usage_billed` is absent on
+ * gateways predating the field, and absence must never read as free.
+ */
+export function isCodeUsageUnbilled(
+  usage: Pick<UsageOutput, "code_usage_billed"> | null | undefined,
+): boolean {
+  return usage?.code_usage_billed === false;
+}
+
 export function formatResetTime(
   resetAtIso: string,
   now: number = Date.now(),

@@ -1,5 +1,5 @@
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { BILLING_FLAG, USAGE_BILLING_FLAG } from "@posthog/shared";
+import { BILLING_FLAG } from "@posthog/shared";
 import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import {
@@ -112,18 +112,16 @@ function useSeatSync(
   billingEnabled: boolean,
 ): void {
   const queryClient = useQueryClient();
-  // Seats are retired under usage-based billing — provisioning one would
-  // error against the retired seat API.
-  const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
   useEffect(() => {
-    if (!authIdentity || !billingEnabled || usageBillingEnabled) {
+    if (!authIdentity || !billingEnabled) {
       useSeatStore.getState().reset();
       return;
     }
 
+    // No-ops (and resets) once seats are retired — the store owns that gate.
     void useSeatStore.getState().fetchSeat({ autoProvision: true });
     void queryClient.invalidateQueries({ queryKey: [["llmGateway"]] });
-  }, [authIdentity, billingEnabled, usageBillingEnabled, queryClient]);
+  }, [authIdentity, billingEnabled, queryClient]);
 }
 
 export function useAuthSession() {

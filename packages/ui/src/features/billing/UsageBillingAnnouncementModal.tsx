@@ -18,11 +18,13 @@ import { useBillingAnnouncementStore } from "./billingAnnouncementStore";
 export function UsageBillingAnnouncementModal() {
   const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
   const acknowledged = useBillingAnnouncementStore((s) => s.acknowledged);
+  const hasHydrated = useBillingAnnouncementStore((s) => s._hasHydrated);
   const acknowledge = useBillingAnnouncementStore((s) => s.acknowledge);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const isLoggedIn = useAuthStateValue((state) => state.currentOrgId !== null);
 
-  const isOpen = usageBillingEnabled && isLoggedIn && !acknowledged;
+  const isOpen =
+    usageBillingEnabled && isLoggedIn && hasHydrated && !acknowledged;
 
   useEffect(() => {
     if (isOpen) {

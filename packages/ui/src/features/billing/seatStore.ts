@@ -4,8 +4,9 @@ import type {
   SeatService,
 } from "@posthog/core/billing/seatService";
 import { resolveService } from "@posthog/di/container";
-import type { SeatData } from "@posthog/shared";
+import { type SeatData, USAGE_BILLING_FLAG } from "@posthog/shared";
 import { create } from "zustand";
+import { isFeatureFlagEnabled } from "../../shell/posthogAnalyticsImpl";
 
 interface SeatStoreState {
   seat: SeatData | null;
@@ -55,10 +56,21 @@ function applyResult(
   });
 }
 
+// Seats are retired under usage-based billing — fetching or provisioning one
+// would error against the retired seat API. Gated here, at the single entry
+// point, so the auth/onboarding/settings callers can stay unconditional.
+function seatsRetired(): boolean {
+  return isFeatureFlagEnabled(USAGE_BILLING_FLAG);
+}
+
 export const useSeatStore = create<SeatStore>()((set, get) => ({
   ...initialState,
 
   fetchSeat: async (options?: { autoProvision?: boolean }) => {
+    if (seatsRetired()) {
+      set(initialState);
+      return;
+    }
     set({ isLoading: true, error: null, redirectUrl: null });
     const service = resolveService<SeatService>(SEAT_SERVICE);
     const result = await service.fetchSeat({
@@ -69,6 +81,10 @@ export const useSeatStore = create<SeatStore>()((set, get) => ({
   },
 
   provisionFreeSeat: async () => {
+    if (seatsRetired()) {
+      set(initialState);
+      return;
+    }
     set({ isLoading: true, error: null, redirectUrl: null });
     const result =
       await resolveService<SeatService>(SEAT_SERVICE).provisionFreeSeat();

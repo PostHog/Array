@@ -1,3 +1,4 @@
+import { isCodeUsageUnbilled } from "@posthog/core/billing/usageDisplay";
 import type { UsageOutput } from "@posthog/core/usage/schemas";
 import { USAGE_BILLING_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
@@ -24,7 +25,7 @@ export function useFreeUsage(billingEnabled: boolean): FreeUsageResult {
   const { usage, isLoading } = useUsage({ enabled: eligible });
 
   if (!eligible) return { usage: null, isLoading: false };
-  if (usageBillingEnabled && usage?.code_usage_billed !== false) {
+  if (usageBillingEnabled && !isCodeUsageUnbilled(usage)) {
     // Billed org (no per-user caps to meter) or billed state unknown: the
     // free-tier bar would be noise or wrong — render nothing.
     return { usage: null, isLoading: usage ? false : isLoading };

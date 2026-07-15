@@ -12,13 +12,8 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
-import {
-  type Adapter,
-  GLM_MODEL_FLAG,
-  USAGE_BILLING_FLAG,
-} from "@posthog/shared";
+import type { Adapter } from "@posthog/shared";
 import { gateRestrictedModelPick } from "@posthog/ui/features/billing/modelGate";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { ModelRadioItem } from "@posthog/ui/features/sessions/components/ModelRadioItem";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import {
@@ -27,6 +22,7 @@ import {
   useSessionIsCloud,
   useSessionSelector,
 } from "@posthog/ui/features/sessions/sessionStore";
+import { useGlmModelVisible } from "@posthog/ui/features/sessions/useGlmModelVisible";
 import { Fragment, useMemo } from "react";
 
 interface ModelSelectorProps {
@@ -47,12 +43,9 @@ export function ModelSelector({
   const sessionStatus = useSessionSelector(taskId, (s) => s?.status);
   const sessionIsCloud = useSessionIsCloud(taskId);
   const rawModelOption = useModelConfigOptionForTask(taskId);
-  const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
-  // Under usage-based billing GLM is the free tier's included model — it must
-  // stay pickable regardless of the staged GLM rollout flag.
-  const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
+  const glmVisible = useGlmModelVisible();
   const modelOption =
-    glmEnabled || usageBillingEnabled || !rawModelOption
+    glmVisible || !rawModelOption
       ? rawModelOption
       : stripGlmModelOption(rawModelOption);
 

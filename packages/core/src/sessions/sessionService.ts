@@ -2716,33 +2716,33 @@ export class SessionService {
 
       const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
 
-      // Free-tier model gate (403): the session is healthy — the user needs
-      // to switch model or add a payment method. Surface the upgrade gate,
-      // not an error state.
-      if (limitCause === "model_gate") {
-        this.d.log.warn("Model gated for free tier, showing upgrade gate", {
+      // Gateway billing denials — free-tier model gate (403) or a usage
+      // limit (429): the session is healthy, the fix is switching model,
+      // adding a payment method, or raising a limit. Surface the upgrade
+      // gate, not an error state.
+      if (
+        limitCause === "model_gate" ||
+        isRateLimitError(errorMessage, errorDetails)
+      ) {
+        this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
-        });
-        this.d.store.updateSession(session.taskRunId, {
-          isPromptPending: false,
-          promptStartedAt: null,
-        });
-        this.d.usageLimit.show({
           cause: limitCause,
-          model: extractGatedModel(errorMessage, errorDetails) ?? undefined,
-        });
-        return { stopReason: "rate_limited" };
-      }
-
-      if (isRateLimitError(errorMessage, errorDetails)) {
-        this.d.log.warn("Rate limit exceeded, showing usage limit modal", {
-          taskRunId: session.taskRunId,
         });
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show(limitCause ? { cause: limitCause } : undefined);
+        this.d.usageLimit.show(
+          limitCause === "model_gate"
+            ? {
+                cause: limitCause,
+                model:
+                  extractGatedModel(errorMessage, errorDetails) ?? undefined,
+              }
+            : limitCause
+              ? { cause: limitCause }
+              : undefined,
+        );
         return { stopReason: "rate_limited" };
       }
 
