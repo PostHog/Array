@@ -14,6 +14,9 @@ import { sandboxPolicyFor } from "./session-config";
 
 // Required-field invariants the native codex app-server enforces on each request.
 const REQUIRED_FIELDS: Record<string, string[]> = {
+  "thread/goal/clear": ["threadId"],
+  "thread/goal/get": ["threadId"],
+  "thread/goal/set": ["threadId"],
   "turn/interrupt": ["threadId", "turnId"],
   "turn/steer": ["threadId", "input", "expectedTurnId"],
 };
@@ -293,6 +296,89 @@ describe("CodexAppServerAgent", () => {
         (notification) => notification.method === "_posthog/turn_complete",
       ),
     ).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      label: "reads an empty goal",
+      prompt: "/goal",
+      method: "thread/goal/get",
+      response: { goal: null },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "No goal set. Usage: `/goal <objective>`",
+    },
+    {
+      label: "reads an active goal",
+      prompt: "/goal",
+      method: "thread/goal/get",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "Goal active: Ship the fix",
+    },
+    {
+      label: "sets a goal",
+      prompt: "/goal Ship the fix",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1", objective: "Ship the fix" },
+      expectedText: "Goal set: Ship the fix",
+    },
+    {
+      label: "clears a goal",
+      prompt: "/goal clear",
+      method: "thread/goal/clear",
+      response: { cleared: true },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "Goal cleared.",
+    },
+    {
+      label: "pauses a goal",
+      prompt: "/goal pause",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "paused" } },
+      expectedParams: { threadId: "thr_1", status: "paused" },
+      expectedText: "Goal paused: Ship the fix",
+    },
+    {
+      label: "resumes a goal",
+      prompt: "/goal resume",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1", status: "active" },
+      expectedText: "Goal resumed: Ship the fix",
+    },
+  ])("$label without starting a model turn", async (testCase) => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      [testCase.method]: testCase.response,
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    const result = await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: testCase.prompt }],
+    } as unknown as PromptRequest);
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(stub.requests).toContainEqual({
+      method: testCase.method,
+      params: testCase.expectedParams,
+    });
+    expect(
+      stub.requests.some((request) => request.method === "turn/start"),
+    ).toBe(false);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: testCase.expectedText },
+      },
+    });
   });
 
   it("includes buffered command output when completion omits aggregatedOutput", async () => {
@@ -1711,6 +1797,7 @@ describe("CodexAppServerAgent", () => {
           {
             skills: [
               { name: "deploy", description: "Deploy", enabled: true },
+              { name: "goal", description: "Duplicate", enabled: true },
               { name: "danger", description: "Disabled", enabled: false },
             ],
           },
@@ -1729,7 +1816,14 @@ describe("CodexAppServerAgent", () => {
         (u: any) => u.update?.sessionUpdate === "available_commands_update",
       ) as any
     )?.update?.availableCommands;
-    expect(cmds.map((c: { name: string }) => c.name)).toEqual(["deploy"]);
+    expect(cmds).toEqual([
+      {
+        name: "goal",
+        description: "Set or view the goal for a long-running task",
+        input: { hint: "[<objective>|clear|pause|resume]" },
+      },
+      { name: "deploy", description: "Deploy" },
+    ]);
   });
 
   it("emits _posthog/sdk_session when a taskRunId is present", async () => {

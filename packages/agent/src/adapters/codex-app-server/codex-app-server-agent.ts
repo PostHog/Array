@@ -95,6 +95,52 @@ type AppServerThread = {
   turns?: Array<{ items?: Parameters<typeof mapHistoryItem>[1][] }>;
 };
 
+type ThreadGoal = {
+  objective: string;
+  status: string;
+};
+
+type GoalCommand =
+  | { kind: "get" }
+  | { kind: "clear" }
+  | { kind: "pause" }
+  | { kind: "resume" }
+  | { kind: "set"; objective: string };
+
+type CodexSkill = {
+  name?: string;
+  description?: string;
+  enabled?: boolean;
+};
+
+const GOAL_COMMAND = {
+  name: "goal",
+  description: "Set or view the goal for a long-running task",
+  input: { hint: "[<objective>|clear|pause|resume]" },
+};
+
+function parseGoalCommand(prompt: PromptRequest["prompt"]): GoalCommand | null {
+  if (prompt.some((block) => block.type !== "text")) return null;
+  const text = prompt
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("\n")
+    .trim();
+  const match = text.match(/^\/goal(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  const argument = match[1]?.trim();
+  if (!argument) return { kind: "get" };
+  switch (argument.toLowerCase()) {
+    case "clear":
+      return { kind: "clear" };
+    case "pause":
+      return { kind: "pause" };
+    case "resume":
+      return { kind: "resume" };
+    default:
+      return { kind: "set", objective: argument };
+  }
+}
+
 // The native app-server owns its config; BaseAcpAgent only calls dispose() on this.
 class NoopSettingsManager implements BaseSettingsManager {
   constructor(private cwd: string) {}
@@ -519,17 +565,29 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** skills/list → available_commands_update so the slash-command menu fills. */
   private async emitAvailableCommands(): Promise<void> {
     if (!this.sessionId) return;
-    let commands: Array<{ name: string; description: string }> = [];
+    let commands: Array<{
+      name: string;
+      description: string;
+      input?: { hint: string };
+    }> = [GOAL_COMMAND];
     try {
-      const res = await this.rpc.request<{ data?: Array<{ skills?: any[] }> }>(
-        APP_SERVER_METHODS.SKILLS_LIST,
-        {},
-      );
-      commands = (res?.data ?? [])
+      const res = await this.rpc.request<{
+        data?: Array<{ skills?: CodexSkill[] }>;
+      }>(APP_SERVER_METHODS.SKILLS_LIST, {});
+      const skills = (res?.data ?? [])
         .flatMap((entry) => entry?.skills ?? [])
         // Drop explicitly-disabled skills; lenient `!== false` so a malformed payload still shows.
-        .filter((s) => s?.name && s?.enabled !== false)
-        .map((s: any) => ({ name: s.name, description: s.description ?? "" }));
+        .filter(
+          (skill): skill is CodexSkill & { name: string } =>
+            !!skill.name &&
+            skill.name !== GOAL_COMMAND.name &&
+            skill.enabled !== false,
+        )
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description ?? "",
+        }));
+      commands = [GOAL_COMMAND, ...skills];
     } catch (err) {
       this.logger.warn("skills/list failed", { error: String(err) });
     }
@@ -547,6 +605,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     if (!this.threadId) {
       throw new Error("prompt() called before newSession()");
+    }
+    const goalCommand = parseGoalCommand(params.prompt);
+    if (goalCommand) {
+      this.broadcastUserInput(params.prompt);
+      await this.handleGoalCommand(goalCommand);
+      return { stopReason: "end_turn" };
     }
     // Reopen the notification gate (a prior interrupt may have left session.cancelled set).
     this.session.cancelled = false;
@@ -641,6 +705,52 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     const stopReason = await this.runTurn(input);
     return { stopReason: await this.maybeOfferPlanImplementation(stopReason) };
+  }
+
+  private async handleGoalCommand(command: GoalCommand): Promise<void> {
+    if (!this.threadId) return;
+    if (command.kind === "clear") {
+      const result = await this.rpc.request<{ cleared?: boolean }>(
+        APP_SERVER_METHODS.THREAD_GOAL_CLEAR,
+        { threadId: this.threadId },
+      );
+      this.broadcastAgentText(
+        result.cleared ? "Goal cleared." : "No goal was set.",
+      );
+      return;
+    }
+
+    if (command.kind === "get") {
+      const result = await this.rpc.request<{ goal?: ThreadGoal | null }>(
+        APP_SERVER_METHODS.THREAD_GOAL_GET,
+        { threadId: this.threadId },
+      );
+      this.broadcastAgentText(
+        result.goal
+          ? `Goal ${result.goal.status}: ${result.goal.objective}`
+          : "No goal set. Usage: `/goal <objective>`",
+      );
+      return;
+    }
+
+    const params =
+      command.kind === "set"
+        ? { threadId: this.threadId, objective: command.objective }
+        : {
+            threadId: this.threadId,
+            status: command.kind === "pause" ? "paused" : "active",
+          };
+    const result = await this.rpc.request<{ goal: ThreadGoal }>(
+      APP_SERVER_METHODS.THREAD_GOAL_SET,
+      params,
+    );
+    const prefix =
+      command.kind === "set"
+        ? "Goal set"
+        : command.kind === "pause"
+          ? "Goal paused"
+          : "Goal resumed";
+    this.broadcastAgentText(`${prefix}: ${result.goal.objective}`);
   }
 
   /** Start one codex turn and await its completion. */
