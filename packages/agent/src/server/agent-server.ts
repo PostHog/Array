@@ -969,6 +969,8 @@ export class AgentServer {
             result.stopReason === "end_turn" &&
             isManualCompactPrompt(prompt)
           ) {
+            // `/compact` is an SDK-local command, so without a follow-up the
+            // cloud run reports completion before the model resumes the task.
             this.recordTurnUsage(result.usage);
             result = await this.promptWithUpstreamRetry({
               sessionId: this.session.acpSessionId,

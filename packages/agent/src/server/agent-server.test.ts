@@ -1463,6 +1463,10 @@ describe("AgentServer HTTP Mode", () => {
       });
 
       expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result?: { stopReason?: string };
+      };
+      expect(body.result?.stopReason).toBe("end_turn");
       expect(prompt).toHaveBeenCalledTimes(2);
       expect(prompt.mock.calls[0]?.[0].prompt).toEqual([
         {
