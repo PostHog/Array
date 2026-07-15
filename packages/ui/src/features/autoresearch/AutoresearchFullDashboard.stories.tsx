@@ -35,7 +35,10 @@ interface FullDashboardStoryProps {
   approach: string;
 }
 
-const STORY_NOW = Date.now();
+// Fixed date: module-scope fixtures evaluate at import time, before the
+// visual-regression clock freeze, so wall-clock times here would make the
+// rendered Time column drift between snapshot runs.
+const STORY_NOW = new Date("2026-07-01T10:30:00Z").getTime();
 const STARTED_AT = STORY_NOW - 26 * 60_000;
 
 function FullDashboardStory(props: FullDashboardStoryProps) {

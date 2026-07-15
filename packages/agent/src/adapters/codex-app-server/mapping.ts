@@ -206,6 +206,15 @@ export type AppServerItem = {
   // Present on message/reasoning items replayed from thread history.
   text?: string;
   content?: unknown;
+  senderThreadId?: string;
+  receiverThreadIds?: string[];
+  prompt?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  agentsStates?: Record<
+    string,
+    { status?: string; message?: string | null } | undefined
+  >;
 };
 
 function mcpResultText(
@@ -295,14 +304,20 @@ export function mapHistoryItem(
             status: mapStatus(item.status),
             ...(tool.rawInput !== undefined ? { rawInput: tool.rawInput } : {}),
             ...(tool.locations?.length ? { locations: tool.locations } : {}),
-            ...(tool.mcp
+            ...(item.type === "collabAgentToolCall"
               ? {
                   _meta: posthogToolMeta({
-                    toolName: mcpToolKey(tool.mcp),
-                    mcp: tool.mcp,
+                    toolName: collabAgentToolName(item.tool),
                   }),
                 }
-              : {}),
+              : tool.mcp
+                ? {
+                    _meta: posthogToolMeta({
+                      toolName: mcpToolKey(tool.mcp),
+                      mcp: tool.mcp,
+                    }),
+                  }
+                : {}),
             ...(content ? { content } : {}),
           },
         },
@@ -394,10 +409,61 @@ function describeTool(item: AppServerItem): ToolDescriptor | null {
         rawInput: item.arguments,
         output: dynamicToolText(item.contentItems),
       };
+    case "collabAgentToolCall":
+      return {
+        title: collabAgentTitle(item),
+        kind: "other",
+        rawInput: {
+          ...(item.prompt ? { prompt: item.prompt } : {}),
+          ...(item.receiverThreadIds?.length
+            ? { receiverThreadIds: item.receiverThreadIds }
+            : {}),
+          ...(item.model ? { model: item.model } : {}),
+          ...(item.reasoningEffort
+            ? { reasoningEffort: item.reasoningEffort }
+            : {}),
+        },
+      };
     case "webSearch":
       return { title: item.query ?? "Web search", kind: "fetch" };
     default:
       return null;
+  }
+}
+
+function collabAgentTitle(item: AppServerItem): string {
+  switch (item.tool) {
+    case "spawnAgent":
+      return item.prompt
+        ? item.prompt.split("\n", 1)[0].slice(0, 120)
+        : "Spawn subagent";
+    case "sendInput":
+      return "Message subagent";
+    case "resumeAgent":
+      return "Resume subagent";
+    case "wait":
+      return "Wait for subagents";
+    case "closeAgent":
+      return "Close subagent";
+    default:
+      return "Subagent";
+  }
+}
+
+function collabAgentToolName(tool: string | undefined): string {
+  switch (tool) {
+    case "spawnAgent":
+      return "spawn_agent";
+    case "sendInput":
+      return "send_input";
+    case "resumeAgent":
+      return "resume_agent";
+    case "wait":
+      return "wait_agent";
+    case "closeAgent":
+      return "close_agent";
+    default:
+      return "subagent";
   }
 }
 
@@ -459,14 +525,20 @@ function mapItem(
         status: "in_progress",
         ...(tool.rawInput !== undefined ? { rawInput: tool.rawInput } : {}),
         ...(tool.locations?.length ? { locations: tool.locations } : {}),
-        ...(tool.mcp
+        ...(item.type === "collabAgentToolCall"
           ? {
               _meta: posthogToolMeta({
-                toolName: mcpToolKey(tool.mcp),
-                mcp: tool.mcp,
+                toolName: collabAgentToolName(item.tool),
               }),
             }
-          : {}),
+          : tool.mcp
+            ? {
+                _meta: posthogToolMeta({
+                  toolName: mcpToolKey(tool.mcp),
+                  mcp: tool.mcp,
+                }),
+              }
+            : {}),
       },
     };
   }
