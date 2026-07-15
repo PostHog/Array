@@ -7,6 +7,7 @@ import {
   existsSync,
   mkdirSync,
   realpathSync,
+  renameSync,
   rmSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -20,19 +21,21 @@ const DEST_DIR = join(__dirname, "..", "resources", "codex-acp");
 
 const BINARIES = [
   {
-    name: "codex-acp",
-    version: "0.14.0",
+    name: "codex",
+    version: "0.140.0",
     getUrl: (version, target) => {
-      const ext = target.includes("windows") ? "zip" : "tar.gz";
-      return `https://github.com/zed-industries/codex-acp/releases/download/v${version}/codex-acp-${version}-${target}.${ext}`;
+      if (target.includes("windows")) {
+        return `https://github.com/openai/codex/releases/download/rust-v${version}/codex-${target}.exe.zip`;
+      }
+      return `https://github.com/openai/codex/releases/download/rust-v${version}/codex-${target}.tar.gz`;
     },
     getTarget: () => {
       const { platform, arch } = process;
       const targets = {
         darwin: { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" },
         linux: {
-          arm64: "aarch64-unknown-linux-gnu",
-          x64: "x86_64-unknown-linux-gnu",
+          arm64: "aarch64-unknown-linux-musl",
+          x64: "x86_64-unknown-linux-musl",
         },
         win32: {
           arm64: "aarch64-pc-windows-msvc",
@@ -46,6 +49,10 @@ const BINARIES = [
       if (!target) throw new Error(`Unsupported arch: ${arch}`);
       return target;
     },
+    // The codex release archive contains a target-suffixed binary
+    // (e.g. `codex-aarch64-apple-darwin`); rename it to `codex` after extract.
+    archiveBinaryName: (target) =>
+      process.platform === "win32" ? `codex-${target}.exe` : `codex-${target}`,
   },
   {
     name: "rg",
@@ -158,6 +165,13 @@ async function downloadBinary(binary) {
   await downloadFile(url, archivePath);
   await extractArchive(archivePath, DEST_DIR);
   rmSync(archivePath);
+
+  if (binary.archiveBinaryName) {
+    const extractedPath = join(DEST_DIR, binary.archiveBinaryName(target));
+    if (extractedPath !== binaryPath && existsSync(extractedPath)) {
+      renameSync(extractedPath, binaryPath);
+    }
+  }
 
   if (!existsSync(binaryPath)) {
     throw new Error(`Binary not found after extraction: ${binaryPath}`);

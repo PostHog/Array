@@ -6,6 +6,7 @@ import { usePreferencesStore } from "@/features/preferences/stores/preferencesSt
 import { logger } from "@/lib/logger";
 import {
   CloudCommandError,
+  cancelRun,
   getTask,
   runTaskInCloud,
   sendCloudCommand,
@@ -28,14 +29,26 @@ import {
   type Task,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
-import { playMeepSound } from "../utils/sounds";
+import { playbackRateForTaskDuration } from "../utils/playbackRate";
+import { playCompletionSound } from "../utils/sounds";
 import { useAttachmentEchoStore } from "./attachmentEchoStore";
 import {
   combineQueuedMessages,
   useMessageQueueStore,
 } from "./messageQueueStore";
+import { useTaskStore } from "./taskStore";
 
 const log = logger.scope("task-session-store");
+
+function completionPlaybackRate(promptStartedAt?: number): number {
+  if (
+    !usePreferencesStore.getState().scaleSoundWithTaskLength ||
+    promptStartedAt == null
+  ) {
+    return 1;
+  }
+  return playbackRateForTaskDuration(Date.now() - promptStartedAt);
+}
 
 // Match historical `user_message_chunk` events (text-only, as the cloud
 // stores them) against locally-cached attachment echoes by position+text.
@@ -288,6 +301,9 @@ export interface TaskSession {
   // we should play a sound when control returns. False when reconnecting
   // to an already-running task to avoid spurious pings.
   awaitingPing?: boolean;
+  // Timestamp when the current prompt started on this device. Used to scale
+  // the completion sound's playback rate by how long the turn ran.
+  promptStartedAt?: number;
   // True after a user prompt is sent, cleared when the first piece of
   // agent output (tool call, message, etc.) arrives.
   awaitingAgentOutput?: boolean;
@@ -304,6 +320,10 @@ export interface TaskSession {
   // the running turn, which would abort an in-flight compaction, so queued
   // messages are held until compaction ends.
   isCompacting?: boolean;
+  // True once the user has requested the whole run be stopped, until the run
+  // reaches a terminal status. Hides the Stop control so it can't be tapped
+  // twice while the cancel is in flight.
+  stopRequested?: boolean;
 }
 
 interface TaskSessionStore {
@@ -330,6 +350,9 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  /** Cancel the whole cloud run. Optimistically marks the session stop-requested
+   *  and reverts on failure. Returns false if there is no session or the API fails. */
+  stopRun: (taskId: string) => Promise<boolean>;
   /** Send a prompt now, interrupting the running turn first if one is live. */
   sendInterrupting: (
     taskId: string,
@@ -337,6 +360,10 @@ interface TaskSessionStore {
     attachments?: PendingAttachment[],
   ) => Promise<void>;
   flushQueuedMessages: (taskId: string) => Promise<void>;
+  /** Flush the queue only if the agent is idle. Used after an in-place edit is
+   *  saved or cancelled: the turn may have ended while the user was editing, so
+   *  nothing else would trigger the turn-end drain. A no-op mid-turn. */
+  flushQueuedMessagesIfIdle: (taskId: string) => void;
   /** Drop one queued message and resend it now as a steer (interrupt + resend). */
   steerQueuedMessage: (taskId: string, messageId: string) => Promise<void>;
   setConfigOption: (
@@ -424,6 +451,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             // us otherwise — the SSE watcher will refine these fields.
             isPromptPending: true,
             awaitingPing,
+            promptStartedAt: awaitingPing ? Date.now() : undefined,
             awaitingAgentOutput: true,
           },
         },
@@ -512,6 +540,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             localUserEchoes: nextLocalEchoes,
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: ts,
             awaitingAgentOutput: true,
           },
         },
@@ -623,6 +652,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             localUserEchoes: nextLocalEchoes,
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: ts,
             awaitingAgentOutput: true,
           },
         },
@@ -774,6 +804,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             ...state.sessions[session.taskRunId],
             isPromptPending: false,
             awaitingPing: false,
+            promptStartedAt: undefined,
             awaitingAgentOutput: false,
           },
         },
@@ -781,6 +812,45 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       return true;
     } catch (error) {
       log.error("Failed to send cancel request", error);
+      return false;
+    }
+  },
+
+  stopRun: async (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (!session) return false;
+    const runId = session.taskRunId;
+
+    const previous = {
+      stopRequested: session.stopRequested,
+      isPromptPending: session.isPromptPending,
+    };
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [runId]: {
+          ...state.sessions[runId],
+          stopRequested: true,
+          isPromptPending: false,
+        },
+      },
+    }));
+
+    try {
+      await cancelRun(taskId, runId);
+      return true;
+    } catch (error) {
+      log.error("Failed to stop cloud run", error);
+      set((state) => {
+        const current = state.sessions[runId];
+        if (!current) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [runId]: { ...current, ...previous },
+          },
+        };
+      });
       return false;
     }
   },
@@ -798,7 +868,9 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     if (flushingTasks.has(taskId)) return;
     flushingTasks.add(taskId);
     try {
-      const drained = useMessageQueueStore.getState().drain(taskId);
+      const drained = useMessageQueueStore
+        .getState()
+        .drain(taskId, { stopAtEdited: true });
       if (drained.length === 0) return;
 
       const { text, attachments } = combineQueuedMessages(drained);
@@ -813,6 +885,21 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       }
     } finally {
       flushingTasks.delete(taskId);
+    }
+  },
+
+  flushQueuedMessagesIfIdle: (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (
+      session?.status === "connected" &&
+      !session.isPromptPending &&
+      !session.terminalStatus &&
+      !session.isCompacting &&
+      useMessageQueueStore.getState().getQueue(taskId).length > 0
+    ) {
+      get()
+        .flushQueuedMessages(taskId)
+        .catch((err) => log.warn("Queue flush failed", err));
     }
   },
 
@@ -1036,7 +1123,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         shouldPingForTurnComplete ||
         shouldPingForTurnFailed;
       if (shouldPingNow && usePreferencesStore.getState().pingsEnabled) {
-        playMeepSound().catch(() => {});
+        playCompletionSound(
+          undefined,
+          undefined,
+          completionPlaybackRate(existing?.promptStartedAt),
+        ).catch(() => {});
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       if (shouldPingForAwaitingInput) {
@@ -1099,7 +1190,11 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
           };
         });
         if (shouldPing && usePreferencesStore.getState().pingsEnabled) {
-          playMeepSound().catch(() => {});
+          playCompletionSound(
+            undefined,
+            undefined,
+            completionPlaybackRate(preState?.promptStartedAt),
+          ).catch(() => {});
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
         if (shouldPing) {
@@ -1118,12 +1213,27 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     prompt: string,
   ) => {
     const freshTask = await getTask(taskId);
-    const previousBranch = freshTask.latest_run?.branch ?? null;
+    const previousRun = freshTask.latest_run;
+    const previousBranch = previousRun?.branch ?? null;
+
+    const composerConfig =
+      useTaskStore.getState().composerConfigByTaskId[taskId];
+    const previousPermissionMode = previousRun?.state?.initial_permission_mode;
+    const reasoningEffort =
+      composerConfig?.reasoning ?? previousRun?.reasoning_effort ?? undefined;
+    const initialPermissionMode =
+      composerConfig?.mode ??
+      (typeof previousPermissionMode === "string"
+        ? previousPermissionMode
+        : undefined);
 
     const updatedTask = await runTaskInCloud(taskId, {
       branch: previousBranch,
       resumeFromRunId: previousRunId,
       pendingUserMessage: prompt,
+      reasoningEffort,
+      initialPermissionMode,
+      rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
     });
 
     const newRun = updatedTask.latest_run;
@@ -1146,6 +1256,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
             status: "connecting",
             isPromptPending: true,
             awaitingPing: true,
+            promptStartedAt: Date.now(),
             awaitingAgentOutput: true,
           },
         },

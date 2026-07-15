@@ -134,8 +134,12 @@ export const bundleLocalSkillOutput = z.object({
   size: z.number().int().positive(),
 });
 
+export const resolveSkillDependenciesInput = z.array(bundleLocalSkillInput);
+export const resolveSkillDependenciesOutput = z.array(bundleLocalSkillInput);
+
 export type BundleLocalSkillInput = z.infer<typeof bundleLocalSkillInput>;
 export type BundleLocalSkillOutput = z.infer<typeof bundleLocalSkillOutput>;
+export type SkillBundleRef = z.infer<typeof bundleLocalSkillInput>;
 export type SkillInfo = z.infer<typeof skillInfo>;
 export type SkillScope = z.infer<typeof skillScope>;
 export type CreateSkillInput = z.infer<typeof createSkillInput>;

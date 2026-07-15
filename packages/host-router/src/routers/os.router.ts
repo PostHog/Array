@@ -1,4 +1,8 @@
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
+import {
+  type IMainWindow,
+  MAIN_WINDOW_SERVICE,
+} from "@posthog/platform/main-window";
 import { OS_SERVICE } from "@posthog/workspace-server/services/os/identifiers";
 import type { OsService } from "@posthog/workspace-server/services/os/os";
 import {
@@ -15,6 +19,7 @@ import {
   selectAttachmentsOutput,
   selectFilesOutput,
   showMessageBoxInput,
+  userAgentInstructionsOutput,
 } from "@posthog/workspace-server/services/os/schemas";
 
 export const osRouter = router({
@@ -22,6 +27,12 @@ export const osRouter = router({
     .output(claudePermissionsOutput)
     .query(({ ctx }) =>
       ctx.container.get<OsService>(OS_SERVICE).getClaudePermissions(),
+    ),
+
+  getUserAgentInstructions: publicProcedure
+    .output(userAgentInstructionsOutput)
+    .query(({ ctx }) =>
+      ctx.container.get<OsService>(OS_SERVICE).getUserAgentInstructions(),
     ),
 
   selectDirectory: publicProcedure.query(({ ctx }) =>
@@ -58,6 +69,10 @@ export const osRouter = router({
     .mutation(({ ctx, input }) =>
       ctx.container.get<OsService>(OS_SERVICE).openExternal(input.url),
     ),
+
+  showLogFolder: publicProcedure.mutation(({ ctx }) =>
+    ctx.container.get<OsService>(OS_SERVICE).showLogFolder(),
+  ),
 
   searchDirectories: publicProcedure
     .input(searchDirectoriesInput)
@@ -116,4 +131,16 @@ export const osRouter = router({
         .get<OsService>(OS_SERVICE)
         .saveClipboardFile(input.base64Data, input.originalName),
     ),
+
+  zoomIn: publicProcedure.mutation(({ ctx }) =>
+    ctx.container.get<IMainWindow>(MAIN_WINDOW_SERVICE).zoomIn(),
+  ),
+
+  zoomOut: publicProcedure.mutation(({ ctx }) =>
+    ctx.container.get<IMainWindow>(MAIN_WINDOW_SERVICE).zoomOut(),
+  ),
+
+  resetZoom: publicProcedure.mutation(({ ctx }) =>
+    ctx.container.get<IMainWindow>(MAIN_WINDOW_SERVICE).resetZoom(),
+  ),
 });

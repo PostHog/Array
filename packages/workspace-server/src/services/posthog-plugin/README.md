@@ -24,7 +24,7 @@ A "skill name" is its directory name. If remote and shipped both have `query-dat
 
 ## Build Time
 
-`copyPosthogPlugin()` in `vite.main.config.mts` assembles the plugin during `writeBundle`:
+`copyPosthogPlugin()` in `vite-main-plugins.mts` assembles the plugin during `writeBundle`:
 
 1. Copies allowed plugin entries into `.vite/build/plugins/posthog/`
 2. Downloads `skills.zip` via `curl`, extracts with `unzip`, overlays into the build output

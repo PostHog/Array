@@ -108,6 +108,7 @@ export function ReviewShell({
   onExpandAll,
   onCollapseAll,
   onRefresh,
+  onDiscardAll,
   effectiveSource,
   branchSourceAvailable,
   prSourceAvailable,
@@ -195,7 +196,9 @@ export function ReviewShell({
 
   return (
     <WorkerPoolContextProvider
-      poolOptions={{ workerFactory }}
+      // poolSize: each highlighter worker is a full V8 isolate with shiki
+      // grammars loaded (~40MB RSS); the library default of 8 is oversized.
+      poolOptions={{ workerFactory, poolSize: 2 }}
       highlighterOptions={{
         theme: { dark: "github-dark", light: "github-light" },
         langs: [
@@ -227,6 +230,7 @@ export function ReviewShell({
           onExpandAll={onExpandAll}
           onCollapseAll={onCollapseAll}
           onRefresh={onRefresh}
+          onDiscardAll={onDiscardAll}
           effectiveSource={effectiveSource}
           branchSourceAvailable={branchSourceAvailable}
           prSourceAvailable={prSourceAvailable}

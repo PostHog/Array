@@ -59,6 +59,106 @@ describe("RepositoryRepository round-trip", () => {
   });
 });
 
+describe("WorkspaceRepository PR cache accumulation", () => {
+  const PR_1 = "https://github.com/acme/repo/pull/1";
+  const PR_2 = "https://github.com/acme/repo/pull/2";
+
+  beforeEach(() => {
+    workspaces.create({ taskId: "task-1", repositoryId: null, mode: "local" });
+  });
+
+  it("appends each new PR URL while keeping first-created order", () => {
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_1,
+      prState: "open",
+      accumulate: true,
+    });
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_2,
+      prState: "open",
+      accumulate: true,
+    });
+
+    expect(workspaces.getPrUrls("task-1")).toEqual([PR_1, PR_2]);
+    expect(workspaces.findByTaskId("task-1")?.prUrl).toBe(PR_2);
+  });
+
+  it("does not duplicate an already-seen PR URL", () => {
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_1,
+      prState: "open",
+      accumulate: true,
+    });
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_1,
+      prState: "merged",
+      accumulate: true,
+    });
+
+    expect(workspaces.getPrUrls("task-1")).toEqual([PR_1]);
+  });
+
+  it("keeps accumulated URLs when the current PR clears", () => {
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_1,
+      prState: "open",
+      accumulate: true,
+    });
+    workspaces.updatePrCache("task-1", {
+      prUrl: null,
+      prState: null,
+      accumulate: false,
+    });
+
+    expect(workspaces.getPrUrls("task-1")).toEqual([PR_1]);
+    expect(workspaces.findByTaskId("task-1")?.prUrl).toBeNull();
+  });
+
+  it("reads an untouched row as an empty list", () => {
+    expect(workspaces.getPrUrls("task-1")).toEqual([]);
+  });
+
+  it("does not accumulate a non-attributable PR, but still shows it as current", () => {
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_1,
+      prState: "open",
+      accumulate: false,
+    });
+
+    expect(workspaces.getPrUrls("task-1")).toEqual([]);
+    expect(workspaces.findByTaskId("task-1")?.prUrl).toBe(PR_1);
+  });
+
+  it("promotePrUrl moves the chosen URL to the front", () => {
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_1,
+      prState: "open",
+      accumulate: true,
+    });
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_2,
+      prState: "open",
+      accumulate: true,
+    });
+
+    workspaces.promotePrUrl("task-1", PR_2);
+
+    expect(workspaces.getPrUrls("task-1")).toEqual([PR_2, PR_1]);
+  });
+
+  it("promotePrUrl adds an unseen URL at the front", () => {
+    workspaces.updatePrCache("task-1", {
+      prUrl: PR_1,
+      prState: "open",
+      accumulate: true,
+    });
+
+    workspaces.promotePrUrl("task-1", PR_2);
+
+    expect(workspaces.getPrUrls("task-1")).toEqual([PR_2, PR_1]);
+  });
+});
+
 describe("repository → workspace → worktree round-trip", () => {
   it("persists the full ownership chain across repositories", () => {
     const repository = repositories.create({ path: "/repos/twig" });

@@ -32,7 +32,7 @@ type StatusFilter = "all" | "live" | "drafts";
 const PAGE_SIZE = 8;
 
 /**
- * The Applications tab. Renders the deployed-agent fleet as the primary
+ * The Fleet tab. Renders the deployed-agent fleet as the primary
  * surface: a searchable, status-filtered, paged list with the 7-day activity
  * strip pinned at the top and operational / live-now panels below.
  */

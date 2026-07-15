@@ -4,6 +4,10 @@
   "description": "Host-agnostic platform port interfaces. Zero runtime deps; implemented by per-host adapters (Electron, Node server, React Native, web).",
   "type": "module",
   "exports": {
+    "./host-capabilities": {
+      "types": "./dist/host-capabilities.d.ts",
+      "import": "./dist/host-capabilities.js"
+    },
     "./url-launcher": {
       "types": "./dist/url-launcher.d.ts",
       "import": "./dist/url-launcher.js"
@@ -56,6 +60,10 @@
       "types": "./dist/notifier.d.ts",
       "import": "./dist/notifier.js"
     },
+    "./speech": {
+      "types": "./dist/speech.d.ts",
+      "import": "./dist/speech.js"
+    },
     "./notifications": {
       "types": "./dist/notifications.d.ts",
       "import": "./dist/notifications.js"
@@ -83,6 +91,14 @@
     "./deep-link": {
       "types": "./dist/deep-link.d.ts",
       "import": "./dist/deep-link.js"
+    },
+    "./app-metrics": {
+      "types": "./dist/app-metrics.d.ts",
+      "import": "./dist/app-metrics.js"
+    },
+    "./dev-host-actions": {
+      "types": "./dist/dev-host-actions.d.ts",
+      "import": "./dist/dev-host-actions.js"
     }
   },
   "scripts": {

@@ -1,20 +1,45 @@
-// Builds the prompt for the task that generates a channel's CONTEXT.md. The
+// Builds the prompt for the task that generates a context's CONTEXT.md. The
 // task runs as a normal repo-less agent task (no repo picked up front), so the
 // agent has full tools; this is the task's content (its first user message).
 // CONTEXT.md is not a file on disk — it lives in PostHog — so the agent must
 // publish the result via the PostHog MCP rather than writing a file.
+//
+// The task starts in plan mode: the agent investigates and proposes a plan for
+// the document, the user shapes it, and only once the plan is approved does the
+// agent publish. The user's own description of what the context is about seeds
+// that plan.
+// Title given to the plan task that builds a context's CONTEXT.md. The prefix
+// doubles as the marker surfaces use to spot an in-flight build in a channel's
+// task feed — the only task↔context.md tie we have until the backend links
+// them explicitly.
+export const CONTEXT_MD_TASK_TITLE_PREFIX = "Build CONTEXT.md";
+
+export function contextMdTaskTitle(channelName: string): string {
+  return `${CONTEXT_MD_TASK_TITLE_PREFIX} for ${channelName}`;
+}
+
 export function buildContextGenerationPrompt(input: {
   channelName: string;
   channelId: string;
+  description?: string;
 }): string {
-  const { channelName, channelId } = input;
-  return `Generate a CONTEXT.md for the channel/folder "${channelName}".
-
+  const { channelName, channelId, description } = input;
+  const seed = description?.trim()
+    ? `\nThe user describes what this context is about:
+"""
+${description.trim()}
+"""
+Treat this as the primary guide for what CONTEXT.md should cover — start from it,
+then verify and fill it out against the sources below.\n`
+    : "";
+  return `Build a CONTEXT.md for the context/folder "${channelName}".
+${seed}
 CONTEXT.md tells future agents the specific, non-obvious details they need to
 work in "${channelName}": what it is, key files, conventions, gotchas, and the
 PostHog resources that relate to it.
 
-Investigate two sources:
+You are in plan mode. Investigate first, then propose a plan for the document and
+let the user refine it before you publish. Investigate two sources:
 1. The relevant repository — use Read, Grep, and Glob to find code, directories,
    and config related to "${channelName}" (conventions, key files, gotchas). No
    repo is attached up front: if one isn't already available and you can't infer
@@ -23,7 +48,7 @@ Investigate two sources:
    this project: feature flags, experiments, surveys, notebooks, insights, web
    analytics, and persons. Operate only on this project.
 
-When you have gathered enough, PUBLISH the document by calling the PostHog MCP
+Once the plan is approved, PUBLISH the document by calling the PostHog MCP
 tool \`desktop-file-system-instructions-partial-update\` exactly once with:
 - id: "${channelId}"
 - content: the full CONTEXT.md markdown

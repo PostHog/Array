@@ -4,6 +4,7 @@ import { Box, Flex } from "@radix-ui/themes";
 import { useCallback, useEffect } from "react";
 import { BackgroundWrapper } from "../../../primitives/BackgroundWrapper";
 import { ErrorBoundary } from "../../../primitives/ErrorBoundary";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { useFolders } from "../../folders/useFolders";
 import { useDraftStore } from "../../message-editor/draftStore";
 import { ProvisioningView } from "../../provisioning/ProvisioningView";
@@ -28,6 +29,12 @@ interface TaskLogsPanelProps {
 }
 
 export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
+  // The folder-picker setup prompt is a local-workspace surface (local git repo
+  // detection, folder picker). A cloud-only host has no local workspaces, so it
+  // must never render — otherwise, in the window before a task is known-cloud
+  // (isCloud derives from the workspace entry / latest run), the !isCloud branch
+  // would mount it and resolve local-only services the host doesn't bind.
+  const { localWorkspaces } = useHostCapabilities();
   const isWorkspaceLoaded = useWorkspaceLoaded();
   const { isPending: isCreatingWorkspace } = useCreateWorkspace();
   const repoKey = getTaskRepository(task);
@@ -41,6 +48,8 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
   const { restoreTask, isRestoring } = useRestoreTask();
 
   const isProvisioning = useProvisioningStore((s) => s.activeTasks.has(taskId));
+  const provisioningError = useProvisioningStore((s) => s.errors[taskId]);
+  const clearProvisioning = useProvisioningStore((s) => s.clear);
 
   const { requestFocus } = useDraftStore((s) => s.actions);
 
@@ -93,6 +102,14 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     requestFocus(taskId);
   }, [taskId, requestFocus]);
 
+  // Once a retry provisions a workspace, drop the stale provisioning error so
+  // the guard in ensureWorkspaceForTask stops firing and the retry prompt hides.
+  useEffect(() => {
+    if (repoPath && provisioningError) {
+      clearProvisioning(taskId);
+    }
+  }, [repoPath, provisioningError, taskId, clearProvisioning]);
+
   const handleRestoreWorktree = useCallback(async () => {
     await restoreTask(taskId);
   }, [taskId, restoreTask]);
@@ -101,7 +118,30 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     return <ProvisioningView taskId={taskId} />;
   }
 
+  // Worktree provisioning failed but the task was kept. Offer to retry setup
+  // (worktree mode) on the existing task. Takes priority over the folder-picker
+  // branch below, whose !hasDirectoryMapping gate wouldn't fire here since the
+  // task's repo folder is already registered.
   if (
+    localWorkspaces &&
+    provisioningError &&
+    !repoPath &&
+    !isCloud &&
+    !isSuspended &&
+    isWorkspaceLoaded &&
+    !isCreatingWorkspace
+  ) {
+    return (
+      <BackgroundWrapper>
+        <Box height="100%" width="100%">
+          <WorkspaceSetupPrompt taskId={taskId} task={task} />
+        </Box>
+      </BackgroundWrapper>
+    );
+  }
+
+  if (
+    localWorkspaces &&
     !repoPath &&
     !isCloud &&
     !isSuspended &&

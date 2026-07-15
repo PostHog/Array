@@ -12,16 +12,22 @@ import {
 import { POSTHOG_PLUGIN_SERVICE } from "../posthog-plugin/identifiers";
 import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import type { WatcherService } from "../watcher/service";
-import { parseSkillFrontmatter } from "./parse-skill-frontmatter";
+import {
+  parseSkillDependencies,
+  parseSkillFrontmatter,
+} from "./parse-skill-frontmatter";
+import { parseSkillReferences } from "./parse-skill-references";
 import type {
   BundleLocalSkillInput,
   BundleLocalSkillOutput,
   CreateSkillInput,
   ExportedSkill,
   InstallTeamSkillInput,
+  SkillBundleRef,
   SkillContents,
   SkillInfo,
   SkillSource,
+  UploadableSkillSource,
 } from "./schemas";
 import { bundleLocalSkill } from "./skill-bundler";
 import {
@@ -499,6 +505,107 @@ export class SkillsService {
       skillPath: skillDir,
     });
   }
+
+  /**
+   * Expand a set of tagged skill refs to include their transitive dependency
+   * skills, so a skill that needs another pulls it into the same cloud run.
+   * A dependency is either declared (SKILL.md frontmatter `dependencies:`)
+   * or referenced in the SKILL.md body as `/skill-name` or `[[skill-name]]`.
+   * Only uploadable local skills are returned; a dependency that resolves to
+   * a built-in (`bundled`) skill is already in the sandbox and is skipped.
+   */
+  async resolveSkillBundleDependencies(
+    refs: SkillBundleRef[],
+  ): Promise<SkillBundleRef[]> {
+    if (refs.length === 0) return [];
+
+    const allSkills = await this.listSkills();
+    // Prefer a dependency beside the referencing skill (same root), then one
+    // from the same source, so a repo skill referencing /helper gets its
+    // sibling rather than a same-named skill from another source.
+    const findUploadableByName = (
+      name: string,
+      referencedFrom: SkillBundleRef,
+    ): SkillBundleRef | null => {
+      const candidates = allSkills.filter(
+        (skill) => skill.name === name && isUploadableSkillSource(skill.source),
+      );
+      const match =
+        candidates.find(
+          (skill) =>
+            path.dirname(skill.path) === path.dirname(referencedFrom.path),
+        ) ??
+        candidates.find((skill) => skill.source === referencedFrom.source) ??
+        candidates[0];
+      return match && isUploadableSkillSource(match.source)
+        ? { name: match.name, source: match.source, path: match.path }
+        : null;
+    };
+    const knownSkillNames: ReadonlySet<string> = new Set(
+      allSkills.map((skill) => skill.name),
+    );
+
+    const seen = new Set<string>();
+    const resolved: SkillBundleRef[] = [];
+    const queue: SkillBundleRef[] = [...refs];
+    // Sanity ceiling on the dependency closure. The `seen` set already
+    // guarantees termination, so exceeding this means a pathological graph —
+    // throw loudly rather than silently uploading an arbitrary subset and
+    // leaving the run missing skills it was told to include.
+    const MAX_RESOLVED_SKILLS = 50;
+
+    while (queue.length > 0) {
+      const ref = queue.shift();
+      if (!ref) break;
+      const key = `${ref.source}:${ref.path}`;
+      if (seen.has(key)) continue;
+      if (resolved.length >= MAX_RESOLVED_SKILLS) {
+        throw new Error(
+          `Skill dependency graph exceeds the ${MAX_RESOLVED_SKILLS}-skill limit for a single cloud run ` +
+            `(from: ${refs.map((r) => r.name).join(", ")}). Reduce the tagged skills or their dependencies.`,
+        );
+      }
+      seen.add(key);
+      resolved.push(ref);
+
+      let dependencyNames: string[] = [];
+      try {
+        const skillDir = await this.resolveKnownSkillDir(ref.path);
+        const manifest = await fs.promises.readFile(
+          path.join(skillDir, "SKILL.md"),
+          "utf-8",
+        );
+        dependencyNames = [
+          ...new Set([
+            ...parseSkillDependencies(manifest),
+            ...parseSkillReferences(manifest, knownSkillNames),
+          ]),
+        ];
+      } catch {
+        // A ref we can't read (missing/renamed skill) still uploads on its own;
+        // just skip its dependency expansion rather than failing the whole run.
+        continue;
+      }
+
+      for (const dependencyName of dependencyNames) {
+        const dependencyRef = findUploadableByName(dependencyName, ref);
+        if (
+          dependencyRef &&
+          !seen.has(`${dependencyRef.source}:${dependencyRef.path}`)
+        ) {
+          queue.push(dependencyRef);
+        }
+      }
+    }
+
+    return resolved;
+  }
+}
+
+function isUploadableSkillSource(
+  source: SkillSource,
+): source is UploadableSkillSource {
+  return source !== "bundled";
 }
 
 export function validateSkillDirName(name: string): void {

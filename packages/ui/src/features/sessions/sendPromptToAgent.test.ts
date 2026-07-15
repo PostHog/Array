@@ -69,27 +69,22 @@ describe("sendPromptToAgent", () => {
     async (rejection, expectedMessage) => {
       mockSender.mockRejectedValueOnce(rejection);
 
-      sendPromptToAgent("task-1", "hello");
+      const success = await sendPromptToAgent("task-1", "hello");
 
-      await vi.waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith(expectedMessage),
-      );
+      expect(success).toBe(false);
+      expect(toast.error).toHaveBeenCalledWith(expectedMessage);
     },
   );
 
   it("does not toast when the send resolves", async () => {
     mockSender.mockResolvedValueOnce(undefined);
 
-    sendPromptToAgent("task-1", "hello");
+    const success = await sendPromptToAgent("task-1", "hello");
 
-    // Await the exact promise the sender returned rather than guessing how many
-    // microtasks the catch chain takes to settle.
-    await mockSender.mock.results[0]?.value;
+    expect(success).toBe(true);
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  // The send is fire-and-forget, so the panel/review side effects must run
-  // regardless of whether it ultimately resolves or rejects.
   it.each([
     ["resolves", () => mockSender.mockResolvedValueOnce(undefined)],
     ["rejects", () => mockSender.mockRejectedValueOnce(new Error("nope"))],

@@ -1,7 +1,8 @@
 import { type FileDiffMetadata, processFile } from "@pierre/diffs";
 import type { PrCommentThread } from "@posthog/core/code-review/types";
+import { isBinaryFile } from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import { DeferredDiffPlaceholder, DiffFileHeader } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
 import { InteractiveFileDiff } from "./InteractiveFileDiff";
@@ -16,6 +17,8 @@ interface PatchedFileDiffProps {
   externalUrl?: string;
   prUrl?: string | null;
   commentThreads?: Map<number, PrCommentThread>;
+  /** Extra controls in the file header row (e.g. a "Viewed" toggle). */
+  headerTrailing?: ReactNode;
 }
 
 export function PatchedFileDiff({
@@ -28,6 +31,7 @@ export function PatchedFileDiff({
   externalUrl,
   prUrl,
   commentThreads,
+  headerTrailing,
 }: PatchedFileDiffProps) {
   const fileDiff = useMemo((): FileDiffMetadata | undefined => {
     if (!file.patch) return undefined;
@@ -45,6 +49,26 @@ export function PatchedFileDiff({
     }
     return null;
   }, [fileDiff, fallback, file.path]);
+  const commentCount = countPrCommentsForFile(commentThreads, file);
+
+  // Branch/PR diffs have no reliable local working-tree file to preview (the
+  // checkout may be on a different ref, and GitHub omits binary patches), so
+  // show a clean placeholder instead of letting the binary sentinel render.
+  if (isBinaryFile(file.path)) {
+    return (
+      <DeferredDiffPlaceholder
+        filePath={file.path}
+        linesAdded={file.linesAdded ?? 0}
+        linesRemoved={file.linesRemoved ?? 0}
+        reason="binary"
+        collapsed={collapsed}
+        onToggle={onToggle}
+        externalUrl={externalUrl}
+        commentCount={commentCount}
+        headerTrailing={headerTrailing}
+      />
+    );
+  }
 
   if (!diffSourceProps) {
     return (
@@ -56,6 +80,8 @@ export function PatchedFileDiff({
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}
+        commentCount={commentCount}
+        headerTrailing={headerTrailing}
       />
     );
   }
@@ -72,8 +98,26 @@ export function PatchedFileDiff({
           fileDiff={fd}
           collapsed={collapsed}
           onToggle={onToggle}
+          commentCount={commentCount}
+          trailing={headerTrailing}
         />
       )}
     />
   );
+}
+
+function countPrCommentsForFile(
+  threads: Map<number, PrCommentThread> | undefined,
+  file: Pick<ChangedFile, "path" | "originalPath">,
+): number {
+  let count = 0;
+  for (const thread of threads?.values() ?? []) {
+    if (
+      thread.filePath === file.path ||
+      (file.originalPath != null && thread.filePath === file.originalPath)
+    ) {
+      count += thread.comments.length;
+    }
+  }
+  return count;
 }

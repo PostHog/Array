@@ -29,6 +29,7 @@ export default defineConfig({
       subpath("api-client"),
       subpath("agent"),
       subpath("enricher"),
+      subpath("git"),
     ],
   },
   server: { port: 5273 },

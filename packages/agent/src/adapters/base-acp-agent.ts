@@ -23,6 +23,8 @@ import {
   type GatewayModel,
   getClaudeModelRecency,
   isAnthropicModel,
+  isCloudflareModel,
+  isCloudflareModelId,
 } from "../gateway-models";
 import { Logger } from "../utils/logger";
 /**
@@ -143,7 +145,9 @@ export abstract class BaseAcpAgent implements Agent {
     );
 
     const options = this.gatewayModels
-      .filter((model) => isAnthropicModel(model))
+      // Cloudflare models are servable on the Claude adapter too — the gateway translates the
+      // `@cf/` path onto its Anthropic-Messages surface — so include them alongside Anthropic models.
+      .filter((model) => isAnthropicModel(model) || isCloudflareModel(model))
       .map((model) => ({
         value: model.id,
         name: formatGatewayModelName(model),
@@ -156,19 +160,23 @@ export abstract class BaseAcpAgent implements Agent {
           getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
       );
 
-    const isAnthropicModelId = (modelId: string): boolean =>
-      modelId.startsWith("claude-") || modelId.startsWith("anthropic/");
+    // Models the Claude adapter can drive: Anthropic ids, plus Cloudflare `@cf/` ids the gateway
+    // serves over its Anthropic-Messages surface. Anything else (e.g. a Codex/GPT id) is a genuine
+    // adapter/model desync and falls back to the default.
+    const isClaudeAdapterModelId = (modelId: string): boolean =>
+      modelId.startsWith("claude-") ||
+      modelId.startsWith("anthropic/") ||
+      isCloudflareModelId(modelId);
 
     let currentModelId = currentModelOverride ?? DEFAULT_GATEWAY_MODEL;
 
     if (!options.some((opt) => opt.value === currentModelId)) {
-      if (!isAnthropicModelId(currentModelId)) {
-        // A non-Anthropic model id reached the Claude adapter, which means the
-        // adapter and model desynced upstream (e.g. a Codex model paired with
-        // the Claude adapter). Log it instead of silently masquerading as a
-        // deliberate Opus session.
+      if (!isClaudeAdapterModelId(currentModelId)) {
+        // A model the Claude adapter can't drive reached it, which means the adapter and model
+        // desynced upstream (e.g. a Codex model paired with the Claude adapter). Log it instead of
+        // silently masquerading as a deliberate Opus session.
         this.logger.warn(
-          "Non-Anthropic model requested on Claude adapter; falling back to default model",
+          "Incompatible model requested on Claude adapter; falling back to default model",
           {
             requestedModel: currentModelId,
             fallbackModel: DEFAULT_GATEWAY_MODEL,

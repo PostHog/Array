@@ -114,6 +114,7 @@ export class ContextMenuService {
       folderPath,
       isPinned,
       isSuspended,
+      canStop,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
       channels,
@@ -141,6 +142,9 @@ export class ContextMenuService {
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
       this.item("Rename", { type: "rename" }),
+      ...(canStop
+        ? [this.separator(), this.item("Stop task", { type: "stop" as const })]
+        : []),
       ...(worktreePath
         ? [
             this.separator(),
@@ -238,7 +242,7 @@ export class ContextMenuService {
         {
           confirm: {
             title: "Remove Folder",
-            message: `Remove "${folderName}" from Array?`,
+            message: `Remove "${folderName}"?`,
             detail:
               "This will clean up any worktrees but keep your folder and tasks intact.",
             confirmLabel: "Remove",

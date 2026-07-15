@@ -1,5 +1,7 @@
 export interface HedgehogModeHandle {
   destroy(): void;
+  /** True when the game's rendering context has died (e.g. GPU reset). */
+  isContextLost(): boolean;
 }
 
 export interface HedgehogModeMountOptions {
@@ -7,6 +9,8 @@ export interface HedgehogModeMountOptions {
   actorOptions?: unknown;
   /** Called when the user quits hedgehog mode from within the game. */
   onQuit: () => void;
+  /** Called when the game's rendering context is lost, so the ui can tear down and remount. */
+  onContextLost?: () => void;
 }
 
 /**

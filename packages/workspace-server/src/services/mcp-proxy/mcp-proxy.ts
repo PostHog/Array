@@ -123,7 +123,13 @@ export class McpProxyService {
     const target = this.targets.get(id);
 
     if (!target) {
-      this.log.warn("Unknown MCP proxy target", { id, url: req.url });
+      // MCP clients probe RFC 8414 OAuth discovery at the proxy root before
+      // falling back to direct auth; a quiet 404 is the expected answer.
+      if (id === ".well-known") {
+        this.log.debug("MCP proxy OAuth discovery probe", { url: req.url });
+      } else {
+        this.log.warn("Unknown MCP proxy target", { id, url: req.url });
+      }
       res.writeHead(404);
       res.end("Unknown target");
       return;
@@ -235,8 +241,17 @@ export class McpProxyService {
             responseHeaders: Object.fromEntries(response.headers.entries()),
             body: bodyText.slice(0, 2000),
           };
+          // Streamable-HTTP servers MAY answer the client's GET (SSE listen)
+          // with 405, and OAuth discovery probes 4xx on servers without OAuth.
+          // Both are expected client behavior, not failures worth a warn.
+          const expectedProbeRejection =
+            response.status < 500 &&
+            ((options.method === "GET" && response.status === 405) ||
+              url.includes("/.well-known/"));
           if (response.status >= 500) {
             this.log.error("MCP proxy server error", details);
+          } else if (expectedProbeRejection) {
+            this.log.debug("MCP proxy probe rejected upstream", details);
           } else {
             this.log.warn("MCP proxy non-OK body", details);
           }

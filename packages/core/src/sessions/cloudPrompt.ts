@@ -1,5 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
+  ATTACHMENT_SUMMARY_PREFIX,
   buildCloudTaskDescription,
   getAbsoluteAttachmentPaths,
   stripAbsoluteFileTags,
@@ -87,7 +88,7 @@ function summarizePrompt(text: string, filePaths: string[]): string {
     return text.trim();
   }
 
-  const attachmentSummary = `Attached files: ${filePaths.map(getFileName).join(", ")}`;
+  const attachmentSummary = `${ATTACHMENT_SUMMARY_PREFIX}${filePaths.map(getFileName).join(", ")}`;
   return text.trim()
     ? `${text.trim()}\n\n${attachmentSummary}`
     : attachmentSummary;

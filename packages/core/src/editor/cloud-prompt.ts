@@ -1,12 +1,14 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   CLOUD_PROMPT_PREFIX,
+  estimateBase64Bytes,
   getFileExtension,
   getFileName,
   getImageMimeType,
   isAbsolutePath,
   isClaudeImageFile,
   isRasterImageFile,
+  MAX_CLAUDE_IMAGE_BYTES,
   pathToFileUri,
   serializeCloudPrompt,
   unescapeXmlAttr,
@@ -66,8 +68,6 @@ const TEXT_FILENAMES = new Set([
   "README",
   "README.md",
 ]);
-const MAX_EMBEDDED_IMAGE_BYTES = 5 * 1024 * 1024;
-
 function isTextAttachment(filePath: string): boolean {
   const fileName = getFileName(filePath);
   const ext = getFileExtension(filePath);
@@ -76,11 +76,6 @@ function isTextAttachment(filePath: string): boolean {
 
 export function isSupportedCloudTextAttachment(filePath: string): boolean {
   return isTextAttachment(filePath);
-}
-
-function estimateBase64Bytes(base64: string): number {
-  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
-  return Math.floor((base64.length * 3) / 4) - padding;
 }
 
 function collectAbsoluteFileTagPaths(prompt: string): string[] {
@@ -147,6 +142,15 @@ export function getAbsoluteAttachmentPaths(
   );
 }
 
+export const ATTACHMENT_SUMMARY_PREFIX = "Attached files: ";
+const TRAILING_ATTACHMENT_SUMMARY_REGEX = new RegExp(
+  `(?:^|\\n)${ATTACHMENT_SUMMARY_PREFIX}[^\\n]*$`,
+);
+
+export function stripTrailingAttachmentSummary(text: string): string {
+  return text.replace(TRAILING_ATTACHMENT_SUMMARY_REGEX, "").trim();
+}
+
 export function buildCloudTaskDescription(
   prompt: string,
   filePaths: string[] = [],
@@ -160,7 +164,7 @@ export function buildCloudTaskDescription(
     return strippedPrompt;
   }
 
-  const attachmentSummary = `Attached files: ${attachmentNames.join(", ")}`;
+  const attachmentSummary = `${ATTACHMENT_SUMMARY_PREFIX}${attachmentNames.join(", ")}`;
   return strippedPrompt
     ? `${strippedPrompt}\n\n${attachmentSummary}`
     : attachmentSummary;
@@ -179,7 +183,7 @@ async function buildAttachmentBlock(
       throw new Error(`Unable to read attached image ${fileName}`);
     }
 
-    if (estimateBase64Bytes(base64) > MAX_EMBEDDED_IMAGE_BYTES) {
+    if (estimateBase64Bytes(base64) > MAX_CLAUDE_IMAGE_BYTES) {
       throw new Error(
         `${fileName} is too large for a cloud image attachment (max 5 MB)`,
       );

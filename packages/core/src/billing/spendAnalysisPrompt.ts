@@ -41,13 +41,13 @@ const PLAYBOOK = `## What to look at
 
 Use this playbook to interpret the numbers above. Apply the levers in order of impact; not every lever applies to every user.
 
-1. **Input tokens are the bill, not the tool calls themselves.** "Avg input" per tool is the context size dragged along on every call. A tool being expensive almost never means the tool itself is expensive — it means there were many calls each carrying a fat context. The biggest lever is conversation length, not which tool gets called: compact aggressively at logical checkpoints, start fresh sessions for unrelated tasks, avoid backtracking ("actually try X instead") because that re-runs all the prior context plus the alternative.
+1. **Input tokens are the bill, not the tool calls themselves.** "Avg input" per tool is the context size dragged along on every call. A tool being expensive almost never means the tool itself is expensive. It means there were many calls each carrying a fat context. The biggest lever is conversation length, not which tool gets called: compact aggressively at logical checkpoints, start fresh sessions for unrelated tasks, avoid backtracking ("actually try X instead") because that re-runs all the prior context plus the alternative.
 
 2. **Model choice.** Look at the "By model" table. If most generations are on the most expensive available model, switching the default to a mid-tier model and only escalating for genuinely hard reasoning is often the single biggest dollar saver. The cheapest tier is essentially free per call for routine work (run a test, check git status, grep for a string).
 
-3. **Subagent hygiene.** The Agent / subagent tool typically has a high avg input because subagents inherit a brief plus the tool registry. They're worth their cost when they protect the main conversation from a long exploration; they're not worth it for "read one file" or "grep one pattern" — use the direct tool.
+3. **Subagent hygiene.** The Agent / subagent tool typically has a high avg input because subagents inherit a brief plus the tool registry. They're worth their cost when they protect the main conversation from a long exploration; they're not worth it for "read one file" or "grep one pattern". Use the direct tool for those.
 
-4. **No-tool replies.** If the "By tool" table has a "(no tool)" row, that's the model replying with pure text — no action. Some of that is unavoidable (answering a question), some is the model thinking out loud or asking clarifying questions when it could just act. If this share is greater than ~10% of spend, more directive prompts ("Just do X" instead of "What do you think about X?") cut a round-trip per task.
+4. **No-tool replies.** If the "By tool" table has a "(no tool)" row, that's the model replying with pure text, no action. Some of that is unavoidable (answering a question), some is the model thinking out loud or asking clarifying questions when it could just act. If this share is greater than ~10% of spend, more directive prompts ("Just do X" instead of "What do you think about X?") cut a round-trip per task.
 
 5. **MCP / tool-registry overhead.** Tool calls that route through MCP (or any plugin layer that ships a tool registry on every turn) often show inflated avg input. If the user has many MCP servers enabled, pruning the ones they don't use shrinks the per-call overhead.
 
@@ -93,7 +93,7 @@ export function buildAnalysisPrompt(data: SpendAnalysisResponse): string {
 
   return `Here is my PostHog Code LLM spend for the last ${windowLabel}. Help me understand what's driving the cost and what concrete changes I should make to reduce it.
 
-Work only from the tables below — do **not** try to query PostHog AI observability or any external data source. The numbers here are everything you have. Rank advice by impact, lead with the biggest lever, and keep each suggestion concrete and actionable.
+Work only from the tables below. Do **not** try to query PostHog AI observability or any external data source. The numbers here are everything you have. Rank advice by impact, lead with the biggest lever, and keep each suggestion concrete and actionable.
 
 ## My spend
 

@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   test as base,
@@ -14,21 +15,21 @@ function getAppPath(): string {
   if (process.platform === "darwin") {
     const arm64Path = path.join(
       outDir,
-      "PostHog Code-darwin-arm64/PostHog Code.app/Contents/MacOS/PostHog Code",
+      "mac-arm64/PostHog Code.app/Contents/MacOS/PostHog Code",
     );
     const x64Path = path.join(
       outDir,
-      "PostHog Code-darwin-x64/PostHog Code.app/Contents/MacOS/PostHog Code",
+      "mac/PostHog Code.app/Contents/MacOS/PostHog Code",
     );
 
     if (requestedArch === "arm64") {
       if (existsSync(arm64Path)) return arm64Path;
-      throw new Error(`No darwin-arm64 packaged app found at ${arm64Path}.`);
+      throw new Error(`No mac-arm64 packaged app found at ${arm64Path}.`);
     }
 
     if (requestedArch === "x64") {
       if (existsSync(x64Path)) return x64Path;
-      throw new Error(`No darwin-x64 packaged app found at ${x64Path}.`);
+      throw new Error(`No mac x64 packaged app found at ${x64Path}.`);
     }
 
     if (existsSync(arm64Path)) return arm64Path;
@@ -40,10 +41,7 @@ function getAppPath(): string {
   }
 
   if (process.platform === "win32") {
-    const winPath = path.join(
-      outDir,
-      "PostHog Code-win32-x64/PostHog Code.exe",
-    );
+    const winPath = path.join(outDir, "win-unpacked/PostHog Code.exe");
     if (existsSync(winPath)) return winPath;
 
     throw new Error(
@@ -52,7 +50,7 @@ function getAppPath(): string {
   }
 
   if (process.platform === "linux") {
-    const linuxPath = path.join(outDir, "PostHog Code-linux-x64/PostHog Code");
+    const linuxPath = path.join(outDir, "linux-unpacked/PostHog Code");
     if (existsSync(linuxPath)) return linuxPath;
 
     throw new Error(
@@ -72,18 +70,33 @@ export const test = base.extend<ElectronFixtures>({
   // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture requires empty destructuring
   electronApp: async ({}, use) => {
     const appPath = getAppPath();
+    const e2eHome = mkdtempSync(path.join(os.tmpdir(), "posthog-code-e2e-"));
+    const e2eAppData = path.join(e2eHome, "app-data");
+    const e2eUserData = path.join(e2eHome, "user-data");
+    mkdirSync(e2eUserData, { recursive: true });
+    let electronApp: ElectronApplication | undefined;
 
-    const electronApp = await electron.launch({
-      executablePath: appPath,
-      args: [],
-      env: {
-        ...process.env,
-        ELECTRON_DISABLE_GPU: "1",
-      },
-    });
+    try {
+      electronApp = await electron.launch({
+        executablePath: appPath,
+        args: [],
+        env: {
+          ...process.env,
+          APPDATA: e2eAppData,
+          ELECTRON_DISABLE_GPU: "1",
+          HOME: e2eHome,
+          LOCALAPPDATA: e2eAppData,
+          POSTHOG_E2E_USER_DATA_DIR: e2eUserData,
+          USERPROFILE: e2eHome,
+          XDG_CONFIG_HOME: e2eAppData,
+        },
+      });
 
-    await use(electronApp);
-    await electronApp.close();
+      await use(electronApp);
+    } finally {
+      await electronApp?.close();
+      rmSync(e2eHome, { recursive: true, force: true });
+    }
   },
 
   window: async ({ electronApp }, use) => {

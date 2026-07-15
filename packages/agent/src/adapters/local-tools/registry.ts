@@ -15,6 +15,7 @@ export interface LocalToolCtx {
   /** GitHub token available to the sandbox, if any. */
   token?: string;
   taskId?: string;
+  taskRunId?: string;
   /**
    * Base branch of the task's repo (e.g. "master"); the signed-git tools fall
    * back to origin/HEAD detection when unset.
@@ -27,6 +28,8 @@ export interface LocalToolGateMeta {
   environment?: "local" | "cloud";
   /** Repo-less channel session: enables the lazy-repo tools. */
   channelMode?: boolean;
+  /** Spoken narration is on for this session: enables the speak tool. */
+  spokenNarration?: boolean;
 }
 
 /**

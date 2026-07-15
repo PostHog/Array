@@ -100,7 +100,11 @@ ${truncatedDiff}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system, model: HELPER_GATEWAY_MODEL },
+      {
+        system,
+        model: HELPER_GATEWAY_MODEL,
+        posthogProperties: { $ai_span_name: "commit_message" },
+      },
     );
 
     return { message: response.content.trim() };
@@ -110,7 +114,7 @@ ${truncatedDiff}${contextSection}`;
     directoryPath: string,
     conversationContext?: string,
   ): Promise<{ title: string; body: string }> {
-    await this.gitDiff.fetchIfStale(directoryPath);
+    await this.gitDiff.fetchFromRemote(directoryPath);
 
     const [defaultBranch, currentBranch, prTemplate] = await Promise.all([
       this.gitDiff.getDefaultBranch(directoryPath),
@@ -182,7 +186,7 @@ Rules for the body:
 - Be thorough but concise
 - Use markdown formatting
 - Only describe changes that are actually in the diff — do not invent or assume changes
-- Treat the target repository as public-readable. Do not include private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, or references to internal tickets / Slack threads / incidents — describe findings qualitatively instead
+- Treat the target repository as public-readable. Do not include private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, or the contents of Slack threads (do not quote or paraphrase what was said) — describe findings qualitatively instead. Linking to the originating Slack thread is fine and encouraged, as are channel references like "raised in #team-foo" — Slack links are auth-gated and useful as context.
 ${templateHint}
 
 Do not include any explanation outside the TITLE and BODY sections.`;
@@ -211,7 +215,12 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
 
     const response = await this.llm.prompt(
       [{ role: "user", content: userMessage }],
-      { system, maxTokens: 2000, model: HELPER_GATEWAY_MODEL },
+      {
+        system,
+        maxTokens: 2000,
+        model: HELPER_GATEWAY_MODEL,
+        posthogProperties: { $ai_span_name: "pr_description" },
+      },
     );
 
     const content = response.content.trim();
@@ -222,6 +231,40 @@ ${truncatedDiff || "(no diff available)"}${contextSection}`;
       title: titleMatch?.[1]?.trim() ?? "",
       body: bodyMatch?.[1]?.trim() ?? "",
     };
+  }
+
+  async generatePrShortSummary(
+    conversationContext?: string,
+    prTitle?: string,
+  ): Promise<{ summary: string }> {
+    if (!conversationContext && !prTitle) return { summary: "" };
+
+    const system = `You generate ultra-short labels for pull requests. Given context about a PR, output a label of 15-20 characters that captures what the PR does.
+
+Rules:
+- 15-20 characters total, never more than 24
+- Plain words, no punctuation, no quotes, no trailing period
+- Imperative mood ("Fix login loop" not "Fixed login loop")
+- Output only the label, nothing else`;
+
+    const parts: string[] = [];
+    if (prTitle) parts.push(`PR title: ${prTitle}`);
+    if (conversationContext) {
+      parts.push(`Conversation context:\n${conversationContext}`);
+    }
+
+    const response = await this.llm.prompt(
+      [{ role: "user", content: parts.join("\n\n") }],
+      {
+        system,
+        maxTokens: 30,
+        model: HELPER_GATEWAY_MODEL,
+        posthogProperties: { $ai_span_name: "pr_short_summary" },
+      },
+    );
+
+    const summary = response.content.trim().replace(/^["']|["']$/g, "");
+    return { summary: summary.length > 24 ? summary.slice(0, 24) : summary };
   }
 
   /**

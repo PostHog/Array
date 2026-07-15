@@ -25,6 +25,11 @@ export const POSTHOG_NOTIFICATIONS = {
   /** Agent finished processing a turn (prompt returned, waiting for next input) */
   TURN_COMPLETE: "_posthog/turn_complete",
 
+  /** Background/task-notification-triggered reply finished. Same rendering
+   * effect as TURN_COMPLETE (closes out the current turn) without touching
+   * the tracked prompt lifecycle that TURN_COMPLETE drives on the agent side. */
+  BACKGROUND_TURN_COMPLETE: "_posthog/background_turn_complete",
+
   /** Error occurred during task execution */
   ERROR: "_posthog/error",
 
@@ -78,7 +83,24 @@ export const POSTHOG_NOTIFICATIONS = {
 
   /** Permission request resolved, persisted so a reconnecting client can tell it is no longer pending */
   PERMISSION_RESOLVED: "_posthog/permission_resolved",
+
+  /** RTK output-compression token savings tallied at the end of a run */
+  RTK_SAVINGS: "_posthog/rtk_savings",
+
+  /** Latest native Codex goal state, persisted so cold cloud resumes can restore it. */
+  CODEX_GOAL: "_posthog/codex_goal",
 } as const;
+
+export type NativeGoalState = {
+  objective: string;
+  status:
+    | "active"
+    | "paused"
+    | "blocked"
+    | "usageLimited"
+    | "budgetLimited"
+    | "complete";
+};
 
 /**
  * Custom request methods for PostHog-specific operations that need a response

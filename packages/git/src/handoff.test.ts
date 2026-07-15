@@ -103,10 +103,9 @@ async function makeCloudChanges(
 }
 
 async function cleanupCapture(capture: GitHandoffCaptureResult): Promise<void> {
-  if (capture.headPack?.path) {
-    await rm(capture.headPack.path, { force: true }).catch(() => {});
-  }
-  await rm(capture.indexFile.path, { force: true }).catch(() => {});
+  await rm(capture.artifactDirectory, { recursive: true, force: true }).catch(
+    () => {},
+  );
 }
 
 async function captureAndApply(
@@ -145,6 +144,41 @@ async function captureAndApply(
 }
 
 describe("GitHandoffTracker", () => {
+  it("stores capture artifacts beside the git object store", async () => {
+    await withRepos(async (repos) => {
+      await makeCloudChanges(repos.cloudRepo, repos.cloudGit);
+
+      const captureTracker = new GitHandoffTracker({
+        repositoryPath: repos.cloudRepo,
+      });
+      const capture = await captureTracker.captureForHandoff(
+        repos.localGitState,
+      );
+      const gitCommonDir = (
+        await repos.cloudGit.raw([
+          "rev-parse",
+          "--path-format=absolute",
+          "--git-common-dir",
+        ])
+      ).trim();
+
+      try {
+        expect(path.dirname(capture.artifactDirectory)).toBe(gitCommonDir);
+        expect(path.dirname(path.dirname(capture.indexFile.path))).toBe(
+          gitCommonDir,
+        );
+        if (!capture.headPack) {
+          throw new Error("Expected handoff capture to include a pack file");
+        }
+        expect(path.dirname(path.dirname(capture.headPack.path))).toBe(
+          gitCommonDir,
+        );
+      } finally {
+        await cleanupCapture(capture);
+      }
+    });
+  }, 15000);
+
   it("captures and reapplies head, worktree, and index state from local files", async () => {
     await withRepos(async (repos) => {
       await makeCloudChanges(repos.cloudRepo, repos.cloudGit);
@@ -422,4 +456,67 @@ describe("GitHandoffTracker", () => {
       }
     });
   }, 15000);
+
+  it.each([
+    ["the branch's upstream tracking ref", false],
+    ["the remote default branch when the branch has no upstream", true],
+  ])(
+    "packs against %s when no local git state is provided",
+    async (_label, useBranchWithoutUpstream) => {
+      const originRepo = await setupRepo();
+      const sandboxRepo = await cloneRepo(originRepo);
+      try {
+        const sandboxGit = createGitClient(sandboxRepo);
+        const branch = (
+          await sandboxGit.revparse(["--abbrev-ref", "HEAD"])
+        ).trim();
+        const baseCommit = (
+          await sandboxGit.revparse([`origin/${branch}`])
+        ).trim();
+        const baseBlob = (
+          await sandboxGit.revparse([`origin/${branch}:tracked.txt`])
+        ).trim();
+
+        if (useBranchWithoutUpstream) {
+          await sandboxGit.checkout(["-b", "session-branch"]);
+        }
+
+        await writeFile(
+          path.join(sandboxRepo, "committed.txt"),
+          "session commit\n",
+        );
+        await sandboxGit.add(["committed.txt"]);
+        await sandboxGit.commit("Session commit");
+        const sessionCommit = (await sandboxGit.revparse(["HEAD"])).trim();
+
+        const tracker = new GitHandoffTracker({ repositoryPath: sandboxRepo });
+        const capture = await tracker.captureForHandoff();
+
+        try {
+          expect(capture.headPack).toBeDefined();
+          const packPath = capture.headPack?.path as string;
+          await execFileAsync("git", ["index-pack", packPath], {
+            cwd: sandboxRepo,
+          });
+          const idxPath = packPath.replace(/\.pack$/, ".idx");
+          const { stdout } = await execFileAsync(
+            "git",
+            ["verify-pack", "-v", idxPath],
+            { cwd: sandboxRepo },
+          );
+          await rm(idxPath, { force: true });
+
+          expect(stdout).toContain(sessionCommit);
+          expect(stdout).not.toContain(baseCommit);
+          expect(stdout).not.toContain(baseBlob);
+        } finally {
+          await cleanupCapture(capture);
+        }
+      } finally {
+        await rm(sandboxRepo, { recursive: true, force: true });
+        await rm(originRepo, { recursive: true, force: true });
+      }
+    },
+    15000,
+  );
 });

@@ -12,6 +12,7 @@ export interface TaskInputPrefill {
   initialCloudRepository?: string;
   initialModel?: string;
   initialMode?: string;
+  folderRunEnvironment?: "local" | "cloud";
   reportAssociation?: TaskInputReportAssociation;
 }
 

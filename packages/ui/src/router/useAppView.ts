@@ -12,6 +12,7 @@ export type AppViewType =
   | "task-input"
   | "folder-settings"
   | "home"
+  | "activity"
   | "inbox"
   | "agents"
   | "archived"
@@ -30,6 +31,7 @@ export interface AppView {
   initialCloudRepository?: string;
   initialModel?: string;
   initialMode?: string;
+  folderRunEnvironment?: "local" | "cloud";
   reportAssociation?: TaskInputReportAssociation;
 }
 
@@ -64,6 +66,8 @@ function deriveFromMatches(matches: Match[]): AppView {
     // active-state highlighting works identically in either space.
     case "/website/home":
       return { type: "home" };
+    case "/website/activity":
+      return { type: "activity" };
     case "/code/inbox":
       return { type: "inbox" };
     case "/code/agents":
@@ -143,6 +147,7 @@ export function useAppView(): AppView {
         initialCloudRepository: prefill.initialCloudRepository,
         initialModel: prefill.initialModel,
         initialMode: prefill.initialMode,
+        folderRunEnvironment: prefill.folderRunEnvironment,
         reportAssociation: prefill.reportAssociation,
         taskInputRequestId: prefill.requestId,
       };

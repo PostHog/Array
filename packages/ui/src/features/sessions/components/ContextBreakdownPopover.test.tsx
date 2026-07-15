@@ -29,6 +29,20 @@ describe("ContextBreakdownPopover", () => {
     expect(screen.getByText("37% full")).toBeInTheDocument();
   });
 
+  it("shows only the token count when the context window is unknown (size 0)", () => {
+    render(
+      <Theme>
+        <ContextBreakdownPopover
+          usage={usageWith(null, { used: 50_000, size: 0, percentage: 0 })}
+        />
+      </Theme>,
+    );
+    // No misleading "/ 0 tokens" denominator or "0% full" line.
+    expect(screen.getByText("~50K tokens")).toBeInTheDocument();
+    expect(screen.queryByText(/\/ 0 tokens/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/% full/)).not.toBeInTheDocument();
+  });
+
   it("shows the placeholder copy when breakdown is missing", () => {
     render(
       <Theme>

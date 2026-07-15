@@ -1,13 +1,18 @@
-import { Archive, GitPullRequest, PushPin } from "@phosphor-icons/react";
+import {
+  Archive,
+  GitFork,
+  GitPullRequest,
+  PushPin,
+} from "@phosphor-icons/react";
 import { parseGithubUrl } from "@posthog/git/utils";
 import type { WorkspaceMode } from "@posthog/shared";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
+import { navigateToPullRequestView } from "@posthog/ui/router/navigationBridge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DotsCircleSpinner } from "../../../../primitives/DotsCircleSpinner";
 import { NestedButton } from "../../../../primitives/NestedButton";
 import { Tooltip } from "../../../../primitives/Tooltip";
-import { openExternalUrl } from "../../../../shell/openExternal";
 import type { SidebarPrState } from "../../useTaskPrStatus";
 import { SidebarItem } from "../SidebarItem";
 import { ICON_SIZE, TaskIcon } from "./TaskIcon";
@@ -19,12 +24,23 @@ function PrBadge({ url, number }: { url: string; number: number }) {
         aria-label={`Open pull request #${number}`}
         className="flex h-4 shrink-0 cursor-pointer items-center gap-0.5 rounded bg-gray-3 px-1 text-[11px] text-gray-11 transition-colors hover:bg-gray-4 hover:text-gray-12"
         onActivate={() => {
-          openExternalUrl(url);
+          navigateToPullRequestView(url);
         }}
       >
         <GitPullRequest size={10} weight="bold" />
         {`#${number}`}
       </NestedButton>
+    </Tooltip>
+  );
+}
+
+function WorktreeChip({ name, path }: { name: string; path?: string }) {
+  return (
+    <Tooltip content={path ?? name} side="top">
+      <span className="flex h-4 max-w-[96px] shrink-0 items-center gap-0.5 rounded bg-gray-3 px-1 text-[11px] text-gray-11">
+        <GitFork size={10} weight="bold" className="shrink-0" />
+        <span className="truncate">{name}</span>
+      </span>
     </Tooltip>
   );
 }
@@ -39,6 +55,9 @@ interface TaskItemProps {
   isArchiving?: boolean;
   hideHoverActions?: boolean;
   workspaceMode?: WorkspaceMode;
+  /** Checkout name shown as a chip when the task runs in a git worktree. */
+  worktreeName?: string;
+  /** Full path of that checkout, surfaced in the chip's tooltip. */
   worktreePath?: string;
   isGenerating?: boolean;
   isUnread?: boolean;
@@ -112,6 +131,8 @@ export function TaskItem({
   isArchiving = false,
   hideHoverActions = false,
   workspaceMode,
+  worktreeName,
+  worktreePath,
   isSuspended = false,
   isGenerating,
   isUnread,
@@ -174,9 +195,14 @@ export function TaskItem({
       />
     ) : null;
 
+  const worktreeChip = worktreeName ? (
+    <WorktreeChip name={worktreeName} path={worktreePath} />
+  ) : null;
+
   const endContent =
-    prBadge || timestampNode || toolbar ? (
+    worktreeChip || prBadge || timestampNode || toolbar ? (
       <>
+        {worktreeChip}
         {prBadge}
         {timestampNode}
         {toolbar}

@@ -1,4 +1,4 @@
-import type { TaskCreationInput } from "@posthog/shared";
+import type { Adapter, TaskCreationInput } from "@posthog/shared";
 
 /** A selectable choice, either flat or wrapped in a labelled group. */
 export interface PreviewConfigChoice {
@@ -72,7 +72,7 @@ export interface BuildSignalReportTaskInput {
   reportId: string;
   cloudRepository: string;
   githubUserIntegrationId: string;
-  adapter: "claude" | "codex";
+  adapter: Adapter;
   model: string;
   reasoningLevel?: string;
   baseBranch?: string | null;

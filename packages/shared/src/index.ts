@@ -1,3 +1,4 @@
+export * from "./adapter";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -15,6 +16,34 @@ export {
   FONT_EXTENSIONS,
   isBinaryFile,
 } from "./binary";
+export {
+  activeTabIsBlank,
+  type CloseTabResult,
+  closeTab,
+  closeTabs,
+  decideTabNavigation,
+  newBlankTab,
+  type OpenTabResult,
+  openOrFocusTab,
+  POSITION_GAP,
+  primaryWindow,
+  primaryWindowHasNoTabs,
+  setTabOrder,
+  setTabTarget,
+  setWindowActiveTab,
+  type TabNavDecision,
+  type TabTarget,
+} from "./browser-tabs";
+export {
+  type BrowserTab,
+  type BrowserWindow,
+  browserTabSchema,
+  browserWindowSchema,
+  type TabsSnapshot,
+  tabsSnapshotSchema,
+  type WindowBounds,
+  windowBoundsSchema,
+} from "./browser-tabs-schemas";
 export type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 export {
   CLOUD_PROMPT_PREFIX,
@@ -48,11 +77,17 @@ export {
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,
 } from "./errors";
 export type { ExecutionMode } from "./exec-types";
+export {
+  CODEX_MODE_PRESETS,
+  type CodexModePreset,
+  resolveCloudInitialPermissionMode,
+} from "./execution-modes";
 export * from "./flags";
 export * from "./git-domain";
 export type {
@@ -73,6 +108,7 @@ export {
   buildImageDataUrl,
   CLAUDE_IMAGE_EXTENSIONS,
   type ClaudeImageMimeType,
+  estimateBase64Bytes,
   getImageMimeType,
   IMAGE_MIME_TYPES,
   isAllowedImageMimeType,
@@ -81,6 +117,7 @@ export {
   isGifFile,
   isImageFile,
   isRasterImageFile,
+  MAX_CLAUDE_IMAGE_BYTES,
   MAX_IMAGE_BASE64_LENGTH,
   type ParsedImageDataUrl,
   parseImageDataUrl,
@@ -88,6 +125,13 @@ export {
 export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
+export {
+  formatMention,
+  type MentionSegment,
+  mentionsToPlainText,
+  splitMentionSegments,
+} from "./mentions";
+export { defaultEligibleModel } from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
@@ -107,6 +151,13 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export {
+  buildPrOutput,
+  mergePrUrls,
+  promotePrUrl,
+  readPrSummaries,
+  readPrUrls,
+} from "./pr-urls";
 export {
   type CloudRegion,
   formatRegionBadge,
@@ -147,7 +198,6 @@ export {
   type UserShellExecuteResult,
 } from "./session-events";
 export {
-  type Adapter,
   type AgentSession,
   cycleModeOption,
   flattenSelectOptions,
@@ -158,7 +208,10 @@ export {
   type OptimisticItem,
   type PermissionRequest,
   type QueuedMessage,
+  resolveBypassRevertMode,
   type SessionStatus,
+  sendableQueuePrefixLength,
+  sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
   SignalReportOrderingField,
@@ -172,7 +225,11 @@ export type {
   SkillSource,
   UploadableSkillSource,
 } from "./skills";
-export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
+export {
+  SKILL_EXISTS_MARKER,
+  serializeSkillMarkdown,
+  stripFrontmatter,
+} from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,
@@ -189,11 +246,30 @@ export type {
 export {
   formatRelativeTimeLong,
   formatRelativeTimeShort,
+  getLocalDayDiff,
   getRelativeDateGroup,
 } from "./time";
+export {
+  mcpToolKey,
+  type PosthogToolMeta,
+  parseMcpToolName,
+  posthogToolMeta,
+  readAgentToolName,
+  readMcpToolDescriptor,
+  readMcpToolName,
+} from "./tool-meta";
 export { TypedEventEmitter } from "./typed-event-emitter";
 export { isSafeExternalUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";
+export {
+  ALLOWED_VIDEO_MIME_TYPES,
+  buildVideoDataUrl,
+  getVideoMimeType,
+  isAllowedVideoMimeType,
+  isPlayableVideoFile,
+  MAX_VIDEO_BASE64_LENGTH,
+  VIDEO_MIME_TYPES,
+} from "./video";
 export type { WorkspaceMode } from "./workspace";
 export * from "./workspace-domain";
 export { escapeXmlAttr, unescapeXmlAttr } from "./xml";

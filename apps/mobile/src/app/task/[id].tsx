@@ -18,6 +18,7 @@ import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
+import { StopRunButton } from "@/features/tasks/components/StopRunButton";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
 import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
@@ -39,6 +40,7 @@ import {
 } from "@/features/tasks/hooks/useMessagingMode";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
 import {
+  type MoveDirection,
   type QueuedMessage,
   useMessageQueueStore,
 } from "@/features/tasks/stores/messageQueueStore";
@@ -49,7 +51,14 @@ import {
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import type { Task } from "@/features/tasks/types";
-import { getSessionActivityPhase } from "@/features/tasks/utils/sessionActivity";
+import {
+  confirmStopRun,
+  isTaskRunning,
+} from "@/features/tasks/utils/archiveGuard";
+import {
+  countUserMessages,
+  getSessionActivityPhase,
+} from "@/features/tasks/utils/sessionActivity";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
   ANALYTICS_EVENTS,
@@ -101,6 +110,8 @@ export default function TaskDetailScreen() {
     getSessionForTask,
     setFocusedTaskId,
     steerQueuedMessage,
+    flushQueuedMessagesIfIdle,
+    stopRun,
   } = useTaskSessionStore();
 
   useEffect(() => {
@@ -165,6 +176,9 @@ export default function TaskDetailScreen() {
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
+  const editingQueuedId = useMessageQueueStore((s) =>
+    taskId ? s.editingByTaskId[taskId] : undefined,
+  );
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const analytics = useAnalytics();
 
@@ -304,6 +318,7 @@ export default function TaskDetailScreen() {
           model: composerModel,
           reasoningEffort: supportsReasoning ? composerReasoning : undefined,
           initialPermissionMode: composerMode,
+          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         });
         setTask(updatedTask);
         await connectToTask(updatedTask);
@@ -349,6 +364,18 @@ export default function TaskDetailScreen() {
       if (!taskId) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+      // Saving an in-place edit: overwrite the queued message and release the
+      // drain hold. If the turn already ended while editing, flush now — the
+      // turn-end drain won't fire again on its own.
+      const queue = useMessageQueueStore.getState();
+      const editingId = queue.editingByTaskId[taskId];
+      if (editingId) {
+        queue.update(taskId, editingId, { content: text, attachments });
+        queue.clearEditing(taskId);
+        flushQueuedMessagesIfIdle(taskId);
+        return;
+      }
+
       if (session?.terminalStatus) {
         handleSendAfterTerminal(text, attachments);
         return;
@@ -388,6 +415,7 @@ export default function TaskDetailScreen() {
       messagingMode,
       handleSendAfterTerminal,
       trackPromptSent,
+      flushQueuedMessagesIfIdle,
     ],
   );
 
@@ -412,10 +440,13 @@ export default function TaskDetailScreen() {
     [taskId, steerQueuedMessage, trackPromptSent],
   );
 
-  const handleReturnQueuedToComposer = useCallback(
+  // Pull a queued message into the composer for an in-place edit. It stays in
+  // the queue at its position (marked as the edit target); the next send saves
+  // it back rather than sending a new prompt.
+  const handleEditQueued = useCallback(
     (message: QueuedMessage) => {
       if (!taskId) return;
-      useMessageQueueStore.getState().remove(taskId, message.id);
+      useMessageQueueStore.getState().setEditing(taskId, message.id);
       setRestoredDraft({
         text: message.content,
         attachments: message.attachments,
@@ -424,10 +455,29 @@ export default function TaskDetailScreen() {
     [taskId],
   );
 
+  const handleCancelEdit = useCallback(() => {
+    if (!taskId) return;
+    useMessageQueueStore.getState().clearEditing(taskId);
+    setRestoredDraft({ text: "", attachments: [] });
+    flushQueuedMessagesIfIdle(taskId);
+  }, [taskId, flushQueuedMessagesIfIdle]);
+
+  const handleMoveQueued = useCallback(
+    (message: QueuedMessage, direction: MoveDirection) => {
+      if (!taskId) return;
+      Haptics.selectionAsync();
+      useMessageQueueStore.getState().move(taskId, message.id, direction);
+    },
+    [taskId],
+  );
+
   const handleDiscardQueued = useCallback(
     (message: QueuedMessage) => {
       if (!taskId) return;
+      const wasEditing =
+        useMessageQueueStore.getState().editingByTaskId[taskId] === message.id;
       useMessageQueueStore.getState().remove(taskId, message.id);
+      if (wasEditing) setRestoredDraft({ text: "", attachments: [] });
     },
     [taskId],
   );
@@ -470,6 +520,37 @@ export default function TaskDetailScreen() {
     cancelPrompt(taskId).catch(() => {});
   }, [taskId, cancelPrompt]);
 
+  const handleStopRun = useCallback(() => {
+    if (!taskId) return;
+    confirmStopRun(() => {
+      const promptsSent = countUserMessages(getSessionForTask(taskId)?.events);
+      stopRun(taskId)
+        .then((ok) => {
+          if (ok) {
+            analytics.track(ANALYTICS_EVENTS.TASK_RUN_STOPPED, {
+              task_id: taskId,
+              execution_type: "cloud",
+              prompts_sent: promptsSent,
+            });
+          } else {
+            Alert.alert(
+              "Couldn't stop",
+              "The run could not be stopped. Please try again.",
+            );
+          }
+        })
+        .catch(() => {});
+    });
+  }, [taskId, stopRun, analytics, getSessionForTask]);
+
+  const canStopRun =
+    !!task &&
+    !!session &&
+    !session.terminalStatus &&
+    !session.stopRequested &&
+    task.latest_run?.environment !== "local" &&
+    isTaskRunning(task);
+
   const handleRetry = useCallback(async () => {
     if (!taskId || !task) return;
     try {
@@ -478,6 +559,7 @@ export default function TaskDetailScreen() {
 
       const updatedTask = await runTaskInCloud(taskId, {
         resumeFromRunId: task.latest_run?.id,
+        rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
       });
       setTask(updatedTask);
       await connectToTask(updatedTask);
@@ -585,7 +667,9 @@ export default function TaskDetailScreen() {
         title={showLoading ? "Loading..." : task?.title || "Task"}
         subtitle={task?.repository ?? undefined}
         rightSlot={
-          prUrl ? (
+          canStopRun ? (
+            <StopRunButton onPress={handleStopRun} />
+          ) : prUrl ? (
             <>
               <PrDiffStatsBadge prUrl={prUrl} />
               <PrStatusBadge prUrl={prUrl} />
@@ -674,13 +758,16 @@ export default function TaskDetailScreen() {
                 !session?.terminalStatus
               }
               onSteer={handleSteerQueued}
-              onReturnToComposer={handleReturnQueuedToComposer}
+              onEdit={handleEditQueued}
               onDiscard={handleDiscardQueued}
+              onMove={handleMoveQueued}
             />
           ) : null}
           <TaskChatComposer
             onSend={handleSendPrompt}
             restoredDraft={restoredDraft}
+            editing={!!editingQueuedId}
+            onCancelEdit={handleCancelEdit}
             onStop={handleStop}
             isUserTurn={!(session?.isPromptPending ?? true)}
             placeholder={

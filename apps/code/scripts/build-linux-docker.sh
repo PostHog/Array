@@ -8,8 +8,8 @@ case "$ARCH" in
   *) echo "Unsupported ARCH=$ARCH (expected x64 or arm64)" >&2; exit 1 ;;
 esac
 
-# Optional maker targets. Without any, all configured makers run (default).
-# Accept friendly aliases or full maker package names, via repeatable
+# Optional builder targets. Without any, all configured targets run (default).
+# Accept friendly aliases or electron-builder target names, via repeatable
 # --target/--targets flags (comma-separated) or the TARGETS env var.
 RAW_TARGETS="${TARGETS:-}"
 while [ $# -gt 0 ]; do
@@ -28,10 +28,6 @@ if [ -n "$RAW_TARGETS" ]; then
   for t in "${_targets[@]}"; do
     t="$(echo "$t" | tr '[:upper:]' '[:lower:]' | xargs)" # lowercase + trim
     [ -z "$t" ] && continue
-    # Forge's --targets matches each configured maker's `.name` (its display
-    # name), NOT its npm package name. Passing the package name makes Forge
-    # fall back to a fresh, UNCONFIGURED maker (dropping options like `bin`),
-    # which then fails to locate the packaged executable. Map to `.name`.
     case "$t" in
       deb)      pkg="deb" ;;
       rpm)      pkg="rpm" ;;
@@ -39,7 +35,7 @@ if [ -n "$RAW_TARGETS" ]; then
       appimage) pkg="AppImage" ;;
       *) echo "Unknown target '$t' (expected: deb, rpm, zip, or appimage)" >&2; exit 1 ;;
     esac
-    MAKE_TARGETS="${MAKE_TARGETS:+$MAKE_TARGETS,}$pkg"
+    MAKE_TARGETS="${MAKE_TARGETS:+$MAKE_TARGETS }$pkg"
   done
 fi
 
@@ -96,9 +92,13 @@ COPYFILE_DISABLE=1 tar -cf - \
       pnpm --filter @posthog/git build
       pnpm --filter @posthog/enricher build
       pnpm --filter @posthog/agent build
-      MAKE_TARGETS_FLAG=""
-      [ -n "${MAKE_TARGETS:-}" ] && MAKE_TARGETS_FLAG="--targets=$MAKE_TARGETS"
-      pnpm --filter code make --platform=linux --arch="$ARCH" $MAKE_TARGETS_FLAG
+      cd apps/code
+      pnpm exec electron-vite build
+      if [ -n "${MAKE_TARGETS:-}" ]; then
+        pnpm exec electron-builder build --linux $MAKE_TARGETS --${ARCH} --config electron-builder.ts
+      else
+        pnpm exec electron-builder build --linux --${ARCH} --config electron-builder.ts
+      fi
       mkdir -p /out
-      cp -r apps/code/out/make /out/
+      cp -r out/. /out/
     '

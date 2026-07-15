@@ -124,19 +124,6 @@ function createSender(
   });
 }
 
-async function waitFor(
-  predicate: () => boolean,
-  timeoutMs = 100,
-): Promise<void> {
-  const deadlineAtMs = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadlineAtMs) {
-      throw new Error("Timed out waiting for condition");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1));
-  }
-}
-
 describe("TaskRunEventStreamSender", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -187,89 +174,108 @@ describe("TaskRunEventStreamSender", () => {
     ]);
   });
 
-  it("keeps the active ingest request open across scheduled flushes", async () => {
-    const requestBodies: string[] = [];
-    let activeStreamClosed = false;
+  it("routes the ingest POST to the agent-proxy run-scoped path when eventIngestBaseUrl is set", async () => {
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
-        if (!init?.body || typeof init.body === "string") {
-          const body = await readRequestBody(init);
-          requestBodies.push(body);
-          return responseForBody(body);
-        }
-
         const body = await readRequestBody(init);
-        activeStreamClosed = true;
-        requestBodies.push(body);
         return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = createSender({ flushDelayMs: 0 });
-
-    sender.enqueue({ type: "notification", notification: { method: "first" } });
-    await waitFor(() => fetchMock.mock.calls.length === 2);
-    expect(activeStreamClosed).toBe(false);
-
-    sender.enqueue({
-      type: "notification",
-      notification: { method: "second" },
+    const sender = createSender({
+      eventIngestBaseUrl: "http://agent-proxy:8003/",
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(activeStreamClosed).toBe(false);
-
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
     await sender.stop();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(activeStreamClosed).toBe(true);
-    expect(parseLines(requestBodies[1])).toEqual([
-      {
-        seq: 1,
-        event: { type: "notification", notification: { method: "first" } },
-      },
-      {
-        seq: 2,
-        event: { type: "notification", notification: { method: "second" } },
-      },
-      { type: STREAM_COMPLETE_CONTROL_TYPE, final_seq: 2 },
-    ]);
+    expect(fetchMock).toHaveBeenCalled();
+    const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(lastCall[0]).toBe("http://agent-proxy:8003/v1/runs/run-1/ingest");
+    expect(lastCall[0]).not.toContain("/api/projects/");
   });
 
-  it("closes an idle active ingest request after the stream window elapses", async () => {
+  it("closes the ingest upload per drained batch on the proxy path by default", async () => {
     const requestBodies: string[] = [];
-    let activeStreamClosed = false;
+    let contentUploads = 0;
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
         if (!init?.body || typeof init.body === "string") {
           return responseForBody(await readRequestBody(init));
         }
 
+        // Resolves only once the sender closes the upload body.
         const body = await readRequestBody(init);
-        activeStreamClosed = true;
+        contentUploads += 1;
         requestBodies.push(body);
         return responseForBody(body);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const sender = createSender({ flushDelayMs: 0, streamWindowMs: 5 });
+    const sender = createSender({
+      flushDelayMs: 0,
+      eventIngestBaseUrl: "http://agent-proxy:8003/",
+    });
 
     sender.enqueue({ type: "notification", notification: { method: "first" } });
-    await waitFor(() => fetchMock.mock.calls.length === 2);
-    expect(activeStreamClosed).toBe(false);
+    await vi.waitFor(() => expect(contentUploads).toBe(1));
 
-    await waitFor(() => activeStreamClosed, 200);
-    expect(eventSequences(requestBodies[0])).toEqual([1]);
-    expect(completionSequences(requestBodies[0])).toEqual([]);
+    sender.enqueue({
+      type: "notification",
+      notification: { method: "second" },
+    });
+    await vi.waitFor(() => expect(contentUploads).toBe(2));
 
     await sender.stop();
 
-    expect(eventSequences(requestBodies[1])).toEqual([]);
-    expect(completionSequences(requestBodies[1])).toEqual([1]);
+    expect(eventSequences(requestBodies[0] ?? "")).toEqual([1]);
+    expect(eventSequences(requestBodies[1] ?? "")).toEqual([2]);
+  });
+
+  it("holds one long-lived upload across batches when keepProxyStreamOpen is set", async () => {
+    const requestBodies: string[] = [];
+    let streamingRequests = 0;
+    let contentUploads = 0;
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        if (!init?.body || typeof init.body === "string") {
+          return responseForBody(await readRequestBody(init));
+        }
+
+        // Counted on open; resolves only once the sender closes the upload body.
+        streamingRequests += 1;
+        const body = await readRequestBody(init);
+        contentUploads += 1;
+        requestBodies.push(body);
+        return responseForBody(body);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sender = createSender({
+      flushDelayMs: 0,
+      eventIngestBaseUrl: "http://agent-proxy:8003/",
+      keepProxyStreamOpen: true,
+    });
+
+    sender.enqueue({ type: "notification", notification: { method: "first" } });
+    // First batch opens the upload and holds it open: nothing is delivered yet.
+    await vi.waitFor(() => expect(streamingRequests).toBe(1));
+    expect(contentUploads).toBe(0);
+
+    // A second batch reuses the held-open upload instead of opening another.
+    sender.enqueue({
+      type: "notification",
+      notification: { method: "second" },
+    });
+    await sender.stop();
+
+    expect(streamingRequests).toBe(1);
+    expect(contentUploads).toBe(1);
+    const finalBody = requestBodies.at(-1) ?? "";
+    expect(eventSequences(finalBody)).toEqual([1, 2]);
+    expect(completionSequences(finalBody)).toEqual([2]);
   });
 
   it("aborts a stuck ingest response after closing the request body", async () => {

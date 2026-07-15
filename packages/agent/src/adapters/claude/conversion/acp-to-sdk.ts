@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 import type { PromptRequest } from "@agentclientprotocol/sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
-import { isClaudeImageMimeType, isImageFile } from "@posthog/shared";
+import {
+  estimateBase64Bytes,
+  isClaudeImageMimeType,
+  isImageFile,
+  MAX_CLAUDE_IMAGE_BYTES,
+} from "@posthog/shared";
+import { isLocalSkillCommandChunk } from "../../local-skill";
 
 const PDF_EXTENSIONS = new Set(["pdf"]);
 
@@ -80,18 +86,6 @@ function transformMcpCommand(text: string): string {
   return text;
 }
 
-function isLocalSkillCommandChunk(
-  chunk: PromptRequest["prompt"][number],
-  skillName: string,
-): boolean {
-  if (chunk.type !== "text") {
-    return false;
-  }
-
-  const match = chunk.text.trim().match(/^\/([^\s]+)(?:\s+[\s\S]*)?$/);
-  return match?.[1] === skillName;
-}
-
 function processPromptChunk(
   chunk: PromptRequest["prompt"][number],
   content: ContentBlockParam[],
@@ -131,7 +125,22 @@ function processPromptChunk(
 
     case "image":
       if (chunk.data) {
-        if (isClaudeImageMimeType(chunk.mimeType)) {
+        if (!isClaudeImageMimeType(chunk.mimeType)) {
+          content.push(
+            sdkText(
+              `[Unsupported image MIME type: ${chunk.mimeType}. Supported: image/jpeg, image/png, image/gif, image/webp.]`,
+            ),
+          );
+        } else if (estimateBase64Bytes(chunk.data) > MAX_CLAUDE_IMAGE_BYTES) {
+          // An oversized image would be rejected by the API and, once baked
+          // into the resumable session, keep failing every subsequent turn.
+          // Drop it to a text note here rather than poison the transcript.
+          content.push(
+            sdkText(
+              "[Image omitted: exceeds the 5 MB per-image limit and cannot be processed.]",
+            ),
+          );
+        } else {
           content.push({
             type: "image",
             source: {
@@ -140,12 +149,6 @@ function processPromptChunk(
               media_type: chunk.mimeType,
             },
           });
-        } else {
-          content.push(
-            sdkText(
-              `[Unsupported image MIME type: ${chunk.mimeType}. Supported: image/jpeg, image/png, image/gif, image/webp.]`,
-            ),
-          );
         }
       } else if (chunk.uri?.startsWith("http")) {
         content.push({

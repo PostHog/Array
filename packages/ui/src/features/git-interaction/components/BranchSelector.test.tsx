@@ -21,6 +21,9 @@ vi.mock("@posthog/host-router/react", () => ({
       getAllBranches: { queryOptions: () => ({}) },
       checkoutBranch: { mutationOptions: () => ({}) },
     },
+    workspace: {
+      listRepoCheckouts: { queryOptions: () => ({}) },
+    },
   }),
 }));
 
@@ -163,5 +166,59 @@ describe("BranchSelector cloud mode", () => {
     );
 
     expect(onCloudBranchCommit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("BranchSelector checkout context", () => {
+  it.each([
+    {
+      name: "local mode shows which checkout the branch switch applies to",
+      workspaceMode: "local" as const,
+      expectedPrefix: "Branch in",
+    },
+    {
+      name: "worktree mode labels the pick as the base branch for the checkout",
+      workspaceMode: "worktree" as const,
+      expectedPrefix: "Base branch for",
+    },
+  ])("$name", async ({ workspaceMode, expectedPrefix }) => {
+    const user = userEvent.setup();
+    renderInTheme(
+      <BranchSelector
+        repoPath="/repos/code-wt"
+        currentBranch="main"
+        workspaceMode={workspaceMode}
+        onBranchSelect={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Branch" }));
+
+    const contextRow = await screen.findByText(expectedPrefix, {
+      exact: false,
+    });
+    expect(contextRow).toHaveTextContent(`${expectedPrefix} code-wt`);
+    expect(contextRow).toHaveAttribute("title", "/repos/code-wt");
+  });
+
+  it("shows no checkout row in cloud mode (the repo picker sits next to it)", async () => {
+    const user = userEvent.setup();
+    renderInTheme(
+      <BranchSelector
+        repoPath="owner/repo"
+        currentBranch={null}
+        workspaceMode="cloud"
+        cloudBranches={["main"]}
+        cloudBranchesLoading={false}
+        cloudSearchQuery=""
+        onBranchSelect={vi.fn()}
+        onCloudSearchChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Branch" }));
+
+    expect(screen.queryByText("Branch in", { exact: false })).toBeNull();
+    expect(screen.queryByText("Base branch for", { exact: false })).toBeNull();
   });
 });

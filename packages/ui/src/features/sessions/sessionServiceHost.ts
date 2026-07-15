@@ -23,15 +23,18 @@ import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
+import { SpeechNotifier } from "@posthog/ui/features/notifications/speechNotifier";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
   removePersistedConfigOptions,
   setPersistedConfigOptions,
-  updatePersistedConfigOptionValue,
 } from "@posthog/ui/features/sessions/sessionConfigStore";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  getEffectiveCustomInstructions,
+  useSettingsStore,
+} from "@posthog/ui/features/settings/settingsStore";
 import { taskViewedApi } from "@posthog/ui/features/sidebar/taskMetaApi";
 import { WORKSPACE_QUERY_KEY } from "@posthog/ui/features/workspace/identifiers";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -62,6 +65,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
   const cloudArtifactService = new CloudArtifactService(
     (filePath) => trpc.fs.readFileAsBase64.query({ filePath }),
     (skillBundleRef) => trpc.skills.bundleLocal.query(skillBundleRef),
+    (skillBundleRefs) => trpc.skills.resolveDependencies.query(skillBundleRefs),
   );
 
   return {
@@ -84,12 +88,14 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         taskTitle,
         taskId,
       ),
-    notifyPromptComplete: (taskTitle, stopReason, taskId) =>
+    notifyPromptComplete: (taskTitle, stopReason, taskId, durationMs) =>
       resolveService(NotificationBus).notifyPromptComplete(
         taskTitle,
         stopReason,
         taskId,
+        durationMs,
       ),
+    enqueueSpeech: (request) => resolveService(SpeechNotifier).speak(request),
     getIsOnline,
     fetchAuthState,
     getAuthenticatedClient,
@@ -98,7 +104,6 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       getPersistedConfigOptions(taskRunId) ?? undefined,
     setPersistedConfigOptions,
     removePersistedConfigOptions,
-    updatePersistedConfigOptionValue,
     adapterStore: {
       getAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().getAdapter(taskRunId),
@@ -108,7 +113,11 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         useSessionAdapterStore.getState().removeAdapter(taskRunId),
     },
     get settings() {
-      return useSettingsStore.getState();
+      const state = useSettingsStore.getState();
+      return {
+        ...state,
+        customInstructions: getEffectiveCustomInstructions(state),
+      };
     },
     usageLimit: {
       show: (...args) => useUsageLimitStore.getState().show(...args),

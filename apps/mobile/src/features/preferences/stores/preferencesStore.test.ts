@@ -55,6 +55,32 @@ describe("preferencesStore reasoning effort", () => {
   });
 });
 
+describe("preferencesStore scale sound with task length", () => {
+  it("defaults to false", () => {
+    expect(usePreferencesStore.getState().scaleSoundWithTaskLength).toBe(false);
+  });
+
+  it.each([true, false])("updates to %s via setter", (enabled) => {
+    usePreferencesStore.getState().setScaleSoundWithTaskLength(enabled);
+    expect(usePreferencesStore.getState().scaleSoundWithTaskLength).toBe(
+      enabled,
+    );
+  });
+
+  it("persists the value to storage", async () => {
+    const AsyncStorage = (
+      await import("@react-native-async-storage/async-storage")
+    ).default;
+    usePreferencesStore.getState().setScaleSoundWithTaskLength(true);
+    await Promise.resolve();
+    const persisted = await AsyncStorage.getItem("posthog-preferences");
+    expect(persisted).not.toBeNull();
+    expect(JSON.parse(persisted as string).state.scaleSoundWithTaskLength).toBe(
+      true,
+    );
+  });
+});
+
 describe("preferencesStore font size", () => {
   it("defaults to a known preference with a 'default' scale of 1", () => {
     const { fontSize } = usePreferencesStore.getState();

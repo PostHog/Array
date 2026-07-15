@@ -21,6 +21,18 @@ import os from "node:os";
 import path from "node:path";
 import { app, crashReporter, protocol } from "electron";
 import { fixPath } from "./utils/fixPath";
+import { shouldRefuseInternalChildBoot } from "./utils/internal-child-guard";
+
+// The internal-child marker means a workspace-server descendant stripped
+// ELECTRON_RUN_AS_NODE and ran `node` or process.execPath; booting a full app
+// here would race the single-instance lock and open phantom windows.
+if (shouldRefuseInternalChildBoot(app.isPackaged, process.env)) {
+  process.stderr.write(
+    "[posthog-code] Refusing to start the desktop app from inside its own " +
+      "child process tree (expected ELECTRON_RUN_AS_NODE=1).\n",
+  );
+  process.exit(1);
+}
 
 const isDev = !app.isPackaged;
 
@@ -30,7 +42,9 @@ app.setName(isDev ? "PostHog Code (Development)" : "PostHog Code");
 
 // Set userData path for @posthog/code
 const appDataPath = app.getPath("appData");
-const userDataPath = path.join(appDataPath, "@posthog", appName);
+const userDataPath =
+  process.env.POSTHOG_E2E_USER_DATA_DIR ??
+  path.join(appDataPath, "@posthog", appName);
 app.setPath("userData", userDataPath);
 
 // Export the electron-derived state to env so utility singletons (utils/*,
@@ -57,6 +71,23 @@ process.env.POSTHOG_CODE_CHROMIUM_LOG_PATH = chromiumLogPath;
 app.commandLine.appendSwitch("enable-logging", "file");
 app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
+
+// Allow programmatic audio playback without a prior user gesture. The agent
+// speaks (and completion sounds ring) autonomously, with no click at that
+// moment, so Chromium's default gesture requirement would silently reject
+// HTMLMediaElement.play(). Must be set before app "ready".
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
+// In dev, expose the renderer over CDP (:9222 by default) for the
+// test-electron-app skill. electron-vite launches Electron itself, so this is
+// set in-process rather than via a CLI flag. POSTHOG_CODE_CDP_PORT matches the
+// port resolution in scripts/electron-cdp.mjs, for when :9222 is taken.
+if (isDev) {
+  app.commandLine.appendSwitch(
+    "remote-debugging-port",
+    process.env.POSTHOG_CODE_CDP_PORT ?? "9222",
+  );
+}
 
 crashReporter.start({ uploadToServer: false });
 

@@ -3,6 +3,9 @@ export interface GithubConnectError {
   code: string | null;
 }
 
+export const GITHUB_CONNECT_TIMEOUT_MESSAGE =
+  "We didn't hear back from GitHub. If your organization requires approval to install the PostHog app, ask a GitHub org owner to approve it, then connect again.";
+
 export const GITHUB_CONNECT_ERROR_MESSAGES: Record<string, string> = {
   access_denied:
     "You declined access on GitHub. Try again to grant the permissions PostHog Code needs.",

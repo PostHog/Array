@@ -45,6 +45,8 @@ import {
 } from "./services/fs/schemas";
 import type { FsService } from "./services/fs/service";
 import {
+  approvePrInput,
+  approvePrOutput,
   changedFilesOutput,
   checkoutBranchInput,
   checkoutBranchOutput,
@@ -62,6 +64,7 @@ import {
   diffStatsInput,
   diffStatsSchema,
   directoryPathInput,
+  discardAllChangesInput,
   discardFileChangesInput,
   discardFileChangesOutput,
   filePathInput,
@@ -79,10 +82,16 @@ import {
   getHeadShaOutput,
   getLocalBranchChangedFilesInput,
   getPrChangedFilesInput,
+  getPrChecksInput,
+  getPrChecksOutput,
+  getPrCommentsInput,
+  getPrCommentsOutput,
   getPrDetailsByUrlInput,
   getPrDetailsByUrlOutput,
   getPrDiffStatsBatchInput,
   getPrDiffStatsBatchOutput,
+  getPrInfoByUrlInput,
+  getPrInfoByUrlOutput,
   getPrReviewCommentsInput,
   getPrReviewCommentsOutput,
   getPrTemplateInput,
@@ -100,6 +109,8 @@ import {
   syncInput as gitSyncInput,
   syncOutput as gitSyncOutput,
   gitSyncStatusSchema,
+  mergePrInput,
+  mergePrOutput,
   openPrInput,
   openPrOutput,
   prStatusOutput,
@@ -130,8 +141,12 @@ import {
   countLocalLogEntriesInput,
   countLocalLogEntriesOutput,
   deleteLocalLogCacheInput,
+  readLocalLogsCollapsedInput,
+  readLocalLogsCollapsedOutput,
   readLocalLogsInput,
   readLocalLogsOutput,
+  readLocalLogsTailInput,
+  readLocalLogsTailOutput,
   seedLocalLogsInput,
   writeLocalLogsInput,
 } from "./services/local-logs/schemas";
@@ -426,7 +441,7 @@ export function createAppRouter({
         .query(({ input }) =>
           gitService().getGitSyncStatus(
             input.directoryPath,
-            input.forceRefresh,
+            input.fetchFromRemote,
           ),
         ),
 
@@ -466,6 +481,13 @@ export function createAppRouter({
             input.filePath,
             input.fileStatus,
           ),
+        ),
+
+      discardAllChanges: t.procedure
+        .input(discardAllChangesInput)
+        .output(discardFileChangesOutput)
+        .mutation(({ input }) =>
+          gitService().discardAllChanges(input.directoryPath),
         ),
 
       push: t.procedure
@@ -555,6 +577,21 @@ export function createAppRouter({
         .output(getPrDetailsByUrlOutput.nullable())
         .query(({ input }) => gitService().getPrDetailsByUrl(input.prUrl)),
 
+      getPrInfoByUrl: t.procedure
+        .input(getPrInfoByUrlInput)
+        .output(getPrInfoByUrlOutput.nullable())
+        .query(({ input }) => gitService().getPrInfoByUrl(input.prUrl)),
+
+      getPrChecks: t.procedure
+        .input(getPrChecksInput)
+        .output(getPrChecksOutput)
+        .query(({ input }) => gitService().getPrChecks(input.prUrl)),
+
+      getPrComments: t.procedure
+        .input(getPrCommentsInput)
+        .output(getPrCommentsOutput)
+        .query(({ input }) => gitService().getPrComments(input.prUrl)),
+
       getPrChangedFiles: t.procedure
         .input(getPrChangedFilesInput)
         .output(changedFilesOutput)
@@ -587,6 +624,18 @@ export function createAppRouter({
         .output(updatePrByUrlOutput)
         .mutation(({ input }) =>
           gitService().updatePrByUrl(input.prUrl, input.action),
+        ),
+
+      approvePr: t.procedure
+        .input(approvePrInput)
+        .output(approvePrOutput)
+        .mutation(({ input }) => gitService().approvePr(input.prUrl)),
+
+      mergePr: t.procedure
+        .input(mergePrInput)
+        .output(mergePrOutput)
+        .mutation(({ input }) =>
+          gitService().mergePr(input.prUrl, input.method),
         ),
 
       getPrReviewComments: t.procedure
@@ -748,12 +797,6 @@ export function createAppRouter({
         }
       }),
     }),
-    diffStats: t.router({
-      getDiffStats: t.procedure
-        .input(diffStatsInput)
-        .output(diffStatsSchema)
-        .query(({ input }) => gitService().getDiffStats(input.directoryPath)),
-    }),
     fs: t.router({
       listDirectory: t.procedure
         .input(listDirectoryInput)
@@ -852,6 +895,20 @@ export function createAppRouter({
         .output(readLocalLogsOutput)
         .query(({ input }) =>
           localLogsService().readLocalLogs(input.taskRunId),
+        ),
+
+      readCollapsed: t.procedure
+        .input(readLocalLogsCollapsedInput)
+        .output(readLocalLogsCollapsedOutput)
+        .query(({ input }) =>
+          localLogsService().readLocalLogsCollapsed(input.taskRunId),
+        ),
+
+      readTail: t.procedure
+        .input(readLocalLogsTailInput)
+        .output(readLocalLogsTailOutput)
+        .query(({ input }) =>
+          localLogsService().readLocalLogsTail(input.taskRunId, input.maxBytes),
         ),
 
       write: t.procedure

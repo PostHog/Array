@@ -1,13 +1,12 @@
-import { cn } from "@posthog/quill";
+import { Button, cn } from "@posthog/quill";
+import { CHANNEL_SECTIONS } from "@posthog/ui/features/canvas/channelSections";
 import { ChannelPinnedMenu } from "@posthog/ui/features/canvas/components/ChannelPinnedMenu";
 import { Link, useRouterState } from "@tanstack/react-router";
 
-const TABS = [
-  { label: "Inbox", to: "/website/$channelId/inbox" },
-  { label: "Artifacts", to: "/website/$channelId/artifacts" },
-  { label: "Recents", to: "/website/$channelId/history" },
-  { label: "CONTEXT.md", to: "/website/$channelId/context" },
-] as const;
+const TABS = CHANNEL_SECTIONS.map((s) => ({
+  label: s.label,
+  to: `/website/$channelId/${s.key}` as const,
+}));
 
 // Home / History / Artifacts tab switcher shown in the channel header bar, with
 // a Pinned quick-access menu alongside. Pathname-driven active state (the
@@ -16,24 +15,21 @@ export function ChannelTabs({ channelId }: { channelId: string }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <nav className="flex items-center gap-0.5">
+    <nav className="flex items-center gap-px">
       {TABS.map((tab) => {
         const href = tab.to.replace("$channelId", channelId);
         const active = pathname === href;
         return (
-          <Link
+          <Button
             key={tab.label}
-            to={tab.to}
-            params={{ channelId }}
-            className={cn(
-              "rounded-md px-2 py-1 font-medium text-[13px] no-underline transition-colors",
-              active
-                ? "bg-gray-3 text-gray-12"
-                : "text-gray-10 hover:bg-gray-2 hover:text-gray-12",
-            )}
+            variant="default"
+            size="sm"
+            data-selected={active || undefined}
+            className={cn(active && "bg-fill-selected")}
+            render={<Link to={tab.to} params={{ channelId }} />}
           >
             {tab.label}
-          </Link>
+          </Button>
         );
       })}
       <ChannelPinnedMenu channelId={channelId} />

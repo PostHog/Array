@@ -61,7 +61,7 @@ describe("WorkspaceSetupSaga.setupWorkspace", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "Failed to set up workspace",
+      error: "boom",
     });
     expect(executor.ensureWorkspace).not.toHaveBeenCalled();
   });

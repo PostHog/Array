@@ -20,6 +20,7 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import type { ThemePreference } from "@posthog/ui/shell/themeStore";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
@@ -35,10 +36,18 @@ export function GeneralSettings() {
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
   // Power state
+  const { localWorkspaces } = useHostCapabilities();
   const { preventSleepWhileRunning, setPreventSleepWhileRunning } =
     useSettingsStore();
   const { data: serverPreventSleep } = useQuery(
-    hostTRPC.sleep.getEnabled.queryOptions(),
+    hostTRPC.sleep.getEnabled.queryOptions(undefined, {
+      enabled: localWorkspaces,
+    }),
+  );
+  const { data: hasBuiltInBattery } = useQuery(
+    hostTRPC.sleep.hasBuiltInBattery.queryOptions(undefined, {
+      enabled: localWorkspaces,
+    }),
   );
   const preventSleepMutation = useMutation(
     hostTRPC.sleep.setEnabled.mutationOptions(),
@@ -74,6 +83,7 @@ export function GeneralSettings() {
     conversationCollapseMode,
     hedgehogMode,
     slotMachineMode,
+    brainrotMode,
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
     setDefaultMessagingMode,
@@ -83,6 +93,7 @@ export function GeneralSettings() {
     setConversationCollapseMode,
     setHedgehogMode,
     setSlotMachineMode,
+    setBrainrotMode,
   } = useSettingsStore();
 
   // Appearance handlers
@@ -205,6 +216,18 @@ export function GeneralSettings() {
       setSlotMachineMode(checked);
     },
     [slotMachineMode, setSlotMachineMode],
+  );
+
+  const handleBrainrotModeChange = useCallback(
+    (checked: boolean) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "brainrot_mode",
+        new_value: checked,
+        old_value: brainrotMode,
+      });
+      setBrainrotMode(checked);
+    },
+    [brainrotMode, setBrainrotMode],
   );
 
   const accountUrl = buildPostHogUrl("/settings/user", cloudRegion);
@@ -414,21 +437,29 @@ export function GeneralSettings() {
       </SettingRow>
 
       {/* Power */}
-      <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
-        Power
-      </Text>
+      {localWorkspaces && (
+        <>
+          <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
+            Power
+          </Text>
 
-      <SettingRow
-        label="Keep awake while agents work"
-        description="Prevent your computer from sleeping while the agent is running a task"
-        noBorder
-      >
-        <Switch
-          checked={preventSleepWhileRunning}
-          onCheckedChange={handlePreventSleepChange}
-          size="1"
-        />
-      </SettingRow>
+          <SettingRow
+            label="Keep awake while agents work"
+            description={
+              hasBuiltInBattery
+                ? "Prevent your computer from going to sleep on its own while the agent is running a task. Closing the lid will still put it to sleep."
+                : "Prevent your computer from going to sleep on its own while the agent is running a task"
+            }
+            noBorder
+          >
+            <Switch
+              checked={preventSleepWhileRunning}
+              onCheckedChange={handlePreventSleepChange}
+              size="1"
+            />
+          </SettingRow>
+        </>
+      )}
 
       {/* Fun */}
       <Text className="mb-2 block border-gray-6 border-t pt-4 font-medium text-sm">
@@ -446,11 +477,22 @@ export function GeneralSettings() {
       <SettingRow
         label="Slot machine mode 🎰"
         description="Show a pull-able slot machine lever while a task is running. Every run is a gamble. Pull the handle and watch the reels spin."
-        noBorder
       >
         <Switch
           checked={slotMachineMode}
           onCheckedChange={handleSlotMachineModeChange}
+          size="1"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Brainrot mode ⚡"
+        description="Add a Brainrot option to empty command center cells that fills them with a looping background video."
+        noBorder
+      >
+        <Switch
+          checked={brainrotMode}
+          onCheckedChange={handleBrainrotModeChange}
           size="1"
         />
       </SettingRow>

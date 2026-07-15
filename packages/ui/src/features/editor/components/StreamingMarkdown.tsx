@@ -1,5 +1,5 @@
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { parseOpenFence, splitMarkdownBlocks } from "./splitMarkdownBlocks";
@@ -26,7 +26,7 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   content,
   componentsOverride,
 }: StreamingMarkdownProps) {
-  const blocks = splitMarkdownBlocks(content);
+  const blocks = useMemo(() => splitMarkdownBlocks(content), [content]);
   const lastIndex = blocks.length - 1;
 
   return (

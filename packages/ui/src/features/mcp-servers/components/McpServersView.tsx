@@ -3,7 +3,7 @@ import type {
   McpRecommendedServer,
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
-import { AddCustomServerForm } from "@posthog/ui/features/mcp-servers/components/parts/AddCustomServerForm";
+import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
 import { MarketplaceView } from "@posthog/ui/features/mcp-servers/components/parts/MarketplaceView";
 import { McpInstalledRail } from "@posthog/ui/features/mcp-servers/components/parts/McpInstalledRail";
 import { useMcpServers } from "@posthog/ui/features/mcp-servers/hooks/useMcpServers";

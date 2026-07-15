@@ -11,6 +11,7 @@ import {
   WORKSPACE_SETTINGS_SERVICE,
 } from "@posthog/platform/workspace-settings";
 import { TypedEventEmitter } from "@posthog/shared";
+import { POSTHOG_CODE_INTERNAL_CHILD_ENV } from "@posthog/shared/constants";
 import { inject, injectable, preDestroy } from "inversify";
 import * as pty from "node-pty";
 import {
@@ -66,6 +67,12 @@ function buildShellEnv(
   additionalEnv?: Record<string, string>,
 ): Record<string, string> {
   const env = { ...process.env } as Record<string, string>;
+
+  // User-facing shells must not inherit the workspace-server's internal
+  // markers: ELECTRON_RUN_AS_NODE makes any Electron-based CLI run as node,
+  // and the internal-child marker makes the packaged app refuse to launch.
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env[POSTHOG_CODE_INTERNAL_CHILD_ENV];
 
   if (platform() === "darwin" && !process.env.LC_ALL) {
     const locale = process.env.LC_CTYPE || "en_US.UTF-8";
@@ -372,13 +379,17 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
 
   execute(cwd: string, command: string): Promise<ExecuteOutput> {
     return new Promise((resolve) => {
-      exec(command, { cwd, timeout: 60000 }, (error, stdout, stderr) => {
-        resolve({
-          stdout: stdout || "",
-          stderr: stderr || "",
-          exitCode: error?.code ?? 0,
-        });
-      });
+      exec(
+        command,
+        { cwd, timeout: 60000, env: buildShellEnv() },
+        (error, stdout, stderr) => {
+          resolve({
+            stdout: stdout || "",
+            stderr: stderr || "",
+            exitCode: error?.code ?? 0,
+          });
+        },
+      );
     });
   }
 
@@ -424,16 +435,29 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
       const worktree = this.worktreeRepo.findByWorkspaceId(workspace.id);
       if (worktree) {
         worktreeName = worktree.name;
-        worktreePath = await this.deriveWorktreePath(repo.path, worktreeName);
+        // The stored path is authoritative — reused worktrees can live
+        // outside the managed worktree directory. Only derive when the
+        // stored path is gone (e.g. stale row after a location move).
+        worktreePath = existsSync(worktree.path)
+          ? worktree.path
+          : this.deriveWorktreePath(repo.path, worktreeName);
       }
     }
 
-    return buildWorkspaceEnv({
-      taskId,
-      folderPath: repo.path,
-      worktreePath,
-      worktreeName,
-      mode: workspace.mode,
-    });
+    try {
+      return await buildWorkspaceEnv({
+        taskId,
+        folderPath: repo.path,
+        worktreePath,
+        worktreeName,
+        mode: workspace.mode,
+      });
+    } catch (error) {
+      this.log.warn(
+        `Failed to build workspace env for task ${taskId}, starting shell without it`,
+        error,
+      );
+      return undefined;
+    }
   }
 }

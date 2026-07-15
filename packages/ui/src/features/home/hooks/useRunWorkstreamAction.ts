@@ -9,6 +9,7 @@ import type { TaskService } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import {
   ANALYTICS_EVENTS,
+  defaultEligibleModel,
   getCloudUrlFromRegion,
   type TaskCreationInput,
 } from "@posthog/shared";
@@ -17,6 +18,7 @@ import { homeKeys } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import { useQuickActionStore } from "@posthog/ui/features/home/stores/quickActionStore";
 import { insertOptimisticTask } from "@posthog/ui/features/home/utils/optimisticTask";
 import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
@@ -102,7 +104,8 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
           // honoured if the gateway still offers it (the resolver validates it),
           // so a stale persisted/pinned id can't reach the run and 403.
           const adapter = action.adapter ?? lastUsedAdapter;
-          const preferredModel = action.model ?? lastUsedModel ?? undefined;
+          const preferredModel =
+            action.model ?? defaultEligibleModel(lastUsedModel);
           let model = preferredModel;
           if (cloudRegion) {
             // The resolver swallows transient failures and returns undefined; fall
@@ -170,16 +173,14 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
             });
             return;
           }
-          toast.error("Failed to start task", { description: result.error });
+          toastError("Failed to start task", result.error);
           log.error("Quick action task creation failed", {
             failedStep: result.failedStep,
             error: result.error,
           });
           fallbackToTaskInput();
         } catch (error) {
-          const description =
-            error instanceof Error ? error.message : "Unknown error";
-          toast.error("Failed to start task", { description });
+          toastError("Failed to start task", error);
           log.error("Quick action task creation threw", { error });
           fallbackToTaskInput();
         } finally {

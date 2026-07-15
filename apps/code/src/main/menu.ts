@@ -9,6 +9,7 @@ import type { UIService } from "@posthog/core/ui/ui";
 import type { UpdatesService } from "@posthog/core/updates/updates";
 import {
   app,
+  type BaseWindow,
   BrowserWindow,
   clipboard,
   dialog,
@@ -20,6 +21,14 @@ import { container } from "./di/container";
 import { AUTH_SERVICE, UPDATES_SERVICE } from "./di/tokens";
 import { isDevBuild } from "./utils/env";
 import { getLogFilePath } from "./utils/logger";
+import { adjustWindowZoom, ZOOM_STEP } from "./zoom";
+
+function applyZoom(
+  window: BaseWindow | undefined,
+  delta: number | "reset",
+): void {
+  if (window instanceof BrowserWindow) adjustWindowZoom(window, delta);
+}
 
 function findLatestCrashDump(): string | null {
   const pendingDir = path.join(app.getPath("crashDumps"), "pending");
@@ -308,9 +317,29 @@ function buildViewMenu(): MenuItemConstructorOptions {
       },
       { role: "toggleDevTools" },
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
-      { role: "zoomOut" },
+      {
+        label: "Actual Size",
+        accelerator: "CmdOrCtrl+0",
+        click: (_menuItem, window) => applyZoom(window, "reset"),
+      },
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+Plus",
+        click: (_menuItem, window) => applyZoom(window, ZOOM_STEP),
+      },
+      // Hidden duplicate so Cmd+= (i.e. Cmd++ without Shift) also zooms in,
+      // matching the built-in zoomIn role's dual accelerator.
+      {
+        label: "Zoom In",
+        accelerator: "CmdOrCtrl+=",
+        visible: false,
+        click: (_menuItem, window) => applyZoom(window, ZOOM_STEP),
+      },
+      {
+        label: "Zoom Out",
+        accelerator: "CmdOrCtrl+-",
+        click: (_menuItem, window) => applyZoom(window, -ZOOM_STEP),
+      },
       { type: "separator" },
       { role: "togglefullscreen" },
       { type: "separator" },

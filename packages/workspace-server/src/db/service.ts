@@ -8,9 +8,9 @@ import {
   type BetterSQLite3Database,
   drizzle,
 } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
 
+import { runMigrations } from "./migrate";
 import * as schema from "./schema";
 
 const MIGRATIONS_FOLDER = path.join(__dirname, "db-migrations");
@@ -32,6 +32,16 @@ export class DatabaseService {
     return this._db;
   }
 
+  /**
+   * Whether the database is ready to be read or written. False during the
+   * startup window before `initialize()` runs and after `close()` tears the
+   * connection down (`@preDestroy`). Callers on best-effort paths use this to
+   * bail gracefully instead of letting the `db` getter throw.
+   */
+  isInitialized(): boolean {
+    return this._db !== null;
+  }
+
   @postConstruct()
   initialize(): void {
     const dbPath = path.join(this.storagePaths.appDataPath, "posthog-code.db");
@@ -39,7 +49,7 @@ export class DatabaseService {
     this._sqlite.pragma("journal_mode = WAL");
     this._sqlite.pragma("foreign_keys = ON");
     this._db = drizzle(this._sqlite, { schema, casing: "snake_case" });
-    migrate(this._db, { migrationsFolder: MIGRATIONS_FOLDER });
+    runMigrations(this._sqlite, MIGRATIONS_FOLDER);
   }
 
   @preDestroy()

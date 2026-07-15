@@ -17,6 +17,10 @@ import { ReportTasksSection } from "@posthog/ui/features/inbox/components/Report
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
 import { ReportImplementationPrLink } from "@posthog/ui/features/inbox/components/utils/ReportImplementationPrLink";
 import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
+import { PrChecksSection } from "@posthog/ui/features/pr-review/PrChecksSection";
+import { PrCommentsSection } from "@posthog/ui/features/pr-review/PrCommentsSection";
+import { PrFilesChangedSection } from "@posthog/ui/features/pr-review/PrFilesChangedSection";
+import { PrReviewActions } from "@posthog/ui/features/pr-review/PrReviewActions";
 import { Text } from "@radix-ui/themes";
 
 interface PullRequestDetailProps {
@@ -111,11 +115,26 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
         </>
       }
       summarySection={{ Icon: GitPullRequestIcon, title: "Summary" }}
+      belowSummary={
+        prRef && report.implementation_pr_url ? (
+          <>
+            <PrFilesChangedSection prUrl={report.implementation_pr_url} />
+            <PrCommentsSection prUrl={report.implementation_pr_url} />
+            <PrChecksSection prUrl={report.implementation_pr_url} />
+            <PrReviewActions prUrl={report.implementation_pr_url} />
+          </>
+        ) : undefined
+      }
       evidenceSection={{ Icon: MagnifyingGlassIcon, title: "Evidence" }}
     >
       <ReportTasksSection report={report} />
       <SuggestedReviewersSection report={report} />
-      <ReportActivitySection reportId={report.id} />
+      <ReportActivitySection
+        reportId={report.id}
+        // The main column already lists every changed file, so the
+        // per-commit diff toggle in the activity log is redundant here.
+        hideCommitDiffs={Boolean(prRef && report.implementation_pr_url)}
+      />
     </InboxDetailFrame>
   );
 }

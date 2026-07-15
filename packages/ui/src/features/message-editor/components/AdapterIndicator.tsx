@@ -1,8 +1,9 @@
 import { Robot } from "@phosphor-icons/react";
+import type { Adapter } from "@posthog/shared";
 import { Flex, Text } from "@radix-ui/themes";
 
 interface AdapterIndicatorProps {
-  adapter: "claude" | "codex";
+  adapter: Adapter;
 }
 
 export function AdapterIndicator({ adapter }: AdapterIndicatorProps) {

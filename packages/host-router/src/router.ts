@@ -4,6 +4,7 @@ import { agentRouter } from "./routers/agent.router";
 import { analyticsRouter } from "./routers/analytics.router";
 import { archiveRouter } from "./routers/archive.router";
 import { authRouter } from "./routers/auth.router";
+import { browserTabsRouter } from "./routers/browser-tabs.router";
 import { canvasDataRouter } from "./routers/canvas-data.router";
 import { canvasTemplatesRouter } from "./routers/canvas-templates.router";
 import { channelTasksRouter } from "./routers/channel-tasks.router";
@@ -22,6 +23,7 @@ import { foldersRouter } from "./routers/folders.router";
 import { fsRouter } from "./routers/fs.router";
 import { gitRouter } from "./routers/git.router";
 import { githubIntegrationRouter } from "./routers/github-integration.router";
+import { githubReleasesRouter } from "./routers/github-releases.router";
 import { handoffRouter } from "./routers/handoff.router";
 import { linearIntegrationRouter } from "./routers/linear-integration.router";
 import { llmGatewayRouter } from "./routers/llm-gateway.router";
@@ -39,6 +41,7 @@ import { shellRouter } from "./routers/shell.router";
 import { skillsRouter } from "./routers/skills.router";
 import { slackIntegrationRouter } from "./routers/slack-integration.router";
 import { sleepRouter } from "./routers/sleep.router";
+import { speechRouter } from "./routers/speech.router";
 import { suspensionRouter } from "./routers/suspension.router";
 import { uiRouter } from "./routers/ui.router";
 import { updatesRouter } from "./routers/updates.router";
@@ -51,6 +54,7 @@ export const hostRouter = router({
   analytics: analyticsRouter,
   archive: archiveRouter,
   auth: authRouter,
+  browserTabs: browserTabsRouter,
   canvasData: canvasDataRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
@@ -70,6 +74,7 @@ export const hostRouter = router({
   git: gitRouter,
   handoff: handoffRouter,
   githubIntegration: githubIntegrationRouter,
+  githubReleases: githubReleasesRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
   logs: logsRouter,
@@ -83,6 +88,7 @@ export const hostRouter = router({
   provisioning: provisioningRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,
+  speech: speechRouter,
   skills: skillsRouter,
   slackIntegration: slackIntegrationRouter,
   sleep: sleepRouter,

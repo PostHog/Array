@@ -31,6 +31,27 @@ export const useSessionForTask = (
   });
 
 /**
+ * Select a derived value from a task's session with referential stability.
+ *
+ * Prefer this over {@link useSessionForTask} whenever a component needs only a
+ * field or two: `useSessionForTask` returns the whole session object, whose
+ * identity changes on every streamed event (the store appends to `events` via
+ * immer), so every consumer re-renders ~60fps for the length of a turn. This
+ * selector re-renders only when the projected value actually changes. Pass
+ * `shallow` as `equality` when the projection returns an object or array.
+ */
+export function useSessionSelector<T>(
+  taskId: string | undefined,
+  select: (session: AgentSession | undefined) => T,
+  equality?: (a: T, b: T) => boolean,
+): T {
+  return useSessionStore((s) => {
+    const taskRunId = taskId ? s.taskIdIndex[taskId] : undefined;
+    return select(taskRunId ? s.sessions[taskRunId] : undefined);
+  }, equality);
+}
+
+/**
  * Returns `null` when the agent hasn't sent an `available_commands_update` yet,
  * so callers can distinguish that from an explicit empty list.
  */
@@ -148,5 +169,32 @@ export const useAdapterForTask = (
     const taskRunId = s.taskIdIndex[taskId];
     if (!taskRunId) return undefined;
     return s.sessions[taskRunId]?.adapter;
+  });
+};
+
+/**
+ * Whether a task's session is a cloud run. A primitive selector, so consumers
+ * that only need this flag don't re-render on every streamed event the way
+ * reading the whole session via {@link useSessionForTask} would.
+ */
+export const useSessionIsCloud = (taskId: string | undefined): boolean => {
+  return useSessionStore((s) => {
+    if (!taskId) return false;
+    const taskRunId = s.taskIdIndex[taskId];
+    if (!taskRunId) return false;
+    return s.sessions[taskRunId]?.isCloud ?? false;
+  });
+};
+
+/** Whether a cloud handoff is in progress for a task. Primitive selector — see
+ * {@link useSessionIsCloud}. */
+export const useSessionHandoffInProgress = (
+  taskId: string | undefined,
+): boolean => {
+  return useSessionStore((s) => {
+    if (!taskId) return false;
+    const taskRunId = s.taskIdIndex[taskId];
+    if (!taskRunId) return false;
+    return s.sessions[taskRunId]?.handoffInProgress ?? false;
   });
 };

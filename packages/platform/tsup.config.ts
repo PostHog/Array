@@ -2,6 +2,7 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: [
+    "src/host-capabilities.ts",
     "src/url-launcher.ts",
     "src/storage-paths.ts",
     "src/app-meta.ts",
@@ -14,6 +15,7 @@ export default defineConfig({
     "src/power-manager.ts",
     "src/updater.ts",
     "src/notifier.ts",
+    "src/speech.ts",
     "src/notifications.ts",
     "src/context-menu.ts",
     "src/bundled-resources.ts",
@@ -22,6 +24,8 @@ export default defineConfig({
     "src/crypto.ts",
     "src/analytics.ts",
     "src/deep-link.ts",
+    "src/app-metrics.ts",
+    "src/dev-host-actions.ts",
   ],
   format: ["esm"],
   dts: true,

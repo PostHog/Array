@@ -2,7 +2,10 @@ import "reflect-metadata";
 import type { NotificationTarget } from "@posthog/platform/notifications";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@posthog/ui/utils/sounds", () => ({
+// Keep resolveSoundUrl real (the bus uses it to decide the native silent flag);
+// only stub the side-effecting player.
+vi.mock("@posthog/ui/utils/sounds", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@posthog/ui/utils/sounds")>()),
   playCompletionSound: vi.fn(),
 }));
 
@@ -14,6 +17,7 @@ const toastMock = vi.hoisted(() => ({
 vi.mock("@posthog/ui/primitives/toast", () => ({ toast: toastMock }));
 
 import { playCompletionSound } from "@posthog/ui/utils/sounds";
+import { useErrorDetailsStore } from "./errorDetails";
 import type {
   IActiveView,
   INotificationSettings,
@@ -48,6 +52,8 @@ function makeBus(overrides?: {
     dockBounceNotifications: true,
     completionSound: "meep",
     completionVolume: 80,
+    scaleSoundWithTaskLength: false,
+    customSounds: [],
     ...overrides?.settings,
   };
 
@@ -148,11 +154,72 @@ describe("native tier settings gating (app unfocused)", () => {
     );
   });
 
+  it("is not silent when the selected custom sound no longer exists", () => {
+    // A deleted custom sound resolves to nothing, so the native chime must
+    // still ring rather than the notification being silent-and-soundless.
+    const { bus, notify } = makeBus({
+      hasFocus: false,
+      settings: { completionSound: "custom:gone", customSounds: [] },
+    });
+    bus.notifyPermissionRequest("My task", TASK_ID);
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({ silent: false }),
+    );
+  });
+
   it("truncates long titles in the body", () => {
     const { bus, notify } = makeBus({ hasFocus: false });
     bus.notifyPromptComplete("x".repeat(80), "end_turn", TASK_ID);
     expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({ body: `"${"x".repeat(50)}..." finished` }),
+    );
+  });
+});
+
+describe("notifyError", () => {
+  const payload = { status: 500, message: "upstream exploded", body: { x: 1 } };
+
+  it("toasts a one-line summary, never the raw payload", () => {
+    const { bus } = makeBus({ hasFocus: true });
+    bus.notifyError("Sync failed", payload);
+    expect(toastMock.error).toHaveBeenCalledWith(
+      "Sync failed",
+      expect.objectContaining({ description: "upstream exploded" }),
+    );
+  });
+
+  it("attaches a Details action that opens the error details dialog", () => {
+    useErrorDetailsStore.getState().close();
+    const { bus } = makeBus({ hasFocus: true });
+    bus.notifyError("Sync failed", payload);
+    const options = toastMock.error.mock.calls[0]?.[1] as {
+      action?: { label: string; onClick: () => void };
+    };
+    expect(options.action?.label).toBe("Details");
+    options.action?.onClick();
+    const detail = useErrorDetailsStore.getState().detail;
+    expect(detail?.title).toBe("Sync failed");
+    expect(detail?.error).toBe(payload);
+    useErrorDetailsStore.getState().close();
+  });
+
+  it("the Details action wins over target navigation on error toasts", () => {
+    const { bus } = makeBus({ hasFocus: true });
+    bus.notifyError("Sync failed", payload, taskTarget(TASK_ID));
+    const options = toastMock.error.mock.calls[0]?.[1] as {
+      action?: { label: string };
+    };
+    expect(options.action?.label).toBe("Details");
+  });
+
+  it("app unfocused → native notification with the summary as body", () => {
+    const { bus, notify } = makeBus({ hasFocus: false });
+    bus.notifyError("Sync failed", payload);
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Sync failed",
+        body: "upstream exploded",
+      }),
     );
   });
 });
@@ -165,5 +232,23 @@ describe("sound", () => {
     });
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
     expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      "scaling off, with duration",
+      false,
+      (10 * 60 * 1000) as number | undefined,
+      1,
+    ],
+    ["scaling on, quick task (<30s) → 3×", true, 10 * 1000, 3],
+    ["scaling on, no duration → 1×", true, undefined, 1],
+  ])("%s", (_label, scaleSoundWithTaskLength, durationMs, expectedRate) => {
+    const { bus, play } = makeBus({
+      hasFocus: false,
+      settings: { scaleSoundWithTaskLength },
+    });
+    bus.notifyPromptComplete("My task", "end_turn", TASK_ID, durationMs);
+    expect(play).toHaveBeenCalledWith("meep", 80, [], expectedRate);
   });
 });

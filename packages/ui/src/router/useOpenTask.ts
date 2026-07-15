@@ -67,6 +67,11 @@ export interface TaskInputNavigationOptions {
   initialCloudRepository?: string;
   initialModel?: string;
   initialMode?: string;
+  /**
+   * Environment ("local" | "cloud") of the folder's most recent visible run,
+   * used to prefill the workspace mode when starting a task scoped to a folder.
+   */
+  folderRunEnvironment?: "local" | "cloud";
   reportAssociation?: { reportId: string; title: string };
   // Which space's new-task screen to open. Both render the same TaskInput; the
   // channels variant keeps the channels chrome instead of switching to Code.
@@ -86,7 +91,10 @@ export function openTaskInput(
       ? { folderId: folderIdOrOptions }
       : (folderIdOrOptions ?? {});
 
+  // folderId counts as transient state: each "+" click must get a fresh
+  // requestId so re-picking the same folder re-applies the prefill.
   const hasTransientState =
+    !!options.folderId ||
     !!options.initialPrompt ||
     !!options.initialCloudRepository ||
     !!options.initialModel ||
@@ -100,6 +108,7 @@ export function openTaskInput(
       initialCloudRepository: options.initialCloudRepository,
       initialModel: options.initialModel,
       initialMode: options.initialMode,
+      folderRunEnvironment: options.folderRunEnvironment,
       reportAssociation: options.reportAssociation,
       requestId: hasTransientState
         ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)

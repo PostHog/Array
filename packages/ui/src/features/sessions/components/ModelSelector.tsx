@@ -13,10 +13,14 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { type Adapter, GLM_MODEL_FLAG } from "@posthog/shared";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import {
   flattenSelectOptions,
   useModelConfigOptionForTask,
-  useSessionForTask,
+  useSessionIsCloud,
+  useSessionSelector,
 } from "@posthog/ui/features/sessions/sessionStore";
 import { Fragment, useMemo } from "react";
 
@@ -24,7 +28,7 @@ interface ModelSelectorProps {
   taskId?: string;
   disabled?: boolean;
   onModelChange?: (modelId: string) => void;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
 }
 
 export function ModelSelector({
@@ -33,8 +37,16 @@ export function ModelSelector({
   onModelChange,
 }: ModelSelectorProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
-  const session = useSessionForTask(taskId);
-  const modelOption = useModelConfigOptionForTask(taskId);
+  // Narrow reads instead of the whole session, so the model dropdown doesn't
+  // re-render on every streamed token during a turn.
+  const sessionStatus = useSessionSelector(taskId, (s) => s?.status);
+  const sessionIsCloud = useSessionIsCloud(taskId);
+  const rawModelOption = useModelConfigOptionForTask(taskId);
+  const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
+  const modelOption =
+    glmEnabled || !rawModelOption
+      ? rawModelOption
+      : stripGlmModelOption(rawModelOption);
 
   const selectOption = modelOption?.type === "select" ? modelOption : undefined;
   const options = selectOption
@@ -53,8 +65,8 @@ export function ModelSelector({
   const handleChange = (value: string) => {
     onModelChange?.(value);
 
-    if (!taskId || !session) return;
-    if (session.status !== "connected" && !session.isCloud) return;
+    if (!taskId) return;
+    if (sessionStatus !== "connected" && !sessionIsCloud) return;
     sessionService.setSessionConfigOption(taskId, selectOption.id, value);
   };
 

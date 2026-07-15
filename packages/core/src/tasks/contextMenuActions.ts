@@ -7,6 +7,7 @@ export type TaskContextMenuIntent =
   | { type: "rename" }
   | { type: "pin" }
   | { type: "suspend" }
+  | { type: "stop" }
   | { type: "restore" }
   | { type: "archive" }
   | { type: "archive-prior" }
@@ -26,6 +27,8 @@ export function resolveTaskContextMenuIntent(
       return { type: "pin" };
     case "suspend":
       return flags.isSuspended ? { type: "restore" } : { type: "suspend" };
+    case "stop":
+      return { type: "stop" };
     case "archive":
       return { type: "archive" };
     case "archive-prior":

@@ -2,6 +2,12 @@ import { CaretDown, CaretRight, CheckCircle } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { PlanContent } from "../../../permissions/PlanContent";
+import {
+  flattenSelectOptions,
+  useModelConfigOptionForTask,
+} from "../../sessionStore";
+import { useSessionTaskId } from "../../useSessionTaskId";
+import { ModelSelector } from "../ModelSelector";
 import { type ToolViewProps, useToolCallStatus } from "./toolCallUtils";
 
 export function PlanApprovalView({
@@ -16,6 +22,11 @@ export function PlanApprovalView({
     turnComplete,
   );
   const [isPlanExpanded, setIsPlanExpanded] = useState(false);
+  const taskId = useSessionTaskId();
+  const modelOption = useModelConfigOptionForTask(taskId ?? undefined);
+  const hasModelSelector =
+    modelOption?.type === "select" &&
+    flattenSelectOptions(modelOption.options).length > 0;
 
   const planText = useMemo(() => {
     const rawPlan = (toolCall.rawInput as { plan?: string } | undefined)?.plan;
@@ -54,7 +65,15 @@ export function PlanApprovalView({
   return (
     <Box className="my-3">
       {!showResult && planText && (
-        <PlanContent id={toolCall.toolCallId} plan={planText} />
+        <>
+          {taskId && hasModelSelector && (
+            <Flex align="center" gap="2" className="mb-2 px-1">
+              <Text className="text-[12px] text-gray-11">Model</Text>
+              <ModelSelector taskId={taskId} />
+            </Flex>
+          )}
+          <PlanContent id={toolCall.toolCallId} plan={planText} />
+        </>
       )}
 
       {showResult && (

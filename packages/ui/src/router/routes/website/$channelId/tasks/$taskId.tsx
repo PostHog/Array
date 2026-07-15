@@ -1,5 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { TaskDetail } from "@posthog/ui/features/task-detail/components/TaskDetail";
 import {
@@ -8,17 +10,26 @@ import {
   taskDetailQuery,
 } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { RoutePending } from "@posthog/ui/router/RoutePending";
+import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
+import { yieldToPaint } from "@posthog/ui/router/yieldToPaint";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
   component: ChannelTaskDetailRoute,
+  pendingComponent: TaskDetailSkeleton,
   // Cache-only loader (same as /code/tasks/$taskId): never block navigation on
-  // the network; the cold-miss fetch lives in the component.
-  loader: ({ params }): Task | null =>
-    getCachedTaskDetail(params.taskId) ?? getCachedTask(params.taskId) ?? null,
+  // the network; the cold-miss fetch lives in the component. The single-frame
+  // yield lets the skeleton paint before TaskDetail's heavy mount.
+  loader: async ({ params }): Promise<Task | null> => {
+    const task =
+      getCachedTaskDetail(params.taskId) ??
+      getCachedTask(params.taskId) ??
+      null;
+    await yieldToPaint();
+    return task;
+  },
 });
 
 function ChannelTaskDetailRoute() {
@@ -38,6 +49,13 @@ function ChannelTaskDetailRoute() {
     markAsViewed(taskId);
   }, [taskId, markAsViewed]);
 
+  // Opening a task shows its thread docked on the right, keeping the user's
+  // collapse preference. The panel follows the task being viewed.
+  const openThread = useThreadPanelStore((s) => s.openThread);
+  useEffect(() => {
+    openThread(taskId, { expand: false });
+  }, [openThread, taskId]);
+
   const { data: fetched } = useQuery({
     ...taskDetailQuery(taskId),
     enabled: !fromList && !loaderTask,
@@ -46,15 +64,20 @@ function ChannelTaskDetailRoute() {
   const task = fromList ?? loaderTask ?? fetched;
 
   if (!task) {
-    return <RoutePending />;
+    return <TaskDetailSkeleton />;
   }
 
   return (
-    <TaskDetail
-      key={task.id}
-      task={task}
-      channelName={channelName ?? "Channel"}
-      channelId={channelId}
-    />
+    <div className="flex h-full min-w-0">
+      <div className="min-w-0 flex-1">
+        <TaskDetail
+          key={task.id}
+          task={task}
+          channelName={channelName ?? "Channel"}
+          channelId={channelId}
+        />
+      </div>
+      <ThreadSidebar taskId={taskId} task={task} showTaskTitle={false} />
+    </div>
   );
 }

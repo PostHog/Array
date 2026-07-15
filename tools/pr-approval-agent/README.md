@@ -58,7 +58,7 @@ Deny-list (hard gate)
   │
   ▼
 Size ceiling (hard gate)
-  - >500 lines or >20 files → too large for auto-review
+  - >1000 lines or >20 files → too large for auto-review
   │
   ▼
 Tier classification

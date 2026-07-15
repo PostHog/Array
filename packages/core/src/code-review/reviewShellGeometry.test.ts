@@ -53,4 +53,8 @@ describe("getDeferredMessage", () => {
   it("returns the unavailable message", () => {
     expect(getDeferredMessage("unavailable")).toBe("Unable to load diff.");
   });
+
+  it("returns the binary message", () => {
+    expect(getDeferredMessage("binary")).toBe("Binary file not shown.");
+  });
 });

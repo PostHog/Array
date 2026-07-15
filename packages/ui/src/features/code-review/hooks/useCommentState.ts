@@ -31,6 +31,13 @@ export function useCommentState() {
     setEditSeed(null);
   }, []);
 
+  const handleLineSelectionChange = useCallback(
+    (range: SelectedLineRange | null) => {
+      setSelectedRange(range);
+    },
+    [],
+  );
+
   const handleLineSelectionEnd = useCallback(
     (range: SelectedLineRange | null) => {
       setSelectedRange(range);
@@ -80,6 +87,7 @@ export function useCommentState() {
     hasOpenComment,
     editSeed,
     reset,
+    handleLineSelectionChange,
     handleLineSelectionEnd,
     openCommentForEdit,
   };

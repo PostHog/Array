@@ -5,11 +5,13 @@ import {
   type BundleLocalSkill,
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+  CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES,
   type CloudArtifactClient,
   type CloudArtifactUploadRequest,
   type CloudSkillBundleRef,
   type FinalizedCloudArtifact,
   type PreparedCloudArtifact,
+  type ResolveSkillBundleDependencies,
 } from "./cloudArtifactIdentifiers";
 
 const ATTACHMENT_SOURCE = "posthog_code";
@@ -123,6 +125,8 @@ export class CloudArtifactService {
     private readonly readFileAsBase64: ReadFileAsBase64,
     @inject(CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL)
     private readonly bundleLocalSkill: BundleLocalSkill,
+    @inject(CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES)
+    private readonly resolveSkillBundleDependencies: ResolveSkillBundleDependencies,
   ) {}
 
   async uploadTaskStagedAttachments(
@@ -225,8 +229,15 @@ export class CloudArtifactService {
   private async loadCloudSkillBundles(
     skillBundleRefs: CloudSkillBundleRef[],
   ): Promise<LoadedCloudAttachment[]> {
+    if (skillBundleRefs.length === 0) {
+      return [];
+    }
+    // Pull in dependency skills the tagged ones declare, so a skill that needs
+    // another arrives in the sandbox together with it.
+    const expandedRefs =
+      await this.resolveSkillBundleDependencies(skillBundleRefs);
     return Promise.all(
-      skillBundleRefs.map(async (skillBundleRef) => {
+      expandedRefs.map(async (skillBundleRef) => {
         const bundle = await this.bundleLocalSkill(skillBundleRef);
         const bytes = base64ToUint8Array(bundle.contentBase64);
         if (bytes.byteLength !== bundle.size) {

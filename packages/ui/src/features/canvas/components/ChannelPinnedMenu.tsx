@@ -1,5 +1,6 @@
 import { CaretDownIcon, PushPinIcon } from "@phosphor-icons/react";
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -41,17 +42,19 @@ export function ChannelPinnedMenu({ channelId }: { channelId: string }) {
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         render={
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-[13px] text-gray-10 transition-colors hover:bg-gray-2 hover:text-gray-12"
-          >
+          <Button size="sm">
             <PushPinIcon size={14} />
             Pinned
             <CaretDownIcon size={12} />
-          </button>
+          </Button>
         }
       />
-      <DropdownMenuContent align="start" side="bottom" sideOffset={4}>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={4}
+        className="w-fit"
+      >
         {pinned.length === 0 ? (
           <DropdownMenuItem disabled>No pinned canvases</DropdownMenuItem>
         ) : (

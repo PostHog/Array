@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  BRAINROT_CELL,
   clampZoom,
   getCellCount,
   getCellSessionId,
   getGridDimensions,
+  getTerminalCellCwd,
+  getTerminalCellId,
+  isBrainrotCell,
+  isTerminalCell,
+  makeTerminalCellValue,
   resizeCells,
 } from "./grid";
 
@@ -48,6 +54,41 @@ describe("clampZoom", () => {
     { input: 1.06, expected: 1.1 },
   ])("clamps and rounds $input -> $expected", ({ input, expected }) => {
     expect(clampZoom(input)).toBe(expected);
+  });
+});
+
+describe("isBrainrotCell", () => {
+  it.each([
+    { value: BRAINROT_CELL, expected: true },
+    { value: "some-task-uuid", expected: false },
+    { value: null, expected: false },
+  ])("$value -> $expected", ({ value, expected }) => {
+    expect(isBrainrotCell(value)).toBe(expected);
+  });
+});
+
+describe("terminal cells", () => {
+  it("round-trips a terminal id through the cell value", () => {
+    const value = makeTerminalCellValue("abc123");
+    expect(isTerminalCell(value)).toBe(true);
+    expect(getTerminalCellId(value)).toBe("abc123");
+    expect(getTerminalCellCwd(value)).toBeNull();
+  });
+
+  it("round-trips a terminal id and cwd through the cell value", () => {
+    const value = makeTerminalCellValue("abc123", "/Users/me/my:repo");
+    expect(isTerminalCell(value)).toBe(true);
+    expect(getTerminalCellId(value)).toBe("abc123");
+    expect(getTerminalCellCwd(value)).toBe("/Users/me/my:repo");
+  });
+
+  it.each([
+    { value: "some-task-uuid", expected: false },
+    { value: BRAINROT_CELL, expected: false },
+    { value: null, expected: false },
+  ])("isTerminalCell($value) -> $expected", ({ value, expected }) => {
+    expect(isTerminalCell(value)).toBe(expected);
+    expect(getTerminalCellId(value)).toBeNull();
   });
 });
 

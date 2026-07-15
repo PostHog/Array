@@ -18,9 +18,7 @@ class Harness {
     unpin: vi.fn().mockResolvedValue(undefined),
     togglePin: vi.fn().mockResolvedValue(undefined),
     navigateAwayFromTaskIfActive: vi.fn(),
-    snapshotTerminalStates: vi.fn().mockReturnValue({}),
     clearTerminalStates: vi.fn(),
-    restoreTerminalStates: vi.fn(),
     snapshotCommandCenter: vi
       .fn()
       .mockReturnValue({ index: -1, wasActive: false }),
@@ -28,6 +26,7 @@ class Harness {
     restoreCommandCenter: vi.fn(),
     getFocusedWorktreePath: vi.fn().mockReturnValue(null),
     disableFocus: vi.fn().mockResolvedValue(undefined),
+    stopCloudRun: vi.fn().mockResolvedValue(true),
     disconnectFromTask: vi.fn().mockResolvedValue(undefined),
     archive: vi.fn().mockResolvedValue(undefined),
     logError: vi.fn(),
@@ -103,6 +102,64 @@ describe("archiveTask", () => {
     expect(harness.list).toEqual([]);
     expect(harness.deps.togglePin).toHaveBeenCalledWith(TASK_ID);
   });
+
+  it("destroys terminals only after the archive succeeds", async () => {
+    let clearedWhenArchiveCalled = true;
+    harness.deps.archive = vi.fn().mockImplementation(async () => {
+      clearedWhenArchiveCalled =
+        vi.mocked(harness.deps.clearTerminalStates).mock.calls.length > 0;
+    });
+
+    await archiveTask(TASK_ID, harness.deps);
+
+    expect(clearedWhenArchiveCalled).toBe(false);
+    expect(harness.deps.clearTerminalStates).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("keeps terminals when archive fails", async () => {
+    harness.deps.archive = vi.fn().mockRejectedValue(new Error("boom"));
+
+    await expect(archiveTask(TASK_ID, harness.deps)).rejects.toThrow("boom");
+
+    expect(harness.deps.clearTerminalStates).not.toHaveBeenCalled();
+  });
+
+  it("stops a running cloud task before archiving it", async () => {
+    await archiveTask(TASK_ID, harness.deps);
+
+    expect(harness.deps.stopCloudRun).toHaveBeenCalledWith(TASK_ID);
+    expect(
+      vi.mocked(harness.deps.stopCloudRun).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(harness.deps.archive).mock.invocationCallOrder[0] ?? Infinity,
+    );
+  });
+
+  it("does not archive when a running cloud task cannot be stopped", async () => {
+    harness.deps.stopCloudRun = vi.fn().mockResolvedValue(false);
+
+    await expect(archiveTask(TASK_ID, harness.deps)).rejects.toThrow(
+      "Couldn't stop the task",
+    );
+
+    expect(harness.deps.archive).not.toHaveBeenCalled();
+    expect(harness.ids).not.toContain(TASK_ID);
+  });
+
+  it.each([
+    ["local workspace", { mode: "local" }],
+    ["task without workspace state", null],
+  ])(
+    "checks a %s for a cloud run before archiving",
+    async (_name, workspace) => {
+      harness.deps.getWorkspace = vi.fn().mockResolvedValue(workspace);
+
+      await archiveTask(TASK_ID, harness.deps);
+
+      expect(harness.deps.stopCloudRun).toHaveBeenCalledWith(TASK_ID);
+      expect(harness.deps.archive).toHaveBeenCalledWith(TASK_ID);
+    },
+  );
 });
 
 describe("archiveTasks", () => {

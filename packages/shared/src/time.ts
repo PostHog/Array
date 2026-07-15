@@ -51,17 +51,25 @@ export function formatRelativeTimeLong(timestamp: number | string): string {
   });
 }
 
+/**
+ * Whole local calendar days between `timestamp` and `now` (0 = today,
+ * 1 = yesterday, negative = future). Uses local-midnight boundaries so the
+ * split lands on the viewer's midnight, not a UTC one.
+ */
+export function getLocalDayDiff(
+  timestamp: number | string | Date,
+  now: Date = new Date(),
+): number {
+  const date = new Date(timestamp);
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+}
+
 export function getRelativeDateGroup(
   timestamp: number | string,
 ): string | null {
-  const date = new Date(timestamp);
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfDate = new Date(date);
-  startOfDate.setHours(0, 0, 0, 0);
-  const days = Math.round(
-    (startOfToday.getTime() - startOfDate.getTime()) / 86_400_000,
-  );
+  const days = getLocalDayDiff(timestamp);
   if (days <= 0) return null;
   if (days === 1) return "Yesterday";
   if (days < 7) return "This week";

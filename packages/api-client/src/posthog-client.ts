@@ -1,8 +1,9 @@
 import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
-import type { PermissionMode } from "@posthog/agent/execution-mode";
 import type {
+  Adapter,
   CloudRunSource,
+  ExecutionMode,
   PrAuthorshipMode,
   SeatData,
   StoredLogEntry,
@@ -11,6 +12,7 @@ import type {
 import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  resolveCloudInitialPermissionMode,
   SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
@@ -37,21 +39,32 @@ import type {
   AgentUsersListResponse,
   BundleFile,
   DecideApprovalRequest,
+  DryRunToolEnvelope,
+  DryRunToolRequest,
+  DryRunToolResult,
   ModelCatalog,
+  ToolCapabilities,
+  ToolCompileError,
+  WriteToolRequest,
+  WriteToolResult,
 } from "@posthog/shared/agent-platform-types";
 import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  ChannelFeedMessage,
+  ChannelFeedMessageEvent,
   CodeReferenceArtefact,
   CommitArtefact,
   CommitDiffResponse,
   DismissalArtefact,
   LineReferenceArtefact,
   NoteArtefact,
+  OrganizationMemberBasic,
   PriorityJudgmentArtefact,
   RepoSelectionArtefact,
   SafetyJudgmentArtefact,
+  SandboxCustomImage,
   SandboxEnvironment,
   SandboxEnvironmentInput,
   Signal,
@@ -71,8 +84,11 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
+  TaskChannel,
+  TaskMention,
   TaskRun,
   TaskRunArtefact,
+  TaskThreadMessage,
   UserBasic,
 } from "@posthog/shared/domain-types";
 import {
@@ -117,10 +133,19 @@ export class SeatPaymentFailedError extends Error {
   }
 }
 
+export class SandboxCustomImagesDisabledError extends Error {
+  constructor(message?: string) {
+    super(message ?? "Custom sandbox images are not enabled");
+    this.name = "SandboxCustomImagesDisabledError";
+  }
+}
+
 export type UsageLimitType = "burst" | "sustained" | null;
 
 // Stable message so callers recognize this after a saga reduces the error to a string.
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
+
+export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
@@ -235,6 +260,7 @@ export interface SignalSourceConfig {
     | "llm_analytics"
     | "github"
     | "linear"
+    | "jira"
     | "zendesk"
     | "conversations"
     | "error_tracking"
@@ -387,6 +413,115 @@ export interface ExternalDataSource {
   schemas?: ExternalDataSourceSchema[] | string;
 }
 
+/**
+ * Field-config variants for an external data source's connect form, as served
+ * by the `external_data_sources/wizard/` endpoint. Mirrors PostHog Cloud's
+ * `SourceFieldConfig` union (`posthog/schema.py`). The backend is the single
+ * source of truth for which credential fields a source needs, so forms can be
+ * rendered generically instead of hardcoded per source.
+ */
+export interface SourceFieldInputConfig {
+  type:
+    | "text"
+    | "email"
+    | "search"
+    | "url"
+    | "password"
+    | "time"
+    | "number"
+    | "textarea";
+  name: string;
+  label: string;
+  required: boolean;
+  placeholder?: string;
+  caption?: string | null;
+  /** Redacted from API responses; render as a password field. */
+  secret?: boolean;
+}
+
+export interface SourceFieldOauthConfig {
+  type: "oauth";
+  name: string;
+  label: string;
+  kind: string;
+  required: boolean;
+  requiredScopes?: string;
+}
+
+/**
+ * A picker whose options are the accounts/resources a connected OAuth integration exposes (loaded
+ * from the `oauth_accounts` endpoint using the integration's server-side token). Used e.g. for a
+ * GitHub repository or an ad account.
+ */
+export interface SourceFieldOauthAccountSelectConfig {
+  type: "oauth-account-select";
+  name: string;
+  label: string;
+  /** Name of the sibling OAuth id field this selector reads its integration id from. */
+  integrationField: string;
+  /** Integration kind used to validate the connected integration, e.g. "github". */
+  integrationKind: string;
+  placeholder?: string;
+  caption?: string;
+  required?: boolean;
+}
+
+/** A selectable account/resource an OAuth integration exposes (shared `IntegrationAccount` shape). */
+export interface IntegrationAccount {
+  value: string;
+  display_name: string;
+  is_primary: boolean;
+  badges: string[];
+  group: string | null;
+  secondary_text: string | null;
+}
+
+export interface SourceFieldSelectConfigOption {
+  label: string;
+  value: string;
+  fields?: SourceFieldConfig[];
+}
+
+export interface SourceFieldSelectConfig {
+  type: "select";
+  name: string;
+  label: string;
+  required: boolean;
+  defaultValue?: string;
+  options: SourceFieldSelectConfigOption[];
+}
+
+export interface SourceFieldSwitchGroupConfig {
+  type: "switch-group";
+  name: string;
+  label: string;
+  caption?: string;
+  default?: boolean;
+  fields: SourceFieldConfig[];
+}
+
+/** Field types the generic renderer does not (yet) handle inline. */
+export interface SourceFieldUnsupportedConfig {
+  type: "ssh-tunnel" | "file-upload";
+  name: string;
+  label: string;
+}
+
+export type SourceFieldConfig =
+  | SourceFieldInputConfig
+  | SourceFieldOauthConfig
+  | SourceFieldOauthAccountSelectConfig
+  | SourceFieldSelectConfig
+  | SourceFieldSwitchGroupConfig
+  | SourceFieldUnsupportedConfig;
+
+export interface SourceConfig {
+  name: string;
+  label?: string;
+  caption?: string;
+  fields: SourceFieldConfig[];
+}
+
 export interface FolderInstructionsUser {
   id?: number;
   uuid?: string;
@@ -466,17 +601,19 @@ export interface FinalizedTaskArtifactUpload {
   uploaded_at?: string;
 }
 
-type CloudRuntimeAdapter = "claude" | "codex";
-
 interface CloudRunOptions {
-  adapter?: CloudRuntimeAdapter;
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
+  /** Only false is sent: opts the run out of rtk command-output compression. */
+  rtkEnabled?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
-  initialPermissionMode?: PermissionMode;
+  initialPermissionMode?: ExecutionMode;
   homeQuickAction?: string;
 }
 
@@ -531,6 +668,13 @@ function buildCloudRunRequestBody(
       }
       body.reasoning_effort = options.reasoningLevel;
     }
+    // The API rejects initial_permission_mode without runtime_adapter and validates it per adapter.
+    if (options.initialPermissionMode) {
+      body.initial_permission_mode = resolveCloudInitialPermissionMode(
+        options.adapter,
+        options.initialPermissionMode,
+      );
+    }
   }
   if (options?.resumeFromRunId) {
     body.resume_from_run_id = options.resumeFromRunId;
@@ -544,17 +688,23 @@ function buildCloudRunRequestBody(
   if (options?.sandboxEnvironmentId) {
     body.sandbox_environment_id = options.sandboxEnvironmentId;
   }
+  if (options?.customImageId) {
+    body.custom_image_id = options.customImageId;
+  }
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
+  }
+  if (options?.autoPublish) {
+    body.auto_publish = options.autoPublish;
+  }
+  if (options?.rtkEnabled === false) {
+    body.rtk_enabled = false;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.initialPermissionMode) {
-    body.initial_permission_mode = options.initialPermissionMode;
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
@@ -588,6 +738,29 @@ function extractRequestErrorMessage(error: unknown, fallback: string): string {
     // Non-JSON body — fall through to the status-based fallback.
   }
   return `${fallback} (HTTP ${match[1]})`;
+}
+
+/**
+ * Parse the shared fetcher's `Failed request: [<status>] <json-body>` throw back
+ * into its status + parsed JSON body, so status-specific responses (422, 429,
+ * 500, 503) can be handled as data instead of a generic error. Returns null when
+ * the error isn't that shape (e.g. a network failure).
+ */
+function parseFailedRequest(
+  error: unknown,
+): { status: number; body: unknown } | null {
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/^Failed request: \[(\d+)\] (.*)$/s);
+  if (!match) {
+    return null;
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(match[2]);
+  } catch {
+    body = match[2];
+  }
+  return { status: Number(match[1]), body };
 }
 
 type AnyArtefact =
@@ -1855,6 +2028,29 @@ export class PostHogAPIClient {
     return (await response.json()) as T;
   }
 
+  private async scoutPost<T>(
+    projectId: number,
+    subPath: string,
+    body: unknown,
+  ): Promise<T> {
+    const urlPath = `/api/projects/${projectId}/signals/scout/${subPath}`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Scout request failed (${subPath}): ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as T;
+  }
+
   async listScoutConfigs(projectId: number): Promise<ScoutConfig[]> {
     const data = await this.scoutGet<
       { results: ScoutConfig[] } | ScoutConfig[]
@@ -1919,29 +2115,67 @@ export class PostHogAPIClient {
     return await this.scoutGet<ScoutRun>(projectId, `runs/${runId}/`);
   }
 
-  async listScoutRunEmissions(
+  /**
+   * POST a run-id list to a scout batch endpoint and flatten the response. The
+   * API caps each call at SCOUT_BATCH_RUN_ID_LIMIT ids, so larger lists are
+   * split into parallel chunks and concatenated — the caller never has to know
+   * the cap exists. Run ids belonging to another team contribute no rows rather
+   * than erroring, so a single stale id can't blank the list.
+   */
+  private async scoutBatchByRunIds<T>(
     projectId: number,
-    runId: string,
-  ): Promise<ScoutEmission[]> {
-    const data = await this.scoutGet<
-      { results: ScoutEmission[] } | ScoutEmission[]
-    >(projectId, `runs/${runId}/emissions/`);
-    return Array.isArray(data) ? data : (data.results ?? []);
+    subPath: string,
+    runIds: string[],
+  ): Promise<T[]> {
+    if (runIds.length === 0) return [];
+    const SCOUT_BATCH_RUN_ID_LIMIT = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < runIds.length; i += SCOUT_BATCH_RUN_ID_LIMIT) {
+      chunks.push(runIds.slice(i, i + SCOUT_BATCH_RUN_ID_LIMIT));
+    }
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        this.scoutPost<{ results: T[] } | T[]>(projectId, subPath, {
+          run_ids: chunk,
+        }),
+      ),
+    );
+    return pages.flatMap((data) =>
+      Array.isArray(data) ? data : (data.results ?? []),
+    );
   }
 
   /**
-   * Best-effort reverse lookup: for each finding a run emitted, the inbox report
-   * (if any) its underlying signal grouped into. Pairs with the report's evidence
-   * list, which links the other direction.
+   * Every supplied run's emitted findings in one request, flattened newest-first
+   * (each row keeps its `run_id` so the caller can regroup). Replaces the old
+   * per-run fan-out — one Postgres query instead of one request per run.
    */
-  async listScoutEmissionReports(
+  async batchScoutRunEmissions(
     projectId: number,
-    runId: string,
+    runIds: string[],
+  ): Promise<ScoutEmission[]> {
+    return this.scoutBatchByRunIds<ScoutEmission>(
+      projectId,
+      "runs/emissions/batch/",
+      runIds,
+    );
+  }
+
+  /**
+   * Best-effort reverse lookup: for each finding the supplied runs emitted, the
+   * inbox report (if any) its underlying signal grouped into. Resolves every
+   * run's findings in a single ClickHouse round-trip instead of one per run.
+   * Pairs with the report's evidence list, which links the other direction.
+   */
+  async batchScoutEmissionReports(
+    projectId: number,
+    runIds: string[],
   ): Promise<ScoutEmissionReportLink[]> {
-    const data = await this.scoutGet<
-      { results: ScoutEmissionReportLink[] } | ScoutEmissionReportLink[]
-    >(projectId, `runs/${runId}/emissions/reports/`);
-    return Array.isArray(data) ? data : (data.results ?? []);
+    return this.scoutBatchByRunIds<ScoutEmissionReportLink>(
+      projectId,
+      "runs/emissions/reports/batch/",
+      runIds,
+    );
   }
 
   async searchScoutScratchpad(
@@ -2026,6 +2260,59 @@ export class PostHogAPIClient {
     return response.data as unknown as ExternalDataSource;
   }
 
+  /**
+   * Fetch the connect-form field schema for external data source types from the
+   * warehouse wizard endpoint. Pass `sourceType` (e.g. `"Jira"`) to scope to one
+   * source; omit to fetch every source's config. Returns a map keyed by the
+   * capitalized source type string.
+   */
+  async getExternalDataSourceConfigs(
+    projectId: number,
+    sourceType?: string,
+  ): Promise<Record<string, SourceConfig>> {
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${projectId}/external_data_sources/wizard/`,
+    );
+    if (sourceType) {
+      url.searchParams.set("source_type", sourceType);
+    }
+    const path = `/api/environments/${projectId}/external_data_sources/wizard/`;
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch source configs: ${response.statusText}`);
+    }
+    return (await response.json()) as Record<string, SourceConfig>;
+  }
+
+  /**
+   * List the accounts/resources a connected OAuth integration exposes for a source type (e.g. the
+   * repositories a GitHub integration can access), for an `oauth-account-select` field. The backend
+   * uses the integration's stored token; the client only passes the integration id. Pass `search`
+   * to filter server-side for large lists.
+   */
+  async getOauthAccounts(
+    projectId: number,
+    sourceType: string,
+    integrationId: number | string,
+    search?: string,
+  ): Promise<IntegrationAccount[]> {
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${projectId}/external_data_sources/oauth_accounts/`,
+    );
+    url.searchParams.set("source_type", sourceType);
+    url.searchParams.set("integration_id", String(integrationId));
+    if (search?.trim()) {
+      url.searchParams.set("search", search.trim());
+    }
+    const path = `/api/environments/${projectId}/external_data_sources/oauth_accounts/`;
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch accounts: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { accounts?: IntegrationAccount[] };
+    return data.accounts ?? [];
+  }
+
   async updateExternalDataSchema(
     projectId: number,
     schemaId: string,
@@ -2057,6 +2344,7 @@ export class PostHogAPIClient {
     createdBy?: number;
     originProduct?: string;
     internal?: boolean;
+    channel?: string;
   }) {
     const teamId = await this.getTeamId();
     const params: Record<string, string | number | boolean> = {
@@ -2077,6 +2365,10 @@ export class PostHogAPIClient {
 
     if (options?.internal) {
       params.internal = true;
+    }
+
+    if (options?.channel) {
+      params.channel = options.channel;
     }
 
     const data = await this.api.get(`/api/projects/{project_id}/tasks/`, {
@@ -2147,6 +2439,10 @@ export class PostHogAPIClient {
         runtime_adapter?: string | null;
         model?: string | null;
         reasoning_effort?: string | null;
+        channel?: string | null;
+        pending_user_message?: string;
+        pending_user_artifact_ids?: string[];
+        auto_publish?: boolean;
       },
   ) {
     const teamId = await this.getTeamId();
@@ -2194,6 +2490,224 @@ export class PostHogAPIClient {
       github_integration: task.github_integration,
       github_user_integration: task.github_user_integration,
     });
+  }
+
+  // Task channels + threads. Not in the generated OpenAPI client yet, so these
+  // go through the raw fetcher like the desktop file-system endpoints above.
+
+  // List backend task channels: all public channels plus the requester's
+  // personal "#me" channel (provisioned lazily server-side on first list).
+  async getTaskChannels(): Promise<TaskChannel[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task channels: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskChannel[];
+  }
+
+  // Resolve-or-create a public channel by name (idempotent server-side).
+  async resolveTaskChannel(name: string): Promise<TaskChannel> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ name }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to resolve task channel: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskChannel;
+  }
+
+  // A channel's system-announcement feed (context created, CONTEXT.md being
+  // built), chronological. Durable + team-visible, rendered alongside task cards.
+  async getChannelFeed(channelId: string): Promise<ChannelFeedMessage[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${channelId}/feed/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch channel feed: ${response.statusText}`);
+    }
+    return (await response.json()) as ChannelFeedMessage[];
+  }
+
+  // Post a system announcement into a channel's feed. The row is authored by the
+  // system; the server records the requester as `author` for "Adam …" rendering.
+  async postChannelFeedMessage(
+    channelId: string,
+    input: {
+      event: ChannelFeedMessageEvent;
+      payload?: Record<string, unknown>;
+      // Optional explicit timestamp (ISO) so a burst of announcements orders
+      // deterministically instead of racing on server insert time.
+      createdAt?: string;
+    },
+  ): Promise<ChannelFeedMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${channelId}/feed/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({
+          event: input.event,
+          payload: input.payload ?? {},
+          ...(input.createdAt ? { created_at: input.createdAt } : {}),
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to post channel feed message: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as ChannelFeedMessage;
+  }
+
+  // Mentions of the current user across task threads, newest first.
+  async getTaskMentions(options?: { since?: string }): Promise<TaskMention[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_mentions/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options?.since) {
+      url.searchParams.set("since", options.since);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task mentions: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskMention[];
+  }
+
+  async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch thread messages: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as TaskThreadMessage[];
+  }
+
+  async createTaskThreadMessage(
+    taskId: string,
+    content: string,
+  ): Promise<TaskThreadMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ content }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to post thread message: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskThreadMessage;
+  }
+
+  async deleteTaskThreadMessage(
+    taskId: string,
+    messageId: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/${encodeURIComponent(messageId)}/`;
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Failed to delete thread message: ${response.statusText}`,
+      );
+    }
+  }
+
+  // Forward a thread message into the task's live run. Task author only; the
+  // backend rejects with 400/403 otherwise (surfaced via the error body detail).
+  async sendTaskThreadMessageToAgent(
+    taskId: string,
+    messageId: string,
+  ): Promise<TaskThreadMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/${encodeURIComponent(messageId)}/send_to_agent/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({}) },
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      let message = `Failed to send message to agent: ${response.statusText}`;
+      try {
+        const parsed = JSON.parse(errorText) as { detail?: string };
+        if (parsed.detail) message = parsed.detail;
+      } catch {
+        if (errorText) message = errorText;
+      }
+      throw new Error(message);
+    }
+    return (await response.json()) as TaskThreadMessage;
+  }
+
+  // Everyone in the current organization — the pool of taggable teammates for
+  // thread @-mentions. Membership churn is slow, so callers cache aggressively.
+  async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {
+    const ORG_MEMBERS_MAX_PAGES = 20;
+    const ORG_MEMBERS_PAGE_SIZE = 200;
+    const all: OrganizationMemberBasic[] = [];
+    let urlPath = `/api/organizations/@current/members/?limit=${ORG_MEMBERS_PAGE_SIZE}`;
+    for (let i = 0; i < ORG_MEMBERS_MAX_PAGES; i++) {
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url: new URL(`${this.api.baseUrl}${urlPath}`),
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch organization members: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as {
+        results: OrganizationMemberBasic[];
+        next: string | null;
+      };
+      all.push(...page.results);
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `listOrganizationMembers hit MAX_PAGES (${ORG_MEMBERS_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
   }
 
   async sendRunCommand(
@@ -2638,32 +3152,51 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
+    const entries: StoredLogEntry[] = [];
     try {
       const teamId = await this.getTeamId();
-      const url = new URL(
-        `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      );
-      url.searchParams.set("limit", String(options?.limit ?? 5000));
-      if (options?.after) {
-        url.searchParams.set("after", options.after);
-      }
-      const response = await this.api.fetcher.fetch({
-        method: "get",
-        url,
-        path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`,
-      });
-
-      if (!response.ok) {
-        log.warn(
-          `Failed to fetch session logs: ${response.status} ${response.statusText}`,
+      const path = `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/session_logs/`;
+      let offset = 0;
+      while (entries.length < maxEntries) {
+        const url = new URL(`${this.api.baseUrl}${path}`);
+        url.searchParams.set(
+          "limit",
+          String(
+            Math.min(SESSION_LOGS_MAX_PAGE_SIZE, maxEntries - entries.length),
+          ),
         );
-        return [];
-      }
+        if (offset > 0) {
+          url.searchParams.set("offset", String(offset));
+        }
+        if (options?.after) {
+          url.searchParams.set("after", options.after);
+        }
+        const response = await this.api.fetcher.fetch({
+          method: "get",
+          url,
+          path,
+        });
 
-      return (await response.json()) as StoredLogEntry[];
+        if (!response.ok) {
+          log.warn(
+            `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
+          );
+          break;
+        }
+
+        const page = (await response.json()) as StoredLogEntry[];
+        entries.push(...page);
+        const hasMore = response.headers.get("X-Has-More") === "true";
+        if (!hasMore || page.length === 0) {
+          break;
+        }
+        offset += page.length;
+      }
+      return entries;
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return [];
+      return entries;
     }
   }
 
@@ -4197,6 +4730,155 @@ export class PostHogAPIClient {
     }
   }
 
+  async listSandboxCustomImages(): Promise<SandboxCustomImage[]> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/`,
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        const errorData = (await response.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new SandboxCustomImagesDisabledError(errorData.detail);
+      }
+      throw new Error(
+        `Failed to fetch sandbox custom images: ${response.statusText}`,
+      );
+    }
+    const data = (await response.json()) as {
+      results?: SandboxCustomImage[];
+    };
+    return data.results ?? [];
+  }
+
+  async createSandboxCustomImage(input: {
+    name: string;
+    description?: string;
+    repository?: string | null;
+    private?: boolean;
+  }): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to create sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async getSandboxCustomImage(id: string): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async ensureSandboxCustomImageBuilderTask(
+    id: string,
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/builder_task/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/builder_task/`,
+      overrides: {
+        body: JSON.stringify({}),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to open image builder session: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async buildSandboxCustomImage(
+    id: string,
+    specYaml?: string | null,
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/build/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/build/`,
+      overrides: {
+        body: JSON.stringify(
+          specYaml === undefined ? {} : { spec_yaml: specYaml },
+        ),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to build sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async deleteSandboxCustomImage(id: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "delete",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to delete sandbox custom image: ${response.statusText}`,
+      );
+    }
+  }
+
   /** Find an exported asset by session recording ID. */
   async findExportBySessionRecordingId(
     projectId: number,
@@ -4271,11 +4953,18 @@ export class PostHogAPIClient {
    * Lists the team's LLM skills (latest versions, no bodies).
    * Returns null when the feature is unavailable for this org (the
    * llm-analytics-skills flag gates the endpoint server-side with a 403).
+   * `category` narrows to one exact server-owned category (e.g. "scout"
+   * for Signals scouts); omit it to list every category.
    */
-  async listLlmSkills(): Promise<LlmSkillListItem[] | null> {
+  async listLlmSkills(
+    options: { category?: string } = {},
+  ): Promise<LlmSkillListItem[] | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/environments/${teamId}/llm_skills/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options.category !== undefined) {
+      url.searchParams.set("category", options.category);
+    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
@@ -4728,6 +5417,60 @@ export class PostHogAPIClient {
   }
 
   /**
+   * Write a single bundle file on a draft revision. The server accepts
+   * `agent.md` and `skills/<id>/SKILL.md` paths only — tool source / schema
+   * stay read-only this round. Ready / live / archived revisions return 409.
+   */
+  async updateAgentDraftBundleFile(
+    idOrSlug: string,
+    revisionId: string,
+    filePath: string,
+    content: string,
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/file/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "put",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({ path: filePath, content }),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
+   * Bulk-import a set of `.md` files into a draft revision's bundle — the
+   * migration hatch for porting an existing multi-file agent in one paste.
+   * Sets `agent_md` if present and merges `skills[]` by id (adds new ids,
+   * overwrites bodies for existing ids; skills not mentioned are left alone).
+   * Draft-only; ready / live / archived return 409.
+   */
+  async importAgentDraftBundle(
+    idOrSlug: string,
+    revisionId: string,
+    body: {
+      agent_md?: string;
+      skills?: { id: string; description?: string; body: string }[];
+    },
+  ): Promise<AgentRevision> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/bundle/import/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify(body),
+      },
+    });
+    return (await response.json()) as AgentRevision;
+  }
+
+  /**
    * A revision's bundle, flattened to per-file rows. The server returns a typed
    * `{ bundle: { agent_md, skills[], tools[] } }`; we expand it to the canonical
    * file paths the explorer renders (agent.md, skills/<id>/SKILL.md,
@@ -4787,6 +5530,143 @@ export class PostHogAPIClient {
     }
     out.sort((a, b) => a.path.localeCompare(b.path));
     return out;
+  }
+
+  /**
+   * Author/compile one custom tool on a draft revision (PUT). Draft-only —
+   * ready/live/archived bundles are sealed and the server returns a conflict.
+   * A compile failure (HTTP 422) is returned as a typed `{ ok: false }` result
+   * carrying `errors`, so the caller renders diagnostics inline against the
+   * source rather than surfacing a generic failure; other non-2xx (400
+   * invalid_request, 409 sealed revision, …) still throw.
+   */
+  async putRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+    body: WriteToolRequest,
+  ): Promise<WriteToolResult> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "put",
+        url,
+        path,
+        overrides: { body: JSON.stringify(body) },
+      });
+      const data = (await response.json()) as {
+        tool_id: string;
+        capabilities: ToolCapabilities;
+      };
+      return {
+        ok: true,
+        tool_id: data.tool_id,
+        capabilities: data.capabilities,
+      };
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      if (
+        failure?.status === 422 &&
+        isObjectRecord(failure.body) &&
+        failure.body.error === "tool_compile_failed"
+      ) {
+        return {
+          ok: false,
+          error: "tool_compile_failed",
+          tool_id: optionalString(failure.body.tool_id) ?? toolId,
+          errors: Array.isArray(failure.body.errors)
+            ? (failure.body.errors as ToolCompileError[])
+            : [],
+        };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Remove one custom tool from a draft revision (draft-only). A 404
+   * (tool_not_found) is treated as success — the tool is already gone, which is
+   * the desired end state.
+   */
+  async deleteRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+  ): Promise<void> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      await this.api.fetcher.fetch({ method: "delete", url, path });
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      if (failure?.status === 404) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Execute a persisted tool once in a sandbox (POST …/dry_run). The envelope's
+   * `ok` is authoritative: a tool-side failure is HTTP 200 with `ok: false`, so
+   * both 2xx and 500 return `{ outcome: "completed", envelope }` and the caller
+   * reads `error.code`/`message` from the body. Throttling (429) and an
+   * unconfigured backend (503) are returned as distinct outcomes — never thrown,
+   * never retried, since dry-run is interactive and process-capped.
+   */
+  async dryRunRevisionTool(
+    idOrSlug: string,
+    revisionId: string,
+    toolId: string,
+    body: DryRunToolRequest,
+  ): Promise<DryRunToolResult> {
+    const teamId = await this.getTeamId();
+    const path = `${this.agentApplicationsPath(teamId)}${encodeURIComponent(idOrSlug)}/revisions/${encodeURIComponent(revisionId)}/tools/${encodeURIComponent(toolId)}/dry_run/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url,
+        path,
+        overrides: { body: JSON.stringify(body) },
+      });
+      return {
+        outcome: "completed",
+        envelope: (await response.json()) as DryRunToolEnvelope,
+      };
+    } catch (error) {
+      const failure = parseFailedRequest(error);
+      // A 500 still carries the envelope (ok:false + error.code/duration_ms) —
+      // surface it as completed so infra failures read like any tool failure.
+      if (
+        failure?.status === 500 &&
+        isObjectRecord(failure.body) &&
+        "ok" in failure.body
+      ) {
+        return {
+          outcome: "completed",
+          envelope: failure.body as unknown as DryRunToolEnvelope,
+        };
+      }
+      if (failure?.status === 429) {
+        const max = isObjectRecord(failure.body)
+          ? failure.body.max_concurrent
+          : undefined;
+        // Omit rather than default to 0 — "0 runs in flight" would be a
+        // misleading count for a throttle.
+        return {
+          outcome: "throttled",
+          max_concurrent: typeof max === "number" ? max : undefined,
+        };
+      }
+      if (failure?.status === 503) {
+        return { outcome: "unavailable" };
+      }
+      throw error;
+    }
   }
 
   /**

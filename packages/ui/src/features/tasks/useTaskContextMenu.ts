@@ -38,16 +38,19 @@ export function useTaskContextMenu() {
 
   const showContextMenu = useCallback(
     async (
-      task: Task,
+      task: Pick<Task, "id" | "title">,
       event: React.MouseEvent,
       options?: {
         worktreePath?: string;
         folderPath?: string;
         isPinned?: boolean;
         isSuspended?: boolean;
+        canStop?: boolean;
+        runId?: string;
         isInCommandCenter?: boolean;
         hasEmptyCommandCenterCell?: boolean;
         onTogglePin?: () => void;
+        onStop?: (taskId: string, taskTitle: string, runId?: string) => void;
         onArchive?: (taskId: string) => void;
         onArchivePrior?: (taskId: string) => void;
         onAddToCommandCenter?: () => void;
@@ -61,9 +64,12 @@ export function useTaskContextMenu() {
         folderPath,
         isPinned,
         isSuspended,
+        canStop,
+        runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
         onTogglePin,
+        onStop,
         onArchive,
         onArchivePrior,
         onAddToCommandCenter,
@@ -76,6 +82,7 @@ export function useTaskContextMenu() {
           folderPath,
           isPinned,
           isSuspended,
+          canStop,
           isInCommandCenter,
           hasEmptyCommandCenterCell,
           channels: channels.map(({ id, name }) => ({ id, name })),
@@ -100,6 +107,10 @@ export function useTaskContextMenu() {
           case "restore":
             await restoreTask(task.id);
             break;
+          case "stop": {
+            onStop?.(task.id, task.title, runId);
+            break;
+          }
           case "archive":
             if (onArchive) {
               onArchive(task.id);
@@ -124,7 +135,7 @@ export function useTaskContextMenu() {
             try {
               await fileTask(intent.channelId, task.id, task.title);
             } catch (error) {
-              toast.error("Couldn't file task to channel", {
+              toast.error("Couldn't file task to context", {
                 description:
                   error instanceof Error ? error.message : String(error),
               });

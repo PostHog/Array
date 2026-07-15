@@ -5,15 +5,19 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { Flex, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useDiffViewerStore } from "../../code-editor/diffViewerStore";
 import {
   useLocalBranchChangedFiles,
   usePrChangedFiles,
 } from "../../git-interaction/useGitQueries";
 import { usePrDetails } from "../../git-interaction/usePrDetails";
+import { makeFileKey } from "../../git-interaction/utils/fileKey";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { useCwd } from "../../sidebar/useCwd";
+import { useDiscardAllChanges } from "../../task-detail/hooks/useDiscardAllChanges";
+import { useDiscardFile } from "../../task-detail/hooks/useDiscardFile";
+import { useStageToggle } from "../../task-detail/hooks/useStageToggle";
 import { REVIEW_FILE_CACHE_TIME_MS, REVIEW_MAX_FILE_LINES } from "../constants";
 import { useEffectiveDiffSource } from "../hooks/useEffectiveDiffSource";
 import { useReviewDiffs } from "../hooks/useReviewDiffs";
@@ -174,6 +178,7 @@ export function ReviewPage({ task }: ReviewPageProps) {
       repoPath={repoPath}
       taskId={taskId}
       openFile={openFile}
+      changedFiles={changedFiles}
       prUrl={prUrl}
       totalFileCount={totalFileCount}
       linesAdded={linesAdded}
@@ -206,6 +211,7 @@ function LocalReviewContent({
   repoPath,
   taskId,
   openFile,
+  changedFiles,
   prUrl,
   totalFileCount,
   linesAdded,
@@ -234,6 +240,7 @@ function LocalReviewContent({
   repoPath: string;
   taskId: string;
   openFile: (taskId: string, path: string, preview: boolean) => void;
+  changedFiles: ChangedFile[];
   prUrl: string | null;
   totalFileCount: number;
   linesAdded: number;
@@ -260,6 +267,34 @@ function LocalReviewContent({
 }) {
   usePrefetchUntrackedFileContents(repoPath, untrackedFiles, true);
 
+  const discardFile = useDiscardFile(repoPath);
+  const discardAllChanges = useDiscardAllChanges(repoPath);
+  const stageToggle = useStageToggle(repoPath);
+  const filesByKey = useMemo(() => {
+    const map = new Map<string, ChangedFile>();
+    for (const file of changedFiles) {
+      map.set(makeFileKey(file.staged, file.path), file);
+    }
+    return map;
+  }, [changedFiles]);
+  const onDiscardFile = useCallback(
+    (key: string) => {
+      const file = filesByKey.get(key);
+      if (!file) return;
+      const fileName = file.path.split("/").pop() ?? file.path;
+      void discardFile(file, fileName);
+    },
+    [filesByKey, discardFile],
+  );
+  const onStageFile = useCallback(
+    (key: string) => {
+      const file = filesByKey.get(key);
+      if (!file) return;
+      void stageToggle(file);
+    },
+    [filesByKey, stageToggle],
+  );
+
   const items = useMemo<ReviewListItem[]>(() => {
     const reviewItems: ReviewListItem[] = [];
 
@@ -278,6 +313,8 @@ function LocalReviewContent({
           collapsedFiles,
           toggleFile,
           openFile,
+          onDiscardFile,
+          onStageFile,
           prUrl,
           commentThreads,
         }),
@@ -304,6 +341,8 @@ function LocalReviewContent({
         collapsedFiles,
         toggleFile,
         openFile,
+        onDiscardFile,
+        onStageFile,
         prUrl,
         commentThreads,
       }),
@@ -316,6 +355,8 @@ function LocalReviewContent({
         diffOptions,
         collapsedFiles,
         toggleFile,
+        onDiscardFile,
+        onStageFile,
       }),
     );
 
@@ -325,6 +366,8 @@ function LocalReviewContent({
     commentThreads,
     diffOptions,
     hasStagedFiles,
+    onDiscardFile,
+    onStageFile,
     openFile,
     prUrl,
     repoPath,
@@ -351,6 +394,7 @@ function LocalReviewContent({
       onCollapseAll={collapseAll}
       onUncollapseFile={uncollapseFile}
       onRefresh={refetch}
+      onDiscardAll={totalFileCount > 0 ? discardAllChanges : undefined}
       effectiveSource={effectiveSource}
       branchSourceAvailable={branchSourceAvailable}
       prSourceAvailable={prSourceAvailable}
@@ -387,13 +431,23 @@ function RemoteReviewPage({
   const taskId = task.id;
   const isBranch = effectiveSource === "branch";
 
-  const { data: branchFiles = EMPTY_CHANGED_FILES, isLoading: branchLoading } =
-    useLocalBranchChangedFiles(
-      isBranch && isReviewOpen ? repoPath : null,
-      isBranch && isReviewOpen ? branch : null,
-    );
-  const { data: prFiles = EMPTY_CHANGED_FILES, isLoading: prLoading } =
-    usePrChangedFiles(!isBranch && isReviewOpen ? prUrl : null);
+  const {
+    data: branchFiles = EMPTY_CHANGED_FILES,
+    isLoading: branchLoading,
+    refetch: refetchBranch,
+  } = useLocalBranchChangedFiles(
+    isBranch && isReviewOpen ? repoPath : null,
+    isBranch && isReviewOpen ? branch : null,
+  );
+  const {
+    data: prFiles = EMPTY_CHANGED_FILES,
+    isLoading: prLoading,
+    refetch: refetchPr,
+  } = usePrChangedFiles(!isBranch && isReviewOpen ? prUrl : null);
+
+  const onRefresh = useCallback(() => {
+    void (isBranch ? refetchBranch() : refetchPr());
+  }, [isBranch, refetchBranch, refetchPr]);
 
   const files = isBranch ? branchFiles : prFiles;
   const isLoading = isBranch
@@ -438,6 +492,7 @@ function RemoteReviewPage({
       onExpandAll={reviewState.expandAll}
       onCollapseAll={reviewState.collapseAll}
       onUncollapseFile={reviewState.uncollapseFile}
+      onRefresh={onRefresh}
       effectiveSource={effectiveSource}
       branchSourceAvailable={branchSourceAvailable}
       prSourceAvailable={prSourceAvailable}

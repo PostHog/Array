@@ -6,12 +6,13 @@ import type {
   SessionConfigSelectOption,
   SessionConfigSelectOptions,
 } from "@agentclientprotocol/sdk";
+import type { Adapter } from "./adapter";
 import type { SkillButtonId } from "./analytics-events";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
 import type { TaskRunStatus } from "./task";
 
-export type Adapter = "claude" | "codex";
+export type { Adapter };
 
 export type PermissionRequest = Omit<RequestPermissionRequest, "sessionId"> & {
   taskRunId: string;
@@ -64,10 +65,28 @@ export interface AgentSession {
   processedLineCount?: number;
   framework?: "claude";
   adapter?: Adapter;
+  model?: string;
+  executionMode?: ExecutionMode;
+  reasoningLevel?: string;
   configOptions?: SessionConfigOption[];
+  /**
+   * Adapter's negotiated steering capability (`_meta.posthog.steering` from
+   * initialize). "native" means a mid-turn message folds into the running turn
+   * (claude, codex); "interrupt-resend" (legacy) or undefined
+   * means the host must cancel + resend. Drives the steer-vs-resend decision.
+   */
+  steering?: string;
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
   messageQueue: QueuedMessage[];
+  /**
+   * Id of the queued message the user currently has open in the composer for an
+   * in-place edit, if any. While set it acts as a drain boundary: when the turn
+   * ends, everything queued *before* this message auto-sends, but this message
+   * and everything after it stay queued until the edit is saved or cancelled.
+   * See {@link sendableQueuePrefixLength}.
+   */
+  editingQueuedId?: string;
   isCloud?: boolean;
   cloudStatus?: TaskRunStatus;
   cloudStage?: string | null;
@@ -76,6 +95,7 @@ export interface AgentSession {
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;
   handoffInProgress?: boolean;
+  stopRequested?: boolean;
   optimisticItems: OptimisticItem[];
   contextUsed?: number;
   contextSize?: number;
@@ -83,6 +103,23 @@ export interface AgentSession {
   idleKilled?: boolean;
   agentVersion?: string;
   agentIdleForRunId?: string;
+}
+
+/**
+ * How many messages at the head of the queue are eligible to auto-send when the
+ * turn ends. A message being edited in place ({@link AgentSession.editingQueuedId})
+ * is a hard boundary: the messages queued before it may send, but it and
+ * everything after it stay put until the edit is saved or cancelled. Returns the
+ * full queue length when nothing is being edited, or when the edited message has
+ * already left the queue (e.g. it was discarded).
+ */
+export function sendableQueuePrefixLength(
+  session: Pick<AgentSession, "messageQueue" | "editingQueuedId">,
+): number {
+  const { messageQueue, editingQueuedId } = session;
+  if (!editingQueuedId) return messageQueue.length;
+  const editIndex = messageQueue.findIndex((m) => m.id === editingQueuedId);
+  return editIndex === -1 ? messageQueue.length : editIndex;
 }
 
 export function isSelectGroup(
@@ -159,4 +196,42 @@ export function getCurrentModeFromConfigOptions(
 ): ExecutionMode | undefined {
   const modeOption = getConfigOptionByCategory(configOptions, "mode");
   return modeOption?.currentValue as ExecutionMode | undefined;
+}
+
+/**
+ * The safe non-bypass mode to revert to when "Bypass permissions" is turned
+ * off, chosen from the session's OWN mode options so it's always valid for that
+ * adapter. Claude exposes "default"; codex has no "default" (its presets are
+ * plan/read-only/auto/full-access) so it falls back to "auto" — reverting codex
+ * to "default" would set an unknown mode (no approvalPolicy → an undefined
+ * approval state). Returns undefined when there is no usable mode option.
+ */
+export function resolveBypassRevertMode(
+  modeOption: SessionConfigOption | undefined,
+): string | undefined {
+  if (modeOption?.type !== "select") return undefined;
+  const opts = flattenSelectOptions(modeOption.options);
+  const isBypass = (v: string) =>
+    v === "bypassPermissions" || v === "full-access";
+  if (opts.some((o) => o.value === "default")) return "default";
+  if (opts.some((o) => o.value === "auto")) return "auto";
+  return opts.find((o) => !isBypass(o.value))?.value;
+}
+
+/**
+ * Whether a mid-turn message can be folded into the running turn (steered)
+ * rather than interrupt-and-resent. Decided by the adapter's negotiated
+ * `steering` capability: "native" folds (claude, codex app-server);
+ * "interrupt-resend" (legacy) does not. Cloud runs never steer locally.
+ *
+ * Fallback: if `steering` is unset (a start path that predates capability
+ * plumbing), Claude is still treated as native — it has always steered — so the
+ * capability rollout can never regress it.
+ */
+export function sessionSupportsNativeSteer(
+  session: Pick<AgentSession, "isCloud" | "steering" | "adapter">,
+): boolean {
+  if (session.isCloud) return false;
+  if (session.steering === "native") return true;
+  return session.steering == null && session.adapter === "claude";
 }

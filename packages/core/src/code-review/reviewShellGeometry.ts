@@ -1,6 +1,6 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 
-export type DeferredReason = "line-limit" | "unavailable";
+export type DeferredReason = "line-limit" | "unavailable" | "binary";
 
 export function splitFilePath(fullPath: string): {
   dirPath: string;
@@ -43,5 +43,7 @@ export function getDeferredMessage(reason: DeferredReason): string {
       return "File exceeds the 5,000-line review limit.";
     case "unavailable":
       return "Unable to load diff.";
+    case "binary":
+      return "Binary file not shown.";
   }
 }

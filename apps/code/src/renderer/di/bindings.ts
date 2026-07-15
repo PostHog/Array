@@ -3,6 +3,16 @@ import {
   ARCHIVE_CLIENT,
   type ArchiveClient,
 } from "@posthog/core/archive/identifiers";
+import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
+import {
+  AUTORESEARCH_GATE,
+  AUTORESEARCH_SERVICE,
+  AUTORESEARCH_SESSION_CLIENT,
+  AUTORESEARCH_STORAGE_CLIENT,
+  type AutoresearchGate,
+  type AutoresearchSessionClient,
+  type AutoresearchStorageClient,
+} from "@posthog/core/autoresearch/identifiers";
 import {
   CODE_REVIEW_WORKSPACE_CLIENT,
   REVERT_HUNK_SERVICE,
@@ -59,6 +69,8 @@ import {
   type BundleLocalSkill,
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
+  CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES,
+  type ResolveSkillBundleDependencies,
 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import {
   LOCAL_HANDOFF_DIALOG,
@@ -85,6 +97,12 @@ import {
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { SKILLS_WORKSPACE_CLIENT } from "@posthog/core/skills/identifiers";
 import type { SkillsWorkspaceClient } from "@posthog/core/skills/teamSkillsService";
+import {
+  SPEECH_SETTINGS_PROVIDER,
+  SPEECH_USER_NAME_PROVIDER,
+  type SpeechSettingsProvider,
+  type UserNameProvider,
+} from "@posthog/core/speech/identifiers";
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
@@ -122,13 +140,22 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import {
+  HOST_CAPABILITIES,
+  type HostCapabilities,
+} from "@posthog/platform/host-capabilities";
+import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
+import { type ISpeech, SPEECH_SERVICE } from "@posthog/platform/speech";
 import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
+import {
+  BROWSER_TABS_CLIENT,
+  type BrowserTabsClient,
+} from "@posthog/ui/features/browser-tabs/browserTabsClient";
 import {
   REVIEW_HOST,
   type ReviewHost,
@@ -172,7 +199,9 @@ import {
   ACTIVE_VIEW_PROVIDER,
   type IActiveView,
   type INotificationSettings,
+  type ISpeechNotifySettings,
   NOTIFICATION_SETTINGS_PROVIDER,
+  SPEECH_NOTIFY_SETTINGS,
 } from "@posthog/ui/features/notifications/identifiers";
 import {
   AGENT_PROMPT_SENDER,
@@ -182,6 +211,14 @@ import {
   MCP_TOOL_BLOCK_COMPONENT,
   type McpToolBlockComponent,
 } from "@posthog/ui/features/sessions/components/session-update/identifiers";
+import {
+  DEV_MODE_CLIENT,
+  type DevModeClient,
+} from "@posthog/ui/features/settings/devModeClient";
+import {
+  type ISpeechKeyStore,
+  SPEECH_KEY_STORE,
+} from "@posthog/ui/features/settings/speechKeyStore";
 import {
   SHELL_CLIENT,
   type ShellClient,
@@ -229,7 +266,9 @@ export interface RendererBindings {
   [TRPC_CLIENT]: TRPCClient<TrpcRouter>;
   [HOST_TRPC_CLIENT]: HostTrpcClient;
   [UPDATES_CLIENT]: UpdatesClient;
+  [DEV_MODE_CLIENT]: DevModeClient;
   [CONNECTIVITY_CLIENT]: ConnectivityClient;
+  [BROWSER_TABS_CLIENT]: BrowserTabsClient;
   [DISCORD_PRESENCE_CLIENT]: DiscordPresenceClient;
   [SHELL_CLIENT]: ShellClient;
   [FOCUS_CONTROLLER_DEPS]: FocusControllerDeps;
@@ -267,6 +306,7 @@ export interface RendererBindings {
   [REVERT_HUNK_SERVICE]: RevertHunkService;
   [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
   [CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL]: BundleLocalSkill;
+  [CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES]: ResolveSkillBundleDependencies;
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
@@ -284,17 +324,27 @@ export interface RendererBindings {
   [REPOSITORIES_SERVICE]: RepositoriesService;
   [HEDGEHOG_MODE_HOST]: HedgehogModeHost;
   [AGENT_PROMPT_SENDER]: AgentPromptSender;
+  [AUTORESEARCH_SESSION_CLIENT]: AutoresearchSessionClient;
+  [AUTORESEARCH_STORAGE_CLIENT]: AutoresearchStorageClient;
+  [AUTORESEARCH_GATE]: AutoresearchGate;
   [FILE_PATH_RESOLVER]: FilePathResolver;
   [NAVIGATION_TASK_BINDER]: NavigationTaskBinder;
   [ROOT_LOGGER]: RootLogger;
   [NOTIFICATIONS_SERVICE]: INotifications;
   [NOTIFICATION_SETTINGS_PROVIDER]: INotificationSettings;
   [ACTIVE_VIEW_PROVIDER]: IActiveView;
+  [SPEECH_SERVICE]: ISpeech;
+  [SPEECH_SETTINGS_PROVIDER]: SpeechSettingsProvider;
+  [SPEECH_USER_NAME_PROVIDER]: UserNameProvider;
+  [SPEECH_NOTIFY_SETTINGS]: ISpeechNotifySettings;
+  [SPEECH_KEY_STORE]: ISpeechKeyStore;
   [FILE_WATCHER_CLIENT]: FileWatcherClient;
   [FEATURE_FLAGS]: FeatureFlags;
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
   [SETUP_STORE]: ISetupStore;
+  [HOST_CAPABILITIES]: HostCapabilities;
 
   // --- desktop-contributions.ts ---
   [CONTRIBUTION]: Contribution;
+  [AUTORESEARCH_SERVICE]: AutoresearchService;
 }

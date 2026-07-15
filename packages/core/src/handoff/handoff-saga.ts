@@ -1,4 +1,5 @@
 import {
+  type Adapter,
   type GitHandoffCheckpoint,
   type HandoffLocalGitState,
   Saga,
@@ -41,7 +42,7 @@ export interface HandoffSagaDeps extends HandoffBaseDeps {
     projectId: number;
     logUrl: string;
     sessionId?: string;
-    adapter?: "claude" | "codex";
+    adapter?: Adapter;
   }): Promise<{ sessionId: string } | null>;
   closeCloudRun(
     taskId: string,
