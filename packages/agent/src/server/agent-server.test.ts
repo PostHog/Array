@@ -25,6 +25,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { POSTHOG_NOTIFICATIONS } from "../acp-extensions";
 import { getSessionJsonlPath } from "../adapters/claude/session/jsonl-hydration";
 import type { PermissionMode } from "../execution-mode";
 import type { PostHogAPIClient } from "../posthog-api";
@@ -1431,6 +1432,126 @@ describe("AgentServer HTTP Mode", () => {
       expect(response.status).toBe(400);
       const body = await response.json();
       expect(body.error).toBe("No active session for this run");
+    }, 20000);
+
+    it("continues a cloud task after a manual compact command", async () => {
+      const s = createServer();
+      await s.start();
+      const broadcastEvent = vi.fn();
+      let serverInternals!: {
+        session: { clientConnection: { prompt: typeof prompt } };
+        broadcastEvent: typeof broadcastEvent;
+        handleAcpTransportMessage(message: unknown): void;
+      };
+      const prompt = vi.fn(async (_params: { prompt: ContentBlock[] }) => {
+        serverInternals.handleAcpTransportMessage({
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+          params: { sessionId: "session-1", stopReason: "end_turn" },
+        });
+        return { stopReason: "end_turn" };
+      });
+      serverInternals = s as unknown as typeof serverInternals;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.broadcastEvent = broadcastEvent;
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "compact-and-continue",
+          method: "user_message",
+          params: {
+            content:
+              "/compact Continue with the task using the question tool and plan.",
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result?: { stopReason?: string };
+      };
+      expect(body.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+      expect(prompt.mock.calls[0]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: "/compact Continue with the task using the question tool and plan.",
+        },
+      ]);
+      expect(prompt.mock.calls[1]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: expect.stringContaining("Continue working on the task"),
+          _meta: { ui: { hidden: true } },
+        },
+      ]);
+      const turnCompleteEvents = broadcastEvent.mock.calls.filter(
+        ([event]) =>
+          (event as { notification?: { method?: string } }).notification
+            ?.method === POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+      );
+      expect(turnCompleteEvents).toHaveLength(1);
+    }, 20000);
+
+    it("retries only the continuation after compact follow-up failure", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn(async (_params: { prompt: ContentBlock[] }) => ({
+          stopReason: "end_turn",
+        }))
+        .mockResolvedValueOnce({ stopReason: "end_turn" })
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async () =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "compact-retry",
+            method: "user_message",
+            params: {
+              content: "/compact Continue the task.",
+              messageId: "compact-retry",
+            },
+          }),
+        });
+
+      const first = await send();
+      expect(first.status).toBe(200);
+      expect(prompt).toHaveBeenCalledTimes(2);
+
+      const retry = await send();
+      expect(retry.status).toBe(200);
+      expect(prompt).toHaveBeenCalledTimes(3);
+      expect(prompt.mock.calls[0]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: "/compact Continue the task.",
+      });
+      expect(prompt.mock.calls[1]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("Continue working on the task"),
+      });
+      expect(prompt.mock.calls[2]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("Continue working on the task"),
+      });
     }, 20000);
 
     it("rewrites a bundled local skill slash command before sending the prompt", async () => {
