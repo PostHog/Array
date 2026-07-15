@@ -28,8 +28,8 @@ Walk me through building it:
    - Whether it works on a repository (for code changes and PRs) or is report-only.
    - Whether it may open pull requests, and how I want to hear about runs (in-app, email, or Slack).
    - A short name.
-3. When you have enough, show me a clear summary of the loop — name, what it does, when it runs, where it works, notifications — and ask me to confirm before creating anything.
-4. Only after I confirm, create it by calling the PostHog MCP \`loops-create\` tool with the assembled configuration. Make it a personal loop unless I ask otherwise. Then tell me it's created and where to find it.
+3. When you have enough, call the PostHog MCP \`loops-review\` tool with the full assembled configuration (the same fields \`loops-create\` takes: name, instructions, runtime_adapter, triggers, behaviors, notifications, and so on). This renders an interactive review card that shows me the loop and gives me a Create button. Make it a personal loop unless I ask otherwise.
+4. Do NOT call \`loops-create\` yourself — the review card's Create button creates the loop once I confirm. After you call \`loops-review\`, just tell me to review the card and create it (or tell you what to change).
 
-Use the PostHog MCP loop tools: \`loops-list\` first to see what already exists so you don't duplicate one, and \`loops-create\` to create it. Do not create the loop until I've confirmed the summary.`;
+Use the PostHog MCP loop tools: \`loops-list\` first so you don't duplicate an existing loop, then \`loops-review\` to present the loop for confirmation. Never call \`loops-create\` directly — the review card handles creation.`;
 }
