@@ -4029,7 +4029,7 @@ export class SessionService {
     this.d.store.updateSession(session.taskRunId, {
       configOptions: updatedOptions,
     });
-    this.d.updatePersistedConfigOptionValue(session.taskRunId, configId, value);
+    this.d.setPersistedConfigOptions(session.taskRunId, updatedOptions);
 
     if (
       !session.isCloud &&
@@ -4063,11 +4063,7 @@ export class SessionService {
       this.d.store.updateSession(session.taskRunId, {
         configOptions: rolledBackOptions,
       });
-      this.d.updatePersistedConfigOptionValue(
-        session.taskRunId,
-        configId,
-        String(previousValue),
-      );
+      this.d.setPersistedConfigOptions(session.taskRunId, rolledBackOptions);
       this.d.log.error("Failed to set session config option", {
         taskId,
         configId,
@@ -4483,6 +4479,27 @@ export class SessionService {
     runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
+    const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
+    const buildInitialConfigOptions = (
+      mode: string | undefined,
+    ): SessionConfigOption[] => {
+      const defaults = addMissingCloudRuntimeConfigOptions(
+        buildCloudDefaultConfigOptions(mode, adapter),
+        adapter,
+        initialModel,
+        initialReasoningEffort,
+      );
+      if (!persistedConfigOptions?.length) return defaults;
+
+      const defaultIds = new Set(defaults.map((option) => option.id));
+      const completeOptions = [
+        ...defaults,
+        ...persistedConfigOptions.filter(
+          (option) => !defaultIds.has(option.id),
+        ),
+      ];
+      return mergeConfigOptions(completeOptions, persistedConfigOptions);
+    };
 
     if (this.supersededRunIds.has(runId)) return () => {};
 
@@ -4512,12 +4529,7 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: addMissingCloudRuntimeConfigOptions(
-              buildCloudDefaultConfigOptions(currentMode, adapter),
-              adapter,
-              initialModel,
-              initialReasoningEffort,
-            ),
+            configOptions: buildInitialConfigOptions(currentMode),
           });
         } else {
           const configOptions = addMissingCloudRuntimeConfigOptions(
@@ -4613,12 +4625,7 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = addMissingCloudRuntimeConfigOptions(
-        buildCloudDefaultConfigOptions(initialMode, adapter),
-        adapter,
-        initialModel,
-        initialReasoningEffort,
-      );
+      session.configOptions = buildInitialConfigOptions(initialMode);
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
       // until `hydrateCloudTaskSessionFromLogs` confirms there's no prior
@@ -4636,12 +4643,7 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = addMissingCloudRuntimeConfigOptions(
-          buildCloudDefaultConfigOptions(currentMode, adapter),
-          adapter,
-          initialModel,
-          initialReasoningEffort,
-        );
+        updates.configOptions = buildInitialConfigOptions(currentMode);
       } else {
         const configOptions = addMissingCloudRuntimeConfigOptions(
           existing.configOptions,

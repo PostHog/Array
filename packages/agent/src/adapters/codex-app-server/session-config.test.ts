@@ -6,6 +6,7 @@ import {
   collaborationModeFor,
   DEFAULT_EFFORTS,
   modeApprovalPolicy,
+  resolveInitialMode,
   sandboxPolicyFor,
 } from "./session-config";
 
@@ -103,6 +104,19 @@ describe("collaborationModeFor", () => {
     expect(collaborationModeFor("auto")).toBe("default");
     expect(collaborationModeFor("full-access")).toBe("default");
     expect(collaborationModeFor(undefined)).toBe("default");
+  });
+});
+
+describe("resolveInitialMode", () => {
+  it.each([
+    ["read-only", "read-only"],
+    ["auto", "auto"],
+    ["full-access", "full-access"],
+    ["bypassPermissions", "full-access"],
+    ["default", "auto"],
+    [undefined, "auto"],
+  ])("maps initial permission mode %s to %s", (mode, expected) => {
+    expect(resolveInitialMode(mode)).toBe(expected);
   });
 });
 

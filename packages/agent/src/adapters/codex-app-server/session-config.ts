@@ -122,9 +122,11 @@ export function collaborationModeFor(
 
 /**
  * Resolve the host's initial `_meta.permissionMode` to a codex mode. A recognized
- * mode is honored; anything else (e.g. "bypassPermissions") falls back to default.
+ * mode is honored; Claude's bypass mode maps to Codex full access. Other unknown
+ * modes fall back to default.
  */
 export function resolveInitialMode(permissionMode: string | undefined): string {
+  if (permissionMode === "bypassPermissions") return "full-access";
   return permissionMode && CODEX_MODES.some((m) => m.id === permissionMode)
     ? permissionMode
     : DEFAULT_MODE;

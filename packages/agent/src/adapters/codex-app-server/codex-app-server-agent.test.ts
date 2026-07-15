@@ -864,7 +864,7 @@ describe("CodexAppServerAgent", () => {
     ).toBe("untrusted");
   });
 
-  it("falls back to auto for a non-codex initial permissionMode", async () => {
+  it("maps bypassPermissions to Codex full-access", async () => {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
       "turn/start": { turn: { id: "turn_1" } },
@@ -874,7 +874,6 @@ describe("CodexAppServerAgent", () => {
       processOptions: { binaryPath: "/x/codex" },
       rpcFactory: stub.factory,
     });
-    // "bypassPermissions" is a Claude mode, not a codex mode → default "auto".
     await agent.newSession({
       cwd: "/r",
       _meta: { permissionMode: "bypassPermissions" },
@@ -889,7 +888,10 @@ describe("CodexAppServerAgent", () => {
     const turnStart = stub.requests.find((r) => r.method === "turn/start");
     expect(
       (turnStart?.params as { approvalPolicy?: string }).approvalPolicy,
-    ).toBe("on-request");
+    ).toBe("never");
+    expect(
+      (turnStart?.params as { sandboxPolicy?: unknown }).sandboxPolicy,
+    ).toEqual({ type: "dangerFullAccess" });
   });
 
   it("applies a read-only sandboxPolicy + approvalPolicy when the picker is Plan", async () => {

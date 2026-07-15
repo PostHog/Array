@@ -349,6 +349,16 @@ export function buildAutoApproveOutcome(
   return { outcome: "selected", optionId };
 }
 
+export function shouldAutoApprovePermissionRequest(
+  adapter: string | undefined,
+  permissionMode: string | undefined,
+): boolean {
+  return (
+    adapter === "codex" &&
+    (permissionMode === "full-access" || permissionMode === "bypassPermissions")
+  );
+}
+
 interface PendingPermission {
   resolve: (response: RequestPermissionResponse) => void;
   reject: (error: Error) => void;
@@ -1715,8 +1725,21 @@ For git operations while detached:
           optionCount: params.options.length,
         });
 
+        const session = service.sessions.get(taskRunId);
+        if (
+          shouldAutoApprovePermissionRequest(
+            session?.config.adapter,
+            session?.config.permissionMode,
+          )
+        ) {
+          service.log.info("Auto-approving Codex full-access permission", {
+            taskRunId,
+            toolCallId,
+          });
+          return { outcome: buildAutoApproveOutcome(params.options) };
+        }
+
         if (toolName && isMcpToolReadOnly(toolName)) {
-          const session = service.sessions.get(taskRunId);
           const approvalState = session?.mcpToolApprovals?.[toolName];
           if (approvalState === "approved") {
             service.log.info("Auto-approving read-only MCP tool", {
