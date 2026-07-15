@@ -153,6 +153,19 @@ describe("CodexAppServerAgent", () => {
       sessionId: "thr_1",
       prompt: [{ type: "text", text: "delegate this" }],
     } as unknown as PromptRequest);
+    stub.emit("item/started", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn_1",
+        tool: "spawnAgent",
+        status: "inProgress",
+        senderThreadId: "thr_1",
+        receiverThreadIds: ["subagent_1"],
+        prompt: "Review the implementation",
+      },
+    });
     const sessionUpdateCount = sessionUpdates.length;
     const extNotificationCount = extNotifications.length;
 
@@ -211,7 +224,9 @@ describe("CodexAppServerAgent", () => {
     });
 
     await expect(promptDone).resolves.toMatchObject({ stopReason: "end_turn" });
-    expect(JSON.stringify(sessionUpdates)).toContain("parent response");
+    const serializedUpdates = JSON.stringify(sessionUpdates);
+    expect(serializedUpdates).toContain("spawn_agent");
+    expect(serializedUpdates).toContain("parent response");
   });
 
   it("includes buffered command output when completion omits aggregatedOutput", async () => {

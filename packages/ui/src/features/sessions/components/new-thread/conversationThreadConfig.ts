@@ -55,10 +55,19 @@ export const COLLAPSE_MODE_OPTIONS: {
 
 export const grouping = {
   /**
-   * Tool names that spawn a subagent. Counted separately in the chip summary.
-   * @see ToolCallBlock — same names drive the SubagentToolView branch.
+   * Tool names that create a subagent. Counted separately in the chip summary.
    */
-  subagentToolNames: new Set<string>(["Task", "Agent"]),
+  subagentToolNames: new Set<string>(["Task", "Agent", "spawn_agent"]),
+  /** Collaboration tools rendered with the dedicated subagent view. */
+  collaborationToolNames: new Set<string>([
+    "Task",
+    "Agent",
+    "spawn_agent",
+    "send_input",
+    "resume_agent",
+    "wait_agent",
+    "close_agent",
+  ]),
   /**
    * MCP-app tool calls are excluded from collapsing so their iframes stay
    * mounted (the `keepMounted` contract). Flip to false to fold them in.
