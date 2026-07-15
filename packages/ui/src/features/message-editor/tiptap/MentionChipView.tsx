@@ -13,6 +13,7 @@ import {
 import { Chip } from "@posthog/quill";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
+import { usePasteUndoStore } from "../pasteUndoStore";
 import type { ChipType, MentionChipAttrs } from "./MentionChipNode";
 
 const chipBase = "group/chip relative top-px active:translate-y-0 pl-1";
@@ -64,6 +65,7 @@ function DefaultChip({
   type,
   id,
   label,
+  chipId,
   pastedText,
   selected,
   onRemove,
@@ -71,10 +73,14 @@ function DefaultChip({
   type: string;
   id: string;
   label: string;
+  chipId: string | null;
   pastedText: boolean;
   selected: boolean;
   onRemove: () => void;
 }) {
+  const undoableChipId = usePasteUndoStore((state) => state.undoableChipId);
+  const canUndoPaste =
+    pastedText && chipId !== null && chipId === undoableChipId;
   const isCommand = type === "command";
   const prefix = isCommand ? "/" : "@";
   const isFile = type === "file";
@@ -100,7 +106,7 @@ function DefaultChip({
 
   if (isFile || isFolder) {
     return (
-      <Tooltip content={pastedText ? "Paste again to expand as text" : id}>
+      <Tooltip content={canUndoPaste ? "Paste again to expand as text" : id}>
         {chipContent}
       </Tooltip>
     );
@@ -115,7 +121,8 @@ export function MentionChipView({
   editor,
   selected,
 }: NodeViewProps) {
-  const { type, id, label, pastedText } = node.attrs as MentionChipAttrs;
+  const { type, id, label, pastedText, chipId } =
+    node.attrs as MentionChipAttrs;
 
   const handleRemove = () => {
     const pos = getPos();
@@ -133,6 +140,7 @@ export function MentionChipView({
         type={type}
         id={id}
         label={label}
+        chipId={chipId ?? null}
         pastedText={pastedText}
         selected={selected}
         onRemove={handleRemove}

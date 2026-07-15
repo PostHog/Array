@@ -29,6 +29,7 @@ import { useEditor } from "@tiptap/react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getGithubIssue, getGithubPullRequest } from "../hostApi";
+import { usePasteUndoStore } from "../pasteUndoStore";
 import { usePromptHistoryStore } from "../promptHistoryStore";
 import { findChipRangeById } from "../tiptap/chipRange";
 import { getEditorExtensions } from "../tiptap/extensions";
@@ -264,6 +265,13 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const lastAutoConvertedPasteRef = useRef<TrackedAutoConvertedPaste | null>(
     null,
   );
+  useEffect(() => {
+    return () => {
+      if (lastAutoConvertedPasteRef.current) {
+        usePasteUndoStore.getState().setUndoableChipId(null);
+      }
+    };
+  }, []);
   const historyActions = usePromptHistoryStore.getState();
   const [isEmptyState, setIsEmptyState] = useState(true);
   const [isReady, setIsReady] = useState(false);
@@ -409,6 +417,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           // Only the immediately-following paste can undo an auto-conversion.
           const lastConverted = lastAutoConvertedPasteRef.current;
           lastAutoConvertedPasteRef.current = null;
+          if (lastConverted) {
+            usePasteUndoStore.getState().setUndoableChipId(null);
+          }
 
           // Auto-wrap selected text as markdown link when pasting a URL
           if (
@@ -539,6 +550,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               status: "pending",
             };
             lastAutoConvertedPasteRef.current = tracked;
+            usePasteUndoStore.getState().setUndoableChipId(tracked.chipId);
 
             (async () => {
               try {
