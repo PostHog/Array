@@ -1,4 +1,5 @@
 import {
+  ArrowSquareOutIcon,
   ArrowUpIcon,
   ClockIcon,
   LightningIcon,
@@ -6,9 +7,11 @@ import {
   PlusIcon,
   RepeatIcon,
 } from "@phosphor-icons/react";
+import { loopHog } from "@posthog/ui/assets/hedgehogs";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
+import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Flex, Heading, IconButton, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { useLoops } from "../hooks/useLoops";
@@ -20,6 +23,9 @@ import {
   type LoopTemplateCategory,
 } from "../loopTemplates";
 import { LoopRow } from "./LoopRow";
+
+// Placeholder until the loops docs page lands; swap for the final URL.
+const LOOPS_DOCS_URL = "https://posthog.com/docs/loops";
 
 const EXAMPLE_PROMPTS = [
   "Summarize my open PRs every weekday morning",
@@ -113,11 +119,7 @@ export function LoopsListView() {
               </Flex>
             </Flex>
           ) : (
-            <EmptyNotice
-              icon={<RepeatIcon size={15} />}
-              title="No loops yet"
-              hint="Describe what you want automated below, or start from a template."
-            />
+            <LoopsEmptyState />
           )}
 
           <Flex direction="column" gap="3">
@@ -275,6 +277,58 @@ function TemplateCard({
         </Flex>
       </Flex>
     </button>
+  );
+}
+
+const GETTING_STARTED_STEPS = [
+  "Describe what you want, or start from a template",
+  "Pick when it runs and what it can touch",
+  "Review it once, then it runs unattended and reports back",
+];
+
+function LoopsEmptyState() {
+  return (
+    <Flex
+      align="center"
+      className="rounded-(--radius-3) border border-gray-6 border-dashed px-8 py-8"
+    >
+      <Flex justify="center" className="w-2/5 shrink-0">
+        <img src={loopHog} alt="" className="h-auto w-52 object-contain" />
+      </Flex>
+      <Flex direction="column" align="start" gap="4" className="min-w-0 flex-1">
+        <Flex direction="column" gap="1">
+          <Text className="font-semibold text-[16px] text-gray-12">
+            Create your first loop
+          </Text>
+          <Text className="text-[13px] text-gray-11 leading-relaxed">
+            Set it up once and it keeps running on its own.
+          </Text>
+        </Flex>
+        <div className="flex flex-col gap-2">
+          {GETTING_STARTED_STEPS.map((step, index) => (
+            <div key={step} className="flex items-center gap-2.5">
+              <Flex
+                align="center"
+                justify="center"
+                className="size-5 shrink-0 rounded-full border border-(--gray-7) font-medium text-[11px] text-gray-11"
+              >
+                {index + 1}
+              </Flex>
+              <Text className="text-[13px] text-gray-11">{step}</Text>
+            </div>
+          ))}
+        </div>
+        <Button
+          variant="outline"
+          color="gray"
+          size="2"
+          onClick={() => void openUrlInBrowser(LOOPS_DOCS_URL)}
+        >
+          Learn more
+          <ArrowSquareOutIcon size={14} />
+        </Button>
+      </Flex>
+    </Flex>
   );
 }
 
