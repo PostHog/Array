@@ -1037,6 +1037,7 @@ export class AgentServer {
             if (!recoverable) {
               throw error;
             }
+            commitDelivery();
             const outcome = { stopReason: "error_recoverable" };
             resolveDelivery(outcome);
             return outcome;

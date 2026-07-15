@@ -639,6 +639,7 @@ export class SessionService {
       teamId: number;
       startToken: number;
       resumeFromEntryCount?: number;
+      resumeHistoryCountOffset?: number;
       subscription: { unsubscribe: () => void };
       onStatusChange?: () => void;
     }
@@ -4212,14 +4213,16 @@ export class SessionService {
         typeof runState?.resume_from_run_id === "string" &&
         !this.pendingPermissionHydratedRuns.has(taskRunId)
       ) {
-        this.hydrateCloudTaskSessionFromLogs(
+        void this.hydrateCloudTaskSessionFromLogs(
           taskId,
           taskRunId,
           logUrl,
           taskDescription,
           runStatus,
           runState,
-        );
+        ).then((result) => {
+          this.applyResumeHydrationOffset(taskId, taskRunId, result);
+        });
       }
       return () => {};
     }
@@ -4351,7 +4354,6 @@ export class SessionService {
       : undefined;
 
     let bufferCloudUpdates = shouldHydrateResumeChain;
-    let resumeHistoryCountOffset = 0;
     const bufferedCloudUpdates: CloudTaskUpdatePayload[] = [];
     const processCloudUpdate = (update: CloudTaskUpdatePayload): void => {
       if (update.kind === "logs" || update.kind === "snapshot") {
@@ -4359,6 +4361,9 @@ export class SessionService {
           cloudTranscriptEntryCount: update.totalEntryCount,
         });
       }
+      const watcher = this.cloudTaskWatchers.get(taskId);
+      const resumeHistoryCountOffset =
+        watcher?.runId === runId ? (watcher.resumeHistoryCountOffset ?? 0) : 0;
       const normalizedUpdate: CloudTaskUpdatePayload =
         resumeHistoryCountOffset > 0 &&
         (update.kind === "logs" || update.kind === "snapshot")
@@ -4371,7 +4376,6 @@ export class SessionService {
             }
           : update;
       this.handleCloudTaskUpdate(taskRunId, normalizedUpdate);
-      const watcher = this.cloudTaskWatchers.get(taskId);
       if (
         (update.kind === "status" ||
           update.kind === "snapshot" ||
@@ -4405,6 +4409,9 @@ export class SessionService {
       teamId,
       startToken,
       resumeFromEntryCount,
+      resumeHistoryCountOffset: shouldHydrateResumeChain
+        ? resumeFromEntryCount
+        : 0,
       subscription,
       onStatusChange,
     });
@@ -4414,14 +4421,7 @@ export class SessionService {
         if (!this.isCurrentCloudTaskWatcher(taskId, runId, startToken)) {
           return;
         }
-        if (result) {
-          resumeHistoryCountOffset = Math.max(
-            0,
-            result.historyEntryCount - result.liveStreamLineCount,
-          );
-        } else {
-          resumeHistoryCountOffset = Math.max(0, resumeFromEntryCount ?? 0);
-        }
+        this.applyResumeHydrationOffset(taskId, runId, result);
         bufferCloudUpdates = false;
         for (const update of bufferedCloudUpdates) {
           processCloudUpdate(update);
@@ -4509,6 +4509,20 @@ export class SessionService {
       }
     });
     return hydration;
+  }
+
+  private applyResumeHydrationOffset(
+    taskId: string,
+    taskRunId: string,
+    result: CloudHydrationResult | undefined,
+  ): void {
+    if (!result) return;
+    const watcher = this.cloudTaskWatchers.get(taskId);
+    if (!watcher || watcher.runId !== taskRunId) return;
+    watcher.resumeHistoryCountOffset = Math.max(
+      0,
+      result.historyEntryCount - result.liveStreamLineCount,
+    );
   }
 
   private async performCloudTaskSessionHydration(
@@ -4622,10 +4636,16 @@ export class SessionService {
           (event) => !eventKeys.has(JSON.stringify([event.ts, event.message])),
         ),
       ];
-      liveStreamLineCount = Math.max(
-        liveStreamLineCount,
-        session.processedLineCount ?? 0,
-      );
+      const watcher = this.cloudTaskWatchers.get(taskId);
+      const hasLeafLocalWatcherCursor =
+        watcher?.runId === taskRunId &&
+        watcher.resumeHistoryCountOffset !== undefined;
+      if (hasLeafLocalWatcherCursor) {
+        liveStreamLineCount = Math.max(
+          liveStreamLineCount,
+          session.processedLineCount ?? 0,
+        );
+      }
     }
     const hasUserPrompt = events.some(
       (e: AcpMessage) =>

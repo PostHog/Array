@@ -1929,6 +1929,49 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toHaveBeenCalledTimes(2);
     }, 20000);
 
+    it("keeps a recoverable delivery committed across an ambiguous retry", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn()
+        .mockRejectedValue(new Error("API Error: The operation timed out."));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              messageId: "m-recoverable",
+            },
+          }),
+        });
+
+      const first = await send("first-attempt");
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "error_recoverable" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const retry = await send("ambiguous-retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
     it("shares a failed in-flight messageId outcome with concurrent retries", async () => {
       const s = createServer();
       await s.start();

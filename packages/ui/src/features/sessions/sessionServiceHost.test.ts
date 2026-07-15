@@ -3881,7 +3881,7 @@ describe("SessionService", () => {
       });
     });
 
-    it("keeps the live cursor and retries after incomplete resume hydration", async () => {
+    it("switches a cold-reload watcher to leaf-local counts after hydration recovers", async () => {
       const service = getSessionService();
       const resumePrompt = {
         type: "acp_message" as const,
@@ -3898,21 +3898,34 @@ describe("SessionService", () => {
         taskId: "task-123",
         status: "connected",
         isCloud: true,
-        events: [resumePrompt],
-        processedLineCount: 1,
+        events: [],
+        processedLineCount: 0,
       });
-      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
-        resumedSession,
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => resumedSession,
       );
-      mockSessionStoreSetters.getSessions.mockReturnValue({
+      mockSessionStoreSetters.getSessions.mockImplementation(() => ({
         "run-456": resumedSession,
-      });
-      const parentEntries = [
-        { timestamp: "2024-01-01T00:00:00Z", notification: {} },
-      ];
-      const leafEntries = [
-        { timestamp: "2024-01-01T00:01:00Z", notification: {} },
-      ];
+      }));
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_runId, updates) => Object.assign(resumedSession, updates),
+      );
+      mockSessionStoreSetters.appendEvents.mockImplementation(
+        (_runId, events, processedLineCount) => {
+          resumedSession.events.push(...events);
+          if (processedLineCount !== undefined) {
+            resumedSession.processedLineCount = processedLineCount;
+          }
+        },
+      );
+      const parentEntries = Array.from({ length: 7 }, (_, index) => ({
+        timestamp: `2024-01-01T00:00:0${index}Z`,
+        notification: {},
+      }));
+      const leafEntry = {
+        timestamp: "2024-01-01T00:01:00Z",
+        notification: {},
+      };
       let resolveAncestor!: (result: {
         entries: typeof parentEntries;
         complete: boolean;
@@ -3925,9 +3938,12 @@ describe("SessionService", () => {
             }),
         )
         .mockResolvedValueOnce({
-          entries: [...parentEntries, ...leafEntries],
+          entries: [...parentEntries, leafEntry],
           complete: true,
         });
+      mockConvertStoredEntriesToEvents
+        .mockReturnValueOnce([resumePrompt])
+        .mockReturnValueOnce([resumePrompt]);
 
       const watch = (): void => {
         service.watchCloudTask(
@@ -3941,7 +3957,7 @@ describe("SessionService", () => {
           "claude",
           undefined,
           "first request",
-          7,
+          undefined,
           "in_progress",
           undefined,
           { resume_from_run_id: "run-123" },
@@ -3959,7 +3975,7 @@ describe("SessionService", () => {
         runId: "run-456",
         apiHost: "https://api.anthropic.com",
         teamId: 123,
-        resumeFromEntryCount: 7,
+        resumeFromEntryCount: undefined,
       });
       watch();
       expect(
@@ -3979,15 +3995,14 @@ describe("SessionService", () => {
           params: { update: { sessionUpdate: "agent_message_chunk" } },
         },
       };
-      mockConvertStoredEntriesToEvents.mockReturnValueOnce([liveEvent]);
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as { onData: (update: unknown) => void };
       subscribeOptions.onData({
         kind: "logs",
         taskId: "task-123",
         runId: "run-456",
-        totalEntryCount: 9,
-        newEntries: [liveEntry],
+        totalEntryCount: 8,
+        newEntries: [...parentEntries, leafEntry],
       });
       expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
 
@@ -3995,32 +4010,25 @@ describe("SessionService", () => {
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
           "run-456",
-          [liveEvent],
-          2,
+          [resumePrompt],
+          8,
         );
       });
-      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
-        "run-456",
-        expect.objectContaining({ events: expect.any(Array) }),
-      );
+      expect(resumedSession.processedLineCount).toBe(8);
 
       mockAuthenticatedClient.getTaskRunSessionLogsResult
         .mockResolvedValueOnce({ entries: parentEntries, complete: true })
         .mockResolvedValueOnce({
-          entries: [...parentEntries, ...leafEntries],
+          entries: [...parentEntries, leafEntry],
           complete: true,
         });
       mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
-        JSON.stringify(leafEntries[0]),
+        JSON.stringify(leafEntry),
       );
       mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
-      mockConvertStoredEntriesToEvents.mockReturnValueOnce([
-        resumePrompt,
-        liveEvent,
-      ]);
 
+      watch();
       await vi.waitFor(() => {
-        watch();
         expect(
           mockAuthenticatedClient.getTaskRunSessionLogsResult,
         ).toHaveBeenCalledTimes(4);
@@ -4029,11 +4037,31 @@ describe("SessionService", () => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
           "run-456",
           expect.objectContaining({
-            events: expect.arrayContaining([resumePrompt, liveEvent]),
+            events: [resumePrompt],
             processedLineCount: 1,
           }),
         );
       });
+      expect(resumedSession.processedLineCount).toBe(1);
+
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([liveEvent]);
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-456",
+        totalEntryCount: 9,
+        newEntries: [liveEntry],
+      });
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.appendEvents).toHaveBeenLastCalledWith(
+          "run-456",
+          [liveEvent],
+          2,
+        );
+      });
+      expect(resumedSession.events).toEqual([resumePrompt, liveEvent]);
+      expect(resumedSession.processedLineCount).toBe(2);
+      expect(resumedSession.cloudTranscriptEntryCount).toBe(9);
     });
 
     it("ignores stale async starts when the same watcher is replaced", async () => {
