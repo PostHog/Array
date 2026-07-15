@@ -101,6 +101,40 @@ export function useChannelStarMutations() {
 }
 
 /**
+ * Re-point a channel's star after its path changes (a rename). Stars are keyed
+ * by the channel's path (the shortcut `ref`), so a rename orphans the old
+ * shortcut and the channel silently leaves the Starred section. Creates a
+ * shortcut for the renamed channel, then removes the stale one. No-op if the
+ * channel wasn't starred. Best-effort: creates before deleting so a failure
+ * never loses the star outright, and never throws — a failed repair must not
+ * turn a successful rename into an error.
+ */
+export function useRepointChannelStar(): (
+  previousPath: string,
+  renamed: Channel,
+) => Promise<void> {
+  const { starredRefToShortcutId } = useChannelStars();
+  const { star, unstar } = useChannelStarMutations();
+
+  return useCallback(
+    async (previousPath: string, renamed: Channel) => {
+      const staleShortcutId = starredRefToShortcutId.get(previousPath);
+      // Nothing to do if the channel wasn't starred, or its path didn't change.
+      if (!staleShortcutId || previousPath === renamed.path) return;
+      try {
+        await star(renamed);
+        await unstar(staleShortcutId);
+      } catch (error) {
+        toast.error("Couldn't keep context starred", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [starredRefToShortcutId, star, unstar],
+  );
+}
+
+/**
  * Per-channel star state plus the actions a channel row needs. Wraps the shared
  * stars query and mutations so the row components stay declarative. Multiple
  * rows calling this share one underlying query (React Query dedupes by key).

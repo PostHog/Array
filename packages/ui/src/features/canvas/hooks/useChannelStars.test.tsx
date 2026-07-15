@@ -16,7 +16,11 @@ vi.mock("@posthog/ui/primitives/toast", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-import { useChannelStars, useChannelStarToggle } from "./useChannelStars";
+import {
+  useChannelStars,
+  useChannelStarToggle,
+  useRepointChannelStar,
+} from "./useChannelStars";
 import type { Channel } from "./useChannels";
 
 function shortcut(
@@ -133,5 +137,63 @@ describe("useChannelStars", () => {
         false,
       ),
     );
+  });
+});
+
+describe("useRepointChannelStar", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+  });
+
+  it("moves a starred channel's shortcut to its new path on rename", async () => {
+    mockClient.getDesktopFileSystemShortcuts.mockResolvedValue([
+      shortcut("s1", "folder", "/alpha"),
+    ]);
+    const { result } = renderHook(
+      () => ({ stars: useChannelStars(), repoint: useRepointChannelStar() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.stars.isLoading).toBe(false));
+
+    mockClient.createDesktopFileSystemShortcut.mockResolvedValue(
+      shortcut("s2", "folder", "/beta"),
+    );
+    mockClient.deleteDesktopFileSystemShortcut.mockResolvedValue(undefined);
+    // Hang the refetch so only the create+delete are exercised.
+    mockClient.getDesktopFileSystemShortcuts.mockReturnValue(
+      new Promise(() => {}),
+    );
+
+    await act(async () => {
+      await result.current.repoint("/alpha", channel("1", "beta", "/beta"));
+    });
+
+    expect(mockClient.createDesktopFileSystemShortcut).toHaveBeenCalledWith({
+      path: "beta",
+      type: "folder",
+      ref: "/beta",
+    });
+    expect(mockClient.deleteDesktopFileSystemShortcut).toHaveBeenCalledWith(
+      "s1",
+    );
+  });
+
+  it("does nothing when the renamed channel wasn't starred", async () => {
+    mockClient.getDesktopFileSystemShortcuts.mockResolvedValue([]);
+    const { result } = renderHook(
+      () => ({ stars: useChannelStars(), repoint: useRepointChannelStar() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.stars.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.repoint("/alpha", channel("1", "beta", "/beta"));
+    });
+
+    expect(mockClient.createDesktopFileSystemShortcut).not.toHaveBeenCalled();
+    expect(mockClient.deleteDesktopFileSystemShortcut).not.toHaveBeenCalled();
   });
 });

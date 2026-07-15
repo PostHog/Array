@@ -2,8 +2,10 @@ import { XIcon } from "@phosphor-icons/react";
 import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { useRepointChannelStar } from "@posthog/ui/features/canvas/hooks/useChannelStars";
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useRenameBackendChannel } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
@@ -25,6 +27,8 @@ export function RenameChannelModal({
   onOpenChange,
 }: RenameChannelModalProps) {
   const { renameChannel, isRenaming } = useChannelMutations();
+  const repointStar = useRepointChannelStar();
+  const renameBackendChannel = useRenameBackendChannel();
   const [name, setName] = useState(channel.name);
 
   // Seed the field with the current name each time the modal opens.
@@ -39,8 +43,17 @@ export function RenameChannelModal({
 
   const submit = async () => {
     if (!trimmed || unchanged || validationError || isRenaming) return;
+    // Capture the pre-rename identity: name keys the backend feed channel, path
+    // keys the star. Both go stale the moment the rename lands.
+    const previousName = channel.name;
+    const previousPath = channel.path;
     try {
-      await renameChannel(channel.id, trimmed);
+      const renamed = await renameChannel(channel.id, trimmed);
+      // Carry the name-keyed dependents over to the new name so the context's
+      // task history and star survive the rename. Both are best-effort and
+      // never throw, so a hiccup can't turn a successful rename into an error.
+      await renameBackendChannel(previousName, trimmed);
+      await repointStar(previousPath, renamed);
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "rename",
         surface: "sidebar",

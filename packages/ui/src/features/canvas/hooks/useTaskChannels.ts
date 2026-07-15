@@ -2,8 +2,9 @@ import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import type { TaskChannel } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 const TASK_CHANNELS_POLL_INTERVAL_MS = 30_000;
 export const TASK_CHANNELS_QUERY_KEY = ["task-channels"] as const;
@@ -60,6 +61,92 @@ export function useTaskChannels(options?: { enabled?: boolean }): {
     [channels],
   );
   return { channels, personalChannel, isLoading: query.isLoading };
+}
+
+/**
+ * Rename a folder channel's backend channel so its task feed/history follows a
+ * rename. The folder and its backend channel are bridged by name only, so
+ * without this the feed re-resolves to a different (empty) channel and the
+ * history appears lost. Renames the existing public channel matching the old
+ * name to the new name, updating the channels cache first so a mounted
+ * `useBackendChannel(newName)` matches the existing channel and doesn't
+ * resolve-or-create an empty duplicate.
+ *
+ * Best-effort and never throws: a failed follow must not turn a successful
+ * folder rename into an error. No-op for the personal channel, an unchanged
+ * name, or a channel with no backend channel yet (nothing to carry over).
+ */
+export function useRenameBackendChannel(): (
+  oldName: string,
+  newName: string,
+) => Promise<void> {
+  const client = useOptionalAuthenticatedClient();
+  const queryClient = useQueryClient();
+
+  return useCallback(
+    async (oldName: string, newName: string) => {
+      if (!client) return;
+      const oldNormalized = normalizeChannelName(oldName);
+      const newNormalized = normalizeChannelName(newName);
+      if (
+        !oldNormalized ||
+        !newNormalized ||
+        oldNormalized === newNormalized ||
+        oldNormalized === PERSONAL_CHANNEL_NAME ||
+        newNormalized === PERSONAL_CHANNEL_NAME
+      ) {
+        return;
+      }
+
+      // Prefer the cache (populated when the channel is on screen, so the
+      // rename is race-free against the feed's name lookup); fall back to a
+      // fetch otherwise (nothing is resolving that channel, so no race).
+      const cached = queryClient.getQueryData<TaskChannel[]>(
+        TASK_CHANNELS_QUERY_KEY,
+      );
+      const findPublic = (list: TaskChannel[]) =>
+        list.find(
+          (c) => c.channel_type === "public" && c.name === oldNormalized,
+        );
+      let existing = cached ? findPublic(cached) : undefined;
+      if (!existing && !cached) {
+        try {
+          existing = findPublic(await client.getTaskChannels());
+        } catch {
+          return;
+        }
+      }
+      if (!existing) return; // No backend channel/history to carry over.
+
+      const staleId = existing.id;
+      const previous = existing;
+      // Optimistically rename in-cache so the feed's name lookup resolves to
+      // this channel immediately once the folder name flips.
+      queryClient.setQueryData<TaskChannel[]>(TASK_CHANNELS_QUERY_KEY, (prev) =>
+        prev?.map((c) =>
+          c.id === staleId ? { ...c, name: newNormalized } : c,
+        ),
+      );
+      try {
+        const updated = await client.renameTaskChannel(staleId, newNormalized);
+        queryClient.setQueryData<TaskChannel[]>(
+          TASK_CHANNELS_QUERY_KEY,
+          (prev) => prev?.map((c) => (c.id === updated.id ? updated : c)),
+        );
+      } catch (error) {
+        // Roll back the optimistic rename so the feed doesn't point at a name
+        // the backend never accepted.
+        queryClient.setQueryData<TaskChannel[]>(
+          TASK_CHANNELS_QUERY_KEY,
+          (prev) => prev?.map((c) => (c.id === staleId ? previous : c)),
+        );
+        toast.error("Couldn't move context history to the new name", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [client, queryClient],
+  );
 }
 
 /**

@@ -2527,6 +2527,28 @@ export class PostHogAPIClient {
     return (await response.json()) as TaskChannel;
   }
 
+  // Rename an existing public channel by id (PATCH). Backend channels are the
+  // feed/history side of a channel and are matched by name, so when the folder
+  // channel is renamed this must follow — otherwise the feed re-resolves to a
+  // different (empty) channel and the task history appears to vanish.
+  async renameTaskChannel(
+    channelId: string,
+    name: string,
+  ): Promise<TaskChannel> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${encodeURIComponent(channelId)}/`;
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ name }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to rename task channel: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskChannel;
+  }
+
   // A channel's system-announcement feed (context created, CONTEXT.md being
   // built), chronological. Durable + team-visible, rendered alongside task cards.
   async getChannelFeed(channelId: string): Promise<ChannelFeedMessage[]> {

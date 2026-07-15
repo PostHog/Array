@@ -111,7 +111,18 @@ export function useChannelMutations() {
       if (!client) throw new Error("Not authenticated");
       return client.renameDesktopFileSystemChannel(id, name);
     },
-    onSuccess: invalidate,
+    onSuccess: (updated) => {
+      // Flip the renamed channel in the cache immediately so the new name is
+      // visible the instant the PATCH resolves, rather than after the refetch.
+      // This also lets callers re-point name-keyed dependents (backend task
+      // channel, stars) in the same tick, before any consumer re-renders with
+      // the new name and provisions an empty duplicate.
+      queryClient.setQueryData<Schemas.FileSystem[]>(
+        CHANNELS_QUERY_KEY,
+        (old) => old?.map((fs) => (fs.id === updated.id ? updated : fs)),
+      );
+      invalidate();
+    },
   });
 
   return {
