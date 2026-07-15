@@ -889,6 +889,7 @@ export class AgentServer {
     switch (method) {
       case POSTHOG_NOTIFICATIONS.USER_MESSAGE:
       case "user_message": {
+        const commandSession = this.session;
         const messageId =
           typeof params.messageId === "string" && params.messageId
             ? params.messageId
@@ -919,6 +920,18 @@ export class AgentServer {
         if (messageId) {
           this.inFlightMessageDeliveries.set(messageId, deliveryOutcome);
         }
+        let deliveryCommitted = false;
+        const commitDelivery = (): void => {
+          deliveryCommitted = true;
+          if (!messageId) return;
+          this.deliveredMessageIds.add(messageId);
+          if (this.deliveredMessageIds.size > 500) {
+            const oldest = this.deliveredMessageIds.values().next().value;
+            if (oldest !== undefined) {
+              this.deliveredMessageIds.delete(oldest);
+            }
+          }
+        };
 
         try {
           this.logger.debug("Received user_message command", {
@@ -935,23 +948,14 @@ export class AgentServer {
             artifacts: Array.isArray(params.artifacts)
               ? (params.artifacts as TaskRunArtifact[])
               : [],
-            taskId: this.session.payload.task_id,
-            runId: this.session.payload.run_id,
+            taskId: commandSession.payload.task_id,
+            runId: commandSession.payload.run_id,
           });
           const prompt = builtPrompt.prompt;
           if (prompt.length === 0) {
             throw new Error("User message cannot be empty");
           }
 
-          if (messageId) {
-            this.deliveredMessageIds.add(messageId);
-            if (this.deliveredMessageIds.size > 500) {
-              const oldest = this.deliveredMessageIds.values().next().value;
-              if (oldest !== undefined) {
-                this.deliveredMessageIds.delete(oldest);
-              }
-            }
-          }
           this.logger.debug("Built user_message prompt", {
             blockTypes: prompt.map((block) => block.type),
           });
@@ -981,36 +985,31 @@ export class AgentServer {
             params.steer === true && this.activeOwnedTurnCount > 0;
 
           if (shouldAttemptSteer) {
-            try {
-              const result = await this.session.clientConnection.prompt({
-                sessionId: this.session.acpSessionId,
-                prompt,
-                _meta: { ...promptMeta, steer: true },
-              });
-              const accepted =
-                (result._meta as { steer?: unknown } | undefined)?.steer ===
-                true;
-              if (accepted) {
-                const outcome = { stopReason: "steered", steered: true };
-                resolveDelivery(outcome);
-                return outcome;
-              }
-              await this.waitForOwnedTurnsIdle();
-            } catch (error) {
-              if (messageId) {
-                this.deliveredMessageIds.delete(messageId);
-              }
-              throw error;
+            const result = await commandSession.clientConnection.prompt({
+              sessionId: commandSession.acpSessionId,
+              prompt,
+              _meta: { ...promptMeta, steer: true },
+            });
+            const accepted =
+              (result._meta as { steer?: unknown } | undefined)?.steer === true;
+            if (accepted) {
+              commitDelivery();
+              const outcome = { stopReason: "steered", steered: true };
+              resolveDelivery(outcome);
+              return outcome;
             }
+            await this.waitForOwnedTurnsIdle();
           }
 
-          this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
+          commandSession.logWriter.resetTurnMessages(
+            commandSession.payload.run_id,
+          );
 
           let result: PromptResponse;
           try {
             result = await this.runOwnedTurn(() => {
-              const promptResult = this.session?.clientConnection.prompt({
-                sessionId: this.session?.acpSessionId,
+              const promptResult = commandSession.clientConnection.prompt({
+                sessionId: commandSession.acpSessionId,
                 prompt,
                 ...(Object.keys(promptMeta).length > 0
                   ? { _meta: promptMeta }
@@ -1025,9 +1024,9 @@ export class AgentServer {
             if (messageId) {
               this.deliveredMessageIds.delete(messageId);
             }
-            await this.session.logWriter.flushAll();
+            await commandSession.logWriter.flushAll();
             const { recoverable } = await this.handleTurnFailure(
-              this.session.payload,
+              commandSession.payload,
               "followup",
               error,
             );
@@ -1038,13 +1037,14 @@ export class AgentServer {
             resolveDelivery(outcome);
             return outcome;
           }
+          commitDelivery();
 
           this.logger.debug("User message completed", {
             stopReason: result.stopReason,
           });
 
           if (result.stopReason === "end_turn") {
-            void this.syncCloudBranchMetadata(this.session.payload);
+            void this.syncCloudBranchMetadata(commandSession.payload);
           }
 
           this.recordTurnUsage(result.usage);
@@ -1053,7 +1053,7 @@ export class AgentServer {
           if (result.stopReason === "end_turn") {
             // Relay the response to Slack. For follow-ups this is the primary
             // delivery path — the HTTP caller only handles reactions.
-            this.relayAgentResponse(this.session.payload).catch((err) =>
+            this.relayAgentResponse(commandSession.payload).catch((err) =>
               this.logger.debug("Failed to relay follow-up response", err),
             );
           }
@@ -1063,11 +1063,14 @@ export class AgentServer {
           // against async log persistence to object storage.
           let assistantMessage: string | undefined;
           try {
-            await this.session.logWriter.flush(this.session.payload.run_id, {
-              coalesce: true,
-            });
-            assistantMessage = this.session.logWriter.getFullAgentResponse(
-              this.session.payload.run_id,
+            await commandSession.logWriter.flush(
+              commandSession.payload.run_id,
+              {
+                coalesce: true,
+              },
+            );
+            assistantMessage = commandSession.logWriter.getFullAgentResponse(
+              commandSession.payload.run_id,
             );
           } catch {
             this.logger.debug("Failed to extract assistant message from logs");
@@ -1080,7 +1083,7 @@ export class AgentServer {
           resolveDelivery(outcome);
           return outcome;
         } catch (error) {
-          if (messageId) {
+          if (messageId && !deliveryCommitted) {
             this.deliveredMessageIds.delete(messageId);
           }
           rejectDelivery(error);

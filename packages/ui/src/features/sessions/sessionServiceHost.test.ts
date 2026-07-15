@@ -3554,7 +3554,8 @@ describe("SessionService", () => {
         status: "connected",
         isCloud: true,
         events: [ancestorEvent],
-        processedLineCount: 3,
+        cloudTranscriptEntryCount: 3,
+        processedLineCount: 0,
       });
       mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
         () => resumedSession,
@@ -3671,6 +3672,207 @@ describe("SessionService", () => {
         apiHost: "https://api.anthropic.com",
         teamId: 123,
         resumeFromEntryCount: 3,
+      });
+    });
+
+    it("uses the full A→B transcript count when B resumes into C", async () => {
+      const service = getSessionService();
+      const aEvent = {
+        type: "acp_message" as const,
+        ts: 1700000000,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 1,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "start A" }] },
+        },
+      };
+      const bEvent = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 2,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "resume B" }] },
+        },
+      };
+      const cEvent = {
+        type: "acp_message" as const,
+        ts: 1700000120,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 3,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "resume C" }] },
+        },
+      };
+      const liveCEvent = {
+        type: "acp_message" as const,
+        ts: 1700000180,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "session/update",
+          params: { update: { sessionUpdate: "agent_message_chunk" } },
+        },
+      };
+      let activeSession = createMockSession({
+        taskRunId: "run-b",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        cloudStatus: "completed",
+        cloudBranch: "feature/resume-chain",
+        events: [aEvent, bEvent],
+        cloudTranscriptEntryCount: 7,
+        processedLineCount: 2,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => activeSession,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() => ({
+        [activeSession.taskRunId]: activeSession,
+      }));
+      mockSessionStoreSetters.setSession.mockImplementation((session) => {
+        activeSession = session;
+      });
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_runId, updates) => Object.assign(activeSession, updates),
+      );
+      mockSessionStoreSetters.appendEvents.mockImplementation(
+        (_runId, events, processedLineCount) => {
+          activeSession.events.push(...events);
+          if (processedLineCount !== undefined) {
+            activeSession.processedLineCount = processedLineCount;
+          }
+        },
+      );
+
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({
+        id: "run-b",
+        task: "task-123",
+        team: 123,
+        branch: "feature/resume-chain",
+        runtime_adapter: "claude",
+        model: "claude-sonnet-4-20250514",
+        reasoning_effort: null,
+        environment: "cloud",
+        status: "completed",
+        log_url: "https://example.com/logs/run-b",
+        error_message: null,
+        output: {},
+        state: { resume_from_run_id: "run-a" },
+        created_at: "2026-04-14T00:00:00Z",
+        updated_at: "2026-04-14T00:05:00Z",
+        completed_at: "2026-04-14T00:05:00Z",
+      });
+      mockAuthenticatedClient.getTask.mockResolvedValue(createMockTask());
+      mockAuthenticatedClient.runTaskInCloud.mockResolvedValue(
+        createMockTask({
+          latest_run: {
+            id: "run-c",
+            task: "task-123",
+            team: 123,
+            branch: "feature/resume-chain",
+            runtime_adapter: "claude",
+            model: "claude-sonnet-4-20250514",
+            reasoning_effort: null,
+            environment: "cloud",
+            status: "queued",
+            log_url: "https://example.com/logs/run-c",
+            error_message: null,
+            output: {},
+            state: { resume_from_run_id: "run-b" },
+            created_at: "2026-04-14T00:06:00Z",
+            updated_at: "2026-04-14T00:06:00Z",
+            completed_at: null,
+          },
+        }),
+      );
+
+      const inheritedEntries = Array.from({ length: 7 }, (_, index) => ({
+        timestamp: `2024-01-01T00:00:0${index}Z`,
+        notification: {},
+      }));
+      const cEntry = {
+        timestamp: "2024-01-01T00:02:00Z",
+        notification: {},
+      };
+      const liveCEntry = {
+        timestamp: "2024-01-01T00:03:00Z",
+        notification: { method: "session/update" },
+      };
+      let resolveInherited!: (result: {
+        entries: typeof inheritedEntries;
+        complete: boolean;
+      }) => void;
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveInherited = resolve;
+            }),
+        )
+        .mockResolvedValueOnce({
+          entries: [...inheritedEntries, cEntry],
+          complete: true,
+        });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
+        JSON.stringify(cEntry),
+      );
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+      mockConvertStoredEntriesToEvents
+        .mockReturnValueOnce([aEvent, bEvent, cEvent])
+        .mockReturnValueOnce([liveCEvent]);
+
+      const result = await service.sendPrompt("task-123", "resume C");
+      expect(result.stopReason).toBe("queued");
+      expect(activeSession).toEqual(
+        expect.objectContaining({
+          taskRunId: "run-c",
+          cloudTranscriptEntryCount: 7,
+          processedLineCount: 0,
+        }),
+      );
+      await vi.waitFor(() => {
+        expect(
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
+        ).toHaveBeenCalledTimes(2);
+      });
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as { onData: (update: unknown) => void };
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-c",
+        totalEntryCount: 9,
+        newEntries: [cEntry, liveCEntry],
+      });
+      expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
+
+      resolveInherited({ entries: inheritedEntries, complete: true });
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
+          "run-c",
+          [liveCEvent],
+          2,
+        );
+      });
+      expect(activeSession.events).toEqual([
+        aEvent,
+        bEvent,
+        cEvent,
+        liveCEvent,
+      ]);
+      expect(activeSession.processedLineCount).toBe(2);
+      expect(activeSession.cloudTranscriptEntryCount).toBe(9);
+      expect(mockTrpcCloudTask.watch.mutate).toHaveBeenCalledWith({
+        taskId: "task-123",
+        runId: "run-c",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        resumeFromEntryCount: 7,
       });
     });
 

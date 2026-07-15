@@ -1994,6 +1994,57 @@ describe("AgentServer HTTP Mode", () => {
       });
       expect(prompt).toHaveBeenCalledTimes(1);
     }, 20000);
+
+    it("keeps an accepted messageId committed when teardown clears the active session", async () => {
+      const s = createServer();
+      await s.start();
+      let finishPrompt!: (result: { stopReason: "end_turn" }) => void;
+      const prompt = vi.fn(
+        () =>
+          new Promise<{ stopReason: "end_turn" }>((resolve) => {
+            finishPrompt = resolve;
+          }),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } } | null;
+      };
+      const acceptedSession = serverInternals.session;
+      if (!acceptedSession) throw new Error("expected active test session");
+      acceptedSession.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-teardown" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      serverInternals.session = null;
+      finishPrompt({ stopReason: "end_turn" });
+      const first = await firstResponse;
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "end_turn" },
+      });
+
+      serverInternals.session = acceptedSession;
+      const retry = await send("retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
   });
 
   describe("404 handling", () => {

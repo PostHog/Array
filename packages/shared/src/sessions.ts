@@ -62,6 +62,9 @@ export interface AgentSession {
   promptStartedAt: number | null;
   currentPromptId?: number | null;
   logUrl?: string;
+  /** Full cloud transcript entry count across the resume chain. */
+  cloudTranscriptEntryCount?: number;
+  /** Leaf-run cursor used to reconcile live cloud log updates. */
   processedLineCount?: number;
   framework?: "claude";
   adapter?: Adapter;

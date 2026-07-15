@@ -3166,8 +3166,10 @@ export class SessionService {
     newSession.optimisticItems = (
       this.getSessionByRunId(session.taskRunId)?.optimisticItems ?? []
     ).filter((item) => item.type === "user_message" && item.pinToTop === false);
-    const resumeFromEntryCount = session.processedLineCount ?? 0;
-    newSession.processedLineCount = resumeFromEntryCount;
+    const resumeFromEntryCount =
+      session.cloudTranscriptEntryCount ?? session.processedLineCount ?? 0;
+    newSession.cloudTranscriptEntryCount = resumeFromEntryCount;
+    newSession.processedLineCount = 0;
     this.d.store.setSession(newSession);
 
     // Start the watcher immediately so we don't miss status updates.
@@ -4191,7 +4193,6 @@ export class SessionService {
           taskDescription,
           runStatus,
           runState,
-          existingWatcher.resumeFromEntryCount,
         );
       }
       return () => {};
@@ -4320,7 +4321,6 @@ export class SessionService {
           taskDescription,
           runStatus,
           runState,
-          resumeFromEntryCount,
         )
       : undefined;
 
@@ -4328,6 +4328,11 @@ export class SessionService {
     let resumeHistoryCountOffset = 0;
     const bufferedCloudUpdates: CloudTaskUpdatePayload[] = [];
     const processCloudUpdate = (update: CloudTaskUpdatePayload): void => {
+      if (update.kind === "logs" || update.kind === "snapshot") {
+        this.d.store.updateSession(taskRunId, {
+          cloudTranscriptEntryCount: update.totalEntryCount,
+        });
+      }
       const normalizedUpdate: CloudTaskUpdatePayload =
         resumeHistoryCountOffset > 0 &&
         (update.kind === "logs" || update.kind === "snapshot")
@@ -4449,7 +4454,6 @@ export class SessionService {
     taskDescription?: string,
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
-    resumeFromEntryCount?: number,
   ): Promise<CloudHydrationResult | undefined> {
     const existing = this.cloudHydrationPromises.get(taskRunId);
     if (existing) {
@@ -4462,7 +4466,6 @@ export class SessionService {
       taskDescription,
       runStatus,
       runState,
-      resumeFromEntryCount,
     ).catch((err: unknown) => {
       this.d.log.warn("Failed to hydrate cloud task session from logs", {
         taskId,
@@ -4487,7 +4490,6 @@ export class SessionService {
     taskDescription?: string,
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
-    resumeFromEntryCount?: number,
   ): Promise<CloudHydrationResult | undefined> {
     let rawEntries: StoredLogEntry[];
     let liveStreamLineCount: number;
@@ -4595,12 +4597,10 @@ export class SessionService {
           (event) => !eventKeys.has(JSON.stringify([event.ts, event.message])),
         ),
       ];
-      if (resumeFromEntryCount === undefined) {
-        liveStreamLineCount = Math.max(
-          liveStreamLineCount,
-          session.processedLineCount ?? 0,
-        );
-      }
+      liveStreamLineCount = Math.max(
+        liveStreamLineCount,
+        session.processedLineCount ?? 0,
+      );
     }
     const hasUserPrompt = events.some(
       (e: AcpMessage) =>
@@ -4655,6 +4655,7 @@ export class SessionService {
       events,
       isCloud: true,
       logUrl: logUrl ?? session.logUrl,
+      cloudTranscriptEntryCount: rawEntries.length,
       processedLineCount: liveStreamLineCount,
     });
     this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
