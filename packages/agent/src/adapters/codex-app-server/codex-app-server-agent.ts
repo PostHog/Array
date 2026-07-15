@@ -39,6 +39,7 @@ import { isLocalSkillCommandChunk } from "../local-skill";
 import {
   AppServerClient,
   type AppServerClientHandlers,
+  AppServerRequestError,
   type AppServerRpc,
 } from "./app-server-client";
 import { handleServerRequest } from "./approvals";
@@ -64,6 +65,17 @@ import {
   APP_SERVER_NOTIFICATIONS,
   APP_SERVER_REQUESTS,
 } from "./protocol";
+
+function isStaleTurnSteerError(error: unknown): boolean {
+  if (!(error instanceof AppServerRequestError) || error.code !== -32600) {
+    return false;
+  }
+  return (
+    error.message === "no active turn to steer" ||
+    /^expected active turn id `.*` but found `.*`$/.test(error.message)
+  );
+}
+
 import { type CodexSandboxPolicy, SessionConfigState } from "./session-config";
 import {
   type CodexAppServerProcess,
@@ -615,14 +627,25 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       // A turn is already running: fold the message in via turn/steer (precondition: the
       // active turnId). Refresh from the response's rotated turnId so a later steer/interrupt
       // still targets the live turn (no turn/started is re-emitted for a steer).
-      const steerRes = await this.rpc.request<{ turnId?: string }>(
-        APP_SERVER_METHODS.TURN_STEER,
-        {
-          threadId: this.threadId,
-          input,
-          expectedTurnId: this.turns.activeTurnId,
-        },
-      );
+      let steerRes: { turnId?: string };
+      try {
+        steerRes = await this.rpc.request<{ turnId?: string }>(
+          APP_SERVER_METHODS.TURN_STEER,
+          {
+            threadId: this.threadId,
+            input,
+            expectedTurnId: this.turns.activeTurnId,
+          },
+        );
+      } catch (error) {
+        if (
+          (params._meta as { steer?: unknown } | undefined)?.steer === true &&
+          isStaleTurnSteerError(error)
+        ) {
+          return { stopReason: "end_turn", _meta: { steer: false } };
+        }
+        throw error;
+      }
       this.turns.onSteered(steerRes?.turnId);
       this.broadcastUserInput(params.prompt);
       return { stopReason: "end_turn", _meta: { steer: true } };

@@ -369,7 +369,6 @@ export class AgentServer {
   private deliveredMessageIds = new Set<string>();
   private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
   private activeOwnedTurnCount = 0;
-  private ownedTurnsIdleWaiters = new Set<() => void>();
   private pendingPermissions = new Map<
     string,
     {
@@ -981,24 +980,29 @@ export class AgentServer {
               : {}),
           };
 
-          const shouldAttemptSteer =
-            params.steer === true && this.activeOwnedTurnCount > 0;
-
-          if (shouldAttemptSteer) {
-            const result = await commandSession.clientConnection.prompt({
-              sessionId: commandSession.acpSessionId,
-              prompt,
-              _meta: { ...promptMeta, steer: true },
-            });
-            const accepted =
-              (result._meta as { steer?: unknown } | undefined)?.steer === true;
-            if (accepted) {
-              commitDelivery();
-              const outcome = { stopReason: "steered", steered: true };
-              resolveDelivery(outcome);
-              return outcome;
+          if (params.steer === true) {
+            if (this.activeOwnedTurnCount > 0) {
+              const result = await commandSession.clientConnection.prompt({
+                sessionId: commandSession.acpSessionId,
+                prompt,
+                _meta: { ...promptMeta, steer: true },
+              });
+              const accepted =
+                (result._meta as { steer?: unknown } | undefined)?.steer ===
+                true;
+              if (accepted) {
+                commitDelivery();
+                const outcome = { stopReason: "steered", steered: true };
+                resolveDelivery(outcome);
+                return outcome;
+              }
             }
-            await this.waitForOwnedTurnsIdle();
+            const outcome = {
+              stopReason: "steer_declined",
+              steered: false,
+            };
+            resolveDelivery(outcome);
+            return outcome;
           }
 
           commandSession.logWriter.resetTurnMessages(
@@ -1624,22 +1628,7 @@ export class AgentServer {
       return await operation();
     } finally {
       this.activeOwnedTurnCount -= 1;
-      if (this.activeOwnedTurnCount === 0) {
-        for (const resolve of this.ownedTurnsIdleWaiters) {
-          resolve();
-        }
-        this.ownedTurnsIdleWaiters.clear();
-      }
     }
-  }
-
-  private async waitForOwnedTurnsIdle(): Promise<void> {
-    if (this.activeOwnedTurnCount === 0) {
-      return;
-    }
-    await new Promise<void>((resolve) => {
-      this.ownedTurnsIdleWaiters.add(resolve);
-    });
   }
 
   /**

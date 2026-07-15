@@ -3362,11 +3362,12 @@ describe("SessionService", () => {
     });
 
     it.each([
-      { name: "leaf-only response", currentIncludesParent: false },
-      { name: "full-chain response", currentIncludesParent: true },
+      { name: "leaf-only response", responseShape: "leaf" },
+      { name: "full-chain response", responseShape: "full" },
+      { name: "overlapping chain window", responseShape: "overlap" },
     ])(
       "hydrates an in-progress resumed run from a $name",
-      async ({ currentIncludesParent }) => {
+      async ({ responseShape }) => {
         const service = getSessionService();
         const priorPrompt = {
           type: "acp_message" as const,
@@ -3422,6 +3423,7 @@ describe("SessionService", () => {
         });
         const parentEntries = [
           { timestamp: "2024-01-01T00:00:00Z", notification: {} },
+          { timestamp: "2024-01-01T00:00:30Z", notification: {} },
         ];
         const leafEntries = [
           { timestamp: "2024-01-01T00:01:00Z", notification: {} },
@@ -3429,9 +3431,12 @@ describe("SessionService", () => {
         mockAuthenticatedClient.getTaskRunSessionLogsResult
           .mockResolvedValueOnce({ entries: parentEntries, complete: true })
           .mockResolvedValueOnce({
-            entries: currentIncludesParent
-              ? [...parentEntries, ...leafEntries]
-              : leafEntries,
+            entries:
+              responseShape === "full"
+                ? [...parentEntries, ...leafEntries]
+                : responseShape === "overlap"
+                  ? [parentEntries[1], ...leafEntries]
+                  : leafEntries,
             complete: true,
           });
         mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
@@ -3467,7 +3472,7 @@ describe("SessionService", () => {
           kind: "snapshot",
           taskId: "task-123",
           runId: "run-456",
-          totalEntryCount: 2,
+          totalEntryCount: 3,
           newEntries: [...parentEntries, ...leafEntries],
           status: "in_progress",
         });
@@ -3936,7 +3941,7 @@ describe("SessionService", () => {
           "claude",
           undefined,
           "first request",
-          undefined,
+          7,
           "in_progress",
           undefined,
           { resume_from_run_id: "run-123" },
@@ -3954,7 +3959,7 @@ describe("SessionService", () => {
         runId: "run-456",
         apiHost: "https://api.anthropic.com",
         teamId: 123,
-        resumeFromEntryCount: undefined,
+        resumeFromEntryCount: 7,
       });
       watch();
       expect(
@@ -3981,7 +3986,7 @@ describe("SessionService", () => {
         kind: "logs",
         taskId: "task-123",
         runId: "run-456",
-        totalEntryCount: 2,
+        totalEntryCount: 9,
         newEntries: [liveEntry],
       });
       expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();

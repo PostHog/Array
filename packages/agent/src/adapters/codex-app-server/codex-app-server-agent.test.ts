@@ -9,6 +9,7 @@ import type {
   AppServerClientHandlers,
   AppServerRpc,
 } from "./app-server-client";
+import { AppServerRequestError } from "./app-server-client";
 import { CodexAppServerAgent } from "./codex-app-server-agent";
 import { sandboxPolicyFor } from "./session-config";
 
@@ -1537,6 +1538,48 @@ describe("CodexAppServerAgent", () => {
         update: expect.objectContaining({
           sessionUpdate: "user_message_chunk",
           content: { type: "text", text: "lost steer" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines a stale turn/steer so the caller can queue it normally", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new AppServerRequestError(
+        -32600,
+        "expected active turn id `turn_1` but found `turn_2`",
+      ),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "queue me" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "queue me" },
         }),
       }),
     );

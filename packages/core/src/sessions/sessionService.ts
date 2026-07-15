@@ -500,6 +500,32 @@ function entriesScopedToTaskRun(
   });
 }
 
+function suffixPrefixOverlap(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) return 0;
+
+  const separator = Symbol("resume-chain-separator");
+  const patternAndTail: (string | symbol)[] = [
+    ...right,
+    separator,
+    ...left.slice(-right.length),
+  ];
+  const prefixLengths = new Array<number>(patternAndTail.length).fill(0);
+  for (let index = 1; index < patternAndTail.length; index += 1) {
+    let prefixLength = prefixLengths[index - 1];
+    while (
+      prefixLength > 0 &&
+      patternAndTail[index] !== patternAndTail[prefixLength]
+    ) {
+      prefixLength = prefixLengths[prefixLength - 1];
+    }
+    if (patternAndTail[index] === patternAndTail[prefixLength]) {
+      prefixLength += 1;
+    }
+    prefixLengths[index] = prefixLength;
+  }
+  return prefixLengths[prefixLengths.length - 1];
+}
+
 export function derivePendingPermissionRequests(
   entries: StoredLogEntry[],
   options?: { taskRunId?: string },
@@ -4393,6 +4419,8 @@ export class SessionService {
             0,
             result.historyEntryCount - result.liveStreamLineCount,
           );
+        } else {
+          resumeHistoryCountOffset = Math.max(0, resumeFromEntryCount ?? 0);
         }
         bufferCloudUpdates = false;
         for (const update of bufferedCloudUpdates) {
@@ -4536,14 +4564,11 @@ export class SessionService {
         const ancestorKeys = ancestorEntries.map((entry) =>
           JSON.stringify(entry),
         );
-        const currentIncludesAncestor =
-          ancestorKeys.length > 0 &&
-          ancestorKeys.every(
-            (key, index) => JSON.stringify(currentRunEntries[index]) === key,
-          );
-        const persistedLeafEntries = currentIncludesAncestor
-          ? currentRunEntries.slice(ancestorEntries.length)
-          : currentRunEntries;
+        const currentKeys = currentRunEntries.map((entry) =>
+          JSON.stringify(entry),
+        );
+        const overlap = suffixPrefixOverlap(ancestorKeys, currentKeys);
+        const persistedLeafEntries = currentRunEntries.slice(overlap);
         const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
         const leafKeys = new Set(
           persistedLeafEntries.map((entry) => JSON.stringify(entry)),

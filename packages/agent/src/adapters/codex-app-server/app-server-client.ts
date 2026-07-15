@@ -24,6 +24,17 @@ export interface AppServerRpc {
   close(): Promise<void>;
 }
 
+export class AppServerRequestError extends Error {
+  constructor(
+    readonly code: number,
+    message: string,
+    readonly data?: unknown,
+  ) {
+    super(message);
+    this.name = "AppServerRequestError";
+  }
+}
+
 /**
  * Bidirectional newline-delimited JSON-RPC client for the native Codex `app-server` subprocess.
  * Transport-agnostic via a {@link StreamPair} so tests can drive it over in-memory streams.
@@ -173,7 +184,13 @@ export class AppServerClient implements AppServerRpc {
     }
     this.pending.delete(message.id);
     if (message.error) {
-      call.reject(new Error(message.error.message));
+      call.reject(
+        new AppServerRequestError(
+          message.error.code,
+          message.error.message,
+          message.error.data,
+        ),
+      );
     } else {
       call.resolve(message.result);
     }
