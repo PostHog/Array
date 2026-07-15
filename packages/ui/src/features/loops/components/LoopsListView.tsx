@@ -2,6 +2,7 @@ import {
   ArrowSquareOutIcon,
   ArrowUpIcon,
   ClockIcon,
+  CloudIcon,
   LightningIcon,
   PlugsIcon,
   PlusIcon,
@@ -86,10 +87,26 @@ export function LoopsListView() {
         >
           <Flex align="center" justify="between" gap="3">
             <Flex direction="column" gap="1" className="min-w-0">
-              <Heading className="font-bold text-2xl">Loops</Heading>
-              <Text color="gray" className="text-sm">
+              <Flex align="center" gap="2">
+                <Heading className="font-bold text-2xl">Loops</Heading>
+                <Flex
+                  align="center"
+                  className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
+                >
+                  <CloudIcon
+                    size={12}
+                    weight="fill"
+                    className="text-(--accent-11)"
+                  />
+                  <Text className="font-medium text-(--accent-11) text-[11px]">
+                    Runs entirely in the cloud
+                  </Text>
+                </Flex>
+              </Flex>
+              <Text color="gray" className="max-w-2xl text-sm">
                 Put your work on autopilot. Loops run on a schedule, on an API
-                call, or when something happens on GitHub.
+                call, or when something happens on GitHub. You can finally
+                close the laptop!
               </Text>
             </Flex>
             <Button variant="solid" size="2" onClick={startBlank}>
@@ -288,7 +305,7 @@ function TemplateCard({
 const GETTING_STARTED_STEPS = [
   "Describe what you want, or start from a template",
   "Pick when it runs and what it can touch",
-  "Review it once, then it runs unattended and reports back",
+  "Review it once, then it runs unattended in the cloud and reports back",
 ];
 
 function LoopsEmptyState() {
@@ -306,7 +323,8 @@ function LoopsEmptyState() {
             Create your first loop
           </Text>
           <Text className="text-[13px] text-gray-11 leading-relaxed">
-            Set it up once and it keeps running on its own.
+            Set it up once and it keeps running on its own, even with your
+            laptop closed.
           </Text>
         </Flex>
         <div className="flex flex-col gap-2">
