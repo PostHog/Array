@@ -40,6 +40,7 @@ import {
 } from "@/features/tasks/hooks/useMessagingMode";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
 import {
+  type MoveDirection,
   type QueuedMessage,
   useMessageQueueStore,
 } from "@/features/tasks/stores/messageQueueStore";
@@ -109,6 +110,7 @@ export default function TaskDetailScreen() {
     getSessionForTask,
     setFocusedTaskId,
     steerQueuedMessage,
+    flushQueuedMessagesIfIdle,
     stopRun,
   } = useTaskSessionStore();
 
@@ -174,6 +176,9 @@ export default function TaskDetailScreen() {
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
+  const editingQueuedId = useMessageQueueStore((s) =>
+    taskId ? s.editingByTaskId[taskId] : undefined,
+  );
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const analytics = useAnalytics();
 
@@ -359,6 +364,18 @@ export default function TaskDetailScreen() {
       if (!taskId) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+      // Saving an in-place edit: overwrite the queued message and release the
+      // drain hold. If the turn already ended while editing, flush now — the
+      // turn-end drain won't fire again on its own.
+      const queue = useMessageQueueStore.getState();
+      const editingId = queue.editingByTaskId[taskId];
+      if (editingId) {
+        queue.update(taskId, editingId, { content: text, attachments });
+        queue.clearEditing(taskId);
+        flushQueuedMessagesIfIdle(taskId);
+        return;
+      }
+
       if (session?.terminalStatus) {
         handleSendAfterTerminal(text, attachments);
         return;
@@ -398,6 +415,7 @@ export default function TaskDetailScreen() {
       messagingMode,
       handleSendAfterTerminal,
       trackPromptSent,
+      flushQueuedMessagesIfIdle,
     ],
   );
 
@@ -422,10 +440,13 @@ export default function TaskDetailScreen() {
     [taskId, steerQueuedMessage, trackPromptSent],
   );
 
-  const handleReturnQueuedToComposer = useCallback(
+  // Pull a queued message into the composer for an in-place edit. It stays in
+  // the queue at its position (marked as the edit target); the next send saves
+  // it back rather than sending a new prompt.
+  const handleEditQueued = useCallback(
     (message: QueuedMessage) => {
       if (!taskId) return;
-      useMessageQueueStore.getState().remove(taskId, message.id);
+      useMessageQueueStore.getState().setEditing(taskId, message.id);
       setRestoredDraft({
         text: message.content,
         attachments: message.attachments,
@@ -434,10 +455,29 @@ export default function TaskDetailScreen() {
     [taskId],
   );
 
+  const handleCancelEdit = useCallback(() => {
+    if (!taskId) return;
+    useMessageQueueStore.getState().clearEditing(taskId);
+    setRestoredDraft({ text: "", attachments: [] });
+    flushQueuedMessagesIfIdle(taskId);
+  }, [taskId, flushQueuedMessagesIfIdle]);
+
+  const handleMoveQueued = useCallback(
+    (message: QueuedMessage, direction: MoveDirection) => {
+      if (!taskId) return;
+      Haptics.selectionAsync();
+      useMessageQueueStore.getState().move(taskId, message.id, direction);
+    },
+    [taskId],
+  );
+
   const handleDiscardQueued = useCallback(
     (message: QueuedMessage) => {
       if (!taskId) return;
+      const wasEditing =
+        useMessageQueueStore.getState().editingByTaskId[taskId] === message.id;
       useMessageQueueStore.getState().remove(taskId, message.id);
+      if (wasEditing) setRestoredDraft({ text: "", attachments: [] });
     },
     [taskId],
   );
@@ -718,13 +758,16 @@ export default function TaskDetailScreen() {
                 !session?.terminalStatus
               }
               onSteer={handleSteerQueued}
-              onReturnToComposer={handleReturnQueuedToComposer}
+              onEdit={handleEditQueued}
               onDiscard={handleDiscardQueued}
+              onMove={handleMoveQueued}
             />
           ) : null}
           <TaskChatComposer
             onSend={handleSendPrompt}
             restoredDraft={restoredDraft}
+            editing={!!editingQueuedId}
+            onCancelEdit={handleCancelEdit}
             onStop={handleStop}
             isUserTurn={!(session?.isPromptPending ?? true)}
             placeholder={
