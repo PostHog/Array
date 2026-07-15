@@ -169,35 +169,25 @@ async function fetchGithubRefTitle(
 async function resolveGithubRefChip(
   view: EditorView,
   parsed: ParsedGithubIssueUrl,
+  chipId: string,
 ): Promise<void> {
-  const chipType = parsed.kind === "pr" ? "github_pr" : "github_issue";
-  const placeholderLabel = `#${parsed.number} - Loading...`;
   const title = await fetchGithubRefTitle(parsed);
   const resolvedLabel =
     title !== null ? `#${parsed.number} - ${title}` : `#${parsed.number}`;
 
   if (view.isDestroyed) return;
 
-  const { doc, tr } = view.state;
-  let updated = false;
-  doc.descendants((node, pos) => {
-    if (
-      node.type.name !== "mentionChip" ||
-      node.attrs.type !== chipType ||
-      node.attrs.id !== parsed.normalizedUrl ||
-      node.attrs.label !== placeholderLabel
-    ) {
-      return true;
-    }
-    tr.setNodeMarkup(pos, undefined, {
+  const { doc } = view.state;
+  const range = findChipRangeById(doc, chipId);
+  if (!range) return;
+  const node = doc.nodeAt(range.from);
+  if (!node) return;
+  view.dispatch(
+    view.state.tr.setNodeMarkup(range.from, undefined, {
       ...node.attrs,
       label: resolvedLabel,
-    });
-    updated = true;
-    return false;
-  });
-
-  if (updated) view.dispatch(tr);
+    }),
+  );
 }
 
 function showPasteHint(message: string, description: string): void {
@@ -487,7 +477,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 kind: "github-ref",
                 status: "inserted",
               };
-              void resolveGithubRefChip(view, parsedRef);
+              void resolveGithubRefChip(view, parsedRef, chipId);
               return true;
             }
           }
