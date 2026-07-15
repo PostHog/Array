@@ -30,6 +30,7 @@ import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getGithubIssue, getGithubPullRequest } from "../hostApi";
 import { usePromptHistoryStore } from "../promptHistoryStore";
+import { findChipRangeById } from "../tiptap/chipRange";
 import { getEditorExtensions } from "../tiptap/extensions";
 import {
   type DraftContext,
@@ -134,26 +135,13 @@ function replaceChipWithText(
   text: string,
 ): boolean {
   const { doc, selection } = view.state;
-  let chipFrom = -1;
-  let chipTo = -1;
-  doc.descendants((node, pos) => {
-    if (chipFrom >= 0) return false;
-    if (node.type.name !== "mentionChip") return;
-    if (node.attrs.chipId !== chipId) return;
-    const nodeEnd = pos + node.nodeSize;
-    // Also swallow the trailing space the chip insertion added.
-    const after = doc.textBetween(
-      nodeEnd,
-      Math.min(nodeEnd + 1, doc.content.size),
-    );
-    chipFrom = pos;
-    chipTo = after === " " ? nodeEnd + 1 : nodeEnd;
-    return false;
-  });
-  if (chipFrom < 0) return false;
+  const range = findChipRangeById(doc, chipId);
+  if (!range) return false;
   // Only treat it as a double paste while the caret still follows the chip.
-  if (selection.from !== chipTo && selection.from !== chipTo - 1) return false;
-  view.dispatch(view.state.tr.insertText(text, chipFrom, chipTo));
+  if (selection.from !== range.to && selection.from !== range.to - 1) {
+    return false;
+  }
+  view.dispatch(view.state.tr.insertText(text, range.from, range.to));
   view.focus();
   return true;
 }
