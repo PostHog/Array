@@ -13,9 +13,9 @@ export function LoopsItem({ isActive, onClick }: LoopsItemProps) {
       depth={0}
       icon={<RepeatIcon size={16} weight={isActive ? "fill" : "regular"} />}
       label="Loops"
+      badge={<Badge variant="info">Alpha</Badge>}
       isActive={isActive}
       onClick={onClick}
-      endContent={<Badge variant="info">Alpha</Badge>}
     />
   );
 }
