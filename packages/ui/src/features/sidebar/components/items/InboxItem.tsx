@@ -35,6 +35,9 @@ export function InboxItem({
           label={
             <>
               Inbox
+              <Badge variant="warning" className="ml-2">
+                Beta
+              </Badge>
               <SidebarCountBadge
                 count={pullRequestCount}
                 title={`${pullRequestCount} pull requests to review`}
@@ -43,12 +46,7 @@ export function InboxItem({
           }
           isActive={isActive}
           onClick={onClick}
-          endContent={
-            <>
-              <Badge variant="warning">Beta</Badge>
-              <SidebarKbdHint keys={SHORTCUTS.INBOX} />
-            </>
-          }
+          endContent={<SidebarKbdHint keys={SHORTCUTS.INBOX} />}
         />
       </div>
     </Tooltip>

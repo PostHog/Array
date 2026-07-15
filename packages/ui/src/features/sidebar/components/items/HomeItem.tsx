@@ -21,6 +21,9 @@ export function HomeItem({
       label={
         <>
           Home
+          <Badge variant="info" className="ml-2">
+            Alpha
+          </Badge>
           <SidebarCountBadge
             count={attentionCount}
             title={`${attentionCount} item${attentionCount === 1 ? "" : "s"} needing attention`}
@@ -29,7 +32,6 @@ export function HomeItem({
       }
       isActive={isActive}
       onClick={onClick}
-      endContent={<Badge variant="info">Alpha</Badge>}
     />
   );
 }
