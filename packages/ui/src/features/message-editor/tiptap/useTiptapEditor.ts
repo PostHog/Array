@@ -72,6 +72,7 @@ const EDITOR_CLASS =
   "cli-editor min-h-[1.5em] w-full break-words border-none bg-transparent pr-2 text-[14px] text-[var(--gray-12)] outline-none [overflow-wrap:break-word] [white-space:pre-wrap] [word-break:break-word]";
 
 interface TrackedAutoConvertedPaste extends AutoConvertedPaste {
+  kind: "file" | "github-ref";
   chipInserted: boolean;
   canceled: boolean;
 }
@@ -467,9 +468,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               )
             ) {
               event.preventDefault();
-              useFeatureSettingsStore
-                .getState()
-                .markHintLearned("paste-as-file");
+              if (lastConverted.kind === "file") {
+                useFeatureSettingsStore
+                  .getState()
+                  .markHintLearned("paste-as-file");
+              }
               return true;
             }
             if (!lastConverted.chipInserted) {
@@ -494,6 +497,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 clipboardText,
                 insertText: clipboardText,
                 chipId,
+                kind: "github-ref",
                 chipInserted: true,
                 canceled: false,
               };
@@ -555,6 +559,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               clipboardText: clipboardText || effectiveText,
               insertText: effectiveText,
               chipId: crypto.randomUUID(),
+              kind: "file",
               chipInserted: false,
               canceled: false,
             };
