@@ -18,9 +18,10 @@ export const usageOutput = z.object({
   is_rate_limited: z.boolean(),
   // Seat-era plan bit; false for everyone once seats are retired.
   is_pro: z.boolean(),
-  // True when the org pays for Code usage (usage-based billing). Absent on
-  // gateways that predate the field — treat absence as unknown, not false.
-  code_usage_billed: z.boolean().optional(),
+  // True when the org is subscribed to Code usage billing (payment method
+  // on file). Absent on gateways that predate the field — treat absence as
+  // unknown, not false.
+  code_usage_subscribed: z.boolean().optional(),
   billing_period_end: z.string().datetime().nullable().optional(),
 });
 

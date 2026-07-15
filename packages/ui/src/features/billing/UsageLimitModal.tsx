@@ -36,7 +36,7 @@ export function UsageLimitModal() {
   const { isPro: seatIsPro } = useSeat();
   const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  // Whether the org pays for Code usage — picks the org_limit copy variant.
+  // The org's Code usage subscription — picks the org_limit copy variant.
   const { usage } = useUsage({ enabled: usageBillingEnabled && isOpen });
   const isPro = eventIsPro ?? seatIsPro;
 
@@ -60,7 +60,7 @@ export function UsageLimitModal() {
         cause: deriveUsageLimitCause(cause, bucket),
         model,
         resetLabel,
-        billed: usage?.code_usage_billed,
+        subscribed: usage?.code_usage_subscribed,
       })
     : seatEraLimitContent({ bucket, isPro, resetLabel });
 

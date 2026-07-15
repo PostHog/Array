@@ -5,7 +5,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import {
-  isCodeUsageUnbilled,
+  isCodeUsageUnsubscribed,
   PRO_USAGE_MULTIPLIER,
 } from "@posthog/core/billing/usageDisplay";
 import type { UsageOutput } from "@posthog/core/usage/schemas";
@@ -528,9 +528,9 @@ function UsageBasedPlanUsage({
   billingUrl,
   onOpenBilling,
 }: UsageBasedPlanUsageProps) {
-  // Tri-state: unknown (absent field) must render as billed, never as free.
-  const unbilled = isCodeUsageUnbilled(usage);
-  const billed = usage?.code_usage_billed === true;
+  // Tri-state: unknown (absent field) must render as subscribed, never free.
+  const unsubscribed = isCodeUsageUnsubscribed(usage);
+  const subscribed = usage?.code_usage_subscribed === true;
   const orgLimitReached = usage?.ai_credits?.exhausted === true;
 
   return (
@@ -571,15 +571,15 @@ function UsageBasedPlanUsage({
         <Flex align="center" justify="between">
           <Flex direction="column" gap="1">
             <Text className="font-bold text-base">
-              {unbilled ? "Free tier" : "Usage-based billing"}
+              {unsubscribed ? "Free tier" : "Usage-based billing"}
             </Text>
             <Text className="text-(--gray-11) text-sm">
-              {unbilled
+              {unsubscribed
                 ? "Your organization's first $20 of usage each month is included, with access to open models. Add a payment method to unlock premium models — you only pay for what you use."
-                : "Your organization pays for PostHog Code usage at cost — no seats, no subscriptions. The first $20 each month is included."}
+                : "Your organization pays for PostHog Code usage at cost — no seats, no per-user plans. The first $20 each month is included."}
             </Text>
           </Flex>
-          {billed && (
+          {subscribed && (
             <Badge variant="soft" color="green" radius="full">
               Active
             </Badge>
@@ -587,12 +587,14 @@ function UsageBasedPlanUsage({
         </Flex>
         <Button
           size="1"
-          variant={unbilled ? "solid" : "outline"}
+          variant={unsubscribed ? "solid" : "outline"}
           disabled={!billingUrl}
           onClick={onOpenBilling}
           className="self-start"
         >
-          {unbilled ? "Add payment method" : "Manage billing and spend limits"}
+          {unsubscribed
+            ? "Add payment method"
+            : "Manage billing and spend limits"}
           <ArrowSquareOut size={12} />
         </Button>
       </Flex>
@@ -608,7 +610,7 @@ function UsageBasedPlanUsage({
           >
             <Spinner size="2" />
           </Flex>
-        ) : unbilled && usage ? (
+        ) : unsubscribed && usage ? (
           <Flex direction="column" gap="3">
             <UsageMeter
               label="Monthly free usage"

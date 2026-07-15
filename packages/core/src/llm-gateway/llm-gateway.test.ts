@@ -202,14 +202,14 @@ describe("LlmGatewayService.prompt", () => {
     expect(retryBody.model).toBe("@cf/zai-org/glm-5.2");
   });
 
-  it("routes straight to the free-tier model once the org is known unbilled", async () => {
+  it("routes straight to the free-tier model once the org is known unsubscribed", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(createJsonResponse(MODEL_GATE_BODY, 403))
       .mockImplementation(async () => createJsonResponse(SUCCESS_BODY));
     const { service } = createService(fetchMock);
 
-    // First call learns "unbilled" from the gate's 403.
+    // First call learns "unsubscribed" from the gate's 403.
     await service.prompt([{ role: "user", content: "hi" }], {
       model: "claude-haiku-4-5",
     });
@@ -303,7 +303,7 @@ describe("LlmGatewayService.fetchUsage", () => {
       createJsonResponse({
         ...USAGE_BODY,
         ai_credits: { exhausted: true },
-        code_usage_billed: true,
+        code_usage_subscribed: true,
       }),
     );
     const { service } = createService(fetchMock);
@@ -311,14 +311,14 @@ describe("LlmGatewayService.fetchUsage", () => {
     const usage = await service.fetchUsage();
 
     expect(usage.ai_credits?.exhausted).toBe(true);
-    expect(usage.code_usage_billed).toBe(true);
+    expect(usage.code_usage_subscribed).toBe(true);
   });
 
-  it("feeds code_usage_billed into helper model routing", async () => {
+  it("feeds code_usage_subscribed into helper model routing", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        createJsonResponse({ ...USAGE_BODY, code_usage_billed: false }),
+        createJsonResponse({ ...USAGE_BODY, code_usage_subscribed: false }),
       )
       .mockResolvedValue(createJsonResponse(SUCCESS_BODY));
     const { service } = createService(fetchMock);

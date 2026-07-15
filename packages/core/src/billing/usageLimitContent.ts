@@ -27,10 +27,10 @@ export function usageBasedLimitContent(args: {
   cause: GatewayLimitCause;
   model: string | null;
   resetLabel: string | null;
-  /** usage.code_usage_billed — absent means unknown, not free. */
-  billed: boolean | undefined;
+  /** usage.code_usage_subscribed — absent means unknown, not free. */
+  subscribed: boolean | undefined;
 }): UsageLimitContent {
-  const { cause, model, resetLabel, billed } = args;
+  const { cause, model, resetLabel, subscribed } = args;
 
   if (cause === "model_gate") {
     return {
@@ -42,7 +42,7 @@ export function usageBasedLimitContent(args: {
   }
 
   if (cause === "org_limit") {
-    if (billed === false) {
+    if (subscribed === false) {
       return {
         title: "Free usage used up",
         description:

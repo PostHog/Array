@@ -1,4 +1,4 @@
-import { isCodeUsageUnbilled } from "@posthog/core/billing/usageDisplay";
+import { isCodeUsageUnsubscribed } from "@posthog/core/billing/usageDisplay";
 import type { UsageOutput } from "@posthog/core/usage/schemas";
 import { USAGE_BILLING_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
@@ -17,7 +17,7 @@ export function useFreeUsage(billingEnabled: boolean): FreeUsageResult {
   const { seat, isPro } = useSeat();
   const seatLoaded = seat !== null;
   // Seat era: free-seat holders only. Usage era: seats are gone — fetch for
-  // everyone, then show only orgs the gateway confirms as unbilled (the free
+  // everyone, then show only orgs the gateway confirms unsubscribed (the free
   // tier's per-user allowance is the meaningful meter).
   const eligible = usageBillingEnabled
     ? billingEnabled
@@ -25,8 +25,8 @@ export function useFreeUsage(billingEnabled: boolean): FreeUsageResult {
   const { usage, isLoading } = useUsage({ enabled: eligible });
 
   if (!eligible) return { usage: null, isLoading: false };
-  if (usageBillingEnabled && !isCodeUsageUnbilled(usage)) {
-    // Billed org (no per-user caps to meter) or billed state unknown: the
+  if (usageBillingEnabled && !isCodeUsageUnsubscribed(usage)) {
+    // Subscribed org (no per-user caps to meter) or unknown state: the
     // free-tier bar would be noise or wrong — render nothing.
     return { usage: null, isLoading: usage ? false : isLoading };
   }

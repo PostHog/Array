@@ -60,11 +60,11 @@ export class LlmGatewayService {
   private readonly endpoints: LlmGatewayEndpoints;
   private readonly log: LlmGatewayLogger;
 
-  // Last code_usage_billed seen from the gateway (usage fetches ride through
-  // this service, and the usage monitor refreshes on LLM activity, so this
-  // stays warm). null until the gateway has told us either way — old gateways
-  // omit the field entirely.
-  private lastKnownCodeUsageBilled: boolean | null = null;
+  // Last code_usage_subscribed seen from the gateway (usage fetches ride
+  // through this service, and the usage monitor refreshes on LLM activity, so
+  // this stays warm). null until the gateway has told us either way — old
+  // gateways omit the field entirely.
+  private lastKnownCodeUsageSubscribed: boolean | null = null;
 
   async prompt(
     messages: LlmMessage[],
@@ -89,7 +89,7 @@ export class LlmGatewayService {
     // free tier, route helpers to the free-tier model upfront instead of
     // burning a request on the model gate's 403.
     const model =
-      this.lastKnownCodeUsageBilled === false
+      this.lastKnownCodeUsageSubscribed === false
         ? FREE_TIER_GATEWAY_MODEL
         : requested;
     try {
@@ -100,10 +100,10 @@ export class LlmGatewayService {
         error.statusCode === 403 &&
         classifyGatewayLimitError(error.message) === "model_gate";
       if (!isModelGate || model === FREE_TIER_GATEWAY_MODEL) throw error;
-      // Backstop for a stale billed bit (org just lost billing): the gate
-      // itself is authoritative that the org isn't billed, so remember that
+      // Backstop for a stale subscription bit (org just unsubscribed): the gate
+      // itself is authoritative that the org isn't subscribed, so remember that
       // and degrade this call instead of failing it.
-      this.lastKnownCodeUsageBilled = false;
+      this.lastKnownCodeUsageSubscribed = false;
       this.log.warn("Model gated for free tier, retrying on free-tier model", {
         model,
         fallbackModel: FREE_TIER_GATEWAY_MODEL,
@@ -282,8 +282,8 @@ export class LlmGatewayService {
     }
 
     const usage = usageOutput.parse(await response.json());
-    if (usage.code_usage_billed !== undefined) {
-      this.lastKnownCodeUsageBilled = usage.code_usage_billed;
+    if (usage.code_usage_subscribed !== undefined) {
+      this.lastKnownCodeUsageSubscribed = usage.code_usage_subscribed;
     }
     return usage;
   }
