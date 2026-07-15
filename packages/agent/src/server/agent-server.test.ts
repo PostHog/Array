@@ -242,6 +242,10 @@ interface TestableServer {
   buildClaudeCodeSessionMeta(
     runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
+  resumeState: ResumeState | null;
+  getNativeGoalForFreshSession(
+    runtimeAdapter: Adapter,
+  ): ResumeState["nativeGoal"];
 }
 
 interface NativeResumeTestServer {
@@ -435,6 +439,37 @@ describe("AgentServer HTTP Mode", () => {
       TEST_PRIVATE_KEY,
     );
   };
+
+  it("replays ACP notifications emitted before cloud session assignment", () => {
+    const testServer = createServer() as unknown as {
+      session: { sseController: null } | null;
+      pendingEvents: Record<string, unknown>[];
+      preSessionEvents: Record<string, unknown>[];
+      handleAcpTransportMessage(message: unknown): void;
+      flushPreSessionEvents(): void;
+    };
+    const message = {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [{ name: "goal" }],
+        },
+      },
+    };
+
+    testServer.handleAcpTransportMessage(message);
+    expect(testServer.preSessionEvents).toHaveLength(1);
+
+    testServer.session = { sseController: null };
+    testServer.flushPreSessionEvents();
+
+    expect(testServer.preSessionEvents).toHaveLength(0);
+    expect(testServer.pendingEvents).toContainEqual(
+      expect.objectContaining({ notification: message }),
+    );
+    testServer.session = null;
+  });
 
   describe("GET /health", () => {
     it("returns ok status with active session", async () => {
@@ -2345,6 +2380,22 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("native resume", () => {
+    it("restores persisted Codex goals only for fresh Codex sessions", () => {
+      const s = createServer() as unknown as TestableServer;
+      const goal = { objective: "Ship the fix", status: "paused" as const };
+      s.resumeState = {
+        conversation: [],
+        latestGitCheckpoint: null,
+        interrupted: false,
+        logEntryCount: 1,
+        sessionId: "prior-session",
+        nativeGoal: goal,
+      };
+
+      expect(s.getNativeGoalForFreshSession("codex")).toEqual(goal);
+      expect(s.getNativeGoalForFreshSession("claude")).toBeUndefined();
+    });
+
     it.each([
       { retryOutcome: "succeeds", retryFails: false },
       { retryOutcome: "fails", retryFails: true },

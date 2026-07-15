@@ -14,6 +14,9 @@ import { sandboxPolicyFor } from "./session-config";
 
 // Required-field invariants the native codex app-server enforces on each request.
 const REQUIRED_FIELDS: Record<string, string[]> = {
+  "thread/goal/clear": ["threadId"],
+  "thread/goal/get": ["threadId"],
+  "thread/goal/set": ["threadId"],
   "turn/interrupt": ["threadId", "turnId"],
   "turn/steer": ["threadId", "input", "expectedTurnId"],
 };
@@ -43,7 +46,12 @@ function makeStubRpc(responses: Record<string, unknown>) {
           message: `Invalid request: missing field \`${missing}\``,
         };
       }
-      return (responses[method] ?? {}) as T;
+      const response = responses[method];
+      return (
+        typeof response === "function"
+          ? await response(params)
+          : (response ?? {})
+      ) as T;
     },
     notify() {},
     async close() {},
@@ -293,6 +301,274 @@ describe("CodexAppServerAgent", () => {
         (notification) => notification.method === "_posthog/turn_complete",
       ),
     ).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      label: "reads an empty goal",
+      prompt: "/goal",
+      method: "thread/goal/get",
+      response: { goal: null },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "No goal set. Usage: `/goal <objective>`",
+      expectedGoal: undefined,
+    },
+    {
+      label: "reads an active goal",
+      prompt: "/goal",
+      method: "thread/goal/get",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "Goal active: Ship the fix",
+      expectedGoal: undefined,
+    },
+    {
+      label: "sets a goal",
+      prompt: "/goal Ship the fix",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1", objective: "Ship the fix" },
+      expectedText: "Goal set: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "active" },
+    },
+    {
+      label: "clears a goal",
+      prompt: "/goal clear",
+      method: "thread/goal/clear",
+      response: { cleared: true },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "Goal cleared.",
+      expectedGoal: null,
+    },
+    {
+      label: "pauses a goal",
+      prompt: "/goal pause",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "paused" } },
+      expectedParams: { threadId: "thr_1", status: "paused" },
+      expectedText: "Goal paused: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "paused" },
+    },
+    {
+      label: "resumes a goal",
+      prompt: "/goal resume",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1", status: "active" },
+      expectedText: "Goal resumed: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "active" },
+    },
+  ])("$label without starting a model turn", async (testCase) => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      [testCase.method]: testCase.response,
+    });
+    const { client, sessionUpdates, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    const result = await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: testCase.prompt }],
+    } as unknown as PromptRequest);
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(stub.requests).toContainEqual({
+      method: testCase.method,
+      params: testCase.expectedParams,
+    });
+    expect(
+      stub.requests.some((request) => request.method === "turn/start"),
+    ).toBe(false);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: testCase.expectedText },
+      },
+    });
+    if (testCase.expectedGoal !== undefined) {
+      expect(extNotifications).toContainEqual({
+        method: "_posthog/codex_goal",
+        params: { goal: testCase.expectedGoal },
+      });
+    }
+  });
+
+  it("handles a goal command wrapped in hidden cold-resume context", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/get": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [
+        {
+          type: "text",
+          text: "Previous conversation context",
+          _meta: { ui: { hidden: true } },
+        },
+        { type: "text", text: "/goal" },
+        {
+          type: "text",
+          text: "Respond to the user above",
+          _meta: { ui: { hidden: true } },
+        },
+      ],
+    } as unknown as PromptRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "thread/goal/get",
+      params: { threadId: "thr_1" },
+    });
+    expect(
+      stub.requests.some((request) => request.method === "turn/start"),
+    ).toBe(false);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "/goal" },
+      },
+    });
+  });
+
+  it("restores a persisted goal when starting a replacement thread", async () => {
+    const restoredGoal = { objective: "Ship the fix", status: "paused" };
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": { goal: restoredGoal },
+    });
+    const { client, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { nativeGoal: restoredGoal },
+    } as unknown as NewSessionRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "thread/goal/set",
+      params: { threadId: "thr_1", ...restoredGoal },
+    });
+    expect(extNotifications).toContainEqual({
+      method: "_posthog/codex_goal",
+      params: { goal: restoredGoal },
+    });
+  });
+
+  it("interrupts a native goal turn that was already queued when paused", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+    await Promise.resolve();
+
+    expect(stub.requests).toContainEqual({
+      method: "turn/interrupt",
+      params: { threadId: "thr_1", turnId: "goal_tick_1" },
+    });
+  });
+
+  it("interrupts a native goal turn that started before it was paused", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "turn/interrupt",
+      params: { threadId: "thr_1", turnId: "goal_tick_1" },
+    });
+  });
+
+  it("retries queued goal cancellation after an interrupt failure", async () => {
+    let interruptAttempts = 0;
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+      "turn/interrupt": () => {
+        interruptAttempts++;
+        if (interruptAttempts === 1) {
+          throw new Error("interrupt failed");
+        }
+        return {};
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    stub.emit("turn/started", { turn: { id: "goal_tick_2" } });
+    await Promise.resolve();
+
+    expect(
+      stub.requests.filter((request) => request.method === "turn/interrupt"),
+    ).toEqual([
+      {
+        method: "turn/interrupt",
+        params: { threadId: "thr_1", turnId: "goal_tick_1" },
+      },
+      {
+        method: "turn/interrupt",
+        params: { threadId: "thr_1", turnId: "goal_tick_2" },
+      },
+    ]);
   });
 
   it("includes buffered command output when completion omits aggregatedOutput", async () => {
@@ -1713,6 +1989,7 @@ describe("CodexAppServerAgent", () => {
           {
             skills: [
               { name: "deploy", description: "Deploy", enabled: true },
+              { name: "goal", description: "Duplicate", enabled: true },
               { name: "danger", description: "Disabled", enabled: false },
             ],
           },
@@ -1731,7 +2008,14 @@ describe("CodexAppServerAgent", () => {
         (u: any) => u.update?.sessionUpdate === "available_commands_update",
       ) as any
     )?.update?.availableCommands;
-    expect(cmds.map((c: { name: string }) => c.name)).toEqual(["deploy"]);
+    expect(cmds).toEqual([
+      {
+        name: "goal",
+        description: "Set or view the goal for a long-running task",
+        input: { hint: "[<objective>|clear|pause|resume]" },
+      },
+      { name: "deploy", description: "Deploy" },
+    ]);
   });
 
   it("emits _posthog/sdk_session when a taskRunId is present", async () => {
