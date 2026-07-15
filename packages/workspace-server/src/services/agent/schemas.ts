@@ -93,7 +93,8 @@ export const startSessionInput = z.object({
   rtkEnabled: z.boolean().optional(),
   /**
    * The user's spoken-narration setting at session start. Gates the agent's
-   * speak tool and its prompt instructions; absent means off for local runs.
+   * speak tool and its prompt instructions; when absent the adapter defaults
+   * by environment (cloud on, local off).
    */
   spokenNarration: z.boolean().optional(),
 });
