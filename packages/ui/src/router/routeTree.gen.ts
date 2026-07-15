@@ -36,6 +36,7 @@ import { Route as CodeLoopsIndexRouteImport } from './routes/code/loops/index'
 import { Route as CodeInboxIndexRouteImport } from './routes/code/inbox/index'
 import { Route as CodeAgentsIndexRouteImport } from './routes/code/agents/index'
 import { Route as WebsiteChannelIdNewRouteImport } from './routes/website/$channelId/new'
+import { Route as WebsiteChannelIdLoopsRouteImport } from './routes/website/$channelId/loops'
 import { Route as WebsiteChannelIdHistoryRouteImport } from './routes/website/$channelId/history'
 import { Route as WebsiteChannelIdContextRouteImport } from './routes/website/$channelId/context'
 import { Route as WebsiteChannelIdCanvasesRouteImport } from './routes/website/$channelId/canvases'
@@ -214,6 +215,11 @@ const CodeAgentsIndexRoute = CodeAgentsIndexRouteImport.update({
 const WebsiteChannelIdNewRoute = WebsiteChannelIdNewRouteImport.update({
   id: '/$channelId/new',
   path: '/$channelId/new',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteChannelIdLoopsRoute = WebsiteChannelIdLoopsRouteImport.update({
+  id: '/$channelId/loops',
+  path: '/$channelId/loops',
   getParentRoute: () => WebsiteRoute,
 } as any)
 const WebsiteChannelIdHistoryRoute = WebsiteChannelIdHistoryRouteImport.update({
@@ -496,6 +502,7 @@ export interface FileRoutesByFullPath {
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
+  '/website/$channelId/loops': typeof WebsiteChannelIdLoopsRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
@@ -559,6 +566,7 @@ export interface FileRoutesByTo {
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
+  '/website/$channelId/loops': typeof WebsiteChannelIdLoopsRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents': typeof CodeAgentsIndexRoute
   '/code/inbox': typeof CodeInboxIndexRoute
@@ -631,6 +639,7 @@ export interface FileRoutesById {
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
+  '/website/$channelId/loops': typeof WebsiteChannelIdLoopsRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
@@ -706,6 +715,7 @@ export interface FileRouteTypes {
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
     | '/website/$channelId/history'
+    | '/website/$channelId/loops'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
@@ -769,6 +779,7 @@ export interface FileRouteTypes {
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
     | '/website/$channelId/history'
+    | '/website/$channelId/loops'
     | '/website/$channelId/new'
     | '/code/agents'
     | '/code/inbox'
@@ -840,6 +851,7 @@ export interface FileRouteTypes {
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
     | '/website/$channelId/history'
+    | '/website/$channelId/loops'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
@@ -1089,6 +1101,13 @@ declare module '@tanstack/react-router' {
       path: '/$channelId/new'
       fullPath: '/website/$channelId/new'
       preLoaderRoute: typeof WebsiteChannelIdNewRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/$channelId/loops': {
+      id: '/website/$channelId/loops'
+      path: '/$channelId/loops'
+      fullPath: '/website/$channelId/loops'
+      preLoaderRoute: typeof WebsiteChannelIdLoopsRouteImport
       parentRoute: typeof WebsiteRoute
     }
     '/website/$channelId/history': {
@@ -1414,6 +1433,7 @@ interface WebsiteRouteChildren {
   WebsiteChannelIdCanvasesRoute: typeof WebsiteChannelIdCanvasesRoute
   WebsiteChannelIdContextRoute: typeof WebsiteChannelIdContextRoute
   WebsiteChannelIdHistoryRoute: typeof WebsiteChannelIdHistoryRoute
+  WebsiteChannelIdLoopsRoute: typeof WebsiteChannelIdLoopsRoute
   WebsiteChannelIdNewRoute: typeof WebsiteChannelIdNewRoute
   WebsiteChannelIdIndexRoute: typeof WebsiteChannelIdIndexRoute
   WebsiteChannelIdDashboardsDashboardIdRoute: typeof WebsiteChannelIdDashboardsDashboardIdRoute
@@ -1432,6 +1452,7 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteChannelIdCanvasesRoute: WebsiteChannelIdCanvasesRoute,
   WebsiteChannelIdContextRoute: WebsiteChannelIdContextRoute,
   WebsiteChannelIdHistoryRoute: WebsiteChannelIdHistoryRoute,
+  WebsiteChannelIdLoopsRoute: WebsiteChannelIdLoopsRoute,
   WebsiteChannelIdNewRoute: WebsiteChannelIdNewRoute,
   WebsiteChannelIdIndexRoute: WebsiteChannelIdIndexRoute,
   WebsiteChannelIdDashboardsDashboardIdRoute:
