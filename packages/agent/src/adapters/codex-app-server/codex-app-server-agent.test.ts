@@ -148,7 +148,10 @@ describe("CodexAppServerAgent", () => {
     });
 
     await agent.initialize(init);
-    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { environment: "cloud", taskRunId: "run_1" },
+    } as unknown as NewSessionRequest);
     const promptDone = agent.prompt({
       sessionId: "thr_1",
       prompt: [{ type: "text", text: "delegate this" }],
@@ -227,6 +230,12 @@ describe("CodexAppServerAgent", () => {
     const serializedUpdates = JSON.stringify(sessionUpdates);
     expect(serializedUpdates).toContain("spawn_agent");
     expect(serializedUpdates).toContain("parent response");
+    expect(serializedUpdates).not.toContain("subagent prose");
+    expect(
+      extNotifications.filter(
+        (notification) => notification.method === "_posthog/turn_complete",
+      ),
+    ).toHaveLength(1);
   });
 
   it("includes buffered command output when completion omits aggregatedOutput", async () => {
