@@ -41,12 +41,16 @@ export function useNotebookNodeAISummary(
   const cached = service.getCachedSummary({ tagName, props });
   const query = useQuery({
     queryKey: ["notebook-node-ai-summary", cacheKey],
-    queryFn: ({ signal }) => {
+    // Deliberately NOT wired to the query's abort signal: the service
+    // coalesces concurrent calls onto one shared promise (and caches the
+    // result), so StrictMode's double-mount abort — or closing the panel —
+    // must not kill the call for the surviving subscriber.
+    queryFn: () => {
       if (!client) throw new Error("Not authenticated");
       return service.summarizeNode(
         client,
         { tagName, props },
-        { signal, onPartial: setPartial },
+        { onPartial: setPartial },
       );
     },
     enabled: client !== null,
