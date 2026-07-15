@@ -14,6 +14,7 @@ import {
   Wrench,
 } from "@phosphor-icons/react";
 import type { CodeToolKind } from "@posthog/ui/features/sessions/types";
+import { SUBAGENT_SPAWN_TOOL_NAMES } from "../session-update/collaborationTools";
 
 /**
  * Single source of truth for the modernized conversation thread's tuneable
@@ -57,17 +58,7 @@ export const grouping = {
   /**
    * Tool names that create a subagent. Counted separately in the chip summary.
    */
-  subagentToolNames: new Set<string>(["Task", "Agent", "spawn_agent"]),
-  /** Collaboration tools rendered with the dedicated subagent view. */
-  collaborationToolNames: new Set<string>([
-    "Task",
-    "Agent",
-    "spawn_agent",
-    "send_input",
-    "resume_agent",
-    "wait_agent",
-    "close_agent",
-  ]),
+  subagentToolNames: SUBAGENT_SPAWN_TOOL_NAMES,
   /**
    * MCP-app tool calls are excluded from collapsing so their iframes stay
    * mounted (the `keepMounted` contract). Flip to false to fold them in.

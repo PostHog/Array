@@ -16,7 +16,7 @@ import type { ToolCall } from "@posthog/ui/features/sessions/types";
 import { Box } from "@radix-ui/themes";
 import type { ConversationItem, TurnContext } from "../buildConversationItems";
 import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
-import { grouping } from "../new-thread/conversationThreadConfig";
+import { isSubagentSpawnTool } from "./collaborationTools";
 import {
   MCP_TOOL_BLOCK_COMPONENT,
   type McpToolBlockComponent,
@@ -48,7 +48,7 @@ export function ToolCallBlock({
 
   const props = { toolCall, turnCancelled, turnComplete };
 
-  if (isSubagentTool(toolName)) {
+  if (isSubagentSpawnTool(toolName)) {
     const subagentChildItems = childItems ?? [];
     const turnContext: TurnContext = {
       toolCalls: buildChildToolCallsMap(subagentChildItems),
@@ -107,10 +107,6 @@ export function ToolCallBlock({
   })();
 
   return <Box>{content}</Box>;
-}
-
-function isSubagentTool(toolName: string | undefined): boolean {
-  return grouping.collaborationToolNames.has(toolName ?? "");
 }
 
 function buildChildToolCallsMap(

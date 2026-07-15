@@ -549,7 +549,7 @@ function mapItem(
     update: {
       sessionUpdate: "tool_call_update",
       toolCallId: item.id,
-      status: mapToolStatus(item),
+      status: mapStatus(item.status),
       ...(content ? { content } : {}),
     },
   };
@@ -593,20 +593,6 @@ function mapStatus(
   if (status === "completed") return "completed";
   if (status === "failed" || status === "declined") return "failed";
   return "in_progress";
-}
-
-function mapToolStatus(
-  item: AppServerItem,
-): "completed" | "failed" | "in_progress" {
-  if (
-    item.type === "collabAgentToolCall" &&
-    Object.values(item.agentsStates ?? {}).some(
-      (agent) => agent?.status === "pendingInit" || agent?.status === "running",
-    )
-  ) {
-    return "in_progress";
-  }
-  return mapStatus(item.status);
 }
 
 function readItem(params: unknown): AppServerItem | null {

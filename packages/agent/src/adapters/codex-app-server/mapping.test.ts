@@ -268,7 +268,7 @@ describe("mapAppServerNotification", () => {
     });
   });
 
-  it("keeps a completed spawn tool call active while its subagent is running", () => {
+  it("keeps a completed spawn tool call terminal while its subagent is running", () => {
     const result = mapAppServerNotification(
       "s-1",
       APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED,
@@ -293,7 +293,7 @@ describe("mapAppServerNotification", () => {
       update: {
         sessionUpdate: "tool_call_update",
         toolCallId: "spawn-1",
-        status: "in_progress",
+        status: "completed",
       },
     });
   });

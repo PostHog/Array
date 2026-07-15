@@ -937,10 +937,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   private handleNotification(method: string, params: unknown): void {
-    const mappedParams = this.withBufferedCommandOutput(method, params);
-    const notificationThreadId = readNotificationThreadId(mappedParams);
+    const notificationThreadId = readNotificationThreadId(params);
     const isMainThread =
       !notificationThreadId || notificationThreadId === this.threadId;
+    const mappedParams = isMainThread
+      ? this.withBufferedCommandOutput(method, params)
+      : params;
 
     if (this.sessionId && !this.session.cancelled) {
       if (isMainThread) {
