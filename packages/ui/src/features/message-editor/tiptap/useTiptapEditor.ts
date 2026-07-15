@@ -722,6 +722,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const draft = useDraftSync(editor, sessionId, context);
   draftRef.current = draft;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `editor` is the trigger: a recreated editor brings a new schema, and restoring a snapshot taken against the old one would throw on replaceWith.
+  useEffect(() => {
+    promptRecallDraftRef.current = null;
+  }, [editor]);
+
   // Keep attachmentsRef in sync with state (synchronous, no effect needed)
   attachmentsRef.current = attachments;
 
