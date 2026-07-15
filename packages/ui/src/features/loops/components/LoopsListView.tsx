@@ -14,6 +14,7 @@ import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Flex, Heading, IconButton, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
+import { useLoopBuilderTask } from "../hooks/useLoopBuilderTask";
 import { useLoops } from "../hooks/useLoops";
 import { useLoopDraftStore } from "../loopDraftStore";
 import {
@@ -38,6 +39,8 @@ export function LoopsListView() {
   const [prompt, setPrompt] = useState("");
   const [templateCategory, setTemplateCategory] =
     useState<LoopTemplateCategory>("engineering");
+  const { runTask: runLoopBuilder, isRunning: isBuildingLoop } =
+    useLoopBuilderTask();
 
   const headerContent = useMemo(
     () => (
@@ -59,9 +62,8 @@ export function LoopsListView() {
 
   const startFromPrompt = () => {
     const text = prompt.trim();
-    if (!text) return;
-    useLoopDraftStore.getState().setPrefill({ instructions: text });
-    navigateToNewLoop();
+    if (!text || isBuildingLoop) return;
+    void runLoopBuilder(text);
   };
 
   const startBlank = () => {
@@ -185,8 +187,9 @@ export function LoopsListView() {
             <textarea
               value={prompt}
               rows={2}
+              disabled={isBuildingLoop}
               placeholder="What do you want automated?"
-              className="w-full resize-none bg-transparent text-[13px] text-gray-12 leading-relaxed outline-none placeholder:text-gray-9"
+              className="w-full resize-none bg-transparent text-[13px] text-gray-12 leading-relaxed outline-none placeholder:text-gray-9 disabled:opacity-60"
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -197,13 +200,15 @@ export function LoopsListView() {
             />
             <Flex align="center" justify="between" gap="3">
               <Text className="text-[11px] text-gray-9">
-                Drafts a loop you can review before it runs
+                An agent builds the loop with you, then creates it on your
+                confirmation
               </Text>
               <IconButton
                 variant="solid"
                 size="1"
-                aria-label="Draft loop"
-                disabled={!prompt.trim()}
+                aria-label="Build loop with an agent"
+                loading={isBuildingLoop}
+                disabled={!prompt.trim() || isBuildingLoop}
                 onClick={startFromPrompt}
               >
                 <ArrowUpIcon size={13} weight="bold" />

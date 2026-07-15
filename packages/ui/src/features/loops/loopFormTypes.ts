@@ -115,6 +115,16 @@ export function emptyLoopFormValues(): LoopFormValues {
   };
 }
 
+/** A context-attached loop files its runs into the context's shared feed, so it must be
+ * team-visible. The backend rejects personal + context; this keeps form state consistent
+ * for prefills (e.g. "New loop" from a context page) and legacy loops. */
+export function normalizeLoopFormValues(values: LoopFormValues): LoopFormValues {
+  if (values.contextTarget && values.visibility !== "team") {
+    return { ...values, visibility: "team" };
+  }
+  return values;
+}
+
 export function loopToFormValues(loop: LoopSchemas.Loop): LoopFormValues {
   return {
     name: loop.name,
@@ -176,6 +186,9 @@ export function formValuesToLoopWrite(
 
 export function isLoopFormValid(values: LoopFormValues): boolean {
   if (!values.name.trim() || !values.instructions.trim()) {
+    return false;
+  }
+  if (values.contextTarget && values.visibility !== "team") {
     return false;
   }
   return values.triggers.every((trigger) => isTriggerDraftValid(trigger));

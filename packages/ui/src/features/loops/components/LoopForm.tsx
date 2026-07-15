@@ -27,6 +27,7 @@ import {
   type LoopContextTargetDraft,
   type LoopFormValues,
   loopToFormValues,
+  normalizeLoopFormValues,
 } from "../loopFormTypes";
 import { LoopBehaviorFields } from "./LoopBehaviorFields";
 import { LoopContextFields } from "./LoopContextFields";
@@ -60,12 +61,15 @@ export function LoopForm({ loop }: LoopFormProps) {
   const isEdit = !!loop;
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const [values, setValues] = useState<LoopFormValues>(() => {
-    if (loop) return loopToFormValues(loop);
+    if (loop) return normalizeLoopFormValues(loopToFormValues(loop));
     // One-shot prefill from the landing prompt or a template; merged over the
     // blank defaults. Read (not consumed) here, then cleared in the effect
     // below so the manual "New loop" button always opens a blank form.
     const prefill = useLoopDraftStore.getState().prefill;
-    return { ...emptyLoopFormValues(), ...(prefill ?? {}) };
+    return normalizeLoopFormValues({
+      ...emptyLoopFormValues(),
+      ...(prefill ?? {}),
+    });
   });
   const [step, setStep] = useState(0);
   // Open when editing a loop that already pins a model, so the pinned value
@@ -200,11 +204,19 @@ export function LoopForm({ loop }: LoopFormProps) {
               title="Options"
               description="Who can see it and how you hear about runs."
             >
-              <Field label="Visibility" className="max-w-[340px]">
+              <Field
+                label="Visibility"
+                className="max-w-[340px]"
+                hint={
+                  values.contextTarget
+                    ? "Loops attached to a context post runs to its shared feed, so they're visible to everyone on the project."
+                    : undefined
+                }
+              >
                 <SettingsOptionSelect
                   value={values.visibility}
                   options={VISIBILITY_OPTIONS}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !!values.contextTarget}
                   ariaLabel="Visibility"
                   onValueChange={(value) =>
                     patch({
@@ -223,7 +235,13 @@ export function LoopForm({ loop }: LoopFormProps) {
                 <LoopContextFields
                   value={values.contextTarget}
                   disabled={isSubmitting}
-                  onChange={(contextTarget) => patch({ contextTarget })}
+                  onChange={(contextTarget) =>
+                    patch(
+                      contextTarget
+                        ? { contextTarget, visibility: "team" }
+                        : { contextTarget },
+                    )
+                  }
                 />
               </Field>
 
