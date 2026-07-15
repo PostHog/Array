@@ -105,8 +105,8 @@ export function LoopsListView() {
               </Flex>
               <Text color="gray" className="max-w-2xl text-sm">
                 Put your work on autopilot. Loops run on a schedule, on an API
-                call, or when something happens on GitHub. You can finally
-                close the laptop!
+                call, or when something happens on GitHub. You can finally close
+                the laptop!
               </Text>
             </Flex>
             <Button variant="solid" size="2" onClick={startBlank}>
