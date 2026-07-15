@@ -28,6 +28,8 @@ export interface LocalToolGateMeta {
   environment?: "local" | "cloud";
   /** Repo-less channel session: enables the lazy-repo tools. */
   channelMode?: boolean;
+  /** Spoken narration is on for this session: enables the speak tool. */
+  spokenNarration?: boolean;
 }
 
 /**

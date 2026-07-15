@@ -108,6 +108,16 @@ describe("canUseTool MCP approval enforcement", () => {
     expect(context.client.requestPermission).toHaveBeenCalled();
   });
 
+  it("auto-allows the speak narration tool without prompting", async () => {
+    const context = createContext("mcp__posthog-code-tools__speak", {
+      toolInput: { text: "all tests pass", kind: "done" },
+    });
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).not.toHaveBeenCalled();
+  });
+
   it("tags MCP tools in the default permission flow with claudeCode.toolName so the renderer can show the server name and unwrap exec dispatch args", async () => {
     setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
 

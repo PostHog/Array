@@ -91,6 +91,11 @@ export const startSessionInput = z.object({
    * Defaults to enabled; false sets POSTHOG_RTK=0 on the agent environment.
    */
   rtkEnabled: z.boolean().optional(),
+  /**
+   * The user's spoken-narration setting at session start. Gates the agent's
+   * speak tool and its prompt instructions; absent means off for local runs.
+   */
+  spokenNarration: z.boolean().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
@@ -224,6 +229,8 @@ export const reconnectSessionInput = z.object({
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
   /** See startSessionInput.rtkEnabled. */
   rtkEnabled: z.boolean().optional(),
+  /** See startSessionInput.spokenNarration. */
+  spokenNarration: z.boolean().optional(),
 });
 
 export type ReconnectSessionInput = z.infer<typeof reconnectSessionInput>;

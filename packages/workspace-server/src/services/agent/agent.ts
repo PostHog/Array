@@ -284,6 +284,8 @@ interface SessionConfig {
   importedSessionId?: string;
   /** rtk command-output compression for this session; false opts out. */
   rtkEnabled?: boolean;
+  /** The user's spoken-narration setting at session start. */
+  spokenNarration?: boolean;
 }
 
 /** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
@@ -971,6 +973,9 @@ If a repository IS genuinely required, attach one in this priority order:
               sessionId: importedSessionId,
               systemPrompt,
               ...(channelMode && { channelMode }),
+              ...(config.spokenNarration !== undefined && {
+                spokenNarration: config.spokenNarration,
+              }),
               mcpToolApprovals: toolApprovals,
               ...(permissionMode && { permissionMode }),
               ...(model != null && { model }),
@@ -1043,6 +1048,9 @@ If a repository IS genuinely required, attach one in this priority order:
             sessionId: existingSessionId,
             systemPrompt,
             ...(channelMode && { channelMode }),
+            ...(config.spokenNarration !== undefined && {
+              spokenNarration: config.spokenNarration,
+            }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -1069,6 +1077,9 @@ If a repository IS genuinely required, attach one in this priority order:
             environment: "local",
             systemPrompt,
             ...(channelMode && { channelMode }),
+            ...(config.spokenNarration !== undefined && {
+              spokenNarration: config.spokenNarration,
+            }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -1978,6 +1989,8 @@ For git operations while detached:
       importedSessionId:
         "importedSessionId" in params ? params.importedSessionId : undefined,
       rtkEnabled: "rtkEnabled" in params ? params.rtkEnabled : undefined,
+      spokenNarration:
+        "spokenNarration" in params ? params.spokenNarration : undefined,
     };
   }
 

@@ -320,6 +320,7 @@ export interface SessionServiceDeps {
     customInstructions?: string | null;
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
+    spokenNotifications?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1074,6 +1075,7 @@ export class SessionService {
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
+        spokenNarration: this.d.settings.spokenNotifications === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1405,6 +1407,7 @@ export class SessionService {
       adapter,
       customInstructions: startCustomInstructions || undefined,
       rtkEnabled: this.d.settings.rtkEnabledLocal,
+      spokenNarration: this.d.settings.spokenNotifications === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
