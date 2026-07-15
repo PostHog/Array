@@ -1,3 +1,10 @@
+export const PROMPT_RECALL_HINT_KEY = "recall-message-nav";
+
+export interface RecallableMessage {
+  id: string;
+  content: string;
+}
+
 export type PromptRecallDirection = -1 | 1;
 
 export type PromptRecallAction =
@@ -38,4 +45,24 @@ export function promptRecallStep(
   }
   const id = sentPromptIds[currentIndex + 1];
   return id ? { kind: "recall", id, fresh: false } : null;
+}
+
+export function resolvePromptRecall(
+  messages: RecallableMessage[],
+  currentId: string | null,
+  direction: PromptRecallDirection,
+): { result: PromptRecallResult | null; nextId: string | null } {
+  const action = promptRecallStep(
+    messages.map((message) => message.id),
+    currentId,
+    direction,
+  );
+  if (!action) return { result: null, nextId: currentId };
+  if (action.kind === "exit") return { result: { kind: "exit" }, nextId: null };
+  const message = messages.find((entry) => entry.id === action.id);
+  if (!message) return { result: null, nextId: currentId };
+  return {
+    result: { kind: "recall", text: message.content, fresh: action.fresh },
+    nextId: action.id,
+  };
 }

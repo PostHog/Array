@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   type PromptRecallAction,
   type PromptRecallDirection,
+  type PromptRecallResult,
   promptRecallStep,
+  resolvePromptRecall,
 } from "./composerPromptRecall";
 
 const ids = ["m1", "m2", "m3"];
@@ -66,6 +68,37 @@ describe("promptRecallStep", () => {
     expect(promptRecallStep(ids, currentId, direction)).toEqual(expected);
   });
 
+  it.each<{
+    name: string;
+    currentId: string | null;
+    direction: PromptRecallDirection;
+    expected: PromptRecallAction | null;
+  }>([
+    {
+      name: "up with no recall in progress recalls it fresh",
+      currentId: null,
+      direction: -1,
+      expected: { kind: "recall", id: "m1", fresh: true },
+    },
+    {
+      name: "up while on it stays on it",
+      currentId: "m1",
+      direction: -1,
+      expected: { kind: "recall", id: "m1", fresh: false },
+    },
+    {
+      name: "down while on it exits recall",
+      currentId: "m1",
+      direction: 1,
+      expected: { kind: "exit" },
+    },
+  ])(
+    "with a single sent prompt, $name",
+    ({ currentId, direction, expected }) => {
+      expect(promptRecallStep(["m1"], currentId, direction)).toEqual(expected);
+    },
+  );
+
   it.each<{ direction: PromptRecallDirection }>([
     { direction: -1 },
     { direction: 1 },
@@ -75,4 +108,67 @@ describe("promptRecallStep", () => {
       expect(promptRecallStep([], null, direction)).toBeNull();
     },
   );
+});
+
+describe("resolvePromptRecall", () => {
+  const messages = [
+    { id: "m1", content: "first prompt" },
+    { id: "m2", content: "second prompt" },
+  ];
+
+  it.each<{
+    name: string;
+    currentId: string | null;
+    direction: PromptRecallDirection;
+    expectedResult: PromptRecallResult | null;
+    expectedNextId: string | null;
+  }>([
+    {
+      name: "recalls the newest prompt fresh and tracks its id",
+      currentId: null,
+      direction: -1,
+      expectedResult: { kind: "recall", text: "second prompt", fresh: true },
+      expectedNextId: "m2",
+    },
+    {
+      name: "steps to an older prompt and tracks its id",
+      currentId: "m2",
+      direction: -1,
+      expectedResult: { kind: "recall", text: "first prompt", fresh: false },
+      expectedNextId: "m1",
+    },
+    {
+      name: "exits at the newest prompt and clears the tracked id",
+      currentId: "m2",
+      direction: 1,
+      expectedResult: { kind: "exit" },
+      expectedNextId: null,
+    },
+    {
+      name: "stays inert on down outside recall and keeps the id",
+      currentId: null,
+      direction: 1,
+      expectedResult: null,
+      expectedNextId: null,
+    },
+    {
+      name: "stays inert on a stale id and keeps it",
+      currentId: "gone",
+      direction: 1,
+      expectedResult: null,
+      expectedNextId: "gone",
+    },
+  ])("$name", ({ currentId, direction, expectedResult, expectedNextId }) => {
+    expect(resolvePromptRecall(messages, currentId, direction)).toEqual({
+      result: expectedResult,
+      nextId: expectedNextId,
+    });
+  });
+
+  it("returns null and keeps the id when no prompts were sent", () => {
+    expect(resolvePromptRecall([], null, -1)).toEqual({
+      result: null,
+      nextId: null,
+    });
+  });
 });

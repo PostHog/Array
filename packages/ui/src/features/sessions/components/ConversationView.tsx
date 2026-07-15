@@ -17,11 +17,12 @@ import type {
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
 import {
+  PROMPT_RECALL_HINT_KEY,
   type PromptRecallHandler,
-  promptRecallStep,
 } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
+import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -258,20 +259,7 @@ export function ConversationView({
     return result;
   }, [items]);
 
-  // Read by the recall handler at keypress time, so it never acts on a stale
-  // snapshot (the ref registration effect runs after paint, and key repeats
-  // can outpace re-renders).
-  const userMessagesRef = useRef(userMessages);
-  userMessagesRef.current = userMessages;
-
-  // Recall position is invisible (no highlight, no scrolling), so a plain ref
-  // is enough. A newly sent prompt resets it so the next Up starts from it.
-  const recallMessageIdRef = useRef<string | null>(null);
-  const prevUserMessageCountRef = useRef(userMessages.length);
-  if (userMessages.length > prevUserMessageCountRef.current) {
-    recallMessageIdRef.current = null;
-  }
-  prevUserMessageCountRef.current = userMessages.length;
+  usePromptRecallSource(userMessages, promptRecallRef);
 
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
@@ -282,7 +270,7 @@ export function ConversationView({
 
   const handleNavigateMessage = useCallback(
     (direction: -1 | 1) => {
-      useSettingsStore.getState().markHintLearned("recall-message-nav");
+      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       if (userMessages.length === 0) return;
 
       const currentIndex = keyboardFocusedMessageId
@@ -351,32 +339,6 @@ export function ConversationView({
     listRef.current?.scrollToBottom();
     setShowScrollButton(false);
   }, []);
-
-  const recallFromComposer = useCallback<PromptRecallHandler>((direction) => {
-    const messages = userMessagesRef.current;
-    const action = promptRecallStep(
-      messages.map((message) => message.id),
-      recallMessageIdRef.current,
-      direction,
-    );
-    if (!action) return null;
-    if (action.kind === "exit") {
-      recallMessageIdRef.current = null;
-      return { kind: "exit" };
-    }
-    const message = messages.find((entry) => entry.id === action.id);
-    if (!message) return null;
-    recallMessageIdRef.current = action.id;
-    return { kind: "recall", text: message.content, fresh: action.fresh };
-  }, []);
-
-  useEffect(() => {
-    if (!promptRecallRef) return;
-    promptRecallRef.current = recallFromComposer;
-    return () => {
-      promptRecallRef.current = null;
-    };
-  }, [promptRecallRef, recallFromComposer]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {

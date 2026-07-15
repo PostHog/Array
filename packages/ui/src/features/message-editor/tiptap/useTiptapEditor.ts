@@ -24,7 +24,10 @@ import {
   formatHotkey,
   SHORTCUTS,
 } from "@posthog/ui/features/command/keyboard-shortcuts";
-import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
+import {
+  PROMPT_RECALL_HINT_KEY,
+  type PromptRecallHandler,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -211,8 +214,8 @@ function hasVisibleSuggestionPopup(sessionId: string): boolean {
 
 function showMessageNavHint(): void {
   const store = useFeatureSettingsStore.getState();
-  if (!store.shouldShowHint("recall-message-nav")) return;
-  store.recordHintShown("recall-message-nav");
+  if (!store.shouldShowHint(PROMPT_RECALL_HINT_KEY)) return;
+  store.recordHintShown(PROMPT_RECALL_HINT_KEY);
   toast.info(
     "Recalled a sent prompt",
     `Use ${formatHotkey(SHORTCUTS.MESSAGE_PREV)} and ${formatHotkey(SHORTCUTS.MESSAGE_NEXT)} to jump between your messages in the conversation.`,
