@@ -50,10 +50,13 @@ export function RenameChannelModal({
     try {
       const renamed = await renameChannel(channel.id, trimmed);
       // Carry the name-keyed dependents over to the new name so the context's
-      // task history and star survive the rename. Both are best-effort and
+      // task history and star survive the rename. They're independent (feed vs
+      // star, different caches), so run them together. Both are best-effort and
       // never throw, so a hiccup can't turn a successful rename into an error.
-      await renameBackendChannel(previousName, trimmed);
-      await repointStar(previousPath, renamed);
+      await Promise.all([
+        renameBackendChannel(previousName, trimmed),
+        repointStar(previousPath, renamed),
+      ]);
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "rename",
         surface: "sidebar",
