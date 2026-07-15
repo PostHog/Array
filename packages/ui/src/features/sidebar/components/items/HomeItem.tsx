@@ -21,15 +21,13 @@ export function HomeItem({
       label={
         <>
           Home
-          <Badge variant="info" className="ml-2">
-            Alpha
-          </Badge>
           <SidebarCountBadge
             count={attentionCount}
             title={`${attentionCount} item${attentionCount === 1 ? "" : "s"} needing attention`}
           />
         </>
       }
+      badge={<Badge variant="info">Alpha</Badge>}
       isActive={isActive}
       onClick={onClick}
     />
