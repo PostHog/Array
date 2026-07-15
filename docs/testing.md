@@ -189,6 +189,46 @@ agent-browser snapshot -i                           # then click/type/screenshot
 
 This drives whatever profile is signed into `~/.posthog-code`; do not mutate production data while exploring. See the `test-electron-app` skill.
 
+## Storybook Visual Regression
+
+Every story is screenshot in Chromium in both themes (`<story-id>--dark.png` and `--light.png`) using `@storybook/test-runner`, following posthog/posthog's setup. The harness lives in `apps/code/.storybook/test-runner.ts`.
+
+PNGs are never committed. The `Storybook visual regression` workflow captures every story and submits the images to the [PostHog Visual Review product](https://us.posthog.com/project/2/visual_review) via the `vr` CLI (built from posthog/posthog). VR diffs against the signed hash manifest committed at `apps/code/snapshots.yml`, posts the result on the PR, and — once a human approves the changes in the VR UI — commits the updated manifest back to the PR branch. The next run then matches and goes green.
+
+One-time setup (not yet done — the vr step no-ops until it is):
+
+1. Register `PostHog/code` as a repo in Visual Review settings (project 2 on us.posthog.com); this mints the repo UUID.
+2. Create a PostHog personal API key with the `visual_review` scope and store it as the `VR_API_TOKEN` Actions secret on this repo.
+3. Commit the seeded baseline at `apps/code/snapshots.yml`:
+
+   ```yaml
+   version: 1
+   config:
+       api: https://us.posthog.com
+       team: "2"
+       repo: <uuid-from-step-1>
+   snapshots: {}
+   ```
+
+Run locally to debug a story before pushing (local PNGs are gitignored):
+
+```bash
+pnpm --filter code build-storybook
+cd apps/code && pnpm exec http-server storybook-static --port 6006 --silent &
+pnpm --filter code test:visual:update    # capture; rerun with test:visual to spot local flakiness
+```
+
+Per-story control via story parameters (see the typing in `test-runner.ts`):
+
+- `testOptions.viewport` — viewport size (default 1280x720)
+- `testOptions.waitForSelector` — extra readiness selector(s)
+- `testOptions.waitForLoadersToDisappear` — default `true`, waits out quill spinners/skeletons
+- `testOptions.snapshotTargetSelector` — screenshot a specific element
+- `testOptions.themes` — limit to `["dark"]` or `["light"]`
+- `tags: ["test-skip"]` — skip snapshots for a story
+
+Stories must render deterministically: the preview freezes the clock (`mockdate`) and seeds `Math.random` per render when running under the test runner, but story fixtures should still use fixed dates and stable data.
+
 ## Boundary Checks
 
 After touching `@posthog/platform`, rebuild or typecheck its `dist/` before relying on downstream typechecks.

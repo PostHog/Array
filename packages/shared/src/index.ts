@@ -210,6 +210,7 @@ export {
   type QueuedMessage,
   resolveBypassRevertMode,
   type SessionStatus,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
@@ -224,7 +225,11 @@ export type {
   SkillSource,
   UploadableSkillSource,
 } from "./skills";
-export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
+export {
+  SKILL_EXISTS_MARKER,
+  serializeSkillMarkdown,
+  stripFrontmatter,
+} from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,

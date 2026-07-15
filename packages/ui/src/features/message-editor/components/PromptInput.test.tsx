@@ -137,3 +137,48 @@ describe("PromptInput submit/stop affordance", () => {
     expect(send).toBeDisabled();
   });
 });
+
+describe("PromptInput escape handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    editorState.isEmpty = false;
+    settingsState.slotMachineMode = false;
+  });
+
+  it("cancels the queued-message edit on Escape", async () => {
+    const user = userEvent.setup();
+    const onCancelEdit = vi.fn();
+
+    renderInput({ isEditingQueued: true, onCancelEdit });
+
+    await user.keyboard("{Escape}");
+    expect(onCancelEdit).toHaveBeenCalledOnce();
+  });
+
+  it("prioritizes cancelling the edit over stopping the run on Escape", async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const onCancelEdit = vi.fn();
+
+    renderInput({
+      isLoading: true,
+      onCancel,
+      isEditingQueued: true,
+      onCancelEdit,
+    });
+
+    await user.keyboard("{Escape}");
+    expect(onCancelEdit).toHaveBeenCalledOnce();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("still stops the run on Escape when not editing", async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+
+    renderInput({ isLoading: true, onCancel, isEditingQueued: false });
+
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+});

@@ -41,14 +41,10 @@ export function InboxItem({
               />
             </>
           }
+          badge={<Badge variant="warning">Beta</Badge>}
           isActive={isActive}
           onClick={onClick}
-          endContent={
-            <>
-              <Badge variant="warning">Beta</Badge>
-              <SidebarKbdHint keys={SHORTCUTS.INBOX} />
-            </>
-          }
+          endContent={<SidebarKbdHint keys={SHORTCUTS.INBOX} />}
         />
       </div>
     </Tooltip>

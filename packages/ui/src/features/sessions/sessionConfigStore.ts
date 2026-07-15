@@ -15,12 +15,6 @@ interface SessionConfigActions {
   getConfigOptions: (taskRunId: string) => SessionConfigOption[] | undefined;
   /** Remove config options for a task run */
   removeConfigOptions: (taskRunId: string) => void;
-  /** Update a single config option value */
-  updateConfigOptionValue: (
-    taskRunId: string,
-    configId: string,
-    value: string,
-  ) => void;
 }
 
 type SessionConfigStore = SessionConfigState & SessionConfigActions;
@@ -41,22 +35,6 @@ export const useSessionConfigStore = create<SessionConfigStore>()(
         set((state) => {
           const { [taskRunId]: _removed, ...rest } = state.configsByRunId;
           return { configsByRunId: rest };
-        }),
-
-      updateConfigOptionValue: (taskRunId, configId, value) =>
-        set((state) => {
-          const existing = state.configsByRunId[taskRunId];
-          if (!existing) return state;
-
-          const updated = existing.map((opt) =>
-            opt.id === configId
-              ? ({ ...opt, currentValue: value } as SessionConfigOption)
-              : opt,
-          );
-
-          return {
-            configsByRunId: { ...state.configsByRunId, [taskRunId]: updated },
-          };
         }),
     }),
     {
@@ -85,15 +63,4 @@ export function setPersistedConfigOptions(
 /** Non-hook accessor for removing persisted config options */
 export function removePersistedConfigOptions(taskRunId: string): void {
   useSessionConfigStore.getState().removeConfigOptions(taskRunId);
-}
-
-/** Non-hook accessor for updating a single config option value */
-export function updatePersistedConfigOptionValue(
-  taskRunId: string,
-  configId: string,
-  value: string,
-): void {
-  useSessionConfigStore
-    .getState()
-    .updateConfigOptionValue(taskRunId, configId, value);
 }

@@ -25,6 +25,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { POSTHOG_NOTIFICATIONS } from "../acp-extensions";
 import { getSessionJsonlPath } from "../adapters/claude/session/jsonl-hydration";
 import type { PermissionMode } from "../execution-mode";
 import type { PostHogAPIClient } from "../posthog-api";
@@ -241,6 +242,10 @@ interface TestableServer {
   buildClaudeCodeSessionMeta(
     runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
+  resumeState: ResumeState | null;
+  getNativeGoalForFreshSession(
+    runtimeAdapter: Adapter,
+  ): ResumeState["nativeGoal"];
 }
 
 interface NativeResumeTestServer {
@@ -434,6 +439,37 @@ describe("AgentServer HTTP Mode", () => {
       TEST_PRIVATE_KEY,
     );
   };
+
+  it("replays ACP notifications emitted before cloud session assignment", () => {
+    const testServer = createServer() as unknown as {
+      session: { sseController: null } | null;
+      pendingEvents: Record<string, unknown>[];
+      preSessionEvents: Record<string, unknown>[];
+      handleAcpTransportMessage(message: unknown): void;
+      flushPreSessionEvents(): void;
+    };
+    const message = {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [{ name: "goal" }],
+        },
+      },
+    };
+
+    testServer.handleAcpTransportMessage(message);
+    expect(testServer.preSessionEvents).toHaveLength(1);
+
+    testServer.session = { sseController: null };
+    testServer.flushPreSessionEvents();
+
+    expect(testServer.preSessionEvents).toHaveLength(0);
+    expect(testServer.pendingEvents).toContainEqual(
+      expect.objectContaining({ notification: message }),
+    );
+    testServer.session = null;
+  });
 
   describe("GET /health", () => {
     it("returns ok status with active session", async () => {
@@ -1433,6 +1469,126 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.error).toBe("No active session for this run");
     }, 20000);
 
+    it("continues a cloud task after a manual compact command", async () => {
+      const s = createServer();
+      await s.start();
+      const broadcastEvent = vi.fn();
+      let serverInternals!: {
+        session: { clientConnection: { prompt: typeof prompt } };
+        broadcastEvent: typeof broadcastEvent;
+        handleAcpTransportMessage(message: unknown): void;
+      };
+      const prompt = vi.fn(async (_params: { prompt: ContentBlock[] }) => {
+        serverInternals.handleAcpTransportMessage({
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+          params: { sessionId: "session-1", stopReason: "end_turn" },
+        });
+        return { stopReason: "end_turn" };
+      });
+      serverInternals = s as unknown as typeof serverInternals;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.broadcastEvent = broadcastEvent;
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "compact-and-continue",
+          method: "user_message",
+          params: {
+            content:
+              "/compact Continue with the task using the question tool and plan.",
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result?: { stopReason?: string };
+      };
+      expect(body.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+      expect(prompt.mock.calls[0]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: "/compact Continue with the task using the question tool and plan.",
+        },
+      ]);
+      expect(prompt.mock.calls[1]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: expect.stringContaining("Continue working on the task"),
+          _meta: { ui: { hidden: true } },
+        },
+      ]);
+      const turnCompleteEvents = broadcastEvent.mock.calls.filter(
+        ([event]) =>
+          (event as { notification?: { method?: string } }).notification
+            ?.method === POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+      );
+      expect(turnCompleteEvents).toHaveLength(1);
+    }, 20000);
+
+    it("retries only the continuation after compact follow-up failure", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn(async (_params: { prompt: ContentBlock[] }) => ({
+          stopReason: "end_turn",
+        }))
+        .mockResolvedValueOnce({ stopReason: "end_turn" })
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async () =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "compact-retry",
+            method: "user_message",
+            params: {
+              content: "/compact Continue the task.",
+              messageId: "compact-retry",
+            },
+          }),
+        });
+
+      const first = await send();
+      expect(first.status).toBe(200);
+      expect(prompt).toHaveBeenCalledTimes(2);
+
+      const retry = await send();
+      expect(retry.status).toBe(200);
+      expect(prompt).toHaveBeenCalledTimes(3);
+      expect(prompt.mock.calls[0]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: "/compact Continue the task.",
+      });
+      expect(prompt.mock.calls[1]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("Continue working on the task"),
+      });
+      expect(prompt.mock.calls[2]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("Continue working on the task"),
+      });
+    }, 20000);
+
     it("rewrites a bundled local skill slash command before sending the prompt", async () => {
       const skillDefinition = [
         "---",
@@ -2224,6 +2380,22 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("native resume", () => {
+    it("restores persisted Codex goals only for fresh Codex sessions", () => {
+      const s = createServer() as unknown as TestableServer;
+      const goal = { objective: "Ship the fix", status: "paused" as const };
+      s.resumeState = {
+        conversation: [],
+        latestGitCheckpoint: null,
+        interrupted: false,
+        logEntryCount: 1,
+        sessionId: "prior-session",
+        nativeGoal: goal,
+      };
+
+      expect(s.getNativeGoalForFreshSession("codex")).toEqual(goal);
+      expect(s.getNativeGoalForFreshSession("claude")).toBeUndefined();
+    });
+
     it.each([
       { retryOutcome: "succeeds", retryFails: false },
       { retryOutcome: "fails", retryFails: true },

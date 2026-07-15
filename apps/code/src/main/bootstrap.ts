@@ -42,7 +42,9 @@ app.setName(isDev ? "PostHog Code (Development)" : "PostHog Code");
 
 // Set userData path for @posthog/code
 const appDataPath = app.getPath("appData");
-const userDataPath = path.join(appDataPath, "@posthog", appName);
+const userDataPath =
+  process.env.POSTHOG_E2E_USER_DATA_DIR ??
+  path.join(appDataPath, "@posthog", appName);
 app.setPath("userData", userDataPath);
 
 // Export the electron-derived state to env so utility singletons (utils/*,

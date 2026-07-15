@@ -3,6 +3,7 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { hasOpenOverlay } from "@posthog/ui/utils/overlay";
@@ -76,12 +77,21 @@ export interface PromptInputProps {
   hideDefaultToolbar?: boolean;
   // prompt history provider
   getPromptHistory?: () => string[];
+  // plain Up/Down at the caret boundary recalls sent prompts into the input
+  onPromptRecall?: PromptRecallHandler;
   // callbacks
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
   onBashCommand?: (command: string) => void;
   onBashModeChange?: (isBashMode: boolean) => void;
   onCancel?: () => void;
+  /**
+   * Whether the composer is currently editing a queued message in place. When
+   * true, Escape abandons the edit (via {@link onCancelEdit}) instead of
+   * stopping the running turn.
+   */
+  isEditingQueued?: boolean;
+  onCancelEdit?: () => void;
   onToggleMessagingMode?: () => void;
   onAttachFiles?: (files: File[]) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
@@ -121,11 +131,14 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       headerAddon,
       hideDefaultToolbar = false,
       getPromptHistory,
+      onPromptRecall,
       onBeforeSubmit,
       onSubmit,
       onBashCommand,
       onBashModeChange,
       onCancel,
+      isEditingQueued = false,
+      onCancelEdit,
       onToggleMessagingMode,
       onAttachFiles,
       onEmptyChange,
@@ -177,6 +190,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         commands: enableCommands,
       },
       getPromptHistory,
+      onPromptRecall,
       onBeforeSubmit,
       onSubmit,
       onBashCommand,
@@ -245,6 +259,13 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       (e) => {
         if (hasOpenOverlay()) return;
         if (!isActiveSession) return;
+        // Editing a queued message: Escape abandons the edit. It takes priority
+        // over stopping a running turn — while editing, Escape just cancels.
+        if (isEditingQueued && onCancelEdit) {
+          e.preventDefault();
+          onCancelEdit();
+          return;
+        }
         if (isLoading && onCancel) {
           e.preventDefault();
           onCancel();
@@ -253,9 +274,10 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       {
         enableOnFormTags: true,
         enableOnContentEditable: true,
-        enabled: isLoading && !!onCancel,
+        enabled:
+          (isEditingQueued && !!onCancelEdit) || (isLoading && !!onCancel),
       },
-      [isActiveSession, isLoading, onCancel],
+      [isActiveSession, isLoading, onCancel, isEditingQueued, onCancelEdit],
     );
 
     useHotkeys(

@@ -289,6 +289,10 @@ function hiddenTextBlock(text: string): ContentBlock {
   } as ContentBlock;
 }
 
+function isManualCompactPrompt(prompt: ContentBlock[]): boolean {
+  return /^\/compact(?:\s|$)/.test(promptBlocksToText(prompt).trimStart());
+}
+
 interface LocalSkillPromptContext {
   /** Set when the message is a bare `/skill` invocation the adapter should strip. */
   skillName?: string;
@@ -339,6 +343,7 @@ export class AgentServer {
   private rtkSavingsAttempted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
+  private suppressAdapterTurnComplete = false;
   private runUsage = new RunUsageAccumulator();
   private detectedPrUrl: string | null = null;
   // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
@@ -363,7 +368,10 @@ export class AgentServer {
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
+  /** ACP notifications emitted by newSession/resumeSession before this.session is assigned. */
+  private preSessionEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
+  private pendingCompactContinuationMessageIds = new Set<string>();
   private pendingPermissions = new Map<
     string,
     {
@@ -794,6 +802,13 @@ export class AgentServer {
     return { sessionId: priorSessionId, warm };
   }
 
+  private getNativeGoalForFreshSession(
+    runtimeAdapter: Adapter,
+  ): ResumeState["nativeGoal"] {
+    if (runtimeAdapter !== "codex") return undefined;
+    return this.resumeState?.nativeGoal;
+  }
+
   async stop(): Promise<void> {
     this.logger.debug("Stopping agent server...");
 
@@ -909,18 +924,28 @@ export class AgentServer {
           typeof params.messageId === "string" && params.messageId
             ? params.messageId
             : undefined;
+        let retryCompactContinuation = false;
         if (messageId) {
           if (this.deliveredMessageIds.has(messageId)) {
-            this.logger.info("Duplicate user_message delivery ignored", {
-              messageId,
-            });
-            return { stopReason: "duplicate_delivery", duplicate: true };
+            if (this.pendingCompactContinuationMessageIds.has(messageId)) {
+              retryCompactContinuation = true;
+              this.logger.info("Retrying pending compact continuation", {
+                messageId,
+              });
+            } else {
+              this.logger.info("Duplicate user_message delivery ignored", {
+                messageId,
+              });
+              return { stopReason: "duplicate_delivery", duplicate: true };
+            }
+          } else {
+            this.deliveredMessageIds.add(messageId);
           }
-          this.deliveredMessageIds.add(messageId);
           if (this.deliveredMessageIds.size > 500) {
             const oldest = this.deliveredMessageIds.values().next().value;
             if (oldest !== undefined) {
               this.deliveredMessageIds.delete(oldest);
+              this.pendingCompactContinuationMessageIds.delete(oldest);
             }
           }
         }
@@ -951,17 +976,53 @@ export class AgentServer {
             : {}),
         };
 
-        let result: PromptResponse;
-        try {
-          result = await this.session.clientConnection.prompt({
-            sessionId: this.session.acpSessionId,
-            prompt,
-            ...(Object.keys(promptMeta).length > 0
-              ? { _meta: promptMeta }
-              : {}),
+        const manualCompactPrompt = isManualCompactPrompt(prompt);
+        const acpSessionId = this.session.acpSessionId;
+        const continueAfterCompaction = (): Promise<PromptResponse> =>
+          this.promptWithUpstreamRetry({
+            sessionId: acpSessionId,
+            prompt: [
+              hiddenTextBlock(
+                "Compaction is complete. Continue working on the task from the compacted context, following the user's instructions from the /compact command.",
+              ),
+            ],
           });
+
+        let compactCommandCompleted = retryCompactContinuation;
+        let result: PromptResponse;
+        this.suppressAdapterTurnComplete =
+          manualCompactPrompt || retryCompactContinuation;
+        try {
+          if (retryCompactContinuation) {
+            result = await continueAfterCompaction();
+            if (messageId) {
+              this.pendingCompactContinuationMessageIds.delete(messageId);
+            }
+          } else {
+            result = await this.session.clientConnection.prompt({
+              sessionId: this.session.acpSessionId,
+              prompt,
+              ...(Object.keys(promptMeta).length > 0
+                ? { _meta: promptMeta }
+                : {}),
+            });
+
+            if (result.stopReason === "end_turn" && manualCompactPrompt) {
+              compactCommandCompleted = true;
+              if (messageId) {
+                this.pendingCompactContinuationMessageIds.add(messageId);
+              }
+              // `/compact` is an SDK-local command, so without a follow-up the
+              // cloud run reports completion before the model resumes the task.
+              this.recordTurnUsage(result.usage);
+              result = await continueAfterCompaction();
+              if (messageId) {
+                this.pendingCompactContinuationMessageIds.delete(messageId);
+              }
+            }
+          }
         } catch (error) {
-          if (messageId) {
+          if (messageId && !compactCommandCompleted) {
             this.deliveredMessageIds.delete(messageId);
           }
           await this.session.logWriter.flushAll();
@@ -974,6 +1035,8 @@ export class AgentServer {
             throw error;
           }
           return { stopReason: "error_recoverable" };
+        } finally {
+          this.suppressAdapterTurnComplete = false;
         }
 
         this.logger.debug("User message completed", {
@@ -1166,6 +1229,7 @@ export class AgentServer {
 
     this.resumeState = null;
     this.nativeResume = null;
+    this.preSessionEvents = [];
     this.prewarmedRun = false;
     this.warmAutoPublishResolved = false;
 
@@ -1299,16 +1363,8 @@ export class AgentServer {
 
     // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
     this.adapterEmittedTurnComplete = false;
-    const onAcpMessage = (message: unknown) => {
-      if (isTurnCompleteNotification(message)) {
-        this.adapterEmittedTurnComplete = true;
-      }
-      this.broadcastEvent({
-        type: "notification",
-        timestamp: new Date().toISOString(),
-        notification: message,
-      });
-    };
+    const onAcpMessage = (message: unknown) =>
+      this.handleAcpTransportMessage(message);
 
     const tappedReadable = createTappedReadableStream(
       acpConnection.clientStreams.readable as ReadableStream<Uint8Array>,
@@ -1381,6 +1437,9 @@ export class AgentServer {
       sessionCwd,
       initialPermissionMode,
     );
+    let effectiveSessionMeta: typeof sessionMeta & {
+      nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
+    } = sessionMeta;
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
@@ -1389,7 +1448,7 @@ export class AgentServer {
           sessionId: nativeResume.sessionId,
           cwd: sessionCwd,
           mcpServers: this.config.mcpServers ?? [],
-          _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+          _meta: { ...effectiveSessionMeta, sessionId: nativeResume.sessionId },
         });
         acpSessionId = nativeResume.sessionId;
         this.nativeResume = nativeResume;
@@ -1408,10 +1467,15 @@ export class AgentServer {
       }
     }
     if (!acpSessionId) {
+      const restoredNativeGoal =
+        this.getNativeGoalForFreshSession(runtimeAdapter);
+      effectiveSessionMeta = restoredNativeGoal
+        ? { ...sessionMeta, nativeGoal: restoredNativeGoal }
+        : sessionMeta;
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,
         mcpServers: this.config.mcpServers ?? [],
-        _meta: sessionMeta,
+        _meta: effectiveSessionMeta,
       });
       acpSessionId = sessionResponse.sessionId;
       this.logger.debug("ACP session created", {
@@ -1434,8 +1498,9 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
-      sessionMeta,
+      sessionMeta: effectiveSessionMeta,
     };
+    this.flushPreSessionEvents();
 
     this.logger = new Logger({
       debug: true,
@@ -3931,6 +3996,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     this.pendingEvents = [];
+    this.preSessionEvents = [];
     this.lastReportedBranch = null;
     // Run usage is per run: a later session on this instance (e.g. a resume
     // with a different run_id) must not inherit the previous run's totals.
@@ -4045,6 +4111,25 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       });
   }
 
+  private handleAcpTransportMessage(message: unknown): void {
+    if (isTurnCompleteNotification(message)) {
+      if (this.suppressAdapterTurnComplete) {
+        return;
+      }
+      this.adapterEmittedTurnComplete = true;
+    }
+    const event = {
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification: message,
+    };
+    if (!this.session) {
+      this.preSessionEvents.push(event);
+      return;
+    }
+    this.broadcastEvent(event);
+  }
+
   private broadcastTurnComplete(stopReason: string): void {
     if (!this.session) return;
     if (this.adapterEmittedTurnComplete) {
@@ -4082,6 +4167,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } else {
       // Buffer events during initialization (sseController not yet attached)
       this.pendingEvents.push(event);
+    }
+  }
+
+  private flushPreSessionEvents(): void {
+    if (!this.session || this.preSessionEvents.length === 0) return;
+    const events = this.preSessionEvents;
+    this.preSessionEvents = [];
+    for (const event of events) {
+      this.broadcastEvent(event);
     }
   }
 

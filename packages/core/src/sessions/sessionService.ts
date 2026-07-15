@@ -31,6 +31,7 @@ import {
   type QueuedMessage,
   resolveBypassRevertMode,
   type StoredLogEntry,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
   type TaskRunStatus,
 } from "@posthog/shared";
@@ -233,9 +234,22 @@ export interface ISessionStore {
     rawPrompt?: string | ContentBlock[],
   ): void;
   removeQueuedMessage(taskId: string, messageId: string): void;
+  updateQueuedMessage(
+    taskId: string,
+    messageId: string,
+    patch: { content: string; rawPrompt?: string | ContentBlock[] },
+  ): void;
+  setEditingQueuedMessage(taskId: string, messageId: string): void;
+  clearEditingQueuedMessage(taskId: string): void;
   clearMessageQueue(taskId: string): void;
-  dequeueMessagesAsText(taskId: string): string | null;
-  dequeueMessages(taskId: string): QueuedMessage[];
+  dequeueMessagesAsText(
+    taskId: string,
+    options?: { stopAtEdited?: boolean; max?: number },
+  ): string | null;
+  dequeueMessages(
+    taskId: string,
+    options?: { stopAtEdited?: boolean; max?: number },
+  ): QueuedMessage[];
   prependQueuedMessages(taskId: string, messages: QueuedMessage[]): void;
   appendOptimisticItem(
     taskRunId: string,
@@ -310,7 +324,6 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
-  updatePersistedConfigOptionValue: (...args: any[]) => any;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -320,6 +333,7 @@ export interface SessionServiceDeps {
     customInstructions?: string | null;
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
+    spokenNotifications?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1026,6 +1040,9 @@ export class SessionService {
     if (previous) {
       session.optimisticItems = previous.optimisticItems;
       session.messageQueue = previous.messageQueue;
+      // Keep the in-place edit hold with the queue it guards: dropping it here
+      // would let the edited message auto-send in its stale, pre-edit form.
+      session.editingQueuedId = previous.editingQueuedId;
       session.isPromptPending = previous.isPromptPending;
       session.promptStartedAt = previous.promptStartedAt;
       session.pausedDurationMs = previous.pausedDurationMs;
@@ -1068,12 +1085,14 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions, rtkEnabledLocal } = this.d.settings;
+      const { customInstructions, rtkEnabledLocal, spokenNotifications } =
+        this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
+        spokenNarration: spokenNotifications === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1393,7 +1412,11 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
-    const { customInstructions: startCustomInstructions } = this.d.settings;
+    const {
+      customInstructions: startCustomInstructions,
+      rtkEnabledLocal,
+      spokenNotifications,
+    } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
@@ -1404,7 +1427,8 @@ export class SessionService {
       permissionMode: executionMode,
       adapter,
       customInstructions: startCustomInstructions || undefined,
-      rtkEnabled: this.d.settings.rtkEnabledLocal,
+      rtkEnabled: rtkEnabledLocal,
+      spokenNarration: spokenNotifications === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
@@ -2083,10 +2107,15 @@ export class SessionService {
       }
 
       const stopReason = (msg.result as { stopReason?: string }).stopReason;
-      const hasQueuedMessages = this.drainQueuedMessages(taskRunId, session);
+      // A cancelled turn is an explicit stop: auto-firing queued messages
+      // right after would restart the agent the user just halted.
+      const hasSendableMessages =
+        stopReason === "cancelled"
+          ? false
+          : this.drainQueuedMessages(taskRunId, session);
 
-      // Only notify when queue is empty - queued messages will start a new turn
-      if (stopReason && !hasQueuedMessages) {
+      // Only notify when nothing is sendable - queued messages start a new turn
+      if (stopReason && !hasSendableMessages) {
         this.d.notifyPromptComplete(
           session.taskTitle,
           stopReason,
@@ -2262,13 +2291,30 @@ export class SessionService {
     session: AgentSession,
   ): boolean {
     const freshSession = this.d.store.getSessions()[taskRunId];
-    const hasQueuedMessages =
-      freshSession &&
-      freshSession.messageQueue.length > 0 &&
-      freshSession.status === "connected";
+    // A message being edited in place holds back itself and everything after
+    // it, so only the sendable prefix counts. When the whole queue is held,
+    // this returns false and the caller fires the "turn complete" notification
+    // (the agent is idle, waiting for the edit to be saved).
+    const hasSendableMessages =
+      !!freshSession &&
+      freshSession.status === "connected" &&
+      sendableQueuePrefixLength(freshSession) > 0;
 
-    if (hasQueuedMessages) {
+    if (hasSendableMessages) {
       setTimeout(() => {
+        // Re-check at fire time: the turn-end drain and the edit-release flush
+        // can each schedule a timer, and whichever fires second must not start
+        // a concurrent prompt (the first send flips isPromptPending before it
+        // awaits, so this check observes it).
+        const latest = this.d.store.getSessionByTaskId(session.taskId);
+        if (
+          !latest ||
+          latest.status !== "connected" ||
+          latest.isPromptPending ||
+          latest.isCompacting
+        ) {
+          return;
+        }
         this.sendQueuedMessages(session.taskId).catch((err) => {
           this.d.log.error("Failed to send queued messages", {
             taskId: session.taskId,
@@ -2278,7 +2324,7 @@ export class SessionService {
       }, 0);
     }
 
-    return hasQueuedMessages;
+    return hasSendableMessages;
   }
 
   private handlePermissionRequest(
@@ -2552,15 +2598,20 @@ export class SessionService {
   }
 
   /**
-   * Send all queued messages as a single prompt.
+   * Send the next queued message as its own prompt.
    * Called internally when a turn completes and there are queued messages.
-   * Queue is cleared atomically before sending - if sending fails, messages are lost
-   * (this is acceptable since the user can re-type; avoiding complex retry logic).
+   * Only the head message is dequeued (`max: 1`) so a queue drains one turn at
+   * a time — when this turn completes, the drain fires again for the next one.
+   * The message is removed from the queue before sending; if sending fails it
+   * is lost (acceptable since the user can re-type; avoids complex retry logic).
    */
   private async sendQueuedMessages(
     taskId: string,
   ): Promise<{ stopReason: string }> {
-    const combinedText = this.d.store.dequeueMessagesAsText(taskId);
+    const combinedText = this.d.store.dequeueMessagesAsText(taskId, {
+      stopAtEdited: true,
+      max: 1,
+    });
     if (!combinedText) {
       return { stopReason: "skipped" };
     }
@@ -2574,7 +2625,7 @@ export class SessionService {
       return { stopReason: "no_session" };
     }
 
-    this.d.log.info("Sending queued messages as single prompt", {
+    this.d.log.info("Sending next queued message as prompt", {
       taskId,
       promptLength: combinedText.length,
     });
@@ -2812,6 +2863,104 @@ export class SessionService {
     } catch (error) {
       this.d.store.prependQueuedMessages(taskId, [message]);
       throw error;
+    }
+  }
+
+  /**
+   * Begin an in-place edit of a queued message: mark it as the edit target so
+   * that, until the edit is saved or cancelled, it and everything queued after
+   * it are held back when the turn ends (only the messages before it may send).
+   */
+  setEditingQueuedMessage(taskId: string, messageId: string): void {
+    this.d.store.setEditingQueuedMessage(taskId, messageId);
+  }
+
+  /**
+   * Release an in-place edit hold — the edit was cancelled, or the edited
+   * message left the queue. Drops the hold and, if the agent is now idle, sends
+   * the messages the hold was blocking (the turn may have ended while the user
+   * was still editing, so nothing else would trigger the drain).
+   */
+  clearEditingQueuedMessage(taskId: string): void {
+    this.d.store.clearEditingQueuedMessage(taskId);
+    this.flushQueuedMessagesIfIdle(taskId);
+  }
+
+  /**
+   * Update a queued message in place from an edited composer prompt, keeping it
+   * in the queue at its current position. Mirrors the enqueue normalization so
+   * the stored `content`/`rawPrompt` match what a freshly-queued prompt would
+   * hold (cloud recomputes the transport display + raw payload; local stores
+   * the serialized text). Returns false when the target is no longer queued so
+   * the caller can fall back to sending it as a new message.
+   *
+   * Saving is also what releases the edit hold: the hold is cleared and, if the
+   * agent finished its turn while the user was editing, the now-unblocked queue
+   * is drained.
+   */
+  async updateQueuedMessage(
+    taskId: string,
+    messageId: string,
+    prompt: string | ContentBlock[],
+  ): Promise<boolean> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return false;
+    if (!session.messageQueue.some((m) => m.id === messageId)) return false;
+
+    if (session.isCloud) {
+      const normalizedPrompt = await this.resolveCloudPrompt(prompt);
+      // Cloud normalization awaits, during which the message may have drained
+      // (a turn completed and sent it). Re-check against fresh state: without
+      // this, the store update below is a silent no-op yet we'd still report a
+      // successful save, so the caller wouldn't fall back to sending the edit
+      // as a fresh message and the edit would be lost.
+      const fresh = this.d.store.getSessionByTaskId(taskId);
+      if (!fresh?.messageQueue.some((m) => m.id === messageId)) return false;
+      const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
+      this.d.store.updateQueuedMessage(taskId, messageId, {
+        content: transport.promptText,
+        rawPrompt: normalizedPrompt,
+      });
+    } else {
+      this.d.store.updateQueuedMessage(taskId, messageId, {
+        content: extractPromptText(prompt),
+      });
+    }
+
+    // Read fresh: the cloud path awaited above, so the pre-await `session`
+    // snapshot may be stale for the edit-hold decision.
+    const latest = this.d.store.getSessionByTaskId(taskId);
+    if (latest?.editingQueuedId === messageId) {
+      this.d.store.clearEditingQueuedMessage(taskId);
+    }
+    this.flushQueuedMessagesIfIdle(taskId);
+    return true;
+  }
+
+  /**
+   * Nudge the queue after an in-place edit is saved or cancelled. The turn may
+   * have finished while the user was editing — in that case nothing else would
+   * trigger the normal turn-end drain, so the now-unblocked messages would sit
+   * stranded until the next turn. Only sends when the agent is actually idle;
+   * a mid-turn edit is left for the turn-end drain to pick up.
+   */
+  private flushQueuedMessagesIfIdle(taskId: string): void {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session || session.messageQueue.length === 0) return;
+
+    if (session.isCloud) {
+      // The cloud flush re-checks run readiness itself, so scheduling while the
+      // run is still busy is a safe no-op.
+      this.scheduleCloudQueueFlush(taskId, "edit_released");
+      return;
+    }
+
+    if (
+      session.status === "connected" &&
+      !session.isPromptPending &&
+      !session.isCompacting
+    ) {
+      this.drainQueuedMessages(session.taskRunId, session);
     }
   }
 
@@ -3115,11 +3264,17 @@ export class SessionService {
       const authStatus = await this.getAuthCredentialsStatus();
       if (authStatus.kind === "restoring") return;
 
-      const drained = this.d.store.dequeueMessages(taskId);
+      // Drain one message per turn (`max: 1`) so a queue sends sequentially:
+      // the next turn_complete flushes the next message. A later flush after
+      // this send finishes picks up the rest.
+      const drained = this.d.store.dequeueMessages(taskId, {
+        stopAtEdited: true,
+        max: 1,
+      });
       const combined = this.d.h.combineQueuedCloudPrompts(drained);
       if (!combined) return;
 
-      this.d.log.info("Sending queued cloud messages", {
+      this.d.log.info("Sending next queued cloud message", {
         taskId,
         drainedCount: drained.length,
       });
@@ -3873,7 +4028,7 @@ export class SessionService {
     this.d.store.updateSession(session.taskRunId, {
       configOptions: updatedOptions,
     });
-    this.d.updatePersistedConfigOptionValue(session.taskRunId, configId, value);
+    this.d.setPersistedConfigOptions(session.taskRunId, updatedOptions);
 
     if (
       !session.isCloud &&
@@ -3898,20 +4053,25 @@ export class SessionService {
         });
       }
     } catch (error) {
-      // Rollback on error
-      const rolledBackOptions = configOptions.map((opt) =>
-        opt.id === configId
-          ? ({ ...opt, currentValue: previousValue } as SessionConfigOption)
-          : opt,
+      const latestConfigOptions =
+        this.d.store.getSessionByTaskId(taskId)?.configOptions ?? [];
+      const latestOption = latestConfigOptions.find(
+        (option) => option.id === configId,
       );
-      this.d.store.updateSession(session.taskRunId, {
-        configOptions: rolledBackOptions,
-      });
-      this.d.updatePersistedConfigOptionValue(
-        session.taskRunId,
-        configId,
-        String(previousValue),
-      );
+      if (latestOption?.currentValue === value) {
+        const rolledBackOptions = latestConfigOptions.map((option) =>
+          option.id === configId
+            ? ({
+                ...option,
+                currentValue: previousValue,
+              } as SessionConfigOption)
+            : option,
+        );
+        this.d.store.updateSession(session.taskRunId, {
+          configOptions: rolledBackOptions,
+        });
+        this.d.setPersistedConfigOptions(session.taskRunId, rolledBackOptions);
+      }
       this.d.log.error("Failed to set session config option", {
         taskId,
         configId,
@@ -4327,8 +4487,33 @@ export class SessionService {
     runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
+    const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
+    const persistedAdapter = this.d.adapterStore.getAdapter(taskRunId);
+    const buildInitialConfigOptions = (
+      mode: string | undefined,
+      configAdapter: Adapter | undefined = persistedAdapter,
+    ): SessionConfigOption[] => {
+      const defaults = addMissingCloudRuntimeConfigOptions(
+        buildCloudDefaultConfigOptions(mode, adapter),
+        adapter,
+        initialModel,
+        initialReasoningEffort,
+      );
+      if (!persistedConfigOptions?.length) return defaults;
+      if (configAdapter && configAdapter !== adapter) return defaults;
+
+      const defaultIds = new Set(defaults.map((option) => option.id));
+      const completeOptions = [
+        ...defaults,
+        ...persistedConfigOptions.filter(
+          (option) => !defaultIds.has(option.id),
+        ),
+      ];
+      return mergeConfigOptions(completeOptions, persistedConfigOptions);
+    };
 
     if (this.supersededRunIds.has(runId)) return () => {};
+    this.d.adapterStore.setAdapter(taskRunId, adapter);
 
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
@@ -4356,11 +4541,9 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: addMissingCloudRuntimeConfigOptions(
-              buildCloudDefaultConfigOptions(currentMode, adapter),
-              adapter,
-              initialModel,
-              initialReasoningEffort,
+            configOptions: buildInitialConfigOptions(
+              currentMode,
+              existing.adapter,
             ),
           });
         } else {
@@ -4457,11 +4640,9 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = addMissingCloudRuntimeConfigOptions(
-        buildCloudDefaultConfigOptions(initialMode, adapter),
-        adapter,
-        initialModel,
-        initialReasoningEffort,
+      session.configOptions = buildInitialConfigOptions(
+        initialMode,
+        existing?.taskRunId === taskRunId ? existing.adapter : persistedAdapter,
       );
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
@@ -4480,11 +4661,9 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = addMissingCloudRuntimeConfigOptions(
-          buildCloudDefaultConfigOptions(currentMode, adapter),
-          adapter,
-          initialModel,
-          initialReasoningEffort,
+        updates.configOptions = buildInitialConfigOptions(
+          currentMode,
+          existing.adapter,
         );
       } else {
         const configOptions = addMissingCloudRuntimeConfigOptions(

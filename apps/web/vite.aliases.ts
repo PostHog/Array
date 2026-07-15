@@ -25,4 +25,5 @@ export const posthogSrcAliases = [
   subpath("api-client"),
   subpath("agent"),
   subpath("enricher"),
+  subpath("git"),
 ];

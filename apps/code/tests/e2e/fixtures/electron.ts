@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   test as base,
@@ -69,18 +70,33 @@ export const test = base.extend<ElectronFixtures>({
   // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture requires empty destructuring
   electronApp: async ({}, use) => {
     const appPath = getAppPath();
+    const e2eHome = mkdtempSync(path.join(os.tmpdir(), "posthog-code-e2e-"));
+    const e2eAppData = path.join(e2eHome, "app-data");
+    const e2eUserData = path.join(e2eHome, "user-data");
+    mkdirSync(e2eUserData, { recursive: true });
+    let electronApp: ElectronApplication | undefined;
 
-    const electronApp = await electron.launch({
-      executablePath: appPath,
-      args: [],
-      env: {
-        ...process.env,
-        ELECTRON_DISABLE_GPU: "1",
-      },
-    });
+    try {
+      electronApp = await electron.launch({
+        executablePath: appPath,
+        args: [],
+        env: {
+          ...process.env,
+          APPDATA: e2eAppData,
+          ELECTRON_DISABLE_GPU: "1",
+          HOME: e2eHome,
+          LOCALAPPDATA: e2eAppData,
+          POSTHOG_E2E_USER_DATA_DIR: e2eUserData,
+          USERPROFILE: e2eHome,
+          XDG_CONFIG_HOME: e2eAppData,
+        },
+      });
 
-    await use(electronApp);
-    await electronApp.close();
+      await use(electronApp);
+    } finally {
+      await electronApp?.close();
+      rmSync(e2eHome, { recursive: true, force: true });
+    }
   },
 
   window: async ({ electronApp }, use) => {

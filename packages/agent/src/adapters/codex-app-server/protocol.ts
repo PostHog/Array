@@ -15,6 +15,9 @@ export const APP_SERVER_METHODS = {
   TURN_INTERRUPT: "turn/interrupt",
   MODEL_LIST: "model/list",
   SKILLS_LIST: "skills/list",
+  THREAD_GOAL_SET: "thread/goal/set",
+  THREAD_GOAL_GET: "thread/goal/get",
+  THREAD_GOAL_CLEAR: "thread/goal/clear",
   THREAD_LIST: "thread/list",
 } as const;
 

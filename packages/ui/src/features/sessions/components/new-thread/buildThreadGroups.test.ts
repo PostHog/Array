@@ -73,4 +73,26 @@ describe("buildThreadGroups MCP detection", () => {
     expect(grouping.idToRowIndex.get("t1")).toBe(0);
     expect(grouping.idToRowIndex.get("t2")).toBe(0);
   });
+
+  it("counts only spawned agents as subagents", () => {
+    const items = [
+      toolCallItem("spawn-1", {
+        posthog: { toolName: "spawn_agent" },
+      }),
+      toolCallItem("wait-1", {
+        posthog: { toolName: "wait_agent" },
+      }),
+      toolCallItem("close-1", {
+        posthog: { toolName: "close_agent" },
+      }),
+    ];
+
+    const grouping = buildThreadGroups(items, "all", {});
+    const row = grouping.rows[0];
+    expect(row.kind).toBe("tool_group");
+    if (row.kind !== "tool_group") return;
+    expect(row.summary.counts.subagents).toBe(1);
+    expect(row.summary.counts.other).toBe(2);
+    expect(row.summary.doneLabel).toBe("1 subagent, 2 tool calls");
+  });
 });

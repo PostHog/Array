@@ -30,6 +30,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { formatDurationSeconds } from "@posthog/ui/utils/customSound";
 import { playCompletionSound } from "@posthog/ui/utils/sounds";
 import {
@@ -73,6 +74,8 @@ export function NotificationsSettings() {
   const notifications = useServiceOptional<INotifications>(
     NOTIFICATIONS_SERVICE,
   );
+  // Dock badge/bounce are macOS desktop-dock features.
+  const { localWorkspaces } = useHostCapabilities();
 
   // Canvases only exist behind the bluebird flag, so only mention them when on.
   const canvasEnabled = useFeatureFlag(
@@ -209,27 +212,31 @@ export function NotificationsSettings() {
         />
       </SettingRow>
 
-      <SettingRow
-        label="Dock badge"
-        description="Display a badge on the dock icon when the agent finishes a task or needs your input"
-      >
-        <Switch
-          checked={dockBadgeNotifications}
-          onCheckedChange={setDockBadgeNotifications}
-          size="1"
-        />
-      </SettingRow>
+      {localWorkspaces && (
+        <>
+          <SettingRow
+            label="Dock badge"
+            description="Display a badge on the dock icon when the agent finishes a task or needs your input"
+          >
+            <Switch
+              checked={dockBadgeNotifications}
+              onCheckedChange={setDockBadgeNotifications}
+              size="1"
+            />
+          </SettingRow>
 
-      <SettingRow
-        label="Bounce dock icon"
-        description="Bounce the dock icon when the agent finishes a task or needs your input"
-      >
-        <Switch
-          checked={dockBounceNotifications}
-          onCheckedChange={setDockBounceNotifications}
-          size="1"
-        />
-      </SettingRow>
+          <SettingRow
+            label="Bounce dock icon"
+            description="Bounce the dock icon when the agent finishes a task or needs your input"
+          >
+            <Switch
+              checked={dockBounceNotifications}
+              onCheckedChange={setDockBounceNotifications}
+              size="1"
+            />
+          </SettingRow>
+        </>
+      )}
 
       <SettingRow
         label="In-app toasts"
@@ -694,6 +701,10 @@ function NotificationTestHarness({
   canvasEnabled: boolean;
 }) {
   const nativeUnavailable = !notifications;
+  // Deep links (OS URL scheme) and the dock are desktop concepts; hide those
+  // test rows on cloud-only hosts. Clicking a native notification still opens
+  // its task in-app on web.
+  const { localWorkspaces } = useHostCapabilities();
 
   const testToast = () =>
     bus?.notify({
@@ -756,27 +767,30 @@ function NotificationTestHarness({
         </Button>
       </SettingRow>
 
-      <SettingRow
-        label="Deep-link toast"
-        description={
-          deepLinkTask
-            ? `Toast with a "View" action that opens "${deepLinkTask.title}".`
-            : "Run a task first to test deep-linking from a toast."
-        }
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={testToastDeepLink}
-          disabled={!bus || !deepLinkTask}
+      {localWorkspaces && (
+        <SettingRow
+          label="Deep-link toast"
+          description={
+            deepLinkTask
+              ? `Toast with a "View" action that opens "${deepLinkTask.title}".`
+              : "Run a task first to test deep-linking from a toast."
+          }
         >
-          Send
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={testToastDeepLink}
+            disabled={!bus || !deepLinkTask}
+          >
+            Send
+          </Button>
+        </SettingRow>
+      )}
 
       <SettingRow
         label="Native OS notification"
         description="Shows a system notification — the tier used when the app is in the background."
+        noBorder={!localWorkspaces}
       >
         <Button
           variant="soft"
@@ -788,52 +802,58 @@ function NotificationTestHarness({
         </Button>
       </SettingRow>
 
-      <SettingRow
-        label="Deep-link notification"
-        description={
-          deepLinkTask
-            ? `Fires a native notification that opens "${deepLinkTask.title}" when clicked.`
-            : "Run a task first to test deep-linking from a notification."
-        }
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={testNativeDeepLink}
-          disabled={nativeUnavailable || !deepLinkTask}
+      {localWorkspaces && (
+        <SettingRow
+          label="Deep-link notification"
+          description={
+            deepLinkTask
+              ? `Fires a native notification that opens "${deepLinkTask.title}" when clicked.`
+              : "Run a task first to test deep-linking from a notification."
+          }
         >
-          Send
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={testNativeDeepLink}
+            disabled={nativeUnavailable || !deepLinkTask}
+          >
+            Send
+          </Button>
+        </SettingRow>
+      )}
 
-      <SettingRow
-        label="Dock badge"
-        description="Adds the unread dot to the dock icon (clears on next focus)."
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={() => notifications?.showUnreadIndicator()}
-          disabled={nativeUnavailable}
+      {localWorkspaces && (
+        <SettingRow
+          label="Dock badge"
+          description="Adds the unread dot to the dock icon (clears on next focus)."
         >
-          Show
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={() => notifications?.showUnreadIndicator()}
+            disabled={nativeUnavailable}
+          >
+            Show
+          </Button>
+        </SettingRow>
+      )}
 
-      <SettingRow
-        label="Dock bounce"
-        description="Bounces the dock icon once to request attention."
-        noBorder
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={() => notifications?.requestAttention()}
-          disabled={nativeUnavailable}
+      {localWorkspaces && (
+        <SettingRow
+          label="Dock bounce"
+          description="Bounces the dock icon once to request attention."
+          noBorder
         >
-          Bounce
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={() => notifications?.requestAttention()}
+            disabled={nativeUnavailable}
+          >
+            Bounce
+          </Button>
+        </SettingRow>
+      )}
     </>
   );
 }

@@ -1,3 +1,4 @@
+import { Text } from "@components/text";
 import * as Haptics from "expo-haptics";
 import {
   ArrowUp,
@@ -81,6 +82,9 @@ interface TaskChatComposerProps {
   onToggleMessagingMode: () => void;
   /** A queued message pulled back for editing; pass a fresh object to restore. */
   restoredDraft?: { text: string; attachments: PendingAttachment[] };
+  /** True while editing a queued message in place; the next send saves it. */
+  editing?: boolean;
+  onCancelEdit?: () => void;
 }
 
 function modeIcon(mode: ExecutionMode, color: string, size = 14): ReactNode {
@@ -167,6 +171,8 @@ export function TaskChatComposer({
   queuedCount,
   onToggleMessagingMode,
   restoredDraft,
+  editing = false,
+  onCancelEdit,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
   const [message, setMessage] = useState(() => initialMessage ?? "");
@@ -266,6 +272,25 @@ export function TaskChatComposer({
         <View className="relative">
           <PulsingBorder active={isUserTurn} color={themeColors.accent[9]} />
           <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
+            {editing ? (
+              <View className="flex-row items-center gap-2 border-gray-6 border-b bg-accent-2 px-3 py-2">
+                <PencilIcon size={14} color={themeColors.accent[11]} />
+                <Text className="flex-1 text-[12px] text-accent-11">
+                  Editing queued message
+                </Text>
+                <Pressable
+                  hitSlop={8}
+                  onPress={onCancelEdit}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel editing"
+                  className="active:opacity-60"
+                >
+                  <Text className="font-medium text-[12px] text-gray-11">
+                    Cancel
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             <AttachmentsBar
               attachments={attachments}
               onRemove={removeAttachment}

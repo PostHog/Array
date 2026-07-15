@@ -41,12 +41,17 @@ import {
 } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
+import {
+  PROMPT_RECALL_HINT_KEY,
+  type PromptRecallHandler,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import {
   ToolGroup,
   type ToolGroupItem,
 } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
+import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -84,6 +89,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   memo,
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -92,7 +98,6 @@ import {
   useState,
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-
 import type { ConversationViewProps } from "../ConversationView";
 
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
@@ -816,24 +821,30 @@ function ThreadKeyboardNav({
   setJumpPickerOpen,
   keyboardFocusedMessageId,
   setKeyboardFocusedMessageId,
+  promptRecallRef,
 }: {
   items: ConversationItem[];
   jumpPickerOpen: boolean;
   setJumpPickerOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
   keyboardFocusedMessageId: string | null;
   setKeyboardFocusedMessageId: (id: string | null) => void;
+  promptRecallRef?: RefObject<PromptRecallHandler | null>;
 }) {
   const { scrollToMessage } = useChatMessageScroller();
 
-  const userMessageIds = useMemo(
+  const userMessages = useMemo(
     () =>
       items
         .filter(
           (item): item is Extract<ConversationItem, { type: "user_message" }> =>
             item.type === "user_message",
         )
-        .map((item) => item.id),
+        .map((item) => ({ id: item.id, content: item.content })),
     [items],
+  );
+  const userMessageIds = useMemo(
+    () => userMessages.map((message) => message.id),
+    [userMessages],
   );
 
   useHotkeys(
@@ -863,6 +874,7 @@ function ThreadKeyboardNav({
       const nextId = userMessageIds[nextIndex];
       if (!nextId) return;
 
+      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       setKeyboardFocusedMessageId(nextId);
       scrollToMessage(nextId);
     },
@@ -885,6 +897,8 @@ function ThreadKeyboardNav({
     () => handleNavigateMessage(1),
     THREAD_HOTKEY_OPTIONS,
   );
+
+  usePromptRecallSource(userMessages, promptRecallRef);
 
   const handleJumpToMessage = useCallback(
     (id: string) => {
@@ -987,6 +1001,7 @@ export function ChatThread({
   repoPath,
   task,
   taskId,
+  promptRecallRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -1129,6 +1144,7 @@ export function ChatThread({
               setJumpPickerOpen={setJumpPickerOpen}
               keyboardFocusedMessageId={keyboardFocusedMessageId}
               setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
+              promptRecallRef={promptRecallRef}
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>
