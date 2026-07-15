@@ -425,16 +425,10 @@ function ThreadConversation({
     [taskId],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new content
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [
-    messages.length,
-    promptMsgs.length,
-    agentMsgs.length,
-    agentMsgs[agentMsgs.length - 1]?.text,
-    agentStatus?.phase,
-  ]);
+  }, [timeline, agentStatus?.phase]);
 
   const isTaskAuthor =
     !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
