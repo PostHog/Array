@@ -1,17 +1,36 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   AgentSessionRuntime,
+  AuthStorage,
   CreateAgentSessionFromServicesOptions,
   CreateAgentSessionRuntimeFactory,
   CreateAgentSessionServicesOptions,
 } from "@earendil-works/pi-coding-agent";
 import { installHogBrandEnv } from "./extensions/hog-branding/brand-env";
+import {
+  POSTHOG_PROVIDER_NAME,
+  type PosthogOAuthCredentials,
+  setPosthogOAuthCredentials,
+} from "./extensions/posthog-provider/provider";
 import type { HarnessExtensionOptions } from "./extensions/registry";
 
 type PiRuntimeTarget = Parameters<CreateAgentSessionRuntimeFactory>[0];
+type AuthStorageSnapshot = Parameters<typeof AuthStorage.inMemory>[0];
 
-export type HarnessRuntimeOptions = HarnessExtensionOptions &
-  Partial<
+function loadAuthStorageSnapshot(
+  authPath: string,
+): AuthStorageSnapshot | undefined {
+  try {
+    return JSON.parse(readFileSync(authPath, "utf8")) as AuthStorageSnapshot;
+  } catch {
+    return undefined;
+  }
+}
+
+export type HarnessRuntimeOptions = HarnessExtensionOptions & {
+  posthogOAuthCredentials?: PosthogOAuthCredentials;
+} & Partial<
     Pick<
       PiRuntimeTarget,
       "cwd" | "agentDir" | "sessionManager" | "sessionStartEvent"
@@ -35,6 +54,7 @@ export type HarnessRuntimeOptions = HarnessExtensionOptions &
 export async function createHarnessRuntime(
   options: HarnessRuntimeOptions = {},
 ): Promise<AgentSessionRuntime> {
+  const { posthogOAuthCredentials, ...runtimeOptions } = options;
   // Pi reads its application branding when the SDK is first evaluated. Keep
   // every runtime import below dynamic so this always happens first.
   installHogBrandEnv();
@@ -45,8 +65,8 @@ export async function createHarnessRuntime(
     import("./extensions/posthog-provider/models"),
   ]);
 
-  const cwd = options.cwd ?? process.cwd();
-  const agentDir = options.agentDir ?? pi.getAgentDir();
+  const cwd = runtimeOptions.cwd ?? process.cwd();
+  const agentDir = runtimeOptions.agentDir ?? pi.getAgentDir();
 
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({
     cwd: runtimeCwd,
@@ -54,12 +74,21 @@ export async function createHarnessRuntime(
     sessionManager,
     sessionStartEvent,
   }) => {
+    const authPath = join(runtimeAgentDir, "auth.json");
     const authStorage =
-      options.authStorage ??
-      pi.AuthStorage.create(join(runtimeAgentDir, "auth.json"));
+      runtimeOptions.authStorage ??
+      (posthogOAuthCredentials
+        ? pi.AuthStorage.inMemory(loadAuthStorageSnapshot(authPath))
+        : pi.AuthStorage.create(authPath));
+    if (posthogOAuthCredentials) {
+      setPosthogOAuthCredentials(authStorage, posthogOAuthCredentials);
+    }
+    if (options.apiKey) {
+      authStorage.setRuntimeApiKey(POSTHOG_PROVIDER_NAME, options.apiKey);
+    }
 
     const services = await pi.createAgentSessionServices({
-      ...options,
+      ...runtimeOptions,
       cwd: runtimeCwd,
       agentDir: runtimeAgentDir,
       authStorage,
@@ -69,9 +98,9 @@ export async function createHarnessRuntime(
           projectTrusted: false,
         }),
       resourceLoaderOptions: {
-        ...options.resourceLoaderOptions,
+        ...runtimeOptions.resourceLoaderOptions,
         extensionFactories: [
-          ...(options.resourceLoaderOptions?.extensionFactories ?? []),
+          ...(runtimeOptions.resourceLoaderOptions?.extensionFactories ?? []),
           ...harnessExtensions(options),
         ],
       },
@@ -86,11 +115,11 @@ export async function createHarnessRuntime(
       .find((model) => model.provider === "posthog");
 
     const created = await pi.createAgentSessionFromServices({
-      ...options,
+      ...runtimeOptions,
       services,
       sessionManager,
       sessionStartEvent,
-      model: options.model ?? preferredModel ?? fallbackModel,
+      model: runtimeOptions.model ?? preferredModel ?? fallbackModel,
     });
 
     return {
@@ -109,12 +138,12 @@ export async function createHarnessRuntime(
   };
 
   const sessionManager =
-    options.sessionManager ?? pi.SessionManager.create(cwd);
+    runtimeOptions.sessionManager ?? pi.SessionManager.create(cwd);
 
   return pi.createAgentSessionRuntime(createRuntime, {
     cwd: sessionManager.getCwd(),
     agentDir,
     sessionManager,
-    sessionStartEvent: options.sessionStartEvent,
+    sessionStartEvent: runtimeOptions.sessionStartEvent,
   });
 }

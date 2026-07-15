@@ -163,6 +163,29 @@ function copyClaudeSupportAssets(sourcePath: string, destDir: string): void {
   }
 }
 
+export function copyPiRpcHost(): Plugin {
+  return {
+    name: "copy-pi-rpc-host",
+    writeBundle() {
+      const candidates = [
+        join(__dirname, "node_modules/@posthog/agent/dist/pi/rpc-host.js"),
+        join(
+          __dirname,
+          "../../node_modules/@posthog/agent/dist/pi/rpc-host.js",
+        ),
+        join(__dirname, "../../packages/agent/dist/pi/rpc-host.js"),
+      ];
+      const source = candidates.find((candidate) => existsSync(candidate));
+      if (!source) {
+        throw new Error(
+          `[copy-pi-rpc-host] Unable to find Pi RPC host, required at runtime by createPiRpcClient. Build @posthog/agent first. Checked:\n  ${candidates.join("\n  ")}`,
+        );
+      }
+      copyFileSync(source, join(__dirname, ".vite/build/rpc-host.js"));
+    },
+  };
+}
+
 export function copyClaudeExecutable(): Plugin {
   return {
     name: "copy-claude-executable",

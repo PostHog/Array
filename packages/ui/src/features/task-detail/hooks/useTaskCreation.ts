@@ -13,6 +13,7 @@ import type { HostTrpcClient } from "@posthog/host-router/client";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
+  type AgentRuntime,
   ANALYTICS_EVENTS,
   PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
@@ -73,6 +74,7 @@ interface UseTaskCreationOptions {
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
@@ -168,6 +170,7 @@ export function useTaskCreation({
   editorIsEmpty,
   executionMode,
   adapter,
+  runtime = "acp",
   model,
   reasoningLevel,
   environmentId,
@@ -359,6 +362,7 @@ export function useTaskCreation({
           reuseExistingWorktree,
           executionMode,
           adapter,
+          runtime,
           model,
           reasoningLevel,
           environmentId,
@@ -532,6 +536,7 @@ export function useTaskCreation({
       branch,
       executionMode,
       adapter,
+      runtime,
       model,
       reasoningLevel,
       environmentId,

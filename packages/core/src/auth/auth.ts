@@ -155,6 +155,22 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       apiHost: getCloudUrlFromRegion(session.cloudRegion),
     };
   }
+  async getOAuthCredentials(): Promise<{
+    access: string;
+    refresh: string;
+    expires: number;
+    region: CloudRegion;
+  } | null> {
+    if (this.tokenOverride) return null;
+    await this.initialize();
+    const session = await this.ensureValidSession();
+    return {
+      access: session.accessToken,
+      refresh: session.refreshToken,
+      expires: session.accessTokenExpiresAt,
+      region: session.cloudRegion,
+    };
+  }
   async refreshAccessToken(): Promise<ValidAccessTokenOutput> {
     const override = this.tokenOverride;
     if (override) {

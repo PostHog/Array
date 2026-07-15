@@ -28,6 +28,10 @@
       "types": "./dist/posthog-products.d.ts",
       "import": "./dist/posthog-products.js"
     },
+    "./pi/rpc-client": {
+      "types": "./dist/pi/rpc-client.d.ts",
+      "import": "./dist/pi/rpc-client.js"
+    },
     "./pr-url-detector": {
       "types": "./dist/pr-url-detector.d.ts",
       "import": "./dist/pr-url-detector.js"

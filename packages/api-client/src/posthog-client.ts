@@ -2426,6 +2426,7 @@ export class PostHogAPIClient {
           | "repository"
           | "json_schema"
           | "origin_product"
+          | "runtime"
           | "signal_report"
         >
       > & {

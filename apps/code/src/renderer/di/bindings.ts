@@ -73,6 +73,8 @@ import {
   GITHUB_CONNECT_CLIENT,
   type GithubConnectClient,
 } from "@posthog/core/onboarding/identifiers";
+import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
+import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import {
   type BundleLocalSkill,
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
@@ -288,6 +290,7 @@ export interface RendererBindings {
   [SHELL_PROCESS_READER]: ShellProcessReader;
   [ANALYTICS_TRACKER]: AnalyticsTracker;
   [TASK_CREATION_HOST]: ITaskCreationHost;
+  [PI_RUNNER]: PiRunner;
   [TASK_CREATION_EFFECTS]: TaskCreationEffects;
   [RENDERER_TASK_SERVICE]: TaskService;
   [TASK_SERVICE]: TaskService;

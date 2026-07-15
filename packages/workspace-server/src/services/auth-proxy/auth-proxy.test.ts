@@ -56,6 +56,18 @@ describe("AuthProxyService", () => {
     expect(url).toBe("https://gateway.example/v1/messages");
   });
 
+  it("rejects requests that do not include the generated access token", async () => {
+    const proxyUrl = await service.start("https://gateway.example");
+    const proxyOrigin = new URL(proxyUrl).origin;
+
+    const missingToken = await fetch(`${proxyOrigin}/v1/messages`);
+    const invalidToken = await fetch(`${proxyOrigin}/invalid/v1/messages`);
+
+    expect(missingToken.status).toBe(401);
+    expect(invalidToken.status).toBe(401);
+    expect(authMock.authenticatedFetch).not.toHaveBeenCalled();
+  });
+
   it("passes a connection-lifetime signal so authenticatedFetch's default timeout does not apply", async () => {
     authMock.authenticatedFetch.mockResolvedValue(new Response("ok"));
 

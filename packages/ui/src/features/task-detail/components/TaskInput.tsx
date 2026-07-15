@@ -9,7 +9,7 @@ import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
-import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { type AgentRuntime, ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
@@ -38,6 +38,7 @@ import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnable
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
+import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { useFeatureFlagsLoaded } from "../../feature-flags/useFeatureFlagsLoaded";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
@@ -87,6 +88,7 @@ import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
 import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
+import { AgentRuntimeSelect } from "./AgentRuntimeSelect";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
@@ -227,6 +229,7 @@ export function TaskInput({
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<AgentRuntime>("acp");
   const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
   const [isCloudRepoPickerOpen, setIsCloudRepoPickerOpen] = useState(false);
   const [cloudBranchSearchQuery, setCloudBranchSearchQuery] = useState("");
@@ -323,6 +326,7 @@ export function TaskInput({
   // Force cloud mode on cloud-only hosts (web).
   const { localWorkspaces } = useHostCapabilities();
   const cloudModeEnabled = useCloudModeEnabled();
+  const piHarnessEnabled = useFeatureFlag("pi-harness");
   const flagsLoaded = useFeatureFlagsLoaded();
   const reposReady = areReposReady({
     isLoadingRepos,
@@ -381,6 +385,7 @@ export function TaskInput({
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     didResolveWorkspaceModeRef.current = true;
+    if (mode === "cloud") setRuntime("acp");
     setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
     if (mode !== "cloud") {
@@ -848,6 +853,7 @@ export function TaskInput({
     branch: branchForTaskCreation,
     editorIsEmpty,
     adapter,
+    runtime,
     executionMode: currentExecutionMode,
     model: effectiveModel,
     reasoningLevel: effectiveReasoningLevel,
@@ -1092,6 +1098,13 @@ export function TaskInput({
                 align="center"
                 className="absolute bottom-full left-0 mb-2 min-w-0"
               >
+                {piHarnessEnabled && workspaceMode !== "cloud" && (
+                  <AgentRuntimeSelect
+                    value={runtime}
+                    onChange={setRuntime}
+                    disabled={isCreatingTask}
+                  />
+                )}
                 <WorkspaceModeSelect
                   value={workspaceMode}
                   onChange={setWorkspaceMode}

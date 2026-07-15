@@ -1,4 +1,5 @@
 export * from "./adapter";
+export * from "./agent-runtime";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";

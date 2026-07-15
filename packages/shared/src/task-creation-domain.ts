@@ -1,4 +1,5 @@
 import type { Adapter } from "./adapter";
+import type { AgentRuntime } from "./agent-runtime";
 import type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 import type { Task } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
@@ -35,6 +36,7 @@ export interface TaskCreationInput {
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string;

@@ -1,6 +1,11 @@
 import type { AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 
 export {
+  type PosthogOAuthCredentials,
+  parsePosthogOAuthCredentials,
+  setPosthogOAuthCredentials,
+} from "./extensions/posthog-provider/provider";
+export {
   createHarnessRuntime,
   type HarnessRuntimeOptions,
 } from "./runtime";

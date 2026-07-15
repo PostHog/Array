@@ -32,6 +32,8 @@ import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import type { LlmMessage } from "@posthog/core/llm-gateway/schemas";
 import { LOCAL_MCP_WORKSPACE_CLIENT } from "@posthog/core/local-mcp/identifiers";
 import type { LocalMcpWorkspaceClient } from "@posthog/core/local-mcp/localMcpImport";
+import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
+import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import {
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
@@ -151,6 +153,7 @@ import { trpcClient } from "@renderer/trpc";
 import { hostTrpcClient } from "@renderer/trpc/client";
 import type { TRPCClient } from "@trpc/client";
 import { hostLog, logger } from "@utils/logger";
+import { TrpcPiRunner } from "../platform-adapters/trpc-pi-runner";
 import type { RendererBindings } from "./bindings";
 import { TASK_SERVICE as RENDERER_TASK_SERVICE, TRPC_CLIENT } from "./tokens";
 
@@ -290,6 +293,7 @@ container
 
 // Bind services
 container.bind<ITaskCreationHost>(TASK_CREATION_HOST).to(TrpcTaskCreationHost);
+container.bind<PiRunner>(PI_RUNNER).to(TrpcPiRunner);
 container.bind(TASK_CREATION_EFFECTS).toConstantValue(taskCreationEffects);
 container.bind<TaskService>(RENDERER_TASK_SERVICE).to(TaskService);
 container.bind<TaskService>(TASK_SERVICE).toService(RENDERER_TASK_SERVICE);

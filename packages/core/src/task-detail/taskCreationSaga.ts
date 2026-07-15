@@ -24,6 +24,7 @@ import type {
   ImportedClaudeCliSession,
   ITaskCreationHost,
 } from "./taskCreationHost";
+import { resolveTaskRepository } from "./taskRepository";
 
 export interface TaskCreationDeps {
   posthogClient: TaskCreationApiClient;
@@ -739,27 +740,9 @@ export class TaskCreationSaga extends Saga<
     input: TaskCreationInput,
     warmPayload: WarmActivationPayload | null,
   ): Promise<Task> {
-    let repository = input.repository;
-
-    const repoPathForDetection = input.repoPath;
-    if (!repository && repoPathForDetection) {
-      // Detection only fills the org/repo metadata on the task; a transient
-      // failure (e.g. the workspace-server transport dropping mid-call) must
-      // not abort task creation, so degrade to an untagged task instead.
-      const detected = await this.readOnlyStep("repo_detection", () =>
-        this.deps.host
-          .detectRepo({ directoryPath: repoPathForDetection })
-          .catch((error) => {
-            this.log.warn("Repo detection failed; creating task without one", {
-              error,
-            });
-            return null;
-          }),
-      );
-      if (detected) {
-        repository = `${detected.organization}/${detected.repository}`;
-      }
-    }
+    const repository = await this.readOnlyStep("repo_detection", () =>
+      resolveTaskRepository(input, this.deps.host, this.log),
+    );
 
     return this.step({
       name: "task_creation",
@@ -807,6 +790,7 @@ export class TaskCreationSaga extends Saga<
               : undefined,
           signal_report: input.signalReportId ?? undefined,
           channel: input.channelId ?? undefined,
+          runtime: "acp",
           pending_user_message: warmPayload?.pendingUserMessage,
           pending_user_artifact_ids: warmPayload?.pendingUserArtifactIds,
           // If creation activates a pre-warmed run, this is the only request

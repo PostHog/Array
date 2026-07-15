@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import http from "node:http";
 import {
   ROOT_LOGGER,
@@ -16,8 +17,10 @@ import type { AuthProxyAuth } from "./ports";
 @injectable()
 export class AuthProxyService {
   private server: http.Server | null = null;
-  private gatewayUrl: string | null = null;
   private port: number | null = null;
+  private listenPromise: Promise<void> | null = null;
+  private readonly gatewayUrlByToken = new Map<string, string>();
+  private readonly tokenByGatewayUrl = new Map<string, string>();
   private readonly log: ScopedLogger;
 
   constructor(
@@ -30,44 +33,57 @@ export class AuthProxyService {
   }
 
   async start(gatewayUrl: string): Promise<string> {
-    if (this.server) {
-      this.gatewayUrl = gatewayUrl;
-      return this.getProxyUrl();
+    let token = this.tokenByGatewayUrl.get(gatewayUrl);
+    if (!token) {
+      token = randomBytes(32).toString("base64url");
+      this.tokenByGatewayUrl.set(gatewayUrl, token);
+      this.gatewayUrlByToken.set(token, gatewayUrl);
     }
 
-    this.gatewayUrl = gatewayUrl;
+    await this.ensureListening();
 
-    this.server = http.createServer((req, res) => {
-      this.handleRequest(req, res);
-    });
-
-    return new Promise<string>((resolve, reject) => {
-      this.server?.listen(0, "127.0.0.1", () => {
-        const addr = this.server?.address();
-        if (typeof addr === "object" && addr) {
-          this.port = addr.port;
-          resolve(this.getProxyUrl());
-        } else {
-          reject(new Error("Failed to get proxy address"));
-        }
-      });
-
-      this.server?.on("error", (err) => {
-        this.log.error("Auth proxy server error", err);
-        reject(err);
-      });
-    });
+    return this.getProxyUrl(token);
   }
 
-  getProxyUrl(): string {
+  getProxyUrl(token: string): string {
     if (!this.port) {
       throw new Error("Auth proxy not started");
     }
-    return `http://127.0.0.1:${this.port}`;
+    return `http://127.0.0.1:${this.port}/${token}`;
   }
 
   isRunning(): boolean {
     return this.server !== null && this.port !== null;
+  }
+
+  private ensureListening(): Promise<void> {
+    if (this.port) {
+      return Promise.resolve();
+    }
+    if (this.listenPromise) {
+      return this.listenPromise;
+    }
+
+    this.server = http.createServer((req, res) => {
+      this.handleRequest(req, res);
+    });
+    this.listenPromise = new Promise<void>((resolve, reject) => {
+      this.server?.listen(0, "127.0.0.1", () => {
+        const address = this.server?.address();
+        if (typeof address === "object" && address) {
+          this.port = address.port;
+          resolve();
+          return;
+        }
+        reject(new Error("Failed to get proxy address"));
+      });
+      this.server?.on("error", (error) => {
+        this.log.error("Auth proxy server error", error);
+        reject(error);
+      });
+    });
+
+    return this.listenPromise;
   }
 
   async stop(): Promise<void> {
@@ -78,6 +94,9 @@ export class AuthProxyService {
         this.log.info("Auth proxy stopped");
         this.server = null;
         this.port = null;
+        this.listenPromise = null;
+        this.gatewayUrlByToken.clear();
+        this.tokenByGatewayUrl.clear();
         resolve();
       });
     });
@@ -87,17 +106,19 @@ export class AuthProxyService {
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): void {
-    if (!this.gatewayUrl) {
-      res.writeHead(503);
-      res.end("Proxy not configured");
+    const incomingUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+    const match = incomingUrl.pathname.match(/^\/([^/]+)(\/.*)?$/);
+    const token = match?.[1];
+    const gatewayUrl = token ? this.gatewayUrlByToken.get(token) : undefined;
+    if (!gatewayUrl) {
+      res.writeHead(401);
+      res.end("Unauthorized");
       return;
     }
 
-    const base = this.gatewayUrl.endsWith("/")
-      ? this.gatewayUrl
-      : `${this.gatewayUrl}/`;
-    const incoming = (req.url ?? "/").replace(/^\//, "");
-    const targetUrl = new URL(incoming, base);
+    const base = gatewayUrl.endsWith("/") ? gatewayUrl : `${gatewayUrl}/`;
+    const targetPath = `${match?.[2] ?? "/"}${incomingUrl.search}`;
+    const targetUrl = new URL(targetPath.replace(/^\//, ""), base);
 
     // Validate that the resolved URL stays within the configured gateway origin
     const gatewayBase = new URL(base);

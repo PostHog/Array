@@ -7,7 +7,11 @@ describe("createPiRpcClient", () => {
     const client = createPiRpcClient({
       cwd: "/workspace",
       model: "claude-opus-4-8",
-      providerOptions: { apiKey: "token", region: "us" },
+      providerOptions: {
+        region: "us",
+        baseUrl: "http://127.0.0.1:1234",
+        apiKey: "proxy-key",
+      },
     });
 
     expect(client).toBeInstanceOf(RpcClient);

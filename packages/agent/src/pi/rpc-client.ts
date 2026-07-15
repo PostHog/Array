@@ -11,6 +11,10 @@ import { safePiEnvironment } from "./rpc-environment";
 
 export type PiRpcClient = RpcClient;
 
+type RpcClientProcessAccess = {
+  process?: ChildProcess;
+};
+
 interface RpcClientInternals {
   process?: ChildProcess;
   stopReadingStdout?: () => void;
@@ -47,7 +51,7 @@ function attachJsonlReader(
 class SecurePiRpcClient extends RpcClient {
   constructor(
     private readonly secureOptions: RpcClientOptions,
-    private readonly providerOptions?: PosthogProviderOptions,
+    private readonly providerOptions: PosthogProviderOptions,
   ) {
     super(secureOptions);
   }
@@ -133,17 +137,24 @@ class SecurePiRpcClient extends RpcClient {
   }
 }
 
+export function getPiRpcClientProcess(
+  client: PiRpcClient,
+): ChildProcess | null {
+  return (client as unknown as RpcClientProcessAccess).process ?? null;
+}
+
 export type PiRpcClientOptions = Pick<RpcClientOptions, "cwd" | "model"> & {
-  providerOptions?: PosthogProviderOptions;
+  sessionFile?: string;
+  providerOptions: PosthogProviderOptions & { apiKey: string };
 };
 
-export function createPiRpcClient(
-  options: PiRpcClientOptions = {},
-): PiRpcClient {
-  const { providerOptions, ...rpcOptions } = options;
+export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {
+  const { sessionFile, providerOptions, ...rpcOptions } = options;
+  const args = sessionFile ? ["--session-file", sessionFile] : [];
   return new SecurePiRpcClient(
     {
       ...rpcOptions,
+      args,
       cliPath: fileURLToPath(new URL("./rpc-host.js", import.meta.url)),
       provider: "posthog",
     },

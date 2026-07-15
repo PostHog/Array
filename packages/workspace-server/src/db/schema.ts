@@ -59,6 +59,7 @@ export const taskMetadata = sqliteTable("task_metadata", {
   // row, so this timestamp is their only home — without it, archiving them is a
   // silent no-op and they reappear on the next refetch.
   archivedAt: text(),
+  piSessionFile: text(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

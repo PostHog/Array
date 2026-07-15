@@ -18,6 +18,7 @@ import { clearGitReviewQueries } from "../../git-interaction/gitCacheKeys";
 import { PanelLayout } from "../../panels/components/PanelLayout";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { getLeafPanel, parseTabId } from "../../panels/panelStoreHelpers";
+import { PiSessionView } from "../../pi-sessions/PiSessionView";
 import { MIN_CHAT_WIDTH } from "../../sessions/constants";
 import { useCwd } from "../../sidebar/useCwd";
 import { useRenameTask } from "../../tasks/useTaskMutations";
@@ -52,6 +53,7 @@ export function TaskDetail({
   const taskId = initialTask.id;
 
   const { task } = useTaskData({ taskId, initialTask });
+  const runtime = task.runtime === "pi" ? "pi" : "acp";
 
   const effectiveRepoPath = useCwd(taskId);
 
@@ -268,7 +270,8 @@ export function TaskDetail({
     <Box height="100%" ref={containerRef}>
       <Flex height="100%">
         <Box className={`min-w-0 flex-1 ${isExpanded ? "hidden" : ""}`}>
-          <PanelLayout taskId={taskId} task={task} />
+          {runtime === "pi" && <PiSessionView taskId={taskId} />}
+          {runtime === "acp" && <PanelLayout taskId={taskId} task={task} />}
         </Box>
 
         {isReviewOpen && !isExpanded && (

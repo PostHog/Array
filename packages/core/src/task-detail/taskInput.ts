@@ -1,6 +1,7 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
 import type {
   Adapter,
+  AgentRuntime,
   CloudMcpServerImport,
   CloudMcpServerRelayDesignation,
   TaskCreationInput,
@@ -19,6 +20,7 @@ export interface PrepareTaskInputOptions {
   reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
@@ -59,6 +61,7 @@ export function prepareTaskInput(
     reuseExistingWorktree: options.reuseExistingWorktree,
     executionMode: options.executionMode,
     adapter: options.adapter,
+    runtime: options.runtime ?? "acp",
     model: options.model,
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,

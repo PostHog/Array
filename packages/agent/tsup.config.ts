@@ -87,6 +87,7 @@ const sharedOptions = {
     "@posthog/shared",
     "@posthog/git",
     "@posthog/enricher",
+    "@posthog/harness",
     "fflate",
   ],
   external: [
@@ -113,7 +114,6 @@ export default defineConfig([
       "src/posthog-products.ts",
       "src/pr-url-detector.ts",
       "src/pi/rpc-client.ts",
-      "src/pi/rpc-host.ts",
       "src/resume.ts",
       "src/types.ts",
       "src/adapters/claude/questions/utils.ts",
@@ -168,5 +168,17 @@ export default defineConfig([
     dts: false,
     clean: false,
     ...sharedOptions,
+  },
+  {
+    entry: { "pi/rpc-host": "src/pi/rpc-host.ts" },
+    format: ["esm"],
+    dts: false,
+    clean: false,
+    banner: {
+      js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+    },
+    ...sharedOptions,
+    noExternal: [/^(?!node:)/],
+    external: [...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
   },
 ]);
