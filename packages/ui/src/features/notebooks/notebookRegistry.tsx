@@ -28,6 +28,8 @@ import type {
   NotebookComponentRegistry,
   NotebookComponentRenderProps,
 } from "./markdown-notebook/types";
+import { QueryWidgetEdit } from "./widgets/QueryWidgetEdit";
+import { getNotebookWidgetsUrl } from "./widgets/widgetLoader";
 
 // The default (vendored) registry renders PostHog entity blocks as JSON
 // previews. This registry swaps in live views backed by the real PostHog
@@ -69,6 +71,18 @@ export function getNotebooksAppRegistry(): NotebookComponentRegistry {
           ViewComponent,
           EditComponent: fallbackEditComponent,
         };
+  }
+  // EXPERIMENT (shared-widgets): when a widgets bundle URL is configured, the
+  // Query node's edit panel becomes the real webapp insight editor (same
+  // document, shadow root, own React copy). The widget renders its own viz, so
+  // the edit panel is exclusive. Toggle via localStorage key
+  // "posthog.notebooks.widgetsUrl".
+  if (getNotebookWidgetsUrl() && components.Query) {
+    components.Query = {
+      ...components.Query,
+      EditComponent: QueryWidgetEdit,
+      exclusiveEditPanel: true,
+    };
   }
   // Discussion-flavor `<Comment ref replies>` threads render (and reply)
   // through the same component in both modes — the generic props edit panel

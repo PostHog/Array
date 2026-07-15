@@ -41,8 +41,13 @@ const appName = isDev ? "posthog-code-dev" : "posthog-code";
 app.setName(isDev ? "PostHog Code (Development)" : "PostHog Code");
 
 // Set userData path for @posthog/code
+// EXPERIMENT (shared-widgets): POSTHOG_CODE_USERDATA_DIR lets a second dev
+// instance run side-by-side with a separate profile (the single-instance lock
+// lives in userData).
 const appDataPath = app.getPath("appData");
-const userDataPath = path.join(appDataPath, "@posthog", appName);
+const userDataPath =
+  process.env.POSTHOG_CODE_USERDATA_DIR ??
+  path.join(appDataPath, "@posthog", appName);
 app.setPath("userData", userDataPath);
 
 // Export the electron-derived state to env so utility singletons (utils/*,
