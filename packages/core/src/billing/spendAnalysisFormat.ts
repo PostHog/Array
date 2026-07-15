@@ -1,4 +1,7 @@
-import type { SpendAnalysisDayRow } from "./spendAnalysisTypes";
+import type {
+  SpendAnalysisDayRow,
+  SpendAnalysisHourRow,
+} from "./spendAnalysisTypes";
 
 export function formatUsd(amount: number): string {
   if (amount === 0) return "$0";
@@ -44,6 +47,50 @@ export interface SpendAnalysisFilledDay {
   day: string;
   event_count: number;
   cost_usd: number;
+}
+
+const HOUR_MS = 3_600_000;
+// The backend caps hourly windows at 8 days (193 possible buckets incl. edges).
+const MAX_FILLED_HOURS = 200;
+
+export interface SpendAnalysisFilledHour {
+  hour: string;
+  event_count: number;
+  cost_usd: number;
+  input_cost_usd: number;
+  output_cost_usd: number;
+  cache_read_cost_usd: number;
+  cache_creation_cost_usd: number;
+}
+
+export function fillSpendHours(
+  items: SpendAnalysisHourRow[],
+  fromIso: string,
+  toIso: string,
+): SpendAnalysisFilledHour[] {
+  const byHour = new Map(
+    items.map((row) => [new Date(row.hour).getTime(), row]),
+  );
+  const start = Math.floor(new Date(fromIso).getTime() / HOUR_MS) * HOUR_MS;
+  const end = new Date(toIso).getTime();
+  const filled: SpendAnalysisFilledHour[] = [];
+  for (
+    let t = start;
+    t <= end && filled.length < MAX_FILLED_HOURS;
+    t += HOUR_MS
+  ) {
+    const row = byHour.get(t);
+    filled.push({
+      hour: new Date(t).toISOString(),
+      event_count: row?.event_count ?? 0,
+      cost_usd: row?.cost_usd ?? 0,
+      input_cost_usd: row?.input_cost_usd ?? 0,
+      output_cost_usd: row?.output_cost_usd ?? 0,
+      cache_read_cost_usd: row?.cache_read_cost_usd ?? 0,
+      cache_creation_cost_usd: row?.cache_creation_cost_usd ?? 0,
+    });
+  }
+  return filled;
 }
 
 export function fillSpendDays(

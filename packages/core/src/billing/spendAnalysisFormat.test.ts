@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   fillSpendDays,
+  fillSpendHours,
   formatTokens,
   type SpendAnalysisWindow,
   windowToDateFrom,
   windowToDays,
 } from "./spendAnalysisFormat";
+import type { SpendAnalysisHourRow } from "./spendAnalysisTypes";
 
 describe("formatTokens", () => {
   it.each([
@@ -83,5 +85,50 @@ describe("fillSpendDays", () => {
       "2026-01-01T00:00:00Z",
     );
     expect(filled.length).toBe(100);
+  });
+});
+
+describe("fillSpendHours", () => {
+  const row = (
+    hour: string,
+    cost: number,
+    cacheCreation = 0,
+  ): SpendAnalysisHourRow => ({
+    hour,
+    event_count: 1,
+    cost_usd: cost,
+    input_cost_usd: 0.1,
+    output_cost_usd: 0.2,
+    cache_read_cost_usd: 0.3,
+    cache_creation_cost_usd: cacheCreation,
+    input_tokens: 100,
+    output_tokens: 50,
+    cache_read_input_tokens: 1000,
+    cache_creation_input_tokens: 500,
+  });
+
+  it("zero-fills missing hours and aligns the window to hour starts", () => {
+    const filled = fillSpendHours(
+      [row("2026-07-10T09:00:00Z", 1.0), row("2026-07-10T11:00:00Z", 3.0, 2.5)],
+      "2026-07-10T08:30:00Z",
+      "2026-07-10T11:10:00Z",
+    );
+    expect(filled.map((h) => [h.hour, h.cost_usd])).toEqual([
+      ["2026-07-10T08:00:00.000Z", 0],
+      ["2026-07-10T09:00:00.000Z", 1.0],
+      ["2026-07-10T10:00:00.000Z", 0],
+      ["2026-07-10T11:00:00.000Z", 3.0],
+    ]);
+    expect(filled[3]?.cache_creation_cost_usd).toBe(2.5);
+    expect(filled[2]?.event_count).toBe(0);
+  });
+
+  it("caps runaway windows instead of looping unbounded", () => {
+    const filled = fillSpendHours(
+      [],
+      "2020-01-01T00:00:00Z",
+      "2026-01-01T00:00:00Z",
+    );
+    expect(filled.length).toBe(200);
   });
 });

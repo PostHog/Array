@@ -6,6 +6,7 @@ import {
 import { Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { useSpendAnalysis } from "../useSpendAnalysis";
+import { HourlyUsageCard } from "./HourlyUsageCard";
 import { ModelBreakdownCards } from "./ModelBreakdownCards";
 import {
   ProductBreakdownCard,
@@ -86,6 +87,7 @@ export function SpendAnalysisSection() {
       ) : data ? (
         <>
           <SpendKpiStrip data={data} filledDays={filledDays} />
+          <HourlyUsageCard product={PRODUCT_SCOPE} />
           {filledDays && <SpendOverTimeCard filledDays={filledDays} />}
           <ModelBreakdownCards
             rows={data.by_model.items}
