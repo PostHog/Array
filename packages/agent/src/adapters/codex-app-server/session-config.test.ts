@@ -6,7 +6,7 @@ import {
   collaborationModeFor,
   DEFAULT_EFFORTS,
   modeApprovalPolicy,
-  resolveInitialMode,
+  resolveCodexMode,
   SessionConfigState,
   sandboxPolicyFor,
 } from "./session-config";
@@ -108,7 +108,7 @@ describe("collaborationModeFor", () => {
   });
 });
 
-describe("resolveInitialMode", () => {
+describe("resolveCodexMode", () => {
   it.each([
     ["read-only", "read-only"],
     ["auto", "auto"],
@@ -116,8 +116,8 @@ describe("resolveInitialMode", () => {
     ["bypassPermissions", "full-access"],
     ["default", "auto"],
     [undefined, "auto"],
-  ])("maps initial permission mode %s to %s", (mode, expected) => {
-    expect(resolveInitialMode(mode)).toBe(expected);
+  ])("maps host mode %s to codex mode %s", (mode, expected) => {
+    expect(resolveCodexMode(mode)).toBe(expected);
   });
 });
 

@@ -126,16 +126,13 @@ export function collaborationModeFor(
 }
 
 /**
- * Resolve the host's initial `_meta.permissionMode` to a codex mode. A recognized
- * mode is honored; Claude's bypass mode maps to Codex full access. Other unknown
- * modes fall back to default.
+ * Resolve a host permission mode or live picker value to a codex mode. A
+ * recognized mode is honored; Claude's bypass mode maps to Codex full access.
+ * Other unknown modes fall back to default.
  */
-export function resolveInitialMode(permissionMode: string | undefined): string {
-  if (!permissionMode) return DEFAULT_MODE;
-  return resolveCloudInitialPermissionMode(
-    "codex",
-    permissionMode as ExecutionMode,
-  );
+export function resolveCodexMode(mode: string | undefined): string {
+  if (!mode) return DEFAULT_MODE;
+  return resolveCloudInitialPermissionMode("codex", mode as ExecutionMode);
 }
 
 /** Codex's standard reasoning efforts; used when model/list doesn't expose them. */
@@ -254,7 +251,7 @@ export class SessionConfigState {
 
   /** Apply the host's initial approval mode (from `_meta.permissionMode`). */
   setInitialMode(permissionMode: string | undefined): void {
-    this._mode = resolveInitialMode(permissionMode);
+    this._mode = resolveCodexMode(permissionMode);
     this.rebuild();
   }
 
@@ -268,7 +265,7 @@ export class SessionConfigState {
       if (configId === "model") this._model = value;
       else if (configId === "effort") this._effort = value;
       else if (configId === "mode") {
-        this._mode = resolveInitialMode(value);
+        this._mode = resolveCodexMode(value);
         modeChanged = true;
       }
     }
