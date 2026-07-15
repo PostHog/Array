@@ -92,7 +92,7 @@ export function LoopsListView() {
             </Flex>
             <Button variant="solid" size="2" onClick={startBlank}>
               <PlusIcon size={14} />
-              New loop
+              Create manually
             </Button>
           </Flex>
 
