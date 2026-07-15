@@ -368,6 +368,8 @@ export class AgentServer {
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
+  /** ACP notifications emitted by newSession/resumeSession before this.session is assigned. */
+  private preSessionEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
   private pendingCompactContinuationMessageIds = new Set<string>();
   private pendingPermissions = new Map<
@@ -800,6 +802,13 @@ export class AgentServer {
     return { sessionId: priorSessionId, warm };
   }
 
+  private getNativeGoalForFreshSession(
+    runtimeAdapter: Adapter,
+  ): ResumeState["nativeGoal"] {
+    if (runtimeAdapter !== "codex") return undefined;
+    return this.resumeState?.nativeGoal;
+  }
+
   async stop(): Promise<void> {
     this.logger.debug("Stopping agent server...");
 
@@ -1220,6 +1229,7 @@ export class AgentServer {
 
     this.resumeState = null;
     this.nativeResume = null;
+    this.preSessionEvents = [];
     this.prewarmedRun = false;
     this.warmAutoPublishResolved = false;
 
@@ -1427,6 +1437,9 @@ export class AgentServer {
       sessionCwd,
       initialPermissionMode,
     );
+    let effectiveSessionMeta: typeof sessionMeta & {
+      nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
+    } = sessionMeta;
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
@@ -1435,7 +1448,7 @@ export class AgentServer {
           sessionId: nativeResume.sessionId,
           cwd: sessionCwd,
           mcpServers: this.config.mcpServers ?? [],
-          _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+          _meta: { ...effectiveSessionMeta, sessionId: nativeResume.sessionId },
         });
         acpSessionId = nativeResume.sessionId;
         this.nativeResume = nativeResume;
@@ -1454,10 +1467,15 @@ export class AgentServer {
       }
     }
     if (!acpSessionId) {
+      const restoredNativeGoal =
+        this.getNativeGoalForFreshSession(runtimeAdapter);
+      effectiveSessionMeta = restoredNativeGoal
+        ? { ...sessionMeta, nativeGoal: restoredNativeGoal }
+        : sessionMeta;
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,
         mcpServers: this.config.mcpServers ?? [],
-        _meta: sessionMeta,
+        _meta: effectiveSessionMeta,
       });
       acpSessionId = sessionResponse.sessionId;
       this.logger.debug("ACP session created", {
@@ -1480,8 +1498,9 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
-      sessionMeta,
+      sessionMeta: effectiveSessionMeta,
     };
+    this.flushPreSessionEvents();
 
     this.logger = new Logger({
       debug: true,
@@ -3977,6 +3996,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     this.pendingEvents = [];
+    this.preSessionEvents = [];
     this.lastReportedBranch = null;
     // Run usage is per run: a later session on this instance (e.g. a resume
     // with a different run_id) must not inherit the previous run's totals.
@@ -4098,11 +4118,16 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       }
       this.adapterEmittedTurnComplete = true;
     }
-    this.broadcastEvent({
+    const event = {
       type: "notification",
       timestamp: new Date().toISOString(),
       notification: message,
-    });
+    };
+    if (!this.session) {
+      this.preSessionEvents.push(event);
+      return;
+    }
+    this.broadcastEvent(event);
   }
 
   private broadcastTurnComplete(stopReason: string): void {
@@ -4142,6 +4167,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } else {
       // Buffer events during initialization (sseController not yet attached)
       this.pendingEvents.push(event);
+    }
+  }
+
+  private flushPreSessionEvents(): void {
+    if (!this.session || this.preSessionEvents.length === 0) return;
+    const events = this.preSessionEvents;
+    this.preSessionEvents = [];
+    for (const event of events) {
+      this.broadcastEvent(event);
     }
   }
 

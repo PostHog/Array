@@ -89,11 +89,12 @@ export const AUTH_OAUTH_FLOW_SERVICE = Symbol.for(
 
 /**
  * Machine-bound symmetric cipher for the refresh token at rest. Desktop adapter
- * wraps the existing encryption util (node:crypto + machine id).
+ * wraps the existing encryption util (node:crypto + machine id); the web adapter
+ * uses a non-extractable Web Crypto key (async), so the contract is async.
  */
 export interface IAuthTokenCipher {
-  encrypt(plaintext: string): string;
-  decrypt(encrypted: string): string | null;
+  encrypt(plaintext: string): Promise<string>;
+  decrypt(encrypted: string): Promise<string | null>;
 }
 
 export const AUTH_TOKEN_CIPHER = Symbol.for("posthog.core.auth.tokenCipher");

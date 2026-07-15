@@ -324,7 +324,6 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
-  updatePersistedConfigOptionValue: (...args: any[]) => any;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -4029,7 +4028,7 @@ export class SessionService {
     this.d.store.updateSession(session.taskRunId, {
       configOptions: updatedOptions,
     });
-    this.d.updatePersistedConfigOptionValue(session.taskRunId, configId, value);
+    this.d.setPersistedConfigOptions(session.taskRunId, updatedOptions);
 
     if (
       !session.isCloud &&
@@ -4054,20 +4053,25 @@ export class SessionService {
         });
       }
     } catch (error) {
-      // Rollback on error
-      const rolledBackOptions = configOptions.map((opt) =>
-        opt.id === configId
-          ? ({ ...opt, currentValue: previousValue } as SessionConfigOption)
-          : opt,
+      const latestConfigOptions =
+        this.d.store.getSessionByTaskId(taskId)?.configOptions ?? [];
+      const latestOption = latestConfigOptions.find(
+        (option) => option.id === configId,
       );
-      this.d.store.updateSession(session.taskRunId, {
-        configOptions: rolledBackOptions,
-      });
-      this.d.updatePersistedConfigOptionValue(
-        session.taskRunId,
-        configId,
-        String(previousValue),
-      );
+      if (latestOption?.currentValue === value) {
+        const rolledBackOptions = latestConfigOptions.map((option) =>
+          option.id === configId
+            ? ({
+                ...option,
+                currentValue: previousValue,
+              } as SessionConfigOption)
+            : option,
+        );
+        this.d.store.updateSession(session.taskRunId, {
+          configOptions: rolledBackOptions,
+        });
+        this.d.setPersistedConfigOptions(session.taskRunId, rolledBackOptions);
+      }
       this.d.log.error("Failed to set session config option", {
         taskId,
         configId,
@@ -4483,8 +4487,33 @@ export class SessionService {
     runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
+    const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
+    const persistedAdapter = this.d.adapterStore.getAdapter(taskRunId);
+    const buildInitialConfigOptions = (
+      mode: string | undefined,
+      configAdapter: Adapter | undefined = persistedAdapter,
+    ): SessionConfigOption[] => {
+      const defaults = addMissingCloudRuntimeConfigOptions(
+        buildCloudDefaultConfigOptions(mode, adapter),
+        adapter,
+        initialModel,
+        initialReasoningEffort,
+      );
+      if (!persistedConfigOptions?.length) return defaults;
+      if (configAdapter && configAdapter !== adapter) return defaults;
+
+      const defaultIds = new Set(defaults.map((option) => option.id));
+      const completeOptions = [
+        ...defaults,
+        ...persistedConfigOptions.filter(
+          (option) => !defaultIds.has(option.id),
+        ),
+      ];
+      return mergeConfigOptions(completeOptions, persistedConfigOptions);
+    };
 
     if (this.supersededRunIds.has(runId)) return () => {};
+    this.d.adapterStore.setAdapter(taskRunId, adapter);
 
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
@@ -4512,11 +4541,9 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: addMissingCloudRuntimeConfigOptions(
-              buildCloudDefaultConfigOptions(currentMode, adapter),
-              adapter,
-              initialModel,
-              initialReasoningEffort,
+            configOptions: buildInitialConfigOptions(
+              currentMode,
+              existing.adapter,
             ),
           });
         } else {
@@ -4613,11 +4640,9 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = addMissingCloudRuntimeConfigOptions(
-        buildCloudDefaultConfigOptions(initialMode, adapter),
-        adapter,
-        initialModel,
-        initialReasoningEffort,
+      session.configOptions = buildInitialConfigOptions(
+        initialMode,
+        existing?.taskRunId === taskRunId ? existing.adapter : persistedAdapter,
       );
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
@@ -4636,11 +4661,9 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = addMissingCloudRuntimeConfigOptions(
-          buildCloudDefaultConfigOptions(currentMode, adapter),
-          adapter,
-          initialModel,
-          initialReasoningEffort,
+        updates.configOptions = buildInitialConfigOptions(
+          currentMode,
+          existing.adapter,
         );
       } else {
         const configOptions = addMissingCloudRuntimeConfigOptions(

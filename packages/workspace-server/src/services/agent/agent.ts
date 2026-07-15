@@ -67,7 +67,9 @@ import {
 import {
   type AcpMessage,
   type Adapter,
+  type ExecutionMode,
   isAuthError,
+  resolveCloudInitialPermissionMode,
   serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
@@ -347,6 +349,22 @@ export function buildAutoApproveOutcome(
     return { outcome: "cancelled" };
   }
   return { outcome: "selected", optionId };
+}
+
+export function shouldAutoApprovePermissionRequest(
+  adapter: string | undefined,
+  permissionMode: string | undefined,
+  codeToolKind?: string,
+): boolean {
+  if (adapter !== "codex" || !permissionMode || codeToolKind === "question") {
+    return false;
+  }
+  return (
+    resolveCloudInitialPermissionMode(
+      "codex",
+      permissionMode as ExecutionMode,
+    ) === "full-access"
+  );
 }
 
 interface PendingPermission {
@@ -1706,6 +1724,9 @@ For git operations while detached:
           (params.toolCall?.rawInput as { toolName?: string } | undefined)
             ?.toolName || "";
         const toolCallId = params.toolCall?.toolCallId || "";
+        const codeToolKind = (
+          params.toolCall?._meta as { codeToolKind?: string } | undefined
+        )?.codeToolKind;
 
         service.log.info("requestPermission called", {
           taskRunId,
@@ -1715,8 +1736,22 @@ For git operations while detached:
           optionCount: params.options.length,
         });
 
+        const session = service.sessions.get(taskRunId);
+        if (
+          shouldAutoApprovePermissionRequest(
+            session?.config.adapter,
+            session?.config.permissionMode,
+            codeToolKind,
+          )
+        ) {
+          service.log.info("Auto-approving Codex full-access permission", {
+            taskRunId,
+            toolCallId,
+          });
+          return { outcome: buildAutoApproveOutcome(params.options) };
+        }
+
         if (toolName && isMcpToolReadOnly(toolName)) {
-          const session = service.sessions.get(taskRunId);
           const approvalState = session?.mcpToolApprovals?.[toolName];
           if (approvalState === "approved") {
             service.log.info("Auto-approving read-only MCP tool", {

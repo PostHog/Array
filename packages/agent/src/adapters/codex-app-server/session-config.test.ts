@@ -6,6 +6,8 @@ import {
   collaborationModeFor,
   DEFAULT_EFFORTS,
   modeApprovalPolicy,
+  resolveCodexMode,
+  SessionConfigState,
   sandboxPolicyFor,
 } from "./session-config";
 
@@ -103,6 +105,34 @@ describe("collaborationModeFor", () => {
     expect(collaborationModeFor("auto")).toBe("default");
     expect(collaborationModeFor("full-access")).toBe("default");
     expect(collaborationModeFor(undefined)).toBe("default");
+  });
+});
+
+describe("resolveCodexMode", () => {
+  it.each([
+    ["read-only", "read-only"],
+    ["auto", "auto"],
+    ["full-access", "full-access"],
+    ["bypassPermissions", "full-access"],
+    ["default", "auto"],
+    [undefined, "auto"],
+  ])("maps host mode %s to codex mode %s", (mode, expected) => {
+    expect(resolveCodexMode(mode)).toBe(expected);
+  });
+});
+
+describe("SessionConfigState", () => {
+  it("canonicalizes bypassPermissions during a live mode update", () => {
+    const config = new SessionConfigState("gpt-5.5");
+
+    config.setOption("mode", "bypassPermissions");
+
+    expect(config.mode).toBe("full-access");
+    expect(config.approvalPolicy()).toBe("never");
+    expect(config.sandboxPolicy()).toEqual({ type: "dangerFullAccess" });
+    expect(
+      config.options.find((option) => option.category === "mode")?.currentValue,
+    ).toBe("full-access");
   });
 });
 

@@ -20,7 +20,10 @@ import type {
   StopReason,
 } from "@agentclientprotocol/sdk";
 import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
-import { POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
+import {
+  type NativeGoalState,
+  POSTHOG_NOTIFICATIONS,
+} from "../../acp-extensions";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
 import { ALLOW_BYPASS } from "../../utils/common";
@@ -87,6 +90,7 @@ type AppServerSessionMeta = {
   channelMode?: boolean;
   spokenNarration?: boolean;
   baseBranch?: string;
+  nativeGoal?: NativeGoalState;
 };
 
 /** The subset of codex's `Thread` the adapter reads: id + persisted `turns` for history replay. */
@@ -94,6 +98,64 @@ type AppServerThread = {
   id?: string;
   turns?: Array<{ items?: Parameters<typeof mapHistoryItem>[1][] }>;
 };
+
+type ThreadGoal = {
+  objective: string;
+  status: NativeGoalState["status"];
+};
+
+type GoalCommand =
+  | { kind: "get" }
+  | { kind: "clear" }
+  | { kind: "pause" }
+  | { kind: "resume" }
+  | { kind: "set"; objective: string };
+
+type CodexSkill = {
+  name?: string;
+  description?: string;
+  enabled?: boolean;
+};
+
+const GOAL_COMMAND = {
+  name: "goal",
+  description: "Set or view the goal for a long-running task",
+  input: { hint: "[<objective>|clear|pause|resume]" },
+};
+
+function isHiddenPromptBlock(block: PromptRequest["prompt"][number]): boolean {
+  const meta = block._meta as { ui?: { hidden?: boolean } } | undefined;
+  return meta?.ui?.hidden === true;
+}
+
+function visiblePromptBlocks(
+  prompt: PromptRequest["prompt"],
+): PromptRequest["prompt"] {
+  return prompt.filter((block) => !isHiddenPromptBlock(block));
+}
+
+function parseGoalCommand(prompt: PromptRequest["prompt"]): GoalCommand | null {
+  const visible = visiblePromptBlocks(prompt);
+  if (visible.some((block) => block.type !== "text")) return null;
+  const text = visible
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("\n")
+    .trim();
+  const match = text.match(/^\/goal(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  const argument = match[1]?.trim();
+  if (!argument) return { kind: "get" };
+  switch (argument.toLowerCase()) {
+    case "clear":
+      return { kind: "clear" };
+    case "pause":
+      return { kind: "pause" };
+    case "resume":
+      return { kind: "resume" };
+    default:
+      return { kind: "set", objective: argument };
+  }
+}
 
 // The native app-server owns its config; BaseAcpAgent only calls dispose() on this.
 class NoopSettingsManager implements BaseSettingsManager {
@@ -158,6 +220,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private readonly mcp = new McpManager();
   private readonly turns = new TurnController();
   private readonly usage = new UsageTracker();
+  /** Pause/clear can race a goal continuation already queued by app-server. */
+  private cancelNextGoalTurn = false;
+  /** Native goal ticks start outside prompt(), so TurnController does not own them. */
+  private nativeGoalTurnId?: string;
 
   constructor(
     client: AgentSideConnection,
@@ -363,6 +429,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       additionalDirectories?: string[];
     },
   ): Promise<{ threadId: string; thread: AppServerThread | undefined }> {
+    this.cancelNextGoalTurn = false;
+    this.nativeGoalTurnId = undefined;
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
@@ -418,6 +486,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     this.threadId = threadId;
     this.sessionId = threadId;
+    if (method === APP_SERVER_METHODS.THREAD_START && params.meta?.nativeGoal) {
+      await this.restoreGoal(params.meta.nativeGoal);
+    }
     await this.loadModelConfig();
     this.emitConfigOptions();
     await this.emitAvailableCommands();
@@ -519,17 +590,29 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** skills/list → available_commands_update so the slash-command menu fills. */
   private async emitAvailableCommands(): Promise<void> {
     if (!this.sessionId) return;
-    let commands: Array<{ name: string; description: string }> = [];
+    let commands: Array<{
+      name: string;
+      description: string;
+      input?: { hint: string };
+    }> = [GOAL_COMMAND];
     try {
-      const res = await this.rpc.request<{ data?: Array<{ skills?: any[] }> }>(
-        APP_SERVER_METHODS.SKILLS_LIST,
-        {},
-      );
-      commands = (res?.data ?? [])
+      const res = await this.rpc.request<{
+        data?: Array<{ skills?: CodexSkill[] }>;
+      }>(APP_SERVER_METHODS.SKILLS_LIST, {});
+      const skills = (res?.data ?? [])
         .flatMap((entry) => entry?.skills ?? [])
         // Drop explicitly-disabled skills; lenient `!== false` so a malformed payload still shows.
-        .filter((s) => s?.name && s?.enabled !== false)
-        .map((s: any) => ({ name: s.name, description: s.description ?? "" }));
+        .filter(
+          (skill): skill is CodexSkill & { name: string } =>
+            !!skill.name &&
+            skill.name !== GOAL_COMMAND.name &&
+            skill.enabled !== false,
+        )
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description ?? "",
+        }));
+      commands = [GOAL_COMMAND, ...skills];
     } catch (err) {
       this.logger.warn("skills/list failed", { error: String(err) });
     }
@@ -548,6 +631,13 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (!this.threadId) {
       throw new Error("prompt() called before newSession()");
     }
+    const goalCommand = parseGoalCommand(params.prompt);
+    if (goalCommand) {
+      this.broadcastUserInput(visiblePromptBlocks(params.prompt));
+      await this.handleGoalCommand(goalCommand);
+      return { stopReason: "end_turn" };
+    }
+    this.cancelNextGoalTurn = false;
     // Reopen the notification gate (a prior interrupt may have left session.cancelled set).
     this.session.cancelled = false;
     // A new prompt while the plan handoff awaits approval implicitly declines it:
@@ -641,6 +731,117 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     const stopReason = await this.runTurn(input);
     return { stopReason: await this.maybeOfferPlanImplementation(stopReason) };
+  }
+
+  private async handleGoalCommand(command: GoalCommand): Promise<void> {
+    if (!this.threadId) return;
+    if (command.kind === "clear") {
+      this.cancelNextGoalTurn = true;
+      const result = await this.rpc.request<{ cleared?: boolean }>(
+        APP_SERVER_METHODS.THREAD_GOAL_CLEAR,
+        { threadId: this.threadId },
+      );
+      await this.emitGoalState(null);
+      await this.cancelRunningGoalTurn();
+      this.broadcastAgentText(
+        result.cleared ? "Goal cleared." : "No goal was set.",
+      );
+      return;
+    }
+
+    if (command.kind === "get") {
+      const result = await this.rpc.request<{ goal?: ThreadGoal | null }>(
+        APP_SERVER_METHODS.THREAD_GOAL_GET,
+        { threadId: this.threadId },
+      );
+      this.broadcastAgentText(
+        result.goal
+          ? `Goal ${result.goal.status}: ${result.goal.objective}`
+          : "No goal set. Usage: `/goal <objective>`",
+      );
+      return;
+    }
+
+    if (command.kind === "pause") {
+      this.cancelNextGoalTurn = true;
+    }
+    const params =
+      command.kind === "set"
+        ? { threadId: this.threadId, objective: command.objective }
+        : {
+            threadId: this.threadId,
+            status: command.kind === "pause" ? "paused" : "active",
+          };
+    const result = await this.rpc.request<{ goal: ThreadGoal }>(
+      APP_SERVER_METHODS.THREAD_GOAL_SET,
+      params,
+    );
+    await this.emitGoalState(result.goal);
+    if (command.kind === "pause") {
+      await this.cancelRunningGoalTurn();
+    }
+    const prefix =
+      command.kind === "set"
+        ? "Goal set"
+        : command.kind === "pause"
+          ? "Goal paused"
+          : "Goal resumed";
+    this.broadcastAgentText(`${prefix}: ${result.goal.objective}`);
+  }
+
+  private async restoreGoal(goal: NativeGoalState): Promise<void> {
+    if (!this.threadId) return;
+    const result = await this.rpc.request<{ goal: ThreadGoal }>(
+      APP_SERVER_METHODS.THREAD_GOAL_SET,
+      {
+        threadId: this.threadId,
+        objective: goal.objective,
+        status: goal.status,
+      },
+    );
+    await this.emitGoalState(result.goal);
+  }
+
+  private async emitGoalState(goal: NativeGoalState | null): Promise<void> {
+    await this.client
+      .extNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, { goal })
+      .catch((error) =>
+        this.logger.warn("Failed to persist Codex goal state", error),
+      );
+  }
+
+  private async cancelRunningGoalTurn(): Promise<void> {
+    if (this.turns.isRunning) {
+      this.cancelNextGoalTurn = false;
+      await this.interrupt();
+      return;
+    }
+    if (this.nativeGoalTurnId) {
+      await this.interruptNativeGoalTurn(this.nativeGoalTurnId);
+    }
+  }
+
+  private interruptQueuedGoalTurn(turnId: string | undefined): void {
+    if (!this.cancelNextGoalTurn || !this.threadId || !turnId) return;
+    void this.interruptNativeGoalTurn(turnId);
+  }
+
+  private async interruptNativeGoalTurn(turnId: string): Promise<void> {
+    if (!this.threadId) return;
+    await this.rpc
+      .request(APP_SERVER_METHODS.TURN_INTERRUPT, {
+        threadId: this.threadId,
+        turnId,
+      })
+      .then(() => {
+        this.cancelNextGoalTurn = false;
+        if (this.nativeGoalTurnId === turnId) {
+          this.nativeGoalTurnId = undefined;
+        }
+      })
+      .catch((error) =>
+        this.logger.warn("Native goal turn interrupt failed", error),
+      );
   }
 
   /** Start one codex turn and await its completion. */
@@ -922,6 +1123,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   async closeSession(): Promise<void> {
     this.commandOutputs.clear();
+    this.nativeGoalTurnId = undefined;
     this.session.abortController.abort();
     this.session.cancelled = true;
     this.planHandoffCancel?.();
@@ -971,7 +1173,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
       // Capture the active turn id (steer precondition / interrupt target).
-      this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
+      const turnId = (params as { turn?: { id?: string } })?.turn?.id;
+      if (!this.turns.isPending && turnId) {
+        this.nativeGoalTurnId = turnId;
+      }
+      this.turns.onStarted(turnId);
+      this.interruptQueuedGoalTurn(turnId);
     }
 
     // codex auto-compaction surfaces as a contextCompaction item: item/started → in progress,
@@ -1014,6 +1221,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       this.commandOutputs.clear();
       const turn = (params as { turn?: { id?: string; status?: string } })
         ?.turn;
+      if (turn?.id === this.nativeGoalTurnId) {
+        this.nativeGoalTurnId = undefined;
+      }
       // Drop the late completion of an already-interrupted turn (else it cancels the follow-up).
       if (this.turns.shouldDropCompletion(turn?.id)) return;
       void this.finalizeTurn(mapTurnStopReason(turn?.status));

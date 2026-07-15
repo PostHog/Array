@@ -69,6 +69,7 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { isMac, isWindows } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -103,6 +104,9 @@ function RootLayout() {
   const view = useAppView();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  // Cloud-only hosts (web) run in a real browser tab that already provides
+  // native back/forward chrome, so the in-app history buttons are redundant.
+  const { localWorkspaces } = useHostCapabilities();
   // Width of the Channels sidebar below — used to right-align the back/forward
   // buttons in the title bar with the sidebar's (and project switcher's) right edge.
   const channelsSidebarWidth = useChannelsSidebarStore((state) => state.width);
@@ -387,28 +391,30 @@ function RootLayout() {
                 )}
               </Button>
             </Flex>
-            <Flex align="center" gap="2" className="no-drag">
-              <ButtonGroup className="no-drag">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Back"
-                  disabled={!canGoBack}
-                  onClick={() => router.history.back()}
-                >
-                  <CaretLeftIcon size={14} />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Forward"
-                  disabled={!canGoForward}
-                  onClick={() => router.history.forward()}
-                >
-                  <CaretRightIcon size={14} />
-                </Button>
-              </ButtonGroup>
-            </Flex>
+            {localWorkspaces && (
+              <Flex align="center" gap="2" className="no-drag">
+                <ButtonGroup className="no-drag">
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Back"
+                    disabled={!canGoBack}
+                    onClick={() => router.history.back()}
+                  >
+                    <CaretLeftIcon size={14} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Forward"
+                    disabled={!canGoForward}
+                    onClick={() => router.history.forward()}
+                  >
+                    <CaretRightIcon size={14} />
+                  </Button>
+                </ButtonGroup>
+              </Flex>
+            )}
           </Flex>
           {/* Tabs work in both spaces: channel tabs under /website and plain
               task tabs in the Code experience. The strip's route→tab effect

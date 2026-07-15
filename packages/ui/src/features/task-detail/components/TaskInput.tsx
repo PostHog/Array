@@ -25,6 +25,7 @@ import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
 import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
 import { AutoresearchComposerControls } from "../../autoresearch/AutoresearchComposerControls";
@@ -317,6 +318,8 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
+  // Force cloud mode on cloud-only hosts (web).
+  const { localWorkspaces } = useHostCapabilities();
   const cloudModeEnabled = useCloudModeEnabled();
   const flagsLoaded = useFeatureFlagsLoaded();
   const reposReady = areReposReady({
@@ -327,6 +330,7 @@ export function TaskInput({
 
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
+    if (!localWorkspaces) return "cloud";
     return resolveWorkspaceModePreference({
       preferredMode: lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE,
       cloudModeEnabled,
@@ -353,6 +357,7 @@ export function TaskInput({
     const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
     if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
+    if (!localWorkspaces) return;
     setWorkspaceModeState(
       resolveWorkspaceModePreference({
         preferredMode,
@@ -365,6 +370,7 @@ export function TaskInput({
     settingsHydrated,
     lastUsedWorkspaceMode,
     initialCloudRepository,
+    localWorkspaces,
     cloudSignalsSettled,
     cloudModeEnabled,
     hasGithubIntegration,
