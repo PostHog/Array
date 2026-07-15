@@ -306,6 +306,7 @@ describe("CodexAppServerAgent", () => {
       response: { goal: null },
       expectedParams: { threadId: "thr_1" },
       expectedText: "No goal set. Usage: `/goal <objective>`",
+      expectedGoal: undefined,
     },
     {
       label: "reads an active goal",
@@ -314,6 +315,7 @@ describe("CodexAppServerAgent", () => {
       response: { goal: { objective: "Ship the fix", status: "active" } },
       expectedParams: { threadId: "thr_1" },
       expectedText: "Goal active: Ship the fix",
+      expectedGoal: undefined,
     },
     {
       label: "sets a goal",
@@ -322,6 +324,7 @@ describe("CodexAppServerAgent", () => {
       response: { goal: { objective: "Ship the fix", status: "active" } },
       expectedParams: { threadId: "thr_1", objective: "Ship the fix" },
       expectedText: "Goal set: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "active" },
     },
     {
       label: "clears a goal",
@@ -330,6 +333,7 @@ describe("CodexAppServerAgent", () => {
       response: { cleared: true },
       expectedParams: { threadId: "thr_1" },
       expectedText: "Goal cleared.",
+      expectedGoal: null,
     },
     {
       label: "pauses a goal",
@@ -338,6 +342,7 @@ describe("CodexAppServerAgent", () => {
       response: { goal: { objective: "Ship the fix", status: "paused" } },
       expectedParams: { threadId: "thr_1", status: "paused" },
       expectedText: "Goal paused: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "paused" },
     },
     {
       label: "resumes a goal",
@@ -346,13 +351,14 @@ describe("CodexAppServerAgent", () => {
       response: { goal: { objective: "Ship the fix", status: "active" } },
       expectedParams: { threadId: "thr_1", status: "active" },
       expectedText: "Goal resumed: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "active" },
     },
   ])("$label without starting a model turn", async (testCase) => {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "thr_1" } },
       [testCase.method]: testCase.response,
     });
-    const { client, sessionUpdates } = makeFakeClient();
+    const { client, sessionUpdates, extNotifications } = makeFakeClient();
     const agent = new CodexAppServerAgent(client, {
       processOptions: { binaryPath: "/bundle/codex" },
       rpcFactory: stub.factory,
@@ -378,6 +384,113 @@ describe("CodexAppServerAgent", () => {
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: testCase.expectedText },
       },
+    });
+    if (testCase.expectedGoal !== undefined) {
+      expect(extNotifications).toContainEqual({
+        method: "_posthog/codex_goal",
+        params: { goal: testCase.expectedGoal },
+      });
+    }
+  });
+
+  it("handles a goal command wrapped in hidden cold-resume context", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/get": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [
+        {
+          type: "text",
+          text: "Previous conversation context",
+          _meta: { ui: { hidden: true } },
+        },
+        { type: "text", text: "/goal" },
+        {
+          type: "text",
+          text: "Respond to the user above",
+          _meta: { ui: { hidden: true } },
+        },
+      ],
+    } as unknown as PromptRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "thread/goal/get",
+      params: { threadId: "thr_1" },
+    });
+    expect(
+      stub.requests.some((request) => request.method === "turn/start"),
+    ).toBe(false);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "/goal" },
+      },
+    });
+  });
+
+  it("restores a persisted goal when starting a replacement thread", async () => {
+    const restoredGoal = { objective: "Ship the fix", status: "paused" };
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": { goal: restoredGoal },
+    });
+    const { client, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { codexGoal: restoredGoal },
+    } as unknown as NewSessionRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "thread/goal/set",
+      params: { threadId: "thr_1", ...restoredGoal },
+    });
+    expect(extNotifications).toContainEqual({
+      method: "_posthog/codex_goal",
+      params: { goal: restoredGoal },
+    });
+  });
+
+  it("interrupts a native goal turn that was already queued when paused", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+    await Promise.resolve();
+
+    expect(stub.requests).toContainEqual({
+      method: "turn/interrupt",
+      params: { threadId: "thr_1", turnId: "goal_tick_1" },
     });
   });
 

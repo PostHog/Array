@@ -617,6 +617,56 @@ describe("ResumeSaga", () => {
     });
   });
 
+  describe("Codex goal state", () => {
+    it.each([
+      {
+        name: "restores the latest persisted goal",
+        entries: [
+          createNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, {
+            goal: { objective: "Old goal", status: "active" },
+          }),
+          createNotification(`_${POSTHOG_NOTIFICATIONS.CODEX_GOAL}`, {
+            goal: { objective: "Ship the fix", status: "paused" },
+          }),
+        ],
+        expected: { objective: "Ship the fix", status: "paused" },
+      },
+      {
+        name: "preserves an explicit goal clear",
+        entries: [
+          createNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, {
+            goal: { objective: "Ship the fix", status: "active" },
+          }),
+          createNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, { goal: null }),
+        ],
+        expected: null,
+      },
+      {
+        name: "leaves goal state undefined when no notification exists",
+        entries: [createUserMessage("Hello")],
+        expected: undefined,
+      },
+    ])("$name", async ({ entries, expected }) => {
+      (mockApiClient.getTaskRun as ReturnType<typeof vi.fn>).mockResolvedValue(
+        createTaskRun(),
+      );
+      (
+        mockApiClient.fetchTaskRunLogs as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(entries);
+
+      const result = await new ResumeSaga(mockLogger).run({
+        taskId: "task-1",
+        runId: "run-1",
+        repositoryPath: repo.path,
+        apiClient: mockApiClient,
+      });
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.codexGoal).toEqual(expected);
+    });
+  });
+
   describe("log entry count", () => {
     it("reports correct log entry count", async () => {
       (mockApiClient.getTaskRun as ReturnType<typeof vi.fn>).mockResolvedValue(
