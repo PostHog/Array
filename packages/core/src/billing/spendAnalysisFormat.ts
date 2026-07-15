@@ -68,8 +68,12 @@ export function fillSpendHours(
   fromIso: string,
   toIso: string,
 ): SpendAnalysisFilledHour[] {
+  // Floor row keys to hour starts so sub-hour timestamps still land in their bucket.
   const byHour = new Map(
-    items.map((row) => [new Date(row.hour).getTime(), row]),
+    items.map((row) => [
+      Math.floor(new Date(row.hour).getTime() / HOUR_MS) * HOUR_MS,
+      row,
+    ]),
   );
   const start = Math.floor(new Date(fromIso).getTime() / HOUR_MS) * HOUR_MS;
   const end = new Date(toIso).getTime();

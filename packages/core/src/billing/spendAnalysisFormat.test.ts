@@ -123,6 +123,18 @@ describe("fillSpendHours", () => {
     expect(filled[2]?.event_count).toBe(0);
   });
 
+  it("buckets rows with sub-hour timestamps into their hour", () => {
+    const filled = fillSpendHours(
+      [row("2026-07-10T09:30:15.500Z", 1.0)],
+      "2026-07-10T09:00:00Z",
+      "2026-07-10T10:00:00Z",
+    );
+    expect(filled.map((h) => [h.hour, h.cost_usd])).toEqual([
+      ["2026-07-10T09:00:00.000Z", 1.0],
+      ["2026-07-10T10:00:00.000Z", 0],
+    ]);
+  });
+
   it("caps runaway windows instead of looping unbounded", () => {
     const filled = fillSpendHours(
       [],
