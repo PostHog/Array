@@ -8762,11 +8762,6 @@ packages:
   bippy@0.5.43:
     resolution: {integrity: sha512-Tvu7b1M7+d8b9/YHaCeODEsi2CgbuoBql+dWSBrNnCuqJ1gMUeY3i0r+319hvjjl5GVBP6FFWxrKnq3fhZER0w==}
     peerDependencies:
-      react: 19.2.6
-
-  bippy@0.5.43:
-    resolution: {integrity: sha512-Tvu7b1M7+d8b9/YHaCeODEsi2CgbuoBql+dWSBrNnCuqJ1gMUeY3i0r+319hvjjl5GVBP6FFWxrKnq3fhZER0w==}
-    peerDependencies:
       react: '>=17.0.1'
 
   bl@4.1.0:
