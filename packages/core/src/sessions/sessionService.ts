@@ -146,6 +146,21 @@ interface CloudHydrationResult {
   liveStreamLineCount: number;
 }
 
+interface CloudTaskWatcher {
+  runId: string;
+  apiHost: string;
+  teamId: number;
+  startToken: number;
+  resumeFromEntryCount?: number;
+  resumeHistoryCountOffset?: number;
+  resumeHydrationToken: number;
+  bufferResumeUpdates: boolean;
+  bufferedResumeUpdates: CloudTaskUpdatePayload[];
+  processCloudUpdate: (update: CloudTaskUpdatePayload) => void;
+  subscription: { unsubscribe: () => void };
+  onStatusChange?: () => void;
+}
+
 export interface SessionTrpc {
   agent: {
     start: TrpcMutation;
@@ -526,6 +541,34 @@ function suffixPrefixOverlap(left: string[], right: string[]): number {
   return prefixLengths[prefixLengths.length - 1];
 }
 
+function cloudHydrationEventKey(event: AcpMessage): string {
+  return JSON.stringify([event.ts, event.message]);
+}
+
+function coalescedAgentMessageKey(event: AcpMessage): string | undefined {
+  const message = event.message;
+  if (!isJsonRpcNotification(message) || message.method !== "session/update") {
+    return undefined;
+  }
+  const update = (
+    message.params as
+      | {
+          update?: {
+            sessionUpdate?: string;
+            content?: unknown;
+          };
+        }
+      | undefined
+  )?.update;
+  if (
+    update?.sessionUpdate !== "agent_message" &&
+    update?.sessionUpdate !== "agent_message_chunk"
+  ) {
+    return undefined;
+  }
+  return JSON.stringify([event.ts, "agent_message", update.content]);
+}
+
 export function derivePendingPermissionRequests(
   entries: StoredLogEntry[],
   options?: { taskRunId?: string },
@@ -631,19 +674,7 @@ export class SessionService {
     }
   >();
   /** Active cloud task watchers, keyed by taskId */
-  private cloudTaskWatchers = new Map<
-    string,
-    {
-      runId: string;
-      apiHost: string;
-      teamId: number;
-      startToken: number;
-      resumeFromEntryCount?: number;
-      resumeHistoryCountOffset?: number;
-      subscription: { unsubscribe: () => void };
-      onStatusChange?: () => void;
-    }
-  >();
+  private cloudTaskWatchers = new Map<string, CloudTaskWatcher>();
   private cloudLogGapReconciler: CloudLogGapReconciler;
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
@@ -4213,16 +4244,14 @@ export class SessionService {
         typeof runState?.resume_from_run_id === "string" &&
         !this.pendingPermissionHydratedRuns.has(taskRunId)
       ) {
-        void this.hydrateCloudTaskSessionFromLogs(
+        void this.hydrateResumeCloudTaskSessionFromLogs(
           taskId,
           taskRunId,
           logUrl,
           taskDescription,
           runStatus,
           runState,
-        ).then((result) => {
-          this.applyResumeHydrationOffset(taskId, taskRunId, result);
-        });
+        );
       }
       return () => {};
     }
@@ -4342,19 +4371,6 @@ export class SessionService {
       initialReasoningEffort,
     );
 
-    const hydration = shouldHydrateSession
-      ? this.hydrateCloudTaskSessionFromLogs(
-          taskId,
-          taskRunId,
-          logUrl,
-          taskDescription,
-          runStatus,
-          runState,
-        )
-      : undefined;
-
-    let bufferCloudUpdates = shouldHydrateResumeChain;
-    const bufferedCloudUpdates: CloudTaskUpdatePayload[] = [];
     const processCloudUpdate = (update: CloudTaskUpdatePayload): void => {
       if (update.kind === "logs" || update.kind === "snapshot") {
         this.d.store.updateSession(taskRunId, {
@@ -4386,24 +4402,7 @@ export class SessionService {
       }
     };
 
-    // Subscribe before starting the main-process watcher so the first replayed
-    // SSE/log burst cannot race ahead of the renderer subscription.
-    const subscription = this.d.trpc.cloudTask.onUpdate.subscribe(
-      { taskId, runId },
-      {
-        onData: (update: CloudTaskUpdatePayload) => {
-          if (bufferCloudUpdates) {
-            bufferedCloudUpdates.push(update);
-            return;
-          }
-          processCloudUpdate(update);
-        },
-        onError: (err: unknown) =>
-          this.d.log.error("Cloud task subscription error", { taskId, err }),
-      },
-    );
-
-    this.cloudTaskWatchers.set(taskId, {
+    const watcher: CloudTaskWatcher = {
       runId,
       apiHost,
       teamId,
@@ -4412,22 +4411,56 @@ export class SessionService {
       resumeHistoryCountOffset: shouldHydrateResumeChain
         ? resumeFromEntryCount
         : 0,
-      subscription,
+      resumeHydrationToken: 0,
+      bufferResumeUpdates: false,
+      bufferedResumeUpdates: [],
+      processCloudUpdate,
+      subscription: { unsubscribe: () => undefined },
       onStatusChange,
-    });
+    };
+    this.cloudTaskWatchers.set(taskId, watcher);
 
-    if (hydration && shouldHydrateResumeChain) {
-      void hydration.then((result) => {
-        if (!this.isCurrentCloudTaskWatcher(taskId, runId, startToken)) {
-          return;
-        }
-        this.applyResumeHydrationOffset(taskId, runId, result);
-        bufferCloudUpdates = false;
-        for (const update of bufferedCloudUpdates) {
-          processCloudUpdate(update);
-        }
-        bufferedCloudUpdates.length = 0;
-      });
+    // Subscribe before starting the main-process watcher so the first replayed
+    // SSE/log burst cannot race ahead of the renderer subscription.
+    watcher.subscription = this.d.trpc.cloudTask.onUpdate.subscribe(
+      { taskId, runId },
+      {
+        onData: (update: CloudTaskUpdatePayload) => {
+          const activeWatcher = this.cloudTaskWatchers.get(taskId);
+          if (!activeWatcher || activeWatcher.runId !== runId) {
+            return;
+          }
+          if (activeWatcher.bufferResumeUpdates) {
+            activeWatcher.bufferedResumeUpdates.push(update);
+            return;
+          }
+          activeWatcher.processCloudUpdate(update);
+        },
+        onError: (err: unknown) =>
+          this.d.log.error("Cloud task subscription error", { taskId, err }),
+      },
+    );
+
+    if (shouldHydrateSession) {
+      if (shouldHydrateResumeChain) {
+        void this.hydrateResumeCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        );
+      } else {
+        void this.hydrateCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        );
+      }
     }
 
     // Start main-process watcher after the subscription is attached.
@@ -4509,6 +4542,44 @@ export class SessionService {
       }
     });
     return hydration;
+  }
+
+  private async hydrateResumeCloudTaskSessionFromLogs(
+    taskId: string,
+    taskRunId: string,
+    logUrl?: string,
+    taskDescription?: string,
+    runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
+  ): Promise<void> {
+    const watcher = this.cloudTaskWatchers.get(taskId);
+    if (!watcher || watcher.runId !== taskRunId) return;
+    const hydrationToken = ++watcher.resumeHydrationToken;
+    watcher.bufferResumeUpdates = true;
+
+    const result = await this.hydrateCloudTaskSessionFromLogs(
+      taskId,
+      taskRunId,
+      logUrl,
+      taskDescription,
+      runStatus,
+      runState,
+    );
+    const activeWatcher = this.cloudTaskWatchers.get(taskId);
+    if (
+      !activeWatcher ||
+      activeWatcher.runId !== taskRunId ||
+      activeWatcher.resumeHydrationToken !== hydrationToken
+    ) {
+      return;
+    }
+
+    this.applyResumeHydrationOffset(taskId, taskRunId, result);
+    activeWatcher.bufferResumeUpdates = false;
+    const bufferedUpdates = activeWatcher.bufferedResumeUpdates.splice(0);
+    for (const update of bufferedUpdates) {
+      activeWatcher.processCloudUpdate(update);
+    }
   }
 
   private applyResumeHydrationOffset(
@@ -4627,22 +4698,22 @@ export class SessionService {
 
     let events = convertStoredEntriesToEvents(rawEntries);
     if (isResumeRun && session.events.length > 0) {
-      // Persisted resume history is authoritative through its newest event;
-      // live watcher updates stay buffered until hydration finishes.
-      const latestHydratedEventTs = events.reduce(
-        (latest, event) => Math.max(latest, event.ts),
-        Number.NEGATIVE_INFINITY,
-      );
-      const eventKeys = new Set(
-        events.map((event) => JSON.stringify([event.ts, event.message])),
+      const eventKeys = new Set(events.map(cloudHydrationEventKey));
+      const agentMessageKeys = new Set(
+        events
+          .map(coalescedAgentMessageKey)
+          .filter((key): key is string => key !== undefined),
       );
       events = [
         ...events,
-        ...session.events.filter(
-          (event) =>
-            event.ts > latestHydratedEventTs &&
-            !eventKeys.has(JSON.stringify([event.ts, event.message])),
-        ),
+        ...session.events.filter((event) => {
+          if (eventKeys.has(cloudHydrationEventKey(event))) return false;
+          const agentMessageKey = coalescedAgentMessageKey(event);
+          return (
+            agentMessageKey === undefined ||
+            !agentMessageKeys.has(agentMessageKey)
+          );
+        }),
       ];
       const watcher = this.cloudTaskWatchers.get(taskId);
       const hasLeafLocalWatcherCursor =

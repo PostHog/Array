@@ -3553,6 +3553,15 @@ describe("SessionService", () => {
           },
         },
       };
+      const sameTimestampCompletion = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "_posthog/turn_complete",
+          params: { stopReason: "end_turn" },
+        },
+      };
       const newerLiveEvent = {
         type: "acp_message" as const,
         ts: 1700000120,
@@ -3567,7 +3576,7 @@ describe("SessionService", () => {
         taskId: "task-123",
         status: "connected",
         isCloud: true,
-        events: [inheritedLiveChunk, newerLiveEvent],
+        events: [inheritedLiveChunk, sameTimestampCompletion, newerLiveEvent],
         processedLineCount: 1,
       });
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
@@ -3610,7 +3619,11 @@ describe("SessionService", () => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
           "run-456",
           expect.objectContaining({
-            events: [persistedAgentMessage, newerLiveEvent],
+            events: [
+              persistedAgentMessage,
+              sameTimestampCompletion,
+              newerLiveEvent,
+            ],
           }),
         );
       });
@@ -4002,7 +4015,11 @@ describe("SessionService", () => {
         "run-456": resumedSession,
       }));
       mockSessionStoreSetters.updateSession.mockImplementation(
-        (_runId, updates) => Object.assign(resumedSession, updates),
+        (_runId, updates) =>
+          Object.assign(resumedSession, {
+            ...updates,
+            ...(updates.events ? { events: [...updates.events] } : {}),
+          }),
       );
       mockSessionStoreSetters.appendEvents.mockImplementation(
         (_runId, events, processedLineCount) => {
@@ -4020,6 +4037,19 @@ describe("SessionService", () => {
         timestamp: "2024-01-01T00:01:00Z",
         notification: {},
       };
+      const liveEntry = {
+        timestamp: "2024-01-01T00:02:00Z",
+        notification: { method: "session/update" },
+      };
+      const liveEvent = {
+        type: "acp_message" as const,
+        ts: 1700000120,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "session/update",
+          params: { update: { sessionUpdate: "agent_message_chunk" } },
+        },
+      };
       let resolveAncestor!: (result: {
         entries: typeof parentEntries;
         complete: boolean;
@@ -4035,9 +4065,14 @@ describe("SessionService", () => {
           entries: [...parentEntries, leafEntry],
           complete: true,
         });
-      mockConvertStoredEntriesToEvents
-        .mockReturnValueOnce([resumePrompt])
-        .mockReturnValueOnce([resumePrompt]);
+      mockConvertStoredEntriesToEvents.mockImplementation((entries) =>
+        entries.some(
+          (entry) =>
+            (entry as { timestamp?: string }).timestamp === liveEntry.timestamp,
+        )
+          ? [liveEvent]
+          : [resumePrompt],
+      );
 
       const watch = (): void => {
         service.watchCloudTask(
@@ -4076,19 +4111,6 @@ describe("SessionService", () => {
         mockAuthenticatedClient.getTaskRunSessionLogsResult,
       ).toHaveBeenCalledTimes(2);
 
-      const liveEntry = {
-        timestamp: "2024-01-01T00:02:00Z",
-        notification: { method: "session/update" },
-      };
-      const liveEvent = {
-        type: "acp_message" as const,
-        ts: 1700000120,
-        message: {
-          jsonrpc: "2.0" as const,
-          method: "session/update",
-          params: { update: { sessionUpdate: "agent_message_chunk" } },
-        },
-      };
       const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
         .calls[0][1] as { onData: (update: unknown) => void };
       subscribeOptions.onData({
@@ -4110,8 +4132,17 @@ describe("SessionService", () => {
       });
       expect(resumedSession.processedLineCount).toBe(8);
 
+      let resolveRetryAncestor!: (result: {
+        entries: typeof parentEntries;
+        complete: boolean;
+      }) => void;
       mockAuthenticatedClient.getTaskRunSessionLogsResult
-        .mockResolvedValueOnce({ entries: parentEntries, complete: true })
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveRetryAncestor = resolve;
+            }),
+        )
         .mockResolvedValueOnce({
           entries: [...parentEntries, leafEntry],
           complete: true,
@@ -4127,6 +4158,20 @@ describe("SessionService", () => {
           mockAuthenticatedClient.getTaskRunSessionLogsResult,
         ).toHaveBeenCalledTimes(4);
       });
+      const appendCountBeforeRetryUpdate =
+        mockSessionStoreSetters.appendEvents.mock.calls.length;
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-456",
+        totalEntryCount: 9,
+        newEntries: [liveEntry],
+      });
+      expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledTimes(
+        appendCountBeforeRetryUpdate,
+      );
+
+      resolveRetryAncestor({ entries: parentEntries, complete: true });
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
           "run-456",
@@ -4135,16 +4180,6 @@ describe("SessionService", () => {
             processedLineCount: 1,
           }),
         );
-      });
-      expect(resumedSession.processedLineCount).toBe(1);
-
-      mockConvertStoredEntriesToEvents.mockReturnValueOnce([liveEvent]);
-      subscribeOptions.onData({
-        kind: "logs",
-        taskId: "task-123",
-        runId: "run-456",
-        totalEntryCount: 9,
-        newEntries: [liveEntry],
       });
       await vi.waitFor(() => {
         expect(mockSessionStoreSetters.appendEvents).toHaveBeenLastCalledWith(
