@@ -3,20 +3,15 @@ export interface ClassifiedSeatError {
   redirectUrl: string | null;
 }
 
-/**
- * The seat API's 410 Gone: PostHog Code seats are retired in favor of
- * usage-based billing. Name-based so it survives the SeatClient seam.
- */
-export function isSeatProductRetiredError(error: unknown): boolean {
-  return error instanceof Error && error.name === "SeatProductRetiredError";
-}
-
 export function classifySeatError(error: unknown): ClassifiedSeatError {
   if (!(error instanceof Error)) {
     return { error: "An unexpected error occurred", redirectUrl: null };
   }
 
-  if (isSeatProductRetiredError(error)) {
+  // The seat API's 410 Gone: seats are retired in favor of usage-based
+  // billing. Only reachable from the seat-era UI, which goes away with the
+  // cutover — no handling beyond readable copy.
+  if (error.name === "SeatProductRetiredError") {
     return {
       error:
         "PostHog Code seat plans have been retired — usage is now billed to your organization.",

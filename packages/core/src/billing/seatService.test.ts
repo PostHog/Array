@@ -300,36 +300,6 @@ describe("seat product retired (410 Gone)", () => {
     expect(result.error).toBeNull();
   });
 
-  it("stops re-attempting provisioning once the product is known retired", async () => {
-    const createSeat = vi.fn().mockRejectedValue(new SeatProductRetiredError());
-    const client = makeClient({ createSeat });
-    const service = new SeatService(client, logger);
-
-    await service.fetchSeat({ autoProvision: true });
-    createSeat.mockClear();
-    await service.fetchSeat({ autoProvision: true });
-
-    expect(createSeat).not.toHaveBeenCalled();
-  });
-
-  it("still re-fetches the seat after a non-retirement provisioning failure", async () => {
-    const seat = makeSeat();
-    const getMySeat = vi
-      .fn()
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValue(seat);
-    const client = makeClient({
-      getMySeat,
-      createSeat: vi.fn().mockRejectedValue(new Error("conflict")),
-    });
-    const result = await new SeatService(client, logger).fetchSeat({
-      autoProvision: true,
-    });
-    expect(result.error).toBeNull();
-    expect(result.seat).toEqual(seat);
-  });
-
   it("surfaces retirement as a clear error on an explicit upgrade", async () => {
     const client = makeClient({
       createSeat: vi.fn().mockRejectedValue(new SeatProductRetiredError()),
