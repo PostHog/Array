@@ -499,6 +499,32 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("interrupts a native goal turn that started before it was paused", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "turn/interrupt",
+      params: { threadId: "thr_1", turnId: "goal_tick_1" },
+    });
+  });
+
   it("retries queued goal cancellation after an interrupt failure", async () => {
     let interruptAttempts = 0;
     const stub = makeStubRpc({

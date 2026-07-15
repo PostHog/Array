@@ -222,6 +222,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private readonly usage = new UsageTracker();
   /** Pause/clear can race a goal continuation already queued by app-server. */
   private cancelNextGoalTurn = false;
+  /** Native goal ticks start outside prompt(), so TurnController does not own them. */
+  private nativeGoalTurnId?: string;
 
   constructor(
     client: AgentSideConnection,
@@ -427,6 +429,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       additionalDirectories?: string[];
     },
   ): Promise<{ threadId: string; thread: AppServerThread | undefined }> {
+    this.cancelNextGoalTurn = false;
+    this.nativeGoalTurnId = undefined;
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
@@ -807,23 +811,36 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   private async cancelRunningGoalTurn(): Promise<void> {
-    if (!this.turns.isRunning) return;
-    this.cancelNextGoalTurn = false;
-    await this.interrupt();
+    if (this.turns.isRunning) {
+      this.cancelNextGoalTurn = false;
+      await this.interrupt();
+      return;
+    }
+    if (this.nativeGoalTurnId) {
+      await this.interruptNativeGoalTurn(this.nativeGoalTurnId);
+    }
   }
 
   private interruptQueuedGoalTurn(turnId: string | undefined): void {
     if (!this.cancelNextGoalTurn || !this.threadId || !turnId) return;
-    void this.rpc
+    void this.interruptNativeGoalTurn(turnId);
+  }
+
+  private async interruptNativeGoalTurn(turnId: string): Promise<void> {
+    if (!this.threadId) return;
+    await this.rpc
       .request(APP_SERVER_METHODS.TURN_INTERRUPT, {
         threadId: this.threadId,
         turnId,
       })
       .then(() => {
         this.cancelNextGoalTurn = false;
+        if (this.nativeGoalTurnId === turnId) {
+          this.nativeGoalTurnId = undefined;
+        }
       })
       .catch((error) =>
-        this.logger.warn("Queued goal turn interrupt failed", error),
+        this.logger.warn("Native goal turn interrupt failed", error),
       );
   }
 
@@ -1106,6 +1123,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   async closeSession(): Promise<void> {
     this.commandOutputs.clear();
+    this.nativeGoalTurnId = undefined;
     this.session.abortController.abort();
     this.session.cancelled = true;
     this.planHandoffCancel?.();
@@ -1156,6 +1174,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
       // Capture the active turn id (steer precondition / interrupt target).
       const turnId = (params as { turn?: { id?: string } })?.turn?.id;
+      if (!this.turns.isPending && turnId) {
+        this.nativeGoalTurnId = turnId;
+      }
       this.turns.onStarted(turnId);
       this.interruptQueuedGoalTurn(turnId);
     }
@@ -1200,6 +1221,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       this.commandOutputs.clear();
       const turn = (params as { turn?: { id?: string; status?: string } })
         ?.turn;
+      if (turn?.id === this.nativeGoalTurnId) {
+        this.nativeGoalTurnId = undefined;
+      }
       // Drop the late completion of an already-interrupted turn (else it cancels the follow-up).
       if (this.turns.shouldDropCompletion(turn?.id)) return;
       void this.finalizeTurn(mapTurnStopReason(turn?.status));
