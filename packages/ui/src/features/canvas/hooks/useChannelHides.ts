@@ -116,11 +116,16 @@ export function useChannelHideToggle(channel: Channel): {
   removeHidden: () => void;
 } {
   const { hiddenRefToShortcutId } = useChannelHides();
-  const { hide, unhide } = useChannelHideMutations();
+  const { hide, unhide, isHiding, isUnhiding } = useChannelHideMutations();
   const shortcutId = hiddenRefToShortcutId.get(channel.path);
   const isHidden = shortcutId !== undefined;
 
   const toggleHidden = useCallback(() => {
+    // Ignore re-clicks while a hide/unhide is in flight. The cache only updates
+    // once the request resolves, so without this guard a quick double-tap would
+    // fire two creates for the same path — leaving a duplicate marker that a
+    // single later unhide can't fully clear.
+    if (isHiding || isUnhiding) return;
     const run = shortcutId ? unhide(shortcutId) : hide(channel);
     run.catch((error: unknown) => {
       toast.error(
@@ -130,11 +135,13 @@ export function useChannelHideToggle(channel: Channel): {
         },
       );
     });
-  }, [channel, shortcutId, isHidden, hide, unhide]);
+  }, [channel, shortcutId, isHidden, hide, unhide, isHiding, isUnhiding]);
 
   const removeHidden = useCallback(() => {
     if (shortcutId) {
-      void unhide(shortcutId);
+      // Best-effort cleanup when the channel is deleted; swallow failures so a
+      // rejected delete doesn't surface as an unhandled rejection.
+      void unhide(shortcutId).catch(() => {});
     }
   }, [shortcutId, unhide]);
 

@@ -117,11 +117,16 @@ export function useChannelStarToggle(channel: Channel): {
   removeStar: () => void;
 } {
   const { starredRefToShortcutId } = useChannelStars();
-  const { star, unstar } = useChannelStarMutations();
+  const { star, unstar, isStarring, isUnstarring } = useChannelStarMutations();
   const shortcutId = starredRefToShortcutId.get(channel.path);
   const isStarred = shortcutId !== undefined;
 
   const toggleStar = useCallback(() => {
+    // Ignore re-clicks while a star/unstar is in flight. The cache only updates
+    // once the request resolves, so without this guard a quick double-tap would
+    // fire two creates for the same path — leaving a duplicate shortcut that a
+    // single later unstar can't fully clear.
+    if (isStarring || isUnstarring) return;
     const run = shortcutId ? unstar(shortcutId) : star(channel);
     run.catch((error: unknown) => {
       toast.error(
@@ -131,11 +136,13 @@ export function useChannelStarToggle(channel: Channel): {
         },
       );
     });
-  }, [channel, shortcutId, isStarred, star, unstar]);
+  }, [channel, shortcutId, isStarred, star, unstar, isStarring, isUnstarring]);
 
   const removeStar = useCallback(() => {
     if (shortcutId) {
-      void unstar(shortcutId);
+      // Best-effort cleanup when the channel is deleted; swallow failures so a
+      // rejected delete doesn't surface as an unhandled rejection.
+      void unstar(shortcutId).catch(() => {});
     }
   }, [shortcutId, unstar]);
 
