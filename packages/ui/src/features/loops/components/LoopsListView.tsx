@@ -238,40 +238,40 @@ function TemplateCard({
     <button
       type="button"
       onClick={onSelect}
-      className="flex flex-col gap-2 rounded-(--radius-3) border border-border bg-(--color-panel-solid) p-4 text-left transition-colors hover:border-(--gray-6) hover:bg-(--gray-2)"
+      className="flex items-start gap-2.5 rounded-(--radius-3) border border-border bg-(--color-panel-solid) p-3 text-left transition-colors hover:border-(--gray-6) hover:bg-(--gray-2)"
     >
-      <Flex align="center" className="gap-2.5">
-        <Flex
-          align="center"
-          justify="center"
-          className={`size-7 shrink-0 rounded-(--radius-2) ${TONE_CLASSES[template.tone]}`}
-        >
-          <Icon size={15} />
-        </Flex>
-        <Text className="font-medium text-[14px] text-gray-12">
-          {template.name}
-        </Text>
-      </Flex>
-      <Text className="text-[12.5px] text-gray-11 leading-snug">
-        {template.description}
-      </Text>
       <Flex
         align="center"
-        justify="between"
-        gap="3"
-        className="mt-auto w-full text-gray-10"
+        justify="center"
+        className={`size-6 shrink-0 rounded-(--radius-2) ${TONE_CLASSES[template.tone]}`}
       >
-        <Flex align="center" className="min-w-0 gap-1.5">
-          <TriggerIcon size={12} className="shrink-0" />
-          <Text className="truncate text-[11.5px]">
-            {template.triggerLabel}
-          </Text>
-        </Flex>
-        <Flex align="center" className="shrink-0 gap-1.5">
-          <PlugsIcon size={12} className="shrink-0" />
-          <Text className="text-[11.5px]">
-            Works with {template.worksWith.join(" · ")}
-          </Text>
+        <Icon size={13} />
+      </Flex>
+      <Flex direction="column" gap="1" className="min-w-0 flex-1">
+        <Text className="font-medium text-[13px] text-gray-12 leading-tight">
+          {template.name}
+        </Text>
+        <Text className="text-[12px] text-gray-11 leading-snug">
+          {template.description}
+        </Text>
+        <Flex
+          align="center"
+          justify="between"
+          gap="3"
+          className="mt-0.5 w-full text-(--accent-11)"
+        >
+          <Flex align="center" className="min-w-0 gap-1.5">
+            <TriggerIcon size={11} className="shrink-0" />
+            <Text className="truncate text-[11px]">
+              {template.triggerLabel}
+            </Text>
+          </Flex>
+          <Flex align="center" className="shrink-0 gap-1.5">
+            <PlugsIcon size={11} className="shrink-0" />
+            <Text className="text-[11px]">
+              Works with {template.worksWith.join(" · ")}
+            </Text>
+          </Flex>
         </Flex>
       </Flex>
     </button>
