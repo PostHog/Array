@@ -74,16 +74,22 @@ test.describe("Main Process", () => {
       targetUrl,
     );
 
-    const frameHandle = await window.evaluateHandle((url) => {
+    const frameHandle = await window.evaluateHandle(() => {
       const iframe = document.createElement("iframe");
-      iframe.srcdoc = `<button id="navigate">Navigate externally</button><script>document.getElementById("navigate").addEventListener("click", () => { window.location.href = ${JSON.stringify(url)}; });</script>`;
+      iframe.srcdoc = '<button id="navigate">Navigate externally</button>';
       document.body.appendChild(iframe);
       return iframe;
-    }, targetUrl);
+    });
     const iframe = frameHandle.asElement();
     if (!iframe) throw new Error("Iframe was not created");
     const frame = await iframe.contentFrame();
     if (!frame) throw new Error("Iframe content frame was not created");
+
+    await frame.evaluate((url) => {
+      document.getElementById("navigate")?.addEventListener("click", () => {
+        window.location.href = url;
+      });
+    }, targetUrl);
 
     await frame.getByText("Navigate externally").click();
 
