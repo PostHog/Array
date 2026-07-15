@@ -118,6 +118,20 @@ describe("canUseTool MCP approval enforcement", () => {
     expect(context.client.requestPermission).not.toHaveBeenCalled();
   });
 
+  it("blocks speak when its approval state is do_not_use", async () => {
+    setMcpToolApprovalStates({
+      "mcp__posthog-code-tools__speak": "do_not_use",
+    });
+
+    const context = createContext("mcp__posthog-code-tools__speak", {
+      toolInput: { text: "all tests pass", kind: "done" },
+    });
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("deny");
+    expect(context.client.requestPermission).not.toHaveBeenCalled();
+  });
+
   it("tags MCP tools in the default permission flow with claudeCode.toolName so the renderer can show the server name and unwrap exec dispatch args", async () => {
     setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
 
