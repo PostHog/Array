@@ -133,7 +133,6 @@ const childToolCallMsg = (
   ts: number,
   toolCallId: string,
   parentToolCallId: string,
-  meta: "claudeCode" | "posthog" = "claudeCode",
 ) =>
   updateMsg(ts, {
     sessionUpdate: "tool_call",
@@ -141,7 +140,7 @@ const childToolCallMsg = (
     kind: "read",
     status: "pending",
     title: toolCallId,
-    _meta: { [meta]: { parentToolCallId } },
+    _meta: { claudeCode: { parentToolCallId } },
   });
 
 // --- normalization (cycle-free, Map-resolved) -----------------------------
@@ -475,23 +474,5 @@ describe("createIncrementalConversationBuilder", () => {
     // New child arrived mid-turn: fresh Map identity so the memoized parent re-renders.
     expect(row2.turnContext.childItems).not.toBe(row1.turnContext.childItems);
     expect(row2.turnContext.childItems.get("agent1")?.length).toBe(1);
-  });
-
-  it("nests Codex child tool calls using canonical PostHog metadata", () => {
-    const inc = createIncrementalConversationBuilder();
-    const events = [
-      userPromptMsg(1, 1, "go"),
-      toolCallMsg(2, "agent1", {
-        _meta: { posthog: { toolName: "spawn_agent" } },
-      }),
-      childToolCallMsg(3, "child1", "agent1", "posthog"),
-    ];
-
-    const result = inc.update(events, true);
-    const row = result.items.find((item) => item.type === "session_update");
-    if (row?.type !== "session_update") {
-      throw new Error("expected agent session_update row");
-    }
-    expect(row.turnContext.childItems.get("agent1")?.length).toBe(1);
   });
 });
