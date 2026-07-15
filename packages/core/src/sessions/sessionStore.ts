@@ -50,6 +50,38 @@ function drainCutoff(
   return options?.max != null ? Math.min(sendable, options.max) : sendable;
 }
 
+/**
+ * Drain messages off the head of the queue, honoring {@link drainCutoff}.
+ * Reads the queue from the frozen committed state BEFORE entering the immer
+ * draft, otherwise the returned items are proxies that get revoked when
+ * setState exits and any later access throws "Cannot perform 'get' on a proxy
+ * that has been revoked".
+ */
+function drainQueueHead(
+  taskId: string,
+  options?: { stopAtEdited?: boolean; max?: number },
+): QueuedMessage[] {
+  const state = sessionStore.getState();
+  const taskRunId = state.taskIdIndex[taskId];
+  if (!taskRunId) return [];
+  const session = state.sessions[taskRunId];
+  if (!session || session.messageQueue.length === 0) return [];
+
+  const cutoff = drainCutoff(session, options);
+  if (cutoff === 0) return [];
+
+  const drained = session.messageQueue.slice(0, cutoff);
+  sessionStore.setState((draft) => {
+    const trid = draft.taskIdIndex[taskId];
+    if (!trid) return;
+    const draftSession = draft.sessions[trid];
+    if (draftSession) {
+      draftSession.messageQueue = draftSession.messageQueue.slice(cutoff);
+    }
+  });
+  return drained;
+}
+
 export const sessionStoreSetters = {
   setSession: (session: AgentSession) => {
     sessionStore.setState((state) => {
@@ -296,31 +328,9 @@ export const sessionStoreSetters = {
     taskId: string,
     options?: { stopAtEdited?: boolean; max?: number },
   ): string | null => {
-    // Read the queue from the frozen committed state BEFORE entering the
-    // immer draft — same rationale as `dequeueMessages`: anything captured
-    // through a draft proxy can be revoked when setState exits.
-    const state = sessionStore.getState();
-    const taskRunId = state.taskIdIndex[taskId];
-    if (!taskRunId) return null;
-    const session = state.sessions[taskRunId];
-    if (!session || session.messageQueue.length === 0) return null;
-
-    const cutoff = drainCutoff(session, options);
-    if (cutoff === 0) return null;
-
-    const combined = session.messageQueue
-      .slice(0, cutoff)
-      .map((msg) => msg.content)
-      .join("\n\n");
-    sessionStore.setState((draft) => {
-      const trid = draft.taskIdIndex[taskId];
-      if (!trid) return;
-      const draftSession = draft.sessions[trid];
-      if (draftSession) {
-        draftSession.messageQueue = draftSession.messageQueue.slice(cutoff);
-      }
-    });
-    return combined;
+    const drained = drainQueueHead(taskId, options);
+    if (drained.length === 0) return null;
+    return drained.map((msg) => msg.content).join("\n\n");
   },
 
   /**
@@ -330,33 +340,7 @@ export const sessionStoreSetters = {
   dequeueMessages: (
     taskId: string,
     options?: { stopAtEdited?: boolean; max?: number },
-  ): QueuedMessage[] => {
-    // Read the queue from the frozen committed state BEFORE entering the
-    // immer draft, otherwise the items returned are proxies that get
-    // revoked when setState exits and any later access throws
-    // "Cannot perform 'get' on a proxy that has been revoked".
-    const state = sessionStore.getState();
-    const taskRunId = state.taskIdIndex[taskId];
-    if (!taskRunId) return [];
-    const session = state.sessions[taskRunId];
-    if (!session || session.messageQueue.length === 0) return [];
-
-    const cutoff = drainCutoff(session, options);
-    if (cutoff === 0) return [];
-
-    const queuedMessages = session.messageQueue.slice(0, cutoff);
-
-    sessionStore.setState((draft) => {
-      const trid = draft.taskIdIndex[taskId];
-      if (!trid) return;
-      const draftSession = draft.sessions[trid];
-      if (draftSession) {
-        draftSession.messageQueue = draftSession.messageQueue.slice(cutoff);
-      }
-    });
-
-    return queuedMessages;
-  },
+  ): QueuedMessage[] => drainQueueHead(taskId, options),
 
   /**
    * Splice messages back at the head of the queue. Used to roll back a
