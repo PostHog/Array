@@ -1,5 +1,7 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { isSafeExternalUrl } from "@posthog/shared";
-import { type BrowserWindow, shell } from "electron";
+import { type BrowserWindow, type Session, shell } from "electron";
 import { logger } from "./utils/logger";
 
 const log = logger.scope("external-links");
@@ -31,11 +33,6 @@ function openExternalIfSafe(url: string): void {
   });
 }
 
-// A navigation is "in-app" only when it targets the exact renderer origin (dev
-// server) or a file under the packaged renderer directory. Comparing parsed
-// URLs — rather than a startsWith prefix — stops lookalikes like
-// http://localhost:5173.evil.example or file:///etc/passwd from being treated
-// as internal and skipping the external-link scheme check below.
 function isInAppNavigation(target: string, appHome: URL): boolean {
   let parsed: URL;
   try {
@@ -45,18 +42,51 @@ function isInAppNavigation(target: string, appHome: URL): boolean {
   }
 
   if (appHome.protocol === "file:") {
-    // file: origins are all opaque ("null"), so pin to the directory that holds
-    // index.html instead of comparing origins.
     if (parsed.protocol !== "file:") return false;
-    const appDir = appHome.pathname.slice(
-      0,
-      appHome.pathname.lastIndexOf("/") + 1,
-    );
-    return parsed.pathname.startsWith(appDir);
+    if (parsed.host !== appHome.host) return false;
+
+    try {
+      const appEntryPath = fileURLToPath(appHome);
+      const targetPath = fileURLToPath(parsed);
+      return path.relative(appEntryPath, targetPath) === "";
+    } catch {
+      return false;
+    }
   }
 
   // Dev server (http/https): pin scheme + host + port exactly.
   return parsed.origin === appHome.origin;
+}
+
+function isAllowedSubframeNavigation(target: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol === "mcp-sandbox:") {
+    return parsed.host === "proxy";
+  }
+
+  if (parsed.protocol === "about:") {
+    return parsed.pathname === "blank" || parsed.pathname === "srcdoc";
+  }
+
+  return ["http:", "https:", "blob:", "data:"].includes(parsed.protocol);
+}
+
+export function setupExternalLinkPermissionHandlers(session: Session): void {
+  // Electron approves permission requests by default. Preserve that existing
+  // behavior except for renderer-initiated external application launches,
+  // which must go through the validated host launcher instead.
+  session.setPermissionCheckHandler(
+    (_webContents, permission) => permission !== "openExternal",
+  );
+  session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission !== "openExternal");
+  });
 }
 
 export function setupExternalLinkHandlers(
@@ -72,5 +102,13 @@ export function setupExternalLinkHandlers(
     if (isInAppNavigation(url, appHome)) return;
     event.preventDefault();
     openExternalIfSafe(url);
+  });
+
+  window.webContents.on("will-frame-navigate", (event) => {
+    if (event.isMainFrame || isAllowedSubframeNavigation(event.url)) return;
+    event.preventDefault();
+    log.warn("Blocked subframe navigation with unsupported scheme", {
+      scheme: urlScheme(event.url),
+    });
   });
 }
