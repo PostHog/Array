@@ -62,6 +62,13 @@ class SeatPaymentFailedError extends Error {
   }
 }
 
+class SeatProductRetiredError extends Error {
+  constructor() {
+    super("PostHog Code seats have been retired");
+    this.name = "SeatProductRetiredError";
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -276,5 +283,59 @@ describe("error classification", () => {
     });
     const result = await new SeatService(client, logger).fetchSeat();
     expect(result.error).toBe("Card declined");
+  });
+});
+
+// The seat API 410s creation/upgrades/reactivation once Code seats are
+// retired in favor of usage-based billing (reads keep working).
+describe("seat product retired (410 Gone)", () => {
+  it("treats a retired auto-provision as seatless instead of erroring", async () => {
+    const client = makeClient({
+      createSeat: vi.fn().mockRejectedValue(new SeatProductRetiredError()),
+    });
+    const result = await new SeatService(client, logger).fetchSeat({
+      autoProvision: true,
+    });
+    expect(result.seat).toBeNull();
+    expect(result.error).toBeNull();
+  });
+
+  it("stops re-attempting provisioning once the product is known retired", async () => {
+    const createSeat = vi.fn().mockRejectedValue(new SeatProductRetiredError());
+    const client = makeClient({ createSeat });
+    const service = new SeatService(client, logger);
+
+    await service.fetchSeat({ autoProvision: true });
+    createSeat.mockClear();
+    await service.fetchSeat({ autoProvision: true });
+
+    expect(createSeat).not.toHaveBeenCalled();
+  });
+
+  it("still re-fetches the seat after a non-retirement provisioning failure", async () => {
+    const seat = makeSeat();
+    const getMySeat = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(seat);
+    const client = makeClient({
+      getMySeat,
+      createSeat: vi.fn().mockRejectedValue(new Error("conflict")),
+    });
+    const result = await new SeatService(client, logger).fetchSeat({
+      autoProvision: true,
+    });
+    expect(result.error).toBeNull();
+    expect(result.seat).toEqual(seat);
+  });
+
+  it("surfaces retirement as a clear error on an explicit upgrade", async () => {
+    const client = makeClient({
+      createSeat: vi.fn().mockRejectedValue(new SeatProductRetiredError()),
+    });
+    const result = await new SeatService(client, logger).upgradeToPro();
+    expect(result.error).toContain("retired");
+    expect(result.redirectUrl).toBeNull();
   });
 });

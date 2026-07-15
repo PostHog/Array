@@ -157,6 +157,94 @@ describe("LlmGatewayService.prompt", () => {
     });
   });
 
+  it("surfaces a FastAPI bare-string detail as the error message", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse(
+        {
+          detail: "OAuth application not authorized for product 'posthog_code'",
+        },
+        403,
+      ),
+    );
+    const { service } = createService(fetchMock);
+
+    await expect(
+      service.prompt([{ role: "user", content: "hi" }]),
+    ).rejects.toMatchObject({
+      name: "LlmGatewayError",
+      message: "OAuth application not authorized for product 'posthog_code'",
+      type: "unknown_error",
+      statusCode: 403,
+    });
+  });
+
+  // The free-tier model gate's 403 body, as the gateway serves it.
+  const MODEL_GATE_BODY = {
+    error: {
+      message:
+        "Model 'claude-haiku-4-5' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. Add a payment method to your organization to unlock all models. (rate_limit)",
+      type: "permission_error",
+      code: "model_gate",
+    },
+  };
+
+  it("retries once on the free-tier model when the model gate 403s", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createJsonResponse(MODEL_GATE_BODY, 403))
+      .mockResolvedValueOnce(createJsonResponse(SUCCESS_BODY));
+    const { service } = createService(fetchMock);
+
+    const result = await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+
+    expect(result.content).toBe("hello world");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(firstBody.model).toBe("claude-haiku-4-5");
+    expect(retryBody.model).toBe("@cf/zai-org/glm-5.2");
+  });
+
+  it("routes straight to the free-tier model once the org is known unbilled", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createJsonResponse(MODEL_GATE_BODY, 403))
+      .mockImplementation(async () => createJsonResponse(SUCCESS_BODY));
+    const { service } = createService(fetchMock);
+
+    // First call learns "unbilled" from the gate's 403.
+    await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+    // Second call must not burn a round trip on the gate.
+    await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const thirdBody = JSON.parse(fetchMock.mock.calls[2][1].body as string);
+    expect(thirdBody.model).toBe("@cf/zai-org/glm-5.2");
+  });
+
+  it("does not retry non-gate 403s on the free-tier model", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        createJsonResponse(
+          { detail: "Product 'posthog_code' requires OAuth authentication" },
+          403,
+        ),
+      );
+    const { service } = createService(fetchMock);
+
+    await expect(
+      service.prompt([{ role: "user", content: "hi" }]),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("throws a timeout LlmGatewayError when the request aborts via the internal timeout", async () => {
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
       return new Promise<Response>((_resolve, reject) => {
@@ -213,6 +301,40 @@ describe("LlmGatewayService.fetchUsage", () => {
       type: "usage_error",
       statusCode: 503,
     });
+  });
+
+  it("parses the usage-based billing fields when present", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({
+        ...USAGE_BODY,
+        ai_credits: { exhausted: true },
+        code_usage_billed: true,
+      }),
+    );
+    const { service } = createService(fetchMock);
+
+    const usage = await service.fetchUsage();
+
+    expect(usage.ai_credits?.exhausted).toBe(true);
+    expect(usage.code_usage_billed).toBe(true);
+  });
+
+  it("feeds code_usage_billed into helper model routing", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({ ...USAGE_BODY, code_usage_billed: false }),
+      )
+      .mockResolvedValue(createJsonResponse(SUCCESS_BODY));
+    const { service } = createService(fetchMock);
+
+    await service.fetchUsage();
+    await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+
+    const promptBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(promptBody.model).toBe("@cf/zai-org/glm-5.2");
   });
 });
 

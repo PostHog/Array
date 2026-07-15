@@ -983,12 +983,21 @@ export type UpgradePromptClickedSurface =
   | "plan_page_card"
   | "upgrade_dialog";
 
+/** Which gateway limit/gate put the prompt on screen (usage-based billing). */
+export type UpgradePromptCause =
+  | "model_gate"
+  | "org_limit"
+  | "user_daily_limit"
+  | "user_monthly_limit";
+
 export interface UpgradePromptShownProperties {
   surface: UpgradePromptShownSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface UpgradePromptClickedProperties {
   surface: UpgradePromptClickedSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface CloudTaskUsageBlockedProperties {

@@ -2,7 +2,11 @@ import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { PLAN_FREE, PLAN_PRO, type SeatData } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { SEAT_CLIENT, type SeatClient, type SeatLogger } from "./identifiers";
-import { type ClassifiedSeatError, classifySeatError } from "./seatErrors";
+import {
+  type ClassifiedSeatError,
+  classifySeatError,
+  isSeatProductRetiredError,
+} from "./seatErrors";
 
 export interface SeatOperationResult {
   seat: SeatData | null;
@@ -43,6 +47,11 @@ function fail(classified: ClassifiedSeatError): SeatOperationResult {
 export class SeatService {
   private readonly logger: SeatLogger;
 
+  // The seat API 410s creation/upgrades/reactivation once seats are retired
+  // (usage-based billing). Remembered so auth/onboarding fetches stop
+  // re-attempting a provision that can never succeed.
+  private seatProductRetired = false;
+
   constructor(
     @inject(SEAT_CLIENT) private readonly client: SeatClient,
     @inject(ROOT_LOGGER) logger: RootLogger,
@@ -55,13 +64,18 @@ export class SeatService {
     autoProvision: boolean;
   }): Promise<SeatData | null> {
     let seat = await this.client.getMySeat({ best: options.best });
-    if (!seat && options.autoProvision) {
+    if (!seat && options.autoProvision && !this.seatProductRetired) {
       this.logger.info("No seat found, auto-provisioning free plan", {
         best: options.best,
       });
       try {
         seat = await this.client.createSeat(PLAN_FREE);
-      } catch {
+      } catch (error) {
+        if (isSeatProductRetiredError(error)) {
+          this.seatProductRetired = true;
+          this.logger.info("Seat product retired; skipping auto-provision");
+          return null;
+        }
         this.logger.info("Auto-provision failed, re-fetching seat");
         seat = await this.client.getMySeat({ best: options.best });
       }
@@ -118,6 +132,7 @@ export class SeatService {
       this.client.invalidatePlanCache();
       return ok(seat, null, true);
     } catch (error) {
+      if (isSeatProductRetiredError(error)) this.seatProductRetired = true;
       this.logger.error("provisionFreeSeat failed", error);
       return fail(classifySeatError(error));
     }
@@ -143,6 +158,7 @@ export class SeatService {
       this.client.invalidatePlanCache();
       return ok(seat, seat);
     } catch (error) {
+      if (isSeatProductRetiredError(error)) this.seatProductRetired = true;
       return fail(classifySeatError(error));
     }
   }
@@ -168,6 +184,7 @@ export class SeatService {
       this.client.invalidatePlanCache();
       return ok(seat, seat);
     } catch (error) {
+      if (isSeatProductRetiredError(error)) this.seatProductRetired = true;
       return fail(classifySeatError(error));
     }
   }

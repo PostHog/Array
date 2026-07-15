@@ -14,7 +14,9 @@ import {
   type Adapter,
   type AgentSession,
   type CloudRegion,
+  classifyGatewayLimitError,
   type ExecutionMode,
+  extractGatedModel,
   flattenSelectOptions,
   getBackoffDelay,
   getCloudUrlFromRegion,
@@ -2712,15 +2714,35 @@ export class SessionService {
 
       this.d.store.clearOptimisticItems(session.taskRunId);
 
-      if (isRateLimitError(errorMessage, errorDetails)) {
-        this.d.log.warn("Rate limit exceeded, showing usage limit modal", {
+      const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
+
+      // Gateway billing denials — the free-tier model gate (403) or a usage
+      // limit (429): the session is healthy, and the fix is switching model,
+      // adding a payment method, or raising a limit. Surface the upgrade
+      // gate, not an error state.
+      if (
+        limitCause === "model_gate" ||
+        isRateLimitError(errorMessage, errorDetails)
+      ) {
+        this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
+          cause: limitCause,
         });
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show();
+        this.d.usageLimit.show(
+          limitCause === "model_gate"
+            ? {
+                cause: limitCause,
+                model:
+                  extractGatedModel(errorMessage, errorDetails) ?? undefined,
+              }
+            : limitCause
+              ? { cause: limitCause }
+              : undefined,
+        );
         return { stopReason: "rate_limited" };
       }
 
