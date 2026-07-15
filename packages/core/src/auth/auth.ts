@@ -86,8 +86,8 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private session: InMemorySession | null = null;
   private initializePromise: Promise<void> | null = null;
   private refreshPromise: Promise<InMemorySession> | null = null;
-  // Serializes session-state commits so overlapping selections can't interleave
-  // across async encryption (see commitSessionState).
+  // Serializes session-state commits so overlapping selections can't
+  // interleave across async encryption (see commitSessionState).
   private commitChain: Promise<void> = Promise.resolve();
   constructor(
     @inject(AUTH_PREFERENCE_STORE)
@@ -337,15 +337,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       currentProjectId: number | null;
     },
   ): Promise<void> {
-    // Serialize commits onto a chain. Encryption is async, so two overlapping
-    // selections would otherwise interleave across the await — an earlier one
-    // completing last would clobber the newer stored session and published
-    // state (and persistSession's own read of the prior selection would race).
-    // Chaining runs each commit's persist-then-publish to completion before the
-    // next starts, so the latest selection wins consistently across the
-    // in-memory session, storage, and subscribers. The stored chain swallows
-    // rejections so one failed commit doesn't wedge later ones; the returned
-    // promise still rejects for the caller.
+    // Serialize commits onto a chain so overlapping selections can't
+    // interleave across async encryption and clobber a newer one. The chain
+    // swallows rejections so one failure doesn't wedge later commits; the
+    // returned promise still rejects for the caller.
     const run = this.commitChain.then(() =>
       this.applyCommittedSession(prevSession, next),
     );
@@ -368,12 +363,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       orgProjectsIncomplete: false,
     };
 
-    // Persist the durable session first — it's the only step here that can
-    // fail (encryption is async and may reject). Mutating this.session, the
-    // project preference, or the published state before it would strand the
-    // service on a project change that the stored session and UI never
-    // committed. Commit those only after the persist resolves, so a rejection
-    // leaves every layer on the prior session.
+    // Persist the durable session first — the only step that can fail (async
+    // encryption may reject). Mutate this.session, the preference, and
+    // published state only after it resolves, so a rejection leaves every
+    // layer on the prior session.
     await this.persistSession({
       refreshToken: nextSession.refreshToken,
       cloudRegion: nextSession.cloudRegion,
@@ -533,13 +526,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return this.refreshPromise;
     }
 
-    // Assign refreshPromise synchronously — with no await between the guard
-    // above and this assignment — so concurrent callers dedupe onto one
-    // refresh. Resolving the stored session (which now awaits decryption)
-    // must therefore happen INSIDE refreshAndSync, not before it; otherwise
-    // two callers both pass the null guard, both decrypt, and both fire a
-    // refresh, burning the rotating refresh token twice and logging the user
-    // out when the second request fails.
+    // Assign refreshPromise synchronously — no await before this — so
+    // concurrent callers dedupe onto one refresh. Resolving the stored session
+    // (now async) must happen INSIDE refreshAndSync, else two callers both
+    // refresh and burn the rotating token twice.
     const refreshAndSync = async (): Promise<InMemorySession> => {
       const sessionInput = await this.getSessionInputForRefresh();
       let session: InMemorySession;
@@ -1118,9 +1108,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     if (!stored) return;
     if (stored.scopeVersion < OAUTH_SCOPE_VERSION) return;
 
-    // Claim the recovery slot synchronously so concurrent triggers (network
-    // regained + tab resume) don't both kick a token refresh; decryptability
-    // is now async (Web Crypto), so it's validated inside recoverSession.
+    // Claim the recovery slot synchronously so concurrent triggers don't both
+    // kick a token refresh; decryptability is now async (Web Crypto), so it's
+    // validated inside recoverSession.
     this.recoveryPromise = this.recoverSession()
       .catch((error) => {
         this.logger.warn("Session recovery failed", { error });
