@@ -30,7 +30,7 @@ import {
 } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { toast } from "@posthog/ui/primitives/toast";
+import { toast, type ToastOptions } from "@posthog/ui/primitives/toast";
 import { isSendMessageSubmitKey } from "@posthog/ui/utils/sendMessageKey";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
@@ -202,6 +202,11 @@ async function resolveGithubRefChip(
   );
 }
 
+function replaceComposerText(view: EditorView, text = "") {
+  const tr = view.state.tr.delete(1, view.state.doc.content.size - 1);
+  return text ? tr.insertText(text, 1) : tr;
+}
+
 function hasVisibleSuggestionPopup(sessionId: string): boolean {
   // tippy.js sets data-state="hidden" when hiding via .hide(); the session
   // tag keeps another mounted composer's popup from matching.
@@ -212,25 +217,34 @@ function hasVisibleSuggestionPopup(sessionId: string): boolean {
   );
 }
 
-function showMessageNavHint(): void {
+function showHintOnce(
+  key: string,
+  title: string,
+  detail: string | ToastOptions,
+): void {
   const store = useFeatureSettingsStore.getState();
-  if (!store.shouldShowHint(PROMPT_RECALL_HINT_KEY)) return;
-  store.recordHintShown(PROMPT_RECALL_HINT_KEY);
-  toast.info(
+  if (!store.shouldShowHint(key)) return;
+  store.recordHintShown(key);
+  toast.info(title, detail);
+}
+
+function showMessageNavHint(): void {
+  showHintOnce(
+    PROMPT_RECALL_HINT_KEY,
     "Recalled a sent prompt",
     `Use ${formatHotkey(SHORTCUTS.MESSAGE_PREV)} and ${formatHotkey(SHORTCUTS.MESSAGE_NEXT)} to jump between your messages in the conversation.`,
   );
 }
 
 function showPasteHint(message: string, description: string): void {
-  const store = useFeatureSettingsStore.getState();
   const key =
     message === "Pasted as file attachment" ? "paste-as-file" : "paste-inline";
-  if (!store.shouldShowHint(key)) return;
-  store.recordHintShown(key);
-  toast.info(message, {
+  showHintOnce(key, message, {
     description,
-    action: { label: "Got it", onClick: () => store.markHintLearned(key) },
+    action: {
+      label: "Got it",
+      onClick: () => useFeatureSettingsStore.getState().markHintLearned(key),
+    },
   });
 }
 
@@ -381,6 +395,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             !event.ctrlKey
           ) {
             const historyGetter = getPromptHistoryRef.current;
+            if (!taskId && !historyGetter && !onPromptRecallRef.current) {
+              return false;
+            }
 
             const currentText = view.state.doc.textContent;
             const isEmpty = !currentText.trim();
@@ -393,11 +410,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                   sessionStoreSetters.dequeueMessagesAsText(taskId);
                 if (queuedContent !== null && queuedContent !== undefined) {
                   event.preventDefault();
-                  view.dispatch(
-                    view.state.tr
-                      .delete(1, view.state.doc.content.size - 1)
-                      .insertText(queuedContent, 1),
-                  );
+                  view.dispatch(replaceComposerText(view, queuedContent));
                   return true;
                 }
               }
@@ -405,11 +418,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               const newText = historyActions.navigateUp(history, currentText);
               if (newText !== null) {
                 event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
+                view.dispatch(replaceComposerText(view, newText));
                 return true;
               }
             }
@@ -418,11 +427,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               const newText = historyActions.navigateDown(history);
               if (newText !== null) {
                 event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
+                view.dispatch(replaceComposerText(view, newText));
                 return true;
               }
             }
@@ -451,9 +456,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                   promptRecallDraftRef.current = view.state.doc;
                   showMessageNavHint();
                 }
-                const tr = view.state.tr
-                  .delete(1, view.state.doc.content.size - 1)
-                  .insertText(result.text, 1);
+                const tr = replaceComposerText(view, result.text);
                 // Recalling up parks the caret at the start so the next Up
                 // press keeps cycling; recalling down parks it at the end.
                 if (event.key === "ArrowUp") {
@@ -465,14 +468,17 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
               const draft = promptRecallDraftRef.current;
               promptRecallDraftRef.current = null;
-              const tr = view.state.tr;
               if (draft) {
-                tr.replaceWith(0, view.state.doc.content.size, draft.content);
+                const tr = view.state.tr.replaceWith(
+                  0,
+                  view.state.doc.content.size,
+                  draft.content,
+                );
                 tr.setSelection(TextSelection.atEnd(tr.doc));
+                view.dispatch(tr);
               } else {
-                tr.delete(1, view.state.doc.content.size - 1);
+                view.dispatch(replaceComposerText(view));
               }
-              view.dispatch(tr);
               return true;
             }
           }

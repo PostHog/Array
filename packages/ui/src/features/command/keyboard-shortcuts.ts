@@ -235,14 +235,14 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     context: "Message editor",
   },
   {
-    id: "prompt-history-prev",
+    id: "prompt-recall-prev",
     keys: "up",
     description: "Recall previous prompt",
     category: "editor",
     context: "Message editor",
   },
   {
-    id: "prompt-history-next",
+    id: "prompt-recall-next",
     keys: "down",
     description: "Recall next prompt",
     category: "editor",
