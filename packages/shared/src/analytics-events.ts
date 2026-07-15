@@ -863,6 +863,8 @@ export type ChannelActionType =
   | "delete"
   | "star"
   | "unstar"
+  | "hide"
+  | "unhide"
   | "edit_context_open"
   | "new_task_open"
   | "new_task_suggestion"
@@ -966,6 +968,7 @@ export interface ChannelsSpaceViewedProperties {
   /** Total channels visible when the space mounts. */
   channel_count: number;
   starred_count: number;
+  hidden_count: number;
 }
 
 // Subscription / billing events

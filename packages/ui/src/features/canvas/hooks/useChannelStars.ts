@@ -6,11 +6,15 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-const STARS_POLL_INTERVAL_MS = 60_000;
-const STARS_QUERY_KEY = ["canvas-channel-stars"] as const;
+// Both the star and hide surfaces read the same per-user desktop shortcuts
+// list, so they share one polled query (React Query dedupes by key) rather than
+// hitting the endpoint twice.
+export const SHORTCUTS_POLL_INTERVAL_MS = 60_000;
+export const SHORTCUTS_QUERY_KEY = ["canvas-channel-shortcuts"] as const;
 
 // Channels are folders, so their stars are folder-typed shortcuts. Anything
-// else on the desktop surface (a starred insight, say) is ignored here.
+// else on the desktop surface (a hidden channel, a starred insight, say) is
+// ignored here.
 const FOLDER_SHORTCUT_TYPE = "folder";
 
 /**
@@ -24,11 +28,11 @@ export function useChannelStars(options?: { enabled?: boolean }): {
   isLoading: boolean;
 } {
   const query = useAuthenticatedQuery<Schemas.FileSystemShortcut[]>(
-    STARS_QUERY_KEY,
+    SHORTCUTS_QUERY_KEY,
     (client) => client.getDesktopFileSystemShortcuts(),
     {
       enabled: options?.enabled ?? true,
-      refetchInterval: STARS_POLL_INTERVAL_MS,
+      refetchInterval: SHORTCUTS_POLL_INTERVAL_MS,
     },
   );
 
@@ -52,7 +56,7 @@ export function useChannelStarMutations() {
   const queryClient = useQueryClient();
 
   const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: STARS_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: SHORTCUTS_QUERY_KEY });
   }, [queryClient]);
 
   const starMutation = useMutation({
@@ -66,7 +70,7 @@ export function useChannelStarMutations() {
     },
     onSuccess: (created) => {
       queryClient.setQueryData<Schemas.FileSystemShortcut[]>(
-        STARS_QUERY_KEY,
+        SHORTCUTS_QUERY_KEY,
         (old) => {
           if (!old) return [created];
           if (old.some((s) => s.id === created.id)) return old;
@@ -85,7 +89,7 @@ export function useChannelStarMutations() {
     },
     onSuccess: (shortcutId) => {
       queryClient.setQueryData<Schemas.FileSystemShortcut[]>(
-        STARS_QUERY_KEY,
+        SHORTCUTS_QUERY_KEY,
         (old) => (old ?? []).filter((s) => s.id !== shortcutId),
       );
       invalidate();

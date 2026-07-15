@@ -1,6 +1,10 @@
 import {
+  CaretDownIcon,
+  CaretRightIcon,
   ChartBarIcon,
   DotsThreeIcon,
+  EyeIcon,
+  EyeSlashIcon,
   FileTextIcon,
   LinkIcon,
   LockSimpleIcon,
@@ -41,6 +45,10 @@ import { CreateChannelModal } from "@posthog/ui/features/canvas/components/Creat
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/createCanvasAnalytics";
 import {
+  useChannelHides,
+  useChannelHideToggle,
+} from "@posthog/ui/features/canvas/hooks/useChannelHides";
+import {
   useChannelStars,
   useChannelStarToggle,
 } from "@posthog/ui/features/canvas/hooks/useChannelStars";
@@ -76,9 +84,10 @@ type ChannelActionItem = {
   separatorBefore?: boolean;
 };
 
-// The channel actions (star, copy link, rename, delete) plus the rename-modal
-// state they drive. Single source of truth so the dropdown and context menus
-// stay in lockstep — add an action here and both surfaces pick it up.
+// The channel actions (star, hide, copy link, rename, delete) plus the
+// rename-modal state they drive. Single source of truth so the dropdown and
+// context menus stay in lockstep — add an action here and both surfaces pick
+// it up.
 function useChannelActions(channel: Channel): {
   actions: ChannelActionItem[];
   renameOpen: boolean;
@@ -96,6 +105,8 @@ function useChannelActions(channel: Channel): {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
   const { isStarred, toggleStar, removeStar } = useChannelStarToggle(channel);
+  const { isHidden, toggleHidden, removeHidden } =
+    useChannelHideToggle(channel);
 
   // Runs the actual delete once confirmed. Returns whether it succeeded so the
   // dialog can stay open (and show the toast) on failure.
@@ -120,6 +131,7 @@ function useChannelActions(channel: Channel): {
 
       await deleteChannel(channel.id);
       removeStar();
+      removeHidden();
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "delete",
         surface: "sidebar",
@@ -157,6 +169,19 @@ function useChannelActions(channel: Channel): {
           channel_id: channel.id,
         });
         toggleStar();
+      },
+    },
+    {
+      key: "hide",
+      label: isHidden ? "Unhide context" : "Hide context",
+      icon: isHidden ? <EyeIcon size={14} /> : <EyeSlashIcon size={14} />,
+      onSelect: () => {
+        track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+          action_type: isHidden ? "unhide" : "hide",
+          surface: "sidebar",
+          channel_id: channel.id,
+        });
+        toggleHidden();
       },
     },
     {
@@ -532,17 +557,26 @@ function PersonalChannelRow() {
 
 // The channel list — the Channels space sidebar body. The private "#me"
 // channel is pinned at the top; starred channels surface in their own section
-// so the ones you use most stay in reach; the rest sit under a "Channels"
-// label with the "New" channel button.
+// so the ones you use most stay in reach; the rest sit under a "Contexts"
+// label with the "New" channel button; channels the user has hidden collapse
+// into a "Hidden" group at the bottom.
 export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
+  const { hiddenRefToShortcutId } = useChannelHides();
   const [modalOpen, setModalOpen] = useState(false);
+  // The "Hidden" group is collapsed by default — hidden channels are ones the
+  // user chose to get out of the way.
+  const [hiddenExpanded, setHiddenExpanded] = useState(false);
 
   // The "me" folder renders as the pinned personal row, not a shared channel.
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
-  const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
-  const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
+  // Hiding wins over starring: a hidden channel leaves both the starred and
+  // main lists and only surfaces under the collapsed "Hidden" group.
+  const hidden = channels.filter((c) => hiddenRefToShortcutId.has(c.path));
+  const visible = channels.filter((c) => !hiddenRefToShortcutId.has(c.path));
+  const starred = visible.filter((c) => starredRefToShortcutId.has(c.path));
+  const others = visible.filter((c) => !starredRefToShortcutId.has(c.path));
 
   // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels first load
   // (so the counts are accurate). The sidebar stays mounted while navigating
@@ -554,8 +588,9 @@ export function ChannelsList() {
     track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
       channel_count: channels.length,
       starred_count: starred.length,
+      hidden_count: hidden.length,
     });
-  }, [isLoading, channels.length, starred.length]);
+  }, [isLoading, channels.length, starred.length, hidden.length]);
 
   return (
     // One shared provider groups every row tooltip so that once one shows,
@@ -608,6 +643,36 @@ export function ChannelsList() {
             <ChannelSection key={channel.id} channel={channel} />
           ))}
         </div>
+
+        {hidden.length > 0 && (
+          <Box className="mt-3">
+            <MenuLabel className="uppercase">
+              <button
+                type="button"
+                aria-expanded={hiddenExpanded}
+                onClick={() => setHiddenExpanded((open) => !open)}
+                className="flex w-full items-center gap-2"
+              >
+                {hiddenExpanded ? (
+                  <CaretDownIcon size={14} className="text-gray-9" />
+                ) : (
+                  <CaretRightIcon size={14} className="text-gray-9" />
+                )}
+                <EyeSlashIcon size={14} className="text-gray-9" />
+                Hidden
+                <span className="ml-0.5 text-gray-9">{hidden.length}</span>
+              </button>
+            </MenuLabel>
+          </Box>
+        )}
+
+        {hidden.length > 0 && hiddenExpanded && (
+          <div className="pl-2">
+            {hidden.map((channel) => (
+              <ChannelSection key={channel.id} channel={channel} />
+            ))}
+          </div>
+        )}
       </Flex>
 
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
