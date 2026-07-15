@@ -27,16 +27,21 @@ import { useQueuedMessagesForTask } from "@posthog/ui/features/sessions/useSessi
 import { toast } from "@posthog/ui/primitives/toast";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { type ReactNode, useCallback, useEffect } from "react";
+import {
+  type ReactNode,
+  type RefCallback,
+  useCallback,
+  useEffect,
+} from "react";
 
 interface QueuedMessagesDockProps {
   taskId: string;
 }
 
 /**
- * A single queued card, wrapped so the whole card is a drag handle for
- * reordering the queue. Drag activation waits for a small pointer move (see the
- * provider's sensor) so the card's buttons still take clicks.
+ * A single queued card wrapped as a sortable item. Dragging is scoped to the
+ * card's grip button (the handle ref passed to `children`), so the card's own
+ * buttons never compete with a drag.
  */
 function SortableQueuedMessage({
   id,
@@ -47,9 +52,9 @@ function SortableQueuedMessage({
   id: string;
   index: number;
   taskId: string;
-  children: ReactNode;
+  children: (dragHandleRef: RefCallback<HTMLButtonElement>) => ReactNode;
 }) {
-  const { ref, isDragging } = useSortable({
+  const { ref, handleRef, isDragging } = useSortable({
     id,
     index,
     group: `queue:${taskId}`,
@@ -57,14 +62,8 @@ function SortableQueuedMessage({
   });
 
   return (
-    <div
-      ref={ref}
-      style={{
-        opacity: isDragging ? 0.5 : 1,
-        cursor: isDragging ? "grabbing" : undefined,
-      }}
-    >
-      {children}
+    <div ref={ref} style={{ opacity: isDragging ? 0.5 : 1 }}>
+      {children(handleRef as RefCallback<HTMLButtonElement>)}
     </div>
   );
 }
@@ -178,32 +177,35 @@ export function QueuedMessagesDock({ taskId }: QueuedMessagesDockProps) {
                   index={index}
                   taskId={taskId}
                 >
-                  <QueuedMessageView
-                    message={message}
-                    supportsNativeSteer={supportsNativeSteer}
-                    isEditing={editingId === message.id}
-                    onSteer={
-                      canSteer
-                        ? () => {
-                            void sessionService
-                              .steerQueuedMessage(taskId, message.id)
-                              .catch(() => {
-                                toast.error(
-                                  "Couldn't steer this message. It's still queued.",
-                                );
-                              });
-                          }
-                        : undefined
-                    }
-                    onEdit={() => editMessage(message)}
-                    onCancelEdit={cancelEdit}
-                    onRemove={() =>
-                      sessionStoreSetters.removeQueuedMessage(
-                        taskId,
-                        message.id,
-                      )
-                    }
-                  />
+                  {(dragHandleRef) => (
+                    <QueuedMessageView
+                      message={message}
+                      dragHandleRef={dragHandleRef}
+                      supportsNativeSteer={supportsNativeSteer}
+                      isEditing={editingId === message.id}
+                      onSteer={
+                        canSteer
+                          ? () => {
+                              void sessionService
+                                .steerQueuedMessage(taskId, message.id)
+                                .catch(() => {
+                                  toast.error(
+                                    "Couldn't steer this message. It's still queued.",
+                                  );
+                                });
+                            }
+                          : undefined
+                      }
+                      onEdit={() => editMessage(message)}
+                      onCancelEdit={cancelEdit}
+                      onRemove={() =>
+                        sessionStoreSetters.removeQueuedMessage(
+                          taskId,
+                          message.id,
+                        )
+                      }
+                    />
+                  )}
                 </SortableQueuedMessage>
               ))}
             </Flex>

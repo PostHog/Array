@@ -8,6 +8,7 @@ import {
 import { Button } from "@posthog/quill";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import clsx from "clsx";
+import type { Ref } from "react";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import type { QueuedMessage } from "../../sessionStore";
 import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
@@ -15,6 +16,7 @@ import { hasFileMentions, parseFileMentions } from "./parseFileMentions";
 
 interface QueuedMessageViewProps {
   message: QueuedMessage;
+  dragHandleRef?: Ref<HTMLButtonElement>;
   onSteer?: () => void;
   onEdit?: () => void;
   onCancelEdit?: () => void;
@@ -25,6 +27,7 @@ interface QueuedMessageViewProps {
 
 export function QueuedMessageView({
   message,
+  dragHandleRef,
   onSteer,
   onEdit,
   onCancelEdit,
@@ -49,11 +52,15 @@ export function QueuedMessageView({
           Steer button (fixed height) anchors it, but the editing state's ghost
           icon buttons are `fit-content` and would otherwise collapse shorter. */}
       <Flex align="center" gap="2" className="min-h-6">
-        <DotsSixVertical
-          size={14}
-          className="shrink-0 cursor-grab text-gray-9"
-          aria-hidden
-        />
+        <button
+          ref={dragHandleRef}
+          type="button"
+          aria-label="Drag to reorder"
+          title="Drag to reorder"
+          className="shrink-0 cursor-grab text-gray-9 hover:text-gray-11"
+        >
+          <DotsSixVertical size={14} aria-hidden />
+        </button>
         <CollapsibleMessageContent
           className="min-w-0 flex-1"
           contentClassName="font-medium text-[13px] text-gray-12"
