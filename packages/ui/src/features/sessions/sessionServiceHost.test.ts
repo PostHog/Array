@@ -3517,6 +3517,163 @@ describe("SessionService", () => {
       },
     );
 
+    it("keeps immediate-resume watcher counts leaf-local while flushing buffered updates", async () => {
+      const service = getSessionService();
+      const ancestorEvent = {
+        type: "acp_message" as const,
+        ts: 1700000000,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 1,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "first request" }] },
+        },
+      };
+      const leafEvent = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 2,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "continue" }] },
+        },
+      };
+      const liveEvent = {
+        type: "acp_message" as const,
+        ts: 1700000120,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "session/update",
+          params: { update: { sessionUpdate: "agent_message_chunk" } },
+        },
+      };
+      const resumedSession = createMockSession({
+        taskRunId: "run-456",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        events: [ancestorEvent],
+        processedLineCount: 3,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => resumedSession,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() => ({
+        "run-456": resumedSession,
+      }));
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_runId, updates) => Object.assign(resumedSession, updates),
+      );
+      mockSessionStoreSetters.appendEvents.mockImplementation(
+        (_runId, events, processedLineCount) => {
+          resumedSession.events.push(...events);
+          if (processedLineCount !== undefined) {
+            resumedSession.processedLineCount = processedLineCount;
+          }
+        },
+      );
+
+      const ancestorEntries = [
+        { timestamp: "2024-01-01T00:00:00Z", notification: {} },
+        { timestamp: "2024-01-01T00:00:01Z", notification: {} },
+        { timestamp: "2024-01-01T00:00:02Z", notification: {} },
+      ];
+      const leafEntry = {
+        timestamp: "2024-01-01T00:01:00Z",
+        notification: {},
+      };
+      const liveEntry = {
+        timestamp: "2024-01-01T00:02:00Z",
+        notification: { method: "session/update" },
+      };
+      let resolveAncestor!: (result: {
+        entries: typeof ancestorEntries;
+        complete: boolean;
+      }) => void;
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveAncestor = resolve;
+            }),
+        )
+        .mockResolvedValueOnce({
+          entries: [...ancestorEntries, leafEntry],
+          complete: true,
+        });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue(
+        JSON.stringify(leafEntry),
+      );
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+      mockConvertStoredEntriesToEvents
+        .mockReturnValueOnce([ancestorEvent, leafEvent])
+        .mockReturnValueOnce([liveEvent]);
+
+      service.watchCloudTask(
+        "task-123",
+        "run-456",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-456",
+        undefined,
+        "claude",
+        undefined,
+        "first request",
+        3,
+        "in_progress",
+        undefined,
+        { resume_from_run_id: "run-123" },
+      );
+
+      await vi.waitFor(() => {
+        expect(
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
+        ).toHaveBeenCalledTimes(2);
+      });
+
+      const subscribeOptions = mockTrpcCloudTask.onUpdate.subscribe.mock
+        .calls[0][1] as { onData: (update: unknown) => void };
+      subscribeOptions.onData({
+        kind: "logs",
+        taskId: "task-123",
+        runId: "run-456",
+        totalEntryCount: 5,
+        newEntries: [leafEntry, liveEntry],
+      });
+      expect(mockSessionStoreSetters.appendEvents).not.toHaveBeenCalled();
+
+      resolveAncestor({ entries: ancestorEntries, complete: true });
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.appendEvents).toHaveBeenCalledWith(
+          "run-456",
+          [liveEvent],
+          2,
+        );
+      });
+      expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+        "run-456",
+        expect.objectContaining({
+          events: expect.arrayContaining([ancestorEvent, leafEvent]),
+          processedLineCount: 1,
+        }),
+      );
+      expect(resumedSession.events).toEqual([
+        ancestorEvent,
+        leafEvent,
+        liveEvent,
+      ]);
+      expect(resumedSession.processedLineCount).toBe(2);
+      expect(mockTrpcCloudTask.watch.mutate).toHaveBeenCalledWith({
+        taskId: "task-123",
+        runId: "run-456",
+        apiHost: "https://api.anthropic.com",
+        teamId: 123,
+        resumeFromEntryCount: 3,
+      });
+    });
+
     it("keeps the live cursor and retries after incomplete resume hydration", async () => {
       const service = getSessionService();
       const resumePrompt = {

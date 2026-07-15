@@ -367,6 +367,7 @@ export class AgentServer {
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
+  private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
   private activeOwnedTurnCount = 0;
   private ownedTurnsIdleWaiters = new Set<() => void>();
   private pendingPermissions = new Map<
@@ -888,167 +889,210 @@ export class AgentServer {
     switch (method) {
       case POSTHOG_NOTIFICATIONS.USER_MESSAGE:
       case "user_message": {
-        this.logger.debug("Received user_message command", {
-          hasContent:
-            typeof params.content === "string"
-              ? params.content.trim().length > 0
-              : Array.isArray(params.content) && params.content.length > 0,
-          artifactCount: Array.isArray(params.artifacts)
-            ? params.artifacts.length
-            : 0,
-        });
-        const builtPrompt = await this.buildPromptFromContentAndArtifacts({
-          content: params.content as string | ContentBlock[] | undefined,
-          artifacts: Array.isArray(params.artifacts)
-            ? (params.artifacts as TaskRunArtifact[])
-            : [],
-          taskId: this.session.payload.task_id,
-          runId: this.session.payload.run_id,
-        });
-        const prompt = builtPrompt.prompt;
-        if (prompt.length === 0) {
-          throw new Error("User message cannot be empty");
-        }
-
         const messageId =
           typeof params.messageId === "string" && params.messageId
             ? params.messageId
             : undefined;
-        if (messageId) {
-          if (this.deliveredMessageIds.has(messageId)) {
-            this.logger.info("Duplicate user_message delivery ignored", {
-              messageId,
-            });
-            return { stopReason: "duplicate_delivery", duplicate: true };
-          }
-          this.deliveredMessageIds.add(messageId);
-          if (this.deliveredMessageIds.size > 500) {
-            const oldest = this.deliveredMessageIds.values().next().value;
-            if (oldest !== undefined) {
-              this.deliveredMessageIds.delete(oldest);
-            }
-          }
+        const inFlightDelivery = messageId
+          ? this.inFlightMessageDeliveries.get(messageId)
+          : undefined;
+        if (inFlightDelivery) {
+          this.logger.info("Awaiting in-flight user_message delivery", {
+            messageId,
+          });
+          return await inFlightDelivery;
         }
-        this.logger.debug("Built user_message prompt", {
-          blockTypes: prompt.map((block) => block.type),
+        if (messageId && this.deliveredMessageIds.has(messageId)) {
+          this.logger.info("Duplicate user_message delivery ignored", {
+            messageId,
+          });
+          return { stopReason: "duplicate_delivery", duplicate: true };
+        }
+
+        let resolveDelivery: (result: unknown) => void = () => {};
+        let rejectDelivery: (error: unknown) => void = () => {};
+        const deliveryOutcome = new Promise<unknown>((resolve, reject) => {
+          resolveDelivery = resolve;
+          rejectDelivery = reject;
         });
-        const promptPreview = promptBlocksToText(prompt);
+        void deliveryOutcome.catch(() => {});
+        if (messageId) {
+          this.inFlightMessageDeliveries.set(messageId, deliveryOutcome);
+        }
 
-        this.logger.debug(
-          `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
-        );
+        try {
+          this.logger.debug("Received user_message command", {
+            hasContent:
+              typeof params.content === "string"
+                ? params.content.trim().length > 0
+                : Array.isArray(params.content) && params.content.length > 0,
+            artifactCount: Array.isArray(params.artifacts)
+              ? params.artifacts.length
+              : 0,
+          });
+          const builtPrompt = await this.buildPromptFromContentAndArtifacts({
+            content: params.content as string | ContentBlock[] | undefined,
+            artifacts: Array.isArray(params.artifacts)
+              ? (params.artifacts as TaskRunArtifact[])
+              : [],
+            taskId: this.session.payload.task_id,
+            runId: this.session.payload.run_id,
+          });
+          const prompt = builtPrompt.prompt;
+          if (prompt.length === 0) {
+            throw new Error("User message cannot be empty");
+          }
 
-        // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
-        // also flips the detected-PR context to its push variant.
-        const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
-        const hostContext = [
-          ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
-          ...(this.detectedPrUrl
-            ? [this.buildDetectedPrContext(this.detectedPrUrl)]
-            : []),
-        ];
-        const promptMeta: Record<string, unknown> = {
-          ...(builtPrompt.meta ?? {}),
-          ...(hostContext.length > 0
-            ? { prContext: hostContext.join("\n\n") }
-            : {}),
-        };
-
-        const shouldAttemptSteer =
-          params.steer === true && this.activeOwnedTurnCount > 0;
-
-        if (shouldAttemptSteer) {
-          try {
-            const result = await this.session.clientConnection.prompt({
-              sessionId: this.session.acpSessionId,
-              prompt,
-              _meta: { ...promptMeta, steer: true },
-            });
-            const accepted =
-              (result._meta as { steer?: unknown } | undefined)?.steer === true;
-            if (accepted) {
-              return { stopReason: "steered", steered: true };
+          if (messageId) {
+            this.deliveredMessageIds.add(messageId);
+            if (this.deliveredMessageIds.size > 500) {
+              const oldest = this.deliveredMessageIds.values().next().value;
+              if (oldest !== undefined) {
+                this.deliveredMessageIds.delete(oldest);
+              }
             }
-            await this.waitForOwnedTurnsIdle();
+          }
+          this.logger.debug("Built user_message prompt", {
+            blockTypes: prompt.map((block) => block.type),
+          });
+          const promptPreview = promptBlocksToText(prompt);
+
+          this.logger.debug(
+            `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
+          );
+
+          // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
+          // also flips the detected-PR context to its push variant.
+          const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
+          const hostContext = [
+            ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
+            ...(this.detectedPrUrl
+              ? [this.buildDetectedPrContext(this.detectedPrUrl)]
+              : []),
+          ];
+          const promptMeta: Record<string, unknown> = {
+            ...(builtPrompt.meta ?? {}),
+            ...(hostContext.length > 0
+              ? { prContext: hostContext.join("\n\n") }
+              : {}),
+          };
+
+          const shouldAttemptSteer =
+            params.steer === true && this.activeOwnedTurnCount > 0;
+
+          if (shouldAttemptSteer) {
+            try {
+              const result = await this.session.clientConnection.prompt({
+                sessionId: this.session.acpSessionId,
+                prompt,
+                _meta: { ...promptMeta, steer: true },
+              });
+              const accepted =
+                (result._meta as { steer?: unknown } | undefined)?.steer ===
+                true;
+              if (accepted) {
+                const outcome = { stopReason: "steered", steered: true };
+                resolveDelivery(outcome);
+                return outcome;
+              }
+              await this.waitForOwnedTurnsIdle();
+            } catch (error) {
+              if (messageId) {
+                this.deliveredMessageIds.delete(messageId);
+              }
+              throw error;
+            }
+          }
+
+          this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
+
+          let result: PromptResponse;
+          try {
+            result = await this.runOwnedTurn(() => {
+              const promptResult = this.session?.clientConnection.prompt({
+                sessionId: this.session?.acpSessionId,
+                prompt,
+                ...(Object.keys(promptMeta).length > 0
+                  ? { _meta: promptMeta }
+                  : {}),
+              });
+              if (!promptResult) {
+                throw new Error("Agent connection did not accept the prompt");
+              }
+              return promptResult;
+            });
           } catch (error) {
             if (messageId) {
               this.deliveredMessageIds.delete(messageId);
             }
-            throw error;
-          }
-        }
-
-        this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
-
-        let result: PromptResponse;
-        try {
-          result = await this.runOwnedTurn(() => {
-            const promptResult = this.session?.clientConnection.prompt({
-              sessionId: this.session?.acpSessionId,
-              prompt,
-              ...(Object.keys(promptMeta).length > 0
-                ? { _meta: promptMeta }
-                : {}),
-            });
-            if (!promptResult) {
-              throw new Error("Agent connection did not accept the prompt");
+            await this.session.logWriter.flushAll();
+            const { recoverable } = await this.handleTurnFailure(
+              this.session.payload,
+              "followup",
+              error,
+            );
+            if (!recoverable) {
+              throw error;
             }
-            return promptResult;
+            const outcome = { stopReason: "error_recoverable" };
+            resolveDelivery(outcome);
+            return outcome;
+          }
+
+          this.logger.debug("User message completed", {
+            stopReason: result.stopReason,
           });
+
+          if (result.stopReason === "end_turn") {
+            void this.syncCloudBranchMetadata(this.session.payload);
+          }
+
+          this.recordTurnUsage(result.usage);
+          this.broadcastTurnComplete(result.stopReason);
+
+          if (result.stopReason === "end_turn") {
+            // Relay the response to Slack. For follow-ups this is the primary
+            // delivery path — the HTTP caller only handles reactions.
+            this.relayAgentResponse(this.session.payload).catch((err) =>
+              this.logger.debug("Failed to relay follow-up response", err),
+            );
+          }
+
+          // Flush logs and include the assistant's response text so callers
+          // (e.g. Slack follow-up forwarding) can extract it without racing
+          // against async log persistence to object storage.
+          let assistantMessage: string | undefined;
+          try {
+            await this.session.logWriter.flush(this.session.payload.run_id, {
+              coalesce: true,
+            });
+            assistantMessage = this.session.logWriter.getFullAgentResponse(
+              this.session.payload.run_id,
+            );
+          } catch {
+            this.logger.debug("Failed to extract assistant message from logs");
+          }
+
+          const outcome = {
+            stopReason: result.stopReason,
+            ...(assistantMessage && { assistant_message: assistantMessage }),
+          };
+          resolveDelivery(outcome);
+          return outcome;
         } catch (error) {
           if (messageId) {
             this.deliveredMessageIds.delete(messageId);
           }
-          await this.session.logWriter.flushAll();
-          const { recoverable } = await this.handleTurnFailure(
-            this.session.payload,
-            "followup",
-            error,
-          );
-          if (!recoverable) {
-            throw error;
+          rejectDelivery(error);
+          throw error;
+        } finally {
+          if (
+            messageId &&
+            this.inFlightMessageDeliveries.get(messageId) === deliveryOutcome
+          ) {
+            this.inFlightMessageDeliveries.delete(messageId);
           }
-          return { stopReason: "error_recoverable" };
         }
-
-        this.logger.debug("User message completed", {
-          stopReason: result.stopReason,
-        });
-
-        if (result.stopReason === "end_turn") {
-          void this.syncCloudBranchMetadata(this.session.payload);
-        }
-
-        this.recordTurnUsage(result.usage);
-        this.broadcastTurnComplete(result.stopReason);
-
-        if (result.stopReason === "end_turn") {
-          // Relay the response to Slack. For follow-ups this is the primary
-          // delivery path — the HTTP caller only handles reactions.
-          this.relayAgentResponse(this.session.payload).catch((err) =>
-            this.logger.debug("Failed to relay follow-up response", err),
-          );
-        }
-
-        // Flush logs and include the assistant's response text so callers
-        // (e.g. Slack follow-up forwarding) can extract it without racing
-        // against async log persistence to object storage.
-        let assistantMessage: string | undefined;
-        try {
-          await this.session.logWriter.flush(this.session.payload.run_id, {
-            coalesce: true,
-          });
-          assistantMessage = this.session.logWriter.getFullAgentResponse(
-            this.session.payload.run_id,
-          );
-        } catch {
-          this.logger.debug("Failed to extract assistant message from logs");
-        }
-
-        return {
-          stopReason: result.stopReason,
-          ...(assistantMessage && { assistant_message: assistantMessage }),
-        };
       }
 
       case POSTHOG_NOTIFICATIONS.CANCEL:

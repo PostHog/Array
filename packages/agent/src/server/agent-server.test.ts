@@ -1931,6 +1931,69 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.result?.stopReason).toBe("end_turn");
       expect(prompt).toHaveBeenCalledTimes(2);
     }, 20000);
+
+    it("shares a failed in-flight messageId outcome with concurrent retries", async () => {
+      const s = createServer();
+      await s.start();
+      let rejectFirstDelivery!: (error: Error) => void;
+      const prompt = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectFirstDelivery = reject;
+            }),
+        )
+        .mockResolvedValueOnce({ stopReason: "end_turn" });
+      const serverInternals = s as unknown as {
+        logger: { info: (...args: unknown[]) => void };
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      const infoLog = vi.spyOn(serverInternals.logger, "info");
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-concurrent" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      let retrySettled = false;
+      const retryResponse = send("concurrent-retry").finally(() => {
+        retrySettled = true;
+      });
+      await vi.waitFor(() => {
+        expect(infoLog).toHaveBeenCalledWith(
+          "Awaiting in-flight user_message delivery",
+          { messageId: "m-concurrent" },
+        );
+        expect(prompt).toHaveBeenCalledTimes(1);
+        expect(retrySettled).toBe(false);
+      });
+
+      rejectFirstDelivery(new Error("sdk connection lost"));
+      const [first, retry] = await Promise.all([firstResponse, retryResponse]);
+      await expect(first.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      await expect(retry.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
   });
 
   describe("404 handling", () => {

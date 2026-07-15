@@ -612,6 +612,7 @@ export class SessionService {
       apiHost: string;
       teamId: number;
       startToken: number;
+      resumeFromEntryCount?: number;
       subscription: { unsubscribe: () => void };
       onStatusChange?: () => void;
     }
@@ -4190,6 +4191,7 @@ export class SessionService {
           taskDescription,
           runStatus,
           runState,
+          existingWatcher.resumeFromEntryCount,
         );
       }
       return () => {};
@@ -4318,6 +4320,7 @@ export class SessionService {
           taskDescription,
           runStatus,
           runState,
+          resumeFromEntryCount,
         )
       : undefined;
 
@@ -4370,6 +4373,7 @@ export class SessionService {
       apiHost,
       teamId,
       startToken,
+      resumeFromEntryCount,
       subscription,
       onStatusChange,
     });
@@ -4379,7 +4383,7 @@ export class SessionService {
         if (!this.isCurrentCloudTaskWatcher(taskId, runId, startToken)) {
           return;
         }
-        if (result && resumeFromEntryCount === undefined) {
+        if (result) {
           resumeHistoryCountOffset = Math.max(
             0,
             result.historyEntryCount - result.liveStreamLineCount,
@@ -4445,6 +4449,7 @@ export class SessionService {
     taskDescription?: string,
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
+    resumeFromEntryCount?: number,
   ): Promise<CloudHydrationResult | undefined> {
     const existing = this.cloudHydrationPromises.get(taskRunId);
     if (existing) {
@@ -4457,6 +4462,7 @@ export class SessionService {
       taskDescription,
       runStatus,
       runState,
+      resumeFromEntryCount,
     ).catch((err: unknown) => {
       this.d.log.warn("Failed to hydrate cloud task session from logs", {
         taskId,
@@ -4481,6 +4487,7 @@ export class SessionService {
     taskDescription?: string,
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
+    resumeFromEntryCount?: number,
   ): Promise<CloudHydrationResult | undefined> {
     let rawEntries: StoredLogEntry[];
     let liveStreamLineCount: number;
@@ -4588,10 +4595,12 @@ export class SessionService {
           (event) => !eventKeys.has(JSON.stringify([event.ts, event.message])),
         ),
       ];
-      liveStreamLineCount = Math.max(
-        liveStreamLineCount,
-        session.processedLineCount ?? 0,
-      );
+      if (resumeFromEntryCount === undefined) {
+        liveStreamLineCount = Math.max(
+          liveStreamLineCount,
+          session.processedLineCount ?? 0,
+        );
+      }
     }
     const hasUserPrompt = events.some(
       (e: AcpMessage) =>
