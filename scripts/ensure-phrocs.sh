@@ -2,12 +2,7 @@
 set -euo pipefail
 
 PHROCS_BIN="bin/phrocs"
-
-if [ -x "$PHROCS_BIN" ]; then
-  exit 0
-fi
-
-echo "phrocs not found, downloading..."
+RELEASE_URL="https://github.com/PostHog/posthog/releases/download/phrocs-latest"
 
 ARCH=$(uname -m)
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -24,10 +19,47 @@ case "$OS" in
 esac
 
 BINARY="phrocs-${OS}-${ARCH}"
-URL="https://github.com/PostHog/posthog/releases/download/phrocs-latest/${BINARY}"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+keep_existing() {
+  if [ -x "$PHROCS_BIN" ]; then
+    echo "phrocs: $1, keeping existing binary" >&2
+    exit 0
+  fi
+  echo "phrocs: $1 and no local binary exists" >&2
+  exit 1
+}
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+curl -fsSL --max-time 10 "${RELEASE_URL}/checksums.txt" -o "$TMP_DIR/checksums.txt" \
+  || keep_existing "could not fetch checksums to check for updates"
+
+EXPECTED=$(awk -v bin="$BINARY" '$2 == bin {print $1}' "$TMP_DIR/checksums.txt")
+[ -n "$EXPECTED" ] || keep_existing "no checksum for ${BINARY} in latest release"
+
+if [ -x "$PHROCS_BIN" ] && [ "$(sha256 "$PHROCS_BIN")" = "$EXPECTED" ]; then
+  exit 0
+fi
+
+echo "phrocs: downloading latest release..."
+curl -fSL --max-time 120 "${RELEASE_URL}/${BINARY}" -o "$TMP_DIR/phrocs" \
+  || keep_existing "download failed"
+
+ACTUAL=$(sha256 "$TMP_DIR/phrocs")
+if [ "$ACTUAL" != "$EXPECTED" ]; then
+  keep_existing "checksum mismatch on download (expected ${EXPECTED}, got ${ACTUAL})"
+fi
 
 mkdir -p bin
-curl -fSL "$URL" -o "$PHROCS_BIN"
-chmod +x "$PHROCS_BIN"
-
-echo "phrocs installed to $PHROCS_BIN"
+chmod +x "$TMP_DIR/phrocs"
+mv "$TMP_DIR/phrocs" "$PHROCS_BIN"
+echo "phrocs: updated to latest (${PHROCS_BIN})"
