@@ -73,8 +73,7 @@ const EDITOR_CLASS =
 
 interface TrackedAutoConvertedPaste extends AutoConvertedPaste {
   kind: "file" | "github-ref";
-  chipInserted: boolean;
-  canceled: boolean;
+  status: "pending" | "inserted" | "canceled";
 }
 
 function insertChipWithTrailingSpace(
@@ -104,7 +103,7 @@ async function pasteTextAsFile(
   tracked?: TrackedAutoConvertedPaste,
 ): Promise<void> {
   const result = await persistTextContent(text);
-  if (tracked?.canceled) return;
+  if (tracked?.status === "canceled") return;
   pasteCountRef.current += 1;
   const lineCount = text.split("\n").length;
   insertChipWithTrailingSpace(view, {
@@ -114,7 +113,7 @@ async function pasteTextAsFile(
     pastedText: true,
     chipId: tracked?.chipId,
   });
-  if (tracked) tracked.chipInserted = true;
+  if (tracked) tracked.status = "inserted";
   view.focus();
 }
 
@@ -475,9 +474,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               }
               return true;
             }
-            if (!lastConverted.chipInserted) {
+            if (lastConverted.status === "pending") {
               event.preventDefault();
-              lastConverted.canceled = true;
+              lastConverted.status = "canceled";
               useFeatureSettingsStore
                 .getState()
                 .markHintLearned("paste-as-file");
@@ -498,8 +497,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 insertText: clipboardText,
                 chipId,
                 kind: "github-ref",
-                chipInserted: true,
-                canceled: false,
+                status: "inserted",
               };
               void resolveGithubRefChip(view, parsedRef);
               return true;
@@ -560,8 +558,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               insertText: effectiveText,
               chipId: crypto.randomUUID(),
               kind: "file",
-              chipInserted: false,
-              canceled: false,
+              status: "pending",
             };
             lastAutoConvertedPasteRef.current = tracked;
 
@@ -573,14 +570,14 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                   pasteCountRef,
                   tracked,
                 );
-                if (!tracked.canceled) {
+                if (tracked.status !== "canceled") {
                   showPasteHint(
                     "Pasted as file attachment",
                     "Paste again to expand as text.",
                   );
                 }
               } catch (_error) {
-                if (!tracked.canceled) {
+                if (tracked.status !== "canceled") {
                   toast.error("Failed to convert pasted text to attachment");
                 }
               }
