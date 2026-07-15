@@ -189,6 +189,7 @@ import { onboardingImportModule } from "@posthog/workspace-server/services/onboa
 import { osModule } from "@posthog/workspace-server/services/os/os.module";
 import {
   PI_RPC_CLIENT_FACTORY,
+  PI_RUNTIME_FACTORY,
   PI_SESSION_SERVICE,
 } from "@posthog/workspace-server/services/pi-session/identifiers";
 import type { PiSessionService } from "@posthog/workspace-server/services/pi-session/pi-session";
@@ -230,6 +231,7 @@ import { workspaceMetadataModule } from "@posthog/workspace-server/services/work
 import ExternalAppsStoreImpl from "electron-store";
 import type { FileWatcherBridge } from "../index";
 import { DesktopPiRpcClientFactory } from "../platform-adapters/desktop-pi-rpc-client-factory";
+import { DesktopPiRuntimeFactory } from "../platform-adapters/desktop-pi-runtime-factory";
 import { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
 import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
@@ -325,6 +327,17 @@ import {
   WORKTREE_REPOSITORY as MAIN_WORKTREE_REPOSITORY,
 } from "./tokens";
 
+async function cancelTaskSessions(
+  agentService: AgentService,
+  piSessionService: PiSessionService,
+  taskId: string,
+): Promise<void> {
+  await Promise.all([
+    agentService.cancelSessionsByTaskId(taskId),
+    piSessionService.stop(taskId),
+  ]);
+}
+
 export const container = new TypedContainer<MainBindings>({
   defaultScope: "Singleton",
 });
@@ -366,6 +379,7 @@ container
   .bind(MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY)
   .toService(DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY);
 container.load(agentModule);
+container.bind(PI_RUNTIME_FACTORY).to(DesktopPiRuntimeFactory);
 container.load(piSessionModule);
 container.bind(AGENT_SLEEP_COORDINATOR).toService(MAIN_SLEEP_SERVICE);
 container.bind(AGENT_MCP_APPS).toService(MCP_APPS_SERVICE);
@@ -406,12 +420,12 @@ container.bind(MCP_PROXY_AUTH).toDynamicValue((ctx) => {
 });
 container.load(archiveModule);
 container.bind(ARCHIVE_SESSION_CANCELLER).toDynamicValue((ctx) => ({
-  cancelSessionsByTaskId: async (taskId: string) => {
-    await Promise.all([
-      ctx.get<AgentService>(AGENT_SERVICE).cancelSessionsByTaskId(taskId),
-      ctx.get<PiSessionService>(PI_SESSION_SERVICE).stop(taskId),
-    ]);
-  },
+  cancelSessionsByTaskId: (taskId: string) =>
+    cancelTaskSessions(
+      ctx.get<AgentService>(AGENT_SERVICE),
+      ctx.get<PiSessionService>(PI_SESSION_SERVICE),
+      taskId,
+    ),
 }));
 container.bind(ARCHIVE_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
@@ -422,12 +436,12 @@ container.bind(ARCHIVE_FILE_WATCHER).toDynamicValue((ctx) => ({
 }));
 container.load(suspensionModule);
 container.bind(SUSPENSION_SESSION_CANCELLER).toDynamicValue((ctx) => ({
-  cancelSessionsByTaskId: async (taskId: string) => {
-    await Promise.all([
-      ctx.get<AgentService>(AGENT_SERVICE).cancelSessionsByTaskId(taskId),
-      ctx.get<PiSessionService>(PI_SESSION_SERVICE).stop(taskId),
-    ]);
-  },
+  cancelSessionsByTaskId: (taskId: string) =>
+    cancelTaskSessions(
+      ctx.get<AgentService>(AGENT_SERVICE),
+      ctx.get<PiSessionService>(PI_SESSION_SERVICE),
+      taskId,
+    ),
 }));
 container.bind(SUSPENSION_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
@@ -705,12 +719,12 @@ container.load(workspaceModule);
 container.bind(WORKSPACE_AGENT).toDynamicValue((ctx): WorkspaceAgent => {
   const agent = ctx.get<AgentService>(AGENT_SERVICE);
   return {
-    cancelSessionsByTaskId: async (taskId) => {
-      await Promise.all([
-        agent.cancelSessionsByTaskId(taskId),
-        ctx.get<PiSessionService>(PI_SESSION_SERVICE).stop(taskId),
-      ]);
-    },
+    cancelSessionsByTaskId: (taskId) =>
+      cancelTaskSessions(
+        agent,
+        ctx.get<PiSessionService>(PI_SESSION_SERVICE),
+        taskId,
+      ),
     onAgentFileActivity: (handler) =>
       agent.on(AgentServiceEvent.AgentFileActivity, handler),
   };

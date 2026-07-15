@@ -29,7 +29,9 @@ import {
   useChatMessageScrollerScrollable,
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
+import type { AcpMessage, AgentConversationEvent } from "@posthog/shared";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import type { Task } from "@posthog/shared/domain-types";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useSmoothedText } from "@posthog/ui/features/editor/components/useSmoothedText";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -67,6 +69,7 @@ import { SessionUpdateView } from "@posthog/ui/features/sessions/components/sess
 import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
+import { useAgentConversationItems } from "@posthog/ui/features/sessions/hooks/useAgentConversationItems";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import {
   useOptimisticItemsForTask,
@@ -98,7 +101,6 @@ import {
   useState,
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import type { ConversationViewProps } from "../ConversationView";
 
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
 type ThreadItem = ConversationItem | ToolGroupItem;
@@ -982,7 +984,7 @@ function ThreadScrollBody({
 }
 
 /**
- * Experimental thread renderer built on the new ChatX (quill) primitives.
+ * Thread renderer built on the ChatX (quill) primitives.
  *
  * Reuses the existing parse pipeline (`useConversationItems`) and the non-virtualized
  * `ChatMessageScroller` (`content-visibility: auto`). User + assistant turns render through
@@ -991,18 +993,66 @@ function ThreadScrollBody({
  * to the ChatX primitive, so every tool view is mapped without forking. User messages carry their
  * context chips (`ChatMessageHeader`), file/attachment mentions, and a hover timestamp
  * (`ChatMessageFooter`) — see `UserBubble`.
- *
- * Swapped in behind `settingsStore.useNewChatThread` via `ThreadView`.
  */
-export function ChatThread({
-  events,
+interface SharedChatThreadProps {
+  isPromptPending: boolean | null;
+  promptStartedAt?: number | null;
+  promptRecallRef?: RefObject<PromptRecallHandler | null>;
+  repoPath?: string | null;
+  task?: Task;
+  taskId?: string;
+}
+
+export interface ChatThreadProps extends SharedChatThreadProps {
+  events: AgentConversationEvent[];
+}
+
+export interface AcpChatThreadProps extends SharedChatThreadProps {
+  events: AcpMessage[];
+}
+
+export function ChatThread({ events, ...props }: ChatThreadProps) {
+  const { items } = useAgentConversationItems(events, props.isPromptPending);
+
+  return (
+    <ChatThreadRenderer
+      {...props}
+      conversationItems={items}
+      footerEvents={[]}
+    />
+  );
+}
+
+export function AcpChatThread({ events, ...props }: AcpChatThreadProps) {
+  const showDebugLogs = useSettingsStore((state) => state.debugLogsCloudRuns);
+  const { items } = useConversationItems(events, props.isPromptPending, {
+    showDebugLogs,
+  });
+
+  return (
+    <ChatThreadRenderer
+      {...props}
+      conversationItems={items}
+      footerEvents={events}
+    />
+  );
+}
+
+interface ChatThreadRendererProps extends SharedChatThreadProps {
+  conversationItems: ConversationItem[];
+  footerEvents: AcpMessage[];
+}
+
+function ChatThreadRenderer({
+  conversationItems,
+  footerEvents,
   isPromptPending,
   promptStartedAt,
   repoPath,
   task,
   taskId,
   promptRecallRef,
-}: ConversationViewProps) {
+}: ChatThreadRendererProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
     () => ({
@@ -1010,14 +1060,6 @@ export function ChatThread({
       totalASTLRUCacheSize: 200,
     }),
     [diffWorkerFactory],
-  );
-
-  const showDebugLogs = useSettingsStore((s) => s.debugLogsCloudRuns);
-
-  const { items: conversationItems } = useConversationItems(
-    events,
-    isPromptPending,
-    { showDebugLogs },
   );
 
   const optimisticItems = useOptimisticItemsForTask(taskId);
@@ -1130,7 +1172,7 @@ export function ChatThread({
               onUserInteract={clearKeyboardFocus}
               footer={
                 <ChatThreadFooter
-                  events={events}
+                  events={footerEvents}
                   isPromptPending={isPromptPending}
                   promptStartedAt={promptStartedAt}
                   task={task}

@@ -76,6 +76,10 @@ import {
 import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
 import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import {
+  PI_SESSION_CLIENT,
+  type PiSessionClient,
+} from "@posthog/core/pi-runtime/piSessionController";
+import {
   type BundleLocalSkill,
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
@@ -291,6 +295,7 @@ export interface RendererBindings {
   [ANALYTICS_TRACKER]: AnalyticsTracker;
   [TASK_CREATION_HOST]: ITaskCreationHost;
   [PI_RUNNER]: PiRunner;
+  [PI_SESSION_CLIENT]: PiSessionClient;
   [TASK_CREATION_EFFECTS]: TaskCreationEffects;
   [RENDERER_TASK_SERVICE]: TaskService;
   [TASK_SERVICE]: TaskService;

@@ -9,6 +9,7 @@ import {
 import { extractPromptDisplayContent } from "@posthog/core/sessions/promptContent";
 import {
   type AcpMessage,
+  type AgentConversationEvent,
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
@@ -21,7 +22,7 @@ import {
 } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import type { UserShellExecute } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
 import type {
-  SessionUpdate,
+  ConversationSessionUpdate,
   ToolCall,
 } from "@posthog/ui/features/sessions/types";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
@@ -99,7 +100,7 @@ interface ProgressCardState {
 
 interface TurnState {
   id: string;
-  promptId: number;
+  promptId: number | string;
   isComplete: boolean;
   stopReason?: string;
   interruptReason?: string;
@@ -117,7 +118,7 @@ export interface ItemBuilder {
    *  incremental consumer treat everything before it (completed turns) as
    *  frozen and only re-derive the active turn. */
   currentTurnStartIndex: number;
-  pendingPrompts: Map<number, TurnState>;
+  pendingPrompts: Map<number | string, TurnState>;
   shellExecutes: Map<string, { item: UserShellExecute; index: number }>;
   isCompacting: boolean;
   nextId: () => number;
@@ -288,6 +289,126 @@ export function processEvent(
  * only apply it to a snapshot it is about to read, never to state it will keep
  * feeding events into.
  */
+export function buildAgentConversationItems(
+  events: AgentConversationEvent[],
+  isPromptPending: boolean | null,
+): BuildResult {
+  const b = createItemBuilder();
+  const ordered = [...events].sort(
+    (left, right) => left.timestamp - right.timestamp,
+  );
+
+  for (const event of ordered) {
+    processAgentConversationEvent(b, event);
+  }
+
+  finalizeBuilder(b, isPromptPending);
+
+  return {
+    items: b.items,
+    lastTurnInfo: readLastTurnInfo(b),
+    isCompacting: b.isCompacting,
+    completedToolCallCount: b.completedToolCallCount,
+  };
+}
+
+export function processAgentConversationEvent(
+  b: ItemBuilder,
+  event: AgentConversationEvent,
+): void {
+  if (event.type === "user_message") {
+    handlePromptRequest(
+      b,
+      { id: event.id, params: { prompt: event.content } },
+      event.timestamp,
+    );
+    return;
+  }
+
+  if (event.type === "assistant_message_chunk") {
+    processSessionUpdate(
+      b,
+      { sessionUpdate: "agent_message_chunk", content: event.content },
+      event.timestamp,
+    );
+    return;
+  }
+
+  if (event.type === "assistant_thought_chunk") {
+    processSessionUpdate(
+      b,
+      { sessionUpdate: "agent_thought_chunk", content: event.content },
+      event.timestamp,
+    );
+    return;
+  }
+
+  if (event.type === "tool_call_started") {
+    const { id, parentId, ...toolCall } = event.toolCall;
+    const update: ConversationSessionUpdate = {
+      sessionUpdate: "tool_call",
+      toolCallId: id,
+      ...toolCall,
+      ...(parentId
+        ? { _meta: { claudeCode: { parentToolCallId: parentId } } }
+        : {}),
+    };
+    processSessionUpdate(b, update, event.timestamp);
+    return;
+  }
+
+  if (event.type === "tool_call_updated") {
+    const { id, parentId, ...toolCall } = event.toolCall;
+    const update: ConversationSessionUpdate = {
+      sessionUpdate: "tool_call_update",
+      toolCallId: id,
+      ...toolCall,
+      ...(parentId
+        ? { _meta: { claudeCode: { parentToolCallId: parentId } } }
+        : {}),
+    };
+    processSessionUpdate(b, update, event.timestamp);
+    return;
+  }
+
+  if (event.type === "runtime_status") {
+    handleRuntimeStatus(b, event, event.timestamp);
+    return;
+  }
+
+  if (event.type === "runtime_error") {
+    ensureImplicitTurn(b, event.timestamp);
+    const duplicate = b.items
+      .slice(b.currentTurnStartIndex)
+      .some(
+        (item) =>
+          item.type === "session_update" &&
+          item.update.sessionUpdate === "error" &&
+          item.update.errorType === event.errorType &&
+          item.update.message === event.message,
+      );
+
+    if (!duplicate) {
+      pushItem(
+        b,
+        {
+          sessionUpdate: "error",
+          errorType: event.errorType,
+          message: event.message,
+        },
+        event.timestamp,
+      );
+    }
+    return;
+  }
+
+  if (b.currentTurn) {
+    completePromptTurn(b, b.currentTurn, event.timestamp, {
+      stopReason: event.stopReason,
+    });
+  }
+}
+
 export function finalizeBuilder(
   b: ItemBuilder,
   isPromptPending: boolean | null,
@@ -324,7 +445,7 @@ export function readLastTurnInfo(b: ItemBuilder): LastTurnInfo | null {
 
 function handlePromptRequest(
   b: ItemBuilder,
-  msg: { id: number; params?: unknown },
+  msg: { id: number | string; params?: unknown },
   ts: number,
 ) {
   // If the current turn is the implicit one, mark it complete before starting a real turn
@@ -564,7 +685,7 @@ function handleNotification(
       preTokens: number;
       contextSize?: number;
     };
-    markCompactingStatusComplete(b);
+    markRuntimeStatusComplete(b, "compacting");
     pushItem(b, {
       sessionUpdate: "compact_boundary",
       trigger: params.trigger,
@@ -584,43 +705,69 @@ function handleNotification(
       fromModel?: string;
       toModel?: string;
     };
-    if (params.status === "refusal" || params.status === "refusal_fallback") {
-      pushItem(b, {
-        sessionUpdate: "status",
-        status: params.status,
-        explanation: params.explanation,
-        fromModel: params.fromModel,
-        toModel: params.toModel,
-      });
-      return;
-    }
-    if (params.status === "compacting") {
-      if (params.isComplete) {
-        // Successful compaction — flip the existing "Compacting…" status to
-        // complete instead of pushing a second item, so the spinner stops.
-        markCompactingStatusComplete(b);
-        return;
-      }
-      b.isCompacting = true;
-    } else if (params.status === "compacting_failed") {
-      // A failed compaction emits no `compact_boundary`, so clear the spinner
-      // and render the outcome as its own status row.
-      markCompactingStatusComplete(b);
-      pushItem(b, {
-        sessionUpdate: "status",
-        status: "compacting_failed",
-        error: params.error,
-      });
-      return;
-    }
+    handleRuntimeStatus(b, params, ts);
+    return;
+  }
+}
+
+function handleRuntimeStatus(
+  b: ItemBuilder,
+  status: {
+    status: string;
+    isComplete?: boolean;
+    error?: string;
+    explanation?: string;
+    fromModel?: string;
+    toModel?: string;
+    message?: string;
+    attempt?: number;
+    maxAttempts?: number;
+    delayMs?: number;
+  },
+  timestamp: number,
+): void {
+  ensureImplicitTurn(b, timestamp);
+
+  if (status.status === "refusal" || status.status === "refusal_fallback") {
     pushItem(b, {
       sessionUpdate: "status",
-      status: params.status,
-      isComplete: params.isComplete,
-      startedAt: ts,
+      status: status.status,
+      explanation: status.explanation,
+      fromModel: status.fromModel,
+      toModel: status.toModel,
     });
     return;
   }
+
+  if (status.status === "compacting") {
+    if (status.isComplete) {
+      markRuntimeStatusComplete(b, "compacting");
+      return;
+    }
+    b.isCompacting = true;
+  } else if (status.status === "compacting_failed") {
+    markRuntimeStatusComplete(b, "compacting");
+    pushItem(b, {
+      sessionUpdate: "status",
+      status: "compacting_failed",
+      error: status.error,
+    });
+    return;
+  } else if (status.status === "retrying" && status.isComplete) {
+    markRuntimeStatusComplete(b, "retrying");
+    return;
+  }
+
+  pushItem(b, {
+    sessionUpdate: "status",
+    status: status.status,
+    isComplete: status.isComplete,
+    startedAt: timestamp,
+    message: status.message,
+    attempt: status.attempt,
+    maxAttempts: status.maxAttempts,
+    delayMs: status.delayMs,
+  });
 }
 
 function ensureProgressCardForGroup(
@@ -701,14 +848,16 @@ function normalizeStepStatus(raw: string | undefined): StepStatus {
   }
 }
 
-function markCompactingStatusComplete(b: ItemBuilder) {
-  b.isCompacting = false;
+function markRuntimeStatusComplete(b: ItemBuilder, status: string) {
+  if (status === "compacting") {
+    b.isCompacting = false;
+  }
   for (let i = b.items.length - 1; i >= 0; i--) {
     const item = b.items[i];
     if (
       item.type === "session_update" &&
       item.update.sessionUpdate === "status" &&
-      item.update.status === "compacting" &&
+      item.update.status === status &&
       !item.update.isComplete
     ) {
       // Replace the row and its update with fresh objects rather than mutating
@@ -764,7 +913,9 @@ function extractUserPrompt(params: unknown): {
   return { content: text, attachments, blocks: p.prompt };
 }
 
-function getParentToolCallId(update: SessionUpdate): string | undefined {
+function getParentToolCallId(
+  update: ConversationSessionUpdate,
+): string | undefined {
   return readParentToolCallId((update as Record<string, unknown>)._meta);
 }
 
@@ -788,7 +939,7 @@ function pushChildItem(b: ItemBuilder, parentId: string, update: RenderItem) {
 function appendTextChunkToChildren(
   b: ItemBuilder,
   parentId: string,
-  update: SessionUpdate & {
+  update: ConversationSessionUpdate & {
     sessionUpdate: "agent_message_chunk" | "agent_thought_chunk";
   },
 ) {
@@ -834,7 +985,7 @@ function appendTextChunkToChildren(
 
 function processSessionUpdate(
   b: ItemBuilder,
-  update: SessionUpdate,
+  update: ConversationSessionUpdate,
   ts: number,
 ) {
   switch (update.sessionUpdate) {
@@ -927,7 +1078,7 @@ function processSessionUpdate(
         customUpdate.sessionUpdate === "error"
       ) {
         ensureImplicitTurn(b, ts);
-        pushItem(b, customUpdate as unknown as SessionUpdate, ts);
+        pushItem(b, customUpdate as unknown as RenderItem, ts);
       }
       break;
     }
@@ -936,7 +1087,7 @@ function processSessionUpdate(
 
 function appendTextChunk(
   b: ItemBuilder,
-  update: SessionUpdate & {
+  update: ConversationSessionUpdate & {
     sessionUpdate: "agent_message_chunk" | "agent_thought_chunk";
   },
   ts: number,

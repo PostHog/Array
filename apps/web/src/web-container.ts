@@ -1,12 +1,18 @@
 import "reflect-metadata";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
 import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
+import { piRuntimeModule } from "@posthog/core/pi-runtime/pi-runtime.module";
+import {
+  PI_SESSION_CLIENT,
+  type PiSessionClient,
+} from "@posthog/core/pi-runtime/piSessionController";
 import { setRootContainer } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
+import { TrpcPiSessionClient } from "@posthog/host-router/pi-session-client";
 import { sandboxProxyHtml } from "@posthog/shared/mcp-sandbox-proxy";
 import {
   AUTH_SIDE_EFFECTS,
@@ -37,6 +43,7 @@ import { hostTrpcClient } from "./web-trpc";
 
 interface WebBindings {
   [HOST_TRPC_CLIENT]: HostTrpcClient;
+  [PI_SESSION_CLIENT]: PiSessionClient;
   [ROOT_LOGGER]: RootLogger;
   [FEATURE_FLAGS]: FeatureFlags;
   [ANALYTICS_TRACKER]: AnalyticsTracker;
@@ -54,6 +61,8 @@ export const container = new TypedContainer<WebBindings>({
 
 // Keystone: the same typed host client the renderer binds, over HTTP not IPC.
 container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
+container.bind(PI_SESSION_CLIENT).to(TrpcPiSessionClient);
+container.load(piRuntimeModule);
 
 // Logger: web uses console; electron uses electron-log. Same RootLogger shape.
 const scoped = (name?: string): RootLogger => ({

@@ -3,13 +3,32 @@ import type { Writable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import {
+  type Api,
+  getSupportedThinkingLevels,
+  type Model,
+} from "@earendil-works/pi-ai";
+import {
   RpcClient,
   type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
 import type { PosthogProviderOptions } from "@posthog/harness/extensions/posthog-provider/provider";
 import { safePiEnvironment } from "./rpc-environment";
+import type { PiModelOption, PiThinkingLevel } from "./types";
 
 export type PiRpcClient = RpcClient;
+
+export async function getAvailableModelsWithThinkingLevels(
+  client: PiRpcClient,
+): Promise<PiModelOption[]> {
+  const models = await client.getAvailableModels();
+
+  return models.map((model) => ({
+    ...model,
+    thinkingLevels: getSupportedThinkingLevels(
+      model as unknown as Model<Api>,
+    ) as PiThinkingLevel[],
+  }));
+}
 
 type RpcClientProcessAccess = {
   process?: ChildProcess;

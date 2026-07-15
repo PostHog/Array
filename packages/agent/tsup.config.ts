@@ -114,6 +114,9 @@ export default defineConfig([
       "src/posthog-products.ts",
       "src/pr-url-detector.ts",
       "src/pi/rpc-client.ts",
+      "src/pi/runtime.ts",
+      "src/pi/types.ts",
+      "src/pi/conversation/translatePiConversation.ts",
       "src/resume.ts",
       "src/types.ts",
       "src/adapters/claude/questions/utils.ts",
@@ -132,7 +135,7 @@ export default defineConfig([
       "src/server/agent-server.ts",
     ],
     format: ["esm"],
-    dts: true,
+    dts: false,
     clean: false,
     // noExternal inlines CJS deps (e.g. simple-git via @posthog/git) whose
     // dynamic `require(...)` calls throw in ESM output unless a real require

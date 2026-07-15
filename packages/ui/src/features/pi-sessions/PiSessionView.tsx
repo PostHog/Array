@@ -1,196 +1,263 @@
-import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
+import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
+import type {
+  PiModelOption,
+  PiQueueMode,
+  PiSessionController,
+  PiThinkingLevel,
+} from "@posthog/core/pi-runtime/piSessionController";
+import { useService } from "@posthog/di/react";
 import {
-  Button,
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@posthog/quill";
-import { useQuery } from "@tanstack/react-query";
-import { useSubscription } from "@trpc/tanstack-react-query";
-import { useEffect, useMemo, useState } from "react";
+import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
+import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
+import { ChatThread } from "@posthog/ui/features/sessions/components/chat-thread/ChatThread";
+import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useMessagingMode } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
+import { useMessagingModeStore } from "@posthog/ui/features/sessions/messagingModeStore";
+import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
+import { toast } from "@posthog/ui/primitives/toast";
+import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
+import { Box, Flex } from "@radix-ui/themes";
+import { useCallback, useEffect } from "react";
+import { useStore } from "zustand";
 import {
-  applyPiEvent,
-  emptyLiveFeed,
-  type PiEntries,
-  PiEntriesSyncer,
-  type PiEvent,
-  type PiLiveFeed,
-  type PiMessage,
-} from "./piSessionFeed";
-import { useEnsurePiSession } from "./useEnsurePiSession";
+  PiMessagingModeSelector,
+  PiModelSelector,
+  PiThinkingLevelSelector,
+} from "./PiSessionControls";
 
 interface PiSessionViewProps {
   taskId: string;
 }
 
-type PiMessageWithContent = Extract<PiMessage, { content: unknown }>;
-
-function PiMessageView({ message }: { message: PiMessage }) {
-  if (message.role === "bashExecution") {
-    return <>{message.output}</>;
-  }
-  if (
-    message.role === "branchSummary" ||
-    message.role === "compactionSummary"
-  ) {
-    return <>{message.summary}</>;
-  }
-  if ("content" in message) {
-    return <>{messageContentText(message)}</>;
-  }
-  return null;
-}
-
-function messageContentText(message: PiMessageWithContent): string {
-  if (typeof message.content === "string") {
-    return message.content;
-  }
-
-  return message.content
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-    .join("\n");
-}
-
-function messageBubbleClass(role: string): string {
-  if (role === "user") {
-    return "mb-3 ml-auto max-w-[80%] rounded-lg bg-accent-3 p-3 text-sm";
-  }
-  return "mb-3 max-w-[80%] whitespace-pre-wrap rounded-lg bg-gray-3 p-3 text-sm";
-}
-
 export function PiSessionView({ taskId }: PiSessionViewProps) {
-  const trpc = useHostTRPC();
-  const client = useHostTRPCClient();
-  const { error: ensureError, isSuccess: sessionReady } =
-    useEnsurePiSession(taskId);
-
-  const [prompt, setPrompt] = useState("");
-  const [liveFeed, setLiveFeed] = useState<PiLiveFeed>(emptyLiveFeed);
-  const [syncedEntries, setSyncedEntries] = useState<PiEntries | undefined>(
-    undefined,
+  const piSessionController = useService<PiSessionController>(
+    PI_SESSION_CONTROLLER,
   );
-
-  const { data: fetchedEntries } = useQuery({
-    ...trpc.piSession.entries.queryOptions({ taskId }),
-    enabled: sessionReady,
-  });
-  const { error: statusError } = useQuery({
-    ...trpc.piSession.status.queryOptions({ taskId }),
-    enabled: sessionReady,
-  });
-
-  const syncer = useMemo(
-    () =>
-      new PiEntriesSyncer(
-        (since) => client.piSession.entries.query({ taskId, since }),
-        setSyncedEntries,
-      ),
-    [client, taskId],
+  const session = useStore(
+    piSessionController.store,
+    (state) => state.sessions[taskId],
   );
+  const draftActions = useDraftStore((state) => state.actions);
+  const workspace = useWorkspace(taskId);
+  const repoPath = workspace?.worktreePath ?? workspace?.folderPath;
+  const messagingMode = useMessagingMode(taskId);
+  const setMessagingMode = useMessagingModeStore((state) => state.setMode);
 
   useEffect(() => {
-    syncer.seed(fetchedEntries);
-  }, [syncer, fetchedEntries]);
+    void piSessionController.ensureConnected(taskId);
+    return () => piSessionController.disconnect(taskId);
+  }, [piSessionController, taskId]);
 
-  const history = syncedEntries ?? fetchedEntries;
+  const sessionAvailable = session?.connectionState === "connected";
+  const status = session?.status;
+  const isStreaming = status?.isStreaming ?? false;
+  const isCompacting = status?.isCompacting ?? false;
+  const isBashRunning = session?.isBashRunning ?? false;
 
-  useSubscription(
-    trpc.piSession.onEvent.subscriptionOptions(
-      { taskId },
-      {
-        enabled: sessionReady,
-        onData: (event: PiEvent) => {
-          setLiveFeed((feed) => applyPiEvent(feed, event));
+  useEffect(() => {
+    draftActions.setContext(taskId, {
+      taskId,
+      repoPath,
+      disabled: !sessionAvailable || isCompacting,
+      isLoading: isStreaming || isBashRunning,
+    });
+  }, [
+    draftActions,
+    isBashRunning,
+    isCompacting,
+    isStreaming,
+    repoPath,
+    sessionAvailable,
+    taskId,
+  ]);
 
-          if (event.type === "agent_settled") {
-            void syncer.sync().then(() => setLiveFeed(emptyLiveFeed));
-          }
-        },
-      },
-    ),
-  );
-
-  const send = async () => {
-    const text = prompt.trim();
-    if (!text) {
+  useEffect(() => {
+    if (!session?.commands) {
       return;
     }
-    await client.piSession.prompt.mutate({ taskId, prompt: text });
-    setPrompt("");
+
+    const piCommands = session.commands
+      .filter((command) => command.name !== "compact")
+      .map((command) => ({
+        name: command.name,
+        description: command.description ?? "",
+      }));
+
+    draftActions.setCommands(taskId, [
+      {
+        name: "compact",
+        description: "Compact the current Pi session context",
+        input: { hint: "optional instructions" },
+      },
+      ...piCommands,
+    ]);
+  }, [draftActions, session?.commands, taskId]);
+
+  const sendPrompt = useCallback(
+    (text: string) => {
+      const message = text.trim();
+      if (!message) {
+        return;
+      }
+
+      const action = piSessionController.getSubmitAction(
+        message,
+        isStreaming,
+        messagingMode,
+      );
+      void piSessionController
+        .submit(taskId, message, isStreaming, messagingMode)
+        .then(() => {
+          if (action === "compact") {
+            toast.success("Pi context compacted");
+          }
+        })
+        .catch(() => {
+          const failureMessage =
+            action === "compact"
+              ? "Failed to compact Pi context"
+              : "Failed to send message to Pi";
+          toast.error(failureMessage);
+        });
+    },
+    [isStreaming, messagingMode, piSessionController, taskId],
+  );
+
+  const setModel = useCallback(
+    (model: PiModelOption) => {
+      void piSessionController
+        .setModel(taskId, model)
+        .catch(() => toast.error("Failed to change Pi model"));
+    },
+    [piSessionController, taskId],
+  );
+
+  const setThinkingLevel = useCallback(
+    (level: PiThinkingLevel) => {
+      void piSessionController
+        .setThinkingLevel(taskId, level)
+        .catch(() => toast.error("Failed to change Pi thinking level"));
+    },
+    [piSessionController, taskId],
+  );
+
+  const setQueueMode = useCallback(
+    (mode: PiQueueMode) => {
+      void piSessionController
+        .setQueueMode(taskId, messagingMode, mode)
+        .catch(() => toast.error("Failed to change Pi queue behavior"));
+    },
+    [messagingMode, piSessionController, taskId],
+  );
+
+  const toggleMessagingMode = useCallback(() => {
+    const nextMode = messagingMode === "steer" ? "queue" : "steer";
+    setMessagingMode(taskId, nextMode);
+  }, [messagingMode, setMessagingMode, taskId]);
+
+  const runBashCommand = (command: string) => {
+    void piSessionController
+      .bash(taskId, command)
+      .catch(() => toast.error("Failed to run Pi bash command"));
   };
 
-  const sessionError = ensureError ?? statusError;
+  const cancelPrompt = () => {
+    if (isBashRunning) {
+      void piSessionController.abortBash(taskId);
+      return;
+    }
+
+    void piSessionController.abort(taskId);
+  };
+
+  const sessionError = session?.error;
   if (sessionError) {
     return (
       <Empty className="h-full">
         <EmptyHeader>
           <EmptyTitle>Pi session failed to start</EmptyTitle>
-          <EmptyDescription>{sessionError.message}</EmptyDescription>
+          <EmptyDescription>{sessionError}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
   }
 
-  if (!sessionReady) {
-    return (
-      <Empty className="h-full">
-        <EmptyHeader>
-          <EmptyTitle>Starting Pi session…</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    );
+  if (!session || !status) {
+    return <TaskDetailSkeleton />;
   }
+
+  const pending = isStreaming || isBashRunning;
+  const currentModel = session.models.find(
+    (model) =>
+      model.provider === status.model?.provider && model.id === status.model.id,
+  );
+  const thinkingLevels = currentModel?.thinkingLevels ?? [];
+  const supportsThinking = thinkingLevels.some((level) => level !== "off");
+  const queueMode =
+    messagingMode === "steer" ? status.steeringMode : status.followUpMode;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {history?.entries.map((entry) => {
-          if (entry.type !== "message") {
-            return null;
-          }
-
-          return (
-            <div
-              key={entry.id}
-              className={messageBubbleClass(entry.message.role)}
-            >
-              <PiMessageView message={entry.message} />
-            </div>
-          );
-        })}
-        {liveFeed.liveMessages.map((message) => (
-          <div
-            key={`${message.role}-${message.timestamp}`}
-            className={messageBubbleClass(message.role)}
-          >
-            <PiMessageView message={message} />
-          </div>
-        ))}
-        {liveFeed.streamingMessage ? (
-          <div className={messageBubbleClass("assistant")}>
-            <PiMessageView message={liveFeed.streamingMessage} />
-          </div>
-        ) : null}
-      </div>
-      <div className="flex gap-2 border-gray-6 border-t p-3">
-        <textarea
-          aria-label="Message Pi"
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-          placeholder="Message Pi"
-          className="min-h-20 flex-1 resize-none rounded-md border border-gray-6 bg-transparent p-2 text-sm"
+    <Flex direction="column" height="100%">
+      <Box className="min-h-0 flex-1">
+        <ChatThread
+          events={session.events}
+          isPromptPending={pending}
+          taskId={taskId}
+          repoPath={repoPath}
         />
-        <Button onClick={() => void send()} disabled={!prompt.trim()}>
-          Send
-        </Button>
-      </div>
-    </div>
+      </Box>
+      <Box
+        className="mx-auto w-full px-2 pb-3"
+        style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+      >
+        <PromptInput
+          sessionId={taskId}
+          taskId={taskId}
+          repoPath={repoPath}
+          placeholder="Type a message..."
+          disabled={!sessionAvailable || isCompacting}
+          isLoading={pending}
+          enableBashMode
+          enableCommands
+          modelSelector={
+            <PiModelSelector
+              models={session.models}
+              currentModel={status.model}
+              disabled={pending || isCompacting}
+              onChange={setModel}
+            />
+          }
+          reasoningSelector={
+            supportsThinking ? (
+              <PiThinkingLevelSelector
+                level={status.thinkingLevel}
+                levels={thinkingLevels}
+                disabled={pending || isCompacting}
+                onChange={setThinkingLevel}
+              />
+            ) : null
+          }
+          messagingModeToggle={
+            <PiMessagingModeSelector
+              mode={messagingMode}
+              queueMode={queueMode}
+              queuedCount={status.pendingMessageCount}
+              disabled={isBashRunning}
+              onModeChange={(mode) => setMessagingMode(taskId, mode)}
+              onQueueModeChange={setQueueMode}
+            />
+          }
+          onToggleMessagingMode={toggleMessagingMode}
+          onSubmit={sendPrompt}
+          onBashCommand={runBashCommand}
+          onCancel={cancelPrompt}
+        />
+      </Box>
+    </Flex>
   );
 }

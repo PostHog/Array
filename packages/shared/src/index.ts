@@ -1,4 +1,23 @@
 export * from "./adapter";
+export type {
+  AgentAudioContent,
+  AgentBlobResource,
+  AgentContent,
+  AgentConversationEvent,
+  AgentEmbeddedResourceContent,
+  AgentImageContent,
+  AgentResourceLinkContent,
+  AgentTextContent,
+  AgentTextResource,
+  AgentToolCall,
+  AgentToolCallContent,
+  AgentToolCallContentBlock,
+  AgentToolCallDiff,
+  AgentToolCallLocation,
+  AgentToolCallStatus,
+  AgentToolCallTerminal,
+  AgentToolKind,
+} from "./agent-conversation";
 export * from "./agent-runtime";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
@@ -166,6 +185,10 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export type {
+  PiMessagingMode,
+  PiRuntimeHealth,
+} from "./pi-session";
 export {
   buildPrOutput,
   mergePrUrls,

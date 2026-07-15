@@ -150,19 +150,21 @@ export class AuthProxyService {
       return;
     }
 
-    const strippedAuthHeaders = new Set([
+    const strippedHeaders = new Set([
       "authorization",
       "x-api-key",
       "api-key",
       "anthropic-auth-token",
       "proxy-authorization",
+      "content-length",
+      "transfer-encoding",
     ]);
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(req.headers)) {
       if (
         key === "host" ||
         key === "connection" ||
-        strippedAuthHeaders.has(key)
+        strippedHeaders.has(key.toLowerCase())
       ) {
         continue;
       }
