@@ -43,7 +43,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 curl -fsSL --max-time 10 "${RELEASE_URL}/checksums.txt" -o "$TMP_DIR/checksums.txt" \
   || keep_existing "could not fetch checksums to check for updates"
 
-EXPECTED=$(awk -v bin="$BINARY" '$2 == bin {print $1}' "$TMP_DIR/checksums.txt")
+EXPECTED=$(awk -v bin="$BINARY" '{name = $2; sub(/^\*/, "", name); if (name == bin) {print $1; exit}}' "$TMP_DIR/checksums.txt")
 [ -n "$EXPECTED" ] || keep_existing "no checksum for ${BINARY} in latest release"
 
 if [ -x "$PHROCS_BIN" ] && [ "$(sha256 "$PHROCS_BIN")" = "$EXPECTED" ]; then
