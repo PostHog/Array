@@ -2715,8 +2715,6 @@ export class SessionService {
 
       const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
 
-      // Billing denials from the gateway leave the session healthy — surface
-      // the upgrade gate, not an error state.
       if (
         limitCause === "model_gate" ||
         isRateLimitError(errorMessage, errorDetails)

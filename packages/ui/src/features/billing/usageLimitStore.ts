@@ -3,7 +3,6 @@ import { create } from "zustand";
 
 export interface UsageLimitShowArgs {
   resetAt?: string;
-  /** Which gateway denial tripped; unset renders the generic copy. */
   cause?: GatewayLimitCause;
 }
 

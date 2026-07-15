@@ -55,7 +55,6 @@ export interface AnthropicErrorResponse {
     type: string;
     code?: string;
   };
-  // Some gateway 403s carry a bare FastAPI `detail` instead of the envelope.
   detail?: unknown;
 }
 

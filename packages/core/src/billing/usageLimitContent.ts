@@ -3,7 +3,6 @@ import type { GatewayLimitCause } from "@posthog/shared";
 export interface UsageLimitContent {
   title: string;
   description: string;
-  /** Primary action label; null renders only the dismiss button. */
   actionLabel: string | null;
   dismissLabel: string;
 }
@@ -11,7 +10,6 @@ export interface UsageLimitContent {
 export function usageLimitContent(args: {
   cause: GatewayLimitCause | null;
   resetLabel: string | null;
-  /** usage.code_usage_billed — absent means unknown, not free. */
   billed: boolean | undefined;
 }): UsageLimitContent {
   const { cause, resetLabel, billed } = args;

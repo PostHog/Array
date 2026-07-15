@@ -74,23 +74,12 @@ const RATE_LIMIT_PATTERNS = [
   "[429]",
 ] as const;
 
-/**
- * Billing denials from the PostHog LLM gateway, matched on the prose in
- * `error.message` (agent-SDK surfaces often reduce the body to that string,
- * so the gateway's structured `code` can't be relied on here). Kept in sync
- * with services/llm-gateway in posthog/posthog:
- * - "model_gate" (403): org isn't billed for Code usage and requested a
- *   model outside the free tier.
- * - "org_limit" (429): the org's credit bucket is exhausted — free
- *   allocation used up, or the org's billing limit reached.
- */
 export type GatewayLimitCause = "model_gate" | "org_limit";
 
 const MODEL_GATE_PATTERNS = ["needs a paid posthog plan"] as const;
 
 const ORG_LIMIT_PATTERNS = [
   "reached its posthog code usage limit",
-  // Gateway fallback wording for a credit bucket without a mapped message.
   "reached its usage limit for this billing period",
 ] as const;
 
@@ -168,8 +157,6 @@ export function isFatalSessionError(
 ): boolean {
   if (isRateLimitError(errorMessage, errorDetails)) return false;
   if (isTransientUpstreamError(errorMessage, errorDetails)) return false;
-  // A model-gate 403 arrives wrapped as "Internal error: API Error: 403 …"
-  // but the session is healthy — it must never trigger teardown.
   if (classifyGatewayLimitError(errorMessage, errorDetails) === "model_gate") {
     return false;
   }

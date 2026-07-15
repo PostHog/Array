@@ -133,14 +133,6 @@ export class SeatPaymentFailedError extends Error {
   }
 }
 
-/** Seat creation/upgrades/reactivation return 410 Gone: seats are retired. */
-export class SeatProductRetiredError extends Error {
-  constructor() {
-    super("PostHog Code seats have been retired");
-    this.name = "SeatProductRetiredError";
-  }
-}
-
 export class SandboxCustomImagesDisabledError extends Error {
   constructor(message?: string) {
     super(message ?? "Custom sandbox images are not enabled");
@@ -4597,9 +4589,6 @@ export class PostHogAPIClient {
     const parsed = this.parseFetcherError(error);
 
     if (parsed) {
-      if (parsed.status === 410) {
-        throw new SeatProductRetiredError();
-      }
       if (
         parsed.status === 400 &&
         typeof parsed.body.redirect_url === "string"

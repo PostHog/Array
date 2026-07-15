@@ -983,7 +983,6 @@ export type UpgradePromptClickedSurface =
   | "plan_page_card"
   | "upgrade_dialog";
 
-/** Which gateway denial put the prompt on screen (usage-based billing). */
 export type UpgradePromptCause = "model_gate" | "org_limit";
 
 export interface UpgradePromptShownProperties {

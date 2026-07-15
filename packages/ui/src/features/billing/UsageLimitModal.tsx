@@ -17,7 +17,6 @@ export function UsageLimitModal() {
   const cause = useUsageLimitStore((s) => s.cause);
   const hide = useUsageLimitStore((s) => s.hide);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  // code_usage_billed picks the org_limit copy variant.
   const { usage } = useUsage({ enabled: isOpen });
 
   useEffect(() => {
