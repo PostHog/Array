@@ -171,4 +171,36 @@ describe("resolvePromptRecall", () => {
       nextId: null,
     });
   });
+
+  it.each<{ name: string; content: string }>([
+    {
+      name: "a channel context block",
+      content:
+        '<channel_context channel="growth">CONTEXT.md body</channel_context>\n\nfix the bug',
+    },
+    {
+      name: "a canvas instructions block",
+      content:
+        "<canvas_generation_instructions>authoring rules</canvas_generation_instructions>\n\nfix the bug",
+    },
+    {
+      name: "a custom instructions block",
+      content:
+        "fix the bug\n\n<user_custom_instructions>be terse</user_custom_instructions>",
+    },
+    {
+      name: "a trailing attachment summary",
+      content: "fix the bug\n\nAttached files: screenshot.png",
+    },
+    {
+      name: "several injected blocks at once",
+      content:
+        '<channel_context channel="growth">CONTEXT.md body</channel_context>\n\nfix the bug\n\n<user_custom_instructions>be terse</user_custom_instructions>',
+    },
+  ])("strips $name from the recalled text", ({ content }) => {
+    expect(resolvePromptRecall([{ id: "m1", content }], null, -1)).toEqual({
+      result: { kind: "recall", text: "fix the bug", fresh: true },
+      nextId: "m1",
+    });
+  });
 });

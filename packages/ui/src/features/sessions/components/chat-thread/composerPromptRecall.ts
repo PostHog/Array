@@ -1,3 +1,8 @@
+import { stripTrailingAttachmentSummary } from "@posthog/core/editor/cloud-prompt";
+import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
+import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
+import { extractCustomInstructions } from "@posthog/ui/features/sessions/components/session-update/customInstructions";
+
 export const PROMPT_RECALL_HINT_KEY = "recall-message-nav";
 
 export interface RecallableMessage {
@@ -47,6 +52,18 @@ export function promptRecallStep(
   return id ? { kind: "recall", id, fresh: false } : null;
 }
 
+// A stored prompt can carry blocks folded in at send time that the user never
+// typed (channel CONTEXT.md, canvas instructions, personalization, a trailing
+// attachment summary); recall returns only what the user wrote.
+function stripInjectedPromptBlocks(content: string): string {
+  const withoutChannel = extractChannelContext(content)?.stripped ?? content;
+  const withoutCanvas =
+    extractCanvasInstructions(withoutChannel)?.stripped ?? withoutChannel;
+  const withoutInstructions =
+    extractCustomInstructions(withoutCanvas)?.stripped ?? withoutCanvas;
+  return stripTrailingAttachmentSummary(withoutInstructions);
+}
+
 export function resolvePromptRecall(
   messages: RecallableMessage[],
   currentId: string | null,
@@ -62,7 +79,11 @@ export function resolvePromptRecall(
   const message = messages.find((entry) => entry.id === action.id);
   if (!message) return { result: null, nextId: currentId };
   return {
-    result: { kind: "recall", text: message.content, fresh: action.fresh },
+    result: {
+      kind: "recall",
+      text: stripInjectedPromptBlocks(message.content),
+      fresh: action.fresh,
+    },
     nextId: action.id,
   };
 }
