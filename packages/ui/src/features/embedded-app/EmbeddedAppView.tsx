@@ -1,8 +1,11 @@
 import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
+import { useOpenEmbeddedAppTab } from "@posthog/ui/features/browser-tabs/useOpenEmbeddedAppTab";
 import { useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useThemeStore } from "../../shell/themeStore";
+import { normalizeEmbedPath } from "./embeddedAppTab";
 
 /**
  * EXPERIMENT (embedded webapp): renders the real PostHog webapp in an iframe.
@@ -10,8 +13,9 @@ import { useThemeStore } from "../../shell/themeStore";
  * The iframe points at a local main-process proxy that serves the webapp
  * shell and forwards /api to PostHog cloud with the app's OAuth token, so
  * the webapp sees a same-origin cookie-less API. A postMessage bridge keeps
- * navigation and theme in sync (see frontend/src/embed/bridge.ts in the
- * posthog repo).
+ * navigation and theme in sync, and forwards new-tab intents (window.open /
+ * target="_blank" inside the webapp) so they open as host browser tabs
+ * (see frontend/src/embed/bridge.ts in the posthog repo).
  */
 
 const FROM_EMBED = "posthog-embed";
@@ -38,6 +42,7 @@ export function PostHogApp({ url: initialPath }: PostHogAppProps) {
     }),
   );
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
+  const openEmbeddedAppTab = useOpenEmbeddedAppTab();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [embedRoute, setEmbedRoute] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -56,6 +61,17 @@ export function PostHogApp({ url: initialPath }: PostHogAppProps) {
       "*",
     );
   }, []);
+
+  // Open a webapp path as a NEW host browser tab (or focus the tab already
+  // at that path — tab identity encodes the path).
+  const openHostTab = useCallback(
+    (path: string) => {
+      openEmbeddedAppTab(normalizeEmbedPath(path));
+    },
+    [openEmbeddedAppTab],
+  );
+  const openHostTabRef = useRef(openHostTab);
+  openHostTabRef.current = openHostTab;
 
   // Read inside the message handler without re-subscribing on theme changes.
   const isDarkModeRef = useRef(isDarkMode);
@@ -87,6 +103,12 @@ export function PostHogApp({ url: initialPath }: PostHogAppProps) {
         typeof message.url === "string"
       ) {
         setEmbedRoute(message.url);
+      } else if (
+        message.type === "openTab" &&
+        typeof message.url === "string"
+      ) {
+        // window.open / target="_blank" inside the webapp: open a host tab.
+        openHostTabRef.current(message.url);
       }
     };
     window.addEventListener("message", onMessage);
@@ -134,6 +156,15 @@ export function PostHogApp({ url: initialPath }: PostHogAppProps) {
             {link.label}
           </Button>
         ))}
+        <Button
+          variant="outline"
+          size="sm"
+          title="Open the current page in a new tab"
+          onClick={() => openHostTab(embedRoute ?? initialPath)}
+        >
+          <Plus size={14} />
+          New tab
+        </Button>
         <span className="ml-auto truncate font-mono text-xs opacity-60">
           {ready ? (embedRoute ?? "") : "connecting…"}
         </span>

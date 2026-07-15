@@ -20,7 +20,8 @@ export type AppViewType =
   | "skills"
   | "notebooks"
   | "mcp-servers"
-  | "settings";
+  | "settings"
+  | "embedded-app";
 
 export interface AppView {
   type: AppViewType;
@@ -34,9 +35,15 @@ export interface AppView {
   initialMode?: string;
   folderRunEnvironment?: "local" | "cloud";
   reportAssociation?: TaskInputReportAssociation;
+  /** EXPERIMENT (embedded webapp): the webapp path this surface starts at. */
+  embedPath?: string;
 }
 
-type Match = { routeId: string; params: Record<string, string | undefined> };
+type Match = {
+  routeId: string;
+  params: Record<string, string | undefined>;
+  search?: Record<string, unknown>;
+};
 
 function deriveFromMatches(matches: Match[]): AppView {
   const last = matches[matches.length - 1];
@@ -90,6 +97,13 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/settings/$category":
     case "/settings/":
       return { type: "settings" };
+    case "/embedded-app": {
+      const path = last.search?.path;
+      return {
+        type: "embedded-app",
+        embedPath: typeof path === "string" ? path : undefined,
+      };
+    }
     default:
       if (last.routeId.startsWith("/code/inbox")) {
         return { type: "inbox" };
@@ -123,6 +137,7 @@ export function useAppView(): AppView {
         ? {
             routeId: m.routeId,
             params: m.params as Record<string, string | undefined>,
+            search: m.search as Record<string, unknown>,
           }
         : null;
     },
@@ -133,12 +148,19 @@ export function useAppView(): AppView {
   const taskId = last?.params.taskId;
   const pendingKey = last?.params.key;
   const folderId = last?.params.folderId;
+  const searchPath = last?.search?.path;
+  const embedSearchPath =
+    typeof searchPath === "string" ? searchPath : undefined;
 
   return useMemo(() => {
     // Rebuild the match from primitives so the memo depends only on stable
     // values — the `last` selector returns a fresh object every render.
     const match = routeId
-      ? { routeId, params: { taskId, key: pendingKey, folderId } }
+      ? {
+          routeId,
+          params: { taskId, key: pendingKey, folderId },
+          search: { path: embedSearchPath },
+        }
       : null;
     const view = deriveFromMatches(match ? [match] : []);
 
@@ -157,7 +179,7 @@ export function useAppView(): AppView {
       };
     }
     return view;
-  }, [routeId, taskId, pendingKey, folderId, prefill]);
+  }, [routeId, taskId, pendingKey, folderId, embedSearchPath, prefill]);
 }
 
 /**

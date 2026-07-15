@@ -1,5 +1,6 @@
 import {
   BrainIcon,
+  GlobeIcon,
   HouseIcon,
   PlugsConnectedIcon,
   RobotIcon,
@@ -35,6 +36,10 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import {
+  embeddedAppTabPath,
+  embeddedAppTabView,
+} from "@posthog/ui/features/embedded-app/embeddedAppTab";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { getLeafPanel } from "@posthog/ui/features/panels/panelStoreHelpers";
@@ -183,7 +188,12 @@ export function BrowserTabStrip() {
   // Home) are tab targets too. useAppView normalizes both the /code routes and
   // their /website mirrors to the same view.type, so a tab survives either space.
   const view = useAppView();
-  const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
+  const routeAppView: string | null =
+    view.type === "embedded-app"
+      ? embeddedAppTabView(view.embedPath ?? "/notebooks")
+      : isAppView(view.type)
+        ? view.type
+        : null;
 
   const { channels } = useChannels();
   const { createChannel } = useChannelMutations();
@@ -533,6 +543,17 @@ export function BrowserTabStrip() {
             pinned,
           };
         }
+        // An embedded PostHog webapp tab — label by its webapp path.
+        const embedPath = embeddedAppTabPath(appView);
+        if (embedPath !== null) {
+          return {
+            id: t.id,
+            label: `PostHog ${embedPath.split("?")[0] || "/"}`,
+            icon: <GlobeIcon size={14} />,
+            channelName: null,
+            pinned,
+          };
+        }
         // A top-level app page (Inbox, Agents, Skills, …).
         if (appView && isAppView(appView)) {
           return {
@@ -601,6 +622,13 @@ export function BrowserTabStrip() {
       } else {
         navigate({ to: "/website/$channelId", params, state });
       }
+    } else if (tab.appView && embeddedAppTabPath(tab.appView) !== null) {
+      // An embedded PostHog webapp tab — its route carries the path in search.
+      navigate({
+        to: "/embedded-app",
+        search: { path: embeddedAppTabPath(tab.appView) ?? undefined },
+        state,
+      });
     } else if (tab.appView && isAppView(tab.appView)) {
       // A top-level app page — back to its canonical route (literal `to` per
       // case so the router types stay checked).
