@@ -120,6 +120,46 @@ describe("useEditQueuedMessage / useCancelQueuedMessageEdit", () => {
     expect(pendingFor(TASK)).toEqual({ segments: [] });
   });
 
+  it.each([
+    { variant: "local", isCloud: false, message: QUEUED },
+    {
+      variant: "cloud",
+      isCloud: true,
+      message: {
+        id: "q-1",
+        content: "queued body",
+        rawPrompt: [{ type: "text" as const, text: "queued body" }],
+        queuedAt: 1,
+      },
+    },
+  ])(
+    "loads a $variant queued message into the composer and marks it as the edit target",
+    ({ isCloud, message }) => {
+      cloudState.isCloud = isCloud;
+
+      const { result: edit } = renderHook(() => useEditQueuedMessage(TASK));
+      act(() => edit.current(message));
+
+      expect(sessionService.setEditingQueuedMessage).toHaveBeenCalledWith(
+        TASK,
+        "q-1",
+      );
+      expect(pendingFor(TASK)?.segments).toEqual([
+        { type: "text", text: "queued body" },
+      ]);
+    },
+  );
+
+  it("does not start an edit when a cloud message has no loadable content", () => {
+    cloudState.isCloud = true;
+
+    const { result: edit } = renderHook(() => useEditQueuedMessage(TASK));
+    act(() => edit.current({ id: "q-1", content: "", queuedAt: 1 }));
+
+    expect(sessionService.setEditingQueuedMessage).not.toHaveBeenCalled();
+    expect(pendingFor(TASK)).toBeUndefined();
+  });
+
   it("snapshots fresh each edit, so a stale draft is not restored later", () => {
     const { result: edit } = renderHook(() => useEditQueuedMessage(TASK));
     const { result: cancel } = renderHook(() =>
