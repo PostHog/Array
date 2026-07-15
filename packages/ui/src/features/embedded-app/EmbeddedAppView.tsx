@@ -57,6 +57,10 @@ export function PostHogApp({ url: initialPath }: PostHogAppProps) {
     );
   }, []);
 
+  // Read inside the message handler without re-subscribing on theme changes.
+  const isDarkModeRef = useRef(isDarkMode);
+  isDarkModeRef.current = isDarkMode;
+
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const data: unknown = event.data;
@@ -72,6 +76,12 @@ export function PostHogApp({ url: initialPath }: PostHogAppProps) {
       if (message.type === "ready") {
         setReady(true);
         if (typeof message.url === "string") setEmbedRoute(message.url);
+        // Re-sync theme on every ready — the iframe may have reloaded and
+        // `ready` state (already true) won't re-run the theme effect.
+        postToEmbed({
+          type: "setTheme",
+          theme: isDarkModeRef.current ? "dark" : "light",
+        });
       } else if (
         message.type === "routeChanged" &&
         typeof message.url === "string"
@@ -81,7 +91,7 @@ export function PostHogApp({ url: initialPath }: PostHogAppProps) {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [postToEmbed]);
 
   // Host theme wins: push it whenever it changes (and once the embed is ready).
   useEffect(() => {
