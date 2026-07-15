@@ -80,14 +80,8 @@ export function useChannelFeedMessages(channelId: string | undefined): {
     (client) => client.getChannelFeed(channelId as string),
     {
       enabled: !!channelId,
-      // The endpoint may not be deployed yet (posthog#70320): don't retry, and
-      // stop polling once the query errors — otherwise every open channel view
-      // streams 404s (poll tick × default retries) forever.
       retry: false,
-      refetchInterval: (query) =>
-        query.state.status === "error"
-          ? false
-          : CHANNEL_FEED_MESSAGES_POLL_INTERVAL_MS,
+      refetchInterval: CHANNEL_FEED_MESSAGES_POLL_INTERVAL_MS,
     },
   );
   const messages = useMemo(

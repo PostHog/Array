@@ -44,15 +44,19 @@ import { mentionChipClass } from "@posthog/ui/features/canvas/components/Mention
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
+import { shouldOpenTaskCardInline } from "@posthog/ui/features/canvas/taskCardNavigation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
 import {
   type SidebarPrState,
   useTaskPrStatus,
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Text } from "@radix-ui/themes";
+import { Link } from "@tanstack/react-router";
 import {
   Fragment,
+  type MouseEvent,
   memo,
   type ReactNode,
   useEffect,
@@ -159,6 +163,14 @@ interface TaskStatusDisplay {
 // deliberate end state we should not soften with a PR.
 function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   const data = useChannelTaskData(task);
+  const agentSettledAfterRun = useSessionSelector(
+    task.id,
+    (session) =>
+      !!session &&
+      (session.events?.length ?? 0) > 0 &&
+      !session.isPromptPending &&
+      (session.pendingPermissions?.size ?? 0) === 0,
+  );
   const { prState } = useTaskPrStatus({
     id: task.id,
     cloudPrUrl: data?.cloudPrUrl ?? null,
@@ -198,7 +210,9 @@ function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   } else if (!status) {
     base = <Badge>Draft</Badge>;
   } else if (environment === "cloud" || isTerminalStatus(status)) {
-    base = statusBadge(status);
+    const effectiveStatus =
+      agentSettledAfterRun && !isTerminalStatus(status) ? "completed" : status;
+    base = statusBadge(effectiveStatus);
   } else {
     // Local, non-terminal: the run status is unreliable (the backend row stays
     // "queued" while the agent runs on the creator's machine), so we render no
@@ -258,61 +272,84 @@ const NO_PENDING: PendingKickoff[] = [];
 
 // The task the message kicked off, as a card everyone in the channel sees:
 // bold title + status up top, then run metadata.
-function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+export function TaskCard({
+  task,
+  channelId,
+  onOpen,
+  inThread = false,
+}: {
+  task: Task;
+  channelId: string;
+  onOpen?: () => void;
+  inThread?: boolean;
+}) {
   const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
     typeof task.latest_run?.output?.pr_url === "string"
       ? task.latest_run.output.pr_url
       : undefined;
   const stage = task.latest_run?.stage;
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!onOpen || !shouldOpenTaskCardInline(event)) return;
+    event.preventDefault();
+    onOpen();
+  };
 
   return (
-    <Card
-      size="sm"
+    <Link
+      to="/website/$channelId/tasks/$taskId"
+      params={{ channelId, taskId: task.id }}
+      preload="intent"
+      onClick={handleClick}
       className={cn(
-        "mt-1.5 w-full cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
-        statusDisplay.isMerged
-          ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
-          : "hover:border-border-primary",
+        "mt-1.5 block w-full text-inherit no-underline outline-none focus-visible:ring-(--accent-8) focus-visible:ring-2",
+        inThread ? "rounded-none" : "rounded-sm",
       )}
-      onClick={onOpen}
     >
-      <CardContent className="flex flex-col gap-1 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {/* Same live status icon as the code side nav, so the card and the
-                nav never disagree (generating spinner, needs-permission, cloud
-                status colors, PR state). */}
-            <TaskTabIcon task={task} size={14} />
-            <span className="line-clamp-2 font-medium text-sm">
-              {task.title || "Untitled task"}
-            </span>
-          </div>
-          <TaskStatusBadge display={statusDisplay} />
-        </div>
-        {(stage || task.repository || prUrl) && (
-          <div className="flex min-w-0 items-center gap-3">
-            {task.repository && (
-              <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-                <GitBranchIcon size={12} />
-                {task.repository}
-              </span>
-            )}
-            {stage && (
-              <Text size="1" className="truncate text-muted-foreground">
-                {stage}
-              </Text>
-            )}
-            {prUrl && (
-              <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
-                <ArrowSquareOutIcon size={12} />
-                PR
-              </span>
-            )}
-          </div>
+      <Card
+        size="sm"
+        className={cn(
+          "w-full cursor-pointer py-0 transition-none hover:bg-fill-hover",
+          statusDisplay.isMerged
+            ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
+            : "hover:border-border-primary",
+          inThread ? "rounded-none" : "rounded-sm",
         )}
-      </CardContent>
-    </Card>
+      >
+        <CardContent className="flex flex-col gap-1 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <TaskTabIcon task={task} size={14} />
+              <span className="line-clamp-2 font-medium text-sm">
+                {task.title || "Untitled task"}
+              </span>
+            </div>
+            <TaskStatusBadge display={statusDisplay} />
+          </div>
+          {(stage || task.repository || prUrl) && (
+            <div className="flex min-w-0 items-center gap-3">
+              {task.repository && (
+                <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
+                  <GitBranchIcon size={12} />
+                  {task.repository}
+                </span>
+              )}
+              {stage && (
+                <Text size="1" className="truncate text-muted-foreground">
+                  {stage}
+                </Text>
+              )}
+              {prUrl && (
+                <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+                  <ArrowSquareOutIcon size={12} />
+                  PR
+                </span>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -388,11 +425,13 @@ function ReplyFooter({
 
 const FeedItem = memo(function FeedItem({
   task,
+  channelId,
   inView,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
+  channelId: string;
   inView: boolean;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
@@ -435,7 +474,11 @@ const FeedItem = memo(function FeedItem({
           )}
         </ThreadItemBody>
 
-        <TaskCard task={task} onOpen={() => onOpenTask(task)} />
+        <TaskCard
+          task={task}
+          channelId={channelId}
+          onOpen={() => onOpenThread(task)}
+        />
         <ReplyFooter
           taskId={task.id}
           inView={inView}
@@ -462,10 +505,12 @@ const FeedItem = memo(function FeedItem({
 // near the viewport, letting `FeedItem` shed off-screen polling.
 function FeedRow({
   task,
+  channelId,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
+  channelId: string;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
@@ -483,6 +528,7 @@ function FeedRow({
     >
       <FeedItem
         task={task}
+        channelId={channelId}
         inView={inView}
         onOpenTask={onOpenTask}
         onOpenThread={onOpenThread}
@@ -610,6 +656,7 @@ type FeedEntry =
 // team-visible and polls for teammates' cards and status flips. Synthetic
 // "PostHog agent" system rows (context lifecycle) are interleaved by timestamp.
 export function ChannelFeedView({
+  channelId,
   tasks,
   pending = NO_PENDING,
   systemMessages,
@@ -619,6 +666,7 @@ export function ChannelFeedView({
   onOpenTask,
   onOpenThread,
 }: {
+  channelId: string;
   tasks: Task[];
   pending?: PendingKickoff[];
   systemMessages?: ChannelFeedSystemMessage[];
@@ -701,6 +749,7 @@ export function ChannelFeedView({
                   {entry.kind === "task" ? (
                     <FeedRow
                       task={entry.task}
+                      channelId={channelId}
                       onOpenTask={onOpenTask}
                       onOpenThread={onOpenThread}
                     />

@@ -1,4 +1,5 @@
 import {
+  ArrowSquareOutIcon,
   CaretRightIcon,
   DotsThreeIcon,
   PaperPlaneRightIcon,
@@ -6,6 +7,13 @@ import {
   TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import {
+  buildThreadTimeline,
+  deriveThreadAgentStatus,
+  shouldSuspendThreadSession,
+  type ThreadAgentMessage,
+  type ThreadAgentStatus,
+} from "@posthog/core/canvas/threadTimeline";
 import {
   Avatar,
   AvatarFallback,
@@ -17,9 +25,19 @@ import {
   DropdownMenuTrigger,
   InputGroupAddon,
   InputGroupButton,
+  Skeleton,
+  SkeletonText,
   Spinner,
+  ThreadItem,
+  ThreadItemAction,
+  ThreadItemActions,
+  ThreadItemAuthor,
+  ThreadItemBody,
+  ThreadItemContent,
+  ThreadItemGroup,
+  ThreadItemGutter,
+  ThreadItemHeader,
 } from "@posthog/quill";
-import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type {
   Task,
@@ -30,20 +48,31 @@ import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
+import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
   useTaskThread,
   useTaskThreadMutations,
 } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import {
+  ChatMarkdown,
+  ChatStreamingMarkdown,
+} from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
+import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
+import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
+import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
+import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
+import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 function ThreadMessageRow({
   message,
@@ -55,7 +84,6 @@ function ThreadMessageRow({
   onDelete,
 }: {
   message: TaskThreadMessage;
-  /** Whether the current user authored the task (may forward to the agent). */
   isTaskAuthor: boolean;
   isOwnMessage: boolean;
   currentUserEmail?: string | null;
@@ -67,97 +95,237 @@ function ThreadMessageRow({
   const showMenu = (isTaskAuthor && !forwarded) || isOwnMessage;
 
   return (
-    <div className="group flex gap-2 rounded-md px-2 py-1.5 hover:bg-fill-secondary">
-      <Avatar size="xs" className="mt-0.5 shrink-0">
-        <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <Text size="1" weight="medium" className="truncate">
-            {userDisplayName(message.author)}
-          </Text>
-          <Text size="1" className="shrink-0 text-muted-foreground">
-            {formatRelativeTimeShort(message.created_at)}
-          </Text>
-        </div>
-        <MentionText
-          content={message.content}
-          currentUserEmail={currentUserEmail}
-          className="block whitespace-pre-wrap break-words"
-        />
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg" className="sticky top-2">
+          <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
+          <ThreadTimestamp dateTime={message.created_at} />
+        </ThreadItemHeader>
+        <ThreadItemBody>
+          <MentionText
+            content={message.content}
+            currentUserEmail={currentUserEmail}
+          />
+        </ThreadItemBody>
         {forwarded && (
-          <Badge variant="info" className="mt-1">
+          <Badge variant="info" className="w-fit">
             <RobotIcon size={10} />
             Sent to agent
           </Badge>
         )}
-      </div>
+      </ThreadItemContent>
       {showMenu && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="default"
-                size="icon-xs"
-                aria-label="Message actions"
-                className="opacity-0 transition-opacity group-hover:opacity-100 data-popup-open:opacity-100"
-              >
-                <DotsThreeIcon size={14} />
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="end">
-            {isTaskAuthor && !forwarded && (
-              <DropdownMenuItem disabled={!canForward} onClick={onSendToAgent}>
-                <PaperPlaneRightIcon size={14} />
-                Send to agent
-              </DropdownMenuItem>
-            )}
-            {isOwnMessage && (
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <TrashIcon size={14} />
-                Delete message
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ThreadItemActions>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <ThreadItemAction label="Message actions">
+                  <DotsThreeIcon size={14} />
+                </ThreadItemAction>
+              }
+            />
+            <DropdownMenuContent align="end">
+              {isTaskAuthor && !forwarded && (
+                <DropdownMenuItem
+                  disabled={!canForward}
+                  onClick={onSendToAgent}
+                >
+                  <PaperPlaneRightIcon size={14} />
+                  Send to agent
+                </DropdownMenuItem>
+              )}
+              {isOwnMessage && (
+                <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                  <TrashIcon size={14} />
+                  Delete message
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ThreadItemActions>
       )}
-    </div>
+    </ThreadItem>
   );
 }
 
-// The right-hand thread dock: the human-only conversation around a task.
-// Nothing here reaches the agent unless the task author explicitly forwards a
-// message ("Send to agent" in the row's hover menu).
-export function ThreadPanel({
-  taskId,
-  task: taskProp,
-  onClose,
-  collapsed,
-  onToggleCollapsed,
-  showTaskTitle = true,
+function agentTurns(items: ConversationItem[]): ThreadAgentMessage[] {
+  const turns: ThreadAgentMessage[] = [];
+  let current: ThreadAgentMessage | null = null;
+  for (const item of items) {
+    if (item.type === "user_message") {
+      if (current) turns.push(current);
+      current = null;
+      continue;
+    }
+    if (
+      item.type === "session_update" &&
+      item.update.sessionUpdate === "agent_message_chunk" &&
+      "content" in item.update &&
+      item.update.content.type === "text" &&
+      item.update.content.text.trim()
+    ) {
+      current = {
+        id: item.id,
+        text: item.update.content.text,
+        timestamp: item.timestamp,
+      };
+    }
+  }
+  if (current) turns.push(current);
+  return turns;
+}
+
+function agentPrompts(items: ConversationItem[]): ThreadAgentMessage[] {
+  const prompts: ThreadAgentMessage[] = [];
+  for (const item of items) {
+    if (item.type !== "user_message") continue;
+    const text = (
+      extractChannelContext(item.content)?.stripped ?? item.content
+    ).trim();
+    if (!text) continue;
+    prompts.push({ id: item.id, text, timestamp: item.timestamp });
+  }
+  return prompts;
+}
+
+function AgentStatusChip({ status }: { status: ThreadAgentStatus }) {
+  switch (status.phase) {
+    case "active":
+      return (
+        <span className="flex items-center gap-1 text-muted-foreground">
+          <Spinner className="size-3" />
+          <span className="text-xs">{status.label}</span>
+        </span>
+      );
+    case "needs_input":
+      return <Badge variant="warning">{status.label}</Badge>;
+    case "error":
+      return <Badge variant="destructive">{status.label}</Badge>;
+    default:
+      return <Badge variant="success">{status.label}</Badge>;
+  }
+}
+
+function AgentTurnRow({
+  message,
+  status,
+  streaming,
 }: {
-  taskId: string;
-  /** The thread's task when the caller already has it; fetched otherwise. */
-  task?: Task;
-  onClose?: () => void;
-  collapsed?: boolean;
-  onToggleCollapsed?: () => void;
-  /**
-   * Show the task title under the "Thread" heading. Hidden in the task detail
-   * view, where the TaskDetail header already names the task.
-   */
-  showTaskTitle?: boolean;
+  message?: ThreadAgentMessage;
+  status?: ThreadAgentStatus;
+  streaming: boolean;
 }) {
+  return (
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg" className="sticky top-2">
+          <AvatarFallback>
+            <RobotIcon size={14} />
+          </AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>Agent</ThreadItemAuthor>
+          {status && <AgentStatusChip status={status} />}
+          {message?.timestamp !== undefined && (
+            <ThreadTimestamp
+              dateTime={new Date(message.timestamp).toISOString()}
+            />
+          )}
+        </ThreadItemHeader>
+        {message?.text && (
+          <ThreadItemBody>
+            <div className="rounded-md border border-border bg-muted px-2 py-1.5">
+              {streaming ? (
+                <ChatStreamingMarkdown content={message.text} />
+              ) : (
+                <ChatMarkdown content={message.text} />
+              )}
+            </div>
+          </ThreadItemBody>
+        )}
+      </ThreadItemContent>
+    </ThreadItem>
+  );
+}
+
+function UserPromptRow({
+  message,
+  author,
+}: {
+  message: ThreadAgentMessage;
+  author: TaskThreadMessage["author"];
+}) {
+  return (
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg" className="sticky top-2">
+          <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>{userDisplayName(author)}</ThreadItemAuthor>
+          {message.timestamp !== undefined && (
+            <ThreadTimestamp
+              dateTime={new Date(message.timestamp).toISOString()}
+            />
+          )}
+        </ThreadItemHeader>
+        <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
+          {message.text}
+        </ThreadItemBody>
+      </ThreadItemContent>
+    </ThreadItem>
+  );
+}
+
+function ThreadTimelineSkeleton() {
+  return (
+    <ThreadItemGroup aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <ThreadItem key={i}>
+          <ThreadItemGutter>
+            <Skeleton className="size-8 rounded-full" />
+          </ThreadItemGutter>
+          <ThreadItemContent>
+            <ThreadItemHeader>
+              <Skeleton className="h-3.5 w-24 rounded" />
+            </ThreadItemHeader>
+            <SkeletonText lines={i === 1 ? 3 : 2} />
+          </ThreadItemContent>
+        </ThreadItem>
+      ))}
+    </ThreadItemGroup>
+  );
+}
+
+function ThreadConversation({
+  task,
+  channelId,
+  onClose,
+  onToggleCollapsed,
+  onOpenFull,
+  showTaskSummary,
+}: {
+  task: Task;
+  channelId: string;
+  onClose?: () => void;
+  onToggleCollapsed?: () => void;
+  onOpenFull?: () => void;
+  showTaskSummary: boolean;
+}) {
+  const taskId = task.id;
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { data: fetchedTask } = useQuery({
-    ...taskDetailQuery(taskId),
-    enabled: !taskProp,
-  });
-  const task = taskProp ?? fetchedTask;
 
-  const { messages, isLoading } = useTaskThread(collapsed ? undefined : taskId);
+  const { messages, isLoading } = useTaskThread(taskId);
   const {
     postMessage,
     deleteMessage,
@@ -165,7 +333,82 @@ export function ThreadPanel({
     isPosting,
     isSendingToAgent,
   } = useTaskThreadMutations(taskId);
-  const { members } = useOrgMembers({ enabled: !collapsed });
+  const { members } = useOrgMembers();
+
+  const {
+    session,
+    repoPath,
+    isCloud,
+    events,
+    cloudStatus,
+    isPromptPending,
+    isInitializing,
+    hasError,
+    errorTitle,
+  } = useSessionViewState(taskId, task);
+  useSessionConnection({
+    taskId,
+    task,
+    session,
+    repoPath,
+    isCloud,
+    isSuspended: shouldSuspendThreadSession({
+      isCloud,
+      hasRun: Boolean(task.latest_run?.id),
+      hasSession: Boolean(session),
+    }),
+  });
+  const { items } = useConversationItems(events, isPromptPending);
+  const pendingPermissions = usePendingPermissionsForTask(taskId);
+  const prUrl =
+    typeof task.latest_run?.output?.pr_url === "string"
+      ? task.latest_run.output.pr_url
+      : undefined;
+
+  const agentMsgs = useMemo(() => agentTurns(items), [items]);
+  const promptMsgs = useMemo(() => agentPrompts(items), [items]);
+
+  const agentStatus = useMemo(
+    () =>
+      deriveThreadAgentStatus({
+        hasActivity: events.length > 0 || !!task.latest_run,
+        hasError,
+        cloudStatus,
+        errorTitle,
+        pendingPermissionCount: pendingPermissions.size,
+        isPromptPending,
+        isInitializing,
+        hasPullRequest: !!prUrl,
+      }),
+    [
+      events.length,
+      task.latest_run,
+      hasError,
+      cloudStatus,
+      errorTitle,
+      pendingPermissions.size,
+      isPromptPending,
+      isInitializing,
+      prUrl,
+    ],
+  );
+
+  const timeline = useMemo(
+    () =>
+      buildThreadTimeline({
+        prompts: promptMsgs,
+        agentMessages: agentMsgs,
+        humanMessages: messages.map((message) => ({
+          id: message.id,
+          content: message.content,
+          createdAt: message.created_at,
+          value: message,
+        })),
+      }),
+    [promptMsgs, messages, agentMsgs],
+  );
+
+  const lastAgentId = agentMsgs[agentMsgs.length - 1]?.id;
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -182,17 +425,21 @@ export function ThreadPanel({
     [taskId],
   );
 
-  // Keep the newest message in view, Slack-style.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new messages
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new content
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length]);
+  }, [
+    messages.length,
+    promptMsgs.length,
+    agentMsgs.length,
+    agentMsgs[agentMsgs.length - 1]?.text,
+    agentStatus?.phase,
+  ]);
 
   const isTaskAuthor =
-    !!currentUser?.uuid && currentUser.uuid === task?.created_by?.uuid;
-  // Forwarding needs a run the workflow can still signal, one send at a time.
+    !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
   const canForward =
-    !!task?.latest_run &&
+    !!task.latest_run &&
     !isTerminalStatus(task.latest_run.status) &&
     !isSendingToAgent;
 
@@ -224,34 +471,25 @@ export function ThreadPanel({
     });
   };
 
-  if (collapsed) {
-    return (
-      <div className="flex h-full w-9 flex-col items-center border-border border-l bg-gray-1 py-2">
-        <Button
-          variant="default"
-          size="icon-sm"
-          aria-label="Expand thread"
-          onClick={onToggleCollapsed}
-        >
-          <CaretRightIcon size={14} className="rotate-180" />
-        </Button>
-      </div>
-    );
-  }
+  const isEmpty = timeline.length === 0 && !agentStatus;
+  const isReady = !isInitializing && !isLoading;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
       <div className="flex items-center gap-1 border-border border-b px-3 py-2">
         <div className="min-w-0 flex-1">
-          <Text size="2" weight="medium" className="block">
-            Thread
-          </Text>
-          {showTaskTitle && task && (
-            <Text size="1" className="block truncate text-muted-foreground">
-              {task.title || "Untitled task"}
-            </Text>
-          )}
+          <span className="block font-medium text-sm">Thread</span>
         </div>
+        {onOpenFull && (
+          <Button
+            variant="default"
+            size="icon-sm"
+            aria-label="Open full task"
+            onClick={onOpenFull}
+          >
+            <ArrowSquareOutIcon size={14} />
+          </Button>
+        )}
         {onToggleCollapsed && (
           <Button
             variant="default"
@@ -274,36 +512,60 @@ export function ThreadPanel({
         )}
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2">
-        {isLoading && messages.length === 0 ? (
-          <div className="flex justify-center py-6">
-            <Spinner />
-          </div>
-        ) : messages.length === 0 ? (
+      {showTaskSummary && (
+        <div className="z-10 px-2">
+          <TaskCard task={task} channelId={channelId} inThread />
+        </div>
+      )}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        {!isReady ? (
+          <ThreadTimelineSkeleton />
+        ) : isEmpty ? (
           <div className="px-2 py-6 text-center">
-            <Text size="1" className="text-muted-foreground">
-              Discuss this task with your team. Messages stay between humans
-              unless the task author sends one to the agent.
-            </Text>
+            <p className="text-muted-foreground text-xs">
+              Discuss this task with your team. The agent's status shows up here
+              too; messages stay between humans unless the task author sends one
+              to the agent.
+            </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-0.5">
-            {messages.map((message) => (
-              <ThreadMessageRow
-                key={message.id}
-                message={message}
-                isTaskAuthor={isTaskAuthor}
-                isOwnMessage={
-                  !!currentUser?.uuid &&
-                  currentUser.uuid === message.author?.uuid
-                }
-                currentUserEmail={currentUser?.email}
-                canForward={canForward}
-                onSendToAgent={() => handleSendToAgent(message.id)}
-                onDelete={() => handleDelete(message.id)}
-              />
-            ))}
-          </div>
+          <ThreadItemGroup>
+            {timeline.map((row) =>
+              row.kind === "prompt" ? (
+                <UserPromptRow
+                  key={row.message.id}
+                  message={row.message}
+                  author={task.created_by}
+                />
+              ) : row.kind === "human" ? (
+                <ThreadMessageRow
+                  key={row.message.id}
+                  message={row.message.value as TaskThreadMessage}
+                  isTaskAuthor={isTaskAuthor}
+                  isOwnMessage={
+                    !!currentUser?.uuid &&
+                    currentUser.uuid === row.message.value?.author?.uuid
+                  }
+                  currentUserEmail={currentUser?.email}
+                  canForward={canForward}
+                  onSendToAgent={() => handleSendToAgent(row.message.id)}
+                  onDelete={() => handleDelete(row.message.id)}
+                />
+              ) : (
+                <AgentTurnRow
+                  key={row.message.id}
+                  message={row.message}
+                  streaming={
+                    row.message.id === lastAgentId &&
+                    agentStatus?.phase === "active"
+                  }
+                />
+              ),
+            )}
+            {agentStatus && !(agentStatus.phase === "complete" && !!prUrl) && (
+              <AgentTurnRow status={agentStatus} streaming={false} />
+            )}
+          </ThreadItemGroup>
         )}
       </div>
 
@@ -334,5 +596,65 @@ export function ThreadPanel({
         </MentionComposer>
       </div>
     </div>
+  );
+}
+
+export function ThreadPanel({
+  taskId,
+  channelId,
+  task: taskProp,
+  onClose,
+  collapsed,
+  onToggleCollapsed,
+  onOpenFull,
+  showTaskSummary = true,
+}: {
+  taskId: string;
+  channelId: string;
+  task?: Task;
+  onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  onOpenFull?: () => void;
+  showTaskSummary?: boolean;
+}) {
+  const { data: fetchedTask } = useQuery({
+    ...taskDetailQuery(taskId),
+    enabled: !taskProp && !collapsed,
+  });
+  const task = taskProp ?? fetchedTask;
+
+  if (collapsed) {
+    return (
+      <div className="flex h-full w-9 flex-col items-center border-border border-l bg-gray-1 py-2">
+        <Button
+          variant="default"
+          size="icon-sm"
+          aria-label="Expand thread"
+          onClick={onToggleCollapsed}
+        >
+          <CaretRightIcon size={14} className="rotate-180" />
+        </Button>
+      </div>
+    );
+  }
+
+  if (!task) {
+    return (
+      <div className="flex h-full min-w-0 flex-col items-center justify-center bg-gray-1">
+        <Spinner />
+      </div>
+    );
+  }
+
+  return (
+    <ThreadConversation
+      task={task}
+      channelId={channelId}
+      onClose={onClose}
+      onToggleCollapsed={onToggleCollapsed}
+      onOpenFull={onOpenFull}
+      showTaskSummary={showTaskSummary}
+    />
   );
 }
