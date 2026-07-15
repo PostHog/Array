@@ -13,6 +13,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import "./mention-chip.css";
 import "./mention-composer.css";
 
 interface MentionComposerProps {
@@ -31,7 +32,7 @@ interface MentionComposerProps {
 }
 
 /** Styled like the chips MentionText renders on sent messages. */
-const MENTION_CHIP_CLASS = "rounded px-0.5 font-medium text-[var(--accent-11)]";
+const MENTION_CHIP_CLASS = "mention-chip";
 
 // Padding lives on the editable element (not the input-group control) so a
 // click anywhere in the box focuses the editor.

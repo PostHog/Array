@@ -2,6 +2,7 @@ import { splitMentionSegments } from "@posthog/shared";
 import { splitLinkSegments } from "@posthog/ui/features/canvas/utils/linkify";
 import { Text } from "@radix-ui/themes";
 import { Fragment, useMemo } from "react";
+import "./mention-chip.css";
 
 type RenderSegment =
   | { type: "text"; text: string }
@@ -11,8 +12,7 @@ type RenderSegment =
 // The plain (not-the-viewer) mention chip look, also used by surfaces that
 // render a mention-styled name without real mention semantics (e.g. the
 // channel feed's "started a new task" row).
-export const mentionChipClass =
-  "rounded px-0.5 font-medium text-[var(--accent-11)]";
+export const mentionChipClass = "mention-chip";
 
 /**
  * Thread message content with inline mention tokens rendered as highlighted
@@ -60,7 +60,7 @@ export function MentionText({
               key={key}
               className={
                 selfEmail && segment.email.toLowerCase() === selfEmail
-                  ? "rounded bg-[var(--accent-a4)] px-0.5 font-medium text-[var(--accent-12)]"
+                  ? `${mentionChipClass} mention-chip--self`
                   : mentionChipClass
               }
               title={segment.email}
