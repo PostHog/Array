@@ -134,6 +134,86 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("isolates subagent output, usage, compaction, and completion", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+      "turn/start": { turn: { id: "turn_1", status: "inProgress" } },
+    });
+    const { client, sessionUpdates, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    const promptDone = agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "delegate this" }],
+    } as unknown as PromptRequest);
+    const sessionUpdateCount = sessionUpdates.length;
+    const extNotificationCount = extNotifications.length;
+
+    stub.emit("item/agentMessage/delta", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      itemId: "subagent_message_1",
+      delta: "subagent prose",
+    });
+    stub.emit("thread/tokenUsage/updated", {
+      threadId: "subagent_1",
+      tokenUsage: {
+        total: { totalTokens: 9000 },
+        modelContextWindow: 10000,
+      },
+    });
+    stub.emit("item/started", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      item: { type: "contextCompaction", id: "subagent_compaction_1" },
+    });
+    stub.emit("item/completed", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      item: { type: "contextCompaction", id: "subagent_compaction_1" },
+    });
+    stub.emit("turn/completed", {
+      threadId: "subagent_1",
+      turn: { id: "subagent_turn_1", status: "completed" },
+    });
+
+    let promptSettled = false;
+    void promptDone.then(() => {
+      promptSettled = true;
+    });
+    await Promise.resolve();
+    expect({
+      extNotifications: extNotifications.length,
+      promptSettled,
+      sessionUpdates: sessionUpdates.length,
+    }).toEqual({
+      extNotifications: extNotificationCount,
+      promptSettled: false,
+      sessionUpdates: sessionUpdateCount,
+    });
+
+    stub.emit("item/agentMessage/delta", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      itemId: "message_1",
+      delta: "parent response",
+    });
+    stub.emit("turn/completed", {
+      threadId: "thr_1",
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    await expect(promptDone).resolves.toMatchObject({ stopReason: "end_turn" });
+    expect(JSON.stringify(sessionUpdates)).toContain("parent response");
+  });
+
   it("includes buffered command output when completion omits aggregatedOutput", async () => {
     const stub = makeStubRpc({
       initialize: {},
