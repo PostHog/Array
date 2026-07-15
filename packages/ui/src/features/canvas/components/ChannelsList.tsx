@@ -562,8 +562,8 @@ function PersonalChannelRow() {
 // into a "Hidden" group at the bottom.
 export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
-  const { starredRefToShortcutId } = useChannelStars();
-  const { hiddenRefToShortcutId } = useChannelHides();
+  const { starredRefToShortcutId, isLoading: starsLoading } = useChannelStars();
+  const { hiddenRefToShortcutId, isLoading: hidesLoading } = useChannelHides();
   const [modalOpen, setModalOpen] = useState(false);
   // The "Hidden" group is collapsed by default — hidden channels are ones the
   // user chose to get out of the way.
@@ -578,19 +578,29 @@ export function ChannelsList() {
   const starred = visible.filter((c) => starredRefToShortcutId.has(c.path));
   const others = visible.filter((c) => !starredRefToShortcutId.has(c.path));
 
-  // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels first load
-  // (so the counts are accurate). The sidebar stays mounted while navigating
-  // between channels, so this naturally fires once per entry into the space.
+  // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels *and* the
+  // shortcuts (stars/hides) first load — the shortcuts query is independent, so
+  // gating only on channels would let the one-shot event record stale zero
+  // starred/hidden counts. The sidebar stays mounted while navigating between
+  // channels, so this naturally fires once per entry into the space.
   const viewedTrackedRef = useRef(false);
   useEffect(() => {
-    if (isLoading || viewedTrackedRef.current) return;
+    if (isLoading || starsLoading || hidesLoading || viewedTrackedRef.current)
+      return;
     viewedTrackedRef.current = true;
     track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
       channel_count: channels.length,
       starred_count: starred.length,
       hidden_count: hidden.length,
     });
-  }, [isLoading, channels.length, starred.length, hidden.length]);
+  }, [
+    isLoading,
+    starsLoading,
+    hidesLoading,
+    channels.length,
+    starred.length,
+    hidden.length,
+  ]);
 
   return (
     // One shared provider groups every row tooltip so that once one shows,
