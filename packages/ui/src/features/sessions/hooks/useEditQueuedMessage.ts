@@ -1,6 +1,7 @@
 import {
   type EditorContent,
   isContentEmpty,
+  textToContent,
   xmlToContent,
 } from "@posthog/core/message-editor/content";
 import {
@@ -71,7 +72,7 @@ export function useEditQueuedMessage(
         !priorDraft || isContentEmpty(priorDraft)
           ? null
           : typeof priorDraft === "string"
-            ? { segments: [{ type: "text", text: priorDraft }] }
+            ? textToContent(priorDraft)
             : priorDraft,
       );
 
