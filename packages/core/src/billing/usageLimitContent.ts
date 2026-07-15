@@ -1,5 +1,4 @@
 import type { GatewayLimitCause } from "@posthog/shared";
-import { PRO_USAGE_MULTIPLIER } from "./usageDisplay";
 
 export interface UsageLimitContent {
   title: string;
@@ -9,7 +8,7 @@ export interface UsageLimitContent {
   dismissLabel: string;
 }
 
-export function usageBasedLimitContent(args: {
+export function usageLimitContent(args: {
   cause: GatewayLimitCause | null;
   model: string | null;
   resetLabel: string | null;
@@ -55,41 +54,5 @@ export function usageBasedLimitContent(args: {
     } Please try again shortly.`,
     actionLabel: null,
     dismissLabel: "Got it",
-  };
-}
-
-export function seatEraLimitContent(args: {
-  bucket: "burst" | "sustained" | null;
-  isPro: boolean;
-  resetLabel: string | null;
-}): UsageLimitContent {
-  const { bucket, isPro, resetLabel } = args;
-  const isDaily = bucket === "burst";
-  const isMonthly = bucket === "sustained";
-
-  const title = isDaily
-    ? "Daily limit reached"
-    : isMonthly && !isPro
-      ? "You're out of usage for this month"
-      : isMonthly
-        ? "Monthly limit reached"
-        : "Usage limit reached";
-
-  const proCapLabel = isDaily
-    ? "a daily usage cap"
-    : isMonthly
-      ? "a monthly usage cap"
-      : "usage caps";
-  const description = isPro
-    ? `Your Pro plan has ${proCapLabel}.${resetLabel ? ` ${resetLabel}.` : ""}`
-    : `You've hit your Free ${
-        isDaily ? "daily" : isMonthly ? "monthly" : "usage"
-      } limit. Upgrade to Pro for ${PRO_USAGE_MULTIPLIER}× more usage.`;
-
-  return {
-    title,
-    description,
-    actionLabel: isPro ? null : "See Pro",
-    dismissLabel: isPro ? "Got it" : "Not now",
   };
 }

@@ -30,11 +30,7 @@ export class BillingContribution implements Contribution {
 
         if (event.threshold === 100) {
           if (event.userIsActive) {
-            useUsageLimitStore.getState().show({
-              bucket: event.bucket,
-              resetAt: event.resetAt,
-              isPro: event.isPro,
-            });
+            useUsageLimitStore.getState().show({ resetAt: event.resetAt });
             return;
           }
           toast.error("Usage limit reached", {

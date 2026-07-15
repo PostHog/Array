@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  seatEraLimitContent,
-  usageBasedLimitContent,
-} from "./usageLimitContent";
+import { usageLimitContent } from "./usageLimitContent";
 
-describe("usageBasedLimitContent", () => {
+describe("usageLimitContent", () => {
   it("names the gated model and offers a payment method", () => {
-    const content = usageBasedLimitContent({
+    const content = usageLimitContent({
       cause: "model_gate",
       model: "Claude Opus 4.8",
       resetLabel: null,
@@ -18,7 +15,7 @@ describe("usageBasedLimitContent", () => {
   });
 
   it("falls back to generic wording when the gated model is unknown", () => {
-    const content = usageBasedLimitContent({
+    const content = usageLimitContent({
       cause: "model_gate",
       model: null,
       resetLabel: null,
@@ -37,7 +34,7 @@ describe("usageBasedLimitContent", () => {
   ] as const)(
     "org_limit with billed=%s -> %s / %s",
     (billed, title, actionLabel) => {
-      const content = usageBasedLimitContent({
+      const content = usageLimitContent({
         cause: "org_limit",
         model: null,
         resetLabel: null,
@@ -49,7 +46,7 @@ describe("usageBasedLimitContent", () => {
   );
 
   it("renders generic copy without a billing CTA when the cause is unknown", () => {
-    const content = usageBasedLimitContent({
+    const content = usageLimitContent({
       cause: null,
       model: null,
       resetLabel: "Resets in 2h",
@@ -59,30 +56,5 @@ describe("usageBasedLimitContent", () => {
     expect(content.description).toContain("Resets in 2h");
     expect(content.actionLabel).toBeNull();
     expect(content.dismissLabel).toBe("Got it");
-  });
-});
-
-describe("seatEraLimitContent", () => {
-  it("keeps the Pro cap copy with no upgrade action", () => {
-    const content = seatEraLimitContent({
-      bucket: "sustained",
-      isPro: true,
-      resetLabel: "Resets in 3d",
-    });
-    expect(content.title).toBe("Monthly limit reached");
-    expect(content.description).toContain("monthly usage cap");
-    expect(content.actionLabel).toBeNull();
-    expect(content.dismissLabel).toBe("Got it");
-  });
-
-  it("keeps the free-plan upgrade pitch", () => {
-    const content = seatEraLimitContent({
-      bucket: "burst",
-      isPro: false,
-      resetLabel: null,
-    });
-    expect(content.title).toBe("Daily limit reached");
-    expect(content.description).toContain("Upgrade to Pro for 40×");
-    expect(content.actionLabel).toBe("See Pro");
   });
 });

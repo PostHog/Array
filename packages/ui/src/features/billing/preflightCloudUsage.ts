@@ -8,27 +8,15 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { track } from "@posthog/ui/shell/analytics";
 import { logger } from "@posthog/ui/shell/logger";
-import {
-  type UsageLimitBucket,
-  type UsageLimitShowArgs,
-  useUsageLimitStore,
-} from "./usageLimitStore";
+import { type UsageLimitShowArgs, useUsageLimitStore } from "./usageLimitStore";
 
 const log = logger.scope("preflight-cloud-usage");
 
 function usageLimitArgs(usage: UsageOutput): UsageLimitShowArgs {
-  // Prefer the bucket that's actually exceeded (burst/daily takes priority); if neither
-  // is flagged (is_rate_limited via a server-side valve), fall back to the monthly bucket
-  // so the modal still shows a title and reset time rather than a bare prompt.
-  const bucket: UsageLimitBucket = usage.burst.exceeded ? "burst" : "sustained";
-  // Under usage-based billing a cloud-task block is the org's credit bucket;
-  // the seat-era modal ignores the cause.
-  return {
-    bucket,
-    resetAt: usage[bucket].reset_at,
-    isPro: usage.is_pro,
-    cause: "org_limit",
-  };
+  // Reset hint from whichever bucket is exceeded (daily takes priority);
+  // the monthly bucket covers an org-bucket block, whose period it matches.
+  const bucket = usage.burst.exceeded ? "burst" : "sustained";
+  return { resetAt: usage[bucket].reset_at, cause: "org_limit" };
 }
 
 async function fetchUsageSnapshot(): Promise<UsageOutput | null> {
@@ -57,12 +45,15 @@ async function fetchUsageSnapshot(): Promise<UsageOutput | null> {
 export async function assertCloudUsageAvailable(): Promise<boolean> {
   const usage = await fetchUsageSnapshot();
   if (usage && isUsageExceeded(usage)) {
-    const args = usageLimitArgs(usage);
     track(ANALYTICS_EVENTS.CLOUD_TASK_USAGE_BLOCKED, {
-      bucket: args.bucket ?? null,
+      bucket: usage.burst.exceeded
+        ? "burst"
+        : usage.sustained.exceeded
+          ? "sustained"
+          : null,
       is_pro: usage.is_pro,
     });
-    useUsageLimitStore.getState().show(args);
+    useUsageLimitStore.getState().show(usageLimitArgs(usage));
     return false;
   }
   return true;
