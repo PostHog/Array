@@ -21,7 +21,11 @@ const mockAcpClient = vi.hoisted(() => ({
     | {
         requestPermission: (params: {
           options: Array<{ optionId: string; kind: string; name: string }>;
-          toolCall?: { toolCallId?: string; title?: string };
+          toolCall?: {
+            toolCallId?: string;
+            title?: string;
+            _meta?: { codeToolKind?: string };
+          };
         }) => Promise<unknown>;
       }
     | undefined,
@@ -421,7 +425,7 @@ describe("AgentService", () => {
       });
 
       await service.setSessionConfigOption("run-1", "mode", "full-access");
-      const response = await mockAcpClient.current?.requestPermission({
+      const responsePromise = mockAcpClient.current?.requestPermission({
         toolCall: {
           toolCallId: "tool-call-1",
           title: "Run command",
@@ -432,6 +436,8 @@ describe("AgentService", () => {
         ],
       });
 
+      expect(service.getDebugSnapshot().pendingPermissions).toEqual([]);
+      const response = await responsePromise;
       expect(response).toEqual({
         outcome: { outcome: "selected", optionId: "allow" },
       });
@@ -440,6 +446,39 @@ describe("AgentService", () => {
         expect.anything(),
       );
       expect(deps.sleepService.release).not.toHaveBeenCalledWith("run-1");
+    });
+
+    it("still prompts for structured user questions in full access", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+        permissionMode: "full-access",
+      });
+
+      const responsePromise = mockAcpClient.current?.requestPermission({
+        toolCall: {
+          toolCallId: "question-1",
+          title: "Which one?",
+          _meta: { codeToolKind: "question" },
+        },
+        options: [
+          { optionId: "option_0", kind: "allow_once", name: "A" },
+          { optionId: "option_1", kind: "allow_once", name: "B" },
+        ],
+      });
+
+      expect(service.getDebugSnapshot().pendingPermissions).toEqual([
+        { taskRunId: "run-1", toolCallId: "question-1" },
+      ]);
+      expect(service.emit).toHaveBeenCalledWith(
+        AgentServiceEvent.PermissionRequest,
+        expect.objectContaining({ taskRunId: "run-1" }),
+      );
+
+      service.cancelPermission("run-1", "question-1");
+      await expect(responsePromise).resolves.toEqual({
+        outcome: { outcome: "cancelled" },
+      });
     });
   });
 
@@ -784,15 +823,23 @@ describe("buildAutoApproveOutcome", () => {
 
 describe("shouldAutoApprovePermissionRequest", () => {
   it.each([
-    ["codex", "full-access", true],
-    ["codex", "bypassPermissions", true],
-    ["codex", "auto", false],
-    ["codex", "read-only", false],
-    ["claude", "bypassPermissions", false],
-    [undefined, "full-access", false],
-  ])("adapter %s in mode %s => %s", (adapter, permissionMode, expected) => {
-    expect(shouldAutoApprovePermissionRequest(adapter, permissionMode)).toBe(
-      expected,
-    );
-  });
+    ["codex", "full-access", undefined, true],
+    ["codex", "bypassPermissions", undefined, true],
+    ["codex", "full-access", "question", false],
+    ["codex", "auto", undefined, false],
+    ["codex", "read-only", undefined, false],
+    ["claude", "bypassPermissions", undefined, false],
+    [undefined, "full-access", undefined, false],
+  ])(
+    "adapter %s in mode %s for %s => %s",
+    (adapter, permissionMode, codeToolKind, expected) => {
+      expect(
+        shouldAutoApprovePermissionRequest(
+          adapter,
+          permissionMode,
+          codeToolKind,
+        ),
+      ).toBe(expected);
+    },
+  );
 });

@@ -67,7 +67,9 @@ import {
 import {
   type AcpMessage,
   type Adapter,
+  type ExecutionMode,
   isAuthError,
+  resolveCloudInitialPermissionMode,
   serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
@@ -352,10 +354,16 @@ export function buildAutoApproveOutcome(
 export function shouldAutoApprovePermissionRequest(
   adapter: string | undefined,
   permissionMode: string | undefined,
+  codeToolKind?: string,
 ): boolean {
+  if (adapter !== "codex" || !permissionMode || codeToolKind === "question") {
+    return false;
+  }
   return (
-    adapter === "codex" &&
-    (permissionMode === "full-access" || permissionMode === "bypassPermissions")
+    resolveCloudInitialPermissionMode(
+      "codex",
+      permissionMode as ExecutionMode,
+    ) === "full-access"
   );
 }
 
@@ -1716,6 +1724,9 @@ For git operations while detached:
           (params.toolCall?.rawInput as { toolName?: string } | undefined)
             ?.toolName || "";
         const toolCallId = params.toolCall?.toolCallId || "";
+        const codeToolKind = (
+          params.toolCall?._meta as { codeToolKind?: string } | undefined
+        )?.codeToolKind;
 
         service.log.info("requestPermission called", {
           taskRunId,
@@ -1730,6 +1741,7 @@ For git operations while detached:
           shouldAutoApprovePermissionRequest(
             session?.config.adapter,
             session?.config.permissionMode,
+            codeToolKind,
           )
         ) {
           service.log.info("Auto-approving Codex full-access permission", {

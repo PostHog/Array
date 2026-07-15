@@ -324,7 +324,6 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
-  updatePersistedConfigOptionValue: (...args: any[]) => any;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -4054,16 +4053,25 @@ export class SessionService {
         });
       }
     } catch (error) {
-      // Rollback on error
-      const rolledBackOptions = configOptions.map((opt) =>
-        opt.id === configId
-          ? ({ ...opt, currentValue: previousValue } as SessionConfigOption)
-          : opt,
+      const latestConfigOptions =
+        this.d.store.getSessionByTaskId(taskId)?.configOptions ?? [];
+      const latestOption = latestConfigOptions.find(
+        (option) => option.id === configId,
       );
-      this.d.store.updateSession(session.taskRunId, {
-        configOptions: rolledBackOptions,
-      });
-      this.d.setPersistedConfigOptions(session.taskRunId, rolledBackOptions);
+      if (latestOption?.currentValue === value) {
+        const rolledBackOptions = latestConfigOptions.map((option) =>
+          option.id === configId
+            ? ({
+                ...option,
+                currentValue: previousValue,
+              } as SessionConfigOption)
+            : option,
+        );
+        this.d.store.updateSession(session.taskRunId, {
+          configOptions: rolledBackOptions,
+        });
+        this.d.setPersistedConfigOptions(session.taskRunId, rolledBackOptions);
+      }
       this.d.log.error("Failed to set session config option", {
         taskId,
         configId,

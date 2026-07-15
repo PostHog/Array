@@ -1,5 +1,10 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { CODEX_MODE_PRESETS, type CodexModePreset } from "@posthog/shared";
+import {
+  CODEX_MODE_PRESETS,
+  type CodexModePreset,
+  type ExecutionMode,
+  resolveCloudInitialPermissionMode,
+} from "@posthog/shared";
 import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
 import { getReasoningEffortOptions } from "./models";
 
@@ -126,10 +131,11 @@ export function collaborationModeFor(
  * modes fall back to default.
  */
 export function resolveInitialMode(permissionMode: string | undefined): string {
-  if (permissionMode === "bypassPermissions") return "full-access";
-  return permissionMode && CODEX_MODES.some((m) => m.id === permissionMode)
-    ? permissionMode
-    : DEFAULT_MODE;
+  if (!permissionMode) return DEFAULT_MODE;
+  return resolveCloudInitialPermissionMode(
+    "codex",
+    permissionMode as ExecutionMode,
+  );
 }
 
 /** Codex's standard reasoning efforts; used when model/list doesn't expose them. */

@@ -194,7 +194,6 @@ const mockSessionConfigStore = vi.hoisted(() => ({
   >(() => undefined),
   setPersistedConfigOptions: vi.fn(),
   removePersistedConfigOptions: vi.fn(),
-  updatePersistedConfigOptionValue: vi.fn(),
 }));
 
 vi.mock(
@@ -1006,6 +1005,14 @@ describe("SessionService", () => {
               currentValue: "auto",
               options: [],
             },
+            {
+              id: "model",
+              name: "Model",
+              type: "select",
+              category: "model",
+              currentValue: "gpt-5.5",
+              options: [],
+            },
           ],
         }),
       );
@@ -1021,6 +1028,10 @@ describe("SessionService", () => {
         expect.objectContaining({
           id: "mode",
           currentValue: "full-access",
+        }),
+        expect.objectContaining({
+          id: "model",
+          currentValue: "gpt-5.5",
         }),
       ]);
 
@@ -1046,9 +1057,19 @@ describe("SessionService", () => {
               id: "mode",
               currentValue: "full-access",
             }),
+            expect.objectContaining({
+              id: "model",
+              currentValue: "gpt-5.5",
+            }),
           ]),
         }),
       );
+
+      mockSessionConfigStore.getPersistedConfigOptions.mockReset();
+      mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue(
+        undefined,
+      );
+      mockSessionConfigStore.setPersistedConfigOptions.mockReset();
     });
 
     it("shows the selected cloud model and reasoning before preview config loads", () => {
@@ -6637,19 +6658,25 @@ describe("SessionService", () => {
 
     it("rolls back on API failure", async () => {
       const service = getSessionService();
-      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
-        createMockSession({
-          configOptions: [
-            {
-              id: "mode",
-              name: "Mode",
-              type: "select",
-              category: "mode",
-              currentValue: "default",
-              options: [],
-            },
-          ],
-        }),
+      let currentSession = createMockSession({
+        configOptions: [
+          {
+            id: "mode",
+            name: "Mode",
+            type: "select",
+            category: "mode",
+            currentValue: "default",
+            options: [],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => currentSession,
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          currentSession = { ...currentSession, ...updates };
+        },
       );
       mockTrpcAgent.setConfigOption.mutate.mockRejectedValue(
         new Error("Failed"),
@@ -6657,28 +6684,94 @@ describe("SessionService", () => {
 
       await service.setSessionConfigOption("task-123", "mode", "acceptEdits");
 
-      // Should rollback
-      expect(mockSessionStoreSetters.updateSession).toHaveBeenLastCalledWith(
-        "run-123",
-        {
-          configOptions: [
-            {
-              id: "mode",
-              name: "Mode",
-              type: "select",
-              category: "mode",
-              currentValue: "default",
-              options: [],
-            },
-          ],
-        },
-      );
+      expect(currentSession.configOptions).toEqual([
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "default",
+        }),
+      ]);
       expect(
         mockSessionConfigStore.setPersistedConfigOptions,
       ).toHaveBeenLastCalledWith("run-123", [
         expect.objectContaining({
           id: "mode",
           currentValue: "default",
+        }),
+      ]);
+    });
+
+    it("preserves a newer successful config change during rollback", async () => {
+      const service = getSessionService();
+      let currentSession = createMockSession({
+        configOptions: [
+          {
+            id: "mode",
+            name: "Mode",
+            type: "select",
+            category: "mode",
+            currentValue: "default",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "claude-3-opus",
+            options: [],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => currentSession,
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          currentSession = { ...currentSession, ...updates };
+        },
+      );
+
+      let rejectModeChange: (error: Error) => void = () => undefined;
+      const pendingModeChange = new Promise<never>((_resolve, reject) => {
+        rejectModeChange = reject;
+      });
+      mockTrpcAgent.setConfigOption.mutate.mockImplementation(({ configId }) =>
+        configId === "mode" ? pendingModeChange : Promise.resolve({}),
+      );
+
+      const modeChange = service.setSessionConfigOption(
+        "task-123",
+        "mode",
+        "acceptEdits",
+      );
+      await service.setSessionConfigOption(
+        "task-123",
+        "model",
+        "claude-3-sonnet",
+      );
+      rejectModeChange(new Error("Mode change failed"));
+      await modeChange;
+
+      expect(currentSession.configOptions).toEqual([
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "default",
+        }),
+        expect.objectContaining({
+          id: "model",
+          currentValue: "claude-3-sonnet",
+        }),
+      ]);
+      expect(
+        mockSessionConfigStore.setPersistedConfigOptions,
+      ).toHaveBeenLastCalledWith("run-123", [
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "default",
+        }),
+        expect.objectContaining({
+          id: "model",
+          currentValue: "claude-3-sonnet",
         }),
       ]);
     });
