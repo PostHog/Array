@@ -15,7 +15,6 @@ export function UsageLimitModal() {
   const isOpen = useUsageLimitStore((s) => s.isOpen);
   const resetAt = useUsageLimitStore((s) => s.resetAt);
   const cause = useUsageLimitStore((s) => s.cause);
-  const model = useUsageLimitStore((s) => s.model);
   const hide = useUsageLimitStore((s) => s.hide);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   // code_usage_billed picks the org_limit copy variant.
@@ -32,7 +31,6 @@ export function UsageLimitModal() {
 
   const content = usageLimitContent({
     cause,
-    model,
     resetLabel: resetAt ? formatResetTime(resetAt) : null,
     billed: usage?.code_usage_billed,
   });

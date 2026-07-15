@@ -16,7 +16,6 @@ import {
   type CloudRegion,
   classifyGatewayLimitError,
   type ExecutionMode,
-  extractGatedModel,
   flattenSelectOptions,
   getBackoffDelay,
   getCloudUrlFromRegion,
@@ -2730,17 +2729,7 @@ export class SessionService {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show(
-          limitCause === "model_gate"
-            ? {
-                cause: limitCause,
-                model:
-                  extractGatedModel(errorMessage, errorDetails) ?? undefined,
-              }
-            : limitCause
-              ? { cause: limitCause }
-              : undefined,
-        );
+        this.d.usageLimit.show(limitCause ? { cause: limitCause } : undefined);
         return { stopReason: "rate_limited" };
       }
 

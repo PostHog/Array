@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyGatewayLimitError,
-  extractGatedModel,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,
@@ -134,26 +133,6 @@ describe("classifyGatewayLimitError", () => {
     "network down",
   ])("returns null for %j", (message) => {
     expect(classifyGatewayLimitError(message)).toBeNull();
-  });
-});
-
-describe("extractGatedModel", () => {
-  it("pulls the model id out of the gate message", () => {
-    expect(
-      extractGatedModel(
-        "Model 'claude-opus-4-8' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2.",
-      ),
-    ).toBe("claude-opus-4-8");
-  });
-
-  it("falls back to the details and returns null when absent", () => {
-    expect(
-      extractGatedModel(
-        "Internal error",
-        "Model 'gpt-5.5' needs a paid PostHog plan.",
-      ),
-    ).toBe("gpt-5.5");
-    expect(extractGatedModel("no model here")).toBeNull();
   });
 });
 

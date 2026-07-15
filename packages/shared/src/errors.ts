@@ -141,20 +141,6 @@ export function isRateLimitError(
   );
 }
 
-const GATED_MODEL_REGEX = /Model '([^']+)' needs a paid PostHog plan/i;
-
-/** The model id a free-tier model-gate 403 names, when present. */
-export function extractGatedModel(
-  errorMessage: string,
-  errorDetails?: string,
-): string | null {
-  return (
-    errorMessage.match(GATED_MODEL_REGEX)?.[1] ??
-    errorDetails?.match(GATED_MODEL_REGEX)?.[1] ??
-    null
-  );
-}
-
 export function classifyGatewayLimitError(
   errorMessage: string,
   errorDetails?: string,

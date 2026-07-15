@@ -7,7 +7,6 @@ describe("usageLimitStore", () => {
       isOpen: false,
       resetAt: null,
       cause: null,
-      model: null,
     });
   });
 
@@ -22,20 +21,17 @@ describe("usageLimitStore", () => {
     expect(state.isOpen).toBe(true);
     expect(state.resetAt).toBeNull();
     expect(state.cause).toBeNull();
-    expect(state.model).toBeNull();
   });
 
   it("show stores the denial context when provided", () => {
     useUsageLimitStore.getState().show({
       resetAt: "2026-01-02T03:04:05Z",
       cause: "model_gate",
-      model: "claude-opus-4-8",
     });
     const state = useUsageLimitStore.getState();
     expect(state.isOpen).toBe(true);
     expect(state.resetAt).toBe("2026-01-02T03:04:05Z");
     expect(state.cause).toBe("model_gate");
-    expect(state.model).toBe("claude-opus-4-8");
   });
 
   it("hide closes the modal", () => {

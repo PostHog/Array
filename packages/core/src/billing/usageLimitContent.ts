@@ -10,17 +10,17 @@ export interface UsageLimitContent {
 
 export function usageLimitContent(args: {
   cause: GatewayLimitCause | null;
-  model: string | null;
   resetLabel: string | null;
   /** usage.code_usage_billed — absent means unknown, not free. */
   billed: boolean | undefined;
 }): UsageLimitContent {
-  const { cause, model, resetLabel, billed } = args;
+  const { cause, resetLabel, billed } = args;
 
   if (cause === "model_gate") {
     return {
       title: "Unlock premium models",
-      description: `${model ? `${model} isn't` : "This model isn't"} included in the free tier. Add a payment method to your organization to unlock all models — you only pay for what you use. You can keep working now by switching to an included model.`,
+      description:
+        "This model isn't included in the free tier. Add a payment method to your organization to unlock all models — you only pay for what you use. You can keep working now by switching to an included model.",
       actionLabel: "Add payment method",
       dismissLabel: "Not now",
     };
