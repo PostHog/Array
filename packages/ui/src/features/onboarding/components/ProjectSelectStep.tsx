@@ -13,7 +13,7 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@posthog/quill";
-import { BILLING_FLAG } from "@posthog/shared";
+import { BILLING_FLAG, USAGE_BILLING_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { happyHog } from "@posthog/ui/assets/hedgehogs";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
@@ -77,6 +77,9 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
     client,
   });
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  // Seats are retired under usage-based billing — provisioning one on org
+  // switch would error against the retired seat API.
+  const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
   const switchOrgTrpcMutation = useSwitchOrgMutation();
 
   const organizations = useMemo<Org[]>(() => {
@@ -110,7 +113,7 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const switchOrgMutation = useMutation({
     mutationFn: async (orgId: string) => {
       await switchOrgTrpcMutation.mutateAsync(orgId);
-      if (billingEnabled) {
+      if (billingEnabled && !usageBillingEnabled) {
         void useSeatStore.getState().fetchSeat({ autoProvision: true });
       }
     },

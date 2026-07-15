@@ -10,7 +10,7 @@ import {
   PopoverTrigger,
   Progress,
 } from "@posthog/quill";
-import { BILLING_FLAG } from "@posthog/shared";
+import { BILLING_FLAG, USAGE_BILLING_FLAG } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
   type UpgradePromptClickedSurface,
@@ -35,6 +35,7 @@ import { useFreeUsage } from "./useFreeUsage";
 // popover portal.
 export function UsageButton() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
   const { usage, isLoading } = useFreeUsage(billingEnabled);
   // Controlled so the trigger click can close the card before navigating to
   // settings — uncontrolled, the same click would also toggle the popover open
@@ -121,7 +122,7 @@ export function UsageButton() {
       >
         <div className="flex items-center justify-between">
           <span className="font-medium text-foreground text-xs">
-            Free plan
+            {usageBillingEnabled ? "Free tier" : "Free plan"}
             <Circle
               size={4}
               weight="fill"
@@ -137,7 +138,7 @@ export function UsageButton() {
             className="h-auto p-0"
             onClick={() => handleOpenPlan("titlebar_card")}
           >
-            Upgrade
+            {usageBillingEnabled ? "Unlock more" : "Upgrade"}
           </Button>
         </div>
         <Progress

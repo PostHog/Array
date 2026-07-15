@@ -11,6 +11,7 @@ import {
   defaultEligibleModel,
   GLM_MODEL_FLAG,
   getCloudUrlFromRegion,
+  USAGE_BILLING_FLAG,
 } from "@posthog/shared";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -47,7 +48,11 @@ function getOptionByCategory(
  */
 export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
-  const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
+  const glmFlagEnabled = useFeatureFlag(GLM_MODEL_FLAG);
+  // Under usage-based billing GLM is the free tier's included model — it must
+  // stay pickable regardless of the staged GLM rollout flag.
+  const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
+  const glmEnabled = glmFlagEnabled || usageBillingEnabled;
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const apiHost = useMemo(
     () => (cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null),

@@ -5,6 +5,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { PRO_USAGE_MULTIPLIER } from "@posthog/core/billing/usageDisplay";
+import type { UsageOutput } from "@posthog/core/usage/schemas";
 import {
   Empty,
   EmptyDescription,
@@ -12,7 +13,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { BILLING_FLAG, PLAN_PRO_ALPHA } from "@posthog/shared";
+import {
+  BILLING_FLAG,
+  PLAN_PRO_ALPHA,
+  USAGE_BILLING_FLAG,
+} from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useSwitchOrgMutation } from "@posthog/ui/features/auth/useAuthMutations";
@@ -55,6 +60,7 @@ export function PlanUsageSettings() {
     hasBetterPlanElsewhere,
   } = useSeat();
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
   const { fetchSeat, upgradeToPro, cancelSeat, reactivateSeat, clearError } =
     useSeatStore();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
@@ -98,15 +104,17 @@ export function PlanUsageSettings() {
     isLoading: usageLoading,
     refetch: refetchUsage,
   } = useUsage({
-    enabled: billingEnabled && seat !== null,
+    enabled: billingEnabled && (usageBillingEnabled || seat !== null),
   });
 
   useEffect(() => {
-    void fetchSeat({ autoProvision: true });
+    // Seats are retired under usage-based billing — provisioning one would
+    // error against the retired seat API.
+    if (!usageBillingEnabled) void fetchSeat({ autoProvision: true });
     // refetchUsage is a refresh mutation, so it bypasses useUsage's `enabled`
     // gate — skip it for spend-only users.
     if (billingEnabled) void refetchUsage();
-  }, [fetchSeat, refetchUsage, billingEnabled]);
+  }, [fetchSeat, refetchUsage, billingEnabled, usageBillingEnabled]);
 
   useTrackUsageViewed({
     isLoading: billingEnabled && (isLoading || usageLoading),
@@ -155,7 +163,17 @@ export function PlanUsageSettings() {
 
   return (
     <Flex direction="column" gap="5">
-      {billingEnabled && (
+      {billingEnabled && usageBillingEnabled && (
+        <UsageBasedPlanUsage
+          usage={usage}
+          usageLoading={usageLoading}
+          billingUrl={billingUrl}
+          onOpenBilling={() => {
+            void openBillingPage(billingOrgId);
+          }}
+        />
+      )}
+      {billingEnabled && !usageBillingEnabled && (
         <>
           {error && !redirectUrl && (
             <Callout.Root color="red" size="1">
@@ -486,6 +504,149 @@ export function PlanUsageSettings() {
 
       {spendAnalysisEnabled && <SpendAnalysisSection />}
     </Flex>
+  );
+}
+
+interface UsageBasedPlanUsageProps {
+  usage: UsageOutput | null;
+  usageLoading: boolean;
+  billingUrl: string | null;
+  onOpenBilling: () => void;
+}
+
+/**
+ * Plan & usage under usage-based billing: no seats or plans to manage in-app —
+ * the org pays for usage at cost, and payment methods / spend limits / org
+ * usage live on the PostHog billing page. The free-tier meters show the
+ * per-user allowance; billed orgs have no per-user caps to meter.
+ */
+function UsageBasedPlanUsage({
+  usage,
+  usageLoading,
+  billingUrl,
+  onOpenBilling,
+}: UsageBasedPlanUsageProps) {
+  // Absent on gateways predating the field — treat as unknown, not free.
+  const billed = usage?.code_usage_billed;
+  const orgLimitReached = usage?.ai_credits?.exhausted === true;
+
+  return (
+    <>
+      {orgLimitReached && (
+        <Callout.Root color="red" size="1">
+          <Callout.Icon>
+            <WarningCircle size={16} />
+          </Callout.Icon>
+          <Callout.Text>
+            <Flex direction="column" gap="2">
+              <Text className="text-sm">
+                Your organization has reached its PostHog Code usage limit for
+                this billing period.
+              </Text>
+              <Button
+                size="1"
+                variant="outline"
+                color="red"
+                disabled={!billingUrl}
+                onClick={onOpenBilling}
+                className="self-start"
+              >
+                Manage billing
+                <ArrowSquareOut size={12} />
+              </Button>
+            </Flex>
+          </Callout.Text>
+        </Callout.Root>
+      )}
+
+      <Flex
+        direction="column"
+        gap="3"
+        p="4"
+        className="rounded-(--radius-3) border border-(--gray-5)"
+      >
+        <Flex align="center" justify="between">
+          <Flex direction="column" gap="1">
+            <Text className="font-bold text-base">
+              {billed === false ? "Free tier" : "Usage-based billing"}
+            </Text>
+            <Text className="text-(--gray-11) text-sm">
+              {billed === false
+                ? "Your organization's first $20 of usage each month is included, with access to open models. Add a payment method to unlock premium models — you only pay for what you use."
+                : "Your organization pays for PostHog Code usage at cost — no seats, no subscriptions. The first $20 each month is included."}
+            </Text>
+          </Flex>
+          {billed === true && (
+            <Badge variant="soft" color="green" radius="full">
+              Active
+            </Badge>
+          )}
+        </Flex>
+        <Button
+          size="1"
+          variant={billed === false ? "solid" : "outline"}
+          disabled={!billingUrl}
+          onClick={onOpenBilling}
+          className="self-start"
+        >
+          {billed === false
+            ? "Add payment method"
+            : "Manage billing and spend limits"}
+          <ArrowSquareOut size={12} />
+        </Button>
+      </Flex>
+
+      <Flex direction="column" gap="3">
+        <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
+        {usageLoading ? (
+          <Flex
+            align="center"
+            justify="center"
+            p="4"
+            className="rounded-(--radius-3) border border-(--gray-5)"
+          >
+            <Spinner size="2" />
+          </Flex>
+        ) : billed === false && usage ? (
+          <Flex direction="column" gap="3">
+            <UsageMeter
+              label="Monthly free usage"
+              bucket={usage.sustained}
+              color={usage.sustained.exceeded ? "red" : undefined}
+            />
+            <UsageMeter
+              label="Daily free usage"
+              bucket={usage.burst}
+              color={usage.burst.exceeded ? "red" : undefined}
+            />
+          </Flex>
+        ) : (
+          <Flex
+            align="center"
+            justify="between"
+            p="4"
+            className="rounded-(--radius-3) border border-(--gray-5)"
+          >
+            <Text color="gray" className="text-sm">
+              {usage
+                ? "Usage is billed to your organization. View detailed usage and spend in PostHog."
+                : "Unable to load usage data"}
+            </Text>
+            {usage && (
+              <Button
+                size="1"
+                variant="outline"
+                disabled={!billingUrl}
+                onClick={onOpenBilling}
+              >
+                View usage
+                <ArrowSquareOut size={12} />
+              </Button>
+            )}
+          </Flex>
+        )}
+      </Flex>
+    </>
   );
 }
 
