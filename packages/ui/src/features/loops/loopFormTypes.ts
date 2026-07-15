@@ -16,6 +16,14 @@ export interface LoopTriggerDraft {
   config: LoopSchemas.LoopTriggerConfig;
 }
 
+/** The context a loop is attached to in the form. `null` on `LoopFormValues.contextTarget`
+ * means the loop isn't attached to any context. */
+export interface LoopContextTargetDraft {
+  folderId: string;
+  name: string;
+  outputs: LoopSchemas.LoopContextOutputs;
+}
+
 export interface LoopFormValues {
   name: string;
   description: string;
@@ -33,6 +41,7 @@ export interface LoopFormValues {
   triggers: LoopTriggerDraft[];
   behaviors: LoopSchemas.LoopBehaviors;
   notifications: LoopSchemas.LoopNotifications;
+  contextTarget: LoopContextTargetDraft | null;
 }
 
 export function emptyLoopScheduleTriggerConfig(): LoopSchemas.LoopScheduleTriggerConfig {
@@ -59,6 +68,12 @@ export function defaultLoopBehaviors(): LoopSchemas.LoopBehaviors {
     fix_review_comments: false,
     max_fix_iterations: 3,
   };
+}
+
+/** Sensible defaults when a loop is first attached to a context: file its runs into the
+ * feed, but don't touch context.md or a canvas until the user opts in. */
+export function defaultLoopContextOutputs(): LoopSchemas.LoopContextOutputs {
+  return { post_to_feed: true, update_context: false, canvas_id: null };
 }
 
 /** The single "Auto-fix pull requests" toggle drives both CI-watching and
@@ -96,6 +111,7 @@ export function emptyLoopFormValues(): LoopFormValues {
     triggers: [],
     behaviors: defaultLoopBehaviors(),
     notifications: defaultLoopNotifications(),
+    contextTarget: null,
   };
 }
 
@@ -118,6 +134,13 @@ export function loopToFormValues(loop: LoopSchemas.Loop): LoopFormValues {
     })),
     behaviors: loop.behaviors,
     notifications: loop.notifications,
+    contextTarget: loop.context_target
+      ? {
+          folderId: loop.context_target.folder_id,
+          name: loop.context_target.name,
+          outputs: loop.context_target.outputs,
+        }
+      : null,
   };
 }
 
@@ -141,6 +164,13 @@ export function formValuesToLoopWrite(
     })),
     behaviors: values.behaviors,
     notifications: values.notifications,
+    context_target: values.contextTarget
+      ? {
+          folder_id: values.contextTarget.folderId,
+          name: values.contextTarget.name,
+          outputs: values.contextTarget.outputs,
+        }
+      : null,
   };
 }
 

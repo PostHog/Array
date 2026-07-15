@@ -89,6 +89,33 @@ export namespace LoopSchemas {
     slack: LoopNotificationChannelWrite;
   }>;
 
+  /** What a context-attached loop maintains each run. */
+  export type LoopContextOutputs = {
+    /** File each run into the context's feed as a card. */
+    post_to_feed: boolean;
+    /** Read and republish the context's context.md each run. */
+    update_context: boolean;
+    /** Id of a canvas in this context to keep up to date, or null. */
+    canvas_id: string | null;
+  };
+
+  export type LoopContextOutputsWrite = Partial<LoopContextOutputs>;
+
+  /** The context (a "#channel" / desktop folder) a loop is attached to, plus what it maintains. */
+  export type LoopContextTarget = {
+    /** Desktop folder id of the attached context. */
+    folder_id: string;
+    /** Context (channel) name, used to file runs into its feed. */
+    name: string;
+    outputs: LoopContextOutputs;
+  };
+
+  export type LoopContextTargetWrite = {
+    folder_id: string;
+    name: string;
+    outputs?: LoopContextOutputsWrite;
+  };
+
   export type LoopScheduleTriggerConfig = {
     cron_expression?: string;
     timezone?: string;
@@ -155,6 +182,8 @@ export namespace LoopSchemas {
     behaviors: LoopBehaviors;
     connectors: LoopConnectors;
     notifications: LoopNotifications;
+    /** Context this loop is attached to, or null when unattached. */
+    context_target: LoopContextTarget | null;
     /** Backend-set: internal loops are hidden from the UI (never returned by the
      * list/detail API), so this is effectively always false for loops a client can see. */
     internal: boolean;
@@ -189,6 +218,8 @@ export namespace LoopSchemas {
     behaviors?: LoopBehaviorsWrite;
     connectors?: LoopConnectorsWrite;
     notifications?: LoopNotificationsWrite;
+    /** Context to attach this loop to, or null to detach. */
+    context_target?: LoopContextTargetWrite | null;
     triggers?: Array<LoopTriggerWrite>;
   };
 

@@ -24,10 +24,12 @@ import {
   isAutoFixEnabled,
   isLoopFormValid,
   isTriggerDraftValid,
+  type LoopContextTargetDraft,
   type LoopFormValues,
   loopToFormValues,
 } from "../loopFormTypes";
 import { LoopBehaviorFields } from "./LoopBehaviorFields";
+import { LoopContextFields } from "./LoopContextFields";
 import { Field } from "./LoopFormPrimitives";
 import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
@@ -209,6 +211,19 @@ export function LoopForm({ loop }: LoopFormProps) {
                       visibility: value as LoopSchemas.LoopVisibilityEnum,
                     })
                   }
+                />
+              </Field>
+
+              <Divider />
+
+              <Field
+                label="Context"
+                hint="Attach this loop to a context to file its runs in the feed and keep its context.md or a canvas up to date."
+              >
+                <LoopContextFields
+                  value={values.contextTarget}
+                  disabled={isSubmitting}
+                  onChange={(contextTarget) => patch({ contextTarget })}
                 />
               </Field>
 
@@ -478,6 +493,10 @@ function ReviewList({ values }: { values: LoopFormValues }) {
         } · ${reasoning} reasoning`}
       />
       <ReviewRow
+        label="Context"
+        value={describeContext(values.contextTarget)}
+      />
+      <ReviewRow
         label="Repository"
         value={
           values.repositories.length > 0
@@ -526,6 +545,17 @@ function ReviewRow({
       </Text>
     </Flex>
   );
+}
+
+function describeContext(target: LoopContextTargetDraft | null): string {
+  if (!target) return "Not attached";
+  const outputs: string[] = [];
+  if (target.outputs.post_to_feed) outputs.push("feed");
+  if (target.outputs.update_context) outputs.push("context.md");
+  if (target.outputs.canvas_id) outputs.push("canvas");
+  return outputs.length > 0
+    ? `#${target.name} (${outputs.join(", ")})`
+    : `#${target.name}`;
 }
 
 function describeTrigger(trigger: LoopFormValues["triggers"][number]): string {
