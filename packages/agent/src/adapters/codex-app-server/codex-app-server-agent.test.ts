@@ -46,7 +46,12 @@ function makeStubRpc(responses: Record<string, unknown>) {
           message: `Invalid request: missing field \`${missing}\``,
         };
       }
-      return (responses[method] ?? {}) as T;
+      const response = responses[method];
+      return (
+        typeof response === "function"
+          ? await response(params)
+          : (response ?? {})
+      ) as T;
     },
     notify() {},
     async close() {},
@@ -492,6 +497,52 @@ describe("CodexAppServerAgent", () => {
       method: "turn/interrupt",
       params: { threadId: "thr_1", turnId: "goal_tick_1" },
     });
+  });
+
+  it("retries queued goal cancellation after an interrupt failure", async () => {
+    let interruptAttempts = 0;
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+      "turn/interrupt": () => {
+        interruptAttempts++;
+        if (interruptAttempts === 1) {
+          throw new Error("interrupt failed");
+        }
+        return {};
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    stub.emit("turn/started", { turn: { id: "goal_tick_2" } });
+    await Promise.resolve();
+
+    expect(
+      stub.requests.filter((request) => request.method === "turn/interrupt"),
+    ).toEqual([
+      {
+        method: "turn/interrupt",
+        params: { threadId: "thr_1", turnId: "goal_tick_1" },
+      },
+      {
+        method: "turn/interrupt",
+        params: { threadId: "thr_1", turnId: "goal_tick_2" },
+      },
+    ]);
   });
 
   it("includes buffered command output when completion omits aggregatedOutput", async () => {

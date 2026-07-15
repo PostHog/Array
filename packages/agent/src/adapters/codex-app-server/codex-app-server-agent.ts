@@ -814,11 +814,13 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   private interruptQueuedGoalTurn(turnId: string | undefined): void {
     if (!this.cancelNextGoalTurn || !this.threadId || !turnId) return;
-    this.cancelNextGoalTurn = false;
     void this.rpc
       .request(APP_SERVER_METHODS.TURN_INTERRUPT, {
         threadId: this.threadId,
         turnId,
+      })
+      .then(() => {
+        this.cancelNextGoalTurn = false;
       })
       .catch((error) =>
         this.logger.warn("Queued goal turn interrupt failed", error),

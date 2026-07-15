@@ -146,7 +146,7 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       const goal = (notification?.params as { goal?: unknown } | undefined)
         ?.goal;
       if (goal === null) return null;
-      if (!goal || typeof goal !== "object") return undefined;
+      if (!goal || typeof goal !== "object") continue;
       const value = goal as Record<string, unknown>;
       if (
         typeof value.objective === "string" &&
@@ -158,7 +158,6 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
           status: value.status as NativeGoalState["status"],
         };
       }
-      return undefined;
     }
     return undefined;
   }

@@ -642,6 +642,19 @@ describe("ResumeSaga", () => {
         expected: null,
       },
       {
+        name: "skips malformed newer goal notifications",
+        entries: [
+          createNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, {
+            goal: { objective: "Ship the fix", status: "paused" },
+          }),
+          createNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, {
+            goal: { objective: "Invalid goal", status: "unknown" },
+          }),
+          createNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, {}),
+        ],
+        expected: { objective: "Ship the fix", status: "paused" },
+      },
+      {
         name: "leaves goal state undefined when no notification exists",
         entries: [createUserMessage("Hello")],
         expected: undefined,
