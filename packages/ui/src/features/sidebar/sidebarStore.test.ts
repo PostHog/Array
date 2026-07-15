@@ -61,6 +61,18 @@ describe("sidebarStore navItemOverrides", () => {
     },
   );
 
+  it("rehydration falls back to defaults when persisted state predates overrides", async () => {
+    localStorage.setItem(
+      "sidebar-storage",
+      JSON.stringify({ state: { open: true }, version: 0 }),
+    );
+
+    await useSidebarStore.persist.rehydrate();
+
+    expect(useSidebarStore.getState().navItemOverrides).toEqual({});
+    localStorage.removeItem("sidebar-storage");
+  });
+
   it("rehydration drops unknown ids and non-boolean values", async () => {
     localStorage.setItem(
       "sidebar-storage",
