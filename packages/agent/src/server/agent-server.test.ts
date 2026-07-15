@@ -1433,6 +1433,52 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.error).toBe("No active session for this run");
     }, 20000);
 
+    it("continues a cloud task after a manual compact command", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async (_params: { prompt: ContentBlock[] }) => ({
+        stopReason: "end_turn",
+      }));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "compact-and-continue",
+          method: "user_message",
+          params: {
+            content:
+              "/compact Continue with the task using the question tool and plan.",
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(prompt).toHaveBeenCalledTimes(2);
+      expect(prompt.mock.calls[0]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: "/compact Continue with the task using the question tool and plan.",
+        },
+      ]);
+      expect(prompt.mock.calls[1]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: expect.stringContaining("Continue working on the task"),
+          _meta: { ui: { hidden: true } },
+        },
+      ]);
+    }, 20000);
+
     it("rewrites a bundled local skill slash command before sending the prompt", async () => {
       const skillDefinition = [
         "---",

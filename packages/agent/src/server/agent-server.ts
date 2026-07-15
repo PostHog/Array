@@ -289,6 +289,10 @@ function hiddenTextBlock(text: string): ContentBlock {
   } as ContentBlock;
 }
 
+function isManualCompactPrompt(prompt: ContentBlock[]): boolean {
+  return /^\/compact(?:\s|$)/.test(promptBlocksToText(prompt).trimStart());
+}
+
 interface LocalSkillPromptContext {
   /** Set when the message is a bare `/skill` invocation the adapter should strip. */
   skillName?: string;
@@ -960,6 +964,21 @@ export class AgentServer {
               ? { _meta: promptMeta }
               : {}),
           });
+
+          if (
+            result.stopReason === "end_turn" &&
+            isManualCompactPrompt(prompt)
+          ) {
+            this.recordTurnUsage(result.usage);
+            result = await this.promptWithUpstreamRetry({
+              sessionId: this.session.acpSessionId,
+              prompt: [
+                hiddenTextBlock(
+                  "Compaction is complete. Continue working on the task from the compacted context, following the user's instructions from the /compact command.",
+                ),
+              ],
+            });
+          }
         } catch (error) {
           if (messageId) {
             this.deliveredMessageIds.delete(messageId);
