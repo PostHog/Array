@@ -855,7 +855,6 @@ function ThreadKeyboardNav({
 
   const handleNavigateMessage = useCallback(
     (direction: -1 | 1) => {
-      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       if (userMessageIds.length === 0) return;
 
       const currentIndex = keyboardFocusedMessageId
@@ -875,6 +874,7 @@ function ThreadKeyboardNav({
       const nextId = userMessageIds[nextIndex];
       if (!nextId) return;
 
+      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       setKeyboardFocusedMessageId(nextId);
       scrollToMessage(nextId);
     },

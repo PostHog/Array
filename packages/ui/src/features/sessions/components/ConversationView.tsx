@@ -270,7 +270,6 @@ export function ConversationView({
 
   const handleNavigateMessage = useCallback(
     (direction: -1 | 1) => {
-      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       if (userMessages.length === 0) return;
 
       const currentIndex = keyboardFocusedMessageId
@@ -292,6 +291,7 @@ export function ConversationView({
       const nextMessage = userMessages[nextIndex];
       if (!nextMessage) return;
 
+      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       setKeyboardFocusedMessageId(nextMessage.id);
       scrollToUserMessage(nextMessage.id, nextMessage.index);
     },
