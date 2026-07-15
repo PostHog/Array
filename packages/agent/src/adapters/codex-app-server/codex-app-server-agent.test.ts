@@ -454,7 +454,7 @@ describe("CodexAppServerAgent", () => {
 
     await agent.newSession({
       cwd: "/repo",
-      _meta: { codexGoal: restoredGoal },
+      _meta: { nativeGoal: restoredGoal },
     } as unknown as NewSessionRequest);
 
     expect(stub.requests).toContainEqual({

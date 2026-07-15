@@ -1,6 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { Saga } from "@posthog/shared";
-import { type CodexGoalState, POSTHOG_NOTIFICATIONS } from "../acp-extensions";
+import { type NativeGoalState, POSTHOG_NOTIFICATIONS } from "../acp-extensions";
 import type { PostHogAPIClient } from "../posthog-api";
 import type {
   DeviceInfo,
@@ -37,7 +37,7 @@ export interface ResumeOutput {
   lastDevice?: DeviceInfo;
   logEntryCount: number;
   sessionId: string | null;
-  codexGoal?: CodexGoalState | null;
+  nativeGoal?: NativeGoalState | null;
 }
 
 export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
@@ -92,8 +92,8 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
     const sessionId = await this.readOnlyStep("find_session_id", () =>
       Promise.resolve(this.findSessionId(entries)),
     );
-    const codexGoal = await this.readOnlyStep("find_codex_goal", () =>
-      Promise.resolve(this.findCodexGoal(entries)),
+    const nativeGoal = await this.readOnlyStep("find_native_goal", () =>
+      Promise.resolve(this.findNativeGoal(entries)),
     );
 
     this.log.info("Resume state rebuilt", {
@@ -110,7 +110,7 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       lastDevice,
       logEntryCount: entries.length,
       sessionId,
-      codexGoal,
+      nativeGoal,
     };
   }
 
@@ -121,14 +121,14 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       interrupted: false,
       logEntryCount: 0,
       sessionId: null,
-      codexGoal: undefined,
+      nativeGoal: undefined,
     };
   }
 
-  private findCodexGoal(
+  private findNativeGoal(
     entries: StoredNotification[],
-  ): CodexGoalState | null | undefined {
-    const statuses = new Set<CodexGoalState["status"]>([
+  ): NativeGoalState | null | undefined {
+    const statuses = new Set<NativeGoalState["status"]>([
       "active",
       "paused",
       "blocked",
@@ -151,11 +151,11 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       if (
         typeof value.objective === "string" &&
         typeof value.status === "string" &&
-        statuses.has(value.status as CodexGoalState["status"])
+        statuses.has(value.status as NativeGoalState["status"])
       ) {
         return {
           objective: value.objective,
-          status: value.status as CodexGoalState["status"],
+          status: value.status as NativeGoalState["status"],
         };
       }
       return undefined;

@@ -21,7 +21,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
 import {
-  type CodexGoalState,
+  type NativeGoalState,
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
@@ -90,7 +90,7 @@ type AppServerSessionMeta = {
   channelMode?: boolean;
   spokenNarration?: boolean;
   baseBranch?: string;
-  codexGoal?: CodexGoalState;
+  nativeGoal?: NativeGoalState;
 };
 
 /** The subset of codex's `Thread` the adapter reads: id + persisted `turns` for history replay. */
@@ -101,7 +101,7 @@ type AppServerThread = {
 
 type ThreadGoal = {
   objective: string;
-  status: CodexGoalState["status"];
+  status: NativeGoalState["status"];
 };
 
 type GoalCommand =
@@ -482,8 +482,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     this.threadId = threadId;
     this.sessionId = threadId;
-    if (method === APP_SERVER_METHODS.THREAD_START && params.meta?.codexGoal) {
-      await this.restoreGoal(params.meta.codexGoal);
+    if (method === APP_SERVER_METHODS.THREAD_START && params.meta?.nativeGoal) {
+      await this.restoreGoal(params.meta.nativeGoal);
     }
     await this.loadModelConfig();
     this.emitConfigOptions();
@@ -785,7 +785,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.broadcastAgentText(`${prefix}: ${result.goal.objective}`);
   }
 
-  private async restoreGoal(goal: CodexGoalState): Promise<void> {
+  private async restoreGoal(goal: NativeGoalState): Promise<void> {
     if (!this.threadId) return;
     const result = await this.rpc.request<{ goal: ThreadGoal }>(
       APP_SERVER_METHODS.THREAD_GOAL_SET,
@@ -798,7 +798,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     await this.emitGoalState(result.goal);
   }
 
-  private async emitGoalState(goal: CodexGoalState | null): Promise<void> {
+  private async emitGoalState(goal: NativeGoalState | null): Promise<void> {
     await this.client
       .extNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, { goal })
       .catch((error) =>

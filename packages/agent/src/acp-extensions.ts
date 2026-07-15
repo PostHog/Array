@@ -91,7 +91,7 @@ export const POSTHOG_NOTIFICATIONS = {
   CODEX_GOAL: "_posthog/codex_goal",
 } as const;
 
-export type CodexGoalState = {
+export type NativeGoalState = {
   objective: string;
   status:
     | "active"

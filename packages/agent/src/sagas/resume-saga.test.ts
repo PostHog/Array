@@ -663,7 +663,7 @@ describe("ResumeSaga", () => {
 
       expect(result.success).toBe(true);
       if (!result.success) return;
-      expect(result.data.codexGoal).toEqual(expected);
+      expect(result.data.nativeGoal).toEqual(expected);
     });
   });
 

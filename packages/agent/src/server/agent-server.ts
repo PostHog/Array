@@ -802,11 +802,11 @@ export class AgentServer {
     return { sessionId: priorSessionId, warm };
   }
 
-  private getCodexGoalForFreshSession(
+  private getNativeGoalForFreshSession(
     runtimeAdapter: Adapter,
-  ): ResumeState["codexGoal"] {
+  ): ResumeState["nativeGoal"] {
     if (runtimeAdapter !== "codex") return undefined;
-    return this.resumeState?.codexGoal;
+    return this.resumeState?.nativeGoal;
   }
 
   async stop(): Promise<void> {
@@ -1438,7 +1438,7 @@ export class AgentServer {
       initialPermissionMode,
     );
     let effectiveSessionMeta: typeof sessionMeta & {
-      codexGoal?: NonNullable<ResumeState["codexGoal"]>;
+      nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
     } = sessionMeta;
 
     let acpSessionId: string | null = null;
@@ -1467,10 +1467,10 @@ export class AgentServer {
       }
     }
     if (!acpSessionId) {
-      const restoredCodexGoal =
-        this.getCodexGoalForFreshSession(runtimeAdapter);
-      effectiveSessionMeta = restoredCodexGoal
-        ? { ...sessionMeta, codexGoal: restoredCodexGoal }
+      const restoredNativeGoal =
+        this.getNativeGoalForFreshSession(runtimeAdapter);
+      effectiveSessionMeta = restoredNativeGoal
+        ? { ...sessionMeta, nativeGoal: restoredNativeGoal }
         : sessionMeta;
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,

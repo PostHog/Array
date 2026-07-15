@@ -243,9 +243,9 @@ interface TestableServer {
     runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
   resumeState: ResumeState | null;
-  getCodexGoalForFreshSession(
+  getNativeGoalForFreshSession(
     runtimeAdapter: Adapter,
-  ): ResumeState["codexGoal"];
+  ): ResumeState["nativeGoal"];
 }
 
 interface NativeResumeTestServer {
@@ -2389,11 +2389,11 @@ describe("AgentServer HTTP Mode", () => {
         interrupted: false,
         logEntryCount: 1,
         sessionId: "prior-session",
-        codexGoal: goal,
+        nativeGoal: goal,
       };
 
-      expect(s.getCodexGoalForFreshSession("codex")).toEqual(goal);
-      expect(s.getCodexGoalForFreshSession("claude")).toBeUndefined();
+      expect(s.getNativeGoalForFreshSession("codex")).toEqual(goal);
+      expect(s.getNativeGoalForFreshSession("claude")).toBeUndefined();
     });
 
     it.each([
