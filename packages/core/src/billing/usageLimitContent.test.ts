@@ -1,22 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  deriveUsageLimitCause,
   seatEraLimitContent,
   usageBasedLimitContent,
 } from "./usageLimitContent";
-
-describe("deriveUsageLimitCause", () => {
-  it.each([
-    ["model_gate", "burst", "model_gate"],
-    [null, "burst", "user_daily_limit"],
-    [null, "sustained", "user_monthly_limit"],
-    // No cause and no bucket (e.g. an upstream provider's own rate limit):
-    // stay generic instead of blaming the org's billing.
-    [null, null, null],
-  ] as const)("cause %s + bucket %s -> %s", (cause, bucket, expected) => {
-    expect(deriveUsageLimitCause(cause, bucket)).toBe(expected);
-  });
-});
 
 describe("usageBasedLimitContent", () => {
   it("names the gated model and offers a payment method", () => {
@@ -62,29 +48,15 @@ describe("usageBasedLimitContent", () => {
     },
   );
 
-  it.each([
-    ["user_daily_limit", "Free daily limit reached"],
-    ["user_monthly_limit", "Free monthly limit reached"],
-  ] as const)("%s carries the reset hint", (cause, title) => {
-    const content = usageBasedLimitContent({
-      cause,
-      model: null,
-      resetLabel: "Resets in 2h",
-      billed: false,
-    });
-    expect(content.title).toBe(title);
-    expect(content.description).toContain("Resets in 2h");
-    expect(content.actionLabel).toBe("Add payment method");
-  });
-
   it("renders generic copy without a billing CTA when the cause is unknown", () => {
     const content = usageBasedLimitContent({
       cause: null,
       model: null,
-      resetLabel: null,
+      resetLabel: "Resets in 2h",
       billed: true,
     });
     expect(content.title).toBe("Usage limit reached");
+    expect(content.description).toContain("Resets in 2h");
     expect(content.actionLabel).toBeNull();
     expect(content.dismissLabel).toBe("Got it");
   });

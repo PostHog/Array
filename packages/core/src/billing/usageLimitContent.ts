@@ -9,27 +9,11 @@ export interface UsageLimitContent {
   dismissLabel: string;
 }
 
-/**
- * Maps a legacy bucket-only caller onto a usage-based cause. Null when
- * neither a cause nor a bucket is known — e.g. an upstream provider's own
- * rate limit — so the modal falls back to generic copy instead of blaming
- * the org's billing.
- */
-export function deriveUsageLimitCause(
-  cause: GatewayLimitCause | null,
-  bucket: "burst" | "sustained" | null,
-): GatewayLimitCause | null {
-  if (cause) return cause;
-  if (bucket === "burst") return "user_daily_limit";
-  if (bucket === "sustained") return "user_monthly_limit";
-  return null;
-}
-
 export function usageBasedLimitContent(args: {
   cause: GatewayLimitCause | null;
   model: string | null;
   resetLabel: string | null;
-  /** usage.code_usage_billed — absent means unknown, never free. */
+  /** usage.code_usage_billed — absent means unknown, not free. */
   billed: boolean | undefined;
 }): UsageLimitContent {
   const { cause, model, resetLabel, billed } = args;
@@ -62,19 +46,7 @@ export function usageBasedLimitContent(args: {
     };
   }
 
-  if (cause === "user_daily_limit" || cause === "user_monthly_limit") {
-    const period = cause === "user_daily_limit" ? "daily" : "monthly";
-    return {
-      title: `Free ${period} limit reached`,
-      description: `You've hit the free tier's ${period} usage limit.${
-        resetLabel ? ` ${resetLabel}.` : ""
-      } Add a payment method to your organization for uncapped usage-based access.`,
-      actionLabel: "Add payment method",
-      dismissLabel: "Not now",
-    };
-  }
-
-  // No recognizable billing cause (e.g. an upstream provider rate limit):
+  // Not a billing denial (e.g. an upstream provider's own rate limit) —
   // don't send the user to billing for something billing can't fix.
   return {
     title: "Usage limit reached",

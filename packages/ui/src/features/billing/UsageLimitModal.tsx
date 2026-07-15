@@ -1,15 +1,11 @@
 import { WarningCircle } from "@phosphor-icons/react";
 import { formatResetTime } from "@posthog/core/billing/usageDisplay";
 import {
-  deriveUsageLimitCause,
   seatEraLimitContent,
   usageBasedLimitContent,
 } from "@posthog/core/billing/usageLimitContent";
 import { USAGE_BILLING_FLAG } from "@posthog/shared";
-import {
-  ANALYTICS_EVENTS,
-  type UpgradePromptCause,
-} from "@posthog/shared/analytics-events";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
 import { track } from "../../shell/analytics";
@@ -36,13 +32,11 @@ export function UsageLimitModal() {
   const { isPro: seatIsPro } = useSeat();
   const usageBillingEnabled = useFeatureFlag(USAGE_BILLING_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  // Whether the org pays for Code usage — picks the org_limit copy variant.
+  // code_usage_billed picks the org_limit copy variant.
   const { usage } = useUsage({ enabled: usageBillingEnabled && isOpen });
   const isPro = eventIsPro ?? seatIsPro;
 
-  const derivedCause = deriveUsageLimitCause(cause, bucket);
-  const trackedCause: UpgradePromptCause | undefined =
-    usageBillingEnabled && derivedCause ? derivedCause : undefined;
+  const trackedCause = usageBillingEnabled ? (cause ?? undefined) : undefined;
 
   useEffect(() => {
     if (isOpen) {
@@ -57,7 +51,7 @@ export function UsageLimitModal() {
 
   const content = usageBillingEnabled
     ? usageBasedLimitContent({
-        cause: derivedCause,
+        cause,
         model,
         resetLabel,
         billed: usage?.code_usage_billed,
@@ -71,7 +65,6 @@ export function UsageLimitModal() {
     });
     hide();
     if (usageBillingEnabled) {
-      // Payment methods and billing limits live on the PostHog billing page.
       const billingUrl = getBillingUrl(cloudRegion);
       if (billingUrl) openExternalUrl(billingUrl);
       return;
@@ -83,8 +76,7 @@ export function UsageLimitModal() {
     openExternalUrl(SUPPORT_MAILTO);
   };
 
-  // Seat-era Pro keeps its support escape hatch; usage-based billing has no
-  // Pro plan (support routes through the billing page instead).
+  // Seat-era Pro keeps its support escape hatch.
   const showSupport = !usageBillingEnabled && isPro;
 
   return (

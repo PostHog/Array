@@ -7,12 +7,9 @@ export interface UsageLimitShowArgs {
   bucket?: UsageLimitBucket;
   resetAt?: string;
   isPro?: boolean;
-  /**
-   * Which gateway limit/gate tripped (usage-based billing). Drives the
-   * cause-specific copy; legacy callers that only know the bucket omit it.
-   */
+  /** Which gateway denial tripped (drives the usage-based copy). */
   cause?: GatewayLimitCause;
-  /** The model the free-tier gate blocked, when known (cause "model_gate"). */
+  /** The model the gate blocked, when known. */
   model?: string;
 }
 

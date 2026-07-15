@@ -26,9 +26,7 @@ import {
 // the cheapest model rather than the gateway default.
 export const HELPER_GATEWAY_MODEL = "claude-haiku-4-5";
 
-// When the org isn't billed for Code usage, the gateway 403s models outside
-// the free tier (free-tier model gate). Helper calls are invisible plumbing,
-// so they run on the free-tier model instead of surfacing the gate.
+// Unbilled orgs can only use the free tier; helpers degrade to it silently.
 export const FREE_TIER_GATEWAY_MODEL = "@cf/zai-org/glm-5.2";
 
 export class LlmGatewayError extends Error {
@@ -60,10 +58,8 @@ export class LlmGatewayService {
   private readonly endpoints: LlmGatewayEndpoints;
   private readonly log: LlmGatewayLogger;
 
-  // Last code_usage_billed seen from the gateway. Usage fetches ride through
-  // this service and the usage monitor refreshes on LLM activity, so this
-  // stays warm. null until the gateway has said either way — old gateways
-  // omit the field entirely.
+  // Learned from this service's own usage fetches; null until the gateway
+  // has said either way.
   private lastKnownCodeUsageBilled: boolean | null = null;
 
   async prompt(
@@ -84,10 +80,8 @@ export class LlmGatewayService {
     } = {},
   ): Promise<PromptOutput> {
     const requested = options.model ?? this.endpoints.defaultModel;
-    // This service only carries helper workloads — the main agent session
-    // goes through the SDK, not here. When the org is known to be on the
-    // free tier, route straight to the free-tier model instead of burning a
-    // round trip on the model gate's 403.
+    // Helper-only traffic (the agent session rides the SDK, not this
+    // service): known-unbilled orgs go straight to the free-tier model.
     const model =
       this.lastKnownCodeUsageBilled === false
         ? FREE_TIER_GATEWAY_MODEL
@@ -100,10 +94,8 @@ export class LlmGatewayService {
         error.statusCode === 403 &&
         classifyGatewayLimitError(error.message) === "model_gate";
       if (!isModelGate || model === FREE_TIER_GATEWAY_MODEL) throw error;
-      // Backstop for a cold start (no usage fetch yet) or a stale billed bit
-      // (org just lost billing): the gate itself is authoritative that the
-      // org isn't billed, so remember that and degrade this call instead of
-      // failing it.
+      // Cold start / stale bit: the gate is authoritative that the org is
+      // unbilled — remember it and degrade this call instead of failing.
       this.lastKnownCodeUsageBilled = false;
       this.log.warn("Model gated for free tier, retrying on free-tier model", {
         model,

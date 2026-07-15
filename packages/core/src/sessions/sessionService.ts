@@ -2716,10 +2716,8 @@ export class SessionService {
 
       const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
 
-      // Gateway billing denials — the free-tier model gate (403) or a usage
-      // limit (429): the session is healthy, and the fix is switching model,
-      // adding a payment method, or raising a limit. Surface the upgrade
-      // gate, not an error state.
+      // Billing denials from the gateway leave the session healthy — surface
+      // the upgrade gate, not an error state.
       if (
         limitCause === "model_gate" ||
         isRateLimitError(errorMessage, errorDetails)

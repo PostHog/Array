@@ -55,8 +55,7 @@ export interface AnthropicErrorResponse {
     type: string;
     code?: string;
   };
-  // FastAPI access-denial shape: some gateway 403s (e.g. OAuth/product
-  // checks) carry a bare string `detail` instead of the error envelope.
+  // Some gateway 403s carry a bare FastAPI `detail` instead of the envelope.
   detail?: unknown;
 }
 

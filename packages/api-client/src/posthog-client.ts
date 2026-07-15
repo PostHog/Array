@@ -133,11 +133,7 @@ export class SeatPaymentFailedError extends Error {
   }
 }
 
-/**
- * Seat creation, upgrades, and reactivation return 410 Gone once PostHog Code
- * seats are retired in favor of usage-based billing (reads and cancellation
- * keep working for existing seats).
- */
+/** Seat creation/upgrades/reactivation return 410 Gone: seats are retired. */
 export class SeatProductRetiredError extends Error {
   constructor() {
     super("PostHog Code seats have been retired");
