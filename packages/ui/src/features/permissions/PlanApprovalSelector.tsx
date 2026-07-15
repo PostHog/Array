@@ -1,4 +1,7 @@
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type {
+  PermissionOption,
+  SessionConfigOption,
+} from "@agentclientprotocol/sdk";
 import {
   resolveInitialPlanApprovalOption,
   selectPlanPermissionOptions,
@@ -17,6 +20,13 @@ import { type BasePermissionProps, toSelectorOptions } from "./types";
 
 const TITLE = "Implementation Plan";
 const QUESTION = "Approve this plan to proceed?";
+const CLEAR_AND_CONTINUE_OPTION_ID = "clearAndContinue";
+const CLEAR_AND_CONTINUE_LABEL =
+  "Approve, clear history, and continue from plan";
+
+function isClearAndContinueOption(option: PermissionOption): boolean {
+  return option.optionId === CLEAR_AND_CONTINUE_OPTION_ID;
+}
 
 // Don't steal focus from an interactive element in a different grid cell
 // (multi-task view). Mirrors the guard in useActionSelectorState.
@@ -43,7 +53,8 @@ function isInteractiveElementInDifferentCell(
  * the per-mode "Yes, and…" rows into the shared prompt-input `ModeSelector`
  * dropdown beside the Approve line. Everything is derived from the permission
  * `options` and reported through `onSelect`/`onCancel`, so there is no backend
- * contract change: approve → `onSelect(<modeOptionId>)`, reject →
+ * contract change: approve → `onSelect(<modeOptionId>)`, clear-and-continue →
+ * `onSelect(clearAndContinue, undefined, { executionMode })`, reject →
  * `onSelect(<rejectOptionId>, feedback)`.
  */
 export function PlanApprovalSelector({
@@ -52,9 +63,17 @@ export function PlanApprovalSelector({
   onSelect,
   onCancel,
 }: BasePermissionProps) {
-  const { approvals: approveOptions, rejection: rejectOption } = useMemo(
+  const clearAndContinueOption = useMemo(
+    () => options.find(isClearAndContinueOption),
+    [options],
+  );
+  const { approvals, rejection: rejectOption } = useMemo(
     () => selectPlanPermissionOptions(options),
     [options],
+  );
+  const approveOptions = useMemo(
+    () => approvals.filter((option) => !isClearAndContinueOption(option)),
+    [approvals],
   );
 
   const lastApprovalMode = useSettingsStore((s) => s.lastPlanApprovalMode);
@@ -95,8 +114,10 @@ export function PlanApprovalSelector({
   const [feedback, setFeedback] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const rejectIndex = rejectOption ? 1 : -1;
-  const rowCount = rejectOption ? 2 : 1;
+  const clearIndex = clearAndContinueOption ? 1 : -1;
+  const rejectIndex = rejectOption ? (clearAndContinueOption ? 2 : 1) : -1;
+  const rowCount =
+    1 + (clearAndContinueOption ? 1 : 0) + (rejectOption ? 1 : 0);
   // The reject row is the inline feedback textarea, so "on the reject row" and
   // "editing feedback" are the same state — derive it, don't duplicate it.
   const rejectSelected = selectedIndex === rejectIndex;
@@ -130,7 +151,7 @@ export function PlanApprovalSelector({
   }, []);
 
   // Move selection and manage focus together (no state-syncing effect): the
-  // approve row focuses the container for keyboard nav; the reject row's
+  // approve/clear rows focus the container for keyboard nav; the reject row's
   // textarea focuses itself via its `active` prop.
   const selectRow = (index: number) => {
     setHoveredIndex(null);
@@ -145,6 +166,14 @@ export function PlanApprovalSelector({
     onSelect(selectedMode);
   };
 
+  const approveClearAndContinue = () => {
+    if (!selectedMode || !clearAndContinueOption) return;
+    setLastApprovalMode(selectedMode as ExecutionMode);
+    onSelect(CLEAR_AND_CONTINUE_OPTION_ID, undefined, {
+      executionMode: selectedMode,
+    });
+  };
+
   const submitReject = () => {
     const text = feedback.trim();
     // Exactly as before: reject requires feedback text; empty Enter is a no-op
@@ -155,6 +184,20 @@ export function PlanApprovalSelector({
 
   const moveSelection = (delta: number) => {
     selectRow((selectedIndex + delta + rowCount) % rowCount);
+  };
+
+  const activateSelectedRow = () => {
+    if (selectedIndex === 0) {
+      approve();
+      return;
+    }
+    if (selectedIndex === clearIndex) {
+      approveClearAndContinue();
+      return;
+    }
+    if (selectedIndex === rejectIndex) {
+      selectRow(rejectIndex);
+    }
   };
 
   const handleContainerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -171,7 +214,7 @@ export function PlanApprovalSelector({
         break;
       case "Enter":
         e.preventDefault();
-        approve();
+        activateSelectedRow();
         break;
       case "Escape":
         e.preventDefault();
@@ -184,6 +227,7 @@ export function PlanApprovalSelector({
           if (idx < rowCount) {
             e.preventDefault();
             if (idx === 0) approve();
+            else if (idx === clearIndex) approveClearAndContinue();
             else selectRow(idx);
           }
         }
@@ -235,6 +279,13 @@ export function PlanApprovalSelector({
   );
 
   const approveActive = selectedIndex === 0 || hoveredIndex === 0;
+  const clearActive =
+    clearIndex >= 0 &&
+    (selectedIndex === clearIndex || hoveredIndex === clearIndex);
+  const clearLabel =
+    clearAndContinueOption?.name === "Yes, clear history and continue from plan"
+      ? CLEAR_AND_CONTINUE_LABEL
+      : (clearAndContinueOption?.name ?? CLEAR_AND_CONTINUE_LABEL);
 
   return (
     <Box
@@ -289,25 +340,48 @@ export function PlanApprovalSelector({
               </Flex>
             </Box>
 
+            {/* Opt-in clear-and-continue — same selected mode, fresh agent context. */}
+            {clearAndContinueOption && (
+              <Box
+                onClick={approveClearAndContinue}
+                onMouseEnter={() => setHoveredIndex(clearIndex)}
+                onMouseLeave={() => setHoveredIndex(null)}
+                py="1"
+                className={rowClass(clearIndex)}
+              >
+                <Flex align="center" gap="2" className="leading-4">
+                  {caret(clearIndex)}
+                  {number(clearIndex)}
+                  <Text
+                    className={`min-w-0 flex-1 whitespace-pre-wrap font-medium text-[13px] leading-4 ${clearActive ? "text-primary" : "text-gray-12"}`}
+                  >
+                    {clearLabel}
+                  </Text>
+                </Flex>
+              </Box>
+            )}
+
             {/* Reject line — the inline feedback textarea, exactly as before. */}
             {rejectOption && (
               <Box
-                onClick={() => selectRow(1)}
-                onMouseEnter={() => setHoveredIndex(1)}
+                onClick={() => selectRow(rejectIndex)}
+                onMouseEnter={() => setHoveredIndex(rejectIndex)}
                 onMouseLeave={() => setHoveredIndex(null)}
                 py="1"
-                className={rowClass(1)}
+                className={rowClass(rejectIndex)}
               >
                 <Flex align="center" gap="2" className="leading-4">
-                  {caret(1)}
-                  {number(1)}
+                  {caret(rejectIndex)}
+                  {number(rejectIndex)}
                   <Box className="min-w-0 flex-1 leading-4">
                     <InlineEditableText
                       value={feedback}
                       placeholder="Type here to tell the agent what to do differently"
                       active={rejectSelected}
                       onChange={setFeedback}
-                      onNavigateUp={() => selectRow(0)}
+                      onNavigateUp={() =>
+                        selectRow(clearIndex >= 0 ? clearIndex : 0)
+                      }
                       onNavigateDown={() => selectRow(0)}
                       onEscape={() => {
                         setFeedback("");
