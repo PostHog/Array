@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  fillSpendBuckets,
   fillSpendDays,
-  fillSpendHours,
   formatTokens,
   type SpendAnalysisWindow,
   windowToDateFrom,
   windowToDays,
 } from "./spendAnalysisFormat";
-import type { SpendAnalysisHourRow } from "./spendAnalysisTypes";
+import type { SpendAnalysisBucketRow } from "./spendAnalysisTypes";
 
 describe("formatTokens", () => {
   it.each([
@@ -88,13 +88,13 @@ describe("fillSpendDays", () => {
   });
 });
 
-describe("fillSpendHours", () => {
+describe("fillSpendBuckets", () => {
   const row = (
-    hour: string,
+    bucketStart: string,
     cost: number,
     cacheCreation = 0,
-  ): SpendAnalysisHourRow => ({
-    hour,
+  ): SpendAnalysisBucketRow => ({
+    bucket_start: bucketStart,
     event_count: 1,
     cost_usd: cost,
     input_cost_usd: 0.1,
@@ -107,13 +107,14 @@ describe("fillSpendHours", () => {
     cache_creation_input_tokens: 500,
   });
 
-  it("zero-fills missing hours and aligns the window to hour starts", () => {
-    const filled = fillSpendHours(
+  it("zero-fills missing buckets and aligns the window to bucket starts", () => {
+    const filled = fillSpendBuckets(
       [row("2026-07-10T09:00:00Z", 1.0), row("2026-07-10T11:00:00Z", 3.0, 2.5)],
       "2026-07-10T08:30:00Z",
       "2026-07-10T11:10:00Z",
+      60,
     );
-    expect(filled.map((h) => [h.hour, h.cost_usd])).toEqual([
+    expect(filled.map((b) => [b.bucket_start, b.cost_usd])).toEqual([
       ["2026-07-10T08:00:00.000Z", 0],
       ["2026-07-10T09:00:00.000Z", 1.0],
       ["2026-07-10T10:00:00.000Z", 0],
@@ -123,24 +124,40 @@ describe("fillSpendHours", () => {
     expect(filled[2]?.event_count).toBe(0);
   });
 
-  it("buckets rows with sub-hour timestamps into their hour", () => {
-    const filled = fillSpendHours(
+  it("fills at 5-minute resolution", () => {
+    const filled = fillSpendBuckets(
+      [row("2026-07-10T09:05:00Z", 1.0)],
+      "2026-07-10T09:00:00Z",
+      "2026-07-10T09:10:00Z",
+      5,
+    );
+    expect(filled.map((b) => [b.bucket_start, b.cost_usd])).toEqual([
+      ["2026-07-10T09:00:00.000Z", 0],
+      ["2026-07-10T09:05:00.000Z", 1.0],
+      ["2026-07-10T09:10:00.000Z", 0],
+    ]);
+  });
+
+  it("buckets rows with sub-bucket timestamps into their bucket", () => {
+    const filled = fillSpendBuckets(
       [row("2026-07-10T09:30:15.500Z", 1.0)],
       "2026-07-10T09:00:00Z",
       "2026-07-10T10:00:00Z",
+      60,
     );
-    expect(filled.map((h) => [h.hour, h.cost_usd])).toEqual([
+    expect(filled.map((b) => [b.bucket_start, b.cost_usd])).toEqual([
       ["2026-07-10T09:00:00.000Z", 1.0],
       ["2026-07-10T10:00:00.000Z", 0],
     ]);
   });
 
   it("caps runaway windows instead of looping unbounded", () => {
-    const filled = fillSpendHours(
+    const filled = fillSpendBuckets(
       [],
       "2020-01-01T00:00:00Z",
       "2026-01-01T00:00:00Z",
+      60,
     );
-    expect(filled.length).toBe(200);
+    expect(filled.length).toBe(620);
   });
 });

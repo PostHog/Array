@@ -36,11 +36,11 @@ export interface SpendAnalysisDayRow {
   cost_usd: number;
 }
 
-// Per-hour cost split into the LLM gateway's cost-breakdown components.
+// Per-bucket cost split into the LLM gateway's cost-breakdown components.
 // `cost_usd` is authoritative: fallback-priced events carry only the total,
 // so the components can sum to less — render any remainder as uncategorized.
-export interface SpendAnalysisHourRow {
-  hour: string;
+export interface SpendAnalysisBucketRow {
+  bucket_start: string;
   event_count: number;
   cost_usd: number;
   input_cost_usd: number;
@@ -58,6 +58,12 @@ export interface SpendAnalysisBreakdown<TRow> {
   truncated: boolean;
 }
 
+export interface SpendAnalysisBucketBreakdown
+  extends SpendAnalysisBreakdown<SpendAnalysisBucketRow> {
+  // Bucket size in minutes the series was computed at — echoes the request.
+  bucket_minutes: number;
+}
+
 export interface SpendAnalysisResponse {
   summary: SpendAnalysisSummary;
   by_product: SpendAnalysisBreakdown<SpendAnalysisProductRow>;
@@ -65,9 +71,9 @@ export interface SpendAnalysisResponse {
   by_model: SpendAnalysisBreakdown<SpendAnalysisModelRow>;
   // Optional until the backend by_day rollout reaches every deployment.
   by_day?: SpendAnalysisBreakdown<SpendAnalysisDayRow>;
-  // Only present when the request set `hourly: true` (and the backend
-  // supports it) — hour-ascending UTC series, windows of 8 days or less.
-  by_hour?: SpendAnalysisBreakdown<SpendAnalysisHourRow>;
+  // Only present when the request set `bucketMinutes` (and the backend
+  // supports it) — time-ascending UTC series, at most 600 buckets per window.
+  by_bucket?: SpendAnalysisBucketBreakdown;
   // `top_traces` is still in the backend response shape (always empty) per
   // posthog/posthog#59796. Renderer code does not consume it; left out of the
   // TS type so future readers see only what we actually use.

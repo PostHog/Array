@@ -1,69 +1,74 @@
 import type { SpendAnalysisResponse } from "@posthog/api-client/spend-analysis";
 import {
-  fillSpendHours,
-  type SpendAnalysisFilledHour,
+  fillSpendBuckets,
+  type SpendAnalysisFilledBucket,
 } from "@posthog/core/billing/spendAnalysisFormat";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { logger } from "@posthog/ui/shell/logger";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
-const log = logger.scope("hourly-usage");
+const log = logger.scope("recent-usage");
 
-const HOURLY_USAGE_STALE_TIME_MS = 60_000;
+const RECENT_USAGE_STALE_TIME_MS = 60_000;
 
-interface UseHourlyUsageOptions {
+// 5-minute buckets match the prompt-cache TTL, so one bucket ≈ one turn:
+// a cold-revival spike stands alone instead of being diluted across an hour.
+export const RECENT_USAGE_BUCKET_MINUTES = 5;
+
+interface UseRecentUsageOptions {
   product?: string;
 }
 
-interface UseHourlyUsageReturn {
-  // null while loading or when the backend doesn't return `by_hour` yet.
-  hours: SpendAnalysisFilledHour[] | null;
+interface UseRecentUsageReturn {
+  // null while loading or when the backend doesn't return `by_bucket` yet.
+  buckets: SpendAnalysisFilledBucket[] | null;
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
 }
 
 /**
- * Last-24h personal spend at hourly resolution, zero-filled so the chart
+ * Last-24h personal spend at 5-minute resolution, zero-filled so the chart
  * always renders a continuous series.
  */
-export function useHourlyUsage({
+export function useRecentUsage({
   product,
-}: UseHourlyUsageOptions): UseHourlyUsageReturn {
+}: UseRecentUsageOptions): UseRecentUsageReturn {
   const client = useOptionalAuthenticatedClient();
   const query = useQuery({
-    queryKey: ["billing", "hourly-usage", product ?? "all"],
+    queryKey: ["billing", "recent-usage", product ?? "all"],
     queryFn: async (): Promise<SpendAnalysisResponse> => {
       if (!client) throw new Error("Not authenticated");
       try {
         return await client.getPersonalSpendAnalysis({
           dateFrom: "-24h",
           product,
-          hourly: true,
+          bucketMinutes: RECENT_USAGE_BUCKET_MINUTES,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
-        log.warn("Failed to fetch hourly usage", { error: message });
+        log.warn("Failed to fetch recent usage", { error: message });
         throw err;
       }
     },
     enabled: client !== null,
-    staleTime: HOURLY_USAGE_STALE_TIME_MS,
+    staleTime: RECENT_USAGE_STALE_TIME_MS,
   });
 
-  const hours = useMemo(() => {
+  const buckets = useMemo(() => {
     const data = query.data;
-    if (!data?.by_hour) return null;
-    return fillSpendHours(
-      data.by_hour.items,
+    if (!data?.by_bucket) return null;
+    return fillSpendBuckets(
+      data.by_bucket.items,
       data.summary.date_from,
       data.summary.date_to,
+      data.by_bucket.bucket_minutes,
     );
   }, [query.data]);
 
   return {
-    hours,
+    buckets,
     // Not isPending: it stays true forever while the query is disabled pre-auth.
     isLoading: query.isLoading,
     error: query.error instanceof Error ? query.error.message : null,

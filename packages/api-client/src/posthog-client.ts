@@ -4923,18 +4923,19 @@ export class PostHogAPIClient {
    * accept absolute dates (`2026-04-23`) or relative strings (`-7d`, `-1m`), and
    * default to the last 30 days. When `product` is set the tool / model / trace
    * breakdowns are scoped to that `ai_product` (e.g. `posthog_code`); when omitted
-   * they aggregate across every product. `hourly` additionally requests the
-   * `by_hour` component-cost series (windows of 8 days or less).
+   * they aggregate across every product. `bucketMinutes` (5, 15, 30, or 60)
+   * additionally requests the `by_bucket` component-cost series; the window
+   * may span at most 600 buckets of the chosen size.
    */
   async getPersonalSpendAnalysis(
     options: {
       dateFrom?: string;
       dateTo?: string;
       product?: string;
-      hourly?: boolean;
+      bucketMinutes?: number;
     } = {},
   ): Promise<SpendAnalysisResponse> {
-    const { dateFrom = "-30d", dateTo, product, hourly } = options;
+    const { dateFrom = "-30d", dateTo, product, bucketMinutes } = options;
     const urlPath = `/api/llm_analytics/@me/spend/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
     url.searchParams.set("date_from", dateFrom);
@@ -4944,8 +4945,8 @@ export class PostHogAPIClient {
     if (product) {
       url.searchParams.set("product", product);
     }
-    if (hourly) {
-      url.searchParams.set("hourly", "true");
+    if (bucketMinutes) {
+      url.searchParams.set("bucket_minutes", String(bucketMinutes));
     }
     const response = await this.api.fetcher.fetch({
       method: "get",

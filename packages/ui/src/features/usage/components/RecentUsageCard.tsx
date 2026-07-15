@@ -1,7 +1,7 @@
 import { ClockCounterClockwise } from "@phosphor-icons/react";
 import {
   formatUsd,
-  type SpendAnalysisFilledHour,
+  type SpendAnalysisFilledBucket,
 } from "@posthog/core/billing/spendAnalysisFormat";
 import {
   type Series,
@@ -9,61 +9,61 @@ import {
   useChartTheme,
 } from "@posthog/quill-charts";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
-import { useHourlyUsage } from "../useHourlyUsage";
+import { useRecentUsage } from "../useRecentUsage";
 import { UsageCard } from "./UsageCard";
 
-interface HourlyUsageCardProps {
+interface RecentUsageCardProps {
   product?: string;
 }
 
 // The component costs can undershoot cost_usd when the gateway priced an
 // event via the token-estimation fallback (no per-side breakdown).
-function otherCost(h: SpendAnalysisFilledHour): number {
+function otherCost(b: SpendAnalysisFilledBucket): number {
   return Math.max(
     0,
-    h.cost_usd -
-      (h.input_cost_usd +
-        h.output_cost_usd +
-        h.cache_read_cost_usd +
-        h.cache_creation_cost_usd),
+    b.cost_usd -
+      (b.input_cost_usd +
+        b.output_cost_usd +
+        b.cache_read_cost_usd +
+        b.cache_creation_cost_usd),
   );
 }
 
-export function HourlyUsageCard({ product }: HourlyUsageCardProps) {
+export function RecentUsageCard({ product }: RecentUsageCardProps) {
   const theme = useChartTheme();
-  const { hours, isLoading, error } = useHourlyUsage({ product });
+  const { buckets, isLoading, error } = useRecentUsage({ product });
 
-  // Older backends don't return by_hour — hide the card rather than erroring.
-  if (!isLoading && !error && hours === null) {
+  // Older backends don't return by_bucket — hide the card rather than erroring.
+  if (!isLoading && !error && buckets === null) {
     return null;
   }
 
-  const series: Series[] = hours
+  const series: Series[] = buckets
     ? [
         {
           key: "cache_read",
           label: "Cache read",
-          data: hours.map((h) => Math.max(0, h.cache_read_cost_usd)),
+          data: buckets.map((b) => Math.max(0, b.cache_read_cost_usd)),
         },
         {
           key: "cache_write",
           label: "Cache write",
-          data: hours.map((h) => Math.max(0, h.cache_creation_cost_usd)),
+          data: buckets.map((b) => Math.max(0, b.cache_creation_cost_usd)),
         },
         {
           key: "input",
           label: "Uncached input",
-          data: hours.map((h) => Math.max(0, h.input_cost_usd)),
+          data: buckets.map((b) => Math.max(0, b.input_cost_usd)),
         },
         {
           key: "output",
           label: "Output",
-          data: hours.map((h) => Math.max(0, h.output_cost_usd)),
+          data: buckets.map((b) => Math.max(0, b.output_cost_usd)),
         },
         {
           key: "other",
           label: "Uncategorized",
-          data: hours.map(otherCost),
+          data: buckets.map(otherCost),
         },
       ]
     : [];
@@ -79,30 +79,31 @@ export function HourlyUsageCard({ product }: HourlyUsageCardProps) {
         </Flex>
       ) : error ? (
         <Text color="gray" className="text-sm">
-          Couldn't load hourly usage
+          Couldn't load recent usage
         </Text>
-      ) : hours ? (
+      ) : buckets ? (
         <>
           {/* flex-col + fixed height: the quill chart sizes its canvas by filling
               a flex-column parent; a plain block collapses it to 0. */}
           <div className="flex h-56 w-full flex-col">
             <TimeSeriesBarChart
               series={series}
-              labels={hours.map((h) => h.hour)}
+              labels={buckets.map((b) => b.bucket_start)}
               config={{
-                xAxis: { timezone: "UTC", interval: "hour" },
+                xAxis: { timezone: "UTC", interval: "minute" },
                 yAxis: { tickFormatter: formatUsd },
                 valueLabels: false,
-                barCornerRadius: 2,
+                barCornerRadius: 1,
                 showCrosshair: true,
               }}
               theme={theme}
             />
           </div>
           <Text className="text-(--gray-11) text-[13px]">
-            Cost per hour, stacked by component. A bar dominated by cache write
-            with little cache read usually means a cold session was revived —
-            its whole context was re-written to the prompt cache at full price.
+            Cost per 5 minutes, stacked by component. A spike dominated by cache
+            write with little cache read usually means a cold session was
+            revived — its whole context was re-written to the prompt cache at
+            full price.
           </Text>
         </>
       ) : null}

@@ -1,6 +1,6 @@
 import type {
+  SpendAnalysisBucketRow,
   SpendAnalysisDayRow,
-  SpendAnalysisHourRow,
 } from "./spendAnalysisTypes";
 
 export function formatUsd(amount: number): string {
@@ -49,12 +49,12 @@ export interface SpendAnalysisFilledDay {
   cost_usd: number;
 }
 
-const HOUR_MS = 3_600_000;
-// The backend caps hourly windows at 8 days (193 possible buckets incl. edges).
-const MAX_FILLED_HOURS = 200;
+const MINUTE_MS = 60_000;
+// The backend caps series at 600 buckets (+ a partial edge bucket).
+const MAX_FILLED_BUCKETS = 620;
 
-export interface SpendAnalysisFilledHour {
-  hour: string;
+export interface SpendAnalysisFilledBucket {
+  bucket_start: string;
   event_count: number;
   cost_usd: number;
   input_cost_usd: number;
@@ -63,29 +63,31 @@ export interface SpendAnalysisFilledHour {
   cache_creation_cost_usd: number;
 }
 
-export function fillSpendHours(
-  items: SpendAnalysisHourRow[],
+export function fillSpendBuckets(
+  items: SpendAnalysisBucketRow[],
   fromIso: string,
   toIso: string,
-): SpendAnalysisFilledHour[] {
-  // Floor row keys to hour starts so sub-hour timestamps still land in their bucket.
-  const byHour = new Map(
+  bucketMinutes: number,
+): SpendAnalysisFilledBucket[] {
+  const bucketMs = bucketMinutes * MINUTE_MS;
+  // Floor row keys to bucket starts so sub-bucket timestamps still land in their bucket.
+  const byBucket = new Map(
     items.map((row) => [
-      Math.floor(new Date(row.hour).getTime() / HOUR_MS) * HOUR_MS,
+      Math.floor(new Date(row.bucket_start).getTime() / bucketMs) * bucketMs,
       row,
     ]),
   );
-  const start = Math.floor(new Date(fromIso).getTime() / HOUR_MS) * HOUR_MS;
+  const start = Math.floor(new Date(fromIso).getTime() / bucketMs) * bucketMs;
   const end = new Date(toIso).getTime();
-  const filled: SpendAnalysisFilledHour[] = [];
+  const filled: SpendAnalysisFilledBucket[] = [];
   for (
     let t = start;
-    t <= end && filled.length < MAX_FILLED_HOURS;
-    t += HOUR_MS
+    t <= end && filled.length < MAX_FILLED_BUCKETS;
+    t += bucketMs
   ) {
-    const row = byHour.get(t);
+    const row = byBucket.get(t);
     filled.push({
-      hour: new Date(t).toISOString(),
+      bucket_start: new Date(t).toISOString(),
       event_count: row?.event_count ?? 0,
       cost_usd: row?.cost_usd ?? 0,
       input_cost_usd: row?.input_cost_usd ?? 0,
