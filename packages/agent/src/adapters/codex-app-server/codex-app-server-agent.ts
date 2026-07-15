@@ -937,24 +937,27 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   private handleNotification(method: string, params: unknown): void {
-    const mappedParams = this.withBufferedCommandOutput(method, params);
-    if (this.sessionId && !this.session.cancelled) {
-      const notification = mapAppServerNotification(
-        this.sessionId,
-        method,
-        mappedParams,
-      );
-      if (notification) {
-        void this.client
-          .sessionUpdate(notification)
-          .catch((err) => this.logger.warn("sessionUpdate failed", err));
-        this.appendNotification(this.sessionId, notification);
-      }
-    }
+    const notificationThreadId = readNotificationThreadId(params);
+    const isMainThread =
+      !notificationThreadId || notificationThreadId === this.threadId;
+    const mappedParams = isMainThread
+      ? this.withBufferedCommandOutput(method, params)
+      : params;
 
-    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
-      // Capture the active turn id (steer precondition / interrupt target).
-      this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
+    if (this.sessionId && !this.session.cancelled) {
+      if (isMainThread) {
+        const notification = mapAppServerNotification(
+          this.sessionId,
+          method,
+          mappedParams,
+        );
+        if (notification) {
+          void this.client
+            .sessionUpdate(notification)
+            .catch((err) => this.logger.warn("sessionUpdate failed", err));
+          this.appendNotification(this.sessionId, notification);
+        }
+      }
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED) {
@@ -962,6 +965,13 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
       this.mcp.release(params);
+    }
+
+    if (!isMainThread) return;
+
+    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
+      // Capture the active turn id (steer precondition / interrupt target).
+      this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
     }
 
     // codex auto-compaction surfaces as a contextCompaction item: item/started → in progress,
@@ -1435,6 +1445,12 @@ function mapTurnStopReason(status: string | undefined): StopReason {
   if (status === "interrupted") return "cancelled";
   if (status === "failed") return "refusal";
   return "end_turn";
+}
+
+function readNotificationThreadId(params: unknown): string | undefined {
+  if (!params || typeof params !== "object") return undefined;
+  const threadId = (params as { threadId?: unknown }).threadId;
+  return typeof threadId === "string" ? threadId : undefined;
 }
 
 /** The codex thread config override map: folds in MCP servers + makes extra workspace roots writable. Undefined when empty. */
