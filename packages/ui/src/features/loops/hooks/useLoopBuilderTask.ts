@@ -44,13 +44,11 @@ export function useLoopBuilderTask(): UseLoopBuilderTaskReturn {
       });
       return {
         content: prompt,
-        taskDescription: "Create a loop",
-        // Building a loop is pure PostHog-MCP work; it runs repo-less when no
-        // personal repo resolves, and passes one through harmlessly when it does.
+        taskDescription: prompt,
         repository: ctx.cloudRepository,
         githubUserIntegrationId: ctx.githubUserIntegrationId ?? undefined,
         workspaceMode: "cloud",
-        executionMode: "auto",
+        executionMode: "default",
         adapter: ctx.adapter,
         model: ctx.model,
         reasoningLevel: ctx.reasoningLevel,
