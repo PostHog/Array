@@ -37,6 +37,7 @@ export namespace LoopSchemas {
     | "deduped"
     | "overlap_skipped"
     | "rate_capped"
+    | "team_rate_capped"
     | "disabled"
     | "gate_blocked";
   export type LoopRunStatusEnum =
@@ -178,6 +179,10 @@ export namespace LoopSchemas {
     repositories: Array<LoopRepositoryEntry>;
     sandbox_environment_id: string | null;
     enabled: boolean;
+    /** Why the loop was paused when it wasn't the owner who paused it (e.g.
+     * "owner_deactivated", "github_integration_disconnected"), or null for a normal pause.
+     * Cleared when the loop is re-enabled. Read-only. */
+    disabled_reason: string | null;
     overlap_policy: LoopOverlapPolicyEnum;
     behaviors: LoopBehaviors;
     connectors: LoopConnectors;
@@ -221,6 +226,10 @@ export namespace LoopSchemas {
     /** Context to attach this loop to, or null to detach. */
     context_target?: LoopContextTargetWrite | null;
     triggers?: Array<LoopTriggerWrite>;
+    /** On a team loop, claim ownership as part of this update so you can edit
+     * identity-bearing config (instructions, model, triggers, ...) that only the owner may
+     * change. Ignored on personal loops and on create. Write-only. */
+    take_ownership?: boolean;
   };
 
   export type PatchedLoop = Partial<LoopWrite>;
