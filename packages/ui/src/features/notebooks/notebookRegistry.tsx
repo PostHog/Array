@@ -1,5 +1,6 @@
 import { Database } from "lucide-react";
 import type { JSX } from "react";
+import { NotebookNodeAIEditPanel } from "./ai/NotebookNodeAIEditPanel";
 import { PythonCellEmbed } from "./cells/PythonCellEmbed";
 import { DuckSqlCellEmbed, HogqlSqlCellEmbed } from "./cells/SqlCellEmbed";
 import { SqlV2CellEmbed } from "./cells/SqlV2CellEmbed";
@@ -69,6 +70,15 @@ export function getNotebooksAppRegistry(): NotebookComponentRegistry {
           ViewComponent,
           EditComponent: fallbackEditComponent,
         };
+    // PostHog entity nodes swap the vendored raw-JSON edit panel for the AI
+    // summarizer + prompter (which keeps a raw-JSON escape hatch inside it).
+    // Image and Embed keep their purpose-built URL form editors.
+    if (AI_EDIT_TAGS.has(tagName)) {
+      components[tagName] = {
+        ...components[tagName],
+        EditComponent: NotebookNodeAIEditPanel,
+      };
+    }
   }
   // Discussion-flavor `<Comment ref replies>` threads render (and reply)
   // through the same component in both modes — the generic props edit panel
@@ -112,6 +122,21 @@ export function getNotebooksAppRegistry(): NotebookComponentRegistry {
   }
   return mergeMarkdownNotebookRegistries(base, { components });
 }
+
+// Entity tags whose edit panel becomes the AI summarizer + prompter. These
+// are exactly the VIEW_OVERRIDES tags that previously fell through to the
+// vendored generic JSON-textarea edit panel.
+const AI_EDIT_TAGS = new Set([
+  "Query",
+  "FeatureFlag",
+  "Experiment",
+  "Survey",
+  "EarlyAccessFeature",
+  "Cohort",
+  "Person",
+  "Group",
+  "Recording",
+]);
 
 const CELL_OVERRIDES: Record<
   string,

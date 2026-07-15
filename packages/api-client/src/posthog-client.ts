@@ -1370,6 +1370,9 @@ function previewTokenHeader(
 export class PostHogAPIClient {
   private api: ReturnType<typeof createApiClient>;
   private _teamId: number | null = null;
+  // Kept for callers that hit non-API origins with the same bearer (the LLM
+  // gateway); the fetcher only covers requests against the API base URL.
+  private readonly getAccessToken: () => Promise<string>;
 
   constructor(
     apiHost: string,
@@ -1378,6 +1381,7 @@ export class PostHogAPIClient {
     teamId?: number,
   ) {
     const baseUrl = apiHost.endsWith("/") ? apiHost.slice(0, -1) : apiHost;
+    this.getAccessToken = getAccessToken;
     this.api = createApiClient(
       buildApiFetcher({
         getAccessToken,
@@ -2040,6 +2044,56 @@ export class PostHogAPIClient {
         signal,
       },
     });
+  }
+
+  /**
+   * PostHog LLM gateway base for this cloud region, scoped to the
+   * `posthog_code` product (mirrors `@posthog/agent`'s `getLlmGatewayUrl`,
+   * inlined here so the api-client stays dependency-free). The gateway
+   * accepts the same OAuth bearer this client already holds.
+   */
+  get llmGatewayUrl(): string {
+    const url = new URL(this.api.baseUrl);
+    const hostname = url.hostname;
+    let base: string;
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      base = `${url.protocol}//localhost:3308`;
+    } else if (hostname === "app.dev.posthog.dev") {
+      base = "https://gateway.dev.posthog.dev";
+    } else {
+      const region = hostname.match(/^(us|eu)\.posthog\.com$/)?.[1] ?? "us";
+      base = `https://gateway.${region}.posthog.com`;
+    }
+    return `${base}/posthog_code`;
+  }
+
+  // One-shot OpenAI-compatible chat completion against the PostHog LLM
+  // gateway (non-agentic — much lower latency than a Max conversation turn).
+  // Returns the raw Response; with `stream: true` in the body it streams
+  // `chat.completion.chunk` SSE events. The gateway is a different origin
+  // from the API, so this goes through plain fetch with the bearer attached
+  // rather than the shared fetcher.
+  async llmGatewayChatCompletion(
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const token = await this.getAccessToken();
+    const response = await fetch(`${this.llmGatewayUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(
+        `LLM gateway request failed: [${response.status}] ${detail.slice(0, 300)}`,
+      );
+    }
+    return response;
   }
 
   // Cancel an in-progress Max AI conversation turn (best-effort; the caller

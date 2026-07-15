@@ -29,3 +29,14 @@ export const notebookListItemSchema = z
     last_modified_at: z.string(),
   })
   .array();
+
+// The single-call contract of the AI node editor: one model reply carries
+// BOTH the full replacement props and the fresh human-readable summary.
+export const notebookNodeAIChangeResponseSchema = z.object({
+  props: z.record(z.string(), z.unknown()),
+  summary: z.string().trim().min(1),
+});
+
+export type NotebookNodeAIChangeResponse = z.infer<
+  typeof notebookNodeAIChangeResponseSchema
+>;
