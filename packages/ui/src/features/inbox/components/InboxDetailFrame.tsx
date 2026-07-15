@@ -18,6 +18,7 @@ import { SignalReportPriorityBadge } from "@posthog/ui/features/inbox/components
 import { SignalReportStatusBadge } from "@posthog/ui/features/inbox/components/utils/SignalReportStatusBadge";
 import { SignalReportSummaryMarkdown } from "@posthog/ui/features/inbox/components/utils/SignalReportSummaryMarkdown";
 import { hasKnownSourceProduct } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
+import type { InboxListRoute } from "@posthog/ui/features/inbox/hooks/useInboxBackTarget";
 import { useInboxReportDismissAction } from "@posthog/ui/features/inbox/hooks/useInboxReportDismissAction";
 import { useInboxReportSignals } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
@@ -27,7 +28,7 @@ import type { ComponentType, ReactNode } from "react";
 interface InboxDetailFrameProps {
   report: SignalReport;
   /** List route for the back-link (e.g. "/code/inbox/pulls"). */
-  backTo: "/code/inbox/pulls" | "/code/inbox/reports" | "/code/inbox/dismissed";
+  backTo: InboxListRoute;
   backLabel: string;
   /**
    * Whether to render the Dismiss button + dialog. Off for already-dismissed

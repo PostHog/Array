@@ -118,6 +118,33 @@ describe("createHogBrandingExtension", () => {
     expect(expandedLines.length).not.toEqual(compactLines.length);
   });
 
+  it("never returns a rendered line containing an embedded newline (compact or expanded)", async () => {
+    // Regression test: `render()` must return one terminal line per array
+    // entry. A previous version joined the expanded hint list into a single
+    // "\n"-separated string and returned it as one array entry, which made
+    // the TUI measure the whole multi-line block as one line and crash with
+    // "Rendered line N exceeds terminal width".
+    const { pi, handlers } = fakePi();
+    const setHeader = vi.fn();
+
+    const extension = createHogBrandingExtension();
+    await extension(pi);
+
+    const ctx = fakeCtx({ mode: "tui", setHeader });
+    await handlers.session_start[0]?.({} as SessionStartEvent, ctx);
+
+    const factory = setHeader.mock.calls[0]?.[0];
+    const component = factory(undefined, fakeTheme());
+
+    for (const line of component.render(80)) {
+      expect(line).not.toContain("\n");
+    }
+    component.setExpanded(true);
+    for (const line of component.render(80)) {
+      expect(line).not.toContain("\n");
+    }
+  });
+
   it("sets a Hog-branded terminal title on session_start, with and without a session name", async () => {
     const { pi, handlers } = fakePi();
 

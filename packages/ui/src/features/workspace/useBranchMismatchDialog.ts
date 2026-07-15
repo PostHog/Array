@@ -117,12 +117,13 @@ export function useBranchMismatchDialog({
   }, [dismissWarning, emitAction]);
 
   const handleCancel = useCallback(() => {
+    if (isSwitching) return;
     emitAction("cancel");
     setPendingMessage(null);
     pendingMessageRef.current = null;
     pendingClearRef.current = null;
     setSwitchError(null);
-  }, [emitAction]);
+  }, [emitAction, isSwitching]);
 
   const dialogProps =
     linkedBranch && currentBranch

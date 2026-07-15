@@ -89,7 +89,7 @@ function ActivityRow({
                 <>
                   {" in "}
                   <Text as="span" size="1" weight="medium">
-                    #{item.channelName}
+                    {item.channelName}
                   </Text>
                 </>
               )}
@@ -176,7 +176,7 @@ export function ActivityView() {
           Activity
         </Text>
         <Text size="2" className="block text-muted-foreground">
-          Mentions of you across channel threads.
+          Mentions of you across contexts.
         </Text>
         <div className="mt-4">
           {isLoading && items.length === 0 ? (

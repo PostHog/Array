@@ -138,6 +138,7 @@ import {
   CODE_EXECUTION_MODES,
   type CodeExecutionMode,
   getAvailableModes,
+  toSdkPermissionMode,
 } from "./tools";
 import type {
   BackgroundTerminal,
@@ -1785,7 +1786,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.session.modeBeforePlan = previousMode;
     }
     try {
-      await this.session.query.setPermissionMode(modeId as CodeExecutionMode);
+      await this.session.query.setPermissionMode(
+        toSdkPermissionMode(modeId as CodeExecutionMode),
+      );
     } catch (error) {
       this.session.permissionMode = previousMode;
       if (error instanceof Error) {
@@ -1955,7 +1958,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       McpSdkServerConfigWithInstance
     > => {
       const server = createLocalToolsMcpServer(
-        { cwd, token: resolveGithubToken(), taskId, baseBranch },
+        {
+          cwd,
+          token: resolveGithubToken(),
+          taskId,
+          taskRunId: meta?.taskRunId,
+          baseBranch,
+        },
         { environment },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};

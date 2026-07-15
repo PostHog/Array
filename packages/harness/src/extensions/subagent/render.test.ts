@@ -1,11 +1,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   formatUsageStats,
   renderSubagentCall,
   renderSubagentResult,
 } from "./render";
 import type { SingleRunResult } from "./run-agent";
+import { __resetAgentRunsForTesting, upsertAgentRun } from "./status-registry";
 
 function makeTheme(): Theme {
   return {
@@ -24,6 +25,7 @@ function successResult(
 ): SingleRunResult {
   return {
     runId: "run-1",
+    startedAt: Date.now(),
     agent: "scout",
     task: "look around",
     exitCode: 0,
@@ -84,12 +86,18 @@ describe("formatUsageStats", () => {
 describe("renderSubagentCall", () => {
   const theme = makeTheme();
 
+  beforeEach(() => {
+    __resetAgentRunsForTesting();
+  });
+
   it("renders single mode", () => {
     const component = renderSubagentCall(
       { agent: "scout", task: "find the auth code" },
       theme,
     );
-    expect(component.constructor.name).toBe("Text");
+    const lines = component.render(80);
+    expect(lines.join("\n")).toContain("scout");
+    expect(lines.join("\n")).toContain("find the auth code");
   });
 
   it("renders parallel mode with a task count", () => {
@@ -102,15 +110,59 @@ describe("renderSubagentCall", () => {
       },
       theme,
     );
-    expect(component.constructor.name).toBe("Text");
+    const lines = component.render(80);
+    expect(lines.join("\n")).toContain("scout");
+    expect(lines.join("\n")).toContain("reviewer");
   });
 
-  it("renders chain mode with a step count", () => {
+  it("never exceeds the given width, even for very long tasks", () => {
     const component = renderSubagentCall(
-      { chain: [{ agent: "scout", task: "a" }] },
+      { agent: "scout", task: "x".repeat(500) },
       theme,
     );
-    expect(component.constructor.name).toBe("Text");
+    for (const line of component.render(40)) {
+      expect(line.length).toBeLessThanOrEqual(40);
+    }
+  });
+
+  it("numbers each task in parallel mode, so the result slot's numbers line up positionally", () => {
+    const component = renderSubagentCall(
+      {
+        tasks: [
+          { agent: "scout", task: "a" },
+          { agent: "scout", task: "b" },
+        ],
+      },
+      theme,
+    );
+    const lines = component.render(80);
+    expect(lines[0]).toContain("1. ");
+    expect(lines[1]).toContain("2. ");
+  });
+
+  it("stays static while a matching run is active", () => {
+    upsertAgentRun({
+      runId: "run-live",
+      agent: "scout",
+      task: "a",
+      startedAt: Date.now() - 5000,
+      usage: {
+        input: 900,
+        output: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: 0,
+        contextTokens: 0,
+        turns: 1,
+      },
+      messages: [],
+    });
+
+    const text = renderSubagentCall({ agent: "scout", task: "a" }, theme)
+      .render(80)
+      .join("\n");
+    expect(text).not.toContain("tokens");
+    expect(text).not.toContain("5s");
   });
 });
 
@@ -126,10 +178,10 @@ describe("renderSubagentResult", () => {
       { expanded: false, isPartial: false },
       theme,
     );
-    expect(component.constructor.name).toBe("Text");
+    expect(component.render(80).join("\n")).toContain("nothing");
   });
 
-  it("renders a collapsed single result", () => {
+  it("renders a collapsed single result without repeating the agent name", () => {
     const component = renderSubagentResult(
       {
         content: [{ type: "text", text: "done" }],
@@ -138,10 +190,14 @@ describe("renderSubagentResult", () => {
       { expanded: false, isPartial: false },
       theme,
     );
-    expect(component.constructor.name).toBe("Text");
+    const text = component.render(80).join("\n");
+    expect(text).toContain("Done");
+    // The call slot already names the agent (`Agent(task)`); the collapsed
+    // result must not repeat it on its own line.
+    expect(text).not.toContain("scout");
   });
 
-  it("renders an expanded single result as a Container with Markdown output", () => {
+  it("renders an expanded single result with the task and output", () => {
     const component = renderSubagentResult(
       {
         content: [{ type: "text", text: "done" }],
@@ -150,7 +206,10 @@ describe("renderSubagentResult", () => {
       { expanded: true, isPartial: false },
       theme,
     );
-    expect(component.constructor.name).toBe("Container");
+    const text = component.render(80).join("\n");
+    expect(text).toContain("scout");
+    expect(text).toContain("look around");
+    expect(text).toContain("found it");
   });
 
   it("renders parallel results without a stale runId hint (runId only ever accompanies empty results)", () => {
@@ -165,7 +224,12 @@ describe("renderSubagentResult", () => {
       { expanded: false, isPartial: false },
       theme,
     );
-    expect(component.constructor.name).toBe("Text");
+    const text = component.render(80).join("\n");
+    expect(text).not.toContain("run-1");
+    // Positionally aligned with the call slot's numbered task list instead
+    // of repeating each agent's name in the result too.
+    expect(text).toContain("1. Done");
+    expect(text).toContain("2. Done");
   });
 
   it("marks a failed result distinctly from a running one", () => {
@@ -183,6 +247,29 @@ describe("renderSubagentResult", () => {
       { expanded: false, isPartial: false },
       theme,
     );
-    expect(component.constructor.name).toBe("Text");
+    const text = component.render(80).join("\n");
+    expect(text).toContain("Failed");
+    expect(text).toContain("boom");
+    expect(text).toContain("Running");
+  });
+
+  it("never exceeds the given width, even for a very long task or error message", () => {
+    const failed = successResult({
+      exitCode: 1,
+      stopReason: "error",
+      task: "first line\nsecond line\n".repeat(20),
+      errorMessage: "boom ".repeat(100),
+    });
+    const component = renderSubagentResult(
+      {
+        content: [{ type: "text", text: "..." }],
+        details: { mode: "single", results: [failed] },
+      },
+      { expanded: true, isPartial: false },
+      theme,
+    );
+    for (const line of component.render(40)) {
+      expect(line.length).toBeLessThanOrEqual(40);
+    }
   });
 });

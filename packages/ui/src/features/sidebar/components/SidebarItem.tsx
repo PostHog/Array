@@ -25,11 +25,19 @@ interface SidebarItemProps {
   onDoubleClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   action?: SidebarItemAction;
+  /** Hugs the label but never truncates with it; pushes endContent right. */
+  badge?: React.ReactNode;
   endContent?: React.ReactNode;
   disabled?: boolean;
 }
 
-function SidebarItemLabel({ label }: { label: React.ReactNode }) {
+function SidebarItemLabel({
+  label,
+  grow,
+}: {
+  label: React.ReactNode;
+  grow: boolean;
+}) {
   const canTooltip = typeof label === "string" || typeof label === "number";
 
   const measureRef = useCallback((el: HTMLSpanElement | null) => {
@@ -44,7 +52,7 @@ function SidebarItemLabel({ label }: { label: React.ReactNode }) {
   }, []);
 
   const span = (
-    <span ref={measureRef} className="min-w-0 flex-1 truncate">
+    <span ref={measureRef} className={cn("min-w-0 truncate", grow && "flex-1")}>
       {label}
     </span>
   );
@@ -76,6 +84,7 @@ export function SidebarItem({
   onClick,
   onDoubleClick,
   onContextMenu,
+  badge,
   endContent,
   disabled,
 }: SidebarItemProps) {
@@ -108,7 +117,12 @@ export function SidebarItem({
       ) : null}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-h-[18px] items-center gap-1">
-          <SidebarItemLabel label={label} />
+          <SidebarItemLabel label={label} grow={!badge} />
+          {badge ? (
+            <span className="mr-auto ml-1 flex shrink-0 items-center">
+              {badge}
+            </span>
+          ) : null}
           {endContent}
         </span>
         {subtitle ? (

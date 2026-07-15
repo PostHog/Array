@@ -18,13 +18,14 @@ import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
+  createReadImageGuardHook,
   createSignedCommitGuardHook,
   createSubagentRewriteHook,
   createTaskHook,
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
-import type { CodeExecutionMode } from "../tools";
+import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { APPENDED_INSTRUCTIONS } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
@@ -50,6 +51,13 @@ export type GatewayEnv = {
   openaiApiKey: string;
   /** Task-specific custom headers forwarded to the gateway (e.g. task_id, run_id). */
   anthropicCustomHeaders?: string;
+  /**
+   * Same task-metadata attribution headers as {@link anthropicCustomHeaders},
+   * in record form for the codex/OpenAI path (which sets provider
+   * `http_headers` rather than `ANTHROPIC_CUSTOM_HEADERS`). Includes `team_id`,
+   * which the Claude path instead appends in {@link buildEnvironment}.
+   */
+  openaiCustomHeaders?: Record<string, string>;
   /** PostHog project ID for per-team attribution headers. */
   posthogProjectId?: string;
 };
@@ -225,6 +233,7 @@ function buildHooks(
   rtkPrefix: string | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
+    createReadImageGuardHook(),
     createPostToolUseHook({
       onModeChange,
       onPostHogResourceUsed,
@@ -447,7 +456,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     cwd: params.cwd,
     includePartialMessages: true,
     allowDangerouslySkipPermissions: !IS_ROOT || !!process.env.IS_SANDBOX,
-    permissionMode: params.permissionMode,
+    permissionMode: toSdkPermissionMode(params.permissionMode),
     canUseTool: params.canUseTool,
     tools,
     agents,

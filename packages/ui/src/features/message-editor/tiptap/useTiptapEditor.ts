@@ -11,23 +11,37 @@ import {
   parseGithubIssueUrl,
 } from "@posthog/core/message-editor/githubIssueUrl";
 import {
+  type AutoConvertedPaste,
   buildMarkdownLink,
   buildPastedTextLabel,
   extractBashCommand,
   isBashModeText,
+  isRepeatOfAutoConvertedPaste,
   isUrlOnly,
   shouldAutoConvertLongText,
 } from "@posthog/core/message-editor/paste";
+import {
+  formatHotkey,
+  SHORTCUTS,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
+import {
+  PROMPT_RECALL_HINT_KEY,
+  type PromptRecallHandler,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { toast } from "@posthog/ui/primitives/toast";
+import { type ToastOptions, toast } from "@posthog/ui/primitives/toast";
 import { isSendMessageSubmitKey } from "@posthog/ui/utils/sendMessageKey";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEditor } from "@tiptap/react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getGithubIssue, getGithubPullRequest } from "../hostApi";
+import { usePasteUndoStore } from "../pasteUndoStore";
 import { usePromptHistoryStore } from "../promptHistoryStore";
+import { findChipRangeById } from "../tiptap/chipRange";
 import { getEditorExtensions } from "../tiptap/extensions";
 import {
   type DraftContext,
@@ -57,6 +71,7 @@ export interface UseTiptapEditorOptions {
   };
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
+  onPromptRecall?: PromptRecallHandler;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
   onSubmit?: (text: string) => void;
   onBashCommand?: (command: string) => void;
@@ -69,6 +84,11 @@ export interface UseTiptapEditorOptions {
 const EDITOR_CLASS =
   "cli-editor min-h-[1.5em] w-full break-words border-none bg-transparent pr-2 text-[14px] text-[var(--gray-12)] outline-none [overflow-wrap:break-word] [white-space:pre-wrap] [word-break:break-word]";
 
+interface TrackedAutoConvertedPaste extends AutoConvertedPaste {
+  kind: "file" | "github-ref";
+  status: "pending" | "inserted" | "canceled";
+}
+
 function insertChipWithTrailingSpace(
   view: EditorView,
   attrs: {
@@ -76,6 +96,7 @@ function insertChipWithTrailingSpace(
     id: string;
     label: string;
     pastedText?: boolean;
+    chipId?: string;
   },
 ): void {
   const chipNode = view.state.schema.nodes.mentionChip.create({
@@ -92,8 +113,10 @@ async function pasteTextAsFile(
   view: EditorView,
   text: string,
   pasteCountRef: React.MutableRefObject<number>,
+  tracked?: TrackedAutoConvertedPaste,
 ): Promise<void> {
   const result = await persistTextContent(text);
+  if (tracked?.status === "canceled") return;
   pasteCountRef.current += 1;
   const lineCount = text.split("\n").length;
   insertChipWithTrailingSpace(view, {
@@ -101,15 +124,38 @@ async function pasteTextAsFile(
     id: result.path,
     label: buildPastedTextLabel(pasteCountRef.current, lineCount),
     pastedText: true,
+    chipId: tracked?.chipId,
   });
+  if (tracked) tracked.status = "inserted";
   view.focus();
 }
 
 function insertGithubRefPlaceholder(
   view: EditorView,
   parsed: ParsedGithubIssueUrl,
+  chipId: string,
 ): void {
-  insertChipWithTrailingSpace(view, buildGithubRefPlaceholderChip(parsed));
+  insertChipWithTrailingSpace(view, {
+    ...buildGithubRefPlaceholderChip(parsed),
+    chipId,
+  });
+}
+
+function replaceChipWithText(
+  view: EditorView,
+  chipId: string,
+  text: string,
+): boolean {
+  const { doc, selection } = view.state;
+  const range = findChipRangeById(doc, chipId);
+  if (!range) return false;
+  // Only treat it as a double paste while the caret still follows the chip.
+  if (selection.from !== range.to && selection.from !== range.to - 1) {
+    return false;
+  }
+  view.dispatch(view.state.tr.insertText(text, range.from, range.to));
+  view.focus();
+  return true;
 }
 
 async function fetchGithubRefTitle(
@@ -135,44 +181,71 @@ async function fetchGithubRefTitle(
 async function resolveGithubRefChip(
   view: EditorView,
   parsed: ParsedGithubIssueUrl,
+  chipId: string,
 ): Promise<void> {
-  const chipType = parsed.kind === "pr" ? "github_pr" : "github_issue";
-  const placeholderLabel = `#${parsed.number} - Loading...`;
   const title = await fetchGithubRefTitle(parsed);
   const resolvedLabel =
     title !== null ? `#${parsed.number} - ${title}` : `#${parsed.number}`;
 
   if (view.isDestroyed) return;
 
-  const { doc, tr } = view.state;
-  let updated = false;
-  doc.descendants((node, pos) => {
-    if (
-      node.type.name !== "mentionChip" ||
-      node.attrs.type !== chipType ||
-      node.attrs.id !== parsed.normalizedUrl ||
-      node.attrs.label !== placeholderLabel
-    ) {
-      return true;
-    }
-    tr.setNodeMarkup(pos, undefined, {
+  const { doc } = view.state;
+  const range = findChipRangeById(doc, chipId);
+  if (!range) return;
+  const node = doc.nodeAt(range.from);
+  if (!node) return;
+  view.dispatch(
+    view.state.tr.setNodeMarkup(range.from, undefined, {
       ...node.attrs,
       label: resolvedLabel,
-    });
-    updated = true;
-    return false;
-  });
+    }),
+  );
+}
 
-  if (updated) view.dispatch(tr);
+function replaceComposerText(view: EditorView, text = "") {
+  const tr = view.state.tr.delete(1, view.state.doc.content.size - 1);
+  return text ? tr.insertText(text, 1) : tr;
+}
+
+function hasVisibleSuggestionPopup(sessionId: string): boolean {
+  // tippy.js sets data-state="hidden" when hiding via .hide(); the session
+  // tag keeps another mounted composer's popup from matching.
+  return (
+    document.querySelector(
+      `[data-tippy-root] .tippy-box:not([data-state='hidden']) [data-suggestion-session="${CSS.escape(sessionId)}"]`,
+    ) !== null
+  );
+}
+
+function showHintOnce(
+  key: string,
+  title: string,
+  detail: string | ToastOptions,
+): void {
+  const store = useFeatureSettingsStore.getState();
+  if (!store.shouldShowHint(key)) return;
+  store.recordHintShown(key);
+  toast.info(title, detail);
+}
+
+function showMessageNavHint(): void {
+  showHintOnce(
+    PROMPT_RECALL_HINT_KEY,
+    "Recalled a sent prompt",
+    `Use ${formatHotkey(SHORTCUTS.MESSAGE_PREV)} and ${formatHotkey(SHORTCUTS.MESSAGE_NEXT)} to jump between your messages in the conversation.`,
+  );
 }
 
 function showPasteHint(message: string, description: string): void {
-  const store = useFeatureSettingsStore.getState();
   const key =
     message === "Pasted as file attachment" ? "paste-as-file" : "paste-inline";
-  if (!store.shouldShowHint(key)) return;
-  store.recordHintShown(key);
-  toast.info(message, description);
+  showHintOnce(key, message, {
+    description,
+    action: {
+      label: "Got it",
+      onClick: () => useFeatureSettingsStore.getState().markHintLearned(key),
+    },
+  });
 }
 
 export function useTiptapEditor(options: UseTiptapEditorOptions) {
@@ -188,6 +261,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     capabilities = {},
     clearOnSubmit = true,
     getPromptHistory,
+    onPromptRecall,
     onBeforeSubmit,
     onSubmit,
     onBashCommand,
@@ -228,12 +302,30 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const getPromptHistoryRef = useRef(getPromptHistory);
   getPromptHistoryRef.current = getPromptHistory;
 
+  const onPromptRecallRef = useRef(onPromptRecall);
+  onPromptRecallRef.current = onPromptRecall;
+
+  // Doc snapshot taken when arrow-key recall first replaces the input, so
+  // arrowing back down past the newest prompt restores what was being typed
+  // (kept as a ProseMirror node to preserve mention chips).
+  const promptRecallDraftRef = useRef<ProseMirrorNode | null>(null);
+
   const prevBashModeRef = useRef(false);
   const prevIsEmptyRef = useRef(true);
   const submitRef = useRef<() => void>(() => {});
   const draftRef = useRef<ReturnType<typeof useDraftSync> | null>(null);
 
   const pasteCountRef = useRef(0);
+  const lastAutoConvertedPasteRef = useRef<TrackedAutoConvertedPaste | null>(
+    null,
+  );
+  useEffect(() => {
+    return () => {
+      if (lastAutoConvertedPasteRef.current) {
+        usePasteUndoStore.getState().setUndoableChipId(null);
+      }
+    };
+  }, []);
   const historyActions = usePromptHistoryStore.getState();
   const [isEmptyState, setIsEmptyState] = useState(true);
   const [isReady, setIsReady] = useState(false);
@@ -286,11 +378,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
           if (isSendMessageSubmitKey(event)) {
             if (!view.editable || submitDisabledRef.current) return false;
-            // tippy.js sets data-state="hidden" when hiding via .hide()
-            const visibleSuggestion = document.querySelector(
-              "[data-tippy-root] .tippy-box:not([data-state='hidden'])",
-            );
-            if (visibleSuggestion) return false;
+            if (hasVisibleSuggestionPopup(sessionId)) return false;
             event.preventDefault();
             historyActions.reset();
             submitRef.current();
@@ -299,12 +387,17 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
           if (
             (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-            // Only navigate prompt history when the input is empty, so arrow
-            // keys (and Shift+Arrow selection) behave normally while editing.
-            !event.shiftKey
+            // Plain arrows only: Shift+Arrow selects, and Alt/Cmd/Ctrl arrow
+            // chords are global shortcuts handled elsewhere.
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.ctrlKey
           ) {
             const historyGetter = getPromptHistoryRef.current;
-            if (!taskId && !historyGetter) return false;
+            if (!taskId && !historyGetter && !onPromptRecallRef.current) {
+              return false;
+            }
 
             const currentText = view.state.doc.textContent;
             const isEmpty = !currentText.trim();
@@ -317,11 +410,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                   sessionStoreSetters.dequeueMessagesAsText(taskId);
                 if (queuedContent !== null && queuedContent !== undefined) {
                   event.preventDefault();
-                  view.dispatch(
-                    view.state.tr
-                      .delete(1, view.state.doc.content.size - 1)
-                      .insertText(queuedContent, 1),
-                  );
+                  view.dispatch(replaceComposerText(view, queuedContent));
                   return true;
                 }
               }
@@ -329,11 +418,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               const newText = historyActions.navigateUp(history, currentText);
               if (newText !== null) {
                 event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
+                view.dispatch(replaceComposerText(view, newText));
                 return true;
               }
             }
@@ -342,13 +427,59 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               const newText = historyActions.navigateDown(history);
               if (newText !== null) {
                 event.preventDefault();
-                view.dispatch(
-                  view.state.tr
-                    .delete(1, view.state.doc.content.size - 1)
-                    .insertText(newText, 1),
-                );
+                view.dispatch(replaceComposerText(view, newText));
                 return true;
               }
+            }
+
+            const recallPrompt = onPromptRecallRef.current;
+            if (recallPrompt) {
+              if (hasVisibleSuggestionPopup(sessionId)) return false;
+
+              const { selection, doc } = view.state;
+              // Arrows move the caret as usual; only a press that can't
+              // travel further (caret already at the first or last position)
+              // hands off to sent-prompt recall.
+              const atBoundary =
+                selection.empty &&
+                (event.key === "ArrowUp"
+                  ? selection.from <= 1
+                  : selection.to >= doc.content.size - 1);
+              if (!atBoundary) return false;
+
+              const result = recallPrompt(event.key === "ArrowUp" ? -1 : 1);
+              if (!result) return false;
+              event.preventDefault();
+
+              if (result.kind === "recall") {
+                if (result.fresh) {
+                  promptRecallDraftRef.current = view.state.doc;
+                  showMessageNavHint();
+                }
+                const tr = replaceComposerText(view, result.text);
+                // Recalling up parks the caret at the start so the next Up
+                // press keeps cycling; recalling down parks it at the end.
+                if (event.key === "ArrowUp") {
+                  tr.setSelection(TextSelection.create(tr.doc, 1));
+                }
+                view.dispatch(tr);
+                return true;
+              }
+
+              const draft = promptRecallDraftRef.current;
+              promptRecallDraftRef.current = null;
+              if (draft) {
+                const tr = view.state.tr.replaceWith(
+                  0,
+                  view.state.doc.content.size,
+                  draft.content,
+                );
+                tr.setSelection(TextSelection.atEnd(tr.doc));
+                view.dispatch(tr);
+              } else {
+                view.dispatch(replaceComposerText(view));
+              }
+              return true;
             }
           }
 
@@ -376,6 +507,13 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           const clipboardText = event.clipboardData?.getData("text/plain");
           const trimmedClipboardText = clipboardText?.trim();
 
+          // Only the immediately-following paste can undo an auto-conversion.
+          const lastConverted = lastAutoConvertedPasteRef.current;
+          lastAutoConvertedPasteRef.current = null;
+          if (lastConverted) {
+            usePasteUndoStore.getState().setUndoableChipId(null);
+          }
+
           // Auto-wrap selected text as markdown link when pasting a URL
           if (
             from !== to &&
@@ -398,13 +536,52 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             return true;
           }
 
+          // Pasting the same clipboard again undoes the chip auto-conversion
+          if (
+            from === to &&
+            isRepeatOfAutoConvertedPaste(lastConverted, clipboardText)
+          ) {
+            if (
+              replaceChipWithText(
+                view,
+                lastConverted.chipId,
+                lastConverted.insertText,
+              )
+            ) {
+              event.preventDefault();
+              if (lastConverted.kind === "file") {
+                useFeatureSettingsStore
+                  .getState()
+                  .markHintLearned("paste-as-file");
+              }
+              return true;
+            }
+            if (lastConverted.status === "pending") {
+              event.preventDefault();
+              lastConverted.status = "canceled";
+              useFeatureSettingsStore
+                .getState()
+                .markHintLearned("paste-as-file");
+              view.dispatch(view.state.tr.insertText(lastConverted.insertText));
+              return true;
+            }
+          }
+
           // Auto-convert a pasted GitHub issue or PR URL into a chip
-          if (from === to && trimmedClipboardText) {
+          if (from === to && clipboardText && trimmedClipboardText) {
             const parsedRef = parseGithubIssueUrl(trimmedClipboardText);
             if (parsedRef) {
               event.preventDefault();
-              insertGithubRefPlaceholder(view, parsedRef);
-              void resolveGithubRefChip(view, parsedRef);
+              const chipId = crypto.randomUUID();
+              insertGithubRefPlaceholder(view, parsedRef, chipId);
+              lastAutoConvertedPasteRef.current = {
+                clipboardText,
+                insertText: clipboardText,
+                chipId,
+                kind: "github-ref",
+                status: "inserted",
+              };
+              void resolveGithubRefChip(view, parsedRef, chipId);
               return true;
             }
           }
@@ -458,15 +635,34 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           ) {
             event.preventDefault();
 
+            const tracked: TrackedAutoConvertedPaste = {
+              clipboardText: clipboardText || effectiveText,
+              insertText: effectiveText,
+              chipId: crypto.randomUUID(),
+              kind: "file",
+              status: "pending",
+            };
+            lastAutoConvertedPasteRef.current = tracked;
+            usePasteUndoStore.getState().setUndoableChipId(tracked.chipId);
+
             (async () => {
               try {
-                await pasteTextAsFile(view, effectiveText, pasteCountRef);
-                showPasteHint(
-                  "Pasted as file attachment",
-                  "Click the chip to convert back to text.",
+                await pasteTextAsFile(
+                  view,
+                  effectiveText,
+                  pasteCountRef,
+                  tracked,
                 );
+                if (tracked.status !== "canceled") {
+                  showPasteHint(
+                    "Pasted as file attachment",
+                    "Paste again to expand as text.",
+                  );
+                }
               } catch (_error) {
-                toast.error("Failed to convert pasted text to attachment");
+                if (tracked.status !== "canceled") {
+                  toast.error("Failed to convert pasted text to attachment");
+                }
               }
             })();
 
@@ -532,6 +728,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const draft = useDraftSync(editor, sessionId, context);
   draftRef.current = draft;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `editor` is the trigger: a recreated editor brings a new schema, and restoring a snapshot taken against the old one would throw on replaceWith.
+  useEffect(() => {
+    promptRecallDraftRef.current = null;
+  }, [editor]);
+
   // Keep attachmentsRef in sync with state (synchronous, no effect needed)
   attachmentsRef.current = attachments;
 
@@ -571,6 +772,8 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     if (isContentEmpty(content)) return;
 
     const text = editor.getText().trim();
+
+    promptRecallDraftRef.current = null;
 
     const doClear = () => {
       if (!clearOnSubmit) return;

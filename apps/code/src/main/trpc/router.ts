@@ -42,6 +42,7 @@ import { shellRouter } from "@posthog/host-router/routers/shell.router";
 import { skillsRouter } from "@posthog/host-router/routers/skills.router";
 import { slackIntegrationRouter } from "@posthog/host-router/routers/slack-integration.router";
 import { sleepRouter } from "@posthog/host-router/routers/sleep.router";
+import { speechRouter } from "@posthog/host-router/routers/speech.router";
 import { suspensionRouter } from "@posthog/host-router/routers/suspension.router";
 import { uiRouter } from "@posthog/host-router/routers/ui.router";
 import { updatesRouter } from "@posthog/host-router/routers/updates.router";
@@ -98,6 +99,7 @@ export const trpcRouter = router({
   suspension: suspensionRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,
+  speech: speechRouter,
   skills: skillsRouter,
   slackIntegration: slackIntegrationRouter,
   ui: uiRouter,

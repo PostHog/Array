@@ -133,6 +133,9 @@ describe("isTransientUpstreamError", () => {
     "API Error: 500 internal server error",
     "API Error: 529 overloaded_error",
     "Internal error: API Error: request timed out",
+    "Internal error: API Error: Connection closed mid-response. The response above may be incomplete.",
+    "The socket connection was closed unexpectedly.",
+    "socket connection closed",
   ])("recognises %j", (message) => {
     expect(isTransientUpstreamError(message)).toBe(true);
   });

@@ -732,12 +732,9 @@ export function TaskInput({
       implementEffort: currentReasoningLevel ?? null,
       measureEffort: currentReasoningLevel ?? null,
     });
-    // The loop iterates unattended, so a permission prompt would stall it.
-    // Default to the most hands-off mode available: bypass when the user has
-    // enabled it, otherwise accept-edits.
-    const autonomousMode = allowBypassPermissions
-      ? "bypassPermissions"
-      : "acceptEdits";
+    // Autoresearch needs to apply edits without stopping for each change, but
+    // it should not silently inherit the broader bypass-permissions mode.
+    const autonomousMode = "acceptEdits";
     if (modeOption && isValidConfigValue(modeOption, autonomousMode)) {
       setConfigOption(modeOption.id, autonomousMode);
     }
@@ -749,7 +746,6 @@ export function TaskInput({
     sessionId,
     currentModel,
     currentReasoningLevel,
-    allowBypassPermissions,
     modeOption,
     setConfigOption,
     workspaceMode,
@@ -1194,7 +1190,7 @@ export function TaskInput({
 
               <Flex direction="column" gap="0">
                 {autoresearchDraft && (
-                  <div className="mb-2 rounded-md border border-violet-6 bg-violet-2 px-2.5 py-1.5">
+                  <div className="mb-3 rounded-md border border-gray-6 bg-gray-2 px-3.5 py-3">
                     <AutoresearchComposerControls
                       draft={autoresearchDraft}
                       modelOptions={autoresearchModelOptions}
@@ -1218,7 +1214,7 @@ export function TaskInput({
                   sessionId={promptSessionId}
                   placeholder={
                     autoresearchDraft
-                      ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
+                      ? "Example: Reduce memory usage measured by `pnpm bench:memory` without changing behavior."
                       : `What do you want to ship? ${hints}`
                   }
                   editorHeight="large"
@@ -1339,7 +1335,7 @@ export function TaskInput({
                         <button
                           type="button"
                           onClick={() => setChannelContextDismissed(true)}
-                          aria-label="Remove channel context from prompt"
+                          aria-label="Remove context from prompt"
                           className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
                         >
                           <X size={12} />

@@ -21,7 +21,8 @@ function successResult(
 ): SingleRunResult {
   return {
     runId: "test-run-id",
-    agent: "scout",
+    startedAt: Date.now(),
+    agent: "Explore",
     task: "look around",
     exitCode: 0,
     messages: [
@@ -88,7 +89,7 @@ describe("subagent tool", () => {
     const execute = await getExecute();
     const result = (await execute(
       "id",
-      { agent: "scout", task: "x", tasks: [{ agent: "scout", task: "y" }] },
+      { agent: "Explore", task: "x", tasks: [{ agent: "Explore", task: "y" }] },
       undefined,
       undefined,
       fakeCtx,
@@ -115,7 +116,7 @@ describe("subagent tool", () => {
   it("errors when parallel tasks exceed the max count", async () => {
     const execute = await getExecute();
     const tasks = Array.from({ length: 9 }, () => ({
-      agent: "scout",
+      agent: "Explore",
       task: "x",
     }));
     const result = (await execute(
@@ -139,7 +140,7 @@ describe("subagent tool", () => {
       "id",
       {
         tasks: [
-          { agent: "scout", task: "x" },
+          { agent: "Explore", task: "x" },
           { agent: "not-real", task: "y" },
         ],
       },
@@ -157,7 +158,7 @@ describe("subagent tool", () => {
     const execute = await getExecute();
     const result = (await execute(
       "id",
-      { agent: "scout", task: "find auth code" },
+      { agent: "Explore", task: "find auth code" },
       undefined,
       undefined,
       fakeCtx,
@@ -177,7 +178,7 @@ describe("subagent tool", () => {
     const execute = await getExecute();
     const result = (await execute(
       "id",
-      { agent: "scout", task: "x" },
+      { agent: "Explore", task: "x" },
       undefined,
       undefined,
       fakeCtx,
@@ -189,64 +190,10 @@ describe("subagent tool", () => {
     expect(result.content[0].text).toMatch(/boom/);
   });
 
-  it("errors when chain has more steps than the max", async () => {
-    const execute = await getExecute();
-    const chain = Array.from({ length: 9 }, () => ({
-      agent: "scout",
-      task: "x",
-    }));
-    const result = (await execute(
-      "id",
-      { chain },
-      undefined,
-      undefined,
-      fakeCtx,
-    )) as { isError?: boolean; content: Array<{ text: string }> };
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/Too many chain steps/);
-  });
-
-  it("dispatches chain mode sequentially with {previous} substitution", async () => {
-    runAgentMock
-      .mockImplementationOnce(async ({ task }: { task: string }) =>
-        successResult({ task, agent: "scout" }),
-      )
-      .mockImplementationOnce(async ({ task }: { task: string }) =>
-        successResult({
-          task,
-          agent: "planner",
-          messages: [
-            {
-              role: "assistant",
-              content: [{ type: "text", text: task }],
-            } as never,
-          ],
-        }),
-      );
-
-    const execute = await getExecute();
-    const result = (await execute(
-      "id",
-      {
-        chain: [
-          { agent: "scout", task: "look around" },
-          { agent: "planner", task: "plan for: {previous}" },
-        ],
-      },
-      undefined,
-      undefined,
-      fakeCtx,
-    )) as { isError?: boolean; content: Array<{ text: string }> };
-
-    expect(runAgentMock).toHaveBeenCalledTimes(2);
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).toBe("plan for: done");
-  });
-
   it("dispatches parallel mode through runPool", async () => {
     const tasks = [
-      { agent: "scout", task: "a" },
-      { agent: "reviewer", task: "b" },
+      { agent: "Explore", task: "a" },
+      { agent: "Plan", task: "b" },
     ];
     runPoolMock.mockImplementation(
       async (

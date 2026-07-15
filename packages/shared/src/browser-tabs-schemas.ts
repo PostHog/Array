@@ -25,6 +25,13 @@ export const browserTabSchema = z.object({
    * blank). Pairs with `channelId`: the two together identify a channel tab.
    */
   channelSection: z.string().nullable().default(null),
+  /**
+   * Top-level app page this tab shows (`inbox` / `agents` / `skills` /
+   * `mcp-servers` / `command-center` / `home`). Null for a canvas / task /
+   * channel / blank tab. These pages have no channel, task, or dashboard id, so
+   * this is what lets them be a real tab target (label + restore-on-refocus).
+   */
+  appView: z.string().nullable().default(null),
   /** Gap-spaced ordering key within a window. Reindexed on collision. */
   position: z.number(),
   /**

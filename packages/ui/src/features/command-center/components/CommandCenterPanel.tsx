@@ -133,9 +133,12 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
     setBrainrotCell(cellIndex);
   }, [layout, cells, setBrainrotCell, cellIndex]);
 
-  const handleNewTerminal = useCallback(() => {
-    setTerminalCell(cellIndex, secureRandomString(8));
-  }, [setTerminalCell, cellIndex]);
+  const handleNewTerminal = useCallback(
+    (cwd?: string) => {
+      setTerminalCell(cellIndex, secureRandomString(8), cwd);
+    },
+    [setTerminalCell, cellIndex],
+  );
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -279,13 +282,15 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
 function TerminalCell({
   cellIndex,
   terminalId,
+  terminalCwd,
 }: {
   cellIndex: number;
   terminalId: string;
+  terminalCwd: string | null;
 }) {
   const clearCell = useCommandCenterStore((s) => s.clearCell);
   const { getRecentFolders, getFolderDisplayName } = useFolders();
-  const cwd = getRecentFolders(1)[0]?.path;
+  const cwd = terminalCwd ?? getRecentFolders(1)[0]?.path;
   const folderName = cwd ? getFolderDisplayName(cwd) : null;
   const stateKey = getTerminalCellStateKey(terminalId);
 
@@ -413,7 +418,11 @@ export function CommandCenterPanel({
 
   if (cell.terminalId) {
     return (
-      <TerminalCell cellIndex={cell.cellIndex} terminalId={cell.terminalId} />
+      <TerminalCell
+        cellIndex={cell.cellIndex}
+        terminalId={cell.terminalId}
+        terminalCwd={cell.terminalCwd}
+      />
     );
   }
 

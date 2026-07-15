@@ -9,6 +9,7 @@ import type { TaskService } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import {
   ANALYTICS_EVENTS,
+  defaultEligibleModel,
   getCloudUrlFromRegion,
   type TaskCreationInput,
 } from "@posthog/shared";
@@ -103,7 +104,8 @@ export function useRunWorkstreamAction(): RunWorkstreamAction {
           // honoured if the gateway still offers it (the resolver validates it),
           // so a stale persisted/pinned id can't reach the run and 403.
           const adapter = action.adapter ?? lastUsedAdapter;
-          const preferredModel = action.model ?? lastUsedModel ?? undefined;
+          const preferredModel =
+            action.model ?? defaultEligibleModel(lastUsedModel);
           let model = preferredModel;
           if (cloudRegion) {
             // The resolver swallows transient failures and returns undefined; fall

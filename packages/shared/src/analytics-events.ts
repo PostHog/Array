@@ -55,6 +55,7 @@ export type CommandMenuAction =
   | "open-channel"
   | "open-command-center"
   | "open-inbox"
+  | "open-usage"
   | "search-files"
   | "open-file"
   | "reload-window"
@@ -131,6 +132,13 @@ export interface TaskRunCancelledProperties {
   execution_type: ExecutionType;
   duration_seconds: number;
   prompts_sent: number;
+}
+
+export interface TaskRunStoppedProperties {
+  task_id: string;
+  execution_type: ExecutionType;
+  duration_seconds?: number;
+  prompts_sent?: number;
 }
 
 export interface PromptSentProperties {
@@ -716,6 +724,7 @@ export type ScoutActionType =
   | "show_more_emitted_runs"
   | "filter_runs"
   | "toggle_hide_disabled"
+  | "filter_created_by"
   | "open_settings"
   | "close_settings"
   | "open_findings"
@@ -774,6 +783,7 @@ export interface ScoutActionProperties {
   filter_match_count?: number;
   helper_skill?: string;
   hide_disabled?: boolean;
+  created_by_me?: boolean;
   /** Status of the linked inbox report, for `open_linked_report`. */
   report_status?: string;
 }
@@ -785,6 +795,7 @@ export interface SignalSourceConnectedProperties {
     | "signals_scout"
     | "github"
     | "linear"
+    | "jira"
     | "zendesk"
     | "conversations"
     | "pganalyze"
@@ -827,6 +838,7 @@ export type ChannelsSurface =
   | "sidebar"
   | "command_menu"
   | "new_task"
+  | "task_input"
   | "channel_home"
   | "channel_history"
   | "channel_artifacts"
@@ -840,6 +852,7 @@ export type ChannelsSurface =
 export type ChannelActionType =
   | "enter_space"
   | "leave_space"
+  | "toggle_channels"
   | "leave_feedback"
   | "nav_click"
   | "open_channel"
@@ -866,7 +879,8 @@ export type ChannelActionType =
   | "copy_link"
   | "mention_member"
   | "view_activity"
-  | "open_mention";
+  | "open_mention"
+  | "canvas_mode_toggle";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -883,6 +897,8 @@ export interface ChannelActionProperties {
   mentioned_user_id?: string;
   /** For new_task_suggestion: the starter-prompt card label. */
   suggestion_label?: string;
+  /** For canvas_mode_toggle: whether canvas mode is being armed. */
+  armed?: boolean;
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }
@@ -954,11 +970,16 @@ export interface ChannelsSpaceViewedProperties {
 
 // Subscription / billing events
 
-export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
+export type UpgradePromptShownSurface =
+  | "usage_limit_modal"
+  | "upgrade_dialog"
+  | "titlebar_card";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
   | "sidebar"
+  | "titlebar"
+  | "titlebar_card"
   | "plan_page_card"
   | "upgrade_dialog";
 
@@ -1054,6 +1075,7 @@ export const ANALYTICS_EVENTS = {
   TASK_RUN_STARTED: "Task run started",
   TASK_RUN_COMPLETED: "Task run completed",
   TASK_RUN_CANCELLED: "Task run cancelled",
+  TASK_RUN_STOPPED: "Task run stopped",
   PROMPT_SENT: "Prompt sent",
 
   // Claude Code session import
@@ -1214,6 +1236,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TASK_RUN_STARTED]: TaskRunStartedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_COMPLETED]: TaskRunCompletedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_CANCELLED]: TaskRunCancelledProperties;
+  [ANALYTICS_EVENTS.TASK_RUN_STOPPED]: TaskRunStoppedProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
 
   // Claude Code session import

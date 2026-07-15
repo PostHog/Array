@@ -17,6 +17,13 @@ export interface CodexOptions {
   apiKey?: string;
   model?: string;
   reasoningEffort?: string;
+  /**
+   * Static HTTP headers forwarded on every request to the PostHog gateway
+   * (the codex equivalent of Claude's `ANTHROPIC_CUSTOM_HEADERS`). Carries the
+   * `x-posthog-property-*` attribution headers the gateway lifts onto the
+   * `$ai_generation` event (team_id, ai_stage, task metadata).
+   */
+  httpHeaders?: Record<string, string>;
   /** Guidance appended on top of Codex's base prompt via `developer_instructions`. */
   developerInstructions?: string;
   /**
@@ -50,6 +57,12 @@ export interface CodexAppServerProcessOptions {
   codexHome?: string;
   /** Guidance appended to Codex's base prompt via `developer_instructions`. */
   developerInstructions?: string;
+  /**
+   * Static HTTP headers forwarded on every request to the PostHog gateway, set
+   * as `model_providers.posthog.http_headers`. Codex equivalent of Claude's
+   * `ANTHROPIC_CUSTOM_HEADERS` (see {@link CodexOptions.httpHeaders}).
+   */
+  httpHeaders?: Record<string, string>;
   /** Extra codex `-c key=value` config overrides (e.g. auto_compact_token_limit). */
   configOverrides?: Record<string, string | number>;
   logger?: Logger;
@@ -61,6 +74,19 @@ export interface CodexAppServerProcess {
   stdin: Writable;
   stdout: Readable;
   kill: () => void;
+}
+
+/** Serialize a string map as a TOML basic string (escapes `\` and `"`). */
+function tomlBasicString(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/** Render a `Record<string, string>` as a TOML inline table. */
+function tomlInlineTable(entries: Record<string, string>): string {
+  const pairs = Object.entries(entries).map(
+    ([key, value]) => `${tomlBasicString(key)} = ${tomlBasicString(value)}`,
+  );
+  return `{ ${pairs.join(", ")} }`;
 }
 
 export function buildAppServerArgs(
@@ -116,6 +142,17 @@ export function buildAppServerArgs(
       "-c",
       `model_providers.posthog.env_key="POSTHOG_GATEWAY_API_KEY"`,
     );
+
+    // Attribution + task-metadata headers the gateway lifts onto the captured
+    // $ai_generation event. Passed as a single TOML inline table so hyphenated
+    // header names (`x-posthog-property-*`) stay quoted rather than becoming
+    // bare-key segments of a dotted `-c` path.
+    if (options.httpHeaders && Object.keys(options.httpHeaders).length > 0) {
+      args.push(
+        "-c",
+        `model_providers.posthog.http_headers=${tomlInlineTable(options.httpHeaders)}`,
+      );
+    }
   }
 
   // developer_instructions are set per-thread in thread/start (with the host's

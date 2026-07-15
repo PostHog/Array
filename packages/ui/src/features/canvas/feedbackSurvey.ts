@@ -19,6 +19,5 @@ export const FEEDBACK_SURVEY_SOURCE_QUESTION_ID =
 // MUST stay in sync with the survey's single_choice options.
 export const FEEDBACK_SOURCE_BY_MODE = {
   feedback: "Generic (Leave feedback button)",
-  leaving: "Going back to Code",
   "posthog-web": "Visiting PostHog web",
 } as const;

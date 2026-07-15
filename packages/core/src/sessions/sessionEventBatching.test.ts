@@ -87,6 +87,7 @@ function createHarness() {
     log: noopLog,
     notifyPromptComplete,
     notifyPermissionRequest: vi.fn(),
+    enqueueSpeech: vi.fn(),
     taskViewedApi: { markActivity: vi.fn() },
     getPersistedConfigOptions: () => undefined,
     setPersistedConfigOptions: vi.fn(),

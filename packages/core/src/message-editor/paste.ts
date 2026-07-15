@@ -29,3 +29,18 @@ export function buildPastedTextLabel(
 ): string {
   return `Pasted text #${pasteNumber} (${lineCount} lines)`;
 }
+
+export interface AutoConvertedPaste {
+  clipboardText: string;
+  insertText: string;
+  chipId: string;
+}
+
+export function isRepeatOfAutoConvertedPaste(
+  last: AutoConvertedPaste | null,
+  clipboardText: string | null | undefined,
+): last is AutoConvertedPaste {
+  return (
+    last !== null && !!clipboardText && clipboardText === last.clipboardText
+  );
+}

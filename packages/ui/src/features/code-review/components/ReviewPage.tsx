@@ -15,6 +15,7 @@ import { usePrDetails } from "../../git-interaction/usePrDetails";
 import { makeFileKey } from "../../git-interaction/utils/fileKey";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { useCwd } from "../../sidebar/useCwd";
+import { useDiscardAllChanges } from "../../task-detail/hooks/useDiscardAllChanges";
 import { useDiscardFile } from "../../task-detail/hooks/useDiscardFile";
 import { useStageToggle } from "../../task-detail/hooks/useStageToggle";
 import { REVIEW_FILE_CACHE_TIME_MS, REVIEW_MAX_FILE_LINES } from "../constants";
@@ -267,6 +268,7 @@ function LocalReviewContent({
   usePrefetchUntrackedFileContents(repoPath, untrackedFiles, true);
 
   const discardFile = useDiscardFile(repoPath);
+  const discardAllChanges = useDiscardAllChanges(repoPath);
   const stageToggle = useStageToggle(repoPath);
   const filesByKey = useMemo(() => {
     const map = new Map<string, ChangedFile>();
@@ -392,6 +394,7 @@ function LocalReviewContent({
       onCollapseAll={collapseAll}
       onUncollapseFile={uncollapseFile}
       onRefresh={refetch}
+      onDiscardAll={totalFileCount > 0 ? discardAllChanges : undefined}
       effectiveSource={effectiveSource}
       branchSourceAvailable={branchSourceAvailable}
       prSourceAvailable={prSourceAvailable}

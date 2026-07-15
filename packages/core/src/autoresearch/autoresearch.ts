@@ -28,10 +28,13 @@ import {
   buildMeasurePrompt,
   buildPhasePrompt,
   buildReportReminderPrompt,
+  buildResearchContinuationPrompt,
   buildResumePrompt,
   countPromptRequests,
   extractLastAgentTurnText,
-  parseMetricReport,
+  parseMetricReports,
+  parseResearchReports,
+  parseStreamedMetricReports,
 } from "./prompts";
 import {
   type AutoresearchConfigInput,
@@ -68,7 +71,7 @@ export const MAX_RECOVERY_ATTEMPTS = 20;
  *
  * Infrastructure obstacles (session drop, idle-kill, usage limit, app
  * restart) never end a run: they mark it `interrupted` and the service keeps
- * trying to bring it back — reconnecting the session when it can and
+ * trying to bring it back by reconnecting the session when it can and
  * resuming the loop once the session is usable again. Only the user
  * (pause/stop), the iteration budget, the target, or a protocol breakdown
  * (the agent repeatedly not reporting) ends a run. Every mutation is
@@ -107,10 +110,14 @@ export class AutoresearchService {
   private pendingReactions = new Map<string, ReturnType<typeof setTimeout>>();
   /**
    * Count of session/prompt requests already handled per run. A turn
-   * completion is only processed when the count moved past this cursor —
+   * completion is only processed when the count moved past this cursor.
    * `isPromptPending` flips without a new prompt when a send fails.
    */
   private promptCursor = new Map<string, number>();
+  private streamedReportCursor = new Map<
+    string,
+    { promptCount: number; metricCount: number; researchCount: number }
+  >();
   private recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private recoveryAttempts = new Map<string, number>();
   /** Per-run write-through chain so persisted saves land in call order. */
@@ -125,7 +132,7 @@ export class AutoresearchService {
   private rehydrated = false;
 
   /**
-   * Register a run whose kickoff prompt the host has already delivered —
+   * Register a run whose kickoff prompt the host has already delivered.
    * the create-task flow sends it as the new task's initial prompt. The
    * engine takes over from the agent's first reply.
    */
@@ -152,6 +159,7 @@ export class AutoresearchService {
       phase: null,
       originalModel: session ? currentSessionModel(session) : null,
       originalEffort: session ? currentSessionEffort(session) : null,
+      researchFindings: [],
       iterations: [],
       startedAt: Date.now(),
       endedAt: null,
@@ -162,9 +170,10 @@ export class AutoresearchService {
 
     autoresearchStoreActions.upsertRun(run);
     this.liveRunIds.add(run.id);
+    const promptCount = session ? countPromptRequests(session.events) : 0;
     this.promptCursor.set(
       run.id,
-      session ? countPromptRequests(session.events) : 0,
+      Math.max(0, promptCount - (session?.isPromptPending ? 1 : 0)),
     );
     this.persist(run.id);
     this.ensureSubscribed();
@@ -180,7 +189,7 @@ export class AutoresearchService {
    * Register a run and send its kickoff into the task's existing session.
    * Used to start a fresh run on a task that already ran autoresearch.
    * (For composer-created tasks the kickoff rides the initial prompt and the
-   * baseline turn runs on the task's creation model — stage models take over
+   * baseline turn runs on the task's creation model. Stage models take over
    * from iteration 2.)
    */
   startRun(input: AutoresearchConfigInput): AutoresearchRun {
@@ -233,7 +242,7 @@ export class AutoresearchService {
       (session.isPromptPending || session.isCompacting)
     ) {
       // A turn is already in flight; the loop re-engages when it completes.
-      // Don't move the cursor — that in-flight prompt is the next turn.
+      // Do not move the cursor. That prompt in progress is the next turn.
       autoresearchStoreActions.setRunStatus(runId, "running");
       this.persist(runId);
       this.log.info("Autoresearch run resumed", { runId });
@@ -241,7 +250,7 @@ export class AutoresearchService {
     }
     if (!session || !isSessionUsable(session)) {
       // The session is down; let the recovery machinery bring it back and
-      // resume the loop. Attempt immediately — the user asked for it now.
+      // resume the loop. Attempt immediately because the user asked for it now.
       // A manual resume is a fresh start, so it does not spend the automatic
       // recovery budget.
       this.recoveryAttempts.delete(runId);
@@ -285,7 +294,7 @@ export class AutoresearchService {
     if (this.rehydrated) return;
     this.rehydrated = true;
 
-    // Feature-flagged: for ungated users the whole feature stays dormant —
+    // Feature flagged: for ungated users the whole feature stays dormant.
     // no restored runs, no auto-resume, no session subscription.
     if (!(await this.gate.isEnabled())) {
       this.log.info("Autoresearch disabled by feature flag; skipping restore");
@@ -409,7 +418,7 @@ export class AutoresearchService {
       }
 
       if (run.status === "interrupted") {
-        // Resume as soon as the session comes back — the reconnect may have
+        // Resume as soon as the session comes back. The reconnect may have
         // been ours (recovery) or the app's own reconciliation.
         if (isSessionUsable(session) && !isSessionUsable(prevSession)) {
           this.resumeFromInterruption(run.id);
@@ -420,31 +429,127 @@ export class AutoresearchService {
       const turnCompleted =
         prevSession?.isPromptPending === true &&
         session.isPromptPending === false;
+      const promptCount = countPromptRequests(session.events);
+
+      if (session.isPromptPending) {
+        if (promptCount === 0) continue;
+        this.ingestCompletedReports(run, session, false);
+        continue;
+      }
+      if (promptCount <= (this.promptCursor.get(run.id) ?? 0)) continue;
       if (!turnCompleted) continue;
 
-      const promptCount = countPromptRequests(session.events);
-      if (promptCount <= (this.promptCursor.get(run.id) ?? 0)) continue;
+      const reports = this.ingestCompletedReports(run, session, true);
       this.promptCursor.set(run.id, promptCount);
-      this.onAgentTurnComplete(run, session);
+      this.onAgentTurnComplete(run.id, reports);
     }
   }
 
-  private onAgentTurnComplete(
+  private ingestCompletedReports(
     run: AutoresearchRun,
     session: AgentSession,
-  ): void {
+    turnComplete: boolean,
+  ): { hasMetric: boolean; hasResearch: boolean } {
     const text = extractLastAgentTurnText(session.events);
-    const report = parseMetricReport(text);
+    const streamedMetricReports = parseStreamedMetricReports(text);
+    const allMetricReports = turnComplete ? parseMetricReports(text) : [];
+    const finalMetricReport =
+      allMetricReports.length > streamedMetricReports.length
+        ? allMetricReports.at(-1)
+        : null;
+    const metricReports = finalMetricReport
+      ? [...streamedMetricReports, finalMetricReport]
+      : streamedMetricReports;
+    const researchReports = parseResearchReports(text);
+    const promptCount = countPromptRequests(session.events);
+    const existing = this.streamedReportCursor.get(run.id);
+    const cursor =
+      existing?.promptCount === promptCount
+        ? existing
+        : { promptCount, metricCount: 0, researchCount: 0 };
 
-    if (!report) {
-      // Deferred: a reportless turn is either a split-run implement turn
-      // (advance to measure) or a genuine missing report (remind). Both wait
-      // out the grace window so a cancel/rate-limit resolving in the
-      // meantime pauses/interrupts the run first.
-      this.scheduleReportlessReaction(run.id);
+    if (metricReports.length === 0) {
+      for (const report of researchReports.slice(cursor.researchCount)) {
+        const current = autoresearchStore.getState().runs[run.id];
+        if (!current || isTerminal(current)) break;
+        if (current.iterations.length > 0) break;
+        this.recordResearchFinding(current, report);
+      }
+    }
+    for (const report of metricReports.slice(cursor.metricCount)) {
+      const current = autoresearchStore.getState().runs[run.id];
+      if (!current || isTerminal(current)) break;
+      this.recordMetricReport(current, report);
+    }
+    this.streamedReportCursor.set(run.id, {
+      promptCount,
+      metricCount: metricReports.length,
+      researchCount: researchReports.length,
+    });
+    return {
+      hasMetric: metricReports.length > 0,
+      hasResearch: metricReports.length === 0 && researchReports.length > 0,
+    };
+  }
+
+  private recordResearchFinding(
+    run: AutoresearchRun,
+    researchReport: ReturnType<typeof parseResearchReports>[number],
+  ): void {
+    this.clearPendingReaction(run.id);
+    this.remindersSent.delete(run.id);
+    this.recoveryAttempts.delete(run.id);
+    autoresearchStoreActions.appendResearchFinding(run.id, {
+      index: run.researchFindings.length + 1,
+      summary: researchReport.summary,
+      finding: researchReport.finding,
+      nextStep: researchReport.nextStep,
+      area: researchReport.area,
+      at: Date.now(),
+    });
+    this.persist(run.id);
+  }
+
+  private onAgentTurnComplete(
+    runId: string,
+    reports: { hasMetric: boolean; hasResearch: boolean },
+  ): void {
+    const run = autoresearchStore.getState().runs[runId];
+    if (!run || run.status !== "running") return;
+    if (reports.hasMetric) {
+      const decision = evaluateContinuation(run);
+      if (decision.done) {
+        this.endRun(run.id, "completed", { endReason: decision.reason });
+        this.log.info("Autoresearch run completed", {
+          runId: run.id,
+          reason: decision.reason,
+          iterations: run.iterations.length,
+        });
+      } else {
+        this.continueLoop(run);
+      }
+      return;
+    }
+    if (reports.hasResearch && run.iterations.length === 0) {
+      void this.send(
+        run.id,
+        run.config.taskId,
+        buildResearchContinuationPrompt(run),
+      );
       return;
     }
 
+    // Deferred: a reportless turn is either a split-run implement turn
+    // (advance to measure) or a genuine missing report (remind). Both wait
+    // out the grace window so a cancel/rate-limit resolving in the
+    // meantime pauses/interrupts the run first.
+    this.scheduleReportlessReaction(run.id);
+  }
+
+  private recordMetricReport(
+    run: AutoresearchRun,
+    report: AutoresearchReport,
+  ): void {
     this.clearPendingReaction(run.id);
     this.remindersSent.delete(run.id);
     // The loop is demonstrably turning again; future interruptions restart
@@ -464,22 +569,6 @@ export class AutoresearchService {
       }
     }
     this.persist(run.id);
-
-    const updated = autoresearchStore.getState().runs[run.id];
-    if (!updated || updated.status !== "running") return;
-
-    const decision = evaluateContinuation(updated);
-    if (decision.done) {
-      this.endRun(run.id, "completed", { endReason: decision.reason });
-      this.log.info("Autoresearch run completed", {
-        runId: run.id,
-        reason: decision.reason,
-        iterations: updated.iterations.length,
-      });
-      return;
-    }
-
-    this.continueLoop(updated);
   }
 
   /** Kick off the next iteration after a recorded report. */
@@ -517,7 +606,7 @@ export class AutoresearchService {
   }
 
   /**
-   * Switch the session's stage (model and/or effort), then send — in that
+   * Switch the session stage, including model or effort, then send in that
    * order, so the turn runs on the intended configuration rather than racing
    * the switch. A stage with nothing to set skips straight to the send with
    * no await, so ordering is unchanged for it. When there is a switch, a run
@@ -541,7 +630,7 @@ export class AutoresearchService {
   }
 
   /**
-   * Apply a stage's model/effort to the session. Failures only warn — the
+   * Apply a stage model or effort to the session. Failures only warn. The
    * turn falls back to whatever the session currently has (effort options
    * can also legitimately differ per model, so a stale effort may be
    * rejected by the session).
@@ -588,7 +677,7 @@ export class AutoresearchService {
    * React to a reportless turn once the grace window has passed and no
    * cancel/rate-limit/interruption intervened. In a split run's implement
    * phase that means advancing to the measure phase; otherwise it is a
-   * missing report — remind once, then fail.
+   * missing report. Remind once, then fail.
    */
   private scheduleReportlessReaction(runId: string): void {
     const run = autoresearchStore.getState().runs[runId];
@@ -646,6 +735,9 @@ export class AutoresearchService {
       bestValue,
       delta: previous ? report.value - previous.value : null,
       summary: report.summary,
+      hypothesis: report.hypothesis,
+      plan: report.plan,
+      approach: report.approach,
       at: Date.now(),
     });
   }
@@ -667,7 +759,7 @@ export class AutoresearchService {
           "Usage limit reached. The loop retries automatically.",
         );
       } else if (stopReason === "cancelled") {
-        // The user stopped the turn — hand them the wheel instead of
+        // The user stopped the turn. Hand them control instead of
         // immediately re-prompting the agent they just silenced.
         const run = autoresearchStore.getState().runs[runId];
         if (run?.status === "running") {
@@ -682,7 +774,7 @@ export class AutoresearchService {
         }
       } else if (stopReason === "queued") {
         // The session was busy (a turn/compaction in flight), so our prompt
-        // sits in the session queue and drains when it frees up — producing
+        // sits in the session queue and drains when it frees up, producing
         // a turn the subscription processes normally. Nothing to do but note
         // it; if the session never frees, its error path drives recovery.
         this.log.warn("Autoresearch prompt queued behind a busy session", {
@@ -831,6 +923,7 @@ export class AutoresearchService {
     this.remindersSent.delete(runId);
     this.recoveryAttempts.delete(runId);
     this.promptCursor.delete(runId);
+    this.streamedReportCursor.delete(runId);
     this.liveRunIds.delete(runId);
     if (run) this.restoreOriginalStage(run);
   }
@@ -849,7 +942,7 @@ export class AutoresearchService {
 
   /**
    * Write-through persistence. Saves for a run are chained so they land in
-   * call order — a later transition can never be overwritten by an in-flight
+   * call order. A later transition can never be overwritten by a pending
    * earlier one. The in-memory store stays authoritative.
    */
   private persist(runId: string): void {
@@ -897,7 +990,7 @@ function measureStage(run: AutoresearchRun): AutoresearchStage {
 
 /**
  * Split runs alternate an implement turn and a measure turn per iteration.
- * Any difference between the stages — model or effort — makes the run split;
+ * Any difference between the stages, model or effort, makes the run split;
  * identical stages run as single turns with no mid-loop switching.
  */
 function isSplitRun(run: AutoresearchRun): boolean {

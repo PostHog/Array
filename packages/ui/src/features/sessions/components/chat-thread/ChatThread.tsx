@@ -30,6 +30,7 @@ import {
   useChatMessageScrollerVisibility,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useSmoothedText } from "@posthog/ui/features/editor/components/useSmoothedText";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
@@ -41,9 +42,16 @@ import {
 import { ChatThreadFooter } from "@posthog/ui/features/sessions/components/chat-thread/ChatThreadFooter";
 import { ChatThreadChromeProvider } from "@posthog/ui/features/sessions/components/chat-thread/chatThreadChrome";
 import {
+  PROMPT_RECALL_HINT_KEY,
+  type PromptRecallHandler,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
+import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
+import {
   ToolGroup,
   type ToolGroupItem,
 } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
+import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
+import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -81,6 +89,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   memo,
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -88,6 +97,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import type { ConversationViewProps } from "../ConversationView";
 
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
@@ -261,10 +271,12 @@ function UserBubble({
   content,
   timestamp,
   attachments = [],
+  keyboardFocused = false,
 }: {
   content: string;
   timestamp?: number;
   attachments?: UserMessageAttachment[];
+  keyboardFocused?: boolean;
 }) {
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
@@ -325,7 +337,7 @@ function UserBubble({
 
   return (
     <ChatMessage align="end" className="group">
-      <ChatMessageContent className="gap-1">
+      <ChatMessageContent className="gap-1 pr-9">
         {showHeaderChips && (
           <ChatMessageHeader className="flex-wrap gap-1">
             {showChannelContextTag && channelContext && (
@@ -363,7 +375,14 @@ function UserBubble({
             )}
           </ChatMessageHeader>
         )}
-        <ChatBubble align="end" variant="default">
+        <ChatBubble
+          align="end"
+          variant="default"
+          className={cn(
+            "rounded-lg ring-(--gray-11) ring-0 ring-inset transition-shadow",
+            keyboardFocused && "ring-[3px]",
+          )}
+        >
           <ChatBubbleContent>
             <div
               ref={textRef}
@@ -415,7 +434,43 @@ function UserBubble({
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
+      <MessageCopyButton
+        value={displayContent}
+        revealClassName="group-hover:opacity-100"
+      />
     </ChatMessage>
+  );
+}
+
+/**
+ * Copy icon that floats into a message's right rail on hover. The hover-group qualifier differs by
+ * message type (`group` for user bubbles, `group/msg` for agent prose), so callers pass their own
+ * `revealClassName` (the `group-hover*:opacity-100` utility).
+ */
+function MessageCopyButton({
+  value,
+  revealClassName,
+}: {
+  value: string;
+  revealClassName: string;
+}) {
+  const { copied, copy } = useCopy();
+  return (
+    <Tooltip content={copied ? "Copied!" : "Copy message"}>
+      <IconButton
+        size="1"
+        variant="ghost"
+        color={copied ? "green" : "gray"}
+        onClick={() => copy(value)}
+        className={cn(
+          "absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity",
+          revealClassName,
+        )}
+        aria-label="Copy message"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </IconButton>
+    </Tooltip>
   );
 }
 
@@ -549,11 +604,10 @@ const AgentProse = memo(function AgentProse({
   isStreaming?: boolean;
 }) {
   const smoothed = useSmoothedText(text);
-  const { copied, copy } = useCopy();
 
   return (
     <ChatMessage align="start" className="group/msg">
-      <ChatMessageContent className="gap-1">
+      <ChatMessageContent className="gap-1 pr-9">
         <ChatBubble variant="ghost">
           <ChatBubbleContent>
             {isStreaming ? (
@@ -563,23 +617,13 @@ const AgentProse = memo(function AgentProse({
             )}
           </ChatBubbleContent>
         </ChatBubble>
-        {isStreaming ? null : (
-          <ChatMessageFooter className="opacity-0 transition-opacity group-hover/msg:opacity-100">
-            <Tooltip content={copied ? "Copied!" : "Copy message"}>
-              <IconButton
-                size="1"
-                variant="ghost"
-                color={copied ? "green" : "gray"}
-                onClick={() => copy(text)}
-                className="cursor-pointer"
-                aria-label="Copy message"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-              </IconButton>
-            </Tooltip>
-          </ChatMessageFooter>
-        )}
       </ChatMessageContent>
+      {isStreaming ? null : (
+        <MessageCopyButton
+          value={text}
+          revealClassName="group-hover/msg:opacity-100"
+        />
+      )}
     </ChatMessage>
   );
 });
@@ -591,10 +635,12 @@ function ThreadItemBody({
   item,
   renderItem,
   isTrailing = false,
+  keyboardFocused = false,
 }: {
   item: ThreadItem;
   renderItem: (item: ConversationItem) => ReactNode;
   isTrailing?: boolean;
+  keyboardFocused?: boolean;
 }) {
   if (item.type === "tool_group") {
     const context = item.tools[0]?.turnContext;
@@ -613,6 +659,7 @@ function ThreadItemBody({
         content={item.content}
         timestamp={item.timestamp}
         attachments={item.attachments}
+        keyboardFocused={keyboardFocused}
       />
     );
   }
@@ -644,9 +691,11 @@ function completedTurnTimestamp(turn: AgentTurn): number | undefined {
 const ThreadRow = memo(function ThreadRow({
   item,
   renderItem,
+  keyboardFocused,
 }: {
   item: TurnRow;
   renderItem: (item: ConversationItem) => ReactNode;
+  keyboardFocused?: boolean;
 }) {
   if (item.type === "agent_turn") {
     return (
@@ -686,7 +735,11 @@ const ThreadRow = memo(function ThreadRow({
       className="mx-auto w-full px-2.5 py-1 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
-      <ThreadItemBody item={item} renderItem={renderItem} />
+      <ThreadItemBody
+        item={item}
+        renderItem={renderItem}
+        keyboardFocused={keyboardFocused}
+      />
     </ChatMessageScrollerItem>
   );
 });
@@ -757,18 +810,131 @@ function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
   return <span ref={probeRef} className="hidden" aria-hidden="true" />;
 }
 
+/**
+ * Keyboard message navigation (Alt/Option+Up/Down) and the Cmd/Ctrl+J jump picker. Rendered inside
+ * `ChatMessageScrollerProvider` so it can call `scrollToMessage` from the engine — the same primitive
+ * `StickyHeaderOverlay` uses to jump back to the anchored turn.
+ */
+function ThreadKeyboardNav({
+  items,
+  jumpPickerOpen,
+  setJumpPickerOpen,
+  keyboardFocusedMessageId,
+  setKeyboardFocusedMessageId,
+  promptRecallRef,
+}: {
+  items: ConversationItem[];
+  jumpPickerOpen: boolean;
+  setJumpPickerOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
+  keyboardFocusedMessageId: string | null;
+  setKeyboardFocusedMessageId: (id: string | null) => void;
+  promptRecallRef?: RefObject<PromptRecallHandler | null>;
+}) {
+  const { scrollToMessage } = useChatMessageScroller();
+
+  const userMessages = useMemo(
+    () =>
+      items
+        .filter(
+          (item): item is Extract<ConversationItem, { type: "user_message" }> =>
+            item.type === "user_message",
+        )
+        .map((item) => ({ id: item.id, content: item.content })),
+    [items],
+  );
+  const userMessageIds = useMemo(
+    () => userMessages.map((message) => message.id),
+    [userMessages],
+  );
+
+  useHotkeys(
+    SHORTCUTS.MESSAGE_JUMP,
+    () => setJumpPickerOpen((prev) => !prev),
+    THREAD_HOTKEY_OPTIONS,
+  );
+
+  const handleNavigateMessage = useCallback(
+    (direction: -1 | 1) => {
+      if (userMessageIds.length === 0) return;
+
+      const currentIndex = keyboardFocusedMessageId
+        ? userMessageIds.indexOf(keyboardFocusedMessageId)
+        : -1;
+
+      const nextIndex =
+        currentIndex === -1
+          ? direction > 0
+            ? 0
+            : userMessageIds.length - 1
+          : Math.max(
+              0,
+              Math.min(userMessageIds.length - 1, currentIndex + direction),
+            );
+
+      const nextId = userMessageIds[nextIndex];
+      if (!nextId) return;
+
+      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
+      setKeyboardFocusedMessageId(nextId);
+      scrollToMessage(nextId);
+    },
+    [
+      keyboardFocusedMessageId,
+      userMessageIds,
+      setKeyboardFocusedMessageId,
+      scrollToMessage,
+    ],
+  );
+
+  useHotkeys(
+    SHORTCUTS.MESSAGE_PREV,
+    () => handleNavigateMessage(-1),
+    THREAD_HOTKEY_OPTIONS,
+  );
+
+  useHotkeys(
+    SHORTCUTS.MESSAGE_NEXT,
+    () => handleNavigateMessage(1),
+    THREAD_HOTKEY_OPTIONS,
+  );
+
+  usePromptRecallSource(userMessages, promptRecallRef);
+
+  const handleJumpToMessage = useCallback(
+    (id: string) => {
+      setKeyboardFocusedMessageId(id);
+      scrollToMessage(id);
+    },
+    [scrollToMessage, setKeyboardFocusedMessageId],
+  );
+
+  return (
+    <MessageJumpPicker
+      open={jumpPickerOpen}
+      onOpenChange={setJumpPickerOpen}
+      items={items}
+      onJumpToMessage={handleJumpToMessage}
+    />
+  );
+}
+
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
   rows,
   renderItem,
   footer,
+  keyboardFocusedMessageId,
+  onUserInteract,
 }: {
   items: ConversationItem[];
   rows: TurnRow[];
   renderItem: (item: ConversationItem) => ReactNode;
   /** Status row (duration / context usage) pinned as the last item in the thread. */
   footer?: ReactNode;
+  keyboardFocusedMessageId?: string | null;
+  /** Clears keyboard-focused message state on any pointer interaction with the thread. */
+  onUserInteract?: () => void;
 }) {
   const keyedRows = useMemo(() => {
     let userTurn = 0;
@@ -781,7 +947,10 @@ function ThreadScrollBody({
   // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
   // mirroring the legacy ConversationView container.
   return (
-    <ChatMessageScroller className="group/thread">
+    <ChatMessageScroller
+      className="group/thread"
+      onPointerDownCapture={onUserInteract}
+    >
       <StickyHeaderOverlay items={items} />
       <ThreadAutoFollow items={items} />
       <ChatMessageScrollerViewport>
@@ -790,7 +959,12 @@ function ThreadScrollBody({
           density="default"
         >
           {keyedRows.map(({ item, key }) => (
-            <ThreadRow key={key} item={item} renderItem={renderItem} />
+            <ThreadRow
+              key={key}
+              item={item}
+              renderItem={renderItem}
+              keyboardFocused={item.id === keyboardFocusedMessageId}
+            />
           ))}
           {footer && (
             <div
@@ -827,6 +1001,7 @@ export function ChatThread({
   repoPath,
   task,
   taskId,
+  promptRecallRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -858,6 +1033,14 @@ export function ChatThread({
     () => groupIntoTurns(groupToolRuns(items)),
     [items],
   );
+
+  const [jumpPickerOpen, setJumpPickerOpen] = useState(false);
+  const [keyboardFocusedMessageId, setKeyboardFocusedMessageId] = useState<
+    string | null
+  >(null);
+  const clearKeyboardFocus = useCallback(() => {
+    setKeyboardFocusedMessageId(null);
+  }, []);
 
   const renderItem = useCallback(
     (item: ConversationItem) => {
@@ -943,6 +1126,8 @@ export function ChatThread({
               items={items}
               rows={rows}
               renderItem={renderItem}
+              keyboardFocusedMessageId={keyboardFocusedMessageId}
+              onUserInteract={clearKeyboardFocus}
               footer={
                 <ChatThreadFooter
                   events={events}
@@ -952,6 +1137,14 @@ export function ChatThread({
                   taskId={taskId}
                 />
               }
+            />
+            <ThreadKeyboardNav
+              items={items}
+              jumpPickerOpen={jumpPickerOpen}
+              setJumpPickerOpen={setJumpPickerOpen}
+              keyboardFocusedMessageId={keyboardFocusedMessageId}
+              setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
+              promptRecallRef={promptRecallRef}
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>

@@ -1,32 +1,8 @@
-import { formatMention } from "@posthog/shared";
+import { formatMention, splitMentionSegments } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-
-/** The in-progress `@query` between the trigger and the caret. */
-export interface ActiveMentionQuery {
-  /** Index of the `@` in the full text. */
-  start: number;
-  query: string;
-}
-
-/**
- * The mention query the caret is inside, or null when the caret isn't in one.
- * The `@` must open a word (start of text or after whitespace); a query
- * starting with `[` is an already-inserted token, not a fresh trigger.
- */
-export function findMentionQuery(
-  text: string,
-  caret: number,
-): ActiveMentionQuery | null {
-  const upToCaret = text.slice(0, caret);
-  const start = upToCaret.lastIndexOf("@");
-  if (start === -1) return null;
-  if (start > 0 && !/\s/.test(upToCaret[start - 1] ?? "")) return null;
-  const query = upToCaret.slice(start + 1);
-  if (query.startsWith("[") || query.startsWith(" ")) return null;
-  if (query.includes("\n") || query.length > 60) return null;
-  return { start, query };
-}
+import type { Node as PmNode } from "@tiptap/pm/model";
+import type { JSONContent } from "@tiptap/react";
 
 /** Members matching the query, best-first: name prefix, word prefix, email, substring. */
 export function filterMentionCandidates(
@@ -56,27 +32,45 @@ export function filterMentionCandidates(
     .map((entry) => entry.member);
 }
 
-/**
- * Replace the active `@query` with the member's mention token, leaving the
- * caret right after it (past any space that already follows).
- */
-export function applyMention(
-  text: string,
-  active: ActiveMentionQuery,
-  caret: number,
-  member: UserBasic,
-): { text: string; caret: number } {
-  // The replacement spans the whole @word: when the caret moved back inside
-  // the query, the characters typed after it are still mention text.
-  let end = caret;
-  while (end < text.length && !/\s/.test(text[end] ?? "")) end++;
-  const tail = text.slice(end);
-  const token = formatMention(userDisplayName(member), member.email);
-  const before = text.slice(0, active.start);
-  // Reuse an existing following space rather than doubling it up.
-  const inserted = tail.startsWith(" ") ? token : `${token} `;
+/** Serialize the composer's editor doc back to content with inline mention tokens. */
+export function docToContent(doc: PmNode): string {
+  const lines: string[] = [];
+  doc.forEach((block) => {
+    let line = "";
+    block.forEach((child) => {
+      if (child.type.name === "mention") {
+        line += formatMention(child.attrs.label, child.attrs.id);
+      } else if (child.type.name === "hardBreak") {
+        line += "\n";
+      } else {
+        line += child.text ?? "";
+      }
+    });
+    lines.push(line);
+  });
+  return lines.join("\n");
+}
+
+export function contentToDoc(content: string): JSONContent {
   return {
-    text: before + inserted + tail,
-    caret: before.length + inserted.length + (tail.startsWith(" ") ? 1 : 0),
+    type: "doc",
+    content: content.split("\n").map((line) => {
+      const children = splitMentionSegments(line).flatMap<JSONContent>(
+        (segment) =>
+          segment.type === "mention"
+            ? [
+                {
+                  type: "mention",
+                  attrs: { id: segment.email, label: segment.name },
+                },
+              ]
+            : segment.text
+              ? [{ type: "text", text: segment.text }]
+              : [],
+      );
+      return children.length
+        ? { type: "paragraph", content: children }
+        : { type: "paragraph" };
+    }),
   };
 }

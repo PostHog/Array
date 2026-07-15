@@ -10,17 +10,26 @@ import {
   taskDetailQuery,
 } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { RoutePending } from "@posthog/ui/router/RoutePending";
+import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
+import { yieldToPaint } from "@posthog/ui/router/yieldToPaint";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
   component: ChannelTaskDetailRoute,
+  pendingComponent: TaskDetailSkeleton,
   // Cache-only loader (same as /code/tasks/$taskId): never block navigation on
-  // the network; the cold-miss fetch lives in the component.
-  loader: ({ params }): Task | null =>
-    getCachedTaskDetail(params.taskId) ?? getCachedTask(params.taskId) ?? null,
+  // the network; the cold-miss fetch lives in the component. The single-frame
+  // yield lets the skeleton paint before TaskDetail's heavy mount.
+  loader: async ({ params }): Promise<Task | null> => {
+    const task =
+      getCachedTaskDetail(params.taskId) ??
+      getCachedTask(params.taskId) ??
+      null;
+    await yieldToPaint();
+    return task;
+  },
 });
 
 function ChannelTaskDetailRoute() {
@@ -55,7 +64,7 @@ function ChannelTaskDetailRoute() {
   const task = fromList ?? loaderTask ?? fetched;
 
   if (!task) {
-    return <RoutePending />;
+    return <TaskDetailSkeleton />;
   }
 
   return (
@@ -68,7 +77,7 @@ function ChannelTaskDetailRoute() {
           channelId={channelId}
         />
       </div>
-      <ThreadSidebar taskId={taskId} task={task} />
+      <ThreadSidebar taskId={taskId} task={task} showTaskTitle={false} />
     </div>
   );
 }

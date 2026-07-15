@@ -80,3 +80,6 @@ CLAUDE.local.md
 apps/mobile/ROADMAP.md
 # Local quill tarball for ChatX thread testing (not committed)
 .local-quill/
+
+# pi project-local config (per-developer MCP servers, prompts, etc.)
+.pi/

@@ -116,16 +116,14 @@ export function BranchMismatchDialog({
             Continue anyway
           </Button>
 
-          <AlertDialog.Action>
-            <Button
-              variant="solid"
-              size="1"
-              onClick={onSwitch}
-              loading={isSwitching}
-            >
-              Switch branch
-            </Button>
-          </AlertDialog.Action>
+          <Button
+            variant="solid"
+            size="1"
+            onClick={onSwitch}
+            loading={isSwitching}
+          >
+            Switch branch
+          </Button>
         </Flex>
       </AlertDialog.Content>
     </AlertDialog.Root>

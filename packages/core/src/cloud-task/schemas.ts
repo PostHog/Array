@@ -77,3 +77,20 @@ export const sendCommandOutput = z.object({
 });
 
 export type SendCommandOutput = z.infer<typeof sendCommandOutput>;
+
+export const stopInput = z.object({
+  taskId: z.string(),
+  runId: z.string(),
+  reason: z.string().optional(),
+});
+
+export type StopInput = z.infer<typeof stopInput>;
+
+export const stopOutput = z.object({
+  success: z.boolean(),
+  runStatus: z.string().optional(),
+  error: z.string().optional(),
+  retryable: z.boolean().optional(),
+});
+
+export type StopOutput = z.infer<typeof stopOutput>;

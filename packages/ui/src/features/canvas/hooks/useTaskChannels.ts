@@ -1,3 +1,4 @@
+import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import type { TaskChannel } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
@@ -16,11 +17,31 @@ export function normalizeChannelName(name: string): string {
 }
 
 /**
+ * Imperative twin of `useBackendChannel`, for flows with no mounted hook (e.g.
+ * launching a task right after creating a context): map a folder channel's
+ * display name onto its backend channel id. The "me" folder maps to the
+ * personal channel; any other name resolve-or-creates its public channel.
+ */
+export async function resolveBackendChannelId(
+  client: PostHogAPIClient | null,
+  channelName: string,
+): Promise<string | undefined> {
+  if (!client) return undefined;
+  const normalized = normalizeChannelName(channelName);
+  if (!normalized) return undefined;
+  if (normalized === PERSONAL_CHANNEL_NAME) {
+    const channels = await client.getTaskChannels();
+    return channels.find((c) => c.channel_type === "personal")?.id;
+  }
+  return (await client.resolveTaskChannel(normalized)).id;
+}
+
+/**
  * Backend task channels — the feed/ownership side of a channel (the sidebar's
  * folder "channels" stay on the desktop file system for CONTEXT.md and
  * artifacts). Listing also lazily provisions the requester's #me channel.
  */
-export function useTaskChannels(): {
+export function useTaskChannels(options?: { enabled?: boolean }): {
   channels: TaskChannel[];
   personalChannel: TaskChannel | undefined;
   isLoading: boolean;
@@ -28,7 +49,10 @@ export function useTaskChannels(): {
   const query = useAuthenticatedQuery<TaskChannel[]>(
     TASK_CHANNELS_QUERY_KEY,
     (client) => client.getTaskChannels(),
-    { refetchInterval: TASK_CHANNELS_POLL_INTERVAL_MS },
+    {
+      enabled: options?.enabled ?? true,
+      refetchInterval: TASK_CHANNELS_POLL_INTERVAL_MS,
+    },
   );
   const channels = useMemo(() => query.data ?? [], [query.data]);
   const personalChannel = useMemo(

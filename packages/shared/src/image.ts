@@ -79,6 +79,18 @@ const DATA_URL_PATTERN =
 const MAX_DATA_URL_LENGTH = 20 * 1024 * 1024;
 export const MAX_IMAGE_BASE64_LENGTH = 15 * 1024 * 1024;
 
+// Anthropic rejects a request whose per-image decoded size exceeds 5 MB with a
+// 400. Guarding at this boundary keeps an oversized image from being embedded
+// into the model payload (and, on resume, from re-triggering the same error on
+// every subsequent turn).
+export const MAX_CLAUDE_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Decoded byte size of a base64 string, without allocating the buffer. */
+export function estimateBase64Bytes(base64: string): number {
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
 export interface ParsedImageDataUrl {
   mimeType: string;
   base64: string;

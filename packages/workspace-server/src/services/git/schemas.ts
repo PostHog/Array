@@ -167,6 +167,10 @@ export const discardFileChangesOutput = z.object({
 
 export type DiscardFileChangesOutput = z.infer<typeof discardFileChangesOutput>;
 
+export const discardAllChangesInput = z.object({
+  directoryPath: z.string(),
+});
+
 export const getGitSyncStatusInput = z.object({
   directoryPath: z.string(),
   /**

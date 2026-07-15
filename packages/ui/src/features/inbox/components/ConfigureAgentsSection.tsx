@@ -11,7 +11,11 @@ import {
 } from "@posthog/core/task-detail/taskService";
 import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
-import { ANALYTICS_EVENTS, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  defaultEligibleModel,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import { SELF_DRIVING_SETUP_TASK_FLAG } from "@posthog/shared/constants";
 import { useTrackAgentsViewed } from "@posthog/ui/features/agents/hooks/useTrackAgentsViewed";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -302,17 +306,18 @@ function SetupTaskSection() {
       const settings = useSettingsStore.getState();
       const adapter = settings.lastUsedAdapter ?? "claude";
       const apiHost = getCloudUrlFromRegion(cloudRegion);
+      const preferredModel = defaultEligibleModel(settings.lastUsedModel);
       const resolvedModel = await resolveDefaultModel(
         queryClient,
         apiHost,
         adapter,
         modelResolver,
-        settings.lastUsedModel,
+        preferredModel,
       );
       // The resolver returns undefined on a transient failure; fall back to the
       // persisted id so a gateway outage degrades gracefully rather than blocking
       // setup for a user whose persisted model was valid.
-      const model = resolvedModel ?? settings.lastUsedModel;
+      const model = resolvedModel ?? preferredModel;
 
       if (!model) {
         toast.dismiss(toastId);

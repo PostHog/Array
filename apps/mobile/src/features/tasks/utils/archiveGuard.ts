@@ -19,3 +19,14 @@ export function confirmArchiveRunningTask(
     ],
   );
 }
+
+export function confirmStopRun(onConfirm: () => void): void {
+  Alert.alert(
+    "Stop this run?",
+    "This cancels the running agent. You can start a new run afterwards.",
+    [
+      { text: "Cancel", style: "cancel" },
+      { text: "Stop", style: "destructive", onPress: onConfirm },
+    ],
+  );
+}

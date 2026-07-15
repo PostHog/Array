@@ -29,6 +29,7 @@ export interface PrepareTaskInputOptions {
   channelId?: string;
   customInstructions?: string;
   autoPublishCloudRuns?: boolean;
+  rtkEnabledCloud?: boolean;
   allowNoRepo?: boolean;
 }
 
@@ -64,6 +65,7 @@ export function prepareTaskInput(
     cloudRunSource:
       options.signalReportId && isCloud ? "signal_report" : undefined,
     cloudAutoPublish: isCloud ? options.autoPublishCloudRuns : undefined,
+    cloudRtkEnabled: isCloud ? options.rtkEnabledCloud : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,

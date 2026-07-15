@@ -161,6 +161,35 @@ describe("AgentServer.configureEnvironment", () => {
     },
   );
 
+  // The codex/OpenAI path sets provider http_headers rather than
+  // ANTHROPIC_CUSTOM_HEADERS, so the same task metadata must be exposed as a
+  // record — including team_id, which the Claude path adds separately in
+  // buildEnvironment.
+  it("forwards task metadata (plus team_id) as openaiCustomHeaders", () => {
+    const env = buildServer("background").configureEnvironment({
+      isInternal: true,
+      originProduct: "signal_report",
+      signalReportId: "report-123",
+      aiStage: "research",
+      taskId: "task-abc",
+      taskRunId: "run-xyz",
+      taskUserId: 42,
+      taskTitle: "Fix the bug",
+    });
+
+    expect(env.openaiCustomHeaders).toEqual({
+      "x-posthog-property-task_origin_product": "signal_report",
+      "x-posthog-property-task_internal": "true",
+      "x-posthog-property-signal_report_id": "report-123",
+      "x-posthog-property-ai_stage": "research",
+      "x-posthog-property-task_id": "task-abc",
+      "x-posthog-property-task_run_id": "run-xyz",
+      "x-posthog-property-task_user_id": "42",
+      "x-posthog-property-task_title": "Fix the bug",
+      "x-posthog-property-team_id": "1",
+    });
+  });
+
   it("forwards task metadata as anthropicCustomHeaders", () => {
     const env = buildServer("background").configureEnvironment({
       isInternal: true,

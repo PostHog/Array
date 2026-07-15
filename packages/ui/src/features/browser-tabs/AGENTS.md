@@ -50,8 +50,17 @@ The feature is deliberately split so the rules are portable and testable:
 - **this folder (`@posthog/ui`)** — `BrowserTabStrip` (container; mounted in the
   Channels title bar in `router/routes/__root.tsx`), `TabStrip` (presentational),
   `BlankTabView` (the new-tab placeholder), `TaskTabIcon` (sidebar-parity status
-  icon for task tabs), the client facade, and the boot contribution that seeds +
-  subscribes the store.
+  icon for task tabs), the client facade, the boot contribution that seeds +
+  subscribes the store, and **`tabsSync.ts` — the local-first sync policy**:
+  every operation applies its shared pure transform to the renderer mirror
+  synchronously (interactions are instant; new tabs mint their id client-side
+  so no navigation ever waits on IPC), server writes are background persistence,
+  and while any write is in flight remote snapshot pushes are dropped because
+  they may predate newer local state. If a push was dropped, the renderer
+  re-fetches the authoritative snapshot after the write batch settles so a real
+  mutation from another window is retained; otherwise the last settling write
+  applies its returned snapshot. This makes rapid tab switching race-free
+  without losing cross-window updates.
 
 One source of truth: any window mutates → service writes sqlite + emits → every
 window's store updates. No window talks to another directly. The same shape ports
@@ -192,11 +201,14 @@ differ. Desktop ships first.
   index for a couple of frames **after** the URL has already left `/website`
   (the `__root` Outlet un-suppresses on the way to `/website/$channelId` before
   the matched leaf settles), and that stale render must not redirect.
-- **Closing the last tab writes the snapshot synchronously.** `handleClose`
-  calls `browserTabsStore.setSnapshot(next)` before navigating to `/website`.
-  The store otherwise lags a subscription round-trip, so the index would render
-  against the still-has-tabs snapshot and redirect (re-opening a tab) before the
-  empty strip arrives.
+- **All writes are local-first (`tabsSync.ts`).** Close/open/new/reorder apply
+  their shared transform to the mirror and navigate in the same tick; the
+  `/website` index therefore always renders against post-mutation state and
+  can't redirect (re-opening a tab) mid-flight. Mutation results and
+  subscription pushes are never applied while writes are in flight — only the
+  last settle reconciles. Don't add a mutation `onSuccess` that calls
+  `setSnapshot`; route new writes through `applyLocalTransform` +
+  `persistWrite`.
 
 ## Testing
 

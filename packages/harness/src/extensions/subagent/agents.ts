@@ -1,8 +1,15 @@
 /**
- * Bundled subagent definitions. Pure data — no filesystem or network I/O.
- * Project-local `.pi/agents/*.md` overrides are loaded by `discovery.ts`,
- * which merges them with `BUNDLED_AGENTS`.
+ * Bundled subagent definitions, loaded from this package's own
+ * `bundled-agents/*.md` files — the same YAML-frontmatter-plus-markdown-body
+ * convention used for project-local `.pi/agents/*.md` overrides (see
+ * `discovery.ts`). Bundled and project agents share one loader
+ * (`loadAgentsFromDir`): there is exactly one way to define an agent, not a
+ * separate hardcoded shape for "ours" vs. "yours".
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 
 export type AgentSource = "bundled" | "project";
 
@@ -15,98 +22,75 @@ export interface AgentConfig {
   source: AgentSource;
 }
 
-const scout: AgentConfig = {
-  name: "scout",
-  description:
-    "Fast, read-only codebase reconnaissance. Finds relevant files, entry points, and data flow, and reports back compressed context.",
-  tools: ["read", "grep", "find", "ls", "bash"],
-  source: "bundled",
-  systemPrompt: `You are "scout", a fast reconnaissance subagent.
+/**
+ * Loads every `.md` file in `dir` as an `AgentConfig`: frontmatter (`name`,
+ * `description`, `tools`, `model`) plus the markdown body as the system
+ * prompt. Files missing `name` or `description` are silently skipped, same
+ * as an unreadable directory returns `[]` rather than throwing — a malformed
+ * or missing agent file should never break subagent delegation entirely.
+ */
+export function loadAgentsFromDir(
+  dir: string,
+  source: AgentSource,
+): AgentConfig[] {
+  const agents: AgentConfig[] = [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return agents;
+  }
 
-Your job is to explore a codebase and report back a compressed, structured summary — not to make changes.
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".md")) continue;
+    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
 
-- Find the files, functions, and data flow relevant to the task.
-- Prefer grep/find/ls over reading whole directories; read only the files that matter.
-- Do not edit anything. You have no write access.
-- Report file paths (with line numbers where useful), a short description of what each does, and any risks or open questions.
-- Keep your final answer dense: bullet points over prose.`,
-};
+    let content: string;
+    try {
+      content = fs.readFileSync(path.join(dir, entry.name), "utf-8");
+    } catch {
+      continue;
+    }
 
-const planner: AgentConfig = {
-  name: "planner",
-  description:
-    "Turns existing context into a concrete, ordered implementation plan. Does not write code.",
-  tools: ["read", "grep", "find", "ls"],
-  source: "bundled",
-  systemPrompt: `You are "planner", a planning subagent.
+    const { frontmatter, body } =
+      parseFrontmatter<Record<string, string>>(content);
+    if (!frontmatter.name || !frontmatter.description) continue;
 
-Your job is to produce a concrete, ordered implementation plan from the context and task you are given.
+    const tools = frontmatter.tools
+      ?.split(",")
+      .map((t: string) => t.trim())
+      .filter(Boolean);
 
-- Break the task into small, sequential, independently verifiable steps.
-- Call out files that need to change and what changes in each.
-- Flag ambiguous requirements or decisions that need the orchestrator's input instead of guessing.
-- Do not write or edit code. Output only the plan.`,
-};
+    agents.push({
+      name: frontmatter.name,
+      description: frontmatter.description,
+      tools: tools && tools.length > 0 ? tools : undefined,
+      model: frontmatter.model,
+      systemPrompt: body,
+      source,
+    });
+  }
 
-const reviewer: AgentConfig = {
-  name: "reviewer",
-  description:
-    "Reviews a diff or change set for correctness, tests, and cleanup, and can apply small fixes.",
-  tools: ["read", "grep", "find", "ls", "bash"],
-  source: "bundled",
-  systemPrompt: `You are "reviewer", a code review subagent.
+  return agents;
+}
 
-Your job is to review the change described in your task for correctness, missing tests, and cleanup opportunities.
+const BUNDLED_AGENTS_DIR = fileURLToPath(
+  new URL("./bundled-agents", import.meta.url),
+);
 
-- Read the relevant diff/files before commenting.
-- Call out concrete issues with file:line references, not vague feedback.
-- Distinguish must-fix issues from nice-to-haves.
-- If asked to fix, make the smallest change that addresses the issue.
-- End with a clear verdict: approve, approve with nits, or changes requested.`,
-};
-
-const worker: AgentConfig = {
-  name: "worker",
-  description:
-    "General-purpose implementation subagent with full tool access. Escalates unapproved decisions.",
-  source: "bundled",
-  systemPrompt: `You are "worker", a general-purpose implementation subagent.
-
-Your job is to carry out the task you are given directly, using the tools available to you.
-
-- Follow any plan or context you are given; do not re-derive it from scratch.
-- Make the change, run any relevant checks, and report what you did.
-- If you hit a decision the task doesn't cover, state your assumption clearly in the final answer rather than silently guessing on something risky.
-- You are a subagent, not the orchestrator: do not try to delegate to other subagents yourself.`,
-};
-
-const oracle: AgentConfig = {
-  name: "oracle",
-  description:
-    "Second opinion. Challenges assumptions and reasons about a plan or bug without editing anything.",
-  tools: ["read", "grep", "find", "ls"],
-  source: "bundled",
-  systemPrompt: `You are "oracle", a second-opinion subagent.
-
-Your job is to critically evaluate the plan, diff, or problem you are given — not to implement anything.
-
-- Challenge assumptions. Look for edge cases, race conditions, and simpler alternatives.
-- Be direct about disagreement; do not just validate what you were given.
-- You have no write access. Output analysis and a recommendation only.`,
-};
-
-export const BUNDLED_AGENTS: readonly AgentConfig[] = [
-  scout,
-  planner,
-  reviewer,
-  worker,
-  oracle,
-];
+/**
+ * Re-reads `bundled-agents/*.md` on every call, same as project agents do —
+ * these are a handful of tiny files, not worth caching, and it keeps
+ * "bundled" and "project" agents going through the identical code path.
+ */
+export function loadBundledAgents(): AgentConfig[] {
+  return loadAgentsFromDir(BUNDLED_AGENTS_DIR, "bundled");
+}
 
 export function findBundledAgent(name: string): AgentConfig | undefined {
-  return BUNDLED_AGENTS.find((agent) => agent.name === name);
+  return loadBundledAgents().find((agent) => agent.name === name);
 }
 
 export function listBundledAgentNames(): string[] {
-  return BUNDLED_AGENTS.map((agent) => agent.name);
+  return loadBundledAgents().map((agent) => agent.name);
 }

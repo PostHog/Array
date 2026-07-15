@@ -3,4 +3,5 @@ export const CLOUD_TASK_AUTH = Symbol.for("posthog.core.cloudTaskAuth");
 
 export interface ICloudTaskAuth {
   authenticatedFetch(url: string, init?: RequestInit): Promise<Response>;
+  getCloudContext(): Promise<{ apiHost: string; teamId: number } | null>;
 }

@@ -32,11 +32,18 @@ export function AgentApprovalsPane({
   filter: ApprovalFilter;
   onFilterChange: (f: ApprovalFilter) => void;
 }) {
-  const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } =
-    useAgentApplicationApprovals(
-      idOrSlug,
-      filter === "all" ? undefined : { state: filter },
-    );
+  const {
+    data,
+    isLoading,
+    isError,
+    isPermissionError,
+    isFetching,
+    dataUpdatedAt,
+    refetch,
+  } = useAgentApplicationApprovals(
+    idOrSlug,
+    filter === "all" ? undefined : { state: filter },
+  );
   const approvals = useMemo(() => data ?? [], [data]);
   const selected = selectedId
     ? (approvals.find((a) => a.id === selectedId) ?? null)
@@ -78,10 +85,17 @@ export function AgentApprovalsPane({
         />
       ))}
     </Flex>
+  ) : isPermissionError ? (
+    // A 404 here means the admin gate: AgentDetailLayout only renders this
+    // pane's content once the application itself has loaded successfully.
+    <AgentDetailEmptyState
+      title="You need organization admin access"
+      description="Tool approvals can only be viewed and decided by organization admins. Ask an admin to review pending requests."
+    />
   ) : isError ? (
     <AgentDetailEmptyState
       title="Couldn't load approvals"
-      description="The agent platform API returned an error. Approvals are team-admin only — you may not have access."
+      description="The agent platform API returned an error while loading approvals. Try again shortly."
     />
   ) : approvals.length === 0 ? (
     <AgentDetailEmptyState

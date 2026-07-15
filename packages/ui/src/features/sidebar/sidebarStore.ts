@@ -17,6 +17,10 @@ interface SidebarStoreState {
   showAllUsers: boolean;
   showInternal: boolean;
   taskTypeFilter: WorkspaceMode[];
+  // Reveals the Channels feature in the unified sidebar (channel tree replaces
+  // the task list, Canvas nav item appears). Off by default — Code merged into
+  // the Bluebird chrome ships with channels hidden until the user opts in.
+  channelsEnabled: boolean;
 }
 
 interface SidebarStoreActions {
@@ -36,6 +40,7 @@ interface SidebarStoreActions {
   setShowAllUsers: (showAllUsers: boolean) => void;
   setShowInternal: (showInternal: boolean) => void;
   toggleTaskType: (mode: WorkspaceMode) => void;
+  setChannelsEnabled: (channelsEnabled: boolean) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -55,6 +60,7 @@ export const useSidebarStore = create<SidebarStore>()(
       showAllUsers: false,
       showInternal: false,
       taskTypeFilter: [...ALL_WORKSPACE_MODES],
+      channelsEnabled: false,
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -111,6 +117,7 @@ export const useSidebarStore = create<SidebarStore>()(
             ? state.taskTypeFilter.filter((m) => m !== mode)
             : [...state.taskTypeFilter, mode],
         })),
+      setChannelsEnabled: (channelsEnabled) => set({ channelsEnabled }),
     }),
     {
       name: "sidebar-storage",
@@ -126,6 +133,7 @@ export const useSidebarStore = create<SidebarStore>()(
         showAllUsers: state.showAllUsers,
         showInternal: state.showInternal,
         taskTypeFilter: state.taskTypeFilter,
+        channelsEnabled: state.channelsEnabled,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -140,6 +148,7 @@ export const useSidebarStore = create<SidebarStore>()(
           showAllUsers?: boolean;
           showInternal?: boolean;
           taskTypeFilter?: WorkspaceMode[];
+          channelsEnabled?: boolean;
         };
         return {
           ...current,
@@ -160,6 +169,8 @@ export const useSidebarStore = create<SidebarStore>()(
           showInternal: persistedState.showInternal ?? current.showInternal,
           taskTypeFilter:
             persistedState.taskTypeFilter ?? current.taskTypeFilter,
+          channelsEnabled:
+            persistedState.channelsEnabled ?? current.channelsEnabled,
         };
       },
     },

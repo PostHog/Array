@@ -20,6 +20,7 @@ import {
 import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useSetupStore } from "@posthog/ui/features/setup/setupStore";
 import { useTourStore } from "@posthog/ui/features/tour/tourStore";
 import {
@@ -28,7 +29,7 @@ import {
 } from "@posthog/ui/router/RouterDevtools";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
-import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Switch, Text, Tooltip } from "@radix-ui/themes";
 import { trpcClient, useTRPC } from "@renderer/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
@@ -126,6 +127,8 @@ export function DevToolbar() {
             }
             onToggleRouterDevtools={toggleRouterDevtools}
           />
+          <Divider />
+          <DebugLogsToggle />
           <Divider />
           <QuickActionsMenu />
         </Flex>
@@ -506,6 +509,31 @@ function GadgetButton({
       >
         {children}
       </button>
+    </Tooltip>
+  );
+}
+
+/**
+ * Mirrors the "Debug logs for cloud runs" toggle from Settings → Advanced so it
+ * can be flipped without leaving the current view. Reads/writes the same
+ * `debugLogsCloudRuns` setting, so the two controls stay in sync.
+ */
+function DebugLogsToggle() {
+  const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
+  const setDebugLogsCloudRuns = useSettingsStore(
+    (s) => s.setDebugLogsCloudRuns,
+  );
+
+  return (
+    <Tooltip content="Show debug-level console output in the conversation view for cloud-executed runs">
+      <Flex align="center" gap="2" className="text-(--gray-11)">
+        <Text size="1">Debug logs</Text>
+        <Switch
+          checked={debugLogsCloudRuns}
+          onCheckedChange={setDebugLogsCloudRuns}
+          size="1"
+        />
+      </Flex>
     </Tooltip>
   );
 }

@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -112,6 +118,83 @@ describe("runMigrations", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // 0013 was amended in place on the bluebird branch, so dogfood DBs have it
+  // recorded as applied while carrying an earlier variant of the browser-tabs
+  // schema. 0020 must heal every observed variant without ever failing boot.
+  describe("0020 browser-tabs repair", () => {
+    const REPAIR_TIMESTAMP = 1783685997328;
+
+    function markHistoryApplied(db: InstanceType<typeof Database>) {
+      // Record 0000..0019 as applied without running them, mimicking a DB
+      // whose ledger is ahead of its real schema.
+      db.exec(
+        "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)",
+      );
+      const journal = JSON.parse(
+        readFileSync(
+          path.join(MIGRATIONS_FOLDER, "meta", "_journal.json"),
+          "utf8",
+        ),
+      ) as { entries: { idx: number; when: number }[] };
+      const insert = db.prepare(
+        "INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('x', ?)",
+      );
+      for (const entry of journal.entries) {
+        if (entry.when !== REPAIR_TIMESTAMP) insert.run(entry.when);
+      }
+    }
+
+    it("heals the panes-era variant (tables exist, active_tab_id missing)", () => {
+      markHistoryApplied(sqlite);
+      sqlite.exec(`
+        CREATE TABLE browser_windows (id text PRIMARY KEY NOT NULL,
+          is_primary integer DEFAULT false NOT NULL, bounds text,
+          position integer DEFAULT 0 NOT NULL, created_at integer NOT NULL,
+          updated_at integer NOT NULL, layout text, focused_pane_id text);
+        CREATE TABLE browser_tabs (id text PRIMARY KEY NOT NULL,
+          window_id text NOT NULL, dashboard_id text, channel_id text,
+          position integer NOT NULL, scroll_state text,
+          created_at integer NOT NULL, last_active_at integer NOT NULL,
+          pane_id text);
+      `);
+
+      expect(() => runMigrations(sqlite, MIGRATIONS_FOLDER)).not.toThrow();
+      expect(hasColumn(sqlite, "browser_windows", "active_tab_id")).toBe(true);
+      expect(hasColumn(sqlite, "browser_tabs", "task_id")).toBe(true);
+      expect(hasColumn(sqlite, "browser_tabs", "channel_section")).toBe(true);
+      expect(hasColumn(sqlite, "browser_tabs", "app_view")).toBe(true);
+    });
+
+    it("heals a variant missing the browser tables entirely", () => {
+      markHistoryApplied(sqlite);
+
+      expect(() => runMigrations(sqlite, MIGRATIONS_FOLDER)).not.toThrow();
+      expect(hasColumn(sqlite, "browser_windows", "active_tab_id")).toBe(true);
+      expect(hasColumn(sqlite, "browser_tabs", "app_view")).toBe(true);
+    });
+
+    it("tolerates arbitrary statement failures in a best-effort migration", () => {
+      // An unforeseen divergence must degrade to "still broken", never a
+      // failed migration batch that kills boot.
+      markHistoryApplied(sqlite);
+      // A browser_windows table that can't accept the ALTERs cleanly: the
+      // column exists with a different type — ALTER throws duplicate column
+      // (tolerated), and the CREATEs no-op. Simulate a nastier case by making
+      // browser_tabs a VIEW, which CREATE TABLE IF NOT EXISTS *and* ALTER
+      // both reject with non-duplicate-column errors.
+      sqlite.exec(`
+        CREATE TABLE browser_windows (id text PRIMARY KEY NOT NULL,
+          is_primary integer DEFAULT false NOT NULL, bounds text,
+          active_tab_id text, position integer DEFAULT 0 NOT NULL,
+          created_at integer NOT NULL, updated_at integer NOT NULL);
+        CREATE VIEW browser_tabs AS SELECT 1 AS id;
+      `);
+
+      expect(() => runMigrations(sqlite, MIGRATIONS_FOLDER)).not.toThrow();
+      expect(ledgerHas(sqlite, REPAIR_TIMESTAMP)).toBe(true);
+    });
   });
 });
 

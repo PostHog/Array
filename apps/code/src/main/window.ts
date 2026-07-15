@@ -25,12 +25,14 @@ import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import {
+  getFullScreenDisplayBounds,
+  saveFullScreenDisplayBounds,
   saveFullScreenState,
-  saveZoomLevel,
   setRestoreFullScreenOnNextLaunch,
   type WindowStateSchema,
   windowStateStore,
 } from "./utils/store";
+import { setupWindowZoom } from "./zoom";
 
 const log = logger.scope("window");
 const trpcLog = logger.scope("host-trpc");
@@ -58,6 +60,10 @@ function getSavedWindowState(): WindowStateSchema {
     isMaximized: windowStateStore.get("isMaximized", true),
     zoomLevel: windowStateStore.get("zoomLevel", 0),
     isFullScreen: windowStateStore.get("isFullScreen", false),
+    fullScreenDisplayBounds: windowStateStore.get(
+      "fullScreenDisplayBounds",
+      undefined,
+    ),
     restoreFullScreenOnNextLaunch: windowStateStore.get(
       "restoreFullScreenOnNextLaunch",
       false,
@@ -76,17 +82,25 @@ function getSavedWindowState(): WindowStateSchema {
 }
 
 export function saveWindowState(window: BrowserWindow): void {
-  const isMaximized = window.isMaximized();
-  windowStateStore.set("isMaximized", isMaximized);
+  // electron-store writes synchronously and throws on failure (e.g. ENOSPC on a
+  // full disk). This runs inside window-event and setTimeout callbacks, where an
+  // uncaught throw would crash the main process. Window-state persistence is
+  // non-critical, so swallow and log the error instead.
+  try {
+    const isMaximized = window.isMaximized();
+    windowStateStore.set("isMaximized", isMaximized);
 
-  // Only save bounds when not maximized, so restoring from maximized
-  // gives the user their previous windowed size/position
-  if (!isMaximized && !window.isFullScreen()) {
-    const bounds = window.getBounds();
-    windowStateStore.set("x", bounds.x);
-    windowStateStore.set("y", bounds.y);
-    windowStateStore.set("width", bounds.width);
-    windowStateStore.set("height", bounds.height);
+    // Only save bounds when not maximized, so restoring from maximized
+    // gives the user their previous windowed size/position
+    if (!isMaximized && !window.isFullScreen()) {
+      const bounds = window.getBounds();
+      windowStateStore.set("x", bounds.x);
+      windowStateStore.set("y", bounds.y);
+      windowStateStore.set("width", bounds.width);
+      windowStateStore.set("height", bounds.height);
+    }
+  } catch (error) {
+    log.warn("Failed to persist window state", { error });
   }
 }
 
@@ -172,6 +186,23 @@ export function createWindow(): void {
   const restoreFullScreen = savedState.restoreFullScreenOnNextLaunch;
   if (restoreFullScreen) {
     setRestoreFullScreenOnNextLaunch(false);
+
+    // setFullScreen(true) fullscreens whichever display the window is on, so
+    // start the hidden window on the display that was fullscreen before the
+    // update. getDisplayMatching falls back to the nearest display if that
+    // monitor is gone.
+    const displayBounds = getFullScreenDisplayBounds();
+    if (displayBounds) {
+      const { workArea } = screen.getDisplayMatching(displayBounds);
+      savedState.width = Math.min(savedState.width, workArea.width);
+      savedState.height = Math.min(savedState.height, workArea.height);
+      savedState.x = Math.round(
+        workArea.x + (workArea.width - savedState.width) / 2,
+      );
+      savedState.y = Math.round(
+        workArea.y + (workArea.height - savedState.height) / 2,
+      );
+    }
   }
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -197,6 +228,10 @@ export function createWindow(): void {
           // buttons (40px bar, 24px buttons → centre at y=20; 12px dots → top at 14).
           // x mirrors y so the inset from the top and the left match.
           trafficLightPosition: { x: 14, y: 14 },
+          // Exposes the titlebar-area-* CSS env vars so the renderer can
+          // clear the traffic lights exactly; their size varies by macOS
+          // version (bigger on Tahoe), so it must not hardcode a width.
+          titleBarOverlay: true,
         }
       : process.platform === "win32"
         ? {
@@ -262,21 +297,7 @@ export function createWindow(): void {
   mainWindow.once("ready-to-show", showWindow);
   const showFallback = setTimeout(showWindow, 3000);
 
-  // Restore the zoom level once the renderer has loaded. Read the latest
-  // persisted value from the store (not the create-time snapshot) so zooming
-  // done during the session survives in-app reloads, which otherwise reset
-  // Chromium's per-webContents zoom.
-  mainWindow.webContents.on("did-finish-load", () => {
-    mainWindow?.webContents.setZoomLevel(windowStateStore.get("zoomLevel", 0));
-  });
-
-  // Persist mouse-wheel/pinch zoom. Menu-driven zoom is persisted by the
-  // menu items themselves (see buildViewMenu in menu.ts).
-  mainWindow.webContents.on("zoom-changed", () => {
-    if (mainWindow) {
-      saveZoomLevel(mainWindow.webContents.getZoomLevel());
-    }
-  });
+  setupWindowZoom(mainWindow);
 
   // Persist window state on changes
   mainWindow.on(
@@ -291,8 +312,16 @@ export function createWindow(): void {
   mainWindow.on("unmaximize", () => mainWindow && saveWindowState(mainWindow));
   mainWindow.on("close", () => mainWindow && saveWindowState(mainWindow));
 
-  // Live-track fullscreen so the update-quit path can read the current state.
-  mainWindow.on("enter-full-screen", () => saveFullScreenState(true));
+  // Live-track fullscreen (and which display it is on) so the update-quit
+  // path can restore the same monitor after the relaunch.
+  mainWindow.on("enter-full-screen", () => {
+    saveFullScreenState(true);
+    if (mainWindow) {
+      saveFullScreenDisplayBounds(
+        screen.getDisplayMatching(mainWindow.getBounds()).bounds,
+      );
+    }
+  });
   mainWindow.on("leave-full-screen", () => saveFullScreenState(false));
 
   container

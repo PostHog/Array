@@ -72,6 +72,11 @@ describe("TabStrip", () => {
     expect(props.onNewTab).toHaveBeenCalledTimes(1);
   });
 
+  it("hides the new-tab button when onNewTab is omitted", () => {
+    setup({ onNewTab: undefined });
+    expect(screen.queryByLabelText("New tab")).toBeNull();
+  });
+
   it("collapses a pinned tab to an icon-only pill without a close affordance", () => {
     setup({
       tabs: [{ ...tabs[0], pinned: true }, tabs[1]],

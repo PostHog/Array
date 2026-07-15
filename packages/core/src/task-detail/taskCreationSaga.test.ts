@@ -153,6 +153,7 @@ describe("TaskCreationSaga", () => {
       model: "gpt-5.4",
       reasoningLevel: "high",
       cloudAutoPublish: true,
+      cloudRtkEnabled: false,
     });
 
     expect(result.success).toBe(true);
@@ -170,6 +171,7 @@ describe("TaskCreationSaga", () => {
       sandboxEnvironmentId: undefined,
       prAuthorshipMode: "user",
       autoPublish: true,
+      rtkEnabled: false,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",

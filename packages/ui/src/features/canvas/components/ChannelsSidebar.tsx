@@ -1,221 +1,148 @@
-import {
-  BellIcon,
-  BrainIcon,
-  GearSixIcon,
-  HouseIcon,
-  RobotIcon,
-  SquaresFourIcon,
-  TrayIcon,
-} from "@phosphor-icons/react";
-import { countUnseenActivity } from "@posthog/core/canvas/mentionActivity";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import { HOME_TAB_FLAG } from "@posthog/shared/constants";
+import { ArchiveIcon } from "@phosphor-icons/react";
+import { Separator } from "@posthog/quill";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
-import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
-import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
-import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
-import { SidebarCountBadge } from "@posthog/ui/features/sidebar/components/items/SidebarCountBadge";
+import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
-import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
+import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
+import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
-import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import {
-  navigateToActivity,
-  navigateToAgents,
-  navigateToCanvas,
-  navigateToInbox,
-  navigateToSkills,
-  navigateToWebsiteHome,
-} from "@posthog/ui/router/navigationBridge";
-import { useAppView } from "@posthog/ui/router/useAppView";
-import { track } from "@posthog/ui/shell/analytics";
+  beginSidebarPeek,
+  cancelSidebarPeek,
+  endSidebarPeek,
+  useSidebarPeekStore,
+} from "@posthog/ui/features/sidebar/sidebarPeekStore";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
+import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import { useSidebarEdgeHoverPeek } from "@posthog/ui/primitives/hooks/useSidebarEdgeHoverPeek";
+import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
+import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
-import { useRouterState } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useDeferredValue, useEffect } from "react";
 
-// Fire a nav_click event, then run the destination's navigation.
-function trackNav(navTarget: string, navigate: () => void) {
-  track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-    action_type: "nav_click",
-    surface: "nav",
-    nav_target: navTarget,
-  });
-  navigate();
-}
-
-// Non-canvas /website mirrors (Home, Files, etc.) — used to tell whether the
-// current /website route is a canvas surface (channels index / a channel / a
-// dashboard) so the Canvas nav item highlights only there.
-const NON_CANVAS_WEBSITE_PREFIXES = [
-  "/website/home",
-  "/website/activity",
-  "/website/skills",
-  "/website/mcp-servers",
-  "/website/command-center",
-];
-
-// The Activity nav row with its unread-mentions dot. Its own component so the
-// mentions query only mounts once here.
-function ActivityNavItem({ isActive }: { isActive: boolean }) {
-  const { items } = useMentionActivity();
-  const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);
-  const unseen = useMemo(
-    () => countUnseenActivity(items, lastSeenAt),
-    [items, lastSeenAt],
-  );
-  return (
-    <SidebarItem
-      depth={0}
-      icon={<BellIcon size={16} weight={isActive ? "fill" : "regular"} />}
-      label={
-        <span className="flex min-w-0 items-center">
-          Activity
-          <SidebarCountBadge
-            count={unseen}
-            title={`${unseen} new ${unseen === 1 ? "mention" : "mentions"}`}
-          />
-        </span>
-      }
-      isActive={isActive}
-      onClick={() => trackNav("activity", navigateToActivity)}
-    />
-  );
-}
-
-// The global nav brought over from the Code app — a single icon+label row each,
-// no rail. Home points at the /website/home mirror so it stays in the Channels
-// space (same shared HomeView, channels chrome kept); the other rows are
-// app-wide destinations that leave the Channels space for the Code view. The
-// channel tree below is channel browsing.
-function ChannelsNav() {
-  const view = useAppView();
-  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
-  // Active on the canvas surfaces: the channels index, a channel, or a canvas —
-  // any /website route that isn't one of the cross-app mirrors above.
-  const isCanvasActive = useRouterState({
-    select: (s) => {
-      const path = s.location.pathname;
-      return (
-        path.startsWith("/website") &&
-        !NON_CANVAS_WEBSITE_PREFIXES.some((p) => path.startsWith(p))
-      );
-    },
-  });
-  return (
-    <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
-      {homeTabEnabled && (
-        <SidebarItem
-          depth={0}
-          icon={
-            <HouseIcon
-              size={16}
-              weight={view.type === "home" ? "fill" : "regular"}
-            />
-          }
-          label="Home"
-          isActive={view.type === "home"}
-          onClick={() => trackNav("home", navigateToWebsiteHome)}
-        />
-      )}
-      <ActivityNavItem isActive={view.type === "activity"} />
-      <SidebarItem
-        depth={0}
-        icon={
-          <TrayIcon
-            size={16}
-            weight={view.type === "inbox" ? "fill" : "regular"}
-          />
-        }
-        label="Global Inbox"
-        isActive={view.type === "inbox"}
-        onClick={() => trackNav("inbox", navigateToInbox)}
-      />
-      <SidebarItem
-        depth={0}
-        icon={
-          <SquaresFourIcon
-            size={16}
-            weight={isCanvasActive ? "fill" : "regular"}
-          />
-        }
-        label="Canvas"
-        isActive={isCanvasActive}
-        onClick={() => trackNav("canvas", navigateToCanvas)}
-      />
-      <SidebarItem
-        depth={0}
-        icon={
-          <RobotIcon
-            size={16}
-            weight={view.type === "agents" ? "fill" : "regular"}
-          />
-        }
-        label="Agents"
-        isActive={view.type === "agents"}
-        onClick={() => trackNav("agents", navigateToAgents)}
-      />
-      <SidebarItem
-        depth={0}
-        icon={
-          <BrainIcon
-            size={16}
-            weight={view.type === "skills" ? "fill" : "regular"}
-          />
-        }
-        label="Files"
-        isActive={view.type === "skills"}
-        onClick={() => trackNav("files", navigateToSkills)}
-      />
-    </Flex>
-  );
-}
-
-// The Channels-space sidebar: a single column owning the whole left pane. Top to
-// bottom — workspace switcher, global nav, the channel tree, then Settings
-// pinned to the bottom. There is no app rail in this space; the nav rows above
-// are the cross-app navigation.
+// The unified app sidebar (Code merged into the Bluebird chrome). Top to
+// bottom: workspace switcher, the merged global nav, the "Enable channels"
+// opt-in, then the body — the task list by default, swapped for the channel
+// tree once channels are enabled — and Settings pinned to the bottom.
 export function ChannelsSidebar() {
   const width = useChannelsSidebarStore((state) => state.width);
   const setWidth = useChannelsSidebarStore((state) => state.setWidth);
   const isResizing = useChannelsSidebarStore((state) => state.isResizing);
   const setIsResizing = useChannelsSidebarStore((state) => state.setIsResizing);
 
+  // Cmd+B collapses the sidebar (via useSidebarStore.open, toggled globally in
+  // GlobalEventHandlers / the command menu). Auto-open once the user has
+  // finished onboarding or has any workspace, matching the retired MainSidebar —
+  // so a brand-new user sees the welcome screen without the sidebar beside it.
+  const open = useSidebarStore((s) => s.open);
+  const setOpen = useSidebarStore((s) => s.setOpen);
+  const setOpenAuto = useSidebarStore((s) => s.setOpenAuto);
+  const hasCompletedOnboarding = useOnboardingStore(
+    (s) => s.hasCompletedOnboarding,
+  );
+  const { data: workspaces = {}, isFetched: workspacesFetched } =
+    useWorkspaces();
+  useEffect(() => {
+    if (!workspacesFetched) return;
+    setOpenAuto(hasCompletedOnboarding || Object.keys(workspaces).length > 0);
+  }, [workspacesFetched, workspaces, hasCompletedOnboarding, setOpenAuto]);
+
+  const peek = useSidebarPeekStore((s) => s.peek);
+  useSidebarEdgeHoverPeek({
+    enabled: !open && !isResizing,
+    peeked: peek,
+    side: "left",
+    width,
+    onReveal: beginSidebarPeek,
+    onClose: () => endSidebarPeek(),
+  });
+  useEffect(() => {
+    if (open) cancelSidebarPeek();
+  }, [open]);
+  // The peek store is a module-level singleton — if this sidebar unmounts
+  // while peeked (route without it), a stale peek would greet the remount.
+  useEffect(() => () => cancelSidebarPeek(), []);
+
+  // Channels stay behind project-bluebird: the toggle only appears where the
+  // canvas backend is wired, and a persisted "on" is ignored when the flag is
+  // off so the sidebar can't strand a user on an unsupported feature.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
+  // The Switch (in SidebarNavSection) reads the live value and flips instantly.
+  // Swapping the sidebar body mounts a heavy tree (ChannelsList: the channels
+  // query + a provider-laden row per channel), so defer that decision: the
+  // urgent commit keeps the current body and paints the toggle, then the tree
+  // mounts in a follow-up non-blocking render.
+  const bodyChannelsEnabled = useDeferredValue(channelsEnabled);
+
+  const archivedTaskIds = useArchivedTaskIds();
+
   return (
     <ResizableSidebar
-      open
+      open={open}
       width={width}
       setWidth={setWidth}
       isResizing={isResizing}
       setIsResizing={setIsResizing}
       side="left"
+      setOpen={setOpen}
+      peek={peek}
+      onPeekEnter={beginSidebarPeek}
+      onPeekLeave={() => endSidebarPeek()}
+      onPeekDismiss={cancelSidebarPeek}
     >
       <Flex direction="column" className="h-full bg-chrome">
-        {/* Workspace switcher — a compact bordered button. The title bar above
-            provides the window-drag region and stoplight clearance. */}
-        <Box className="shrink-0 px-2 pb-0">
-          <ProjectSwitcher triggerVariant="button" />
-        </Box>
+        {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by
+            the same flag), so this section carries the whole merged nav. */}
+        <SidebarNavSection />
 
-        {/* The global nav links stay pinned below the switcher; only the channel
-            tree scrolls when it overflows. */}
-        <ChannelsNav />
-        <Box className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto">
-          <ChannelsList />
-        </Box>
+        {/* Body: the channel tree when channels are on, otherwise the task
+            list. Each owns its own scroll region. Gated on the deferred value so
+            the toggle paints before this heavy swap. */}
+        {bodyChannelsEnabled ? (
+          <>
+            <Separator />
+            <Box className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto">
+              <ChannelsList />
+            </Box>
+          </>
+        ) : (
+          <Box className="min-h-0 flex-1">
+            <SidebarMenu />
+          </Box>
+        )}
 
         <UpdateBanner />
 
-        {/* Settings pinned to the bottom. Settings is a full-page route, so this
-            leaves the Channels space rather than highlighting in place. */}
-        <Box className="shrink-0 border-border border-t p-2">
-          <SidebarItem
-            depth={0}
-            icon={<GearSixIcon size={16} />}
-            label="Settings"
-            onClick={() => trackNav("settings", () => openSettings())}
-          />
+        {/* Archived is a task-list affordance — hidden while channels are on,
+            since the body then shows the channel tree, not tasks. */}
+        {!channelsEnabled && archivedTaskIds.size > 0 && (
+          <Box className="shrink-0 border-border border-t">
+            <button
+              type="button"
+              className="flex w-full items-center gap-1 bg-transparent px-2 py-1.5 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
+              onClick={navigateToArchived}
+            >
+              <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-gray-10">
+                <ArchiveIcon size={14} />
+              </span>
+              <span className="text-gray-11">Archived</span>
+            </button>
+          </Box>
+        )}
+
+        {/* Workspace switcher pinned to the bottom. Its dropdown carries the
+            Settings entry, so there's no separate Settings row. */}
+        <Box className="shrink-0 px-2 pb-2">
+          <ProjectSwitcher />
         </Box>
       </Flex>
     </ResizableSidebar>

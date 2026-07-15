@@ -79,6 +79,14 @@ export interface AgentSession {
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
   messageQueue: QueuedMessage[];
+  /**
+   * Id of the queued message the user currently has open in the composer for an
+   * in-place edit, if any. While set it acts as a drain boundary: when the turn
+   * ends, everything queued *before* this message auto-sends, but this message
+   * and everything after it stay queued until the edit is saved or cancelled.
+   * See {@link sendableQueuePrefixLength}.
+   */
+  editingQueuedId?: string;
   isCloud?: boolean;
   cloudStatus?: TaskRunStatus;
   cloudStage?: string | null;
@@ -87,6 +95,7 @@ export interface AgentSession {
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;
   handoffInProgress?: boolean;
+  stopRequested?: boolean;
   optimisticItems: OptimisticItem[];
   contextUsed?: number;
   contextSize?: number;
@@ -94,6 +103,23 @@ export interface AgentSession {
   idleKilled?: boolean;
   agentVersion?: string;
   agentIdleForRunId?: string;
+}
+
+/**
+ * How many messages at the head of the queue are eligible to auto-send when the
+ * turn ends. A message being edited in place ({@link AgentSession.editingQueuedId})
+ * is a hard boundary: the messages queued before it may send, but it and
+ * everything after it stay put until the edit is saved or cancelled. Returns the
+ * full queue length when nothing is being edited, or when the edited message has
+ * already left the queue (e.g. it was discarded).
+ */
+export function sendableQueuePrefixLength(
+  session: Pick<AgentSession, "messageQueue" | "editingQueuedId">,
+): number {
+  const { messageQueue, editingQueuedId } = session;
+  if (!editingQueuedId) return messageQueue.length;
+  const editIndex = messageQueue.findIndex((m) => m.id === editingQueuedId);
+  return editIndex === -1 ? messageQueue.length : editIndex;
 }
 
 export function isSelectGroup(

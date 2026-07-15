@@ -100,6 +100,11 @@ describe("parseStoredAutoresearchRun", () => {
     );
   });
 
+  it("defaults research findings for legacy persisted runs", () => {
+    const run = parseStoredAutoresearchRun(storedRun("paused"));
+    expect(run?.researchFindings).toEqual([]);
+  });
+
   it.each([
     ["corrupt JSON", "{nope"],
     ["schema mismatch", JSON.stringify({ id: "ar-1" })],

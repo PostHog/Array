@@ -30,6 +30,7 @@ export {
   primaryWindowHasNoTabs,
   setTabOrder,
   setTabTarget,
+  setWindowActiveTab,
   type TabNavDecision,
   type TabTarget,
 } from "./browser-tabs";
@@ -85,6 +86,7 @@ export type { ExecutionMode } from "./exec-types";
 export {
   CODEX_MODE_PRESETS,
   type CodexModePreset,
+  resolveCloudInitialPermissionMode,
 } from "./execution-modes";
 export * from "./flags";
 export * from "./git-domain";
@@ -106,6 +108,7 @@ export {
   buildImageDataUrl,
   CLAUDE_IMAGE_EXTENSIONS,
   type ClaudeImageMimeType,
+  estimateBase64Bytes,
   getImageMimeType,
   IMAGE_MIME_TYPES,
   isAllowedImageMimeType,
@@ -114,6 +117,7 @@ export {
   isGifFile,
   isImageFile,
   isRasterImageFile,
+  MAX_CLAUDE_IMAGE_BYTES,
   MAX_IMAGE_BASE64_LENGTH,
   type ParsedImageDataUrl,
   parseImageDataUrl,
@@ -127,6 +131,7 @@ export {
   mentionsToPlainText,
   splitMentionSegments,
 } from "./mentions";
+export { defaultEligibleModel } from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
@@ -205,6 +210,7 @@ export {
   type QueuedMessage,
   resolveBypassRevertMode,
   type SessionStatus,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
@@ -236,6 +242,7 @@ export type {
 export {
   formatRelativeTimeLong,
   formatRelativeTimeShort,
+  getLocalDayDiff,
   getRelativeDateGroup,
 } from "./time";
 export {

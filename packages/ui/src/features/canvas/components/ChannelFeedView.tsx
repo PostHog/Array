@@ -3,7 +3,6 @@ import {
   ChatCircleIcon,
   GitBranchIcon,
   RobotIcon,
-  UserIcon,
 } from "@phosphor-icons/react";
 import {
   Avatar,
@@ -34,25 +33,32 @@ import {
   ThreadItemRepliesLabel,
   ThreadItemRepliesMeta,
   ThreadItemTimestamp,
+  useChatMessageScroller,
 } from "@posthog/quill";
-import { formatRelativeTimeShort } from "@posthog/shared";
+import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
+import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
+import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { xmlToPlainText } from "@posthog/ui/features/message-editor/content";
-import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
-import { getOriginProductMeta } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 import {
   type SidebarPrState,
   useTaskPrStatus,
 } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Text } from "@radix-ui/themes";
-import { Fragment, memo, type ReactNode, useMemo } from "react";
+import {
+  Fragment,
+  memo,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
 // shared query key means an open panel naturally speeds the row up too.
@@ -119,9 +125,7 @@ function ordinal(n: number): string {
 // year when it differs) further back so older separators stay unambiguous.
 function dayLabel(iso: string, now: Date): string {
   const date = new Date(iso);
-  const startOfDay = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  const days = getLocalDayDiff(date, now);
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
   const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
@@ -197,9 +201,8 @@ function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
     base = statusBadge(status);
   } else {
     // Local, non-terminal: the run status is unreliable (the backend row stays
-    // "queued" while the agent runs on the creator's machine), and the
-    // environment already shows in the card's meta row ("· Local"), so we
-    // render no status badge here rather than a redundant "Local" pill.
+    // "queued" while the agent runs on the creator's machine), so we render no
+    // status badge rather than a misleading one.
     base = null;
   }
 
@@ -241,59 +244,33 @@ function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
   );
 }
 
-// The prompt as the user typed it: drop the channel CONTEXT.md block the saga
-// prepended and flatten the editor XML back to plain text.
-function promptText(task: Task): string {
-  const raw =
-    extractChannelContext(task.description)?.stripped ?? task.description;
-  try {
-    return xmlToPlainText(raw).trim() || task.title;
-  } catch {
-    return raw.trim() || task.title;
-  }
+// A kickoff a user just submitted, before its task exists on the backend. The
+// feed shows it optimistically so a submit reacts instantly instead of waiting
+// on the create round trip; it's swapped for the real card once created.
+export interface PendingKickoff {
+  id: string;
+  prompt: string;
 }
 
-// The card's context line, mirroring the storybook feed: who/what kicked the
-// task off ("Requested by @Ann" for humans, the origin product otherwise).
-function TaskCardOrigin({ task }: { task: Task }) {
-  const isUserCreated = task.origin_product === "user_created";
-  const label = isUserCreated
-    ? `Requested by @${userDisplayName(task.created_by)}`
-    : (getOriginProductMeta(task.origin_product)?.label ?? task.origin_product);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-      {isUserCreated ? <UserIcon size={12} /> : <RobotIcon size={12} />}
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
+// A stable empty default so the `pending` prop doesn't hand memoized children a
+// fresh array every render.
+const NO_PENDING: PendingKickoff[] = [];
 
 // The task the message kicked off, as a card everyone in the channel sees:
-// origin + status up top, bold title, then run metadata.
+// bold title + status up top, then run metadata.
 function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
     typeof task.latest_run?.output?.pr_url === "string"
       ? task.latest_run.output.pr_url
       : undefined;
-  // The repository renders separately with its icon; `meta` is the plain-text
-  // remainder of the row.
-  const environment = task.latest_run?.environment;
-  const meta = [
-    task.slug || null,
-    task.latest_run?.stage ?? null,
-    environment === "cloud"
-      ? "Cloud"
-      : environment === "local"
-        ? "Local"
-        : null,
-  ].filter(Boolean) as string[];
+  const stage = task.latest_run?.stage;
 
   return (
     <Card
       size="sm"
       className={cn(
-        "mt-1.5 w-full max-w-[820px] cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
+        "mt-1.5 w-full cursor-pointer rounded-sm py-0 transition-none hover:bg-fill-hover",
         statusDisplay.isMerged
           ? "border-transparent bg-(--purple-a2) shadow-[0_0_0_1px_var(--purple-8)] hover:bg-(--purple-a3) dark:bg-(--purple-a1) dark:hover:bg-(--purple-a2)"
           : "hover:border-border-primary",
@@ -302,19 +279,18 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
     >
       <CardContent className="flex flex-col gap-1 py-2.5">
         <div className="flex items-center justify-between gap-2">
-          <TaskCardOrigin task={task} />
+          <div className="flex min-w-0 items-center gap-1.5">
+            {/* Same live status icon as the code side nav, so the card and the
+                nav never disagree (generating spinner, needs-permission, cloud
+                status colors, PR state). */}
+            <TaskTabIcon task={task} size={14} />
+            <span className="line-clamp-2 font-medium text-sm">
+              {task.title || "Untitled task"}
+            </span>
+          </div>
           <TaskStatusBadge display={statusDisplay} />
         </div>
-        <div className="flex min-w-0 items-center gap-1.5">
-          {/* Same live status icon as the code side nav, so the card and the
-              nav never disagree (generating spinner, needs-permission, cloud
-              status colors, PR state). */}
-          <TaskTabIcon task={task} size={14} />
-          <Text size="2" weight="medium" className="line-clamp-2">
-            {task.title || "Untitled task"}
-          </Text>
-        </div>
-        {(meta.length > 0 || task.repository || prUrl) && (
+        {(stage || task.repository || prUrl) && (
           <div className="flex min-w-0 items-center gap-3">
             {task.repository && (
               <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
@@ -322,9 +298,9 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
                 {task.repository}
               </span>
             )}
-            {meta.length > 0 && (
+            {stage && (
               <Text size="1" className="truncate text-muted-foreground">
-                {meta.join(" · ")}
+                {stage}
               </Text>
             )}
             {prUrl && (
@@ -340,18 +316,27 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   );
 }
 
-// Slack-style thread teaser under the card: reply-author facepile, count, and
-// last-reply time. Only renders once the thread has messages; starting a
-// thread lives in the row's hover toolbar.
-function RepliesRow({
+// The reply row under the card, always present at a constant height: the
+// Slack-style teaser (author facepile, count, last-reply time) once the thread
+// has messages, and a quiet "Reply" affordance otherwise. Keeping the row
+// mounted at a fixed height means the teaser swaps in after the thread fetch
+// lands without shifting the feed — and it surfaces an always-visible way into
+// the thread instead of hiding it in the hover toolbar.
+//
+// The fetch/poll only runs for near-viewport rows (`inView`); off-screen rows
+// render the static affordance and idle, so a long feed isn't polling per row.
+function ReplyFooter({
   taskId,
+  inView,
   onOpenThread,
 }: {
   taskId: string;
+  inView: boolean;
   onOpenThread: () => void;
 }) {
   const { messages } = useTaskThread(taskId, {
     pollIntervalMs: FEED_REPLIES_POLL_INTERVAL_MS,
+    enabled: inView,
   });
   const authors = useMemo(() => {
     const seen = new Map<string, (typeof messages)[number]["author"]>();
@@ -362,9 +347,26 @@ function RepliesRow({
     return [...seen.values()].slice(0, 4);
   }, [messages]);
 
-  if (messages.length === 0) return null;
-  const last = messages[messages.length - 1];
+  if (messages.length === 0) {
+    // A single avatar-sized slot keeps this row the exact height of the
+    // populated teaser, so swapping to it after the fetch never shifts the feed.
+    return (
+      <ThreadItemReplies onClick={onOpenThread} className="mt-1">
+        <AvatarGroup size="xs">
+          <Avatar size="xs">
+            <AvatarFallback>
+              <ChatCircleIcon size={12} />
+            </AvatarFallback>
+          </Avatar>
+        </AvatarGroup>
+        <ThreadItemRepliesLabel className="text-(--muted-foreground)">
+          Reply
+        </ThreadItemRepliesLabel>
+      </ThreadItemReplies>
+    );
+  }
 
+  const last = messages[messages.length - 1];
   return (
     <ThreadItemReplies onClick={onOpenThread} className="mt-1">
       <AvatarGroup size="xs">
@@ -395,29 +397,20 @@ const FeedItem = memo(function FeedItem({
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  const prompt = useMemo(() => promptText(task), [task]);
-  const isAgent = !task.created_by || task.origin_product !== "user_created";
-
   return (
-    <ThreadItem className="rounded-none py-4 pr-8 hover:bg-fill-hover/50">
+    <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
-            {isAgent && !task.created_by ? (
-              <RobotIcon size={16} />
-            ) : (
-              getUserInitials(task.created_by)
-            )}
+            <RobotIcon size={16} />
           </AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
 
       <ThreadItemContent className="min-w-0">
         <ThreadItemHeader>
-          <ThreadItemAuthor>
-            {task.created_by ? userDisplayName(task.created_by) : "Agent"}
-          </ThreadItemAuthor>
-          {isAgent && <Badge variant="info">Agent</Badge>}
+          <ThreadItemAuthor>PostHog</ThreadItemAuthor>
+          <Badge variant="info">Agent</Badge>
           <ThreadItemTimestamp
             dateTime={new Date(task.created_at).toISOString()}
           >
@@ -425,32 +418,37 @@ const FeedItem = memo(function FeedItem({
           </ThreadItemTimestamp>
         </ThreadItemHeader>
 
-        <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
-          {prompt}
+        <ThreadItemBody className="wrap-break-word">
+          {/* Only attribute channel-started tasks: other origins (Slack,
+              automations) carry a created_by who didn't start it here. */}
+          {task.origin_product === "user_created" && task.created_by ? (
+            <>
+              {/* Mention-styled but rendered inert: the starter shouldn't be
+                  notified about their own task. */}
+              <span className={mentionChipClass}>
+                @{userDisplayName(task.created_by)}
+              </span>{" "}
+              started a new task
+            </>
+          ) : (
+            "A new task was started"
+          )}
         </ThreadItemBody>
 
         <TaskCard task={task} onOpen={() => onOpenTask(task)} />
-        {/* Off-screen rows drop the reply teaser so a long feed isn't running a
-            15s poll timer per row; the wide inView margin mounts it well before
-            the row scrolls into view, so nothing pops in. */}
-        {inView && (
-          <RepliesRow
-            taskId={task.id}
-            onOpenThread={() => onOpenThread(task)}
-          />
-        )}
+        <ReplyFooter
+          taskId={task.id}
+          inView={inView}
+          onOpenThread={() => onOpenThread(task)}
+        />
       </ThreadItemContent>
 
-      {/* Actions anchor to the row's top-right corner; a top tooltip there
-          overhangs the panel edge and gets clipped by the scroll container, so
-          open tooltips toward the content instead. */}
+      {/* Replying now lives in the always-visible ReplyFooter, so the hover
+          toolbar only carries the distinct "Open task" action. Actions anchor
+          to the row's top-right corner; a top tooltip there overhangs the panel
+          edge and gets clipped by the scroll container, so open tooltips toward
+          the content instead. */}
       <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
-        <ThreadItemAction
-          label="Reply in thread"
-          onClick={() => onOpenThread(task)}
-        >
-          <ChatCircleIcon size={15} />
-        </ThreadItemAction>
         <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
           <ArrowSquareOutIcon size={15} />
         </ThreadItemAction>
@@ -493,23 +491,175 @@ function FeedRow({
   );
 }
 
+// The optimistic kickoff row: the user's message plus a "Starting…" card,
+// shown the moment they submit. Deliberately dumb — no per-task data hooks or
+// polls (there's no task id to query yet); it's replaced by a real FeedRow as
+// soon as the task is created.
+function PendingFeedRow({
+  pending,
+  createdAt,
+}: {
+  pending: PendingKickoff;
+  createdAt: string;
+}) {
+  return (
+    <ChatMessageScrollerItem
+      messageId={pending.id}
+      className="[contain-intrinsic-size:auto_13rem]"
+    >
+      <ThreadItem className="rounded-none py-4 pr-8">
+        <ThreadItemGutter>
+          <Avatar>
+            <AvatarFallback>
+              <Spinner className="size-4" />
+            </AvatarFallback>
+          </Avatar>
+        </ThreadItemGutter>
+        <ThreadItemContent className="min-w-0">
+          <ThreadItemHeader>
+            <ThreadItemAuthor>You</ThreadItemAuthor>
+            <ThreadItemTimestamp dateTime={createdAt}>now</ThreadItemTimestamp>
+          </ThreadItemHeader>
+          <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
+            {pending.prompt}
+          </ThreadItemBody>
+          <Card
+            size="sm"
+            className="mt-1.5 w-full max-w-[820px] rounded-sm py-0"
+          >
+            <CardContent className="py-2.5">
+              <Badge variant="info">
+                <Spinner className="size-2.5" />
+                Starting…
+              </Badge>
+            </CardContent>
+          </Card>
+        </ThreadItemContent>
+      </ThreadItem>
+    </ChatMessageScrollerItem>
+  );
+}
+
+// A card-less feed row for a synthetic announcement. Rows with an `author`
+// render as that user (initials avatar + name — e.g. "Adam L · joined mobile");
+// the rest render as "PostHog / Agent" (context lifecycle updates). Same chrome
+// as a task row, minus the task card and reply footer.
+function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
+  return (
+    <ChatMessageScrollerItem messageId={message.id}>
+      <ThreadItem className="rounded-none py-1 pr-8">
+        <ThreadItemGutter>
+          <Avatar>
+            <AvatarFallback>
+              {message.author ? (
+                getUserInitials(message.author)
+              ) : (
+                <RobotIcon size={16} />
+              )}
+            </AvatarFallback>
+          </Avatar>
+        </ThreadItemGutter>
+        <ThreadItemContent className="min-w-0">
+          <ThreadItemHeader>
+            <ThreadItemAuthor>
+              {message.author ? userDisplayName(message.author) : "PostHog"}
+            </ThreadItemAuthor>
+            {!message.author && <Badge variant="info">Agent</Badge>}
+            <ThreadItemTimestamp dateTime={message.createdAt}>
+              {formatRelativeTimeShort(message.createdAt)}
+            </ThreadItemTimestamp>
+          </ThreadItemHeader>
+          <ThreadItemBody className="wrap-break-word text-muted-foreground">
+            {message.text}
+          </ThreadItemBody>
+        </ThreadItemContent>
+      </ThreadItem>
+    </ChatMessageScrollerItem>
+  );
+}
+
+// Follow the feed to the bottom when *this* user posts, but not when a
+// teammate's card arrives via polling — a new `pending` kickoff is only ever
+// added by the local composer, so it's the right signal. Must live inside the
+// scroller provider to reach `scrollToEnd`. Renders nothing.
+function FollowOwnPost({ latestPendingId }: { latestPendingId?: string }) {
+  const { scrollToEnd } = useChatMessageScroller();
+  const prevRef = useRef(latestPendingId);
+  useEffect(() => {
+    if (latestPendingId && latestPendingId !== prevRef.current) {
+      scrollToEnd();
+    }
+    prevRef.current = latestPendingId;
+  }, [latestPendingId, scrollToEnd]);
+  return null;
+}
+
+// A single feed entry, either a real task card or a synthetic system row, tagged
+// with the timestamp used to interleave the two.
+type FeedEntry =
+  | { kind: "task"; id: string; createdAt: string; task: Task }
+  | {
+      kind: "system";
+      id: string;
+      createdAt: string;
+      message: ChannelFeedSystemMessage;
+    };
+
 // The Slack-style channel feed: every task kicked off in the channel, oldest
 // first, rendered as a kickoff message + task card. Multiplayer — the list is
-// team-visible and polls for teammates' cards and status flips.
+// team-visible and polls for teammates' cards and status flips. Synthetic
+// "PostHog agent" system rows (context lifecycle) are interleaved by timestamp.
 export function ChannelFeedView({
   tasks,
+  pending = NO_PENDING,
+  systemMessages,
   isLoading,
   emptyState,
+  intro,
   onOpenTask,
   onOpenThread,
 }: {
   tasks: Task[];
+  pending?: PendingKickoff[];
+  systemMessages?: ChannelFeedSystemMessage[];
   isLoading: boolean;
   emptyState?: React.ReactNode;
+  /** Rendered pinned above the first entry — the Slack-style channel intro
+   * (name, creation line, onboarding card). When set, the feed renders even
+   * with no entries instead of falling back to `emptyState`. */
+  intro?: ReactNode;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  if (isLoading && tasks.length === 0) {
+  // Merge tasks + system rows into one chronological list. ISO timestamps sort
+  // lexically, so a plain string compare is chronological. Announcements are
+  // posted 1ms before the task they describe; if the backend truncates that
+  // sub-second offset the timestamps tie, so break ties system-row-first to
+  // keep the announcement above its card.
+  const entries = useMemo<FeedEntry[]>(() => {
+    const merged: FeedEntry[] = [
+      ...tasks.map((task) => ({
+        kind: "task" as const,
+        id: task.id,
+        createdAt: task.created_at,
+        task,
+      })),
+      ...(systemMessages ?? []).map((message) => ({
+        kind: "system" as const,
+        id: message.id,
+        createdAt: message.createdAt,
+        message,
+      })),
+    ];
+    merged.sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) ||
+        (a.kind === b.kind ? 0 : a.kind === "system" ? -1 : 1),
+    );
+    return merged;
+  }, [tasks, systemMessages]);
+
+  if (isLoading && entries.length === 0 && pending.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Spinner />
@@ -517,42 +667,56 @@ export function ChannelFeedView({
     );
   }
 
-  if (tasks.length === 0) {
+  if (entries.length === 0 && pending.length === 0 && !intro) {
     return <div className="flex-1 overflow-y-auto">{emptyState}</div>;
   }
 
   const now = new Date();
+  const latestPendingId = pending[pending.length - 1]?.id;
 
   return (
     <ChatMessageScrollerProvider defaultScrollPosition="end">
+      <FollowOwnPost latestPendingId={latestPendingId} />
       <ChatMessageScroller className="min-h-0 flex-1">
         <ChatMessageScrollerViewport>
           {/* Horizontal padding is load-bearing: ThreadItem's actions float at
               the row's top-right corner (absolute, past the row edge). Without a
               gutter they hug the scroll container and get clipped. */}
           <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
-            {tasks.map((task, index) => {
-              const previous = tasks[index - 1];
+            {intro}
+            {entries.map((entry, index) => {
+              const previous = entries[index - 1];
               const showDayMarker =
                 !previous ||
-                dayKey(previous.created_at) !== dayKey(task.created_at);
+                dayKey(previous.createdAt) !== dayKey(entry.createdAt);
               return (
-                <Fragment key={task.id}>
+                <Fragment key={entry.id}>
                   {showDayMarker && (
                     <ChatMarker variant="separator">
                       <ChatMarkerContent>
-                        {dayLabel(task.created_at, now)}
+                        {dayLabel(entry.createdAt, now)}
                       </ChatMarkerContent>
                     </ChatMarker>
                   )}
-                  <FeedRow
-                    task={task}
-                    onOpenTask={onOpenTask}
-                    onOpenThread={onOpenThread}
-                  />
+                  {entry.kind === "task" ? (
+                    <FeedRow
+                      task={entry.task}
+                      onOpenTask={onOpenTask}
+                      onOpenThread={onOpenThread}
+                    />
+                  ) : (
+                    <SystemFeedRow message={entry.message} />
+                  )}
                 </Fragment>
               );
             })}
+            {pending.map((p) => (
+              <PendingFeedRow
+                key={p.id}
+                pending={p}
+                createdAt={now.toISOString()}
+              />
+            ))}
           </ChatMessageScrollerContent>
         </ChatMessageScrollerViewport>
         <ChatMessageScrollerButton />

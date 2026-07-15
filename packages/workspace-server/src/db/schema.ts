@@ -243,6 +243,9 @@ export const browserTabs = sqliteTable(
     /** Channel sub-section (inbox/artifacts/history/context). Null = channel
      * home, or a non-channel tab. */
     channelSection: text(),
+    /** Top-level app page (inbox/agents/skills/mcp-servers/command-center/home).
+     * Null = a canvas / task / channel / blank tab. */
+    appView: text(),
     /** Gap-spaced ordering key within a window. */
     position: integer().notNull(),
     /** Reserved/unwired. Opaque JSON for future per-tab state. */

@@ -83,6 +83,9 @@ interface PreferencesState {
 
   autoPublishCloudRuns: boolean;
   setAutoPublishCloudRuns: (enabled: boolean) => void;
+
+  rtkEnabledCloud: boolean;
+  setRtkEnabledCloud: (enabled: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -127,6 +130,9 @@ export const usePreferencesStore = create<PreferencesState>()(
       autoPublishCloudRuns: true,
       setAutoPublishCloudRuns: (enabled) =>
         set({ autoPublishCloudRuns: enabled }),
+
+      rtkEnabledCloud: true,
+      setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
     }),
     {
       name: "posthog-preferences",
@@ -144,6 +150,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         defaultReasoningEffort: state.defaultReasoningEffort,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         autoPublishCloudRuns: state.autoPublishCloudRuns,
+        rtkEnabledCloud: state.rtkEnabledCloud,
       }),
     },
   ),

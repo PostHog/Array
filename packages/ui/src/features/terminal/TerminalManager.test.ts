@@ -266,3 +266,65 @@ describe("TerminalManager.destroyForTask", () => {
     host.remove();
   });
 });
+
+describe("TerminalManager custom key handling", () => {
+  const sessionId = "key-handler-test";
+
+  beforeEach(() => {
+    mocks.check.mockReset().mockResolvedValue(true);
+    mocks.create.mockReset().mockResolvedValue(undefined);
+    mocks.write.mockReset().mockResolvedValue(undefined);
+    mocks.resize.mockReset().mockResolvedValue(undefined);
+    mocks.terminalInstances.length = 0;
+  });
+
+  afterEach(() => {
+    terminalManager.destroy(sessionId);
+  });
+
+  function keyHandler() {
+    terminalManager.create({ sessionId, persistenceKey: "task-key" });
+    const instance = mocks.terminalInstances[0];
+    return instance.attachCustomKeyEventHandler.mock.calls[0][0] as (
+      event: KeyboardEvent,
+    ) => boolean;
+  }
+
+  function fakeEvent(overrides: Partial<KeyboardEvent>): KeyboardEvent {
+    return {
+      key: "k",
+      type: "keydown",
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      stopImmediatePropagation: vi.fn(),
+      ...overrides,
+    } as unknown as KeyboardEvent;
+  }
+
+  it("clears the terminal and stops ctrl+k from bubbling to the command menu", () => {
+    const handler = keyHandler();
+    const event = fakeEvent({ key: "k", ctrlKey: true, type: "keydown" });
+
+    const result = handler(event);
+
+    expect(result).toBe(false);
+    expect(mocks.terminalInstances[0].clear).toHaveBeenCalledTimes(1);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(event.stopPropagation).toHaveBeenCalledTimes(1);
+    expect(event.stopImmediatePropagation).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets ctrl+w keep bubbling so global handlers can act", () => {
+    const handler = keyHandler();
+    const event = fakeEvent({ key: "w", ctrlKey: true });
+
+    const result = handler(event);
+
+    expect(result).toBe(false);
+    expect(event.stopPropagation).not.toHaveBeenCalled();
+    expect(event.stopImmediatePropagation).not.toHaveBeenCalled();
+  });
+});

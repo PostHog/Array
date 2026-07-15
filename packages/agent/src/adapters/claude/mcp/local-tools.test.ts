@@ -20,10 +20,29 @@ describe("createLocalToolsMcpServer", () => {
     }
   });
 
-  it("returns undefined when no tool's gate passes (desktop run)", () => {
-    expect(
-      createLocalToolsMcpServer({ cwd: "/repo", token: "ghs_x" }, undefined),
-    ).toBeUndefined();
+  it("exposes only the always-on tools on a desktop run (no cloud-only tools)", async () => {
+    const server = createLocalToolsMcpServer(
+      { cwd: "/repo", token: "ghs_x" },
+      undefined,
+    );
+    if (!server) {
+      throw new Error("expected the local-tools server to be registered");
+    }
+
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await server.instance.connect(serverTransport);
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(clientTransport);
+
+    const { tools } = await client.listTools();
+    const names = tools.map((t) => t.name);
+    // `speak` is always on (narration works on desktop and cloud alike).
+    expect(names).toContain("speak");
+    // Signed-git tools are cloud-only and must not leak into a desktop run.
+    expect(names).not.toContain("git_signed_commit");
+
+    await client.close();
   });
 
   it("exposes git_signed_commit over MCP in a cloud run with a token", async () => {

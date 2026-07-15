@@ -14,6 +14,7 @@ export default defineConfig({
     "src/power-manager.ts",
     "src/updater.ts",
     "src/notifier.ts",
+    "src/speech.ts",
     "src/notifications.ts",
     "src/context-menu.ts",
     "src/bundled-resources.ts",

@@ -257,7 +257,12 @@ describe("buildConversationItems", () => {
     );
     // Spinner row (now complete) + the failure row.
     expect(statusItems.map((i) => i.update)).toEqual([
-      { sessionUpdate: "status", status: "compacting", isComplete: true },
+      {
+        sessionUpdate: "status",
+        status: "compacting",
+        isComplete: true,
+        startedAt: 2,
+      },
       {
         sessionUpdate: "status",
         status: "compacting_failed",

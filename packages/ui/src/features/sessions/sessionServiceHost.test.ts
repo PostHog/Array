@@ -1,4 +1,8 @@
-import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type {
+  ContentBlock,
+  SessionConfigOption,
+  SessionConfigSelectGroup,
+} from "@agentclientprotocol/sdk";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
@@ -67,6 +71,9 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   appendEvents: vi.fn(),
   enqueueMessage: vi.fn(),
   removeQueuedMessage: vi.fn(),
+  updateQueuedMessage: vi.fn(),
+  setEditingQueuedMessage: vi.fn(),
+  clearEditingQueuedMessage: vi.fn(),
   clearMessageQueue: vi.fn(),
   dequeueMessagesAsText: vi.fn((): string | null => null),
   dequeueMessages: vi.fn(
@@ -224,15 +231,32 @@ const mockNotificationService = vi.hoisted(() => ({
   notifyPromptComplete: vi.fn(),
 }));
 
-const mockSettingsState = vi.hoisted(() => ({
-  customInstructions: "",
+const mockSpeechNotifier = vi.hoisted(() => ({
+  speak: vi.fn(),
 }));
 
-vi.mock("@posthog/ui/features/settings/settingsStore", () => ({
-  useSettingsStore: {
-    getState: () => mockSettingsState,
-  },
+const mockSettingsState = vi.hoisted(() => ({
+  customInstructions: "",
+  syncCustomInstructionsFromFile: false,
+  syncedCustomInstructions: null as {
+    path: string;
+    displayPath: string;
+    content: string;
+    truncated: boolean;
+  } | null,
 }));
+
+vi.mock(
+  "@posthog/ui/features/settings/settingsStore",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@posthog/ui/features/settings/settingsStore")
+    >()),
+    useSettingsStore: {
+      getState: () => mockSettingsState,
+    },
+  }),
+);
 
 vi.mock("@posthog/ui/features/sidebar/taskMetaApi", () => ({
   taskViewedApi: {
@@ -285,6 +309,9 @@ vi.mock("@posthog/di/container", () => ({
     }
     if (typeof token === "function" && token.name === "NotificationBus") {
       return mockNotificationService;
+    }
+    if (typeof token === "function" && token.name === "SpeechNotifier") {
+      return mockSpeechNotifier;
     }
     throw new Error(`resolveService: unmocked token ${String(token)}`);
   },
@@ -397,6 +424,8 @@ describe("SessionService", () => {
     mockConvertStoredEntriesToEvents.mockImplementation(() => []);
     resetSessionService();
     mockSettingsState.customInstructions = "";
+    mockSettingsState.syncCustomInstructionsFromFile = false;
+    mockSettingsState.syncedCustomInstructions = null;
     mockGetIsOnline.mockReturnValue(true);
     mockGetConfigOptionByCategory.mockReturnValue(undefined);
     mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
@@ -535,6 +564,42 @@ describe("SessionService", () => {
       });
 
       expect(mockTrpcAgent.start.mutate).not.toHaveBeenCalled();
+    });
+
+    it("starts the session with the synced file content when file sync is on", async () => {
+      // Pins the host wiring at sessionServiceHost.ts: the settings getter runs
+      // the store through getEffectiveCustomInstructions, so the synced file -
+      // not the hand-typed instructions - reaches agent.start. Reverting that
+      // to a plain state.customInstructions pass-through would send "typed".
+      const service = getSessionService();
+      mockSettingsState.customInstructions = "typed";
+      mockSettingsState.syncCustomInstructionsFromFile = true;
+      mockSettingsState.syncedCustomInstructions = {
+        path: "/home/u/.claude/CLAUDE.md",
+        displayPath: "~/.claude/CLAUDE.md",
+        content: "synced from file",
+        truncated: false,
+      };
+
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-789" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "test-channel",
+        configOptions: [],
+      });
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      expect(mockTrpcAgent.start.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ customInstructions: "synced from file" }),
+      );
     });
 
     it("deduplicates concurrent connection attempts", async () => {
@@ -910,6 +975,42 @@ describe("SessionService", () => {
               ],
             }),
           ],
+        }),
+      );
+    });
+
+    it("shows the selected cloud model and reasoning before preview config loads", () => {
+      const service = getSessionService();
+
+      service.watchCloudTask(
+        "task-runtime-123",
+        "run-runtime-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adapter: "codex",
+          configOptions: expect.arrayContaining([
+            expect.objectContaining({
+              category: "model",
+              currentValue: "gpt-5.6-sol",
+            }),
+            expect.objectContaining({
+              category: "thought_level",
+              currentValue: "max",
+            }),
+          ]),
         }),
       );
     });
@@ -3487,6 +3588,7 @@ describe("SessionService", () => {
         taskRunId: "run-model-123",
         taskId: "task-model-123",
         isCloud: true,
+        adapter: "claude",
         configOptions: [
           {
             id: "mode",
@@ -3495,6 +3597,27 @@ describe("SessionService", () => {
             category: "mode",
             currentValue: "plan",
             options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "claude-sonnet-4-6",
+            options: [
+              {
+                value: "claude-sonnet-4-6",
+                name: "claude-sonnet-4-6",
+              },
+            ],
+          },
+          {
+            id: "effort",
+            name: "Effort",
+            type: "select",
+            category: "thought_level",
+            currentValue: "high",
+            options: [{ value: "high", name: "high" }],
           },
         ],
       });
@@ -3569,9 +3692,371 @@ describe("SessionService", () => {
         );
         const modelOpt = modelUpdate?.[1].configOptions?.find(
           (o) => o.id === "model",
-        ) as { currentValue?: string } | undefined;
+        ) as
+          | {
+              currentValue?: string;
+              options?: Array<{ name: string; value: string }>;
+            }
+          | undefined;
         expect(modelOpt?.currentValue).toBe("claude-sonnet-4-6");
+        expect(modelOpt?.options).toContainEqual({
+          value: "claude-sonnet-4-6",
+          name: "Sonnet 4.6",
+        });
       });
+    });
+
+    it("keeps model-specific max reasoning when generic preview options omit it", async () => {
+      const service = getSessionService();
+      const session = createMockSession({
+        taskRunId: "run-max-123",
+        taskId: "task-max-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "gpt-5.6-sol" }],
+          },
+          {
+            id: "reasoning_effort",
+            name: "Reasoning",
+            type: "select",
+            category: "thought_level",
+            currentValue: "max",
+            options: [{ value: "max", name: "Max" }],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-max-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "gpt-5.5",
+          options: [
+            { value: "gpt-5.5", name: "gpt-5.5" },
+            { value: "gpt-5.6-sol", name: "gpt-5.6-sol" },
+          ],
+        },
+        {
+          id: "reasoning_effort",
+          name: "Reasoning",
+          type: "select",
+          category: "thought_level",
+          currentValue: "high",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+            { value: "xhigh", name: "Extra High" },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-max-123",
+        "run-max-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      await vi.waitFor(() => {
+        const configUpdate = (
+          mockSessionStoreSetters.updateSession.mock.calls as Array<
+            [string, { configOptions?: SessionConfigOption[] }]
+          >
+        )
+          .filter(([runId]) => runId === "run-max-123")
+          .map(([, patch]) => patch.configOptions)
+          .find(Boolean);
+        const reasoningOption = configUpdate?.find(
+          (option) => option.category === "thought_level",
+        );
+        expect(reasoningOption?.currentValue).toBe("max");
+        expect(
+          reasoningOption?.type === "select"
+            ? reasoningOption.options
+            : undefined,
+        ).toContainEqual({ value: "max", name: "Max" });
+      });
+    });
+
+    it("keeps runtime controls omitted from a partial preview response", async () => {
+      const service = getSessionService();
+      const reasoningOption: SessionConfigOption = {
+        id: "reasoning_effort",
+        name: "Reasoning",
+        type: "select",
+        category: "thought_level",
+        currentValue: "max",
+        options: [{ value: "max", name: "Max" }],
+      };
+      const session = createMockSession({
+        taskRunId: "run-partial-123",
+        taskId: "task-partial-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "gpt-5.6-sol" }],
+          },
+          reasoningOption,
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-partial-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "gpt-5.5",
+          options: [
+            { value: "gpt-5.5", name: "gpt-5.5" },
+            { value: "gpt-5.6-sol", name: "gpt-5.6-sol" },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-partial-123",
+        "run-partial-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      await vi.waitFor(() => {
+        const configUpdate = (
+          mockSessionStoreSetters.updateSession.mock.calls as Array<
+            [string, { configOptions?: SessionConfigOption[] }]
+          >
+        )
+          .filter(([runId]) => runId === "run-partial-123")
+          .map(([, patch]) => patch.configOptions)
+          .find(Boolean);
+        expect(configUpdate).toContainEqual(reasoningOption);
+      });
+    });
+
+    it("adds a missing selected value to grouped preview options", async () => {
+      const service = getSessionService();
+      mockGetConfigOptionByCategory.mockImplementation(
+        (
+          configOptions: Array<{ category?: string }> | undefined,
+          category?: string,
+        ) => configOptions?.find((option) => option.category === category),
+      );
+      const session = createMockSession({
+        taskRunId: "run-grouped-123",
+        taskId: "task-grouped-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "gpt-5.6-sol",
+            options: [{ value: "gpt-5.6-sol", name: "GPT-5.6 Sol" }],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-grouped-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "gpt-5.5",
+          options: [
+            {
+              group: "openai",
+              name: "OpenAI",
+              options: [{ value: "gpt-5.5", name: "GPT-5.5" }],
+            },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-grouped-123",
+        "run-grouped-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+      );
+
+      await vi.waitFor(() => {
+        const configUpdate = (
+          mockSessionStoreSetters.updateSession.mock.calls as Array<
+            [string, { configOptions?: SessionConfigOption[] }]
+          >
+        )
+          .filter(([runId]) => runId === "run-grouped-123")
+          .map(([, patch]) => patch.configOptions)
+          .find(Boolean);
+        const modelOption = configUpdate?.find(
+          (option) => option.category === "model",
+        );
+        expect(modelOption?.currentValue).toBe("gpt-5.6-sol");
+        expect(
+          modelOption?.type === "select" &&
+            modelOption.options.length > 0 &&
+            "group" in modelOption.options[0]
+            ? (modelOption.options as SessionConfigSelectGroup[]).flatMap(
+                (group) => group.options,
+              )
+            : undefined,
+        ).toContainEqual({ value: "gpt-5.6-sol", name: "GPT-5.6 Sol" });
+      });
+    });
+
+    it("does not rewrite unchanged cloud preview options", async () => {
+      const service = getSessionService();
+      const previewOptions = [
+        {
+          id: "model",
+          name: "Model",
+          type: "select" as const,
+          category: "model" as const,
+          currentValue: "gpt-5.6-sol",
+          options: [{ value: "gpt-5.6-sol", name: "gpt-5.6-sol" }],
+        },
+        {
+          id: "reasoning_effort",
+          name: "Reasoning",
+          type: "select" as const,
+          category: "thought_level" as const,
+          currentValue: "max",
+          options: [{ value: "max", name: "Max" }],
+        },
+      ];
+      const session = createMockSession({
+        taskRunId: "run-stable-123",
+        taskId: "task-stable-123",
+        isCloud: true,
+        adapter: "codex",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "auto",
+            options: [],
+          },
+          ...previewOptions,
+        ],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-stable-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "mode",
+          name: "Approval Preset",
+          type: "select",
+          category: "mode",
+          currentValue: "auto",
+          options: [],
+        },
+        ...previewOptions,
+      ]);
+
+      service.watchCloudTask(
+        "task-stable-123",
+        "run-stable-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.6-sol",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      await vi.waitFor(() => {
+        expect(
+          mockTrpcAgent.getPreviewConfigOptions.query,
+        ).toHaveBeenCalledOnce();
+      });
+      await Promise.resolve();
+
+      expect(mockSessionStoreSetters.updateSession).not.toHaveBeenCalledWith(
+        "run-stable-123",
+        expect.objectContaining({ configOptions: expect.any(Array) }),
+      );
     });
 
     it("retries an errored cloud watcher in place", async () => {
@@ -4049,6 +4534,7 @@ describe("SessionService", () => {
         });
         expect(mockSessionStoreSetters.dequeueMessages).toHaveBeenCalledWith(
           "task-123",
+          { stopAtEdited: true, max: 1 },
         );
       } finally {
         vi.useRealTimers();
@@ -4845,6 +5331,213 @@ describe("SessionService", () => {
     });
   });
 
+  describe("turn-end queue drain gating", () => {
+    async function connectWithLiveSession() {
+      const service = getSessionService();
+
+      let session: AgentSession | undefined;
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => session,
+      );
+      mockSessionStoreSetters.getSessions.mockImplementation(() =>
+        session ? { "run-123": session } : {},
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          if (session)
+            session = { ...session, ...(updates as Partial<AgentSession>) };
+        },
+      );
+      mockSessionStoreSetters.setSession.mockImplementation((next) => {
+        session = next as AgentSession;
+      });
+      mockSessionStoreSetters.clearEditingQueuedMessage.mockImplementation(
+        () => {
+          if (session) session = { ...session, editingQueuedId: undefined };
+        },
+      );
+
+      mockBuildAuthenticatedClient.mockReturnValue({
+        ...mockAuthenticatedClient,
+        createTaskRun: vi.fn().mockResolvedValue({ id: "run-123" }),
+        appendTaskRunLog: vi.fn(),
+      });
+      mockTrpcAgent.start.mutate.mockResolvedValue({
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+
+      await service.connectToTask({
+        task: createMockTask(),
+        repoPath: "/repo",
+      });
+
+      const onData = mockTrpcAgent.onSessionEvent.subscribe.mock.calls.at(
+        -1,
+      )?.[1]?.onData as ((payload: unknown) => void) | undefined;
+      expect(onData).toBeDefined();
+
+      return {
+        service,
+        onData: onData as (payload: unknown) => void,
+        setSession: (next: AgentSession) => {
+          session = next;
+        },
+      };
+    }
+
+    const promptResponse = (id: number, stopReason: string) => ({
+      type: "acp_message" as const,
+      ts: 1700000002,
+      message: { jsonrpc: "2.0" as const, id, result: { stopReason } },
+    });
+
+    it("fires the turn-complete notification instead of draining when the head message is held by an edit", async () => {
+      const { onData, setSession } = await connectWithLiveSession();
+      vi.useFakeTimers();
+      try {
+        setSession(
+          createMockSession({
+            currentPromptId: 42,
+            isPromptPending: true,
+            messageQueue: [{ id: "q-1", content: "held", queuedAt: 1 }],
+            editingQueuedId: "q-1",
+          }),
+        );
+
+        onData(promptResponse(42, "end_turn"));
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(
+          mockNotificationService.notifyPromptComplete,
+        ).toHaveBeenCalledWith("Test Task", "end_turn", "task-123", undefined);
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).not.toHaveBeenCalled();
+        expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not drain the queue when the turn was cancelled", async () => {
+      const { onData, setSession } = await connectWithLiveSession();
+      vi.useFakeTimers();
+      try {
+        setSession(
+          createMockSession({
+            currentPromptId: 42,
+            isPromptPending: true,
+            messageQueue: [{ id: "q-1", content: "queued", queuedAt: 1 }],
+          }),
+        );
+
+        onData(promptResponse(42, "cancelled"));
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).not.toHaveBeenCalled();
+        expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("drains queued messages one turn at a time", async () => {
+      const { onData, setSession } = await connectWithLiveSession();
+      vi.useFakeTimers();
+      try {
+        setSession(
+          createMockSession({
+            currentPromptId: 42,
+            isPromptPending: true,
+            messageQueue: [
+              { id: "q-1", content: "first", queuedAt: 1 },
+              { id: "q-2", content: "second", queuedAt: 2 },
+            ],
+          }),
+        );
+        mockSessionStoreSetters.dequeueMessagesAsText
+          .mockReturnValueOnce("first")
+          .mockReturnValueOnce("second");
+        mockTrpcAgent.prompt.mutate.mockResolvedValue({
+          stopReason: "end_turn",
+        });
+
+        onData(promptResponse(42, "end_turn"));
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledTimes(1);
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).toHaveBeenLastCalledWith("task-123", { stopAtEdited: true, max: 1 });
+
+        // The sent message's turn runs and completes: its prompt echo claims a
+        // new id, then its response drains the next queued message.
+        onData({
+          type: "acp_message",
+          ts: 1700000003,
+          message: {
+            jsonrpc: "2.0",
+            id: 43,
+            method: "session/prompt",
+            params: { prompt: [] },
+          },
+        });
+        onData(promptResponse(43, "end_turn"));
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledTimes(2);
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not start a second prompt when an edit release races the turn-end drain", async () => {
+      const { service, onData, setSession } = await connectWithLiveSession();
+      vi.useFakeTimers();
+      try {
+        setSession(
+          createMockSession({
+            currentPromptId: 42,
+            isPromptPending: true,
+            messageQueue: [
+              { id: "q-1", content: "first", queuedAt: 1 },
+              { id: "q-2", content: "second", queuedAt: 2 },
+            ],
+            editingQueuedId: "q-2",
+          }),
+        );
+        mockSessionStoreSetters.dequeueMessagesAsText
+          .mockReturnValueOnce("first")
+          .mockReturnValueOnce("second");
+        // Keep the first send in flight so the raced timer must observe it.
+        mockTrpcAgent.prompt.mutate.mockImplementation(
+          () => new Promise(() => {}),
+        );
+
+        // The turn ends (the buffered event flush processes it and schedules a
+        // drain timer), then the user cancels the edit before that timer fires
+        // (scheduling a second drain via the idle flush).
+        onData(promptResponse(42, "end_turn"));
+        await vi.advanceTimersToNextTimerAsync();
+        service.clearEditingQueuedMessage("task-123");
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledTimes(1);
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("steer echo routing", () => {
     async function connectAndCaptureOnData(): Promise<
       (payload: unknown) => void
@@ -5063,6 +5756,274 @@ describe("SessionService", () => {
         prompt: [{ type: "text", text: "rich blocks" }],
         steer: true,
       });
+    });
+  });
+
+  describe("in-place edit hold release", () => {
+    const seedEditedIdleSession = (
+      overrides: Partial<AgentSession> = {},
+    ): AgentSession => {
+      const session = createMockSession({
+        isCloud: false,
+        status: "connected",
+        isPromptPending: false,
+        messageQueue: [{ id: "q-1", content: "old", queuedAt: 1 }],
+        editingQueuedId: "q-1",
+        ...overrides,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": session,
+      });
+      // Mirror the real store so the flush's readiness check sees the hold gone.
+      mockSessionStoreSetters.clearEditingQueuedMessage.mockImplementation(
+        () => {
+          session.editingQueuedId = undefined;
+        },
+      );
+      return session;
+    };
+
+    it("saving an edit while the agent is idle clears the hold and drains the queue", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        seedEditedIdleSession();
+        mockSessionStoreSetters.dequeueMessagesAsText.mockReturnValue("edited");
+        mockTrpcAgent.prompt.mutate.mockResolvedValue({
+          stopReason: "end_turn",
+        });
+
+        const updated = await service.updateQueuedMessage(
+          "task-123",
+          "q-1",
+          "edited",
+        );
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(updated).toBe(true);
+        expect(
+          mockSessionStoreSetters.updateQueuedMessage,
+        ).toHaveBeenCalledWith("task-123", "q-1", { content: "edited" });
+        expect(
+          mockSessionStoreSetters.clearEditingQueuedMessage,
+        ).toHaveBeenCalledWith("task-123");
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true, max: 1 });
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({ sessionId: "run-123" }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("returns false and keeps the hold when the target is no longer queued", async () => {
+      const service = getSessionService();
+      seedEditedIdleSession({
+        messageQueue: [{ id: "q-other", content: "x", queuedAt: 1 }],
+      });
+
+      const updated = await service.updateQueuedMessage(
+        "task-123",
+        "q-1",
+        "edited",
+      );
+
+      expect(updated).toBe(false);
+      expect(
+        mockSessionStoreSetters.updateQueuedMessage,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockSessionStoreSetters.clearEditingQueuedMessage,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("saving an edit while the agent is still busy does not send immediately", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        seedEditedIdleSession({ isPromptPending: true });
+
+        await service.updateQueuedMessage("task-123", "q-1", "edited");
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(
+          mockSessionStoreSetters.clearEditingQueuedMessage,
+        ).toHaveBeenCalledWith("task-123");
+        // Left for the turn-end drain — nothing sent mid-turn.
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).not.toHaveBeenCalled();
+        expect(mockTrpcAgent.prompt.mutate).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("cancelling an edit while idle drains the messages the hold was blocking", async () => {
+      vi.useFakeTimers();
+      try {
+        const service = getSessionService();
+        seedEditedIdleSession();
+        mockSessionStoreSetters.dequeueMessagesAsText.mockReturnValue("q-1");
+        mockTrpcAgent.prompt.mutate.mockResolvedValue({
+          stopReason: "end_turn",
+        });
+
+        service.clearEditingQueuedMessage("task-123");
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(
+          mockSessionStoreSetters.dequeueMessagesAsText,
+        ).toHaveBeenCalledWith("task-123", { stopAtEdited: true, max: 1 });
+        expect(mockTrpcAgent.prompt.mutate).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    const seedEditedIdleCloudSession = () => {
+      const queuedMessage = {
+        id: "q-1",
+        content: "old",
+        rawPrompt: [{ type: "text" as const, text: "old" }],
+        queuedAt: 1,
+      };
+      const session = createMockSession({
+        isCloud: true,
+        cloudStatus: "in_progress",
+        status: "connected",
+        isPromptPending: false,
+        messageQueue: [queuedMessage],
+        editingQueuedId: "q-1",
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": session,
+      });
+      mockSessionStoreSetters.clearEditingQueuedMessage.mockImplementation(
+        () => {
+          session.editingQueuedId = undefined;
+        },
+      );
+      mockSessionStoreSetters.dequeueMessages.mockReturnValue([queuedMessage]);
+      mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
+        success: true,
+        result: { stopReason: "end_turn" },
+      });
+      return session;
+    };
+
+    it("saving a cloud edit while the run is idle flushes the queue", async () => {
+      const service = getSessionService();
+      seedEditedIdleCloudSession();
+
+      const updated = await service.updateQueuedMessage(
+        "task-123",
+        "q-1",
+        "edited",
+      );
+
+      expect(updated).toBe(true);
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            taskId: "task-123",
+            method: "user_message",
+          }),
+        );
+      });
+      expect(mockSessionStoreSetters.dequeueMessages).toHaveBeenCalledWith(
+        "task-123",
+        { stopAtEdited: true, max: 1 },
+      );
+    });
+
+    it("cancelling a cloud edit while the run is idle flushes the queue", async () => {
+      const service = getSessionService();
+      seedEditedIdleCloudSession();
+
+      service.clearEditingQueuedMessage("task-123");
+
+      await vi.waitFor(() => {
+        expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            taskId: "task-123",
+            method: "user_message",
+          }),
+        );
+      });
+    });
+  });
+
+  describe("updateQueuedMessage cloud normalization race", () => {
+    const cloudSession = (
+      overrides: Partial<AgentSession> = {},
+    ): AgentSession =>
+      createMockSession({
+        isCloud: true,
+        cloudStatus: "in_progress",
+        status: "connected",
+        isPromptPending: true,
+        messageQueue: [
+          {
+            id: "q-1",
+            content: "old",
+            rawPrompt: [{ type: "text", text: "old" }],
+            queuedAt: 1,
+          },
+        ],
+        editingQueuedId: "q-1",
+        ...overrides,
+      });
+
+    it("returns false when the message drains while cloud normalization awaits", async () => {
+      const service = getSessionService();
+      // Present for the initial membership check, gone for the post-await
+      // re-check (a turn completed and drained it during normalization).
+      mockSessionStoreSetters.getSessionByTaskId
+        .mockReturnValueOnce(cloudSession())
+        .mockReturnValue(
+          cloudSession({ messageQueue: [], editingQueuedId: undefined }),
+        );
+
+      const updated = await service.updateQueuedMessage(
+        "task-123",
+        "q-1",
+        "edited",
+      );
+
+      // No-op store write must not be reported as a save, so the caller falls
+      // back to sending the edit as a fresh message instead of losing it.
+      expect(updated).toBe(false);
+      expect(
+        mockSessionStoreSetters.updateQueuedMessage,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockSessionStoreSetters.clearEditingQueuedMessage,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("updates in place when the message is still queued after normalization", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        cloudSession(),
+      );
+
+      const updated = await service.updateQueuedMessage(
+        "task-123",
+        "q-1",
+        "edited",
+      );
+
+      expect(updated).toBe(true);
+      expect(mockSessionStoreSetters.updateQueuedMessage).toHaveBeenCalledWith(
+        "task-123",
+        "q-1",
+        expect.objectContaining({ content: expect.any(String) }),
+      );
     });
   });
 
@@ -5841,6 +6802,37 @@ describe("SessionService", () => {
 
       const stored = mockSessionStoreSetters.setSession.mock.calls.at(-1)?.[0];
       expect(stored.events).toBe(previousEvents);
+    });
+
+    it("carries the queue and its edit hold across an in-place reconnect", async () => {
+      const service = getSessionService();
+      const queued = [{ id: "q-1", content: "old", queuedAt: 1 }];
+      const mockSession = createMockSession({
+        status: "error",
+        logUrl: "https://logs.example.com/run-123",
+        messageQueue: queued,
+        editingQueuedId: "q-1",
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(mockSession);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": mockSession,
+      });
+      mockTrpcAgent.reconnect.mutate.mockResolvedValue({
+        sessionId: "run-123",
+        channel: "agent-event:run-123",
+        configOptions: [],
+      });
+      mockTrpcWorkspace.verify.query.mockResolvedValue({ exists: true });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+
+      await service.clearSessionError("task-123", "/repo");
+
+      // The rebuilt session must keep the hold with the queue it guards, or
+      // the edited message would auto-send in its stale, pre-edit form.
+      const stored = mockSessionStoreSetters.setSession.mock.calls.at(-1)?.[0];
+      expect(stored.messageQueue).toBe(queued);
+      expect(stored.editingQueuedId).toBe("q-1");
     });
 
     it("creates fresh session when initialPrompt is set (prompt never delivered)", async () => {

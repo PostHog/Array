@@ -1,22 +1,21 @@
 import { CaretDown, CaretUp } from "@phosphor-icons/react";
+import { cn } from "@posthog/quill";
 import { Box } from "@radix-ui/themes";
 import {
   type CSSProperties,
   type ReactNode,
-  useEffect,
+  useCallback,
   useRef,
   useState,
 } from "react";
 
-const COLLAPSED_MAX_HEIGHT = 160;
+const COLLAPSED_MAX_HEIGHT = 120;
 
 interface CollapsibleMessageContentProps {
   children: ReactNode;
   className?: string;
   /** Extra classes for the inner content box (e.g. per-caller typography). */
   contentClassName?: string;
-  /** Color the bottom fade blends into — match the caller's background. */
-  fadeColor?: string;
   style?: CSSProperties;
 }
 
@@ -24,25 +23,39 @@ export function CollapsibleMessageContent({
   children,
   className,
   contentClassName,
-  fadeColor = "var(--gray-2)",
   style,
 }: CollapsibleMessageContentProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
 
-  useEffect(() => {
-    const el = contentRef.current;
-    if (el) {
+  // Callback ref (not a mount effect) so it measures before paint; the observer
+  // re-checks on reflow and lazy `content-visibility` layout.
+  const measureRef = useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!el) return;
+    const measure = () =>
       setIsOverflowing(el.scrollHeight > COLLAPSED_MAX_HEIGHT);
-    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    observerRef.current = observer;
   }, []);
 
   return (
     <Box className={className} style={style}>
+      {/* Paint-only mask fades just the text — no background color to match, no
+          full-width band past ragged text. */}
       <Box
-        ref={contentRef}
-        className={`relative overflow-hidden font-medium text-[13px] [&>*:last-child]:mb-0 ${contentClassName ?? ""}`}
+        ref={measureRef}
+        className={cn(
+          "overflow-hidden [&>*:last-child]:mb-0",
+          !isExpanded &&
+            isOverflowing &&
+            "[mask-image:linear-gradient(to_bottom,black_45%,transparent)]",
+          contentClassName,
+        )}
         style={
           !isExpanded && isOverflowing
             ? { maxHeight: COLLAPSED_MAX_HEIGHT }
@@ -50,14 +63,6 @@ export function CollapsibleMessageContent({
         }
       >
         {children}
-        {!isExpanded && isOverflowing && (
-          <Box
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-12"
-            style={{
-              background: `linear-gradient(transparent, ${fadeColor})`,
-            }}
-          />
-        )}
       </Box>
       {isOverflowing && (
         <button

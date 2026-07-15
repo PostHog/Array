@@ -1,18 +1,20 @@
+import { Badge, Switch } from "@posthog/quill";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
-import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import {
+  navigateToActivity,
   navigateToAgents,
   navigateToCommandCenter,
   navigateToHome,
   navigateToInbox,
   navigateToMcpServers,
   navigateToSkills,
-  navigateToUsage,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
   navigateToWebsiteMcpServers,
@@ -20,9 +22,12 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
+import { SquircleDashed } from "lucide-react";
+import { ActivityItem } from "./items/ActivityItem";
 import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { HomeItem } from "./items/HomeItem";
@@ -31,7 +36,6 @@ import { McpServersItem } from "./items/McpServersItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 import { SkillsItem } from "./items/SkillsItem";
-import { UsageItem } from "./items/UsageItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -49,19 +53,27 @@ interface SidebarNavSectionProps {
 // state, badge count, and click handler is wired here — so it can be dropped
 // into either layout. In the Channels space, destinations with a /website
 // mirror (Home, Skills, MCP servers, Command Center) stay in that space;
-// Inbox, Agents, Usage and New task have no mirror yet and jump back to Code.
+// Inbox, Agents and New task have no mirror yet and jump back to Code.
 // Search opens the command menu in place.
 export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
-  const usageEnabled = useSpendAnalysisEnabled();
+  // Channels stay behind project-bluebird: the "Enable channels" nav row (and
+  // the Canvas row it reveals) only appear where the canvas backend is wired.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
+  const setChannelsEnabled = useSidebarStore((s) => s.setChannelsEnabled);
 
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
-  // section in the Code space) uses the canonical routes. Inbox, Agents, Usage
-  // and New task have no mirror yet, so they intentionally jump back to Code.
+  // section in the Code space) uses the canonical routes. Inbox, Agents and
+  // New task have no mirror yet, so they intentionally jump back to Code.
   const inChannels = useRouterState({
     select: (s) => s.location.pathname.startsWith("/website"),
   });
@@ -81,12 +93,12 @@ export function SidebarNavSection({
   const isHomeActive =
     view.type === "task-input" || view.type === "task-pending";
   const isHomeViewActive = view.type === "home";
+  const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
   const isAgentsActive = view.type === "agents";
   const isCommandCenterActive = view.type === "command-center";
   const isSkillsActive = view.type === "skills";
   const isMcpServersActive = view.type === "mcp-servers";
-  const isUsageActive = view.type === "usage";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
   // Pull requests tab shows, so the badge and the tab always agree.
@@ -157,7 +169,7 @@ export function SidebarNavSection({
         <McpServersItem isActive={isMcpServersActive} onClick={goMcpServers} />
       </Box>
 
-      <Box mb={usageEnabled ? undefined : "2"}>
+      <Box mb={bluebirdEnabled ? undefined : "2"}>
         <CommandCenterItem
           isActive={isCommandCenterActive}
           onClick={goCommandCenter}
@@ -165,9 +177,53 @@ export function SidebarNavSection({
         />
       </Box>
 
-      {usageEnabled && (
-        <Box mb="2">
-          <UsageItem isActive={isUsageActive} onClick={navigateToUsage} />
+      {/* "Channels" is a toggle laid out as a nav row: the # label and Alpha
+          badge on the left, a Switch on the right. It flips the channels
+          feature rather than routing — enabling it reveals the Canvas row
+          below and swaps the sidebar body to the channel tree. A <label> (not a
+          nav Button) so the Switch can live inside it without nesting buttons. */}
+      {bluebirdEnabled && (
+        <label
+          htmlFor="channels-toggle"
+          className="group flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-[13px] leading-snug transition-colors hover:bg-fill-secondary"
+        >
+          <span className="flex shrink-0 items-center opacity-80">
+            <SquircleDashed size={14} />
+          </span>
+          <span className="min-w-0 truncate font-medium">Contexts</span>
+          <Badge variant="info">Alpha</Badge>
+          <Switch
+            id="channels-toggle"
+            size="sm"
+            className="ml-auto"
+            checked={channelsEnabled}
+            onCheckedChange={(checked) => {
+              setChannelsEnabled(checked);
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "toggle_channels",
+                surface: "nav",
+              });
+              // The unified sidebar removed the Code↔Channels space boundary;
+              // this toggle is its successor. Keep firing the legacy
+              // enter/leave events so space-adoption dashboards stay continuous.
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: checked ? "enter_space" : "leave_space",
+                surface: "nav",
+              });
+            }}
+          />
+        </label>
+      )}
+
+      {/* Activity (the mentions feed) is a channels surface, so it only appears
+          once channels are enabled — sitting directly under the toggle that
+          reveals it. */}
+      {channelsEnabled && (
+        <Box>
+          <ActivityItem
+            isActive={isActivityActive}
+            onClick={navigateToActivity}
+          />
         </Box>
       )}
     </Flex>

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAskAboutPrCommentPrompt,
   buildBatchedInlineCommentsPrompt,
+  buildChatAboutPrCommentPrompt,
   buildFixPrCommentPrompt,
   buildInlineCommentPrompt,
 } from "./reviewPrompts";
@@ -65,7 +66,7 @@ describe("buildBatchedInlineCommentsPrompt", () => {
   });
 });
 
-describe("buildFixPrCommentPrompt / buildAskAboutPrCommentPrompt", () => {
+describe("PR comment prompts", () => {
   it("includes the thread body and side", () => {
     const out = buildFixPrCommentPrompt("a.ts", 4, "new", [
       makeComment("please rename"),
@@ -80,5 +81,20 @@ describe("buildFixPrCommentPrompt / buildAskAboutPrCommentPrompt", () => {
       makeComment("why?"),
     ]);
     expect(out).toContain("Do not make any changes");
+  });
+
+  it("chat prompt includes the thread and custom message", () => {
+    const out = buildChatAboutPrCommentPrompt(
+      'src/a".ts',
+      8,
+      "new",
+      [makeComment("consider extracting this", "reviewer")],
+      "Is there already a helper for this?",
+    );
+    expect(out).toContain('<file path="src/a&quot;.ts" />');
+    expect(out).toContain("line 8 (new)");
+    expect(out).toContain("@reviewer");
+    expect(out).toContain("consider extracting this");
+    expect(out.endsWith("Is there already a helper for this?")).toBe(true);
   });
 });
