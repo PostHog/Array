@@ -25,6 +25,13 @@ export type AcpConnectionConfig = {
   processCallbacks?: ProcessSpawnedCallback;
   codexOptions?: CodexOptions;
   allowedModelIds?: Set<string>;
+  /**
+   * Models outside the org's plan (the gateway's `allowed: false` marks).
+   * Pickers render these locked behind an upgrade gate instead of omitting
+   * them. Codex-only: the Claude adapter reads marks off its own authed
+   * models fetch, while codex's model/list round-trip drops unknown fields.
+   */
+  restrictedModelIds?: Set<string>;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   /** PostHog API config; when set, enables file-read enrichment unless disabled. */
@@ -230,6 +237,7 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
       },
       model: codexOptions.model,
       reasoningEffort: codexOptions.reasoningEffort,
+      restrictedModelIds: config.restrictedModelIds,
       processCallbacks: config.processCallbacks,
       onStructuredOutput: config.onStructuredOutput,
       logger: config.logger?.child("CodexAppServerAgent"),

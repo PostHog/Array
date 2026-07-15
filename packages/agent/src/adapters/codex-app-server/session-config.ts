@@ -4,6 +4,7 @@ import {
   type CodexModePreset,
   type ExecutionMode,
   resolveCloudInitialPermissionMode,
+  restrictedModelMeta,
 } from "@posthog/shared";
 import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
 import { getReasoningEffortOptions } from "./models";
@@ -160,6 +161,12 @@ export interface ConfigSelectors {
   /** From model/list; falls back to the single current model when empty. */
   models: Array<{ id: string; name: string }>;
   efforts: string[];
+  /**
+   * Models outside the org's plan (free-tier model gate). Rendered locked
+   * behind an upgrade gate by the picker. Sourced from the agent's own authed
+   * gateway models fetch — codex's model/list round-trip drops the marks.
+   */
+  restrictedModelIds?: ReadonlySet<string>;
 }
 
 /** Builds the ACP configOptions (mode + model + thought_level) the host renders. */
@@ -195,7 +202,13 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
       name: "Model",
       category: "model",
       currentValue: s.model,
-      options: models.map((m) => ({ name: m.name, value: m.id })),
+      options: models.map((m) => ({
+        name: m.name,
+        value: m.id,
+        ...(s.restrictedModelIds?.has(m.id)
+          ? { _meta: restrictedModelMeta() }
+          : {}),
+      })),
     } as unknown as SessionConfigOption,
     {
       type: "select",
@@ -229,10 +242,16 @@ export class SessionConfigState {
   private models: Array<{ id: string; name: string }> = [];
   private efforts: string[] = [];
   private _options: SessionConfigOption[] = [];
+  private readonly restrictedModelIds?: ReadonlySet<string>;
 
-  constructor(model: string, effort?: string) {
+  constructor(
+    model: string,
+    effort?: string,
+    restrictedModelIds?: ReadonlySet<string>,
+  ) {
     this._model = model;
     this._effort = effort;
+    this.restrictedModelIds = restrictedModelIds;
     this.rebuild();
   }
 
@@ -331,6 +350,7 @@ export class SessionConfigState {
       effort: this._effort,
       models: this.models,
       efforts: this.efforts,
+      restrictedModelIds: this.restrictedModelIds,
     });
   }
 }

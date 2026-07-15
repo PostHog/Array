@@ -4,15 +4,29 @@ export interface GatewayModel {
   context_window: number;
   supports_streaming: boolean;
   supports_vision: boolean;
+  /**
+   * Free-tier model gate (posthog_code): the gateway marks models the caller's
+   * org can't use as `allowed: false` instead of omitting them, so pickers can
+   * render them locked with an upgrade prompt. Only authenticated fetches get
+   * marks — anonymous callers see everything allowed — and gateways predating
+   * the gate omit the field, so absence means allowed.
+   */
+  allowed: boolean;
+  restriction_reason?: string | null;
 }
 
 interface GatewayModelsResponse {
   object: "list";
-  data: GatewayModel[];
+  data: Array<Omit<GatewayModel, "allowed"> & { allowed?: boolean }>;
 }
 
 export interface FetchGatewayModelsOptions {
   gatewayUrl: string;
+  /**
+   * Bearer token for the models fetch. Required for accurate free-tier marks:
+   * the gateway only annotates `allowed: false` for authenticated callers.
+   */
+  authToken?: string;
 }
 
 export const DEFAULT_GATEWAY_MODEL = "claude-opus-4-8";
@@ -42,12 +56,19 @@ export function isBlockedModelId(modelId: string): boolean {
   return BLOCKED_MODELS.has(modelId.toLowerCase());
 }
 
+interface ModelsListEntry {
+  id?: string;
+  owned_by?: string;
+  allowed?: boolean;
+  restriction_reason?: string | null;
+}
+
 type ModelsListResponse =
   | {
-      data?: Array<{ id?: string; owned_by?: string }>;
-      models?: Array<{ id?: string; owned_by?: string }>;
+      data?: ModelsListEntry[];
+      models?: ModelsListEntry[];
     }
-  | Array<{ id?: string; owned_by?: string }>;
+  | ModelsListEntry[];
 
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
@@ -61,7 +82,12 @@ let gatewayModelsCache: {
   models: GatewayModel[];
   expiry: number;
   url: string;
+  authed: boolean;
 } | null = null;
+
+function authHeaders(authToken?: string): Record<string, string> | undefined {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+}
 
 export async function fetchGatewayModels(
   options?: FetchGatewayModelsOptions,
@@ -71,9 +97,14 @@ export async function fetchGatewayModels(
     return [];
   }
 
+  // Authed and anonymous responses differ (free-tier marks are only present
+  // on authed fetches), so a cached anonymous list must not serve an authed
+  // caller or vice versa.
+  const authed = Boolean(options?.authToken);
   if (
     gatewayModelsCache &&
     gatewayModelsCache.url === gatewayUrl &&
+    gatewayModelsCache.authed === authed &&
     Date.now() < gatewayModelsCache.expiry
   ) {
     return gatewayModelsCache.models;
@@ -83,6 +114,7 @@ export async function fetchGatewayModels(
 
   try {
     const response = await fetch(modelsUrl, {
+      headers: authHeaders(options?.authToken),
       signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
     });
 
@@ -91,11 +123,14 @@ export async function fetchGatewayModels(
     }
 
     const data = (await response.json()) as GatewayModelsResponse;
-    const models = (data.data ?? []).filter((m) => !isBlockedModelId(m.id));
+    const models = (data.data ?? [])
+      .filter((m) => !isBlockedModelId(m.id))
+      .map((m) => ({ ...m, allowed: m.allowed !== false }));
     gatewayModelsCache = {
       models,
       expiry: Date.now() + CACHE_TTL,
       url: gatewayUrl,
+      authed,
     };
     return models;
   } catch {
@@ -136,12 +171,15 @@ export function isCloudflareModel(model: GatewayModel): boolean {
 export interface ModelInfo {
   id: string;
   owned_by?: string;
+  allowed: boolean;
+  restriction_reason?: string | null;
 }
 
 let modelsListCache: {
   models: ModelInfo[];
   expiry: number;
   url: string;
+  authed: boolean;
 } | null = null;
 
 export async function fetchModelsList(
@@ -152,9 +190,11 @@ export async function fetchModelsList(
     return [];
   }
 
+  const authed = Boolean(options?.authToken);
   if (
     modelsListCache &&
     modelsListCache.url === gatewayUrl &&
+    modelsListCache.authed === authed &&
     Date.now() < modelsListCache.expiry
   ) {
     return modelsListCache.models;
@@ -163,6 +203,7 @@ export async function fetchModelsList(
   try {
     const modelsUrl = `${gatewayUrl}/v1/models`;
     const response = await fetch(modelsUrl, {
+      headers: authHeaders(options?.authToken),
       signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -177,17 +218,47 @@ export async function fetchModelsList(
       const id = model?.id ? String(model.id) : "";
       if (!id) continue;
       if (isBlockedModelId(id)) continue;
-      results.push({ id, owned_by: model?.owned_by });
+      results.push({
+        id,
+        owned_by: model?.owned_by,
+        allowed: model?.allowed !== false,
+        restriction_reason: model?.restriction_reason ?? null,
+      });
     }
     modelsListCache = {
       models: results,
       expiry: Date.now() + CACHE_TTL,
       url: gatewayUrl,
+      authed,
     };
     return results;
   } catch {
     return [];
   }
+}
+
+/**
+ * The model a session should start on: the preferred id when it's present and
+ * allowed, else the newest allowed model (so a free-tier org lands on the
+ * free model instead of a premium default that would 403 on first message).
+ * Returns the preferred id unchanged when the list is empty (fetch failed —
+ * no marks to honor) or nothing is allowed (all locked; the picker and the
+ * upgrade gate communicate that state better than a silent second-guess).
+ */
+export function pickAllowedModel(
+  models: ReadonlyArray<Pick<GatewayModel, "id" | "allowed">>,
+  preferred: string,
+): string {
+  if (models.length === 0) return preferred;
+  const preferredEntry = models.find((m) => m.id === preferred);
+  if (!preferredEntry || preferredEntry.allowed) return preferred;
+  const allowed = models.filter((m) => m.allowed);
+  if (allowed.length === 0) return preferred;
+  return allowed.reduce((best, candidate) =>
+    getClaudeModelRecency(candidate.id) >= getClaudeModelRecency(best.id)
+      ? candidate
+      : best,
+  ).id;
 }
 
 const PROVIDER_NAMES: Record<string, string> = {

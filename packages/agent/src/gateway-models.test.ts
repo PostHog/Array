@@ -16,6 +16,7 @@ const model = (id: string, owned_by = ""): GatewayModel => ({
   context_window: 128000,
   supports_streaming: true,
   supports_vision: false,
+  allowed: true,
 });
 
 describe("formatGatewayModelName", () => {
@@ -27,6 +28,7 @@ describe("formatGatewayModelName", () => {
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
+        allowed: true,
       }),
     ).toBe("Claude Opus 4.8");
   });
@@ -39,6 +41,7 @@ describe("formatGatewayModelName", () => {
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
+        allowed: true,
       }),
     ).toBe("gpt-5.5");
   });
@@ -51,6 +54,7 @@ describe("formatGatewayModelName", () => {
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
+        allowed: true,
       }),
     ).toBe("gpt-5.5");
   });
@@ -63,6 +67,7 @@ describe("formatGatewayModelName", () => {
         context_window: 128000,
         supports_streaming: true,
         supports_vision: false,
+        allowed: true,
       }),
     ).toBe("glm-5.2");
   });

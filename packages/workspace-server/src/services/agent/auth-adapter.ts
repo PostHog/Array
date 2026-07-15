@@ -79,6 +79,19 @@ export class AgentAuthAdapter {
     };
   }
 
+  /**
+   * Bearer token for direct gateway REST calls (e.g. the models fetch), so
+   * the gateway can annotate plan-restricted models. Null when auth isn't
+   * available — callers fall back to an anonymous fetch.
+   */
+  async gatewayAuthToken(): Promise<string | null> {
+    try {
+      return await this.getValidToken();
+    } catch {
+      return null;
+    }
+  }
+
   async buildMcpServers(credentials: Credentials): Promise<{
     servers: AcpMcpServer[];
     toolApprovals: McpToolApprovals;

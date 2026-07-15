@@ -9,6 +9,7 @@ import {
   DEFAULT_GATEWAY_MODEL,
   fetchModelsList,
   isBlockedModelId,
+  pickAllowedModel,
 } from "./gateway-models";
 import { PostHogAPIClient, type TaskRunUpdate } from "./posthog-api";
 import { SessionLogWriter } from "./session-log-writer";
@@ -79,32 +80,44 @@ export class Agent {
     this.taskRunId = taskRunId;
 
     let allowedModelIds: Set<string> | undefined;
+    let restrictedModelIds: Set<string> | undefined;
     let sanitizedModel =
       options.model && !isBlockedModelId(options.model)
         ? options.model
         : undefined;
     if (options.adapter === "codex" && gatewayConfig) {
+      // Authenticated so the gateway can mark models outside the org's plan
+      // (`allowed: false`) — anonymous fetches see everything allowed.
       const models = await fetchModelsList({
         gatewayUrl: gatewayConfig.gatewayUrl,
+        authToken: gatewayConfig.apiKey,
       });
-      const codexModelIds = models
-        .filter((model) => {
-          if (isBlockedModelId(model.id)) return false;
-          if (model.owned_by) {
-            return model.owned_by === "openai";
-          }
-          return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
-        })
-        .map((model) => model.id);
+      const codexModels = models.filter((model) => {
+        if (isBlockedModelId(model.id)) return false;
+        if (model.owned_by) {
+          return model.owned_by === "openai";
+        }
+        return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
+      });
+      const codexModelIds = codexModels.map((model) => model.id);
 
       if (codexModelIds.length > 0) {
         allowedModelIds = new Set(codexModelIds);
+        restrictedModelIds = new Set(
+          codexModels.filter((model) => !model.allowed).map((m) => m.id),
+        );
       }
 
       if (!sanitizedModel || !allowedModelIds?.has(sanitizedModel)) {
         sanitizedModel = codexModelIds.includes(DEFAULT_CODEX_MODEL)
           ? DEFAULT_CODEX_MODEL
           : codexModelIds[0];
+      }
+      // Never start a session on a model the org's plan can't use — it would
+      // 403 on the first message. Explicit user picks still flow through the
+      // picker's upgrade gate.
+      if (sanitizedModel) {
+        sanitizedModel = pickAllowedModel(codexModels, sanitizedModel);
       }
     }
     if (!sanitizedModel && options.adapter !== "codex") {
@@ -131,6 +144,7 @@ export class Agent {
       processCallbacks: options.processCallbacks,
       onStructuredOutput: options.onStructuredOutput,
       allowedModelIds,
+      restrictedModelIds,
       posthogApiConfig: this.posthogApiConfig,
       enricherEnabled: this.enricherEnabled,
       claudeGatewayEnv,

@@ -1,4 +1,5 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import { classifyGatewayLimitError } from "@posthog/shared";
 import {
   buildPosthogPropertyHeaderRecord,
   type PosthogProperties,
@@ -24,6 +25,11 @@ import {
 // Bounded helper workloads (titles, summaries, commit messages, PR copy) run on
 // the cheapest model rather than the gateway default.
 export const HELPER_GATEWAY_MODEL = "claude-haiku-4-5";
+
+// When the org isn't billed for Code usage the gateway 403s premium models
+// (free-tier model gate). Helper calls are invisible plumbing, so they retry
+// once on the free-tier model instead of surfacing the gate to the user.
+export const FREE_TIER_GATEWAY_MODEL = "@cf/zai-org/glm-5.2";
 
 export class LlmGatewayError extends Error {
   constructor(
@@ -54,6 +60,12 @@ export class LlmGatewayService {
   private readonly endpoints: LlmGatewayEndpoints;
   private readonly log: LlmGatewayLogger;
 
+  // Last code_usage_billed seen from the gateway (usage fetches ride through
+  // this service, and the usage monitor refreshes on LLM activity, so this
+  // stays warm). null until the gateway has told us either way — old gateways
+  // omit the field entirely.
+  private lastKnownCodeUsageBilled: boolean | null = null;
+
   async prompt(
     messages: LlmMessage[],
     options: {
@@ -71,10 +83,53 @@ export class LlmGatewayService {
       posthogProperties?: PosthogProperties;
     } = {},
   ): Promise<PromptOutput> {
+    const requested = options.model ?? this.endpoints.defaultModel;
+    // This service only carries helper workloads — the main agent session
+    // goes through the SDK, not here. When the org is known to be on the
+    // free tier, route helpers to the free-tier model upfront instead of
+    // burning a request on the model gate's 403.
+    const model =
+      this.lastKnownCodeUsageBilled === false
+        ? FREE_TIER_GATEWAY_MODEL
+        : requested;
+    try {
+      return await this.sendPrompt(messages, { ...options, model });
+    } catch (error) {
+      const isModelGate =
+        error instanceof LlmGatewayError &&
+        error.statusCode === 403 &&
+        classifyGatewayLimitError(error.message) === "model_gate";
+      if (!isModelGate || model === FREE_TIER_GATEWAY_MODEL) throw error;
+      // Backstop for a stale billed bit (org just lost billing): the gate
+      // itself is authoritative that the org isn't billed, so remember that
+      // and degrade this call instead of failing it.
+      this.lastKnownCodeUsageBilled = false;
+      this.log.warn("Model gated for free tier, retrying on free-tier model", {
+        model,
+        fallbackModel: FREE_TIER_GATEWAY_MODEL,
+      });
+      return await this.sendPrompt(messages, {
+        ...options,
+        model: FREE_TIER_GATEWAY_MODEL,
+      });
+    }
+  }
+
+  private async sendPrompt(
+    messages: LlmMessage[],
+    options: {
+      system?: string;
+      maxTokens?: number;
+      model: string;
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      posthogProperties?: PosthogProperties;
+    },
+  ): Promise<PromptOutput> {
     const {
       system,
       maxTokens,
-      model = this.endpoints.defaultModel,
+      model,
       signal,
       timeoutMs = 60_000,
       posthogProperties,
@@ -154,8 +209,11 @@ export class LlmGatewayService {
         });
       }
 
+      const detail =
+        typeof errorData?.detail === "string" ? errorData.detail : undefined;
       const errorMessage =
         errorData?.error?.message ||
+        detail ||
         `HTTP ${response.status}: ${response.statusText}`;
       const errorType = errorData?.error?.type || "unknown_error";
       const errorCode = errorData?.error?.code;
@@ -223,7 +281,11 @@ export class LlmGatewayService {
       );
     }
 
-    return usageOutput.parse(await response.json());
+    const usage = usageOutput.parse(await response.json());
+    if (usage.code_usage_billed !== undefined) {
+      this.lastKnownCodeUsageBilled = usage.code_usage_billed;
+    }
+    return usage;
   }
 
   async invalidatePlanCache(): Promise<void> {

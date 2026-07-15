@@ -2097,6 +2097,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
         this.options?.gatewayEnv?.anthropicBaseUrl,
+        this.options?.gatewayEnv?.anthropicAuthToken,
       ),
       ...(meta?.taskRunId
         ? [

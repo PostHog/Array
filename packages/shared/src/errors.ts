@@ -74,6 +74,38 @@ const RATE_LIMIT_PATTERNS = [
   "[429]",
 ] as const;
 
+/**
+ * Billing/limit denials from the PostHog LLM gateway (posthog_code product),
+ * classified by their server-written detail strings. Kept in sync with
+ * services/llm-gateway in posthog/posthog:
+ * - "model_gate" (403): org isn't billed for Code usage and requested a model
+ *   outside the free tier — "Model 'X' needs a paid PostHog plan. …".
+ * - "org_limit" (429): the org's posthog_code_credits bucket is exhausted
+ *   (free allocation used up, or the org's billing limit reached) — "Your
+ *   team has reached its PostHog Code usage limit for this billing period."
+ * - "user_daily_limit" / "user_monthly_limit" (429): the per-user cost valve —
+ *   "User burst rate limit exceeded" / "User sustained rate limit exceeded".
+ */
+export type GatewayLimitCause =
+  | "model_gate"
+  | "org_limit"
+  | "user_daily_limit"
+  | "user_monthly_limit";
+
+const MODEL_GATE_PATTERNS = ["needs a paid posthog plan"] as const;
+
+const ORG_LIMIT_PATTERNS = [
+  "reached its posthog code usage limit",
+  // Gateway fallback wording for an unmapped credit bucket.
+  "reached its usage limit for this billing period",
+] as const;
+
+const USER_DAILY_LIMIT_PATTERNS = ["user burst rate limit exceeded"] as const;
+
+const USER_MONTHLY_LIMIT_PATTERNS = [
+  "user sustained rate limit exceeded",
+] as const;
+
 const FATAL_SESSION_ERROR_PATTERNS = [
   "internal error",
   "process exited",
@@ -121,6 +153,33 @@ export function isRateLimitError(
   );
 }
 
+const GATED_MODEL_REGEX = /Model '([^']+)' needs a paid PostHog plan/i;
+
+/** The model id a free-tier model-gate 403 names, when present. */
+export function extractGatedModel(
+  errorMessage: string,
+  errorDetails?: string,
+): string | null {
+  return (
+    errorMessage.match(GATED_MODEL_REGEX)?.[1] ??
+    errorDetails?.match(GATED_MODEL_REGEX)?.[1] ??
+    null
+  );
+}
+
+export function classifyGatewayLimitError(
+  errorMessage: string,
+  errorDetails?: string,
+): GatewayLimitCause | null {
+  const matches = (patterns: readonly string[]) =>
+    includesAny(errorMessage, patterns) || includesAny(errorDetails, patterns);
+  if (matches(MODEL_GATE_PATTERNS)) return "model_gate";
+  if (matches(ORG_LIMIT_PATTERNS)) return "org_limit";
+  if (matches(USER_DAILY_LIMIT_PATTERNS)) return "user_daily_limit";
+  if (matches(USER_MONTHLY_LIMIT_PATTERNS)) return "user_monthly_limit";
+  return null;
+}
+
 export function isTransientUpstreamError(
   errorMessage: string,
   errorDetails?: string,
@@ -137,6 +196,12 @@ export function isFatalSessionError(
 ): boolean {
   if (isRateLimitError(errorMessage, errorDetails)) return false;
   if (isTransientUpstreamError(errorMessage, errorDetails)) return false;
+  // A free-tier model-gate 403 arrives wrapped as "Internal error: API
+  // Error: 403 …" — the session is healthy, the fix is switching model or
+  // adding a payment method, so it must never trigger session teardown.
+  if (classifyGatewayLimitError(errorMessage, errorDetails) === "model_gate") {
+    return false;
+  }
   return (
     includesAny(errorMessage, FATAL_SESSION_ERROR_PATTERNS) ||
     includesAny(errorDetails, FATAL_SESSION_ERROR_PATTERNS)

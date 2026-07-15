@@ -72,6 +72,9 @@ export {
 export type { SignalReportPriority, Task } from "./domain-types";
 export * from "./enrichment";
 export {
+  classifyGatewayLimitError,
+  extractGatedModel,
+  type GatewayLimitCause,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,
@@ -131,7 +134,12 @@ export {
   mentionsToPlainText,
   splitMentionSegments,
 } from "./mentions";
-export { defaultEligibleModel } from "./models";
+export {
+  defaultEligibleModel,
+  isRestrictedModelOption,
+  RESTRICTED_MODEL_META_KEY,
+  restrictedModelMeta,
+} from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,

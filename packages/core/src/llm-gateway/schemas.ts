@@ -50,11 +50,14 @@ export interface AnthropicMessagesResponse {
 }
 
 export interface AnthropicErrorResponse {
-  error: {
+  error?: {
     message: string;
     type: string;
     code?: string;
   };
+  // FastAPI access-denial shape: the gateway's 403s (e.g. the free-tier
+  // model gate) carry a bare string `detail` instead of the error envelope.
+  detail?: unknown;
 }
 
 export type { UsageBucket, UsageOutput } from "../usage/schemas";

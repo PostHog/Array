@@ -973,7 +973,9 @@ export interface ChannelsSpaceViewedProperties {
 export type UpgradePromptShownSurface =
   | "usage_limit_modal"
   | "upgrade_dialog"
-  | "titlebar_card";
+  | "titlebar_card"
+  | "model_picker"
+  | "billing_announcement";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
@@ -981,19 +983,35 @@ export type UpgradePromptClickedSurface =
   | "titlebar"
   | "titlebar_card"
   | "plan_page_card"
-  | "upgrade_dialog";
+  | "upgrade_dialog"
+  | "model_picker"
+  | "billing_announcement";
+
+/** Which gateway limit/gate put the prompt on screen (usage-based billing). */
+export type UpgradePromptCause =
+  | "model_gate"
+  | "org_limit"
+  | "user_daily_limit"
+  | "user_monthly_limit";
 
 export interface UpgradePromptShownProperties {
   surface: UpgradePromptShownSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface UpgradePromptClickedProperties {
   surface: UpgradePromptClickedSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface CloudTaskUsageBlockedProperties {
   bucket: "burst" | "sustained" | null;
   is_pro: boolean;
+}
+
+export interface UsageBillingAnnouncementAcknowledgedProperties {
+  /** Stamps the acknowledgment on the person for support auditability. */
+  $set: { code_usage_billing_acknowledged_at: string };
 }
 
 export interface SubscriptionStartedProperties {
@@ -1209,6 +1227,8 @@ export const ANALYTICS_EVENTS = {
   CLOUD_TASK_USAGE_BLOCKED: "Cloud task usage blocked",
   SUBSCRIPTION_STARTED: "Subscription started",
   SUBSCRIPTION_CANCELLED: "Subscription cancelled",
+  USAGE_BILLING_ANNOUNCEMENT_ACKNOWLEDGED:
+    "Usage billing announcement acknowledged",
 
   // Project Bluebird (Channels) events
   CHANNELS_SPACE_VIEWED: "Channels space viewed",
@@ -1364,6 +1384,7 @@ export type EventPropertyMap = {
   // Subscription events
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN]: UpgradePromptShownProperties;
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED]: UpgradePromptClickedProperties;
+  [ANALYTICS_EVENTS.USAGE_BILLING_ANNOUNCEMENT_ACKNOWLEDGED]: UsageBillingAnnouncementAcknowledgedProperties;
   [ANALYTICS_EVENTS.CLOUD_TASK_USAGE_BLOCKED]: CloudTaskUsageBlockedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
   [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;

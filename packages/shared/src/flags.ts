@@ -1,5 +1,12 @@
 export const BILLING_FLAG = "posthog-code-billing";
 export const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
+/**
+ * Usage-based billing (the 2026-07 seat retirement). Flips billing UI from
+ * the seat-era Free/Pro copy to usage-based copy, and arms the one-time
+ * billing-change announcement. Flip together with the server-side
+ * LLM_GATEWAY_POSTHOG_CODE_MODEL_GATE_ENABLED cutover.
+ */
+export const USAGE_BILLING_FLAG = "posthog-code-usage-billing";
 export const EXPERIMENT_SUGGESTIONS_FLAG =
   "posthog-code-experiment-suggestions";
 export const SYNC_CLOUD_TASKS_FLAG = "posthog-code-sync-cloud-tasks";
