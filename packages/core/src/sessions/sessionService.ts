@@ -1003,6 +1003,9 @@ export class SessionService {
     if (previous) {
       session.optimisticItems = previous.optimisticItems;
       session.messageQueue = previous.messageQueue;
+      // Keep the in-place edit hold with the queue it guards: dropping it here
+      // would let the edited message auto-send in its stale, pre-edit form.
+      session.editingQueuedId = previous.editingQueuedId;
       session.isPromptPending = previous.isPromptPending;
       session.promptStartedAt = previous.promptStartedAt;
       session.pausedDurationMs = previous.pausedDurationMs;
@@ -2023,10 +2026,15 @@ export class SessionService {
       }
 
       const stopReason = (msg.result as { stopReason?: string }).stopReason;
-      const hasQueuedMessages = this.drainQueuedMessages(taskRunId, session);
+      // A cancelled turn is an explicit stop: auto-firing queued messages
+      // right after would restart the agent the user just halted.
+      const hasSendableMessages =
+        stopReason === "cancelled"
+          ? false
+          : this.drainQueuedMessages(taskRunId, session);
 
-      // Only notify when queue is empty - queued messages will start a new turn
-      if (stopReason && !hasQueuedMessages) {
+      // Only notify when nothing is sendable - queued messages start a new turn
+      if (stopReason && !hasSendableMessages) {
         this.d.notifyPromptComplete(
           session.taskTitle,
           stopReason,
@@ -2136,6 +2144,19 @@ export class SessionService {
 
     if (hasSendableMessages) {
       setTimeout(() => {
+        // Re-check at fire time: the turn-end drain and the edit-release flush
+        // can each schedule a timer, and whichever fires second must not start
+        // a concurrent prompt (the first send flips isPromptPending before it
+        // awaits, so this check observes it).
+        const latest = this.d.store.getSessionByTaskId(session.taskId);
+        if (
+          !latest ||
+          latest.status !== "connected" ||
+          latest.isPromptPending ||
+          latest.isCompacting
+        ) {
+          return;
+        }
         this.sendQueuedMessages(session.taskId).catch((err) => {
           this.d.log.error("Failed to send queued messages", {
             taskId: session.taskId,

@@ -14,6 +14,7 @@ const sessionService = vi.hoisted(() => ({
   updateQueuedMessage: vi.fn(),
   clearEditingQueuedMessage: vi.fn(),
   sendPrompt: vi.fn(),
+  cancelPrompt: vi.fn(),
 }));
 
 vi.mock("@posthog/core/sessions/sessionService", () => ({
@@ -52,12 +53,17 @@ vi.mock("@posthog/ui/features/message-editor/commands", () => ({
   resolveLocalSkillPrompt: async (text: string) => text,
 }));
 
-const editingIdState = vi.hoisted(() => ({
+const sessionState = vi.hoisted(() => ({
   editingQueuedId: "q-1" as string | undefined,
+  messageQueue: [] as Array<{ id: string; content: string; queuedAt: number }>,
 }));
+const dequeueMessages = vi.hoisted(() =>
+  vi.fn(() => [] as Array<{ id: string; content: string; queuedAt: number }>),
+);
 vi.mock("@posthog/ui/features/sessions/sessionStore", () => ({
   sessionStoreSetters: {
-    getSessionByTaskId: () => editingIdState,
+    getSessionByTaskId: () => sessionState,
+    dequeueMessages,
   },
 }));
 
@@ -87,10 +93,11 @@ function renderCallbacks() {
   );
 }
 
-describe("useSessionCallbacks.handleSendPrompt — failed queued edit", () => {
+describe("useSessionCallbacks.handleSendPrompt while editing a queued message", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    editingIdState.editingQueuedId = "q-1";
+    sessionState.editingQueuedId = "q-1";
+    sessionState.messageQueue = [];
     useDraftStore.setState((state) => ({
       ...state,
       drafts: {},
@@ -135,6 +142,85 @@ describe("useSessionCallbacks.handleSendPrompt — failed queued edit", () => {
     expect(sessionService.clearEditingQueuedMessage).toHaveBeenCalledWith(TASK);
     expect(sessionService.sendPrompt).toHaveBeenCalledWith(TASK, "my edit", {
       steer: false,
+    });
+  });
+
+  it("updates in place and never sends when the edit saves", async () => {
+    sessionService.updateQueuedMessage.mockResolvedValue(true);
+
+    const { result } = renderCallbacks();
+    await result.current.handleSendPrompt("my edit");
+
+    expect(sessionService.updateQueuedMessage).toHaveBeenCalledWith(
+      TASK,
+      "q-1",
+      "my edit",
+    );
+    expect(taskViewed.markAsViewed).toHaveBeenCalledWith(TASK);
+    // Saving releases the hold inside the service, not the hook.
+    expect(sessionService.clearEditingQueuedMessage).not.toHaveBeenCalled();
+    expect(sessionService.sendPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe("useSessionCallbacks.handleCancelPrompt", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionState.editingQueuedId = undefined;
+    sessionState.messageQueue = [];
+    dequeueMessages.mockReturnValue([]);
+    sessionService.cancelPrompt.mockResolvedValue(true);
+    useDraftStore.setState((state) => ({
+      ...state,
+      drafts: {},
+      pendingContent: {},
+      _hasHydrated: true,
+    }));
+  });
+
+  it("recalls the queue into the composer when no edit is active", async () => {
+    dequeueMessages.mockReturnValue([
+      { id: "q-1", content: "first", queuedAt: 1 },
+      { id: "q-2", content: "second", queuedAt: 2 },
+    ]);
+
+    const { result } = renderCallbacks();
+    await result.current.handleCancelPrompt();
+
+    expect(sessionService.cancelPrompt).toHaveBeenCalledWith(TASK);
+    expect(dequeueMessages).toHaveBeenCalledWith(TASK);
+    expect(useDraftStore.getState().pendingContent[TASK]).toEqual({
+      segments: [{ type: "text", text: "first\n\nsecond" }],
+    });
+  });
+
+  it("stops without touching the queue or composer while an edit is active", async () => {
+    sessionState.editingQueuedId = "q-1";
+    sessionState.messageQueue = [{ id: "q-1", content: "old", queuedAt: 1 }];
+
+    const { result } = renderCallbacks();
+    await result.current.handleCancelPrompt();
+
+    expect(sessionService.cancelPrompt).toHaveBeenCalledWith(TASK);
+    // The queue is left in place (the edit hold keeps it from auto-sending)
+    // and the composer keeps the in-progress edit.
+    expect(dequeueMessages).not.toHaveBeenCalled();
+    expect(useDraftStore.getState().pendingContent[TASK]).toBeUndefined();
+  });
+
+  it("falls back to the normal recall when the edit hold is stale", async () => {
+    sessionState.editingQueuedId = "q-gone";
+    sessionState.messageQueue = [{ id: "q-1", content: "first", queuedAt: 1 }];
+    dequeueMessages.mockReturnValue([
+      { id: "q-1", content: "first", queuedAt: 1 },
+    ]);
+
+    const { result } = renderCallbacks();
+    await result.current.handleCancelPrompt();
+
+    expect(dequeueMessages).toHaveBeenCalledWith(TASK);
+    expect(useDraftStore.getState().pendingContent[TASK]).toEqual({
+      segments: [{ type: "text", text: "first" }],
     });
   });
 });

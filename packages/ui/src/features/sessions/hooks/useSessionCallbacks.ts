@@ -1,5 +1,6 @@
 import {
   isContentEmpty,
+  textToContent,
   xmlToContent,
 } from "@posthog/core/message-editor/content";
 import {
@@ -172,6 +173,22 @@ export function useSessionCallbacks({
   );
 
   const handleCancelPrompt = useCallback(async () => {
+    // Stopping while a queued message is being edited: halt the turn but leave
+    // the queue and the composer alone, since recalling the queue into the
+    // composer would clobber the in-progress edit. The edit hold keeps the
+    // queue from auto-sending until the edit is saved or cancelled.
+    const currentSession = sessionStoreSetters.getSessionByTaskId(taskId);
+    const editingId = currentSession?.editingQueuedId;
+    if (
+      editingId &&
+      currentSession?.messageQueue.some((m) => m.id === editingId)
+    ) {
+      const result = await sessionService.cancelPrompt(taskId);
+      log.info("Prompt cancelled during queued edit", { success: result });
+      requestFocus(taskId);
+      return;
+    }
+
     const queuedMessages = sessionStoreSetters.dequeueMessages(taskId);
     const result = await sessionService.cancelPrompt(taskId);
     log.info("Prompt cancelled", { success: result });
@@ -183,14 +200,7 @@ export function useSessionCallbacks({
     if (queuedPrompt) {
       const pendingContent = sessionRef.current?.isCloud
         ? promptToQueuedEditorContent(queuedPrompt)
-        : {
-            segments: [
-              {
-                type: "text" as const,
-                text: typeof queuedPrompt === "string" ? queuedPrompt : "",
-              },
-            ],
-          };
+        : textToContent(typeof queuedPrompt === "string" ? queuedPrompt : "");
 
       setPendingContent(taskId, pendingContent);
     }
