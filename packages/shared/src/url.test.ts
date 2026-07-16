@@ -6,6 +6,7 @@ describe("isSafeExternalUrl", () => {
     "https://github.com/PostHog/code/pull/42",
     "http://example.com",
     "https://example.com/path?q=1#frag",
+    "https://example.com:443/path",
     "HTTPS://EXAMPLE.COM",
     "mailto:hi@posthog.com",
   ])("allows %s", (url) => {
