@@ -23,6 +23,7 @@ import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
   CLOUD_TASK_SERVICE,
+  MCP_RELAY_EXECUTOR,
 } from "@posthog/core/cloud-task/identifiers";
 import { contextMenuCoreModule } from "@posthog/core/context-menu/context-menu.module";
 import {
@@ -177,9 +178,12 @@ import {
 import type { HandoffGitGateway } from "@posthog/workspace-server/services/handoff/ports";
 import { HandoffHostService } from "@posthog/workspace-server/services/handoff/service";
 import { LOGS_SERVICE } from "@posthog/workspace-server/services/local-logs/identifiers";
+import { localMcpModule } from "@posthog/workspace-server/services/local-mcp/local-mcp.module";
 import { mcpCallbackModule } from "@posthog/workspace-server/services/mcp-callback/mcp-callback.module";
 import { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-proxy/identifiers";
 import { mcpProxyModule } from "@posthog/workspace-server/services/mcp-proxy/mcp-proxy.module";
+import { MCP_RELAY_SERVICE } from "@posthog/workspace-server/services/mcp-relay/identifiers";
+import { mcpRelayModule } from "@posthog/workspace-server/services/mcp-relay/mcp-relay.module";
 import { OAUTH_CALLBACK_SERVER } from "@posthog/workspace-server/services/oauth-callback/identifiers";
 import { oauthCallbackModule } from "@posthog/workspace-server/services/oauth-callback/oauth-callback.module";
 import { onboardingImportModule } from "@posthog/workspace-server/services/onboarding-import/onboarding-import.module";
@@ -620,6 +624,15 @@ container.load(skillsModule);
 container.load(skillsMarketplaceModule);
 container.load(githubReleasesModule);
 container.load(onboardingImportModule);
+container.load(localMcpModule);
+container.load(mcpRelayModule);
+// Core's cloud-task service executes MCP relay requests through this seam;
+// the workspace relay service satisfies the core executor interface
+// structurally (docs/cloud-mcp-relay.md).
+container
+  .bind(MCP_RELAY_EXECUTOR)
+  .toDynamicValue((ctx) => ctx.get(MCP_RELAY_SERVICE))
+  .inSingletonScope();
 container.load(claudeCliSessionsModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);

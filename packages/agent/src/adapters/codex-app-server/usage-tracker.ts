@@ -1,8 +1,8 @@
+import type { Usage } from "@agentclientprotocol/sdk";
 import {
   type ContextBreakdownBaseline,
   emptyBaseline,
 } from "../claude/context-breakdown";
-import type { AccumulatedUsage } from "./ext-notifications";
 import { readTokenUsage } from "./token-usage";
 
 /** The live `_posthog/usage_update` fields (context-window occupancy). */
@@ -25,7 +25,7 @@ export interface UsageUpdate {
  */
 export class UsageTracker {
   private baseline: ContextBreakdownBaseline = emptyBaseline();
-  private lastTurn?: AccumulatedUsage;
+  private lastTurn?: Usage;
   private contextUsed?: number;
 
   setBaseline(baseline: ContextBreakdownBaseline): void {
@@ -36,7 +36,6 @@ export class UsageTracker {
     return this.baseline;
   }
 
-  /** Zero the per-turn view at turn start so a token-less turn reports 0. */
   resetForTurn(): void {
     this.lastTurn = undefined;
     this.contextUsed = undefined;
@@ -49,12 +48,17 @@ export class UsageTracker {
     const { context, used, size } = reading;
     // Drives the per-source breakdown's "conversation" bucket on turn complete.
     this.contextUsed = used;
+    const inputTokens = context.inputTokens ?? 0;
+    const outputTokens = context.outputTokens ?? 0;
+    const cachedReadTokens = context.cachedInputTokens ?? 0;
     this.lastTurn = {
-      inputTokens: context.inputTokens ?? 0,
-      outputTokens: context.outputTokens ?? 0,
-      cachedReadTokens: context.cachedInputTokens ?? 0,
-      // codex's TokenUsageBreakdown has no cache-write field; 0 is authoritative.
+      inputTokens,
+      outputTokens,
+      cachedReadTokens,
       cachedWriteTokens: 0,
+      thoughtTokens: context.reasoningOutputTokens,
+      totalTokens:
+        context.totalTokens ?? inputTokens + outputTokens + cachedReadTokens,
     };
     return {
       used,
@@ -69,16 +73,8 @@ export class UsageTracker {
     };
   }
 
-  /** Per-turn usage for `_posthog/turn_complete` — codex's `last`, not a delta. */
-  perTurnUsage(): AccumulatedUsage {
-    return (
-      this.lastTurn ?? {
-        inputTokens: 0,
-        outputTokens: 0,
-        cachedReadTokens: 0,
-        cachedWriteTokens: 0,
-      }
-    );
+  perTurnUsage(): Usage | undefined {
+    return this.lastTurn ? { ...this.lastTurn } : undefined;
   }
 
   /** Live context occupancy (same derivation as the renderer gauge), or undefined pre-usage. */

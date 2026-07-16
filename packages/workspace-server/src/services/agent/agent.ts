@@ -37,6 +37,7 @@ import {
   isAnthropicModel,
   isCloudflareModel,
   isOpenAIModel,
+  pickAllowedModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import {
@@ -67,7 +68,10 @@ import {
 import {
   type AcpMessage,
   type Adapter,
+  type ExecutionMode,
   isAuthError,
+  resolveCloudInitialPermissionMode,
+  restrictedModelMeta,
   serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
@@ -347,6 +351,22 @@ export function buildAutoApproveOutcome(
     return { outcome: "cancelled" };
   }
   return { outcome: "selected", optionId };
+}
+
+export function shouldAutoApprovePermissionRequest(
+  adapter: string | undefined,
+  permissionMode: string | undefined,
+  codeToolKind?: string,
+): boolean {
+  if (adapter !== "codex" || !permissionMode || codeToolKind === "question") {
+    return false;
+  }
+  return (
+    resolveCloudInitialPermissionMode(
+      "codex",
+      permissionMode as ExecutionMode,
+    ) === "full-access"
+  );
 }
 
 interface PendingPermission {
@@ -1706,6 +1726,9 @@ For git operations while detached:
           (params.toolCall?.rawInput as { toolName?: string } | undefined)
             ?.toolName || "";
         const toolCallId = params.toolCall?.toolCallId || "";
+        const codeToolKind = (
+          params.toolCall?._meta as { codeToolKind?: string } | undefined
+        )?.codeToolKind;
 
         service.log.info("requestPermission called", {
           taskRunId,
@@ -1715,8 +1738,22 @@ For git operations while detached:
           optionCount: params.options.length,
         });
 
+        const session = service.sessions.get(taskRunId);
+        if (
+          shouldAutoApprovePermissionRequest(
+            session?.config.adapter,
+            session?.config.permissionMode,
+            codeToolKind,
+          )
+        ) {
+          service.log.info("Auto-approving Codex full-access permission", {
+            taskRunId,
+            toolCallId,
+          });
+          return { outcome: buildAutoApproveOutcome(params.options) };
+        }
+
         if (toolName && isMcpToolReadOnly(toolName)) {
-          const session = service.sessions.get(taskRunId);
           const approvalState = session?.mcpToolApprovals?.[toolName];
           if (approvalState === "approved") {
             service.log.info("Auto-approving read-only MCP tool", {
@@ -2206,7 +2243,10 @@ For git operations while detached:
 
   async getGatewayModels(apiHost: string) {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    const models = await fetchGatewayModels({ gatewayUrl });
+    const models = await fetchGatewayModels({
+      gatewayUrl,
+      authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
+    });
 
     const mapped = models.map((model) => ({
       modelId: model.id,
@@ -2235,7 +2275,12 @@ For git operations while detached:
     adapter: Adapter = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    const gatewayModels = await fetchGatewayModels({ gatewayUrl });
+    // Authenticated so the gateway can mark plan-restricted models; falls
+    // back to an anonymous fetch (everything allowed) without auth.
+    const gatewayModels = await fetchGatewayModels({
+      gatewayUrl,
+      authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
+    });
 
     // The Claude adapter can also drive Cloudflare `@cf/` models the gateway serves over its
     // Anthropic-Messages surface, so the preview/default-model path must offer them too — otherwise an
@@ -2246,13 +2291,15 @@ For git operations while detached:
         : (model: GatewayModel) =>
             isAnthropicModel(model) || isCloudflareModel(model);
 
-    const modelOptions = gatewayModels
-      .filter((model) => modelFilter(model))
-      .map((model) => ({
-        value: model.id,
-        name: formatGatewayModelName(model),
-        description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      }));
+    const adapterModels = gatewayModels.filter((model) => modelFilter(model));
+    const modelOptions = adapterModels.map((model) => ({
+      value: model.id,
+      name: formatGatewayModelName(model),
+      description: `Context: ${model.context_window.toLocaleString()} tokens`,
+      // Locked models stay listed so the picker can gate them instead of
+      // silently dropping them.
+      ...(model.allowed ? {} : { _meta: restrictedModelMeta() }),
+    }));
 
     // The gateway returns models in an arbitrary order. Sort Claude models
     // oldest-to-newest so the picker is deterministic and the newest model
@@ -2271,9 +2318,12 @@ For git operations while detached:
           "")
         : DEFAULT_GATEWAY_MODEL;
 
-    const resolvedModelId = modelOptions.some((o) => o.value === defaultModel)
+    const preferredModelId = modelOptions.some((o) => o.value === defaultModel)
       ? defaultModel
       : (modelOptions[0]?.value ?? defaultModel);
+    // Never preselect a model the org's plan can't use — it would 403 on the
+    // first message.
+    const resolvedModelId = pickAllowedModel(adapterModels, preferredModelId);
 
     if (!modelOptions.some((o) => o.value === resolvedModelId)) {
       modelOptions.unshift({

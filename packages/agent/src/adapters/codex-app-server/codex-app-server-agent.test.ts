@@ -4,6 +4,7 @@ import type {
   NewSessionRequest,
   PromptRequest,
 } from "@agentclientprotocol/sdk";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
 import type {
   AppServerClientHandlers,
@@ -14,6 +15,9 @@ import { sandboxPolicyFor } from "./session-config";
 
 // Required-field invariants the native codex app-server enforces on each request.
 const REQUIRED_FIELDS: Record<string, string[]> = {
+  "thread/goal/clear": ["threadId"],
+  "thread/goal/get": ["threadId"],
+  "thread/goal/set": ["threadId"],
   "turn/interrupt": ["threadId", "turnId"],
   "turn/steer": ["threadId", "input", "expectedTurnId"],
 };
@@ -43,7 +47,12 @@ function makeStubRpc(responses: Record<string, unknown>) {
           message: `Invalid request: missing field \`${missing}\``,
         };
       }
-      return (responses[method] ?? {}) as T;
+      const response = responses[method];
+      return (
+        typeof response === "function"
+          ? await response(params)
+          : (response ?? {})
+      ) as T;
     },
     notify() {},
     async close() {},
@@ -293,6 +302,274 @@ describe("CodexAppServerAgent", () => {
         (notification) => notification.method === "_posthog/turn_complete",
       ),
     ).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      label: "reads an empty goal",
+      prompt: "/goal",
+      method: "thread/goal/get",
+      response: { goal: null },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "No goal set. Usage: `/goal <objective>`",
+      expectedGoal: undefined,
+    },
+    {
+      label: "reads an active goal",
+      prompt: "/goal",
+      method: "thread/goal/get",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "Goal active: Ship the fix",
+      expectedGoal: undefined,
+    },
+    {
+      label: "sets a goal",
+      prompt: "/goal Ship the fix",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1", objective: "Ship the fix" },
+      expectedText: "Goal set: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "active" },
+    },
+    {
+      label: "clears a goal",
+      prompt: "/goal clear",
+      method: "thread/goal/clear",
+      response: { cleared: true },
+      expectedParams: { threadId: "thr_1" },
+      expectedText: "Goal cleared.",
+      expectedGoal: null,
+    },
+    {
+      label: "pauses a goal",
+      prompt: "/goal pause",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "paused" } },
+      expectedParams: { threadId: "thr_1", status: "paused" },
+      expectedText: "Goal paused: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "paused" },
+    },
+    {
+      label: "resumes a goal",
+      prompt: "/goal resume",
+      method: "thread/goal/set",
+      response: { goal: { objective: "Ship the fix", status: "active" } },
+      expectedParams: { threadId: "thr_1", status: "active" },
+      expectedText: "Goal resumed: Ship the fix",
+      expectedGoal: { objective: "Ship the fix", status: "active" },
+    },
+  ])("$label without starting a model turn", async (testCase) => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      [testCase.method]: testCase.response,
+    });
+    const { client, sessionUpdates, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    const result = await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: testCase.prompt }],
+    } as unknown as PromptRequest);
+
+    expect(result.stopReason).toBe("end_turn");
+    expect(stub.requests).toContainEqual({
+      method: testCase.method,
+      params: testCase.expectedParams,
+    });
+    expect(
+      stub.requests.some((request) => request.method === "turn/start"),
+    ).toBe(false);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: testCase.expectedText },
+      },
+    });
+    if (testCase.expectedGoal !== undefined) {
+      expect(extNotifications).toContainEqual({
+        method: "_posthog/codex_goal",
+        params: { goal: testCase.expectedGoal },
+      });
+    }
+  });
+
+  it("handles a goal command wrapped in hidden cold-resume context", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/get": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [
+        {
+          type: "text",
+          text: "Previous conversation context",
+          _meta: { ui: { hidden: true } },
+        },
+        { type: "text", text: "/goal" },
+        {
+          type: "text",
+          text: "Respond to the user above",
+          _meta: { ui: { hidden: true } },
+        },
+      ],
+    } as unknown as PromptRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "thread/goal/get",
+      params: { threadId: "thr_1" },
+    });
+    expect(
+      stub.requests.some((request) => request.method === "turn/start"),
+    ).toBe(false);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "thr_1",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "/goal" },
+      },
+    });
+  });
+
+  it("restores a persisted goal when starting a replacement thread", async () => {
+    const restoredGoal = { objective: "Ship the fix", status: "paused" };
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": { goal: restoredGoal },
+    });
+    const { client, extNotifications } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { nativeGoal: restoredGoal },
+    } as unknown as NewSessionRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "thread/goal/set",
+      params: { threadId: "thr_1", ...restoredGoal },
+    });
+    expect(extNotifications).toContainEqual({
+      method: "_posthog/codex_goal",
+      params: { goal: restoredGoal },
+    });
+  });
+
+  it("interrupts a native goal turn that was already queued when paused", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+    await Promise.resolve();
+
+    expect(stub.requests).toContainEqual({
+      method: "turn/interrupt",
+      params: { threadId: "thr_1", turnId: "goal_tick_1" },
+    });
+  });
+
+  it("interrupts a native goal turn that started before it was paused", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+
+    expect(stub.requests).toContainEqual({
+      method: "turn/interrupt",
+      params: { threadId: "thr_1", turnId: "goal_tick_1" },
+    });
+  });
+
+  it("retries queued goal cancellation after an interrupt failure", async () => {
+    let interruptAttempts = 0;
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "thr_1" } },
+      "thread/goal/set": {
+        goal: { objective: "Ship the fix", status: "paused" },
+      },
+      "turn/interrupt": () => {
+        interruptAttempts++;
+        if (interruptAttempts === 1) {
+          throw new Error("interrupt failed");
+        }
+        return {};
+      },
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+    await agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "/goal pause" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { turn: { id: "goal_tick_1" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    stub.emit("turn/started", { turn: { id: "goal_tick_2" } });
+    await Promise.resolve();
+
+    expect(
+      stub.requests.filter((request) => request.method === "turn/interrupt"),
+    ).toEqual([
+      {
+        method: "turn/interrupt",
+        params: { threadId: "thr_1", turnId: "goal_tick_1" },
+      },
+      {
+        method: "turn/interrupt",
+        params: { threadId: "thr_1", turnId: "goal_tick_2" },
+      },
+    ]);
   });
 
   it("includes buffered command output when completion omits aggregatedOutput", async () => {
@@ -864,7 +1141,7 @@ describe("CodexAppServerAgent", () => {
     ).toBe("untrusted");
   });
 
-  it("falls back to auto for a non-codex initial permissionMode", async () => {
+  it("maps bypassPermissions to Codex full-access", async () => {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
       "turn/start": { turn: { id: "turn_1" } },
@@ -874,7 +1151,6 @@ describe("CodexAppServerAgent", () => {
       processOptions: { binaryPath: "/x/codex" },
       rpcFactory: stub.factory,
     });
-    // "bypassPermissions" is a Claude mode, not a codex mode → default "auto".
     await agent.newSession({
       cwd: "/r",
       _meta: { permissionMode: "bypassPermissions" },
@@ -889,7 +1165,10 @@ describe("CodexAppServerAgent", () => {
     const turnStart = stub.requests.find((r) => r.method === "turn/start");
     expect(
       (turnStart?.params as { approvalPolicy?: string }).approvalPolicy,
-    ).toBe("on-request");
+    ).toBe("never");
+    expect(
+      (turnStart?.params as { sandboxPolicy?: unknown }).sandboxPolicy,
+    ).toEqual({ type: "dangerFullAccess" });
   });
 
   it("applies a read-only sandboxPolicy + approvalPolicy when the picker is Plan", async () => {
@@ -1318,6 +1597,45 @@ describe("CodexAppServerAgent", () => {
     expect((await done).stopReason).toBe("refusal");
   });
 
+  it("rejects the prompt when the fatal error is a gateway billing denial", async () => {
+    // A silent refusal would hide the free-tier gate: the host only shows the
+    // upgrade modal when the prompt rejects with the gateway's message.
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("error", {
+      willRetry: false,
+      error: {
+        message:
+          "unexpected status 403 Forbidden: Model 'gpt-5.5' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. (rate_limit)",
+      },
+    });
+
+    const err = await done.then(
+      () => {
+        throw new Error("prompt resolved instead of rejecting");
+      },
+      (e: unknown) => e,
+    );
+    // Must be a RequestError with the gateway text in its message — a plain
+    // Error crosses the ACP boundary as a bare "Internal error", which the
+    // host classifies as fatal and answers with a kill/respawn loop.
+    expect(err).toBeInstanceOf(RequestError);
+    expect((err as RequestError).message).toContain("Internal error: ");
+    expect((err as RequestError).message).toContain(
+      "needs a paid PostHog plan",
+    );
+  });
+
   it("ends the turn without turn/start when no prompt block is usable", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();
@@ -1643,9 +1961,23 @@ describe("CodexAppServerAgent", () => {
     } as unknown as PromptRequest);
 
     // The single turn/completed resolves both the original and the folded prompt.
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 45,
+          inputTokens: 30,
+          cachedInputTokens: 5,
+          outputTokens: 10,
+        },
+      },
+    });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    expect((await first).stopReason).toBe("end_turn");
-    expect((await second).stopReason).toBe("end_turn");
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toMatchObject({
+      stopReason: "end_turn",
+      usage: { totalTokens: 45 },
+    });
+    expect(secondResult).toEqual({ stopReason: "end_turn" });
 
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect(steer?.params).toMatchObject({
@@ -1711,6 +2043,7 @@ describe("CodexAppServerAgent", () => {
           {
             skills: [
               { name: "deploy", description: "Deploy", enabled: true },
+              { name: "goal", description: "Duplicate", enabled: true },
               { name: "danger", description: "Disabled", enabled: false },
             ],
           },
@@ -1729,7 +2062,14 @@ describe("CodexAppServerAgent", () => {
         (u: any) => u.update?.sessionUpdate === "available_commands_update",
       ) as any
     )?.update?.availableCommands;
-    expect(cmds.map((c: { name: string }) => c.name)).toEqual(["deploy"]);
+    expect(cmds).toEqual([
+      {
+        name: "goal",
+        description: "Set or view the goal for a long-running task",
+        input: { hint: "[<objective>|clear|pause|resume]" },
+      },
+      { name: "deploy", description: "Deploy" },
+    ]);
   });
 
   it("emits _posthog/sdk_session when a taskRunId is present", async () => {
@@ -1800,7 +2140,19 @@ describe("CodexAppServerAgent", () => {
       },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    await done;
+    const result = await done;
+
+    expect(result).toEqual({
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 60,
+        outputTokens: 30,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 0,
+        thoughtTokens: 5,
+        totalTokens: 100,
+      },
+    });
 
     const turnComplete = extNotifications.find(
       (n) => n.method === "_posthog/turn_complete",
@@ -2492,6 +2844,16 @@ describe("CodexAppServerAgent", () => {
         text: "The implementation plan is ready.",
       },
     });
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 30,
+          inputTokens: 20,
+          outputTokens: 10,
+          reasoningOutputTokens: 2,
+        },
+      },
+    });
     stub.emit("turn/completed", {
       turn: { id: "turn_1", status: "completed" },
     });
@@ -2500,10 +2862,31 @@ describe("CodexAppServerAgent", () => {
     await waitUntil(
       () => stub.requests.filter((r) => r.method === "turn/start").length >= 2,
     );
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 50,
+          inputTokens: 35,
+          cachedInputTokens: 5,
+          outputTokens: 10,
+          reasoningOutputTokens: 3,
+        },
+      },
+    });
     stub.emit("turn/completed", {
       turn: { id: "turn_2", status: "completed" },
     });
-    expect((await done).stopReason).toBe("end_turn");
+    expect(await done).toEqual({
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 55,
+        outputTokens: 20,
+        cachedReadTokens: 5,
+        cachedWriteTokens: 0,
+        thoughtTokens: 5,
+        totalTokens: 80,
+      },
+    });
 
     // The approval renders as the plan-approval UI (switch_mode + the plan text).
     expect(permissionRequests).toHaveLength(1);

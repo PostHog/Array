@@ -14,6 +14,7 @@ import {
   type Adapter,
   type AgentSession,
   type CloudRegion,
+  classifyGatewayLimitError,
   type ExecutionMode,
   flattenSelectOptions,
   getBackoffDelay,
@@ -174,6 +175,7 @@ export interface SessionTrpc {
     retry: TrpcMutation;
     sendCommand: TrpcMutation;
     stop: TrpcMutation;
+    designateRelayedMcpServers: TrpcMutation;
     onUpdate: TrpcSubscription;
   };
   handoff: {
@@ -324,7 +326,6 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
-  updatePersistedConfigOptionValue: (...args: any[]) => any;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -335,6 +336,7 @@ export interface SessionServiceDeps {
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
     spokenNotifications?: boolean;
+    spokenNarrationEnabled?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1086,14 +1088,14 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions, rtkEnabledLocal, spokenNotifications } =
+      const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
         this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
-        spokenNarration: spokenNotifications === true,
+        spokenNarration: spokenNarrationEnabled === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1416,7 +1418,7 @@ export class SessionService {
     const {
       customInstructions: startCustomInstructions,
       rtkEnabledLocal,
-      spokenNotifications,
+      spokenNarrationEnabled,
     } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
@@ -1429,7 +1431,7 @@ export class SessionService {
       adapter,
       customInstructions: startCustomInstructions || undefined,
       rtkEnabled: rtkEnabledLocal,
-      spokenNarration: spokenNotifications === true,
+      spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
@@ -2713,15 +2715,18 @@ export class SessionService {
 
       this.d.store.clearOptimisticItems(session.taskRunId);
 
-      if (isRateLimitError(errorMessage, errorDetails)) {
-        this.d.log.warn("Rate limit exceeded, showing usage limit modal", {
+      const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
+
+      if (limitCause !== null || isRateLimitError(errorMessage, errorDetails)) {
+        this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
+          cause: limitCause,
         });
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show();
+        this.d.usageLimit.show(limitCause ? { cause: limitCause } : undefined);
         return { stopReason: "rate_limited" };
       }
 
@@ -4029,7 +4034,7 @@ export class SessionService {
     this.d.store.updateSession(session.taskRunId, {
       configOptions: updatedOptions,
     });
-    this.d.updatePersistedConfigOptionValue(session.taskRunId, configId, value);
+    this.d.setPersistedConfigOptions(session.taskRunId, updatedOptions);
 
     if (
       !session.isCloud &&
@@ -4054,20 +4059,25 @@ export class SessionService {
         });
       }
     } catch (error) {
-      // Rollback on error
-      const rolledBackOptions = configOptions.map((opt) =>
-        opt.id === configId
-          ? ({ ...opt, currentValue: previousValue } as SessionConfigOption)
-          : opt,
+      const latestConfigOptions =
+        this.d.store.getSessionByTaskId(taskId)?.configOptions ?? [];
+      const latestOption = latestConfigOptions.find(
+        (option) => option.id === configId,
       );
-      this.d.store.updateSession(session.taskRunId, {
-        configOptions: rolledBackOptions,
-      });
-      this.d.updatePersistedConfigOptionValue(
-        session.taskRunId,
-        configId,
-        String(previousValue),
-      );
+      if (latestOption?.currentValue === value) {
+        const rolledBackOptions = latestConfigOptions.map((option) =>
+          option.id === configId
+            ? ({
+                ...option,
+                currentValue: previousValue,
+              } as SessionConfigOption)
+            : option,
+        );
+        this.d.store.updateSession(session.taskRunId, {
+          configOptions: rolledBackOptions,
+        });
+        this.d.setPersistedConfigOptions(session.taskRunId, rolledBackOptions);
+      }
       this.d.log.error("Failed to set session config option", {
         taskId,
         configId,
@@ -4466,6 +4476,22 @@ export class SessionService {
    * status triggers full teardown from within handleCloudTaskUpdate via
    * stopCloudTaskWatch().
    */
+  /**
+   * Register this client as the relay executor for a run's desktop-only MCP
+   * servers (docs/cloud-mcp-relay.md). Called by the creation saga — only the
+   * creating client may execute relay requests.
+   */
+  async designateRelayedMcpServers(
+    runId: string,
+    servers: string[],
+  ): Promise<void> {
+    if (servers.length === 0) return;
+    await this.d.trpc.cloudTask.designateRelayedMcpServers.mutate({
+      runId,
+      servers,
+    });
+  }
+
   watchCloudTask(
     taskId: string,
     runId: string,
@@ -4483,8 +4509,33 @@ export class SessionService {
     runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
+    const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
+    const persistedAdapter = this.d.adapterStore.getAdapter(taskRunId);
+    const buildInitialConfigOptions = (
+      mode: string | undefined,
+      configAdapter: Adapter | undefined = persistedAdapter,
+    ): SessionConfigOption[] => {
+      const defaults = addMissingCloudRuntimeConfigOptions(
+        buildCloudDefaultConfigOptions(mode, adapter),
+        adapter,
+        initialModel,
+        initialReasoningEffort,
+      );
+      if (!persistedConfigOptions?.length) return defaults;
+      if (configAdapter && configAdapter !== adapter) return defaults;
+
+      const defaultIds = new Set(defaults.map((option) => option.id));
+      const completeOptions = [
+        ...defaults,
+        ...persistedConfigOptions.filter(
+          (option) => !defaultIds.has(option.id),
+        ),
+      ];
+      return mergeConfigOptions(completeOptions, persistedConfigOptions);
+    };
 
     if (this.supersededRunIds.has(runId)) return () => {};
+    this.d.adapterStore.setAdapter(taskRunId, adapter);
 
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
@@ -4512,11 +4563,9 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: addMissingCloudRuntimeConfigOptions(
-              buildCloudDefaultConfigOptions(currentMode, adapter),
-              adapter,
-              initialModel,
-              initialReasoningEffort,
+            configOptions: buildInitialConfigOptions(
+              currentMode,
+              existing.adapter,
             ),
           });
         } else {
@@ -4613,11 +4662,9 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = addMissingCloudRuntimeConfigOptions(
-        buildCloudDefaultConfigOptions(initialMode, adapter),
-        adapter,
-        initialModel,
-        initialReasoningEffort,
+      session.configOptions = buildInitialConfigOptions(
+        initialMode,
+        existing?.taskRunId === taskRunId ? existing.adapter : persistedAdapter,
       );
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
@@ -4636,11 +4683,9 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = addMissingCloudRuntimeConfigOptions(
-          buildCloudDefaultConfigOptions(currentMode, adapter),
-          adapter,
-          initialModel,
-          initialReasoningEffort,
+        updates.configOptions = buildInitialConfigOptions(
+          currentMode,
+          existing.adapter,
         );
       } else {
         const configOptions = addMissingCloudRuntimeConfigOptions(

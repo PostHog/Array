@@ -28,10 +28,16 @@ describe("getPostHogUrl", () => {
 
 describe("getBillingUrl", () => {
   it.each([
-    ["us", "https://us.posthog.com/organization/billing/overview"],
-    ["eu", "https://eu.posthog.com/organization/billing/overview"],
+    [
+      "us",
+      "https://us.posthog.com/organization/billing/overview?products=posthog_code_usage",
+    ],
+    [
+      "eu",
+      "https://eu.posthog.com/organization/billing/overview?products=posthog_code_usage",
+    ],
   ] as const)(
-    "points at /organization/billing/overview on %s",
+    "points at /organization/billing/overview?products=posthog_code_usage on %s",
     (region, expected) => {
       expect(getBillingUrl(region)).toBe(expected);
     },

@@ -8,12 +8,14 @@ import {
 } from "@phosphor-icons/react";
 import { repoMatchesGitHubRepos } from "@posthog/core/onboarding/repoProvider";
 import { cn } from "@posthog/quill";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Box, Button, Flex, Text } from "@radix-ui/themes";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo } from "react";
 import { builderHog } from "../../../assets/hedgehogs";
 import { OnboardingHogTip } from "../../../primitives/OnboardingHogTip";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
+import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
 import { useUserRepositoryIntegration } from "../../integrations/useIntegrations";
 import type { DetectedRepo } from "../types";
 import { OptionalBadge } from "./OptionalBadge";
@@ -37,7 +39,13 @@ export function SelectRepoStep({
   isDetectingRepo,
   onDirectoryChange,
 }: SelectRepoStepProps) {
-  const { repositories } = useUserRepositoryIntegration();
+  const { localWorkspaces } = useHostCapabilities();
+  const {
+    repositories,
+    isLoadingRepos,
+    isRefreshingRepos,
+    refreshRepositories,
+  } = useUserRepositoryIntegration();
 
   const repoMatchesGitHub = useMemo(
     () => repoMatchesGitHubRepos(detectedRepo, repositories),
@@ -96,18 +104,31 @@ export function SelectRepoStep({
                         </Text>
                       </Flex>
                       <Text className="text-(--gray-11) text-sm">
-                        Select a single repository folder, not a parent folder
-                        that contains multiple repos.
+                        {localWorkspaces
+                          ? "Select a single repository folder, not a parent folder that contains multiple repos."
+                          : "Pick a repository from your connected GitHub organizations."}
                       </Text>
                     </Flex>
-                    <FolderPicker
-                      variant="field"
-                      value={selectedDirectory}
-                      onChange={onDirectoryChange}
-                      placeholder="Select repository..."
-                    />
+                    {localWorkspaces ? (
+                      <FolderPicker
+                        variant="field"
+                        value={selectedDirectory}
+                        onChange={onDirectoryChange}
+                        placeholder="Select repository..."
+                      />
+                    ) : (
+                      <GitHubRepoPicker
+                        value={selectedDirectory || null}
+                        onChange={(repo) => onDirectoryChange(repo ?? "")}
+                        repositories={repositories}
+                        isLoading={isLoadingRepos}
+                        onRefresh={refreshRepositories}
+                        isRefreshing={isRefreshingRepos}
+                        placeholder="Select repository..."
+                      />
+                    )}
                     <AnimatePresence mode="wait">
-                      {isDetectingRepo && (
+                      {localWorkspaces && isDetectingRepo && (
                         <motion.div
                           key="detecting"
                           initial={{ opacity: 0 }}
@@ -126,7 +147,8 @@ export function SelectRepoStep({
                           </Flex>
                         </motion.div>
                       )}
-                      {!isDetectingRepo &&
+                      {localWorkspaces &&
+                        !isDetectingRepo &&
                         selectedDirectory &&
                         detectedRepo && (
                           <motion.div
@@ -161,7 +183,8 @@ export function SelectRepoStep({
                             </Flex>
                           </motion.div>
                         )}
-                      {!isDetectingRepo &&
+                      {localWorkspaces &&
+                        !isDetectingRepo &&
                         selectedDirectory &&
                         !detectedRepo && (
                           <motion.div

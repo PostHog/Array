@@ -37,12 +37,12 @@ import {
 
 @injectable()
 export class TokenCipherPortAdapter implements IAuthTokenCipher {
-  encrypt(plaintext: string): string {
-    return encrypt(plaintext);
+  encrypt(plaintext: string): Promise<string> {
+    return Promise.resolve(encrypt(plaintext));
   }
 
-  decrypt(encrypted: string): string | null {
-    return decrypt(encrypted);
+  decrypt(encrypted: string): Promise<string | null> {
+    return Promise.resolve(decrypt(encrypted));
   }
 }
 

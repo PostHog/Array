@@ -21,6 +21,7 @@ import {
   buildPrOutput,
   getErrorMessage,
   mergePrUrls,
+  readMcpToolDescriptor,
   readPrUrls,
 } from "@posthog/shared";
 import { unzipSync } from "fflate";
@@ -32,6 +33,7 @@ import {
   createAcpConnection,
   type InProcessAcpConnection,
 } from "../adapters/acp-connection";
+import { setAlwaysAskMcpServers } from "../adapters/claude/mcp/tool-metadata";
 import {
   getSessionJsonlPath,
   hydrateSessionJsonl,
@@ -43,6 +45,7 @@ import {
   classifyAgentError,
   isPromptTooLongError,
 } from "../adapters/error-classification";
+import { appendRtkGuidanceForCodex } from "../adapters/rtk-guidance";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
   SIGNED_MERGE_QUALIFIED_TOOL_NAME,
@@ -90,11 +93,13 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { type McpRelayResponse, McpRelayServer } from "./mcp-relay-server";
 import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
+  type RemoteMcpServer,
   validateCommandParams,
 } from "./schemas";
 import type { AgentServerConfig } from "./types";
@@ -368,6 +373,8 @@ export class AgentServer {
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
+  /** ACP notifications emitted by newSession/resumeSession before this.session is assigned. */
+  private preSessionEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
   private pendingCompactContinuationMessageIds = new Set<string>();
   private pendingPermissions = new Map<
@@ -380,6 +387,29 @@ export class AgentServer {
       toolCallId?: string;
     }
   >();
+  private mcpRelayServer: McpRelayServer | null = null;
+
+  /**
+   * Start loopback relay endpoints for the run's designated desktop-only MCP
+   * servers and return their session mcpServers entries. No designations →
+   * no relay server, no entries.
+   */
+  private async startMcpRelayServer(): Promise<RemoteMcpServer[]> {
+    const names = this.config.relayMcpServers ?? [];
+    if (names.length === 0) return [];
+    if (!this.mcpRelayServer) {
+      this.mcpRelayServer = new McpRelayServer({
+        servers: names,
+        emitEvent: (event) => this.broadcastEvent(event),
+        hasReachableClient: () => this.hasReachableClient(),
+        logger: this.logger,
+      });
+      await this.mcpRelayServer.start();
+      // Relayed tools execute on the user's machine — always ask.
+      setAlwaysAskMcpServers(names);
+    }
+    return this.mcpRelayServer.mcpServers;
+  }
 
   private detachSseController(controller: SseController): void {
     if (this.session?.sseController === controller) {
@@ -455,6 +485,17 @@ export class AgentServer {
     }
 
     return this.getRuntimeAdapter() === "codex" ? "auto" : "default";
+  }
+
+  // A direct SSE viewer or an active durable event stream both count: the
+  // desktop reads the durable stream through the agent-proxy without ever
+  // connecting to the sandbox, so requiring hasDesktopConnected alone would
+  // 503/auto-deny every relayed request and permission prompt.
+  private hasReachableClient(): boolean {
+    return (
+      Boolean(this.session?.hasDesktopConnected) ||
+      this.eventStreamSender !== null
+    );
   }
 
   private shouldRelayPermissionToClient(mode: PermissionMode): boolean {
@@ -800,6 +841,13 @@ export class AgentServer {
     return { sessionId: priorSessionId, warm };
   }
 
+  private getNativeGoalForFreshSession(
+    runtimeAdapter: Adapter,
+  ): ResumeState["nativeGoal"] {
+    if (runtimeAdapter !== "codex") return undefined;
+    return this.resumeState?.nativeGoal;
+  }
+
   async stop(): Promise<void> {
     this.logger.debug("Stopping agent server...");
 
@@ -1134,13 +1182,31 @@ export class AgentServer {
           return { refreshed: true };
         }
 
+        // refresh_session replaces the session's MCP server list wholesale, and
+        // Django's refresh rebuilds it from posthog + user + imported configs —
+        // it can't include the relay loopback entries, whose URL and per-run
+        // bearer live only here. Re-append them so a mid-run refresh (token
+        // rotation, follow-up past the refresh window) doesn't silently drop
+        // every relayed server from the session.
+        const relayServers = this.mcpRelayServer?.mcpServers ?? [];
+        const refreshedMcpServers = [
+          ...mcpServers,
+          ...relayServers.filter(
+            (relay) =>
+              !mcpServers.some(
+                (s: { name?: unknown }) => s?.name === relay.name,
+              ),
+          ),
+        ];
+
         this.logger.debug("Refresh session requested", {
-          serverCount: mcpServers.length,
+          serverCount: refreshedMcpServers.length,
+          relayServerCount: relayServers.length,
         });
 
         return await this.session.clientConnection.extMethod(
           POSTHOG_METHODS.REFRESH_SESSION,
-          { mcpServers },
+          { mcpServers: refreshedMcpServers },
         );
       }
 
@@ -1165,6 +1231,26 @@ export class AgentServer {
         if (!resolved) {
           throw new Error(
             `No pending permission request found for id: ${requestId}`,
+          );
+        }
+        return { resolved: true };
+      }
+
+      case POSTHOG_NOTIFICATIONS.MCP_RESPONSE:
+      case "mcp_response": {
+        const resolved = this.mcpRelayServer?.resolveResponse(
+          params as unknown as McpRelayResponse,
+        );
+        // Logged so the desktop's response behavior is visible from the
+        // readable sandbox side, not just the (often invisible) desktop logs.
+        this.logger.debug("MCP relay response received", {
+          requestId: String(params.requestId),
+          server: String(params.server),
+          resolved,
+        });
+        if (!resolved) {
+          throw new Error(
+            `No pending MCP relay request found for id: ${String(params.requestId)}`,
           );
         }
         return { resolved: true };
@@ -1220,6 +1306,7 @@ export class AgentServer {
 
     this.resumeState = null;
     this.nativeResume = null;
+    this.preSessionEvents = [];
     this.prewarmedRun = false;
     this.warmAutoPublishResolved = false;
 
@@ -1269,8 +1356,11 @@ export class AgentServer {
     });
 
     if (this.config.repoReadyFile && gatewayEnv.anthropicBaseUrl) {
+      // Authed so this cache-warm matches the session's own authed fetch
+      // (the models cache is keyed on auth presence).
       void fetchGatewayModels({
         gatewayUrl: gatewayEnv.anthropicBaseUrl,
+        authToken: gatewayEnv.anthropicAuthToken,
       }).catch(() => {});
     }
 
@@ -1427,6 +1517,14 @@ export class AgentServer {
       sessionCwd,
       initialPermissionMode,
     );
+    let effectiveSessionMeta: typeof sessionMeta & {
+      nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
+    } = sessionMeta;
+
+    const sessionMcpServers = [
+      ...(this.config.mcpServers ?? []),
+      ...(await this.startMcpRelayServer()),
+    ];
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
@@ -1434,8 +1532,8 @@ export class AgentServer {
         await clientConnection.resumeSession({
           sessionId: nativeResume.sessionId,
           cwd: sessionCwd,
-          mcpServers: this.config.mcpServers ?? [],
-          _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+          mcpServers: sessionMcpServers,
+          _meta: { ...effectiveSessionMeta, sessionId: nativeResume.sessionId },
         });
         acpSessionId = nativeResume.sessionId;
         this.nativeResume = nativeResume;
@@ -1454,10 +1552,15 @@ export class AgentServer {
       }
     }
     if (!acpSessionId) {
+      const restoredNativeGoal =
+        this.getNativeGoalForFreshSession(runtimeAdapter);
+      effectiveSessionMeta = restoredNativeGoal
+        ? { ...sessionMeta, nativeGoal: restoredNativeGoal }
+        : sessionMeta;
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,
-        mcpServers: this.config.mcpServers ?? [],
-        _meta: sessionMeta,
+        mcpServers: sessionMcpServers,
+        _meta: effectiveSessionMeta,
       });
       acpSessionId = sessionResponse.sessionId;
       this.logger.debug("ACP session created", {
@@ -1480,8 +1583,9 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
-      sessionMeta,
+      sessionMeta: effectiveSessionMeta,
     };
+    this.flushPreSessionEvents();
 
     this.logger = new Logger({
       debug: true,
@@ -2919,9 +3023,11 @@ export class AgentServer {
   private buildCodexInstructions(
     systemPrompt: string | { append: string },
   ): string {
-    return typeof systemPrompt === "string"
-      ? systemPrompt
-      : systemPrompt.append;
+    const instructions =
+      typeof systemPrompt === "string" ? systemPrompt : systemPrompt.append;
+    // Codex has no command-rewrite hook (see rtk-guidance.ts), so RTK is
+    // adopted through the developer instructions instead.
+    return appendRtkGuidanceForCodex(instructions);
   }
 
   /**
@@ -3549,6 +3655,45 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           }
         }
 
+        // Tools on relayed MCP servers execute on the user's machine with
+        // their local privileges: always ask, regardless of permission mode
+        // (docs/cloud-mcp-relay.md). Without a reachable client, deny rather
+        // than auto-approve.
+        {
+          // Read the MCP server through the adapter-neutral `_meta.posthog`
+          // channel (codex writes `_meta.posthog.mcp`, Claude writes the legacy
+          // `_meta.claudeCode.toolName`; readMcpToolDescriptor handles both),
+          // falling back to Claude's `rawInput.toolName`. Keying off only the
+          // Claude channel would silently skip this gate for codex and let a
+          // relayed tool auto-run in non-asking modes.
+          const rawInput = params.toolCall?.rawInput as
+            | { toolName?: string }
+            | undefined;
+          const mcpServerName =
+            readMcpToolDescriptor(params.toolCall?._meta)?.server ??
+            (typeof rawInput?.toolName === "string" &&
+            rawInput.toolName.startsWith("mcp__")
+              ? rawInput.toolName.split("__")[1]
+              : undefined);
+          if (
+            mcpServerName &&
+            (this.config.relayMcpServers ?? []).includes(mcpServerName)
+          ) {
+            if (mode !== "background" && this.hasReachableClient()) {
+              return this.relayPermissionToClient(params);
+            }
+            return {
+              outcome: { outcome: "cancelled" as const },
+              _meta: {
+                message:
+                  "This tool runs on the user's machine via the MCP relay and " +
+                  "requires their explicit approval, but no client is available " +
+                  "to approve it. Do NOT retry; tell the user what you wanted to do.",
+              },
+            };
+          }
+        }
+
         // Relay permission requests to the connected client when:
         // - Plan approvals: always relay because they gate autonomy changes
         //   that require human confirmation (buffered until desktop connects)
@@ -3564,15 +3709,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
             sessionPermissionMode,
           );
 
-          // With durable event ingest nothing connects to GET /events, so
-          // hasDesktopConnected stays false even while the web/desktop task
-          // views follow the run through the agent-proxy stream. Those views
-          // render permission_request frames and answer via
-          // permission_response, so an active event stream counts as a
-          // reachable client for questions.
-          const hasReachableClient =
-            Boolean(this.session?.hasDesktopConnected) ||
-            this.eventStreamSender !== null;
+          const hasReachableClient = this.hasReachableClient();
 
           // A background run has no human to answer a relayed approval
           // (hasDesktopConnected is true from the event-relay reader), so
@@ -3951,6 +4088,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       this.logger.error("Failed to flush session logs", error);
     }
 
+    if (this.mcpRelayServer) {
+      await this.mcpRelayServer.stop();
+      this.mcpRelayServer = null;
+    }
+
     // Drain pending permissions before ACP cleanup to avoid deadlocks —
     // cleanup may await operations that are blocked on a permission response.
     for (const [, pending] of this.pendingPermissions) {
@@ -3977,6 +4119,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     this.pendingEvents = [];
+    this.preSessionEvents = [];
     this.lastReportedBranch = null;
     // Run usage is per run: a later session on this instance (e.g. a resume
     // with a different run_id) must not inherit the previous run's totals.
@@ -4098,11 +4241,16 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       }
       this.adapterEmittedTurnComplete = true;
     }
-    this.broadcastEvent({
+    const event = {
       type: "notification",
       timestamp: new Date().toISOString(),
       notification: message,
-    });
+    };
+    if (!this.session) {
+      this.preSessionEvents.push(event);
+      return;
+    }
+    this.broadcastEvent(event);
   }
 
   private broadcastTurnComplete(stopReason: string): void {
@@ -4133,15 +4281,24 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   }
 
   private broadcastEvent(event: Record<string, unknown>): void {
-    if (!this.session) return;
-
     this.eventStreamSender?.enqueue(event);
 
     if (this.session?.sseController) {
       this.sendSseEvent(this.session.sseController, event);
     } else {
-      // Buffer events during initialization (sseController not yet attached)
+      // Buffers events raised before a session exists yet (e.g. an MCP relay
+      // request fired the instant the client subprocess starts, ahead of
+      // `this.session` assignment) or before its SSE controller attaches.
       this.pendingEvents.push(event);
+    }
+  }
+
+  private flushPreSessionEvents(): void {
+    if (!this.session || this.preSessionEvents.length === 0) return;
+    const events = this.preSessionEvents;
+    this.preSessionEvents = [];
+    for (const event of events) {
+      this.broadcastEvent(event);
     }
   }
 

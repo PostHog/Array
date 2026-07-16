@@ -86,7 +86,23 @@ export const POSTHOG_NOTIFICATIONS = {
 
   /** RTK output-compression token savings tallied at the end of a run */
   RTK_SAVINGS: "_posthog/rtk_savings",
+
+  /** Latest native Codex goal state, persisted so cold cloud resumes can restore it. */
+  CODEX_GOAL: "_posthog/codex_goal",
+  /** Desktop → sandbox reply to an MCP relay request (docs/cloud-mcp-relay.md). */
+  MCP_RESPONSE: "_posthog/mcp_response",
 } as const;
+
+export type NativeGoalState = {
+  objective: string;
+  status:
+    | "active"
+    | "paused"
+    | "blocked"
+    | "usageLimited"
+    | "budgetLimited"
+    | "complete";
+};
 
 /**
  * Custom request methods for PostHog-specific operations that need a response

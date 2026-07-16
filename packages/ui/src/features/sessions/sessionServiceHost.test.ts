@@ -189,10 +189,11 @@ vi.mock("@features/sessions/stores/modelsStore", () => ({
 }));
 
 const mockSessionConfigStore = vi.hoisted(() => ({
-  getPersistedConfigOptions: vi.fn(() => undefined),
+  getPersistedConfigOptions: vi.fn<
+    (taskRunId: string) => SessionConfigOption[] | undefined
+  >(() => undefined),
   setPersistedConfigOptions: vi.fn(),
   removePersistedConfigOptions: vi.fn(),
-  updatePersistedConfigOptionValue: vi.fn(),
 }));
 
 vi.mock(
@@ -235,8 +236,14 @@ const mockSpeechNotifier = vi.hoisted(() => ({
   speak: vi.fn(),
 }));
 
+const mockFeatureFlags = vi.hoisted(() => ({
+  isEnabled: vi.fn(() => false),
+  onFlagsLoaded: vi.fn(() => vi.fn()),
+}));
+
 const mockSettingsState = vi.hoisted(() => ({
   customInstructions: "",
+  spokenNotifications: false,
   syncCustomInstructionsFromFile: false,
   syncedCustomInstructions: null as {
     path: string;
@@ -313,6 +320,9 @@ vi.mock("@posthog/di/container", () => ({
     if (typeof token === "function" && token.name === "SpeechNotifier") {
       return mockSpeechNotifier;
     }
+    if (token === Symbol.for("posthog.ui.featureFlags")) {
+      return mockFeatureFlags;
+    }
     throw new Error(`resolveService: unmocked token ${String(token)}`);
   },
 }));
@@ -320,7 +330,8 @@ vi.mock("@posthog/shared", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@posthog/shared")>()),
   getCloudUrlFromRegion: () => "https://api.anthropic.com",
   getConfigOptionByCategory: mockGetConfigOptionByCategory,
-  mergeConfigOptions: vi.fn((live: unknown[], _persisted: unknown[]) => live),
+  mergeConfigOptions: (await importOriginal<typeof import("@posthog/shared")>())
+    .mergeConfigOptions,
   flattenSelectOptions: vi.fn(
     (options: Array<{ options?: unknown[] }> | undefined) => {
       if (!options?.length) return [];
@@ -380,7 +391,11 @@ vi.mock("@posthog/core/sessions/sessionEvents", async () => {
 });
 
 import { toast } from "@posthog/ui/primitives/toast";
-import { getSessionService, resetSessionService } from "./sessionServiceHost";
+import {
+  getSessionService,
+  resetSessionService,
+  shouldEnableSpokenNarration,
+} from "./sessionServiceHost";
 
 // --- Test Fixtures ---
 
@@ -424,12 +439,16 @@ describe("SessionService", () => {
     mockConvertStoredEntriesToEvents.mockImplementation(() => []);
     resetSessionService();
     mockSettingsState.customInstructions = "";
+    mockSettingsState.spokenNotifications = false;
+    mockFeatureFlags.isEnabled.mockReturnValue(false);
     mockSettingsState.syncCustomInstructionsFromFile = false;
     mockSettingsState.syncedCustomInstructions = null;
     mockGetIsOnline.mockReturnValue(true);
     mockGetConfigOptionByCategory.mockReturnValue(undefined);
     mockBuildAuthenticatedClient.mockReturnValue(mockAuthenticatedClient);
     mockAuthenticatedClient.getTaskRunSessionLogs.mockResolvedValue([]);
+    mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue(undefined);
+    mockAdapterFns.getAdapter.mockReturnValue(undefined);
     mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
     mockSessionStoreSetters.getSessions.mockReturnValue({});
     mockAuth.fetchAuthState.mockResolvedValue({
@@ -508,6 +527,42 @@ describe("SessionService", () => {
     it("handles reset when no instance exists", () => {
       expect(() => resetSessionService()).not.toThrow();
     });
+  });
+
+  describe("spoken narration availability", () => {
+    it.each([
+      {
+        userOptedIn: true,
+        flagEnabled: true,
+        isDevelopment: false,
+        expected: true,
+      },
+      {
+        userOptedIn: false,
+        flagEnabled: true,
+        isDevelopment: false,
+        expected: false,
+      },
+      {
+        userOptedIn: true,
+        flagEnabled: false,
+        isDevelopment: false,
+        expected: false,
+      },
+      {
+        userOptedIn: true,
+        flagEnabled: false,
+        isDevelopment: true,
+        expected: true,
+      },
+    ])(
+      "returns $expected for opt-in=$userOptedIn flag=$flagEnabled dev=$isDevelopment",
+      ({ userOptedIn, flagEnabled, isDevelopment, expected }) => {
+        expect(
+          shouldEnableSpokenNarration(userOptedIn, flagEnabled, isDevelopment),
+        ).toBe(expected);
+      },
+    );
   });
 
   describe("connectToTask", () => {
@@ -976,6 +1031,176 @@ describe("SessionService", () => {
             }),
           ],
         }),
+      );
+    });
+
+    it("keeps full-access after changing tasks and rebuilding the cloud session", async () => {
+      let persistedConfigOptions: SessionConfigOption[] | undefined;
+      mockSessionConfigStore.setPersistedConfigOptions.mockImplementation(
+        (_taskRunId, options) => {
+          persistedConfigOptions = options;
+        },
+      );
+      mockSessionConfigStore.getPersistedConfigOptions.mockImplementation(
+        () => persistedConfigOptions,
+      );
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          adapter: "codex",
+          cloudStatus: "in_progress",
+          configOptions: [
+            {
+              id: "mode",
+              name: "Approval Preset",
+              type: "select",
+              category: "mode",
+              currentValue: "auto",
+              options: [],
+            },
+            {
+              id: "model",
+              name: "Model",
+              type: "select",
+              category: "model",
+              currentValue: "gpt-5.5",
+              options: [],
+            },
+          ],
+        }),
+      );
+      mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({ success: true });
+
+      const initialService = getSessionService();
+      await initialService.setSessionConfigOption(
+        "task-123",
+        "mode",
+        "full-access",
+      );
+      expect(persistedConfigOptions).toEqual([
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "full-access",
+        }),
+        expect.objectContaining({
+          id: "model",
+          currentValue: "gpt-5.5",
+        }),
+      ]);
+
+      resetSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(undefined);
+      mockSessionStoreSetters.setSession.mockClear();
+      const restoredService = getSessionService();
+      restoredService.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.example.com",
+        123,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+      );
+
+      expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          configOptions: expect.arrayContaining([
+            expect.objectContaining({
+              id: "mode",
+              currentValue: "full-access",
+            }),
+            expect.objectContaining({
+              id: "model",
+              currentValue: "gpt-5.5",
+            }),
+          ]),
+        }),
+      );
+
+      mockSessionConfigStore.getPersistedConfigOptions.mockReset();
+      mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue(
+        undefined,
+      );
+      mockSessionConfigStore.setPersistedConfigOptions.mockReset();
+    });
+
+    it("drops persisted options when the cloud adapter changes", () => {
+      const service = getSessionService();
+      mockAdapterFns.getAdapter.mockReturnValue("claude");
+      mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue([
+        {
+          id: "mode",
+          name: "Mode",
+          type: "select",
+          category: "mode",
+          currentValue: "acceptEdits",
+          options: [],
+        },
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "claude-opus-4-8",
+          options: [],
+        },
+        {
+          id: "effort",
+          name: "Effort",
+          type: "select",
+          category: "thought_level",
+          currentValue: "high",
+          options: [],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-adapter-change",
+        "run-adapter-change",
+        "https://api.example.com",
+        123,
+        undefined,
+        undefined,
+        "auto",
+        "codex",
+        "gpt-5.5",
+        undefined,
+        undefined,
+        undefined,
+        "max",
+      );
+
+      expect(mockSessionStoreSetters.setSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adapter: "codex",
+          configOptions: expect.arrayContaining([
+            expect.objectContaining({
+              category: "mode",
+              currentValue: "auto",
+            }),
+            expect.objectContaining({
+              category: "model",
+              currentValue: "gpt-5.5",
+            }),
+            expect.objectContaining({
+              category: "thought_level",
+              currentValue: "max",
+            }),
+          ]),
+        }),
+      );
+      const session = mockSessionStoreSetters.setSession.mock.calls.at(-1)?.[0];
+      expect(session?.configOptions).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ currentValue: "acceptEdits" }),
+          expect.objectContaining({ currentValue: "claude-opus-4-8" }),
+          expect.objectContaining({ id: "effort" }),
+        ]),
+      );
+      expect(mockAdapterFns.setAdapter).toHaveBeenCalledWith(
+        "run-adapter-change",
+        "codex",
       );
     });
 
@@ -4862,6 +5087,8 @@ describe("SessionService", () => {
 
     it("preserves codex runtime selection when resuming a terminal cloud run", async () => {
       const service = getSessionService();
+      mockSettingsState.spokenNotifications = true;
+      mockFeatureFlags.isEnabled.mockReturnValue(true);
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
         createMockSession({
           isCloud: true,
@@ -6549,8 +6776,13 @@ describe("SessionService", () => {
         },
       );
       expect(
-        mockSessionConfigStore.updatePersistedConfigOptionValue,
-      ).toHaveBeenCalledWith("run-123", "model", "claude-3-sonnet");
+        mockSessionConfigStore.setPersistedConfigOptions,
+      ).toHaveBeenCalledWith("run-123", [
+        expect.objectContaining({
+          id: "model",
+          currentValue: "claude-3-sonnet",
+        }),
+      ]);
       expect(mockTrpcAgent.setConfigOption.mutate).toHaveBeenCalledWith({
         sessionId: "run-123",
         configId: "model",
@@ -6560,19 +6792,25 @@ describe("SessionService", () => {
 
     it("rolls back on API failure", async () => {
       const service = getSessionService();
-      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
-        createMockSession({
-          configOptions: [
-            {
-              id: "mode",
-              name: "Mode",
-              type: "select",
-              category: "mode",
-              currentValue: "default",
-              options: [],
-            },
-          ],
-        }),
+      let currentSession = createMockSession({
+        configOptions: [
+          {
+            id: "mode",
+            name: "Mode",
+            type: "select",
+            category: "mode",
+            currentValue: "default",
+            options: [],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => currentSession,
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          currentSession = { ...currentSession, ...updates };
+        },
       );
       mockTrpcAgent.setConfigOption.mutate.mockRejectedValue(
         new Error("Failed"),
@@ -6580,25 +6818,96 @@ describe("SessionService", () => {
 
       await service.setSessionConfigOption("task-123", "mode", "acceptEdits");
 
-      // Should rollback
-      expect(mockSessionStoreSetters.updateSession).toHaveBeenLastCalledWith(
-        "run-123",
-        {
-          configOptions: [
-            {
-              id: "mode",
-              name: "Mode",
-              type: "select",
-              category: "mode",
-              currentValue: "default",
-              options: [],
-            },
-          ],
+      expect(currentSession.configOptions).toEqual([
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "default",
+        }),
+      ]);
+      expect(
+        mockSessionConfigStore.setPersistedConfigOptions,
+      ).toHaveBeenLastCalledWith("run-123", [
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "default",
+        }),
+      ]);
+    });
+
+    it("preserves a newer successful config change during rollback", async () => {
+      const service = getSessionService();
+      let currentSession = createMockSession({
+        configOptions: [
+          {
+            id: "mode",
+            name: "Mode",
+            type: "select",
+            category: "mode",
+            currentValue: "default",
+            options: [],
+          },
+          {
+            id: "model",
+            name: "Model",
+            type: "select",
+            category: "model",
+            currentValue: "claude-3-opus",
+            options: [],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockImplementation(
+        () => currentSession,
+      );
+      mockSessionStoreSetters.updateSession.mockImplementation(
+        (_taskRunId, updates) => {
+          currentSession = { ...currentSession, ...updates };
         },
       );
+
+      let rejectModeChange: (error: Error) => void = () => undefined;
+      const pendingModeChange = new Promise<never>((_resolve, reject) => {
+        rejectModeChange = reject;
+      });
+      mockTrpcAgent.setConfigOption.mutate.mockImplementation(({ configId }) =>
+        configId === "mode" ? pendingModeChange : Promise.resolve({}),
+      );
+
+      const modeChange = service.setSessionConfigOption(
+        "task-123",
+        "mode",
+        "acceptEdits",
+      );
+      await service.setSessionConfigOption(
+        "task-123",
+        "model",
+        "claude-3-sonnet",
+      );
+      rejectModeChange(new Error("Mode change failed"));
+      await modeChange;
+
+      expect(currentSession.configOptions).toEqual([
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "default",
+        }),
+        expect.objectContaining({
+          id: "model",
+          currentValue: "claude-3-sonnet",
+        }),
+      ]);
       expect(
-        mockSessionConfigStore.updatePersistedConfigOptionValue,
-      ).toHaveBeenLastCalledWith("run-123", "mode", "default");
+        mockSessionConfigStore.setPersistedConfigOptions,
+      ).toHaveBeenLastCalledWith("run-123", [
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "default",
+        }),
+        expect.objectContaining({
+          id: "model",
+          currentValue: "claude-3-sonnet",
+        }),
+      ]);
     });
 
     it("skips backend call when local session is idle-killed so reconnect restore handles it", async () => {
@@ -6640,8 +6949,13 @@ describe("SessionService", () => {
         },
       );
       expect(
-        mockSessionConfigStore.updatePersistedConfigOptionValue,
-      ).toHaveBeenCalledWith("run-123", "mode", "acceptEdits");
+        mockSessionConfigStore.setPersistedConfigOptions,
+      ).toHaveBeenCalledWith("run-123", [
+        expect.objectContaining({
+          id: "mode",
+          currentValue: "acceptEdits",
+        }),
+      ]);
     });
 
     it("skips backend call when local session is reconnecting (disconnected status)", async () => {

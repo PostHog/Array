@@ -2,6 +2,8 @@ import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type {
   Adapter,
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   CloudRunSource,
   ExecutionMode,
   PrAuthorshipMode,
@@ -615,6 +617,12 @@ interface CloudRunOptions {
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
   homeQuickAction?: string;
+  /**
+   * Local url-based MCP servers to make available inside the sandbox. The
+   * backend merges these into the agent server's `--mcpServers` at spawn.
+   */
+  importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -708,6 +716,12 @@ function buildCloudRunRequestBody(
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
+  }
+  if (options?.importedMcpServers?.length) {
+    body.imported_mcp_servers = options.importedMcpServers;
+  }
+  if (options?.relayedMcpServers?.length) {
+    body.relayed_mcp_servers = options.relayedMcpServers;
   }
 
   return body;
@@ -2803,6 +2817,8 @@ export class PostHogAPIClient {
     runtime_adapter?: string | null;
     model?: string | null;
     reasoning_effort?: string | null;
+    sandbox_environment_id?: string | null;
+    custom_image_id?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/warm/`;
@@ -2819,6 +2835,12 @@ export class PostHogAPIClient {
           runtime_adapter: options.runtime_adapter ?? null,
           model: options.model ?? null,
           reasoning_effort: options.reasoning_effort ?? null,
+          ...(options.sandbox_environment_id
+            ? { sandbox_environment_id: options.sandbox_environment_id }
+            : {}),
+          ...(options.custom_image_id
+            ? { custom_image_id: options.custom_image_id }
+            : {}),
         }),
       },
     });
