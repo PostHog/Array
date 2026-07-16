@@ -77,7 +77,7 @@ export function McpServersView() {
     reauthorizePending,
   } = useMcpServers();
 
-  const localServers = useLocalMcpCloudServers(true);
+  const { servers: localServers } = useLocalMcpCloudServers(true);
 
   useEffect(() => {
     const refreshMcpState = () => {

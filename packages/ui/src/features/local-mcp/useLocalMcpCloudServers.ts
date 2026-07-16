@@ -9,6 +9,13 @@ import { useQuery } from "@tanstack/react-query";
 // Stable identity so consumers' memo deps don't churn while data is absent.
 const NO_SERVERS: LocalMcpCloudClassification[] = [];
 
+export interface LocalMcpCloudServersResult {
+  servers: LocalMcpCloudClassification[];
+  /** True only during the initial fetch while enabled — false once resolved,
+   *  and false while disabled, so a disabled query never blocks a caller. */
+  isLoading: boolean;
+}
+
 /**
  * The user's local (~/.claude.json) MCP servers classified by cloud
  * availability. Empty on hosts without a local workspace (web/mobile — the
@@ -16,7 +23,7 @@ const NO_SERVERS: LocalMcpCloudClassification[] = [];
  */
 export function useLocalMcpCloudServers(
   enabled: boolean,
-): LocalMcpCloudClassification[] {
+): LocalMcpCloudServersResult {
   const service = useServiceOptional<LocalMcpImportService>(
     LOCAL_MCP_IMPORT_SERVICE,
   );
@@ -28,5 +35,5 @@ export function useLocalMcpCloudServers(
     staleTime: 30_000,
   });
 
-  return query.data ?? NO_SERVERS;
+  return { servers: query.data ?? NO_SERVERS, isLoading: query.isLoading };
 }
