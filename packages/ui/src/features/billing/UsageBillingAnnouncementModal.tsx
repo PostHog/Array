@@ -91,8 +91,8 @@ export function UsageBillingAnnouncementModal() {
                 </>
               ) : (
                 <>
-                  • A default <Text weight="medium">$50/month</Text> spend
-                  limit applies — adjust it any time in billing settings.
+                  • A default <Text weight="medium">$50/month</Text> spend limit
+                  applies — adjust it any time in billing settings.
                 </>
               )}
             </Text>

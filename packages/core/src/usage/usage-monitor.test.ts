@@ -260,9 +260,7 @@ describe("UsageMonitorService", () => {
       service = makeService(mockGateway(usage), makeActivityMonitor());
       const thresholds: unknown[] = [];
       const updates: unknown[] = [];
-      service.on(UsageMonitorEvent.ThresholdCrossed, (e) =>
-        thresholds.push(e),
-      );
+      service.on(UsageMonitorEvent.ThresholdCrossed, (e) => thresholds.push(e));
       service.on(UsageMonitorEvent.UsageUpdated, (u) => updates.push(u));
 
       await service.fetchOnce();
