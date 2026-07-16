@@ -28,6 +28,8 @@ interface Props {
   runtimeAdapter?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
 }
 
 const cloudTyping: Props = {
@@ -197,6 +199,41 @@ describe("useWarmTask", () => {
       runtime_adapter: "codex",
       model: "gpt-5.5",
       reasoning_effort: "high",
+    });
+    expect(mockClient.warmTask).toHaveBeenCalledTimes(2);
+  });
+
+  it("forwards sandbox configuration and re-warms when the image changes", async () => {
+    const { rerender } = renderHook((props: Props) => useWarmTask(props), {
+      initialProps: {
+        ...cloudTyping,
+        sandboxEnvironmentId: "environment-123",
+        customImageId: "image-123",
+      },
+    });
+    await flushDebounce();
+    expect(mockClient.warmTask).toHaveBeenLastCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      ...NULL_RUNTIME,
+      sandbox_environment_id: "environment-123",
+      custom_image_id: "image-123",
+    });
+
+    rerender({
+      ...cloudTyping,
+      sandboxEnvironmentId: "environment-123",
+      customImageId: "image-456",
+    });
+    await flushDebounce();
+    expect(mockClient.warmTask).toHaveBeenLastCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      ...NULL_RUNTIME,
+      sandbox_environment_id: "environment-123",
+      custom_image_id: "image-456",
     });
     expect(mockClient.warmTask).toHaveBeenCalledTimes(2);
   });

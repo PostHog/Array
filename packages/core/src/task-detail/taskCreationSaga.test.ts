@@ -569,6 +569,8 @@ describe("TaskCreationSaga", () => {
       runtimeAdapter: null,
       model: null,
       reasoningEffort: null,
+      sandboxEnvironmentId: null,
+      customImageId: null,
     });
     // The bundle must land on the warm run before createTask triggers activation.
     expect(mockHost.uploadRunAttachments).toHaveBeenCalledWith(
@@ -699,8 +701,9 @@ describe("TaskCreationSaga", () => {
       expectedRunOptions: { customImageId: "image-123" },
     },
   ])(
-    "starts a cold run for a selected $selection",
+    "falls back to a cold run without a matching warm $selection lease",
     async ({ input, expectedRunOptions }) => {
+      mockHost.takeWarmTaskLease.mockReturnValue(null);
       const createdTask = createTask();
       const startedTask = createTask({ latest_run: createRun() });
       const createTaskMock = vi.fn().mockResolvedValue(createdTask);
@@ -728,6 +731,40 @@ describe("TaskCreationSaga", () => {
       );
     },
   );
+
+  it("reuses a warm run built from the selected custom image", async () => {
+    mockHost.takeWarmTaskLease.mockReturnValue({
+      taskId: "warm-task",
+      runId: "warm-run",
+    });
+    const warmActivatedTask = createTask({
+      id: "warm-task",
+      latest_run: createRun({ id: "warm-run", task: "warm-task" }),
+    });
+    const createTaskMock = vi.fn().mockResolvedValue(warmActivatedTask);
+    const createTaskRunMock = vi.fn();
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      customImageId: "image-123",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "main",
+        custom_image_id: "image-123",
+      }),
+    );
+    expect(createTaskRunMock).not.toHaveBeenCalled();
+  });
 
   it("uses the selected user GitHub integration for cloud task creation", async () => {
     const createdTask = createTask({
