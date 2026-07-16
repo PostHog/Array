@@ -48,7 +48,7 @@ export function useLoopBuilderTask(): UseLoopBuilderTaskReturn {
         repository: ctx.cloudRepository,
         githubUserIntegrationId: ctx.githubUserIntegrationId ?? undefined,
         workspaceMode: "cloud",
-        executionMode: "default",
+        executionMode: "acceptEdits",
         adapter: ctx.adapter,
         model: ctx.model,
         reasoningLevel: ctx.reasoningLevel,
