@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthService } from "../auth/auth";
 import type {
   LlmGatewayAuth,
   LlmGatewayEndpoints,
@@ -43,8 +44,25 @@ function createService(
   };
   const logger = { ...log, scope: () => log };
 
-  const service = new LlmGatewayService(host, logger);
-  return { service, auth, endpoints, log };
+  const orgListeners: Array<(state: { currentOrgId: string | null }) => void> =
+    [];
+  const authService = {
+    getState: () => ({ currentOrgId: "org-1" }),
+    on: (
+      _event: string,
+      listener: (state: { currentOrgId: string | null }) => void,
+    ) => {
+      orgListeners.push(listener);
+    },
+  } as unknown as AuthService;
+  const emitAuthState = (currentOrgId: string | null) => {
+    for (const listener of orgListeners) {
+      listener({ currentOrgId });
+    }
+  };
+
+  const service = new LlmGatewayService(host, logger, authService);
+  return { service, auth, endpoints, log, emitAuthState };
 }
 
 const SUCCESS_BODY = {
@@ -226,6 +244,49 @@ describe("LlmGatewayService.prompt", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const thirdBody = JSON.parse(fetchMock.mock.calls[2][1].body as string);
     expect(thirdBody.model).toBe("@cf/zai-org/glm-5.2");
+  });
+
+  it("forgets the learned subscription state when the organization changes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createJsonResponse(MODEL_GATE_BODY, 403))
+      .mockImplementation(async () => createJsonResponse(SUCCESS_BODY));
+    const { service, emitAuthState } = createService(fetchMock);
+
+    await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+    emitAuthState("org-2");
+    await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+
+    const bodyAfterSwitch = JSON.parse(
+      fetchMock.mock.calls[2][1].body as string,
+    );
+    expect(bodyAfterSwitch.model).toBe("claude-haiku-4-5");
+  });
+
+  it("keeps the learned subscription state across same-org auth changes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createJsonResponse(MODEL_GATE_BODY, 403))
+      .mockImplementation(async () => createJsonResponse(SUCCESS_BODY));
+    const { service, emitAuthState } = createService(fetchMock);
+
+    await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+    emitAuthState("org-1");
+    await service.prompt([{ role: "user", content: "hi" }], {
+      model: "claude-haiku-4-5",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const bodyAfterRefresh = JSON.parse(
+      fetchMock.mock.calls[2][1].body as string,
+    );
+    expect(bodyAfterRefresh.model).toBe("@cf/zai-org/glm-5.2");
   });
 
   it("does not retry non-gate 403s on the free-tier model", async () => {

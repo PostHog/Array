@@ -5,6 +5,9 @@ import {
   type PosthogProperties,
 } from "@posthog/shared/posthog-property-headers";
 import { inject, injectable } from "inversify";
+import type { AuthService } from "../auth/auth";
+import { AUTH_SERVICE } from "../auth/auth.module";
+import { AuthServiceEvent } from "../auth/schemas";
 import {
   LLM_GATEWAY_HOST,
   type LlmGatewayAuth,
@@ -47,10 +50,18 @@ export class LlmGatewayService {
     host: LlmGatewayHost,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
+    @inject(AUTH_SERVICE)
+    authService: AuthService,
   ) {
     this.auth = host;
     this.endpoints = host;
     this.log = logger.scope("llm-gateway");
+    let orgId = authService.getState().currentOrgId;
+    authService.on(AuthServiceEvent.StateChanged, (state) => {
+      if (state.currentOrgId === orgId) return;
+      orgId = state.currentOrgId;
+      this.lastKnownCodeUsageSubscribed = null;
+    });
   }
 
   private readonly auth: LlmGatewayAuth;

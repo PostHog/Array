@@ -2715,10 +2715,7 @@ export class SessionService {
 
       const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
 
-      if (
-        limitCause === "model_gate" ||
-        isRateLimitError(errorMessage, errorDetails)
-      ) {
+      if (limitCause !== null || isRateLimitError(errorMessage, errorDetails)) {
         this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
           cause: limitCause,
