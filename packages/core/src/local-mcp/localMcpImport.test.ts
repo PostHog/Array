@@ -37,6 +37,7 @@ describe("isPrivateHostname", () => {
     { hostname: "vault.internal", isPrivate: true },
     { hostname: "printer.lan", isPrivate: true },
     { hostname: "server.home.arpa", isPrivate: true },
+    { hostname: "router.home", isPrivate: true },
     { hostname: "machine.tailnet-1234.ts.net", isPrivate: true },
     { hostname: "example.com.", isPrivate: false },
     // public
