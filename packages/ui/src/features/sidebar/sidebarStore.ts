@@ -10,9 +10,6 @@ interface SidebarStoreState {
   width: number;
   isResizing: boolean;
   collapsedSections: Set<string>;
-  // Per-repo "Worktrees" subsections start collapsed, so unlike
-  // collapsedSections this tracks the expanded exceptions.
-  expandedWorktreeSections: Set<string>;
   folderOrder: string[];
   historyVisibleCount: number;
   organizeMode: "by-project" | "chronological";
@@ -33,7 +30,6 @@ interface SidebarStoreActions {
   setWidth: (width: number) => void;
   setIsResizing: (isResizing: boolean) => void;
   toggleSection: (sectionId: string) => void;
-  toggleWorktreeSection: (sectionId: string) => void;
   reorderFolders: (fromIndex: number, toIndex: number) => void;
   setFolderOrder: (order: string[]) => void;
   syncFolderOrder: (folderIds: string[]) => void;
@@ -57,7 +53,6 @@ export const useSidebarStore = create<SidebarStore>()(
       width: 256,
       isResizing: false,
       collapsedSections: new Set<string>(),
-      expandedWorktreeSections: new Set<string>(),
       folderOrder: [],
       historyVisibleCount: 25,
       organizeMode: "by-project",
@@ -82,16 +77,6 @@ export const useSidebarStore = create<SidebarStore>()(
             newCollapsedSections.add(sectionId);
           }
           return { collapsedSections: newCollapsedSections };
-        }),
-      toggleWorktreeSection: (sectionId) =>
-        set((state) => {
-          const next = new Set(state.expandedWorktreeSections);
-          if (next.has(sectionId)) {
-            next.delete(sectionId);
-          } else {
-            next.add(sectionId);
-          }
-          return { expandedWorktreeSections: next };
         }),
       reorderFolders: (fromIndex, toIndex) =>
         set((state) => {
@@ -141,7 +126,6 @@ export const useSidebarStore = create<SidebarStore>()(
         hasUserSetOpen: state.hasUserSetOpen,
         width: state.width,
         collapsedSections: Array.from(state.collapsedSections),
-        expandedWorktreeSections: Array.from(state.expandedWorktreeSections),
         folderOrder: state.folderOrder,
         historyVisibleCount: state.historyVisibleCount,
         organizeMode: state.organizeMode,
@@ -157,7 +141,6 @@ export const useSidebarStore = create<SidebarStore>()(
           hasUserSetOpen?: boolean;
           width?: number;
           collapsedSections?: string[];
-          expandedWorktreeSections?: string[];
           folderOrder?: string[];
           historyVisibleCount?: number;
           organizeMode?: SidebarStoreState["organizeMode"];
@@ -177,9 +160,6 @@ export const useSidebarStore = create<SidebarStore>()(
             persistedState.width ?? current.width,
           ),
           collapsedSections: new Set(persistedState.collapsedSections ?? []),
-          expandedWorktreeSections: new Set(
-            persistedState.expandedWorktreeSections ?? [],
-          ),
           folderOrder: persistedState.folderOrder ?? [],
           historyVisibleCount:
             persistedState.historyVisibleCount ?? current.historyVisibleCount,

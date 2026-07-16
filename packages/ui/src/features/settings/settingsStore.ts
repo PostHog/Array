@@ -232,7 +232,7 @@ interface SettingsStore {
 
   // Sidebar
   // Shows a per-repo "Worktrees" dropdown of task-less worktrees a click can
-  // start a task in.
+  // start a task in. Opt-in: off by default to keep the sidebar uncluttered.
   showSidebarWorktrees: boolean;
   setShowSidebarWorktrees: (enabled: boolean) => void;
 
@@ -454,7 +454,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ conversationCollapseMode: mode }),
 
       // Sidebar
-      showSidebarWorktrees: true,
+      showSidebarWorktrees: false,
       setShowSidebarWorktrees: (enabled) =>
         set({ showSidebarWorktrees: enabled }),
 
