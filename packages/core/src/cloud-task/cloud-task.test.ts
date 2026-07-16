@@ -614,6 +614,62 @@ describe("CloudTaskService", () => {
     },
   );
 
+  it("falls back to the paginated API when an ancestor log object is missing", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([consoleLogEntry("from api")], 200, {
+            "X-Has-More": "false",
+          }),
+        );
+      }
+      if (url.startsWith("https://storage.example/run-0.jsonl")) {
+        return Promise.resolve(new Response("gone", { status: 404 }));
+      }
+      if (url.startsWith("https://storage.example/run-1.jsonl")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(consoleLogEntry("current"))),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "completed",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+          log_urls: [
+            "https://storage.example/run-0.jsonl?sig=1",
+            "https://storage.example/run-1.jsonl?sig=2",
+          ],
+        }),
+      );
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some((u) => (u as { kind?: string }).kind === "snapshot"),
+    );
+
+    // A truncated chain (missing ancestor) must not be presented as full history.
+    const snapshot = updates.find(
+      (u) => (u as { kind?: string }).kind === "snapshot",
+    ) as { newEntries: unknown[] };
+    expect(snapshot.newEntries).toEqual([consoleLogEntry("from api")]);
+  });
+
   it("shares one history fetch when a subscriber attaches mid-bootstrap", async () => {
     const updates: unknown[] = [];
     service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));

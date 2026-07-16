@@ -853,10 +853,12 @@ async function fetchChainLogEntries(
   logUrls: string[],
 ): Promise<StoredLogEntry[] | null> {
   const entries: StoredLogEntry[] = [];
-  for (const logUrl of logUrls) {
+  for (const [index, logUrl] of logUrls.entries()) {
     const chunk = await fetchS3LogEntries(watcher, logUrl);
     if (watcher.stopped || watcher.failed) return null;
     if (chunk === null) return null;
+    // An empty ancestor object is missing or expired; fall back rather than truncate history.
+    if (chunk.length === 0 && index < logUrls.length - 1) return null;
     // Per-entry push: spreading a huge chunk into push() overflows the engine's argument limit.
     for (const entry of chunk) {
       entries.push(entry);

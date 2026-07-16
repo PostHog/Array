@@ -1774,10 +1774,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   ): Promise<StoredLogEntry[] | null> {
     const entries: StoredLogEntry[] = [];
 
-    for (const logUrl of logUrls) {
+    for (const [index, logUrl] of logUrls.entries()) {
       const chunk = await this.downloadLogEntries(watcher, logUrl, signal);
       if (watcher.bootstrapGeneration !== generation) return null;
       if (chunk === null) return null;
+      // An empty ancestor object is missing or expired; fall back rather than truncate history.
+      if (chunk.length === 0 && index < logUrls.length - 1) return null;
       for (const entry of chunk) {
         entries.push(entry);
       }
