@@ -66,6 +66,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   private toolAssociations = new Map<string, McpToolUiAssociation>();
   private toolDefinitions = new Map<string, Tool>();
   private serverConfigs = new Map<string, McpServerConnectionConfig>();
+  private configResolver?: (serverName: string) => Promise<void>;
   private pendingConnections = new Map<string, Promise<ServerConnection>>();
   private pendingFetches = new Map<string, Promise<McpUiResource | null>>();
   private resourceMetaCache = new Map<string, McpResourceUiMeta>();
@@ -91,6 +92,29 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     for (const config of configs) {
       this.serverConfigs.set(config.name, config);
     }
+  }
+
+  /**
+   * Merge server configs without clearing existing ones. Cloud runs never run a
+   * local agent session (the agent lives in the sandbox), so setServerConfigs is
+   * never called for them and a cloud run's UI-app resource fetch has no config
+   * to connect through ("No server config for: posthog"). This registers the
+   * config on demand so the card can load.
+   */
+  addServerConfigs(configs: McpServerConnectionConfig[]): void {
+    for (const config of configs) {
+      this.serverConfigs.set(config.name, config);
+    }
+  }
+
+  /**
+   * Register a fallback that lazily supplies a missing server config (expected to
+   * call addServerConfigs). getOrCreateConnection invokes it when a config is
+   * absent — the path cloud runs hit, since no local session ever registered
+   * their servers — so a UI-app resource fetch self-heals instead of throwing.
+   */
+  setConfigResolver(resolver: (serverName: string) => Promise<void>): void {
+    this.configResolver = resolver;
   }
 
   /**
@@ -206,7 +230,11 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       return pending;
     }
 
-    const config = this.serverConfigs.get(serverName);
+    let config = this.serverConfigs.get(serverName);
+    if (!config && this.configResolver) {
+      await this.configResolver(serverName);
+      config = this.serverConfigs.get(serverName);
+    }
     if (!config) {
       throw new Error(`No server config for: ${serverName}`);
     }

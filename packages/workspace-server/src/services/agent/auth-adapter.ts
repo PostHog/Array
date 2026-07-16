@@ -79,6 +79,17 @@ export class AgentAuthAdapter {
     };
   }
 
+  /**
+   * The current signed-in credentials from auth state, or null when no project is
+   * selected. Lets the mcp-apps config resolver register servers for a cloud run
+   * without a session (where the renderer never supplies credentials).
+   */
+  async getCurrentCredentials(): Promise<Credentials | null> {
+    const { apiHost } = await this.authService.getValidAccessToken();
+    const projectId = this.authService.getState().currentProjectId;
+    return projectId === null ? null : { apiHost, projectId };
+  }
+
   async buildMcpServers(credentials: Credentials): Promise<{
     servers: AcpMcpServer[];
     toolApprovals: McpToolApprovals;
