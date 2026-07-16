@@ -15,6 +15,8 @@ export type LocalMcpCloudAvailability =
   | "importable"
   /** stdio server or private-network URL; only usable through a desktop relay. */
   | "requires_desktop"
+  /** the sandbox already provides a server under this name; importing would be rejected. */
+  | "built_in"
   /** shape we can't run anywhere (unparseable URL, unrecognized transport). */
   | "unsupported";
 
@@ -22,8 +24,16 @@ export type LocalMcpCloudReason =
   | "public_url"
   | "private_url"
   | "stdio_transport"
+  | "reserved_name"
   | "invalid_url"
   | "unsupported_transport";
+
+/**
+ * Names the cloud sandbox always provides itself. The run-creation API
+ * rejects imports under these names (case-insensitively), so they must never
+ * enter the payload — the built-in server covers them.
+ */
+const RESERVED_CLOUD_MCP_NAMES = new Set(["posthog"]);
 
 export interface LocalMcpCloudClassification {
   name: string;
@@ -106,6 +116,9 @@ export function classifyLocalMcpServer(
   const { name } = server;
   const transport = server.transport;
 
+  if (RESERVED_CLOUD_MCP_NAMES.has(name.toLowerCase())) {
+    return { name, availability: "built_in", reason: "reserved_name" };
+  }
   if (transport.type === "stdio") {
     return {
       name,

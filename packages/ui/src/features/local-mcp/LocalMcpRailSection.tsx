@@ -8,6 +8,7 @@ const AVAILABILITY_LABELS: Record<
 > = {
   importable: "Available in cloud",
   requires_desktop: "Requires your machine",
+  built_in: "Built into cloud runs",
   unsupported: "Not available in cloud",
 };
 

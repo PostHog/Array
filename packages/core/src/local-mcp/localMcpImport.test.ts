@@ -93,6 +93,20 @@ describe("classifyLocalMcpServer", () => {
     });
   });
 
+  it.each(["posthog", "PostHog"])(
+    "marks a server named %s built-in instead of importing it",
+    (name) => {
+      const result = classifyLocalMcpServer(
+        server({ type: "http", url: "https://mcp.posthog.com/mcp" }, { name }),
+      );
+      expect(result).toEqual({
+        name,
+        availability: "built_in",
+        reason: "reserved_name",
+      });
+    },
+  );
+
   it.each<ClassifyCase>([
     {
       name: "sse server on a public host",
