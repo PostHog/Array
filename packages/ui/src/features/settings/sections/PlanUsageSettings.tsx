@@ -16,10 +16,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
+import { BILLING_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageMeter } from "@posthog/ui/features/billing/UsageMeter";
 import { useUsage } from "@posthog/ui/features/billing/useUsage";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SpendAnalysisSection } from "@posthog/ui/features/usage/components/SpendAnalysisSection";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import { useTrackUsageViewed } from "@posthog/ui/features/usage/useTrackUsageViewed";
@@ -44,7 +46,7 @@ export function PlanUsageSettings() {
     // refetchUsage is a refresh mutation, so it bypasses useUsage's `enabled`
     // gate — skip it for spend-only users.
     if (billingEnabled) void refetchUsage();
-  }, [refetchUsage]);
+  }, [refetchUsage, billingEnabled]);
 
   useTrackUsageViewed({
     isLoading: billingEnabled && usageLoading,
