@@ -187,6 +187,8 @@ function createMockDependencies() {
     },
     mcpAppsService: {
       setServerConfigs: vi.fn(),
+      addServerConfigs: vi.fn(),
+      setConfigResolver: vi.fn(),
       handleDiscovery: vi.fn().mockResolvedValue(undefined),
       cleanup: vi.fn().mockResolvedValue(undefined),
       notifyToolInput: vi.fn(),
