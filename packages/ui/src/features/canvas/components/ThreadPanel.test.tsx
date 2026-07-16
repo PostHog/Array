@@ -1,20 +1,16 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { AgentTurnRow, UserPromptRow } from "./ThreadPanel";
+import { AgentStatusLine, UserPromptRow } from "./ThreadPanel";
 
-describe("AgentTurnRow", () => {
-  it.each([
-    { phase: "active" as const, label: "Working…" },
-    { phase: "complete" as const, label: "Done" },
-  ])("renders $label in the message area", (statusValue) => {
-    render(<AgentTurnRow status={statusValue} streaming={false} />);
+describe("AgentStatusLine", () => {
+  it("renders working status outside the conversation timeline", () => {
+    render(<AgentStatusLine status={{ phase: "active", label: "Working…" }} />);
 
-    const author = screen.getByText("Agent");
-    const status = screen.getByText(statusValue.label);
+    const status = screen.getByText("Working…");
 
-    expect(author.parentElement).not.toContainElement(status);
-    expect(author.closest("article")).toContainElement(status);
-    expect(status.closest('[data-slot="thread-item-body"]')).not.toBeNull();
+    expect(status.closest("article")).toBeNull();
+    expect(status.closest('[data-slot="thread-item-body"]')).toBeNull();
+    expect(status.closest("output")).not.toBeNull();
   });
 });
 

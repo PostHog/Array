@@ -73,7 +73,7 @@ export function buildThreadTimeline<T>({
   ].sort((left, right) => left.timestamp - right.timestamp);
 }
 
-export type ThreadAgentPhase = "active" | "needs_input" | "complete" | "error";
+export type ThreadAgentPhase = "active" | "needs_input" | "error";
 
 export interface ThreadAgentStatus {
   phase: ThreadAgentPhase;
@@ -109,7 +109,6 @@ export function deriveThreadAgentStatus({
   pendingPermissionCount = 0,
   isPromptPending = false,
   isInitializing = false,
-  hasPullRequest = false,
 }: {
   hasActivity?: boolean;
   hasError?: boolean;
@@ -118,7 +117,6 @@ export function deriveThreadAgentStatus({
   pendingPermissionCount?: number;
   isPromptPending?: boolean;
   isInitializing?: boolean;
-  hasPullRequest?: boolean;
 }): ThreadAgentStatus | null {
   if (!hasActivity) return null;
   if (hasError || cloudStatus === "failed") {
@@ -130,10 +128,7 @@ export function deriveThreadAgentStatus({
   if (isPromptPending || isInitializing) {
     return { phase: "active", label: "Working…" };
   }
-  return {
-    phase: "complete",
-    label: hasPullRequest ? "Shipped" : "Done",
-  };
+  return null;
 }
 
 export function shouldSuspendThreadSession({

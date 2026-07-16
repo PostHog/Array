@@ -204,31 +204,27 @@ function agentPrompts(items: ConversationItem[]): ThreadAgentMessage[] {
   return prompts;
 }
 
-function AgentStatusChip({ status }: { status: ThreadAgentStatus }) {
-  switch (status.phase) {
-    case "active":
-      return (
-        <Badge variant="info">
-          <Spinner className="size-3" />
-          {status.label}
-        </Badge>
-      );
-    case "needs_input":
-      return <Badge variant="warning">{status.label}</Badge>;
-    case "error":
-      return <Badge variant="destructive">{status.label}</Badge>;
-    default:
-      return <Badge variant="success">{status.label}</Badge>;
-  }
+export function AgentStatusLine({ status }: { status: ThreadAgentStatus }) {
+  return (
+    <output
+      aria-live="polite"
+      className="flex items-center gap-1.5 px-3 py-1.5 text-muted-foreground text-xs"
+    >
+      {status.phase === "active" ? (
+        <Spinner className="size-3" />
+      ) : (
+        <RobotIcon size={12} />
+      )}
+      <span>{status.label}</span>
+    </output>
+  );
 }
 
 export function AgentTurnRow({
   message,
-  status,
   streaming,
 }: {
-  message?: ThreadAgentMessage;
-  status?: ThreadAgentStatus;
+  message: ThreadAgentMessage;
   streaming: boolean;
 }) {
   return (
@@ -243,25 +239,19 @@ export function AgentTurnRow({
       <ThreadItemContent>
         <ThreadItemHeader>
           <ThreadItemAuthor>Agent</ThreadItemAuthor>
-          {message?.timestamp !== undefined && (
+          {message.timestamp !== undefined && (
             <ThreadTimestamp
               dateTime={new Date(message.timestamp).toISOString()}
             />
           )}
         </ThreadItemHeader>
-        {(message?.text || status) && (
+        {message.text && (
           <ThreadItemBody>
             <div className="rounded-md border border-border bg-muted px-2 py-1.5">
-              {message?.text &&
-                (streaming ? (
-                  <ChatStreamingMarkdown content={message.text} />
-                ) : (
-                  <ChatMarkdown content={message.text} />
-                ))}
-              {status && (
-                <div className={message?.text ? "mt-2" : undefined}>
-                  <AgentStatusChip status={status} />
-                </div>
+              {streaming ? (
+                <ChatStreamingMarkdown content={message.text} />
+              ) : (
+                <ChatMarkdown content={message.text} />
               )}
             </div>
           </ThreadItemBody>
@@ -370,11 +360,6 @@ function ThreadConversation({
   });
   const { items } = useConversationItems(events, isPromptPending);
   const pendingPermissions = usePendingPermissionsForTask(taskId);
-  const prUrl =
-    typeof task.latest_run?.output?.pr_url === "string"
-      ? task.latest_run.output.pr_url
-      : undefined;
-
   const agentMsgs = useMemo(() => agentTurns(items), [items]);
   const promptMsgs = useMemo(() => agentPrompts(items), [items]);
 
@@ -388,7 +373,6 @@ function ThreadConversation({
         pendingPermissionCount: pendingPermissions.size,
         isPromptPending,
         isInitializing,
-        hasPullRequest: !!prUrl,
       }),
     [
       events.length,
@@ -399,7 +383,6 @@ function ThreadConversation({
       pendingPermissions.size,
       isPromptPending,
       isInitializing,
-      prUrl,
     ],
   );
 
@@ -498,7 +481,7 @@ function ThreadConversation({
     });
   };
 
-  const isEmpty = timeline.length === 0 && !agentStatus;
+  const isEmpty = timeline.length === 0;
   const isReady = !isInitializing && !isLoading;
 
   return (
@@ -595,12 +578,11 @@ function ThreadConversation({
                 />
               ),
             )}
-            {agentStatus && !(agentStatus.phase === "complete" && !!prUrl) && (
-              <AgentTurnRow status={agentStatus} streaming={false} />
-            )}
           </ThreadItemGroup>
         )}
       </div>
+
+      {agentStatus && <AgentStatusLine status={agentStatus} />}
 
       <div className="border-border border-t p-2">
         <MentionComposer
