@@ -4,6 +4,7 @@ import {
   readAgentToolName,
   readMcpToolDescriptor,
   readMcpToolName,
+  readParentToolCallId,
 } from "./tool-meta";
 
 describe("parseMcpToolName", () => {
@@ -46,6 +47,25 @@ describe("readAgentToolName", () => {
   it("returns undefined for non-tool meta", () => {
     expect(readAgentToolName(undefined)).toBeUndefined();
     expect(readAgentToolName({})).toBeUndefined();
+  });
+});
+
+describe("readParentToolCallId", () => {
+  it("prefers the posthog channel over the legacy claudeCode fallback", () => {
+    expect(
+      readParentToolCallId({
+        posthog: { toolName: "Bash", parentToolCallId: "parent-1" },
+        claudeCode: { parentToolCallId: "stale" },
+      }),
+    ).toBe("parent-1");
+  });
+
+  it("falls back to claudeCode when posthog is absent", () => {
+    expect(
+      readParentToolCallId({
+        claudeCode: { parentToolCallId: "parent-2" },
+      }),
+    ).toBe("parent-2");
   });
 });
 

@@ -475,4 +475,34 @@ describe("createIncrementalConversationBuilder", () => {
     expect(row2.turnContext.childItems).not.toBe(row1.turnContext.childItems);
     expect(row2.turnContext.childItems.get("agent1")?.length).toBe(1);
   });
+
+  it("groups canonical PostHog child metadata under its subagent", () => {
+    const inc = createIncrementalConversationBuilder();
+    const messages = [
+      userPromptMsg(1, 1, "go"),
+      toolCallMsg(2, "agent1", {
+        _meta: { posthog: { toolName: "spawn_agent" } },
+      }),
+      updateMsg(3, {
+        sessionUpdate: "tool_call",
+        toolCallId: "child1",
+        kind: "read",
+        status: "pending",
+        title: "child1",
+        _meta: {
+          posthog: {
+            toolName: "subagent_activity",
+            parentToolCallId: "agent1",
+          },
+        },
+      }),
+    ];
+
+    const result = inc.update(messages, true);
+    const row = result.items.find((item) => item.type === "session_update");
+    if (row?.type !== "session_update") {
+      throw new Error("expected agent session_update row");
+    }
+    expect(row.turnContext.childItems.get("agent1")?.length).toBe(1);
+  });
 });
