@@ -140,8 +140,12 @@ export function ArchiveRefundDialog({
 
           {/* The refund opt-in — Alex's "meaningful, deliberate" choice, made
               to feel good rather than like a throwaway checkbox. */}
-          <label className="mt-3 flex cursor-pointer items-center gap-2 select-none">
+          <label
+            htmlFor="archive-refund-optin"
+            className="mt-3 flex cursor-pointer select-none items-center gap-2"
+          >
             <Checkbox
+              id="archive-refund-optin"
               checked={refund}
               onCheckedChange={(next) => setRefund(next === true)}
               disabled={isSubmitting}
