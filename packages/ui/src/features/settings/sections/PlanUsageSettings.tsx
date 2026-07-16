@@ -29,7 +29,7 @@ import { Badge, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
 
 export function PlanUsageSettings() {
-  const billingEnabled = true;
+  const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const billingUrl = getBillingUrl(cloudRegion);
