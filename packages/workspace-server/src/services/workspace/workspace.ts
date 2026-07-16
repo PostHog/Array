@@ -65,6 +65,7 @@ import type {
   WorkspaceProvisioning,
 } from "./ports";
 import type {
+  AdoptableWorktree,
   BranchChangedPayload,
   CheckWorktreeBranchInput,
   CheckWorktreeBranchOutput,
@@ -1481,7 +1482,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
    */
   async listAdoptableWorktrees(
     mainRepoPath: string,
-  ): Promise<Array<{ worktreePath: string; branch: string }>> {
+  ): Promise<AdoptableWorktree[]> {
     const [linkedWorktrees, localStashPath] = await Promise.all([
       listLinkedWorktrees(mainRepoPath),
       this.getLocalWorktreePathIfExists(mainRepoPath),

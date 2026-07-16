@@ -47,6 +47,7 @@ export function SidebarSection({
           className="flex w-full items-center justify-between pl-2 not-hover:aria-expanded:bg-transparent"
           style={{
             marginTop: addSpacingBefore ? "12px" : undefined,
+            // + 8 matches the base pl-2 padding set via className below.
             paddingLeft: depth ? `${depth * INDENT_SIZE + 8}px` : undefined,
           }}
           onContextMenu={onContextMenu}

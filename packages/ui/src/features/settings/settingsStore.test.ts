@@ -219,6 +219,7 @@ describe("feature settingsStore cloud selections", () => {
     ["debugLogsCloudRuns", false, true],
     ["slotMachineMode", false, true],
     ["dismissibleUpdateBanners", false, true],
+    ["showSidebarWorktrees", false, true],
   ] as const)("rehydrates %s", async (field, initial, persisted) => {
     getItem.mockResolvedValue(
       JSON.stringify({ state: { [field]: persisted }, version: 0 }),
