@@ -603,15 +603,25 @@ describe("mapHistoryItem", () => {
     ]);
   });
 
-  it("replays a persisted plan item as an agent_message_chunk", () => {
+  it("replays a persisted plan item as a historical plan tool call", () => {
     expect(
       mapHistoryItem("s-1", { type: "plan", id: "p1", text: "# The plan" }),
     ).toEqual([
       {
         sessionId: "s-1",
         update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: "# The plan" },
+          sessionUpdate: "tool_call",
+          toolCallId: "p1:implement",
+          title: "Plan",
+          kind: "switch_mode",
+          status: "completed",
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "# The plan" },
+            },
+          ],
+          rawInput: { plan: "# The plan", historical: true },
         },
       },
     ]);

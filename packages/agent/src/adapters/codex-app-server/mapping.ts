@@ -267,19 +267,29 @@ export function mapHistoryItem(
         : [];
     case "reasoning":
       return [];
-    // Replay the proposed plan as agent prose so a reattached host still shows it.
-    case "plan":
-      return item.text
-        ? [
-            {
-              sessionId,
-              update: {
-                sessionUpdate: "agent_message_chunk",
+    case "plan": {
+      if (!item.text) return [];
+      const toolCallId = `${item.id ?? "codex-plan"}:implement`;
+      return [
+        {
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: "Plan",
+            kind: "switch_mode",
+            status: "completed",
+            content: [
+              {
+                type: "content",
                 content: { type: "text", text: item.text },
               },
-            },
-          ]
-        : [];
+            ],
+            rawInput: { plan: item.text, historical: true },
+          },
+        },
+      ];
+    }
     default: {
       const tool = describeTool(item);
       if (!tool || !item.id) return [];

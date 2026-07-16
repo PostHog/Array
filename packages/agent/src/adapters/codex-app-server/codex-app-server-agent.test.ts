@@ -2759,7 +2759,10 @@ describe("CodexAppServerAgent", () => {
   // permissionOutcome may be a value or a function (per-call, e.g. a pending promise).
   function makePlanAgent(
     permissionOutcome: unknown,
-    options: { rejectPlanToolUpdates?: boolean } = {},
+    options: {
+      rejectPlanToolUpdates?: boolean;
+      stallPlanToolUpdates?: boolean;
+    } = {},
   ) {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
@@ -2775,11 +2778,15 @@ describe("CodexAppServerAgent", () => {
       sessionUpdate: async (n: unknown) => {
         const notification = n as { update?: Record<string, unknown> };
         if (
-          options.rejectPlanToolUpdates &&
-          (notification.update?.sessionUpdate === "tool_call" ||
-            notification.update?.sessionUpdate === "tool_call_update")
+          notification.update?.sessionUpdate === "tool_call" ||
+          notification.update?.sessionUpdate === "tool_call_update"
         ) {
-          throw new Error("renderer disconnected");
+          if (options.rejectPlanToolUpdates) {
+            throw new Error("renderer disconnected");
+          }
+          if (options.stallPlanToolUpdates) {
+            return new Promise(() => {});
+          }
         }
         sessionUpdates.push(notification);
       },
@@ -2919,11 +2926,26 @@ describe("CodexAppServerAgent", () => {
         content: [
           {
             type: "content",
+            content: { type: "text", text: "# The plan\n\n" },
+          },
+        ],
+        rawInput: { plan: "# The plan\n\n" },
+        status: "in_progress",
+      },
+    });
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1:implement",
+        status: "in_progress",
+        content: [
+          {
+            type: "content",
             content: { type: "text", text: "# The plan\n\n1. do it" },
           },
         ],
         rawInput: { plan: "# The plan\n\n1. do it" },
-        status: "in_progress",
       },
     });
     expect(sessionUpdates).toContainEqual({
@@ -3011,6 +3033,27 @@ describe("CodexAppServerAgent", () => {
     stub.emit("item/completed", {
       item: { type: "plan", id: "p1", text: "# The plan" },
     });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(1);
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not block the handoff when plan tool-call updates never settle", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent(
+      {
+        outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+      },
+      { stallPlanToolUpdates: true },
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "# The plan" });
     stub.emit("turn/completed", {
       turn: { id: "turn_1", status: "completed" },
     });
