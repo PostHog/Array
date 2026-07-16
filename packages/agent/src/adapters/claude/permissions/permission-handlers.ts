@@ -778,10 +778,10 @@ export async function canUseTool(
     if (isPostHogExecTool(toolName)) {
       const subTool = extractPostHogSubTool(toolInput);
       if (subTool && isPostHogDestructiveSubTool(subTool)) {
-        if (
-          session.permissionMode === "auto" ||
-          session.permissionMode === "bypassPermissions"
-        ) {
+        // "auto" deliberately does NOT skip this gate: the mode only promises
+        // hands-off file edits and shell commands, and destructive PostHog
+        // sub-tools must still surface a permission prompt to the client.
+        if (session.permissionMode === "bypassPermissions") {
           return {
             behavior: "allow",
             updatedInput: toolInput as Record<string, unknown>,

@@ -200,7 +200,7 @@ describe("canUseTool MCP approval enforcement", () => {
     expect(result.behavior).toBe("allow");
   });
 
-  it("bypasses the PostHog exec gate in auto mode", async () => {
+  it("prompts through the PostHog exec gate in auto mode", async () => {
     setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
     const hasApproval = vi.fn().mockReturnValue(false);
     const addApproval = vi.fn().mockResolvedValue(undefined);
@@ -215,12 +215,23 @@ describe("canUseTool MCP approval enforcement", () => {
           addPostHogExecApproval: addApproval,
         },
       },
+      client: createClient({
+        outcome: { outcome: "selected", optionId: "allow" },
+      }),
     });
     const result = await canUseTool(context);
 
+    // Auto mode only auto-approves file edits and shell commands; destructive
+    // PostHog sub-tools must still reach the client as a permission prompt.
     expect(result.behavior).toBe("allow");
-    expect(context.client.requestPermission).not.toHaveBeenCalled();
-    expect(hasApproval).not.toHaveBeenCalled();
+    expect(hasApproval).toHaveBeenCalledWith("experiment-update");
+    expect(context.client.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          title: "The agent wants to run `experiment-update` on PostHog",
+        }),
+      }),
+    );
     expect(addApproval).not.toHaveBeenCalled();
   });
 
