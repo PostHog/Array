@@ -110,6 +110,7 @@ export function CommentAnnotation({
     sendPromptToAgent(
       taskId,
       buildInlineCommentPrompt(filePath, startLine, endLine, side, text),
+      { keepReviewExpanded: true },
     );
   }, [
     taskId,

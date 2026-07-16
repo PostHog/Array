@@ -105,4 +105,19 @@ describe("sendPromptToAgent", () => {
       );
     },
   );
+
+  it("keeps expanded review open when requested", () => {
+    mockSender.mockResolvedValueOnce(undefined);
+    reviewState.mode = "expanded";
+    panelState.taskLayouts = { "task-1": { panelTree: {} } };
+
+    sendPromptToAgent("task-1", "hello", { keepReviewExpanded: true });
+
+    expect(reviewState.setReviewMode).not.toHaveBeenCalled();
+    expect(panelState.setActiveTab).toHaveBeenCalledWith(
+      "task-1",
+      "panel-logs",
+      DEFAULT_TAB_IDS.LOGS,
+    );
+  });
 });

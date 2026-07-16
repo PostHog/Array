@@ -80,10 +80,12 @@ describe("PrCommentThread", () => {
     expect(sendPromptToAgent).toHaveBeenCalledWith(
       "task-1",
       expect.stringContaining("Could this use the shared helper?"),
+      { keepReviewExpanded: true },
     );
     expect(sendPromptToAgent).toHaveBeenCalledWith(
       "task-1",
       expect.stringContaining("Check whether this helper already exists"),
+      { keepReviewExpanded: true },
     );
     await waitFor(() =>
       expect(

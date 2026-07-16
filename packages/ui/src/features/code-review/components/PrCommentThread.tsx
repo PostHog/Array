@@ -347,6 +347,7 @@ export function PrCommentThread({
       const success = await sendPromptToAgent(
         taskId,
         buildChatAboutPrCommentPrompt(filePath, endLine, side, comments, text),
+        { keepReviewExpanded: true },
       );
       setIsSendingChat(false);
       if (success) {

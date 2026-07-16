@@ -18,7 +18,7 @@ export function PendingReviewBar({ taskId }: PendingReviewBarProps) {
   const handleSend = () => {
     const prompt = buildBatchedInlineCommentsPrompt(drafts);
     if (!prompt) return;
-    sendPromptToAgent(taskId, prompt);
+    sendPromptToAgent(taskId, prompt, { keepReviewExpanded: true });
     clearDrafts(taskId);
   };
 

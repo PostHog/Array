@@ -10,13 +10,14 @@ import {
   type AgentPromptSender,
 } from "./agentPromptSender";
 
-/**
- * Sends a prompt to the agent session for a task, collapses the review
- * panel to split mode if expanded, and switches to the logs/chat tab.
- */
+interface SendPromptToAgentOptions {
+  keepReviewExpanded?: boolean;
+}
+
 export function sendPromptToAgent(
   taskId: string,
   prompt: string | ContentBlock[],
+  options: SendPromptToAgentOptions = {},
 ): Promise<boolean> {
   const sendPromise = resolveService<AgentPromptSender>(AGENT_PROMPT_SENDER)(
     taskId,
@@ -33,7 +34,7 @@ export function sendPromptToAgent(
     });
 
   const { getReviewMode, setReviewMode } = useReviewNavigationStore.getState();
-  if (getReviewMode(taskId) === "expanded") {
+  if (!options.keepReviewExpanded && getReviewMode(taskId) === "expanded") {
     setReviewMode(taskId, "split");
   }
 
