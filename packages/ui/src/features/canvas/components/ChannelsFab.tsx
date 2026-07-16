@@ -1,4 +1,4 @@
-import { FileTextIcon, PlusIcon } from "@phosphor-icons/react";
+import { FileTextIcon, HashIcon, PlusIcon } from "@phosphor-icons/react";
 import {
   Button,
   DropdownMenu,
@@ -12,7 +12,6 @@ import {
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useRouterState } from "@tanstack/react-router";
-import { SquircleDashed } from "lucide-react";
 import { useState } from "react";
 
 // The create affordance for the Channels space, floated over the bottom-right
@@ -52,7 +51,7 @@ export function ChannelsFab() {
         </Tooltip>
         <DropdownMenuContent align="center" side="top" sideOffset={6}>
           <DropdownMenuItem onClick={() => setModalOpen(true)}>
-            <SquircleDashed size={14} className="text-gray-9" />
+            <HashIcon size={14} className="text-gray-9" />
             New channel
           </DropdownMenuItem>
           <DropdownMenuItem

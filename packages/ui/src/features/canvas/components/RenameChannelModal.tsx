@@ -1,4 +1,4 @@
-import { XIcon } from "@phosphor-icons/react";
+import { HashIcon, XIcon } from "@phosphor-icons/react";
 import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -7,7 +7,6 @@ import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChanne
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
-import { SquircleDashed } from "lucide-react";
 import { useEffect, useState } from "react";
 
 // Matches the create-channel naming constraint.
@@ -111,7 +110,7 @@ export function RenameChannelModal({
             }}
           >
             <TextField.Slot>
-              <SquircleDashed size={16} className="text-gray-10" />
+              <HashIcon size={16} className="text-gray-10" />
             </TextField.Slot>
             <TextField.Slot side="right">
               <Text className="text-gray-9 text-sm tabular-nums">

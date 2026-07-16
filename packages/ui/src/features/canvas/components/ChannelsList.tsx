@@ -1,7 +1,11 @@
+import { Collapsible } from "@base-ui/react/collapsible";
 import {
+  CaretDownIcon,
+  CaretRightIcon,
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
+  HashIcon,
   LinkIcon,
   LockSimpleIcon,
   PencilSimpleIcon,
@@ -30,6 +34,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Empty,
+  EmptyHeader,
   MenuLabel,
   Tooltip,
   TooltipContent,
@@ -54,11 +60,11 @@ import {
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { SquircleDashed } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
 
@@ -333,7 +339,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
               }}
               className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
-              <SquircleDashed size={14} className="shrink-0 text-gray-9" />
+              <HashIcon size={14} className="shrink-0 text-gray-9" />
               <span
                 className={cn(
                   "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
@@ -551,7 +557,7 @@ function PersonalChannelRow() {
         onClick={() => void open()}
         className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
       >
-        <SquircleDashed size={14} className="shrink-0 text-gray-9" />
+        <HashIcon size={14} className="shrink-0 text-gray-9" />
         <span className="truncate font-medium text-[13px] text-gray-12">
           {PERSONAL_CHANNEL_NAME}
         </span>
@@ -614,6 +620,77 @@ function PersonalChannelRow() {
   );
 }
 
+// Collapse state is keyed per section in the shared sidebar store, so it
+// persists across navigation and restarts. Prefixed to stay clear of the Code
+// sidebar's folder sections, which key the same set by folder path.
+const STARRED_SECTION_ID = "channels:starred";
+const CHANNELS_SECTION_ID = "channels:all";
+
+// A collapsible sidebar group ("Starred" / "Channels"). Base UI directly rather
+// than quill's Collapsible: quill styles its trigger as a button (which fought
+// the label styling) and animates the panel height (which janked on a list this
+// long). Unstyled parts give a plain label row that snaps.
+//
+// The whole header row is the trigger. It rests as a "#" and swaps to a chevron
+// on hover or keyboard focus, so the row only advertises the disclosure when
+// you're actually reaching for it.
+function ChannelGroup({
+  sectionId,
+  label,
+  className,
+  children,
+}: {
+  sectionId: string;
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const collapsedSections = useSidebarStore((s) => s.collapsedSections);
+  const toggleSection = useSidebarStore((s) => s.toggleSection);
+  const isOpen = !collapsedSections.has(sectionId);
+
+  return (
+    <Collapsible.Root
+      open={isOpen}
+      onOpenChange={() => toggleSection(sectionId)}
+      className={className}
+    >
+      {/* MenuLabel carries the sidebar's label styling; `render` keeps it a
+          real button so the whole row is clickable. */}
+      <Collapsible.Trigger
+        className="group/group-trigger flex w-full items-center gap-2"
+        render={<MenuLabel render={<button type="button" />} />}
+      >
+        <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+          <HashIcon
+            size={14}
+            className="group-hover/group-trigger:hidden group-focus-visible/group-trigger:hidden"
+          />
+          {isOpen ? (
+            <CaretDownIcon
+              size={14}
+              className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
+            />
+          ) : (
+            <CaretRightIcon
+              size={14}
+              className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
+            />
+          )}
+        </span>
+        {label}
+      </Collapsible.Trigger>
+      {/* Stay mounted while collapsed. Every row builds a context menu, a
+          dropdown, a tooltip and two dialogs up front, so unmounting on close
+          makes each expand rebuild the lot (~940ms for 46 channels, vs ~80ms
+          to collapse). */}
+      <Collapsible.Panel keepMounted>
+        <div className="pl-5">{children}</div>
+      </Collapsible.Panel>
+    </Collapsible.Root>
+  );
+}
+
 // The channel list — the Channels space sidebar body. The private "#me"
 // channel is pinned at the top; starred channels surface in their own section
 // so the ones you use most stay in reach; the rest sit under a "Channels"
@@ -651,39 +728,25 @@ export function ChannelsList() {
         <PersonalChannelRow />
 
         {starred.length > 0 && (
-          <>
-            <Box>
-              <MenuLabel className="flex items-center gap-2 uppercase">
-                <StarIcon size={14} className="text-gray-9" />
-                Starred
-              </MenuLabel>
-            </Box>
-            <div className="pl-2">
-              {starred.map((channel) => (
-                <ChannelSection key={channel.id} channel={channel} />
-              ))}
-            </div>
-          </>
+          <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
+            {starred.map((channel) => (
+              <ChannelSection key={channel.id} channel={channel} />
+            ))}
+          </ChannelGroup>
         )}
 
-        <Box className={cn(starred.length > 0 && "mt-3")}>
-          <MenuLabel className="flex items-center gap-2 uppercase">
-            <SquircleDashed size={14} className="text-gray-9" />
-            Channels
-          </MenuLabel>
-        </Box>
-
-        {!isLoading && channels.length === 0 && (
-          <Text size="1" className="px-2 text-gray-9">
-            No channels yet. Create one to get started.
-          </Text>
-        )}
-
-        <div className="pl-2">
+        <ChannelGroup sectionId={CHANNELS_SECTION_ID} label="Channels">
+          {!isLoading && channels.length === 0 && (
+            <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+              <EmptyHeader className="text-left">
+                No channels other channels yet.
+              </EmptyHeader>
+            </Empty>
+          )}
           {others.map((channel) => (
             <ChannelSection key={channel.id} channel={channel} />
           ))}
-        </div>
+        </ChannelGroup>
       </Flex>
     </TooltipProvider>
   );
