@@ -415,6 +415,7 @@ function ThreadConversation({
           id: message.id,
           content: message.content,
           createdAt: message.created_at,
+          forwardedToAgent: !!message.forwarded_to_agent_at,
           value: message,
         })),
       }),

@@ -8,6 +8,7 @@ export interface ThreadHumanMessage<T = unknown> {
   id: string;
   content: string;
   createdAt: string;
+  forwardedToAgent?: boolean;
   value?: T;
 }
 
@@ -36,8 +37,19 @@ export function buildThreadTimeline<T>({
   agentMessages: ThreadAgentMessage[];
   humanMessages: ThreadHumanMessage<T>[];
 }): ThreadTimelineRow<T>[] {
+  const forwardedHumanContent = new Set(
+    humanMessages
+      .filter((message) => message.forwardedToAgent)
+      .map((message) => normalizeAgentPromptText(message.content)),
+  );
+  const visiblePrompts = prompts.filter(
+    (message) =>
+      !isThreadCommentPrompt(message.text) ||
+      !forwardedHumanContent.has(normalizeAgentPromptText(message.text)),
+  );
+
   return [
-    ...prompts.map(
+    ...visiblePrompts.map(
       (message): ThreadTimelineRow<T> => ({
         kind: "prompt",
         timestamp: validTimestamp(message.timestamp),
@@ -83,6 +95,10 @@ export function normalizeAgentPromptText(content: string): string {
     .replace(THREAD_COMMENT_ATTRIBUTION_PATTERN, "")
     .replace(LEADING_AGENT_MENTION_PATTERN, "")
     .trim();
+}
+
+function isThreadCommentPrompt(content: string): boolean {
+  return THREAD_COMMENT_ATTRIBUTION_PATTERN.test(content.trim());
 }
 
 export function deriveThreadAgentStatus({

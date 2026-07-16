@@ -38,6 +38,45 @@ describe("normalizeAgentPromptText", () => {
 });
 
 describe("buildThreadTimeline", () => {
+  it("omits the session echo of a forwarded thread message", () => {
+    const timeline = buildThreadTimeline({
+      prompts: [
+        {
+          id: "prompt",
+          text: "[Thread comment from Peter Kirkham] @agent which model are you?",
+          timestamp: 200,
+        },
+      ],
+      humanMessages: [
+        {
+          id: "human",
+          content: "@agent which model are you?",
+          createdAt: "1970-01-01T00:00:00.100Z",
+          forwardedToAgent: true,
+        },
+      ],
+      agentMessages: [],
+    });
+
+    expect(timeline.map((row) => row.kind)).toEqual(["human"]);
+  });
+
+  it("keeps a thread-comment prompt without a matching forwarded message", () => {
+    const timeline = buildThreadTimeline({
+      prompts: [
+        {
+          id: "prompt",
+          text: "[Thread comment from Peter Kirkham] @agent which model are you?",
+          timestamp: 200,
+        },
+      ],
+      humanMessages: [],
+      agentMessages: [],
+    });
+
+    expect(timeline.map((row) => row.kind)).toEqual(["prompt"]);
+  });
+
   it("interleaves prompts, human replies, and agent turns chronologically", () => {
     const timeline = buildThreadTimeline({
       prompts: [{ id: "prompt", text: "Start", timestamp: 100 }],
