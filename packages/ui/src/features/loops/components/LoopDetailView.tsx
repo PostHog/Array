@@ -10,7 +10,7 @@ import {
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
 import { AlertDialog, Flex, Text } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
   useDeleteLoop,
@@ -54,10 +54,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const runsQuery = useLoopRuns(loopId);
-  const runs = useMemo(
-    () => runsQuery.data?.pages.flatMap((page) => page.results) ?? [],
-    [runsQuery.data],
-  );
+  const runs = runsQuery.data ?? [];
 
   useSetHeaderContent(
     <Flex align="center" gap="2" className="w-full min-w-0">
@@ -201,9 +198,12 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
         <ConfigSummarySection loop={loop} />
 
         <Flex direction="column" gap="2">
-          <Text className="font-medium text-[13px] text-gray-12">
-            Run history
-          </Text>
+          <Flex align="center" gap="2">
+            <Text className="font-medium text-[13px] text-gray-12">
+              Run history
+            </Text>
+            <Text className="text-[11px] text-gray-10">10 most recent</Text>
+          </Flex>
           {runsQuery.isLoading ? (
             <div className="h-16 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
           ) : runs.length === 0 ? (
@@ -215,19 +215,6 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               ))}
             </Flex>
           )}
-          {runsQuery.hasNextPage ? (
-            <Button
-              variant="soft"
-              color="gray"
-              size="1"
-              className="w-fit"
-              loading={runsQuery.isFetchingNextPage}
-              disabled={runsQuery.isFetchingNextPage}
-              onClick={() => void runsQuery.fetchNextPage()}
-            >
-              Load more
-            </Button>
-          ) : null}
         </Flex>
       </Flex>
 
@@ -279,8 +266,13 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) p-3"
       >
         <SummaryRow label="Model">
-          {loop.runtime_adapter} · {loop.model}
-          {loop.reasoning_effort ? ` · ${loop.reasoning_effort} reasoning` : ""}
+          {[
+            loop.runtime_adapter,
+            loop.model,
+            loop.reasoning_effort ? `${loop.reasoning_effort} reasoning` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </SummaryRow>
 
         <SummaryRow label="Repository">
