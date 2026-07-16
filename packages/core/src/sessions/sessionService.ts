@@ -547,8 +547,15 @@ function cloudHydrationMessageKey(event: AcpMessage): string {
 
 interface HydrationTurn {
   events: AcpMessage[];
+  eventKeys: string[];
   promptKey?: string;
   taskRunId?: string;
+}
+
+interface HydrationPromptPositions {
+  all: number[];
+  unscoped: number[];
+  byTaskRunId: Map<string, number[]>;
 }
 
 function sessionEventTaskRunMarker(event: AcpMessage): string | undefined {
@@ -575,11 +582,16 @@ function sessionEventTaskRunMarker(event: AcpMessage): string | undefined {
 function splitHydrationTurns(events: AcpMessage[]): HydrationTurn[] {
   const turns: HydrationTurn[] = [];
   let taskRunId: string | undefined;
-  let current: HydrationTurn = { events: [] };
+  let currentEvents: AcpMessage[] = [];
+  let currentPromptKey: string | undefined;
   const finishCurrent = (): void => {
-    if (current.events.length > 0) {
-      turns.push(current);
-    }
+    if (currentEvents.length === 0) return;
+    turns.push({
+      events: currentEvents,
+      eventKeys: currentEvents.map(cloudHydrationMessageKey),
+      promptKey: currentPromptKey,
+      taskRunId,
+    });
   };
 
   for (const event of events) {
@@ -587,17 +599,19 @@ function splitHydrationTurns(events: AcpMessage[]): HydrationTurn[] {
     if (marker) {
       finishCurrent();
       taskRunId = marker;
-      current = { events: [event], taskRunId };
+      currentEvents = [event];
+      currentPromptKey = undefined;
       continue;
     }
 
     const promptKey = sessionPromptTurnKey(event);
     if (promptKey) {
       finishCurrent();
-      current = { events: [event], promptKey, taskRunId };
+      currentEvents = [event];
+      currentPromptKey = promptKey;
       continue;
     }
-    current.events.push(event);
+    currentEvents.push(event);
   }
   finishCurrent();
   return turns;
@@ -614,36 +628,102 @@ function hydrationTurnScopesMatch(
   );
 }
 
-function hydrationTurnsMatch(
-  liveTurn: HydrationTurn,
-  hydratedTurn: HydrationTurn,
-  liveEventKeys: Set<string> | undefined,
-): boolean {
-  if (!hydrationTurnScopesMatch(liveTurn, hydratedTurn)) return false;
-  if (liveTurn.promptKey !== undefined) {
-    return liveTurn.promptKey === hydratedTurn.promptKey;
+function indexHydratedPromptTurns(
+  hydratedTurns: HydrationTurn[],
+): Map<string, HydrationPromptPositions> {
+  const positionsByPrompt = new Map<string, HydrationPromptPositions>();
+  for (let index = 0; index < hydratedTurns.length; index += 1) {
+    const turn = hydratedTurns[index];
+    if (turn.promptKey === undefined) continue;
+    let positions = positionsByPrompt.get(turn.promptKey);
+    if (!positions) {
+      positions = {
+        all: [],
+        unscoped: [],
+        byTaskRunId: new Map(),
+      };
+      positionsByPrompt.set(turn.promptKey, positions);
+    }
+    positions.all.push(index);
+    if (turn.taskRunId === undefined) {
+      positions.unscoped.push(index);
+      continue;
+    }
+    const scopedPositions = positions.byTaskRunId.get(turn.taskRunId) ?? [];
+    scopedPositions.push(index);
+    positions.byTaskRunId.set(turn.taskRunId, scopedPositions);
   }
-  if (!liveEventKeys) return false;
-  return hydratedTurn.events.some((event) =>
-    liveEventKeys.has(cloudHydrationMessageKey(event)),
+  return positionsByPrompt;
+}
+
+function latestPositionAtOrBefore(
+  positions: number[] | undefined,
+  maximum: number,
+): number {
+  if (!positions || positions.length === 0) return -1;
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle] <= maximum) {
+      match = positions[middle];
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findPromptHydrationTurn(
+  liveTurn: HydrationTurn,
+  positionsByPrompt: Map<string, HydrationPromptPositions>,
+  maximum: number,
+): number {
+  if (liveTurn.promptKey === undefined) return -1;
+  const positions = positionsByPrompt.get(liveTurn.promptKey);
+  if (!positions) return -1;
+  if (liveTurn.taskRunId === undefined) {
+    return latestPositionAtOrBefore(positions.all, maximum);
+  }
+  return Math.max(
+    latestPositionAtOrBefore(
+      positions.byTaskRunId.get(liveTurn.taskRunId),
+      maximum,
+    ),
+    latestPositionAtOrBefore(positions.unscoped, maximum),
   );
 }
 
+function promptlessHydrationTurnsMatch(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  if (!hydrationTurnScopesMatch(liveTurn, hydratedTurn)) return false;
+  const liveEventKeys = new Set(liveTurn.eventKeys);
+  return hydratedTurn.eventKeys.some((eventKey) => liveEventKeys.has(eventKey));
+}
+
 function discardExactHydratedEvents(
-  liveEvents: AcpMessage[],
-  hydratedEvents: AcpMessage[],
+  liveTurn: Pick<HydrationTurn, "events" | "eventKeys">,
+  hydratedTurn: Pick<HydrationTurn, "eventKeys">,
 ): AcpMessage[] {
-  const keep = new Array<boolean>(liveEvents.length).fill(true);
+  const keep = new Array<boolean>(liveTurn.events.length).fill(true);
   const hydratedPositions = new Map<string, number[]>();
-  for (let index = 0; index < hydratedEvents.length; index += 1) {
-    const eventKey = cloudHydrationMessageKey(hydratedEvents[index]);
+  for (let index = 0; index < hydratedTurn.eventKeys.length; index += 1) {
+    const eventKey = hydratedTurn.eventKeys[index];
     const positions = hydratedPositions.get(eventKey) ?? [];
     positions.push(index);
     hydratedPositions.set(eventKey, positions);
   }
-  let hydratedIndex = hydratedEvents.length - 1;
-  for (let liveIndex = liveEvents.length - 1; liveIndex >= 0; liveIndex -= 1) {
-    const liveKey = cloudHydrationMessageKey(liveEvents[liveIndex]);
+  let hydratedIndex = hydratedTurn.eventKeys.length - 1;
+  for (
+    let liveIndex = liveTurn.eventKeys.length - 1;
+    liveIndex >= 0;
+    liveIndex -= 1
+  ) {
+    const liveKey = liveTurn.eventKeys[liveIndex];
     const positions = hydratedPositions.get(liveKey);
     if (!positions) continue;
     while (
@@ -657,7 +737,7 @@ function discardExactHydratedEvents(
     keep[liveIndex] = false;
     hydratedIndex = matchedIndex - 1;
   }
-  return liveEvents.filter((_event, index) => keep[index]);
+  return liveTurn.events.filter((_event, index) => keep[index]);
 }
 
 function agentMessageUpdateKind(
@@ -713,15 +793,15 @@ function finishAgentMessageChunkRun(position: AgentMessagePosition): void {
 }
 
 function discardChunksSupersededByHydratedMessages(
-  liveEvents: AcpMessage[],
-  hydratedEvents: AcpMessage[],
-): AcpMessage[] {
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): Pick<HydrationTurn, "events" | "eventKeys"> {
   const hydratedMessagePositions = new Set<number>();
   const hydratedPosition: AgentMessagePosition = {
     messageIndex: 0,
     chunkRunActive: false,
   };
-  for (const event of hydratedEvents) {
+  for (const event of hydratedTurn.events) {
     if (sessionPromptTurnKey(event)) continue;
     const updateKind = agentMessageUpdateKind(event);
     if (updateKind === "ignored") continue;
@@ -748,31 +828,42 @@ function discardChunksSupersededByHydratedMessages(
     chunkRunActive: false,
   };
   let discardChunkRun = false;
-  return liveEvents.filter((event) => {
+  const events: AcpMessage[] = [];
+  const eventKeys: string[] = [];
+  for (
+    let eventIndex = 0;
+    eventIndex < liveTurn.events.length;
+    eventIndex += 1
+  ) {
+    const event = liveTurn.events[eventIndex];
+    let keep = true;
     if (sessionPromptTurnKey(event)) {
       discardChunkRun = false;
-      return true;
-    }
-    const updateKind = agentMessageUpdateKind(event);
-    if (updateKind === "ignored") return true;
-    if (updateKind === "chunk") {
-      if (!livePosition.chunkRunActive) {
-        livePosition.chunkRunActive = true;
-        discardChunkRun = hydratedMessagePositions.has(
-          livePosition.messageIndex,
-        );
-      }
-      return !discardChunkRun;
-    }
-    if (updateKind === "final") {
-      livePosition.messageIndex += 1;
-      livePosition.chunkRunActive = false;
     } else {
-      finishAgentMessageChunkRun(livePosition);
+      const updateKind = agentMessageUpdateKind(event);
+      if (updateKind === "chunk") {
+        if (!livePosition.chunkRunActive) {
+          livePosition.chunkRunActive = true;
+          discardChunkRun = hydratedMessagePositions.has(
+            livePosition.messageIndex,
+          );
+        }
+        keep = !discardChunkRun;
+      } else if (updateKind === "final") {
+        livePosition.messageIndex += 1;
+        livePosition.chunkRunActive = false;
+        discardChunkRun = false;
+      } else if (updateKind !== "ignored") {
+        finishAgentMessageChunkRun(livePosition);
+        discardChunkRun = false;
+      }
     }
-    discardChunkRun = false;
-    return true;
-  });
+    if (keep) {
+      events.push(event);
+      eventKeys.push(liveTurn.eventKeys[eventIndex]);
+    }
+  }
+  return { events, eventKeys };
 }
 
 function reconcileLiveEventsWithHydratedEvents(
@@ -781,6 +872,7 @@ function reconcileLiveEventsWithHydratedEvents(
 ): AcpMessage[] {
   const liveTurns = splitHydrationTurns(liveEvents);
   const hydratedTurns = splitHydrationTurns(hydratedEvents);
+  const promptPositions = indexHydratedPromptTurns(hydratedTurns);
   const reconciledTurns = new Array<AcpMessage[]>(liveTurns.length);
   let hydratedTurnIndex = hydratedTurns.length - 1;
 
@@ -790,26 +882,17 @@ function reconcileLiveEventsWithHydratedEvents(
     liveTurnIndex -= 1
   ) {
     const liveTurn = liveTurns[liveTurnIndex];
-    const liveEventKeys =
-      liveTurn.promptKey === undefined
-        ? new Set(liveTurn.events.map(cloudHydrationMessageKey))
-        : undefined;
-    let matchedHydratedTurnIndex = -1;
-    for (
-      let candidateIndex = hydratedTurnIndex;
-      candidateIndex >= 0;
-      candidateIndex -= 1
+    let matchedHydratedTurnIndex = findPromptHydrationTurn(
+      liveTurn,
+      promptPositions,
+      hydratedTurnIndex,
+    );
+    if (
+      liveTurn.promptKey === undefined &&
+      hydratedTurnIndex >= 0 &&
+      promptlessHydrationTurnsMatch(liveTurn, hydratedTurns[hydratedTurnIndex])
     ) {
-      if (
-        hydrationTurnsMatch(
-          liveTurn,
-          hydratedTurns[candidateIndex],
-          liveEventKeys,
-        )
-      ) {
-        matchedHydratedTurnIndex = candidateIndex;
-        break;
-      }
+      matchedHydratedTurnIndex = hydratedTurnIndex;
     }
     if (matchedHydratedTurnIndex === -1) {
       reconciledTurns[liveTurnIndex] = liveTurn.events;
@@ -818,11 +901,8 @@ function reconcileLiveEventsWithHydratedEvents(
 
     const hydratedTurn = hydratedTurns[matchedHydratedTurnIndex];
     reconciledTurns[liveTurnIndex] = discardExactHydratedEvents(
-      discardChunksSupersededByHydratedMessages(
-        liveTurn.events,
-        hydratedTurn.events,
-      ),
-      hydratedTurn.events,
+      discardChunksSupersededByHydratedMessages(liveTurn, hydratedTurn),
+      hydratedTurn,
     );
     hydratedTurnIndex = matchedHydratedTurnIndex - 1;
   }

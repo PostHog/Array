@@ -3666,6 +3666,102 @@ describe("SessionService", () => {
       });
     });
 
+    it("preserves a promptless current completion that only matches an ancestor turn", async () => {
+      const service = getSessionService();
+      const ancestorPrompt = {
+        type: "acp_message" as const,
+        ts: 1700000010,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 1,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "ancestor request" }] },
+        },
+      };
+      const currentPrompt = {
+        type: "acp_message" as const,
+        ts: 1700000040,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 2,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "current request" }] },
+        },
+      };
+      const ancestorCompletion = {
+        type: "acp_message" as const,
+        ts: 1700000030,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "_posthog/turn_complete",
+          params: { stopReason: "end_turn" },
+        },
+      };
+      const currentCompletion = {
+        ...ancestorCompletion,
+        ts: 1700000060,
+      };
+      const resumedSession = createMockSession({
+        taskRunId: "run-456",
+        taskId: "task-123",
+        status: "connected",
+        isCloud: true,
+        events: [currentCompletion],
+        processedLineCount: 1,
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        resumedSession,
+      );
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-456": resumedSession,
+      });
+      const parentEntry = {
+        timestamp: "2024-01-01T00:01:00Z",
+        notification: {},
+      };
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
+        .mockResolvedValueOnce({ entries: [parentEntry], complete: true })
+        .mockResolvedValueOnce({ entries: [parentEntry], complete: true });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+      mockConvertStoredEntriesToEvents.mockReturnValueOnce([
+        ancestorPrompt,
+        ancestorCompletion,
+        currentPrompt,
+      ]);
+
+      service.watchCloudTask(
+        "task-123",
+        "run-456",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://logs.example.com/run-456",
+        undefined,
+        "claude",
+        undefined,
+        undefined,
+        undefined,
+        "in_progress",
+        undefined,
+        { resume_from_run_id: "run-123" },
+      );
+
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-456",
+          expect.objectContaining({
+            events: [
+              ancestorPrompt,
+              ancestorCompletion,
+              currentPrompt,
+              currentCompletion,
+            ],
+          }),
+        );
+      });
+    });
+
     it("keeps immediate-resume watcher counts leaf-local while flushing buffered updates", async () => {
       const service = getSessionService();
       const ancestorEvent = {
