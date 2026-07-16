@@ -64,6 +64,7 @@ import {
   type Adapter,
   AUTORESEARCH_FLAG,
   type CloudRegion,
+  SPOKEN_NARRATION_FLAG,
 } from "@posthog/shared";
 import {
   AUTH_SIDE_EFFECTS,
@@ -386,7 +387,9 @@ container
     get: () => {
       const s = useSettingsStore.getState();
       return {
-        enabled: s.spokenNotifications,
+        enabled:
+          s.spokenNotifications &&
+          posthogFeatureFlags.isEnabled(SPOKEN_NARRATION_FLAG),
         voiceId: s.elevenLabsVoiceId || undefined,
       };
     },
@@ -426,7 +429,9 @@ container.bind<ISpeechNotifySettings>(SPEECH_NOTIFY_SETTINGS).toConstantValue({
   get: () => {
     const s = useSettingsStore.getState();
     return {
-      enabled: s.spokenNotifications,
+      enabled:
+        s.spokenNotifications &&
+        posthogFeatureFlags.isEnabled(SPOKEN_NARRATION_FLAG),
       needsInput: s.spokenNotifyNeedsInput,
       completion: s.spokenNotifyCompletion,
       progress: s.spokenNotifyProgress,

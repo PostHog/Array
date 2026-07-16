@@ -15,12 +15,17 @@ import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
+import { SPOKEN_NARRATION_FLAG } from "@posthog/shared";
 import {
   createAuthenticatedClient,
   getAuthenticatedClient,
 } from "@posthog/ui/features/auth/authClientImperative";
 import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
+import {
+  FEATURE_FLAGS,
+  type FeatureFlags,
+} from "@posthog/ui/features/feature-flags/identifiers";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
 import { SpeechNotifier } from "@posthog/ui/features/notifications/speechNotifier";
@@ -55,6 +60,18 @@ const log = logger.scope("session-service");
 
 function hostClient(): HostTrpcClient {
   return resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
+}
+
+// Fail closed: a host without flags (or flags not yet loaded) means the
+// spoken-narration rollout is off for this session start.
+function spokenNarrationFlagEnabled(): boolean {
+  try {
+    return resolveService<FeatureFlags>(FEATURE_FLAGS).isEnabled(
+      SPOKEN_NARRATION_FLAG,
+    );
+  } catch {
+    return false;
+  }
 }
 
 function buildSessionServiceDeps(): SessionServiceDeps {
@@ -117,6 +134,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       return {
         ...state,
         customInstructions: getEffectiveCustomInstructions(state),
+        spokenNarrationFlagEnabled: spokenNarrationFlagEnabled(),
       };
     },
     usageLimit: {

@@ -94,6 +94,7 @@ import {
 import { selectSessionsToEvict } from "./sessionEviction";
 import { createBaseSession } from "./sessionFactory";
 import { type ParsedSessionLogs, parseSessionLogContent } from "./sessionLogs";
+import { resolveLocalSpokenNarration } from "./spokenNarration";
 
 const LOCAL_SESSION_RECONNECT_ATTEMPTS = 3;
 const LOCAL_SESSION_RECONNECT_BACKOFF = {
@@ -337,6 +338,9 @@ export interface SessionServiceDeps {
     rtkEnabledCloud?: boolean;
     spokenNotifications?: boolean;
     elevenLabsKeyConfigured?: boolean;
+    // The spoken-narration rollout flag, evaluated by the host (core has no
+    // feature-flag client). Absent means off — narration stays fail-closed.
+    spokenNarrationFlagEnabled?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1088,19 +1092,13 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const {
-        customInstructions,
-        rtkEnabledLocal,
-        spokenNotifications,
-        elevenLabsKeyConfigured,
-      } = this.d.settings;
+      const { customInstructions, rtkEnabledLocal } = this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
-        spokenNarration:
-          spokenNotifications === true && elevenLabsKeyConfigured === true,
+        spokenNarration: resolveLocalSpokenNarration(this.d.settings),
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1420,12 +1418,8 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
-    const {
-      customInstructions: startCustomInstructions,
-      rtkEnabledLocal,
-      spokenNotifications,
-      elevenLabsKeyConfigured,
-    } = this.d.settings;
+    const { customInstructions: startCustomInstructions, rtkEnabledLocal } =
+      this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
@@ -1437,8 +1431,7 @@ export class SessionService {
       adapter,
       customInstructions: startCustomInstructions || undefined,
       rtkEnabled: rtkEnabledLocal,
-      spokenNarration:
-        spokenNotifications === true && elevenLabsKeyConfigured === true,
+      spokenNarration: resolveLocalSpokenNarration(this.d.settings),
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
