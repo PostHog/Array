@@ -57,7 +57,7 @@ export class LlmGatewayService {
   private readonly endpoints: LlmGatewayEndpoints;
   private readonly log: LlmGatewayLogger;
 
-  private lastKnownCodeUsageBilled: boolean | null = null;
+  private lastKnownCodeUsageSubscribed: boolean | null = null;
 
   async prompt(
     messages: LlmMessage[],
@@ -78,7 +78,7 @@ export class LlmGatewayService {
   ): Promise<PromptOutput> {
     const requested = options.model ?? this.endpoints.defaultModel;
     const model =
-      this.lastKnownCodeUsageBilled === false
+      this.lastKnownCodeUsageSubscribed === false
         ? FREE_TIER_GATEWAY_MODEL
         : requested;
     try {
@@ -89,7 +89,7 @@ export class LlmGatewayService {
         error.statusCode === 403 &&
         classifyGatewayLimitError(error.message) === "model_gate";
       if (!isModelGate || model === FREE_TIER_GATEWAY_MODEL) throw error;
-      this.lastKnownCodeUsageBilled = false;
+      this.lastKnownCodeUsageSubscribed = false;
       this.log.warn("Model gated for free tier, retrying on free-tier model", {
         model,
         fallbackModel: FREE_TIER_GATEWAY_MODEL,
@@ -268,8 +268,8 @@ export class LlmGatewayService {
     }
 
     const usage = usageOutput.parse(await response.json());
-    if (usage.code_usage_billed !== undefined) {
-      this.lastKnownCodeUsageBilled = usage.code_usage_billed;
+    if (usage.code_usage_subscribed !== undefined) {
+      this.lastKnownCodeUsageSubscribed = usage.code_usage_subscribed;
     }
     return usage;
   }

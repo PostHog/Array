@@ -31,7 +31,7 @@ export function UsageLimitModal() {
   const content = usageLimitContent({
     cause,
     resetLabel: resetAt ? formatResetTime(resetAt) : null,
-    billed: usage?.code_usage_billed,
+    subscribed: usage?.code_usage_subscribed,
   });
 
   const handleAction = () => {

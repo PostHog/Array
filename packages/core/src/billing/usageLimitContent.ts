@@ -10,9 +10,9 @@ export interface UsageLimitContent {
 export function usageLimitContent(args: {
   cause: GatewayLimitCause | null;
   resetLabel: string | null;
-  billed: boolean | undefined;
+  subscribed: boolean | undefined;
 }): UsageLimitContent {
-  const { cause, resetLabel, billed } = args;
+  const { cause, resetLabel, subscribed } = args;
 
   if (cause === "model_gate") {
     return {
@@ -25,7 +25,7 @@ export function usageLimitContent(args: {
   }
 
   if (cause === "org_limit") {
-    if (billed === false) {
+    if (subscribed === false) {
       return {
         title: "Free usage used up",
         description:
