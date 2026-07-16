@@ -3522,7 +3522,7 @@ describe("SessionService", () => {
       },
     );
 
-    it("does not merge inherited live chunks over coalesced resume history", async () => {
+    it("does not retain a live chunk superseded by coalesced resume history", async () => {
       const service = getSessionService();
       const persistedAgentMessage = {
         type: "acp_message" as const,
@@ -3533,7 +3533,7 @@ describe("SessionService", () => {
           params: {
             update: {
               sessionUpdate: "agent_message",
-              content: { type: "text", text: "answer once" },
+              content: { type: "text", text: "complete" },
             },
           },
         },
@@ -3548,7 +3548,7 @@ describe("SessionService", () => {
             sessionId: "parent-session",
             update: {
               sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: "answer once" },
+              content: { type: "text", text: "partial" },
             },
           },
         },

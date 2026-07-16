@@ -545,7 +545,9 @@ function cloudHydrationEventKey(event: AcpMessage): string {
   return JSON.stringify([event.ts, event.message]);
 }
 
-function coalescedAgentMessageKey(event: AcpMessage): string | undefined {
+function agentMessageUpdateKind(
+  event: AcpMessage,
+): "final" | "chunk" | undefined {
   const message = event.message;
   if (!isJsonRpcNotification(message) || message.method !== "session/update") {
     return undefined;
@@ -560,13 +562,34 @@ function coalescedAgentMessageKey(event: AcpMessage): string | undefined {
         }
       | undefined
   )?.update;
-  if (
-    update?.sessionUpdate !== "agent_message" &&
-    update?.sessionUpdate !== "agent_message_chunk"
-  ) {
-    return undefined;
-  }
-  return JSON.stringify([event.ts, "agent_message", update.content]);
+  if (update?.sessionUpdate === "agent_message") return "final";
+  if (update?.sessionUpdate === "agent_message_chunk") return "chunk";
+  return undefined;
+}
+
+function discardChunksSupersededByHydratedMessages(
+  liveEvents: AcpMessage[],
+  hydratedEvents: AcpMessage[],
+): AcpMessage[] {
+  // SessionLogWriter timestamps a coalesced agent_message with the first
+  // chunk's timestamp. Use that stable group boundary to discard the entire
+  // inherited chunk run once persisted history has the authoritative message.
+  const hydratedMessageStarts = new Set(
+    hydratedEvents
+      .filter((event) => agentMessageUpdateKind(event) === "final")
+      .map((event) => event.ts),
+  );
+  let discardChunkRun = false;
+  return liveEvents.filter((event) => {
+    if (agentMessageUpdateKind(event) !== "chunk") {
+      discardChunkRun = false;
+      return true;
+    }
+    if (hydratedMessageStarts.has(event.ts)) {
+      discardChunkRun = true;
+    }
+    return !discardChunkRun;
+  });
 }
 
 export function derivePendingPermissionRequests(
@@ -4699,21 +4722,15 @@ export class SessionService {
     let events = convertStoredEntriesToEvents(rawEntries);
     if (isResumeRun && session.events.length > 0) {
       const eventKeys = new Set(events.map(cloudHydrationEventKey));
-      const agentMessageKeys = new Set(
-        events
-          .map(coalescedAgentMessageKey)
-          .filter((key): key is string => key !== undefined),
+      const inheritedEvents = discardChunksSupersededByHydratedMessages(
+        session.events,
+        events,
       );
       events = [
         ...events,
-        ...session.events.filter((event) => {
-          if (eventKeys.has(cloudHydrationEventKey(event))) return false;
-          const agentMessageKey = coalescedAgentMessageKey(event);
-          return (
-            agentMessageKey === undefined ||
-            !agentMessageKeys.has(agentMessageKey)
-          );
-        }),
+        ...inheritedEvents.filter(
+          (event) => !eventKeys.has(cloudHydrationEventKey(event)),
+        ),
       ];
       const watcher = this.cloudTaskWatchers.get(taskId);
       const hasLeafLocalWatcherCursor =
