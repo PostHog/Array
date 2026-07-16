@@ -192,6 +192,48 @@ describe("SessionService.clearSessionError retry config", () => {
   });
 });
 
+describe("SessionService.startFreshSession", () => {
+  it("tears down and creates a new task run without replaying the prompt", async () => {
+    const session = makeSession({
+      events: [PROMPT_ECHO_EVENT, AGENT_MESSAGE_EVENT],
+      model: "claude-fable-5",
+      adapter: "claude",
+      executionMode: "acceptEdits",
+      reasoningLevel: "medium",
+    });
+    const { service, createNewLocalSession, reconnectInPlace } =
+      createHarness(session);
+
+    await service.startFreshSession("task-1", "/repo");
+
+    expect(createNewLocalSession).toHaveBeenCalledWith(
+      "task-1",
+      "Test task",
+      "/repo",
+      { client: {} },
+      undefined,
+      "acceptEdits",
+      "claude",
+      "claude-fable-5",
+      "medium",
+    );
+    expect(reconnectInPlace).not.toHaveBeenCalled();
+  });
+
+  it("leaves resetSession on the reconnect-in-place path", async () => {
+    const session = makeSession({
+      events: [PROMPT_ECHO_EVENT, AGENT_MESSAGE_EVENT],
+    });
+    const { service, createNewLocalSession, reconnectInPlace } =
+      createHarness(session);
+
+    await service.resetSession("task-1", "/repo");
+
+    expect(reconnectInPlace).toHaveBeenCalledWith("task-1", "/repo", null);
+    expect(createNewLocalSession).not.toHaveBeenCalled();
+  });
+});
+
 const CONNECT_PARAMS: ConnectParams = {
   task: {
     id: "task-1",

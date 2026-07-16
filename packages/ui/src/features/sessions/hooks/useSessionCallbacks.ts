@@ -61,6 +61,26 @@ export function useSessionCallbacks({
 
   const messagingMode = useMessagingMode(taskId);
 
+  const handleNewSession = useCallback(async () => {
+    if (!repoPath) return;
+    try {
+      await sessionService.resetSession(taskId, repoPath);
+    } catch (error) {
+      log.error("Failed to reset session", error);
+      toast.error("Failed to start new session. Please try again.");
+    }
+  }, [taskId, repoPath, sessionService]);
+
+  const handleStartFreshSession = useCallback(async () => {
+    if (!repoPath) return;
+    try {
+      await sessionService.startFreshSession(taskId, repoPath);
+    } catch (error) {
+      log.error("Failed to start fresh session", error);
+      toast.error("Failed to clear chat. Please try again.");
+    }
+  }, [taskId, repoPath, sessionService]);
+
   const handleSendPrompt = useCallback(
     async (text: string) => {
       const currentSession = sessionRef.current;
@@ -76,6 +96,7 @@ export function useSessionCallbacks({
             }
           : null,
         taskRun: task.latest_run ?? null,
+        onNewSession: handleStartFreshSession,
       });
       if (handled) return;
 
@@ -169,6 +190,7 @@ export function useSessionCallbacks({
       messagingMode,
       setPendingContent,
       requestFocus,
+      handleStartFreshSession,
     ],
   );
 
@@ -219,16 +241,6 @@ export function useSessionCallbacks({
     } catch (error) {
       log.error("Failed to clear session error", error);
       toast.error("Failed to retry. Please try again.");
-    }
-  }, [taskId, repoPath, sessionService]);
-
-  const handleNewSession = useCallback(async () => {
-    if (!repoPath) return;
-    try {
-      await sessionService.resetSession(taskId, repoPath);
-    } catch (error) {
-      log.error("Failed to reset session", error);
-      toast.error("Failed to start new session. Please try again.");
     }
   }, [taskId, repoPath, sessionService]);
 

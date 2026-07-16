@@ -26,6 +26,8 @@ interface CommandContext {
     events: unknown[];
   } | null;
   taskRun: { id?: string; log_url?: string } | null;
+  /** Clears the transcript and starts a blank local chat (new task run). */
+  onNewSession?: () => Promise<void>;
 }
 
 export interface CodeCommandInsertContext {
@@ -104,7 +106,20 @@ const addDirCommand: CodeCommand = {
   },
 };
 
+const newCommand: CodeCommand = {
+  name: "new",
+  description: "Clear the chat and start a fresh conversation",
+  async execute(_args, ctx) {
+    if (!ctx.onNewSession || !ctx.repoPath) {
+      toast.error("Clearing chat is only available for local chats.");
+      return;
+    }
+    await ctx.onNewSession();
+  },
+};
+
 const commands: CodeCommand[] = [
+  newCommand,
   addDirCommand,
   makeFeedbackCommand("good", "good", "Positive"),
   makeFeedbackCommand("bad", "bad", "Negative"),

@@ -4258,6 +4258,41 @@ export class SessionService {
     await this.reconnectInPlace(taskId, repoPath, null);
   }
 
+  /** Tear down the current run and create a new one with a blank transcript. */
+  async startFreshSession(taskId: string, repoPath: string): Promise<void> {
+    this.localRepoPaths.set(taskId, repoPath);
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return;
+
+    const { taskTitle, executionMode, adapter, model, reasoningLevel } =
+      session;
+
+    await this.teardownSession(session.taskRunId);
+
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind === "restoring") {
+      throw new Error("Authentication is still restoring. Please wait.");
+    }
+    if (authStatus.kind !== "ready") {
+      throw new Error("Unable to reach server. Please check your connection.");
+    }
+
+    // teardownSession clears localRepoPaths; restore before starting again.
+    this.localRepoPaths.set(taskId, repoPath);
+
+    await this.createNewLocalSession(
+      taskId,
+      taskTitle,
+      repoPath,
+      authStatus.auth,
+      undefined,
+      executionMode,
+      adapter,
+      model,
+      reasoningLevel,
+    );
+  }
+
   /**
    * Cancel the current backend agent and reconnect under the same taskRunId.
    * Does NOT remove the session from the store (avoids connect effect loop).
