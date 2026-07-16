@@ -4,6 +4,7 @@ import {
   GitBranchIcon,
   RobotIcon,
 } from "@phosphor-icons/react";
+import { taskFeedRunStatus } from "@posthog/core/canvas/channelFeed";
 import {
   Avatar,
   AvatarFallback,
@@ -37,7 +38,6 @@ import {
 } from "@posthog/quill";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
-import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
@@ -46,7 +46,6 @@ import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannel
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { shouldOpenTaskCardInline } from "@posthog/ui/features/canvas/taskCardNavigation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
 import {
   type SidebarPrState,
   useTaskPrStatus,
@@ -163,14 +162,6 @@ interface TaskStatusDisplay {
 // deliberate end state we should not soften with a PR.
 function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   const data = useChannelTaskData(task);
-  const agentSettledAfterRun = useSessionSelector(
-    task.id,
-    (session) =>
-      !!session &&
-      (session.events?.length ?? 0) > 0 &&
-      !session.isPromptPending &&
-      (session.pendingPermissions?.size ?? 0) === 0,
-  );
   const { prState } = useTaskPrStatus({
     id: task.id,
     cloudPrUrl: data?.cloudPrUrl ?? null,
@@ -178,6 +169,7 @@ function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   });
   const status = data?.taskRunStatus ?? task.latest_run?.status;
   const environment = data?.taskRunEnvironment ?? task.latest_run?.environment;
+  const displayStatus = taskFeedRunStatus({ status, environment });
   // `prState` is resolved async from git/`gh` and is routinely null for cloud
   // tasks (the details fetch hasn't landed, or there's no cached row). But the
   // PR URL itself is a hard signal a PR exists — the card's "PR" link keys off
@@ -209,10 +201,8 @@ function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
     base = null;
   } else if (!status) {
     base = <Badge>Draft</Badge>;
-  } else if (environment === "cloud" || isTerminalStatus(status)) {
-    const effectiveStatus =
-      agentSettledAfterRun && !isTerminalStatus(status) ? "completed" : status;
-    base = statusBadge(effectiveStatus);
+  } else if (displayStatus) {
+    base = statusBadge(displayStatus);
   } else {
     // Local, non-terminal: the run status is unreliable (the backend row stays
     // "queued" while the agent runs on the creator's machine), so we render no

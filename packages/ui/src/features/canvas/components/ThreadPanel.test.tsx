@@ -1,6 +1,37 @@
+import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AgentStatusLine, UserPromptRow } from "./ThreadPanel";
+import { agentTurns } from "./threadAgentTurns";
+
+describe("agentTurns", () => {
+  it("accumulates every text chunk in one agent turn", () => {
+    const items = [
+      {
+        type: "session_update",
+        id: "first",
+        timestamp: 10,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Hello" },
+        },
+      },
+      {
+        type: "session_update",
+        id: "second",
+        timestamp: 20,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: " there" },
+        },
+      },
+    ] as ConversationItem[];
+
+    expect(agentTurns(items)).toEqual([
+      { id: "first", text: "Hello there", timestamp: 10 },
+    ]);
+  });
+});
 
 describe("AgentStatusLine", () => {
   it("renders working status outside the conversation timeline", () => {

@@ -15,6 +15,7 @@ import {
   shouldSuspendThreadSession,
   type ThreadAgentMessage,
   type ThreadAgentStatus,
+  type ThreadTimelineRow,
 } from "@posthog/core/canvas/threadTimeline";
 import {
   Avatar,
@@ -60,6 +61,7 @@ import {
   mentionChipClass,
 } from "@posthog/ui/features/canvas/components/MentionText";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
+import { agentTurns } from "@posthog/ui/features/canvas/components/threadAgentTurns";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
   useDeleteTaskThreadMessage,
@@ -162,33 +164,6 @@ function ThreadMessageRow({
       )}
     </ThreadItem>
   );
-}
-
-function agentTurns(items: ConversationItem[]): ThreadAgentMessage[] {
-  const turns: ThreadAgentMessage[] = [];
-  let current: ThreadAgentMessage | null = null;
-  for (const item of items) {
-    if (item.type === "user_message") {
-      if (current) turns.push(current);
-      current = null;
-      continue;
-    }
-    if (
-      item.type === "session_update" &&
-      item.update.sessionUpdate === "agent_message_chunk" &&
-      "content" in item.update &&
-      item.update.content.type === "text" &&
-      item.update.content.text.trim()
-    ) {
-      current = {
-        id: item.id,
-        text: item.update.content.text,
-        timestamp: item.timestamp,
-      };
-    }
-  }
-  if (current) turns.push(current);
-  return turns;
 }
 
 function agentPrompts(items: ConversationItem[]): ThreadAgentMessage[] {
@@ -304,6 +279,181 @@ function ThreadLoadingState() {
         <EmptyTitle>Loading thread</EmptyTitle>
       </EmptyHeader>
     </Empty>
+  );
+}
+
+function ThreadHeader({
+  onClose,
+  onToggleCollapsed,
+  onOpenFull,
+}: {
+  onClose?: () => void;
+  onToggleCollapsed?: () => void;
+  onOpenFull?: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 border-border border-b px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <span className="block font-medium text-sm">Thread</span>
+      </div>
+      {onOpenFull && (
+        <Button
+          variant="default"
+          size="icon-sm"
+          aria-label="Open full task"
+          onClick={onOpenFull}
+        >
+          <ArrowSquareOutIcon size={14} />
+        </Button>
+      )}
+      {onToggleCollapsed && (
+        <Button
+          variant="default"
+          size="icon-sm"
+          aria-label="Collapse thread"
+          onClick={onToggleCollapsed}
+        >
+          <CaretRightIcon size={14} />
+        </Button>
+      )}
+      {onClose && (
+        <Button
+          variant="default"
+          size="icon-sm"
+          aria-label="Close thread"
+          onClick={onClose}
+        >
+          <XIcon size={14} />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ThreadTimeline({
+  timeline,
+  isReady,
+  taskAuthor,
+  currentUserUuid,
+  currentUserEmail,
+  isTaskAuthor,
+  canForward,
+  lastAgentId,
+  agentActive,
+  onSendToAgent,
+  onDelete,
+}: {
+  timeline: ThreadTimelineRow<TaskThreadMessage>[];
+  isReady: boolean;
+  taskAuthor: UserBasic | null | undefined;
+  currentUserUuid?: string;
+  currentUserEmail?: string;
+  isTaskAuthor: boolean;
+  canForward: boolean;
+  lastAgentId?: string;
+  agentActive: boolean;
+  onSendToAgent: (messageId: string) => void;
+  onDelete: (messageId: string) => void;
+}) {
+  if (!isReady) return <ThreadLoadingState />;
+  if (timeline.length === 0) {
+    return (
+      <Empty className="h-full border-0">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <RobotIcon size={18} />
+          </EmptyMedia>
+          <EmptyTitle>No messages yet</EmptyTitle>
+          <EmptyDescription>
+            Discuss this task with your team. The agent's status shows up here
+            too; messages stay between humans unless the task author sends one
+            to the agent.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+
+  return (
+    <ThreadItemGroup>
+      {timeline.map((row) =>
+        row.kind === "prompt" ? (
+          <UserPromptRow
+            key={row.message.id}
+            message={row.message}
+            author={taskAuthor}
+          />
+        ) : row.kind === "human" ? (
+          <ThreadMessageRow
+            key={row.message.id}
+            message={row.message.value as TaskThreadMessage}
+            isTaskAuthor={isTaskAuthor}
+            isOwnMessage={
+              !!currentUserUuid &&
+              currentUserUuid === row.message.value?.author?.uuid
+            }
+            currentUserEmail={currentUserEmail}
+            canForward={canForward}
+            onSendToAgent={() => onSendToAgent(row.message.id)}
+            onDelete={() => onDelete(row.message.id)}
+          />
+        ) : (
+          <AgentTurnRow
+            key={row.message.id}
+            message={row.message}
+            streaming={row.message.id === lastAgentId && agentActive}
+          />
+        ),
+      )}
+    </ThreadItemGroup>
+  );
+}
+
+function ThreadReplyComposer({
+  draft,
+  onDraftChange,
+  onSubmit,
+  members,
+  allowAgentMention,
+  onMentionInsert,
+  disabled,
+}: {
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSubmit: () => void;
+  members: UserBasic[];
+  allowAgentMention: boolean;
+  onMentionInsert: (member: UserBasic) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="border-border border-t p-2">
+      <MentionComposer
+        value={draft}
+        onValueChange={onDraftChange}
+        onSubmit={onSubmit}
+        members={members}
+        allowAgentMention={allowAgentMention}
+        onMentionInsert={onMentionInsert}
+        placeholder="Reply in thread… @agent sends to the agent"
+        rows={2}
+        inputClassName="max-h-40 text-[13px]"
+      >
+        <InputGroupAddon align="block-end" className="p-1">
+          <span className="ml-auto flex items-center gap-1">
+            <InputGroupButton
+              variant="primary"
+              size="icon-sm"
+              aria-label="Send"
+              disabled={disabled}
+              onClick={onSubmit}
+            >
+              <PaperPlaneRightIcon size={14} />
+            </InputGroupButton>
+          </span>
+        </InputGroupAddon>
+      </MentionComposer>
+    </div>
   );
 }
 
@@ -481,46 +631,15 @@ function ThreadConversation({
     });
   };
 
-  const isEmpty = timeline.length === 0;
   const isReady = !isInitializing && !isLoading;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
-      <div className="flex items-center gap-1 border-border border-b px-3 py-2">
-        <div className="min-w-0 flex-1">
-          <span className="block font-medium text-sm">Thread</span>
-        </div>
-        {onOpenFull && (
-          <Button
-            variant="default"
-            size="icon-sm"
-            aria-label="Open full task"
-            onClick={onOpenFull}
-          >
-            <ArrowSquareOutIcon size={14} />
-          </Button>
-        )}
-        {onToggleCollapsed && (
-          <Button
-            variant="default"
-            size="icon-sm"
-            aria-label="Collapse thread"
-            onClick={onToggleCollapsed}
-          >
-            <CaretRightIcon size={14} />
-          </Button>
-        )}
-        {onClose && (
-          <Button
-            variant="default"
-            size="icon-sm"
-            aria-label="Close thread"
-            onClick={onClose}
-          >
-            <XIcon size={14} />
-          </Button>
-        )}
-      </div>
+      <ThreadHeader
+        onOpenFull={onOpenFull}
+        onToggleCollapsed={onToggleCollapsed}
+        onClose={onClose}
+      />
 
       {showTaskSummary && (
         <div className="z-10 px-2">
@@ -528,89 +647,32 @@ function ThreadConversation({
         </div>
       )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {!isReady ? (
-          <ThreadLoadingState />
-        ) : isEmpty ? (
-          <Empty className="h-full border-0">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <RobotIcon size={18} />
-              </EmptyMedia>
-              <EmptyTitle>No messages yet</EmptyTitle>
-              <EmptyDescription>
-                Discuss this task with your team. The agent's status shows up
-                here too; messages stay between humans unless the task author
-                sends one to the agent.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <ThreadItemGroup>
-            {timeline.map((row) =>
-              row.kind === "prompt" ? (
-                <UserPromptRow
-                  key={row.message.id}
-                  message={row.message}
-                  author={task.created_by}
-                />
-              ) : row.kind === "human" ? (
-                <ThreadMessageRow
-                  key={row.message.id}
-                  message={row.message.value as TaskThreadMessage}
-                  isTaskAuthor={isTaskAuthor}
-                  isOwnMessage={
-                    !!currentUser?.uuid &&
-                    currentUser.uuid === row.message.value?.author?.uuid
-                  }
-                  currentUserEmail={currentUser?.email}
-                  canForward={canForward}
-                  onSendToAgent={() => handleSendToAgent(row.message.id)}
-                  onDelete={() => handleDelete(row.message.id)}
-                />
-              ) : (
-                <AgentTurnRow
-                  key={row.message.id}
-                  message={row.message}
-                  streaming={
-                    row.message.id === lastAgentId &&
-                    agentStatus?.phase === "active"
-                  }
-                />
-              ),
-            )}
-          </ThreadItemGroup>
-        )}
+        <ThreadTimeline
+          timeline={timeline}
+          isReady={isReady}
+          taskAuthor={task.created_by}
+          currentUserUuid={currentUser?.uuid}
+          currentUserEmail={currentUser?.email}
+          isTaskAuthor={isTaskAuthor}
+          canForward={canForward}
+          lastAgentId={lastAgentId}
+          agentActive={agentStatus?.phase === "active"}
+          onSendToAgent={handleSendToAgent}
+          onDelete={handleDelete}
+        />
       </div>
 
       {agentStatus && <AgentStatusLine status={agentStatus} />}
 
-      <div className="border-border border-t p-2">
-        <MentionComposer
-          value={draft}
-          onValueChange={setDraft}
-          onSubmit={submit}
-          members={members}
-          allowAgentMention={isTaskAuthor && canForward}
-          onMentionInsert={handleMentionInsert}
-          placeholder="Reply in thread… @agent sends to the agent"
-          rows={2}
-          inputClassName="max-h-40 text-[13px]"
-        >
-          <InputGroupAddon align="block-end" className="p-1">
-            <span className="ml-auto flex items-center gap-1">
-              <InputGroupButton
-                variant="primary"
-                size="icon-sm"
-                aria-label="Send"
-                disabled={!draft.trim() || isPosting || isSendingToAgent}
-                onClick={submit}
-              >
-                <PaperPlaneRightIcon size={14} />
-              </InputGroupButton>
-            </span>
-          </InputGroupAddon>
-        </MentionComposer>
-      </div>
+      <ThreadReplyComposer
+        draft={draft}
+        onDraftChange={setDraft}
+        onSubmit={submit}
+        members={members}
+        allowAgentMention={isTaskAuthor && canForward}
+        onMentionInsert={handleMentionInsert}
+        disabled={!draft.trim() || isPosting || isSendingToAgent}
+      />
     </div>
   );
 }

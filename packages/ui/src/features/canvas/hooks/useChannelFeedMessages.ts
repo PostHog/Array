@@ -1,3 +1,4 @@
+import { shouldPollChannelFeed } from "@posthog/core/canvas/channelFeed";
 import type {
   ChannelFeedMessage,
   TaskChannel,
@@ -81,7 +82,10 @@ export function useChannelFeedMessages(channelId: string | undefined): {
     {
       enabled: !!channelId,
       retry: false,
-      refetchInterval: CHANNEL_FEED_MESSAGES_POLL_INTERVAL_MS,
+      refetchInterval: (query) =>
+        shouldPollChannelFeed(query.state.error)
+          ? CHANNEL_FEED_MESSAGES_POLL_INTERVAL_MS
+          : false,
     },
   );
   const messages = useMemo(
