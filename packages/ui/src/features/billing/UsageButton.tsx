@@ -1,6 +1,7 @@
 import { Circle } from "@phosphor-icons/react";
 import {
   formatResetTime,
+  formatUsageBreakdown,
   formatUsdAmount,
 } from "@posthog/core/billing/usageDisplay";
 import {
@@ -67,9 +68,14 @@ export function UsageButton() {
     meter.kind === "dollars"
       ? `${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)} used`
       : `${percent}% used`;
-  const resetLabel = formatResetTime(
-    meter.kind === "dollars" ? meter.resetAt : meter.bucket.reset_at,
-  );
+  const resetLabel =
+    meter.kind === "dollars"
+      ? formatResetTime(meter.resetAt, { label: "Billing period ends" })
+      : formatResetTime(meter.bucket.reset_at);
+  const breakdownLabel =
+    meter.kind === "dollars" && meter.breakdown
+      ? formatUsageBreakdown(meter.breakdown)
+      : null;
 
   // Upgrade-prompt analytics only apply to free-tier orgs — a subscribed
   // org's meter is not an upgrade prompt.
@@ -158,7 +164,7 @@ export function UsageButton() {
           variant={blocked ? "destructive" : "default"}
         />
         <div className="font-normal text-[11px] text-muted-foreground">
-          {resetLabel}
+          {breakdownLabel ? `${breakdownLabel} · ${resetLabel}` : resetLabel}
         </div>
       </PopoverContent>
     </Popover>

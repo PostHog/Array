@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
+import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
 import { setRootContainer } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
@@ -95,5 +96,7 @@ container.bind(MCP_SANDBOX_PROXY_URL).toConstantValue(() => {
   }
   return sandboxProxyUrl;
 });
+
+container.load(taskThreadCoreModule);
 
 setRootContainer(container);
