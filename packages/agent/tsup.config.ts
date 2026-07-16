@@ -119,6 +119,7 @@ export default defineConfig([
       "src/adapters/claude/tools.ts",
       "src/adapters/claude/conversion/tool-use-to-acp.ts",
       "src/adapters/claude/session/jsonl-hydration.ts",
+      "src/adapters/claude/session/mcp-config.ts",
       "src/adapters/claude/session/models.ts",
       "src/adapters/codex-app-server/models.ts",
       "src/adapters/codex-app-server/local-tools-mcp-server.ts",

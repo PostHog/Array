@@ -127,6 +127,13 @@ export {
 export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
+export type {
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
+  LocalMcpServerDescriptor,
+  LocalMcpServerScope,
+  LocalMcpTransport,
+} from "./local-mcp-domain";
 export {
   formatMention,
   type MentionSegment,
@@ -165,6 +172,10 @@ export {
   readPrSummaries,
   readPrUrls,
 } from "./pr-urls";
+export {
+  isPrivateIpv4Octets,
+  isPrivateIpv6Literal,
+} from "./private-network";
 export {
   type CloudRegion,
   formatRegionBadge,

@@ -407,12 +407,25 @@ export class TaskCreationSaga extends Saga<
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,
+            importedMcpServers: input.importedMcpServers,
+            relayedMcpServers: input.relayedMcpServers,
             initialPermissionMode:
               input.executionMode ??
               (cloudAdapter === "codex" ? "auto" : "plan"),
           });
           if (!taskRun?.id) {
             throw new Error("Failed to create cloud run");
+          }
+
+          if (input.relayedMcpServers?.length) {
+            // Best-effort: relay designation failing must not fail creation —
+            // the run still works, minus desktop-relayed servers.
+            await this.deps.sessionService
+              .designateRelayedMcpServers(
+                taskRun.id,
+                input.relayedMcpServers.map((server) => server.name),
+              )
+              .catch(() => undefined);
           }
 
           const pendingUserArtifactIds = transport
