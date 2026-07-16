@@ -1596,6 +1596,32 @@ describe("CodexAppServerAgent", () => {
     expect((await done).stopReason).toBe("refusal");
   });
 
+  it("rejects the prompt when the fatal error is a gateway billing denial", async () => {
+    // A silent refusal would hide the free-tier gate: the host only shows the
+    // upgrade modal when the prompt rejects with the gateway's message.
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("error", {
+      willRetry: false,
+      error: {
+        message:
+          "unexpected status 403 Forbidden: Model 'gpt-5.5' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. (rate_limit)",
+      },
+    });
+
+    await expect(done).rejects.toThrow("needs a paid PostHog plan");
+  });
+
   it("ends the turn without turn/start when no prompt block is usable", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();
