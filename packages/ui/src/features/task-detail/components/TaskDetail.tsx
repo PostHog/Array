@@ -25,6 +25,7 @@ import { useWorkspace } from "../../workspace/useWorkspace";
 import { useWorkspaceEvents } from "../../workspace/useWorkspaceEvents";
 import { HeaderTitleEditor } from "../HeaderTitleEditor";
 import { useTaskData } from "../hooks/useTaskData";
+import { CustomImageBadge } from "./CustomImageBadge";
 import { ExternalAppsOpener } from "./ExternalAppsOpener";
 import { WorkspaceModeBadge } from "./WorkspaceModeBadge";
 
@@ -147,12 +148,13 @@ export function TaskDetail({
           channelName={channelName}
           channelId={channelId}
           leafIcon={
-            workspaceMode ? (
+            <span className="flex items-center gap-1.5">
               <WorkspaceModeBadge
                 mode={workspaceMode}
                 checkoutPath={effectiveRepoPath}
               />
-            ) : undefined
+              <CustomImageBadge task={task} />
+            </span>
           }
           leafLabel={task.title}
           onRename={handleTitleEditSubmit}
@@ -172,6 +174,7 @@ export function TaskDetail({
                 mode={workspaceMode}
                 checkoutPath={effectiveRepoPath}
               />
+              <CustomImageBadge task={task} />
               <Tooltip content={task.title} side="bottom" delayDuration={300}>
                 <Text
                   truncate
@@ -189,7 +192,7 @@ export function TaskDetail({
     [
       channelName,
       channelId,
-      task.title,
+      task,
       trailing,
       isEditingTitle,
       workspaceMode,

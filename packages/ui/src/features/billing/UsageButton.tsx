@@ -1,7 +1,7 @@
 import { Circle } from "@phosphor-icons/react";
 import {
   formatResetTime,
-  isUsageExceeded,
+  formatUsdAmount,
 } from "@posthog/core/billing/usageDisplay";
 import {
   Button,
@@ -23,19 +23,19 @@ import {
   openSettings,
   prepareSettingsPage,
 } from "../settings/hooks/useOpenSettings";
-import { useFreeUsage } from "./useFreeUsage";
+import { useUsageMeter } from "./useUsageMeter";
 
 // Title-bar usage entry point (replaces the old sidebar usage bar): a compact
-// "Usage: N%" button whose hover card carries the full plan card — plan name,
-// progress bar, reset time, and the Upgrade action. Built on quill's Popover
+// usage button whose hover card carries the full plan card — plan name,
+// progress bar, reset time, and the plan action. Built on quill's Popover
 // with `openOnHover` on the trigger, so it behaves as a hover card (Base UI
-// keeps it open while the pointer travels into the card to click Upgrade).
+// keeps it open while the pointer travels into the card to click the action).
 // The card body styles with quill tokens (foreground/muted-foreground/primary,
 // quill Progress) — radix scale classes don't resolve inside the data-quill
 // popover portal.
 export function UsageButton() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
-  const { usage, isLoading } = useFreeUsage(billingEnabled);
+  const { meter, freeTier, blocked, isLoading } = useUsageMeter(billingEnabled);
   // Controlled so the trigger click can close the card before navigating to
   // settings — uncontrolled, the same click would also toggle the popover open
   // over the settings view. Hover open/close still flows through onOpenChange.
@@ -45,7 +45,7 @@ export function UsageButton() {
 
   // Same-size placeholder while usage loads, so the button doesn't pop in and
   // shift the PostHog Web button after boot.
-  if (!usage) {
+  if (meter.kind === "hidden") {
     if (!isLoading) return null;
     return (
       <Button variant="outline" size="sm" disabled aria-hidden>
@@ -54,18 +54,27 @@ export function UsageButton() {
     );
   }
 
-  const exceeded = isUsageExceeded(usage);
-  const dominant =
-    usage.sustained.used_percent >= usage.burst.used_percent
-      ? usage.sustained
-      : usage.burst;
-  const usagePercent = Math.min(Math.round(dominant.used_percent), 100);
-  const resetLabel = formatResetTime(dominant.reset_at);
+  const percent =
+    meter.kind === "dollars"
+      ? meter.percent
+      : Math.min(Math.round(meter.bucket.used_percent), 100);
+  const buttonLabel = blocked
+    ? "Usage: limit reached"
+    : meter.kind === "dollars"
+      ? `Usage: ${formatUsdAmount(meter.usedUsd)}`
+      : `Usage: ${percent}%`;
+  const amountLabel =
+    meter.kind === "dollars"
+      ? `${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)} used`
+      : `${percent}% used`;
+  const resetLabel = formatResetTime(
+    meter.kind === "dollars" ? meter.resetAt : meter.bucket.reset_at,
+  );
 
+  // Upgrade-prompt analytics only apply to free-tier orgs — a subscribed
+  // org's meter is not an upgrade prompt.
   const handleOpenChange = (nextOpen: boolean) => {
-    // The hover card has real impressions now (the old sidebar bar was
-    // always-visible); count each open as a shown upgrade prompt.
-    if (nextOpen && !open) {
+    if (nextOpen && !open && freeTier) {
       track(ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN, {
         surface: "titlebar_card",
       });
@@ -74,7 +83,9 @@ export function UsageButton() {
   };
 
   const handleOpenPlan = (surface: UpgradePromptClickedSurface) => {
-    track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface });
+    if (freeTier) {
+      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface });
+    }
     setOpen(false);
     openSettings("plan-usage");
   };
@@ -84,7 +95,9 @@ export function UsageButton() {
   // openSettings would have done — tracking, closing the card, and resetting
   // the settings-page store so no stale context/one-shot action leaks in.
   const handleTriggerClick = () => {
-    track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface: "titlebar" });
+    if (freeTier) {
+      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, { surface: "titlebar" });
+    }
     setOpen(false);
     prepareSettingsPage();
   };
@@ -107,7 +120,7 @@ export function UsageButton() {
               />
             }
           >
-            {exceeded ? "Usage: limit reached" : `Usage: ${usagePercent}%`}
+            {buttonLabel}
           </Button>
         }
       />
@@ -121,14 +134,14 @@ export function UsageButton() {
       >
         <div className="flex items-center justify-between">
           <span className="font-medium text-foreground text-xs">
-            Free plan
+            {freeTier ? "Free tier" : "Usage-based billing"}
             <Circle
               size={4}
               weight="fill"
               className="mx-1.5 inline text-muted-foreground"
             />
             <span className="font-normal text-muted-foreground">
-              {exceeded ? "Limit reached" : `${usagePercent}% used`}
+              {blocked ? "Limit reached" : amountLabel}
             </span>
           </span>
           <Button
@@ -137,12 +150,12 @@ export function UsageButton() {
             className="h-auto p-0"
             onClick={() => handleOpenPlan("titlebar_card")}
           >
-            Upgrade
+            {freeTier ? "Unlock more" : "View usage"}
           </Button>
         </div>
         <Progress
-          value={usagePercent}
-          variant={exceeded ? "destructive" : "default"}
+          value={percent}
+          variant={blocked ? "destructive" : "default"}
         />
         <div className="font-normal text-[11px] text-muted-foreground">
           {resetLabel}

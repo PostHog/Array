@@ -70,6 +70,6 @@ export async function resolvePosthogProvider(
   options: PosthogProviderOptions = {},
 ): Promise<ProviderConfig> {
   const region = resolveRegion(options.region);
-  const models = await resolveModelConfigs(region);
+  const models = await resolveModelConfigs(region, options.apiKey);
   return buildPosthogProvider(models, options);
 }

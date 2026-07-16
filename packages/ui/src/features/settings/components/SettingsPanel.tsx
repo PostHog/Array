@@ -25,7 +25,6 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
-import { useSeat } from "@posthog/ui/features/billing/useSeat";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { AdvancedSettings } from "@posthog/ui/features/settings/sections/AdvancedSettings";
@@ -166,7 +165,6 @@ export function SettingsPanel({
   );
   const client = useOptionalAuthenticatedClient();
   const { data: user } = useCurrentUser({ client });
-  const { seat, planLabel } = useSeat();
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const { localWorkspaces } = useHostCapabilities();
   const logoutMutation = useLogoutMutation();
@@ -234,11 +232,6 @@ export function SettingsPanel({
               <Text truncate className="font-medium text-sm">
                 {user.email}
               </Text>
-              {seat && (
-                <Text className="text-(--gray-9) text-[13px]">
-                  {planLabel} Plan
-                </Text>
-              )}
             </Flex>
           </Flex>
         )}

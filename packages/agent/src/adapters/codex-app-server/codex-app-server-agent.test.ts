@@ -4,6 +4,7 @@ import type {
   NewSessionRequest,
   PromptRequest,
 } from "@agentclientprotocol/sdk";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
 import type {
   AppServerClientHandlers,
@@ -1594,6 +1595,45 @@ describe("CodexAppServerAgent", () => {
     stub.emit("error", { willRetry: false, error: { message: "boom" } });
 
     expect((await done).stopReason).toBe("refusal");
+  });
+
+  it("rejects the prompt when the fatal error is a gateway billing denial", async () => {
+    // A silent refusal would hide the free-tier gate: the host only shows the
+    // upgrade modal when the prompt rejects with the gateway's message.
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("error", {
+      willRetry: false,
+      error: {
+        message:
+          "unexpected status 403 Forbidden: Model 'gpt-5.5' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. (rate_limit)",
+      },
+    });
+
+    const err = await done.then(
+      () => {
+        throw new Error("prompt resolved instead of rejecting");
+      },
+      (e: unknown) => e,
+    );
+    // Must be a RequestError with the gateway text in its message — a plain
+    // Error crosses the ACP boundary as a bare "Internal error", which the
+    // host classifies as fatal and answers with a kill/respawn loop.
+    expect(err).toBeInstanceOf(RequestError);
+    expect((err as RequestError).message).toContain("Internal error: ");
+    expect((err as RequestError).message).toContain(
+      "needs a paid PostHog plan",
+    );
   });
 
   it("ends the turn without turn/start when no prompt block is usable", async () => {

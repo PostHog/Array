@@ -6,25 +6,18 @@ describe("resolveSpokenNarration", () => {
     vi.unstubAllEnvs();
   });
 
+  // Narration is strictly opt-in: only an explicit `spokenNarration: true`
+  // enables it. Cloud/sandbox runs no longer default on, so headless runs
+  // (Slack threads, Signals scouts) never load the tool or its instructions.
   it.each([
     {
-      name: "explicit true on local",
-      meta: { environment: "local" as const, spokenNarration: true },
+      name: "explicit true",
+      meta: { spokenNarration: true },
       expected: true,
     },
     {
-      name: "explicit false on cloud",
-      meta: { environment: "cloud" as const, spokenNarration: false },
-      expected: false,
-    },
-    {
-      name: "cloud default",
-      meta: { environment: "cloud" as const },
-      expected: true,
-    },
-    {
-      name: "local default",
-      meta: { environment: "local" as const },
+      name: "explicit false",
+      meta: { spokenNarration: false },
       expected: false,
     },
     { name: "no meta", meta: undefined, expected: false },
@@ -35,20 +28,20 @@ describe("resolveSpokenNarration", () => {
   });
 
   it.each([
-    { name: "no meta", meta: undefined, expected: true },
-    { name: "empty meta", meta: {}, expected: true },
+    { name: "no meta", meta: undefined, expected: false },
+    { name: "empty meta", meta: {}, expected: false },
+    {
+      name: "explicit true",
+      meta: { spokenNarration: true },
+      expected: true,
+    },
     {
       name: "explicit false",
       meta: { spokenNarration: false },
       expected: false,
     },
-    {
-      name: "explicit local environment",
-      meta: { environment: "local" as const },
-      expected: false,
-    },
   ])(
-    "resolves $name to $expected in a sandbox without an environment tag",
+    "resolves $name to $expected in a sandbox (no default-on)",
     ({ meta, expected }) => {
       vi.stubEnv("IS_SANDBOX", "1");
       expect(resolveSpokenNarration(meta)).toBe(expected);

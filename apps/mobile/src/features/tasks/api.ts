@@ -1,4 +1,8 @@
 import type { Adapter } from "@posthog/shared";
+import type {
+  SandboxCustomImage,
+  SandboxEnvironment,
+} from "@posthog/shared/domain-types";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
@@ -777,6 +781,50 @@ export async function streamCloudTask(
     headers,
     signal: options.signal,
   });
+}
+
+export async function getSandboxCustomImages(): Promise<SandboxCustomImage[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/sandbox_custom_images/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch sandbox custom images",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: SandboxCustomImage[] }>(
+    response,
+  );
+  return data.results ?? [];
+}
+
+export async function getSandboxEnvironments(): Promise<SandboxEnvironment[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/sandbox_environments/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch sandbox environments",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: SandboxEnvironment[] }>(
+    response,
+  );
+  return data.results ?? [];
 }
 
 export async function getIntegrations(): Promise<Integration[]> {
