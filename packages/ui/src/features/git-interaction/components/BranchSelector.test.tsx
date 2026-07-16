@@ -75,6 +75,50 @@ describe("BranchSelector cloud mode", () => {
     expect(screen.getByRole("combobox", { name: "Branch" })).toBeEnabled();
   });
 
+  it("seeds the default branch as a pickable item with a loading row while the cloud list loads", async () => {
+    const user = userEvent.setup();
+    renderInTheme(
+      <BranchSelector
+        repoPath="owner/repo"
+        currentBranch={null}
+        defaultBranch="main"
+        workspaceMode="cloud"
+        cloudBranches={[]}
+        cloudBranchesLoading={true}
+        cloudSearchQuery=""
+        selectedBranch="main"
+        onBranchSelect={vi.fn()}
+        onCloudSearchChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Branch" }));
+
+    expect(await screen.findByRole("option", { name: "main" })).toBeVisible();
+    expect(screen.getByText("Loading branches…")).toBeVisible();
+  });
+
+  it("does not seed the default branch once the user is searching", async () => {
+    const user = userEvent.setup();
+    renderInTheme(
+      <BranchSelector
+        repoPath="owner/repo"
+        currentBranch={null}
+        defaultBranch="main"
+        workspaceMode="cloud"
+        cloudBranches={[]}
+        cloudBranchesLoading={true}
+        cloudSearchQuery="feat"
+        onBranchSelect={vi.fn()}
+        onCloudSearchChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Branch" }));
+
+    expect(screen.queryByRole("option", { name: "main" })).toBeNull();
+  });
+
   it("surfaces the 'Use input as branch name' action when the typed value is new", async () => {
     const user = userEvent.setup();
     renderInTheme(

@@ -175,11 +175,27 @@ export function BranchSelector({
     return byBranch;
   }, [repoCheckouts]);
 
-  const branches = isCloudMode ? (cloudBranches ?? []) : localBranches;
+  const liveBranches = isCloudMode ? (cloudBranches ?? []) : localBranches;
   const effectiveLoading = loading || (isCloudMode && cloudBranchesLoading);
   const branchListLoading = isCloudMode
     ? !!cloudBranchesLoading
     : localBranchesLoading;
+
+  // On a cold start the live cloud branch list is still empty while the (slow)
+  // remote fetch runs. Surface the known default ("trunk") branch as a real
+  // list item straight away — with a loading row rendered below it — so the
+  // common "start on trunk" case is pickable with zero wait. Only when there's
+  // no active search: once the user types, the results should be purely what
+  // the remote returns.
+  const seededDefaultBranch =
+    isCloudMode &&
+    branchListLoading &&
+    liveBranches.length === 0 &&
+    !!defaultBranch &&
+    !(cloudSearchQuery ?? "").trim()
+      ? defaultBranch
+      : null;
+  const branches = seededDefaultBranch ? [seededDefaultBranch] : liveBranches;
 
   const checkoutMutation = useMutation({
     ...trpc.git.checkoutBranch.mutationOptions(),
@@ -518,6 +534,13 @@ export function BranchSelector({
             );
           }}
         </ComboboxList>
+
+        {/*
+          Cold start: the default ("trunk") branch is seeded as the only list
+          item while the remote list loads. A loading row directly below it
+          makes clear the rest of the branches are still on the way.
+        */}
+        {seededDefaultBranch ? <LoadingRow label="Loading branches…" /> : null}
 
         {isCloudMode && cloudBranchesHasMore ? (
           <ComboboxListFooter>
