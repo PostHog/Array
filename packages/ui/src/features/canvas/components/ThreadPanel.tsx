@@ -11,6 +11,7 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
+  normalizeAgentPromptText,
   shouldSuspendThreadSession,
   type ThreadAgentMessage,
   type ThreadAgentStatus,
@@ -271,6 +272,8 @@ export function UserPromptRow({
   message: ThreadAgentMessage;
   author: TaskThreadMessage["author"];
 }) {
+  const promptText = normalizeAgentPromptText(message.text);
+
   return (
     <ThreadItem>
       <ThreadItemGutter>
@@ -288,7 +291,7 @@ export function UserPromptRow({
           )}
         </ThreadItemHeader>
         <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
-          <span className={mentionChipClass}>@agent</span> {message.text}
+          <span className={mentionChipClass}>@agent</span> {promptText}
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>

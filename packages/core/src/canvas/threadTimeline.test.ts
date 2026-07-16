@@ -3,6 +3,7 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
+  normalizeAgentPromptText,
   shouldSuspendThreadSession,
 } from "./threadTimeline";
 
@@ -15,6 +16,24 @@ describe("hasAgentMention", () => {
     ["without a mention", "human-only note", false],
   ])("detects an agent mention %s", (_name, content, expected) => {
     expect(hasAgentMention(content)).toBe(expected);
+  });
+});
+
+describe("normalizeAgentPromptText", () => {
+  it.each([
+    [
+      "forwarded thread comment",
+      "[Thread comment from Peter Kirkham] @agent which model are you?",
+      "which model are you?",
+    ],
+    ["direct prompt", "which model are you?", "which model are you?"],
+    [
+      "direct prompt with mention",
+      "@agent which model are you?",
+      "which model are you?",
+    ],
+  ])("normalizes a %s", (_name, content, expected) => {
+    expect(normalizeAgentPromptText(content)).toBe(expected);
   });
 });
 

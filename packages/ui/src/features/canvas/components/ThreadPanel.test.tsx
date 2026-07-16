@@ -30,4 +30,21 @@ describe("UserPromptRow", () => {
     expect(screen.getByText("@agent")).toBeInTheDocument();
     expect(screen.getByText("Investigate this")).toBeInTheDocument();
   });
+
+  it("hides forwarded thread attribution and duplicate agent mentions", () => {
+    render(
+      <UserPromptRow
+        message={{
+          id: "prompt",
+          text: "[Thread comment from Peter Kirkham] @agent which model are you?",
+          timestamp: 1,
+        }}
+        author={{ id: 1, uuid: "user", email: "user@example.com" }}
+      />,
+    );
+
+    expect(screen.getAllByText("@agent")).toHaveLength(1);
+    expect(screen.getByText("which model are you?")).toBeInTheDocument();
+    expect(screen.queryByText(/Thread comment from/)).not.toBeInTheDocument();
+  });
 });

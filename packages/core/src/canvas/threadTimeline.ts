@@ -69,9 +69,20 @@ export interface ThreadAgentStatus {
 }
 
 const AGENT_MENTION_PATTERN = /(^|\s)@agent\b/i;
+const THREAD_COMMENT_ATTRIBUTION_PATTERN =
+  /^\[Thread comment from [^\]\r\n]+\]\s*/i;
+const LEADING_AGENT_MENTION_PATTERN = /^@agent\b[\s:]*/i;
 
 export function hasAgentMention(content: string): boolean {
   return AGENT_MENTION_PATTERN.test(content);
+}
+
+export function normalizeAgentPromptText(content: string): string {
+  return content
+    .trim()
+    .replace(THREAD_COMMENT_ATTRIBUTION_PATTERN, "")
+    .replace(LEADING_AGENT_MENTION_PATTERN, "")
+    .trim();
 }
 
 export function deriveThreadAgentStatus({
