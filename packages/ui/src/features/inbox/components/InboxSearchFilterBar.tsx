@@ -80,7 +80,6 @@ export function InboxSearchFilterBar({
       >
         <Flex direction="column" gap="0">
           <InboxFilterAnyItem
-            label="Any"
             active={sourceProductFilter.length === 0}
             onClick={clearSourceProductFilter}
           />
@@ -144,7 +143,6 @@ export function InboxSearchFilterBar({
       >
         <Flex direction="column" gap="0">
           <InboxFilterAnyItem
-            label="Any"
             active={priorityFilter.length === 0}
             onClick={clearPriorityFilter}
           />
@@ -177,17 +175,15 @@ export function InboxSearchFilterBar({
 }
 
 function InboxFilterAnyItem({
-  label,
   active,
   onClick,
 }: {
-  label: string;
   active: boolean;
   onClick: () => void;
 }) {
   return (
     <button type="button" className={FILTER_ITEM_CLASS} onClick={onClick}>
-      <span className="truncate">{label}</span>
+      <span className="truncate">Any</span>
       {active ? (
         <CheckIcon size={12} className="shrink-0 text-gray-12" />
       ) : null}
