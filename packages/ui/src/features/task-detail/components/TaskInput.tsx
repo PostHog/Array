@@ -1345,7 +1345,7 @@ export function TaskInput({
                     <span className="shrink-0 text-gray-10">Using:</span>
                     <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
                       {onContextChipClick ? (
-                        <Tooltip content="View this context">
+                        <Tooltip content="View this CONTEXT.md">
                           <button
                             type="button"
                             onClick={onContextChipClick}
@@ -1365,11 +1365,11 @@ export function TaskInput({
                           </span>
                         </>
                       )}
-                      <Tooltip content="Don't include this context">
+                      <Tooltip content="Don't include this CONTEXT.md">
                         <button
                           type="button"
                           onClick={() => setChannelContextDismissed(true)}
-                          aria-label="Remove context from prompt"
+                          aria-label="Remove CONTEXT.md from prompt"
                           className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
                         >
                           <X size={12} />

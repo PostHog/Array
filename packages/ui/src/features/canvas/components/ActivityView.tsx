@@ -176,7 +176,7 @@ export function ActivityView() {
           Activity
         </Text>
         <Text size="2" className="block text-muted-foreground">
-          Mentions of you across contexts.
+          Mentions of you across channels.
         </Text>
         <div className="mt-4">
           {isLoading && items.length === 0 ? (

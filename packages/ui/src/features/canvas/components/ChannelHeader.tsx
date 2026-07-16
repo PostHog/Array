@@ -34,7 +34,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
           className="shrink-0 text-muted-foreground/80"
         />
         <Text className="min-w-0 truncate font-medium" title={channelName}>
-          {channelName ?? "Context"}
+          {channelName ?? "Channel"}
         </Text>
       </Button>
       <ChannelTabs channelId={channelId} />

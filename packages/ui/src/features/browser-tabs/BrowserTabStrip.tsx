@@ -525,7 +525,7 @@ export function BrowserTabStrip() {
           const meta = channelSectionFor(section);
           return {
             id: t.id,
-            label: meta?.label ?? channel ?? "Context",
+            label: meta?.label ?? channel ?? "Channel",
             icon: <SquircleDashed size={14} />,
             channelName: channel,
             // No section meta → the channel's index page.

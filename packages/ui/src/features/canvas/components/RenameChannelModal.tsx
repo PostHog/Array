@@ -55,7 +55,7 @@ export function RenameChannelModal({
         channel_id: channel.id,
         success: false,
       });
-      toast.error("Couldn't rename context", {
+      toast.error("Couldn't rename channel", {
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -71,7 +71,7 @@ export function RenameChannelModal({
       <Dialog.Content maxWidth="560px">
         <Flex align="start" justify="between" gap="3">
           <Dialog.Title>
-            <Text className="font-bold text-lg">Rename context</Text>
+            <Text className="font-bold text-lg">Rename channel</Text>
           </Dialog.Title>
           <Dialog.Close>
             <IconButton

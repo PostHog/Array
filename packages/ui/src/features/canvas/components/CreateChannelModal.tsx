@@ -107,7 +107,7 @@ export function CreateChannelModal({
         surface: "sidebar",
         success: false,
       });
-      toast.error("Couldn't create context", {
+      toast.error("Couldn't create channel", {
         description: error instanceof Error ? error.message : String(error),
       });
       return;
@@ -183,7 +183,7 @@ export function CreateChannelModal({
           <DialogTitle className="sr-only">Create your context.md</DialogTitle>
         ) : (
           <DialogHeader>
-            <DialogTitle>Create a context</DialogTitle>
+            <DialogTitle>Create a channel</DialogTitle>
           </DialogHeader>
         )}
 
@@ -234,7 +234,7 @@ export function CreateChannelModal({
           {needsDescription && (
             <Field>
               <FieldLabel htmlFor="context-description">
-                What's this context about?
+                What's this channel about?
               </FieldLabel>
               <Textarea
                 id="context-description"

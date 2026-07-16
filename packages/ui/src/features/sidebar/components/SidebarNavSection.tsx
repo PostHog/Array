@@ -190,7 +190,7 @@ export function SidebarNavSection({
           <span className="flex shrink-0 items-center opacity-80">
             <SquircleDashed size={14} />
           </span>
-          <span className="min-w-0 truncate font-medium">Contexts</span>
+          <span className="min-w-0 truncate font-medium">Channels</span>
           <Badge variant="info">Alpha</Badge>
           <Switch
             id="channels-toggle"
