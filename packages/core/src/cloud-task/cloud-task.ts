@@ -10,9 +10,7 @@ import {
 import type { StoredLogEntry } from "@posthog/shared";
 import {
   mcpToolKey,
-  parseMcpToolName,
   posthogToolMeta,
-  readAgentToolName,
   serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
@@ -50,6 +48,15 @@ const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
 const MAX_HANDLED_RELAY_REQUEST_IDS = 1_000;
+const MCP_RELAY_METHODS_WITHOUT_APPROVAL = new Set([
+  "initialize",
+  "notifications/initialized",
+  "ping",
+  "tools/list",
+  "prompts/list",
+  "resources/list",
+  "resources/templates/list",
+]);
 
 // Authoritative end-of-stream sentinel, matched on the SSE event name (event.event, not data.type).
 // The client stops on it without consulting run status.
@@ -239,69 +246,61 @@ const RELAY_APPROVAL_REQUEST_PREFIX = "relay-approval:";
 
 const RELAY_KEY_SEPARATOR = "";
 
-function relayPassKey(runId: string, server: string, tool: string): string {
-  return [runId, server, tool].join(RELAY_KEY_SEPARATOR);
+function relayApprovalKey(
+  runId: string,
+  server: string,
+  kind: "method" | "tool",
+  name: string,
+): string {
+  return [runId, server, kind, name].join(RELAY_KEY_SEPARATOR);
 }
 
-/**
- * Deterministic JSON with sorted object keys, so an args hash computed from a
- * harness approval prompt's rawInput matches the identical arguments arriving
- * later in the relayed tools/call. Any mismatch fails safe into a re-prompt.
- */
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
-    return `{${entries.join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
+interface RelayApprovalRequest {
+  approvalKey: string;
+  title: string;
+  toolName: string;
+  rawInput: Record<string, unknown>;
+  mcp: { server: string; tool: string };
 }
 
-interface RelayToolsCall {
-  tool: string;
-  args: Record<string, unknown> | undefined;
-}
-
-/** The relayed JSON-RPC payload's tool invocation, when it is a `tools/call`. */
-function parseRelayToolsCall(
+function relayApprovalRequest(
+  runId: string,
+  server: string,
   payload: Record<string, unknown>,
-): RelayToolsCall | null {
-  if (payload.method !== "tools/call") return null;
+): RelayApprovalRequest | null {
+  const method =
+    typeof payload.method === "string" ? payload.method : "unknown";
+  if (MCP_RELAY_METHODS_WITHOUT_APPROVAL.has(method)) return null;
+
   const params =
     payload.params && typeof payload.params === "object"
       ? (payload.params as Record<string, unknown>)
       : {};
-  const tool = typeof params.name === "string" ? params.name : "";
-  const args =
-    params.arguments && typeof params.arguments === "object"
-      ? (params.arguments as Record<string, unknown>)
-      : undefined;
-  return { tool, args };
-}
 
-/** MCP `{server, tool}` named by a permission request's tool call, if any. */
-function permissionRequestMcpTool(
-  toolCall: PermissionRequestEventData["toolCall"],
-): { server: string; tool: string; args: Record<string, unknown> } | null {
-  const rawInput =
-    toolCall?.rawInput && typeof toolCall.rawInput === "object"
-      ? (toolCall.rawInput as Record<string, unknown>)
-      : undefined;
-  const toolName =
-    readAgentToolName(toolCall?._meta) ??
-    (typeof rawInput?.toolName === "string" ? rawInput.toolName : undefined);
-  if (!toolName) return null;
-  const mcp = parseMcpToolName(toolName);
-  if (!mcp) return null;
-  // The claude adapter mixes `toolName` into rawInput alongside the tool's own
-  // arguments; strip it so the hash matches the relayed `params.arguments`.
-  const { toolName: _ignored, ...args } = rawInput ?? {};
-  return { ...mcp, args };
+  if (method === "tools/call") {
+    const tool = typeof params.name === "string" ? params.name : "unknown";
+    const args =
+      params.arguments && typeof params.arguments === "object"
+        ? (params.arguments as Record<string, unknown>)
+        : {};
+    const toolName = mcpToolKey({ server, tool });
+    return {
+      approvalKey: relayApprovalKey(runId, server, "tool", tool),
+      title: `The agent wants to call ${tool} (${server}) on your machine`,
+      toolName,
+      rawInput: { ...args, toolName },
+      mcp: { server, tool },
+    };
+  }
+
+  const toolName = `mcp:${server}:${method}`;
+  return {
+    approvalKey: relayApprovalKey(runId, server, "method", method),
+    title: `The agent wants to send ${method} to ${server} on your machine`,
+    toolName,
+    rawInput: { method, params },
+    mcp: { server, tool: method },
+  };
 }
 
 function isKeepaliveEvent(event: SseEvent): boolean {
@@ -467,32 +466,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private readonly handledRelayRequestIds = new Set<string>();
   private readonly handledRelayRequestOrder: string[] = [];
 
-  /**
-   * Relayed tools execute on the user's machine with their privileges, so a
-   * relayed `tools/call` never runs without the user having approved it here
-   * on the desktop — the sandbox's own prompts can't be trusted for that (a
-   * compromised sandbox could emit `mcp_request` events without ever asking).
-   *
-   * A harness that does prompt (claude's always-ask) isn't double-prompted:
-   * when the user answers that prompt in the task view, the response passes
-   * through `sendCommand` below, which converts an allow into a consume-once
-   * pass for the exact (run, server, tool, args) about to be relayed. Harnesses
-   * with no per-MCP-call prompt (codex) find no pass and get the desktop
-   * prompt instead — the request's own expiry bounds the wait.
-   */
+  /** Sensitive relay requests require desktop-owned approval. */
   private readonly relayAlwaysApprovals = new Set<string>();
-  private readonly relayOnceApprovals = new Map<string, number>();
-  /** Harness prompt requestId → the pass its approval would grant. */
-  private readonly harnessPromptGrants = new Map<
-    string,
-    {
-      runId: string;
-      onceKey: string;
-      alwaysKey: string;
-      optionKinds: Map<string, string>;
-    }
-  >();
-  private readonly harnessPromptGrantOrder: string[] = [];
   /** Desktop-issued relay approval prompts awaiting a task-view answer. */
   private readonly pendingLocalRelayPrompts = new Map<
     string,
@@ -546,12 +521,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return;
     }
 
-    const toolsCall = parseRelayToolsCall(data.payload);
-    if (toolsCall) {
-      const approval = await this.ensureRelayToolApproval(
+    const approvalRequest = relayApprovalRequest(
+      watcher.runId,
+      data.server,
+      data.payload,
+    );
+    if (approvalRequest) {
+      const approval = await this.ensureRelayRequestApproval(
         watcher,
-        data,
-        toolsCall,
+        approvalRequest,
         expiresAt,
       );
       if (!approval.approved) {
@@ -632,33 +610,18 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
-  /**
-   * Resolve user approval for a relayed `tools/call`: consume a pass granted
-   * by a just-answered harness prompt for the same call, honor a standing
-   * always-allow, or raise a desktop prompt in the task view.
-   */
-  private async ensureRelayToolApproval(
+  private async ensureRelayRequestApproval(
     watcher: WatcherState,
-    data: McpRequestEventData,
-    toolsCall: RelayToolsCall,
+    request: RelayApprovalRequest,
     expiresAt: number,
   ): Promise<
     { approved: true } | { approved: false; expired: boolean; message: string }
   > {
     const { runId } = watcher;
-    const { tool, args } = toolsCall;
-    const alwaysKey = relayPassKey(runId, data.server, tool);
-    if (this.relayAlwaysApprovals.has(alwaysKey)) return { approved: true };
-
-    const onceKey = `${alwaysKey}${RELAY_KEY_SEPARATOR}${stableStringify(args ?? {})}`;
-    const oncePasses = this.relayOnceApprovals.get(onceKey) ?? 0;
-    if (oncePasses > 0) {
-      if (oncePasses === 1) this.relayOnceApprovals.delete(onceKey);
-      else this.relayOnceApprovals.set(onceKey, oncePasses - 1);
+    if (this.relayAlwaysApprovals.has(request.approvalKey)) {
       return { approved: true };
     }
 
-    const toolName = mcpToolKey({ server: data.server, tool });
     const requestId = `${RELAY_APPROVAL_REQUEST_PREFIX}${globalThis.crypto.randomUUID()}`;
     this.emit(CloudTaskEvent.Update, {
       taskId: watcher.taskId,
@@ -667,12 +630,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       requestId,
       toolCall: {
         toolCallId: requestId,
-        title: `The agent wants to call ${tool} (${data.server}) on your machine`,
+        title: request.title,
         kind: "other",
-        rawInput: { ...(args ?? {}), toolName },
+        rawInput: request.rawInput,
         _meta: posthogToolMeta({
-          toolName,
-          mcp: { server: data.server, tool },
+          toolName: request.toolName,
+          mcp: request.mcp,
         }),
       },
       options: [
@@ -710,7 +673,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     });
 
     if (outcome.optionId === "allow_always") {
-      this.relayAlwaysApprovals.add(alwaysKey);
+      this.relayAlwaysApprovals.add(request.approvalKey);
       return { approved: true };
     }
     if (outcome.optionId === "allow") return { approved: true };
@@ -725,59 +688,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       approved: false,
       expired: false,
       message: outcome.customInput
-        ? `The user denied this tool call: ${outcome.customInput}`
-        : "The user denied this tool call.",
+        ? `The user denied this MCP request: ${outcome.customInput}`
+        : "The user denied this MCP request.",
     };
-  }
-
-  /**
-   * Remember a sandbox-side (harness) approval prompt that names a relayed MCP
-   * tool, so the user's answer can grant the matching relay pass — one prompt
-   * covers both the harness's ask and the desktop's execution gate.
-   */
-  private recordHarnessRelayPrompt(
-    watcher: WatcherState,
-    data: PermissionRequestEventData,
-  ): void {
-    const designated = this.relayDesignations.get(watcher.runId);
-    if (!designated) return;
-    const mcp = permissionRequestMcpTool(data.toolCall);
-    if (!mcp || !designated.has(mcp.server)) return;
-    const alwaysKey = relayPassKey(watcher.runId, mcp.server, mcp.tool);
-    this.harnessPromptGrants.set(data.requestId, {
-      runId: watcher.runId,
-      alwaysKey,
-      onceKey: `${alwaysKey}${RELAY_KEY_SEPARATOR}${stableStringify(mcp.args)}`,
-      optionKinds: new Map(
-        (data.options ?? []).map((option) => [option.optionId, option.kind]),
-      ),
-    });
-    this.harnessPromptGrantOrder.push(data.requestId);
-    if (this.harnessPromptGrantOrder.length > MAX_HANDLED_RELAY_REQUEST_IDS) {
-      const evicted = this.harnessPromptGrantOrder.shift();
-      if (evicted) this.harnessPromptGrants.delete(evicted);
-    }
-  }
-
-  /** Convert an answered harness prompt into the relay pass it authorized. */
-  private grantRelayPassFromHarnessResponse(
-    requestId: string,
-    params: Record<string, unknown>,
-  ): void {
-    const grant = this.harnessPromptGrants.get(requestId);
-    if (!grant) return;
-    this.harnessPromptGrants.delete(requestId);
-    const optionId =
-      typeof params.optionId === "string" ? params.optionId : undefined;
-    const kind = optionId ? grant.optionKinds.get(optionId) : undefined;
-    if (kind === "allow_always") {
-      this.relayAlwaysApprovals.add(grant.alwaysKey);
-    } else if (kind === "allow_once") {
-      this.relayOnceApprovals.set(
-        grant.onceKey,
-        (this.relayOnceApprovals.get(grant.onceKey) ?? 0) + 1,
-      );
-    }
   }
 
   /** Drop a terminal run's relay approval state and abandon its open prompts. */
@@ -785,12 +698,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const prefix = `${runId}${RELAY_KEY_SEPARATOR}`;
     for (const key of [...this.relayAlwaysApprovals]) {
       if (key.startsWith(prefix)) this.relayAlwaysApprovals.delete(key);
-    }
-    for (const key of [...this.relayOnceApprovals.keys()]) {
-      if (key.startsWith(prefix)) this.relayOnceApprovals.delete(key);
-    }
-    for (const [requestId, grant] of [...this.harnessPromptGrants]) {
-      if (grant.runId === runId) this.harnessPromptGrants.delete(requestId);
     }
     for (const [requestId, prompt] of [...this.pendingLocalRelayPrompts]) {
       if (prompt.runId !== runId) continue;
@@ -911,7 +818,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         });
         return { success: true };
       }
-      if (requestId) this.grantRelayPassFromHarnessResponse(requestId, params);
     }
 
     const url = `${input.apiHost}/api/projects/${input.teamId}/tasks/${input.taskId}/runs/${input.runId}/command/`;
@@ -1700,7 +1606,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     if (isPermissionRequestEvent(event.data)) {
-      this.recordHarnessRelayPrompt(watcher, event.data);
       this.emit(CloudTaskEvent.Update, {
         taskId: watcher.taskId,
         runId: watcher.runId,

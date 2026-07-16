@@ -3284,6 +3284,34 @@ describe("CloudTaskService MCP relay", () => {
     );
   });
 
+  it.each([
+    "initialize",
+    "notifications/initialized",
+    "ping",
+    "tools/list",
+    "prompts/list",
+    "resources/list",
+    "resources/templates/list",
+  ])("executes the %s relay method without approval", async (method) => {
+    const updates: unknown[] = [];
+    relayService.on(CloudTaskEvent.Update, (payload) => {
+      updates.push(payload);
+    });
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({
+          payload: { jsonrpc: "2.0", id: 1, method },
+        }),
+      ),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+
+    expect(lastPermissionRequestUpdate(updates)).toBeUndefined();
+  });
+
   it("evicts a run's relay designation once the run reaches a terminal status", async () => {
     mockStreamFetch.mockResolvedValueOnce(
       createOpenSseResponse(
@@ -3384,7 +3412,78 @@ describe("CloudTaskService MCP relay", () => {
     expect(mcpRelayExecutor.closeRun).toHaveBeenCalledWith("run-1");
   });
 
-  describe("relayed tools/call approval", () => {
+  describe("relayed MCP request approval", () => {
+    it.each([
+      "resources/read",
+      "prompts/get",
+      "resources/subscribe",
+      "custom/mutate",
+    ])("requires desktop approval for %s", async (method) => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockStreamFetch.mockResolvedValueOnce(
+        createOpenSseResponse(
+          mcpRequestSseLine({
+            payload: {
+              jsonrpc: "2.0",
+              id: 1,
+              method,
+              params: { uri: "file:///private" },
+            },
+          }),
+        ),
+      );
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+
+      expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+    });
+
+    it("executes a non-tool request after desktop approval", async () => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockNetFetch.mockResolvedValue(createJsonResponse({ result: {} }));
+      mockStreamFetch.mockResolvedValueOnce(
+        createOpenSseResponse(
+          mcpRequestSseLine({
+            payload: {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "resources/read",
+              params: { uri: "file:///private" },
+            },
+          }),
+        ),
+      );
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+      const prompt = lastPermissionRequestUpdate(updates);
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: { requestId: prompt?.requestId, optionId: "allow" },
+      });
+
+      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+
+      expect(mcpRelayExecutor.execute).toHaveBeenCalledWith(
+        "run-1",
+        "slack",
+        expect.objectContaining({ method: "resources/read" }),
+      );
+    });
+
     it("prompts on the desktop and executes after the user allows", async () => {
       const updates: unknown[] = [];
       relayService.on(CloudTaskEvent.Update, (payload) => {
@@ -3496,7 +3595,7 @@ describe("CloudTaskService MCP relay", () => {
       ).toBe(false);
     });
 
-    it("consumes a harness prompt approval instead of prompting a second time", async () => {
+    it("does not derive local approval from sandbox-controlled permission options", async () => {
       const updates: unknown[] = [];
       relayService.on(CloudTaskEvent.Update, (payload) => {
         updates.push(payload);
@@ -3508,7 +3607,6 @@ describe("CloudTaskService MCP relay", () => {
       watchRun("run-1");
       await waitFor(() => mockStreamFetch.mock.calls.length > 0);
 
-      // The harness (claude always-ask) prompt for the same call arrives first.
       push(
         `data: ${JSON.stringify({
           type: "permission_request",
@@ -3522,50 +3620,22 @@ describe("CloudTaskService MCP relay", () => {
               toolName: "mcp__slack__send_message",
             },
           },
-          options: [
-            { kind: "allow_once", name: "Yes", optionId: "allow" },
-            {
-              kind: "allow_always",
-              name: "Yes, always allow",
-              optionId: "allow_always",
-            },
-            { kind: "reject_once", name: "No", optionId: "reject" },
-          ],
+          options: [{ kind: "allow_once", name: "No", optionId: "reject" }],
         })}\n\n`,
       );
       await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
 
-      // The user answers it in the task view; the response routes through
-      // sendCommand, granting a consume-once pass for the identical call.
       await relayService.sendCommand({
         taskId: "task-1",
         runId: "run-1",
         apiHost: "https://app.example.com",
         teamId: 2,
         method: "permission_response",
-        params: { requestId: "harness-req-1", optionId: "allow" },
+        params: { requestId: "harness-req-1", optionId: "reject" },
       });
 
       const updatesBeforeCall = updates.length;
       push(mcpRequestSseLine({ payload: toolsCallPayload() }));
-      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
-
-      // No desktop prompt was raised for the relayed call itself.
-      expect(
-        updates
-          .slice(updatesBeforeCall)
-          .filter(
-            (u) => (u as { kind?: string }).kind === "permission_request",
-          ),
-      ).toEqual([]);
-
-      // The pass was consume-once: an identical unattested call prompts again.
-      push(
-        mcpRequestSseLine({
-          requestId: "req-2",
-          payload: toolsCallPayload(),
-        }),
-      );
       await waitFor(
         () =>
           updates
@@ -3574,7 +3644,20 @@ describe("CloudTaskService MCP relay", () => {
               (u) => (u as { kind?: string }).kind === "permission_request",
             ).length > 0,
       );
-      expect(mcpRelayExecutor.execute).toHaveBeenCalledOnce();
+
+      expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+
+      const desktopPrompt = lastPermissionRequestUpdate(updates);
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: { requestId: desktopPrompt?.requestId, optionId: "allow" },
+      });
+
+      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
     });
 
     it("an always-allow answer covers subsequent calls to the same tool", async () => {
