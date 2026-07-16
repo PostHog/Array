@@ -245,6 +245,8 @@ function isSameUsage(a: UsageOutput | null, b: UsageOutput): boolean {
   return (
     a.is_rate_limited === b.is_rate_limited &&
     a.billing_period_end === b.billing_period_end &&
+    a.code_usage_subscribed === b.code_usage_subscribed &&
+    a.ai_credits?.exhausted === b.ai_credits?.exhausted &&
     isSameBucket(a.burst, b.burst) &&
     isSameBucket(a.sustained, b.sustained)
   );

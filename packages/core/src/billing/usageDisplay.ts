@@ -26,8 +26,12 @@ export function formatResetTime(
 
   const totalHours = ms / 3_600_000;
   if (totalHours < 24) {
-    const hours = Math.floor(totalHours);
-    const minutes = Math.round((totalHours - hours) * 60);
+    let hours = Math.floor(totalHours);
+    let minutes = Math.round((totalHours - hours) * 60);
+    if (minutes === 60) {
+      hours += 1;
+      minutes = 0;
+    }
     return minutes === 0
       ? `Resets in ${hours}h`
       : `Resets in ${hours}h ${minutes}m`;

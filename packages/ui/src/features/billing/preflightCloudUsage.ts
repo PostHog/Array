@@ -13,9 +13,10 @@ import { type UsageLimitShowArgs, useUsageLimitStore } from "./usageLimitStore";
 const log = logger.scope("preflight-cloud-usage");
 
 function usageLimitArgs(usage: UsageOutput): UsageLimitShowArgs {
-  // Reset hint from whichever bucket is exceeded (daily takes priority);
-  // the monthly bucket covers an org-bucket block, whose period it matches.
-  const bucket = usage.burst.exceeded ? "burst" : "sustained";
+  // Burst-alone is the only state the earlier daily reset unblocks; both
+  // exceeded or an org-bucket block wait for the sustained window.
+  const bucket =
+    usage.burst.exceeded && !usage.sustained.exceeded ? "burst" : "sustained";
   return { resetAt: usage[bucket].reset_at, cause: "org_limit" };
 }
 

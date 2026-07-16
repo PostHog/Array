@@ -96,6 +96,11 @@ describe("formatResetTime", () => {
       expected: "Resets in 4h",
     },
     {
+      name: "rolls the hour instead of showing 60 minutes",
+      resetAt: isoAt((23 * 3600 + 59 * 60 + 40) * 1000),
+      expected: "Resets in 24h",
+    },
+    {
       name: "returns localized date when over 24h away",
       resetAt: isoAt(30 * 86400 * 1000),
       expected: /^Resets [A-Za-z]+ \d+ at /,

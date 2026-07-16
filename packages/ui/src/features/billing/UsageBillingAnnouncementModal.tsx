@@ -65,25 +65,22 @@ export function UsageBillingAnnouncementModal() {
             </Dialog.Title>
           </Flex>
           <Dialog.Description>
-            <Text color="gray" className="text-sm">
-              Seat-based plans are gone. PostHog Code is now usage-based — your
-              organization pays for AI usage at cost, and you only pay for what
-              you use.
+            <Text className="text-sm">
+              Seat-based plans are gone — PostHog Code is now usage-based. You
+              only pay for what you use.
             </Text>
           </Dialog.Description>
           <Flex direction="column" gap="2" className="text-sm">
-            <Text>
-              • Your organization's first <Text weight="medium">$20</Text> of
-              usage each month is included.
+            <Text color="gray">
+              • The first <Text weight="medium">$20</Text> of usage each month
+              is included.
             </Text>
-            <Text>
-              • Premium models (Claude, GPT) need a payment method on your
-              organization; an open model stays available on the free tier.
+            <Text color="gray">
+              • Premium models need a payment method; an open model stays free.
             </Text>
-            <Text>
-              • Every organization starts with a{" "}
-              <Text weight="medium">$50/month</Text> spend limit you can raise,
-              lower, or remove in PostHog billing settings.
+            <Text color="gray">
+              • A default <Text weight="medium">$50/month</Text> spend limit
+              applies — adjust it any time in billing settings.
             </Text>
           </Flex>
           <Flex justify="end" gap="3" mt="2">

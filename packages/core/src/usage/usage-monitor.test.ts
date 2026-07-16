@@ -246,6 +246,29 @@ describe("UsageMonitorService", () => {
     expect(updates[1].burst.used_percent).toBe(35);
   });
 
+  // The titlebar meter keys off this bit; a subscribe flip must not wait for
+  // some other field to change.
+  it("emits UsageUpdated when only the subscription bit flips", async () => {
+    const updates: UsageOutput[] = [];
+    const gateway = {
+      fetchUsage: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ...makeUsage(),
+          code_usage_subscribed: false,
+        })
+        .mockResolvedValueOnce({ ...makeUsage(), code_usage_subscribed: true }),
+    } as unknown as GatewaySlice;
+    service = makeService(gateway, makeActivityMonitor());
+    service.on(UsageMonitorEvent.UsageUpdated, (u) => updates.push(u));
+
+    await service.fetchOnce();
+    await service.fetchOnce();
+
+    expect(updates).toHaveLength(2);
+    expect(updates[1].code_usage_subscribed).toBe(true);
+  });
+
   it("does not emit UsageUpdated when the gateway throws", async () => {
     const updates: UsageOutput[] = [];
     const gateway = {

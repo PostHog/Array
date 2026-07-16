@@ -168,18 +168,11 @@ export function PlanUsageSettings() {
                 <Spinner size="2" />
               </Flex>
             ) : freeTier && usage ? (
-              <Flex direction="column" gap="3">
-                <UsageMeter
-                  label="Monthly free usage"
-                  bucket={usage.sustained}
-                  color={usage.sustained.exceeded ? "red" : undefined}
-                />
-                <UsageMeter
-                  label="Daily free usage"
-                  bucket={usage.burst}
-                  color={usage.burst.exceeded ? "red" : undefined}
-                />
-              </Flex>
+              <UsageMeter
+                label="Monthly free usage"
+                bucket={usage.sustained}
+                color={usage.sustained.exceeded ? "red" : undefined}
+              />
             ) : (
               <Flex
                 align="center"
