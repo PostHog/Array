@@ -19,6 +19,7 @@ import type {
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
+import { RequestError } from "@agentclientprotocol/sdk";
 import {
   classifyGatewayLimitError,
   mcpToolKey,
@@ -1259,13 +1260,15 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         });
         const message = error?.message ?? "";
         // A gateway billing denial rejects the prompt so the host classifies
-        // it and shows the upgrade gate; a silent refusal would hide it.
+        // it and shows the upgrade gate. It must be a RequestError: a plain
+        // Error serializes to a bare "Internal error" at the ACP boundary,
+        // which the host reads as fatal and answers with a respawn loop.
         if (classifyGatewayLimitError(message) !== null) {
           if (this.compactionActive) {
             this.compactionActive = false;
             this.emitCompactionBoundary();
           }
-          this.turns.fail(new Error(message));
+          this.turns.fail(RequestError.internalError(undefined, message));
           return;
         }
         void this.finalizeTurn("refusal");

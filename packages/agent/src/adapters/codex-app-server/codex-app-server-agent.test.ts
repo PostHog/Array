@@ -4,6 +4,7 @@ import type {
   NewSessionRequest,
   PromptRequest,
 } from "@agentclientprotocol/sdk";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
 import type {
   AppServerClientHandlers,
@@ -1619,7 +1620,20 @@ describe("CodexAppServerAgent", () => {
       },
     });
 
-    await expect(done).rejects.toThrow("needs a paid PostHog plan");
+    const err = await done.then(
+      () => {
+        throw new Error("prompt resolved instead of rejecting");
+      },
+      (e: unknown) => e,
+    );
+    // Must be a RequestError with the gateway text in its message — a plain
+    // Error crosses the ACP boundary as a bare "Internal error", which the
+    // host classifies as fatal and answers with a kill/respawn loop.
+    expect(err).toBeInstanceOf(RequestError);
+    expect((err as RequestError).message).toContain("Internal error: ");
+    expect((err as RequestError).message).toContain(
+      "needs a paid PostHog plan",
+    );
   });
 
   it("ends the turn without turn/start when no prompt block is usable", async () => {
