@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { UsageOutput } from "../usage/schemas";
-import { formatResetTime, isUsageExceeded } from "./usageDisplay";
+import {
+  formatResetTime,
+  isCodeUsageFreeTier,
+  isUsageExceeded,
+} from "./usageDisplay";
 
 function makeUsage(
   overrides: Partial<{
@@ -50,6 +54,24 @@ describe("isUsageExceeded", () => {
         makeUsage({ sustained: true, burst: true, isRateLimited: true }),
       ),
     ).toBe(true);
+  });
+});
+
+describe("isCodeUsageFreeTier", () => {
+  it.each([
+    [false, true],
+    [true, false],
+    // Absent means unknown, never free.
+    [undefined, false],
+  ] as const)("code_usage_subscribed=%s -> %s", (subscribed, expected) => {
+    expect(isCodeUsageFreeTier({ code_usage_subscribed: subscribed })).toBe(
+      expected,
+    );
+  });
+
+  it("treats missing usage as not confirmed free", () => {
+    expect(isCodeUsageFreeTier(null)).toBe(false);
+    expect(isCodeUsageFreeTier(undefined)).toBe(false);
   });
 });
 

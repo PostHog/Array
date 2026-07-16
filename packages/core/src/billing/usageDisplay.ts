@@ -1,7 +1,11 @@
 import type { UsageOutput } from "../usage/schemas";
 
-/** How much more usage the Pro plan offers relative to the Free plan. */
-export const PRO_USAGE_MULTIPLIER = 40;
+/** Confirmed free tier only — an absent `code_usage_subscribed` is unknown, never free. */
+export function isCodeUsageFreeTier(
+  usage: Pick<UsageOutput, "code_usage_subscribed"> | null | undefined,
+): boolean {
+  return usage?.code_usage_subscribed === false;
+}
 
 export function isUsageExceeded(usage: UsageOutput): boolean {
   return (

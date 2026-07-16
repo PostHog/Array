@@ -121,7 +121,7 @@ export function UsageButton() {
       >
         <div className="flex items-center justify-between">
           <span className="font-medium text-foreground text-xs">
-            Free plan
+            Free tier
             <Circle
               size={4}
               weight="fill"
@@ -137,7 +137,7 @@ export function UsageButton() {
             className="h-auto p-0"
             onClick={() => handleOpenPlan("titlebar_card")}
           >
-            Upgrade
+            Unlock more
           </Button>
         </div>
         <Progress
