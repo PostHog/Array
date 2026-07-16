@@ -1,4 +1,3 @@
-import { latestActivityForChannel } from "@posthog/core/canvas/channelUnread";
 import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
@@ -31,12 +30,10 @@ import {
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
-import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
 import {
   PERSONAL_CHANNEL_NAME,
   useBackendChannel,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
-import { useChannelSeenStore } from "@posthog/ui/features/canvas/stores/channelSeenStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
@@ -78,19 +75,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // identity-resolution window (settling if the resolve fails), so fold it in:
   // we can't call a channel empty until we know which channel it is.
   const isLoading = isLoadingChannels || isResolvingChannel || isLoadingFeed;
-  // Viewing a channel reads it: stamp it seen so the sidebar drops its bold.
-  // Keyed on the newest activity rather than "now", so a mention landing while
-  // the channel is open re-stamps it (and so remounts don't churn the store).
-  const { items: mentionItems } = useMentionActivity();
-  const latestActivityAt = useMemo(
-    () => latestActivityForChannel(mentionItems, backendChannel?.id),
-    [mentionItems, backendChannel?.id],
-  );
-  const markChannelSeen = useChannelSeenStore((s) => s.markChannelSeen);
-  useEffect(() => {
-    if (!backendChannel?.id || !latestActivityAt) return;
-    markChannelSeen(backendChannel.id, latestActivityAt);
-  }, [backendChannel?.id, latestActivityAt, markChannelSeen]);
+  // Marking this channel read lives in ChannelHeader (rendered by every channel
+  // surface), so opening Artifacts or CONTEXT.md counts as reading it too.
 
   // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
   // backend channel — the same id the feed tasks use, not the folder id.

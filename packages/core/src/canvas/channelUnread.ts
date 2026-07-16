@@ -47,11 +47,20 @@ export function unreadChannelIds(
   return unread;
 }
 
-/** The newest activity in one channel, for stamping it seen while it's open. */
+/**
+ * The newest activity in one channel, for stamping it seen while it's open.
+ * Scans for the one channel rather than reusing `latestActivityByChannel`,
+ * which would build (and throw away) a map of every other channel to answer.
+ */
 export function latestActivityForChannel(
   items: readonly MentionActivityItem[],
   channelId: string | undefined,
 ): string | undefined {
   if (!channelId) return undefined;
-  return latestActivityByChannel(items).get(channelId);
+  let latest: string | undefined;
+  for (const item of items) {
+    if (item.channelId !== channelId) continue;
+    if (!latest || item.createdAt > latest) latest = item.createdAt;
+  }
+  return latest;
 }

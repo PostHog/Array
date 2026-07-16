@@ -57,25 +57,17 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import {
-  normalizeChannelName,
   PERSONAL_CHANNEL_NAME,
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
-import { useUnreadChannelIds } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
+import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import {
-  Fragment,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
 
 // One actionable entry in a channel's menu, rendered the same whether it
@@ -527,12 +519,10 @@ function PersonalChannelRow() {
   const { channels } = useChannels();
   const { createChannel, isCreating } = useChannelMutations();
   // Listing backend channels lazily provisions the personal channel server-side.
-  const { personalChannel } = useTaskChannels();
+  useTaskChannels();
   // The "+" dropdown (New task / New canvas), mirroring a shared channel row.
   const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const unreadChannelIds = useUnreadChannelIds();
-  const isUnread =
-    !!personalChannel && unreadChannelIds.has(personalChannel.id);
+  const isUnread = useIsChannelUnread()(PERSONAL_CHANNEL_NAME);
 
   const meFolder = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
   const createAndOpenCanvas = useCreateAndOpenDashboard(meFolder?.id);
@@ -707,7 +697,12 @@ function ChannelGroup({
   return (
     <Collapsible.Root
       open={isOpen}
-      onOpenChange={() => toggleSection(sectionId)}
+      // The store only exposes a toggle, so drive it from the requested value:
+      // an event for the state we're already in is then a no-op rather than an
+      // inversion.
+      onOpenChange={(open) => {
+        if (open !== isOpen) toggleSection(sectionId);
+      }}
       className={className}
     >
       {/* MenuLabel carries the sidebar's label styling; `render` keeps it a
@@ -755,20 +750,7 @@ export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
 
-  // Unread activity is keyed by backend channel id, while these rows are folder
-  // channels — joined by name, the same bridge useBackendChannel walks. Resolved
-  // once here rather than per row, so the list mounts one lookup, not 46.
-  const { channels: backendChannels } = useTaskChannels();
-  const unreadChannelIds = useUnreadChannelIds();
-  const unreadNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const channel of backendChannels) {
-      if (unreadChannelIds.has(channel.id)) names.add(channel.name);
-    }
-    return names;
-  }, [backendChannels, unreadChannelIds]);
-  const isUnread = (channel: Channel) =>
-    unreadNames.has(normalizeChannelName(channel.name));
+  const isUnread = useIsChannelUnread();
 
   // The "me" folder renders as the pinned personal row, not a shared channel.
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
@@ -803,7 +785,7 @@ export function ChannelsList() {
               <ChannelSection
                 key={channel.id}
                 channel={channel}
-                isUnread={isUnread(channel)}
+                isUnread={isUnread(channel.name)}
               />
             ))}
           </ChannelGroup>
@@ -819,7 +801,7 @@ export function ChannelsList() {
             <ChannelSection
               key={channel.id}
               channel={channel}
-              isUnread={isUnread(channel)}
+              isUnread={isUnread(channel.name)}
             />
           ))}
         </ChannelGroup>
