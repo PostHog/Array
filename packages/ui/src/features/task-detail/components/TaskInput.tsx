@@ -58,6 +58,7 @@ import {
   useUserGithubRepositories,
   useUserRepositoryIntegration,
 } from "../../integrations/useIntegrations";
+import { useLocalMcpCloudServers } from "../../local-mcp/useLocalMcpCloudServers";
 import { skillToEditorCommand } from "../../message-editor/commands";
 import { PromptHistoryDialog } from "../../message-editor/components/PromptHistoryDialog";
 import { PromptInput } from "../../message-editor/components/PromptInput";
@@ -83,7 +84,6 @@ import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
 } from "../hooks/useInitialRepoSelectionFromFolderId";
-import { useLocalMcpCloudServers } from "../hooks/useLocalMcpCloudServers";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
@@ -807,13 +807,6 @@ export function TaskInput({
   const localMcpServers = useLocalMcpCloudServers(
     effectiveWorkspaceMode === "cloud",
   );
-  const importedMcpServers = useMemo(
-    () =>
-      localMcpServers.flatMap((server) =>
-        server.remote ? [server.remote] : [],
-      ),
-    [localMcpServers],
-  );
 
   const {
     isCreatingTask,
@@ -849,7 +842,6 @@ export function TaskInput({
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
     allowNoRepo,
-    importedMcpServers,
   });
 
   // Wraps the prompt in the autoresearch kickoff: protocol preamble first,

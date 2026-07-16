@@ -81,8 +81,6 @@ describe("classifyLocalMcpServer", () => {
     );
     expect(result).toEqual({
       name: "grafana",
-      scope: "project",
-      transportType: "http",
       availability: "importable",
       reason: "public_url",
       remote: {

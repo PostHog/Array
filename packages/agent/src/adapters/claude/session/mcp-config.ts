@@ -3,13 +3,16 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { NewSessionRequest } from "@agentclientprotocol/sdk";
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  LocalMcpServerDescriptor,
+  LocalMcpServerScope,
+  LocalMcpTransport,
+} from "@posthog/shared";
 import type { Logger } from "../../../utils/logger";
-
-export type ClaudeJsonMcpScope = "user" | "project";
 
 export interface ClaudeJsonMcpServerEntry {
   name: string;
-  scope: ClaudeJsonMcpScope;
+  scope: LocalMcpServerScope;
   config: McpServerConfig;
 }
 
@@ -46,7 +49,7 @@ export function loadUserClaudeJsonMcpServerEntries(
     return [];
   }
 
-  const sections: Array<{ scope: ClaudeJsonMcpScope; servers: unknown }> = [
+  const sections: Array<{ scope: LocalMcpServerScope; servers: unknown }> = [
     { scope: "user", servers: cfg.mcpServers },
     {
       scope: "project",
@@ -80,6 +83,63 @@ export function loadUserClaudeJsonMcpServers(
     servers[entry.name] = entry.config;
   }
   return servers;
+}
+
+function sanitizeHeaders(headers: unknown): Record<string, string> | undefined {
+  if (!headers || typeof headers !== "object") return undefined;
+  const entries = Object.entries(headers as Record<string, unknown>).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function toTransport(config: McpServerConfig): LocalMcpTransport {
+  // ~/.claude.json is hand-editable, so treat the parsed config as untyped.
+  const raw = config as Record<string, unknown>;
+  const type = typeof raw.type === "string" ? raw.type : undefined;
+
+  if ((type === "http" || type === "sse") && typeof raw.url === "string") {
+    return { type, url: raw.url, headers: sanitizeHeaders(raw.headers) };
+  }
+  if (
+    (type === undefined || type === "stdio") &&
+    typeof raw.command === "string"
+  ) {
+    const args = Array.isArray(raw.args)
+      ? raw.args.filter((arg): arg is string => typeof arg === "string")
+      : undefined;
+    return { type: "stdio", command: raw.command, args };
+  }
+  // Legacy entries can carry a bare `url` with no `type`; streamable HTTP is
+  // the current default transport, so read them as http.
+  if (type === undefined && typeof raw.url === "string") {
+    return {
+      type: "http",
+      url: raw.url,
+      headers: sanitizeHeaders(raw.headers),
+    };
+  }
+  return { type: "unknown" };
+}
+
+/**
+ * The user's ~/.claude.json MCP servers as host-agnostic descriptors
+ * (`@posthog/shared`), with the raw config normalized per transport and stdio
+ * `env` values dropped — they routinely hold secrets consumers of the
+ * descriptor shape have no use for.
+ */
+export function loadUserClaudeJsonMcpServerDescriptors(
+  cwd?: string,
+  logger?: Logger,
+  homeDir: string = os.homedir(),
+): LocalMcpServerDescriptor[] {
+  return loadUserClaudeJsonMcpServerEntries(cwd, logger, homeDir).map(
+    (entry) => ({
+      name: entry.name,
+      scope: entry.scope,
+      transport: toTransport(entry.config),
+    }),
+  );
 }
 
 export function parseMcpServers(

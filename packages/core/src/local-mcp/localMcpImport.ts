@@ -1,7 +1,6 @@
 import type {
   CloudMcpServerImport,
   LocalMcpServerDescriptor,
-  LocalMcpServerScope,
 } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { LOCAL_MCP_WORKSPACE_CLIENT } from "./identifiers";
@@ -28,8 +27,6 @@ export type LocalMcpCloudReason =
 
 export interface LocalMcpCloudClassification {
   name: string;
-  scope: LocalMcpServerScope;
-  transportType: "http" | "sse" | "stdio" | "unknown";
   availability: LocalMcpCloudAvailability;
   reason: LocalMcpCloudReason;
   /** Sandbox-shaped config; present only when availability is "importable". */
@@ -94,69 +91,54 @@ export function isPrivateHostname(hostname: string): boolean {
   return PRIVATE_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
+function parseHttpUrl(raw: string): URL | null {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export function classifyLocalMcpServer(
   server: LocalMcpServerDescriptor,
 ): LocalMcpCloudClassification {
-  const base = { name: server.name, scope: server.scope };
+  const { name } = server;
   const transport = server.transport;
 
   if (transport.type === "stdio") {
     return {
-      ...base,
-      transportType: "stdio",
+      name,
       availability: "requires_desktop",
       reason: "stdio_transport",
     };
   }
   if (transport.type === "unknown") {
     return {
-      ...base,
-      transportType: "unknown",
+      name,
       availability: "unsupported",
       reason: "unsupported_transport",
     };
   }
 
-  let url: URL;
-  try {
-    url = new URL(transport.url);
-  } catch {
-    return {
-      ...base,
-      transportType: transport.type,
-      availability: "unsupported",
-      reason: "invalid_url",
-    };
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return {
-      ...base,
-      transportType: transport.type,
-      availability: "unsupported",
-      reason: "invalid_url",
-    };
+  const url = parseHttpUrl(transport.url);
+  if (!url) {
+    return { name, availability: "unsupported", reason: "invalid_url" };
   }
   if (isPrivateHostname(url.hostname)) {
-    return {
-      ...base,
-      transportType: transport.type,
-      availability: "requires_desktop",
-      reason: "private_url",
-    };
+    return { name, availability: "requires_desktop", reason: "private_url" };
   }
   return {
-    ...base,
-    transportType: transport.type,
+    name,
     availability: "importable",
     reason: "public_url",
     remote: {
       type: transport.type,
-      name: server.name,
+      name,
       url: transport.url,
-      headers: Object.entries(transport.headers ?? {}).map(([name, value]) => ({
-        name,
-        value,
-      })),
+      headers: Object.entries(transport.headers ?? {}).map(
+        ([headerName, value]) => ({ name: headerName, value }),
+      ),
     },
   };
 }
