@@ -1613,6 +1613,7 @@ export class AgentServer {
       taskRunId: payload.run_id,
       taskId: payload.task_id,
       environment: "cloud",
+      mode: this.getEffectiveMode(payload),
       systemPrompt: sessionSystemPrompt,
       ...(this.config.model && { model: this.config.model }),
       allowedDomains: this.config.allowedDomains,

@@ -57,6 +57,7 @@ import {
   type Enrichment,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
+import { PostHogAPIClient } from "../../posthog-api";
 import { resolvePostHogExecPermissionRegex } from "../../posthog-exec-permission";
 import {
   classifyPostHogExecCall,
@@ -75,7 +76,7 @@ import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
-import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
+import { LOCAL_TOOLS_MCP_NAME, type LocalToolCtx } from "../local-tools";
 import { resolveSpokenNarration, resolveTaskId } from "../session-meta";
 import {
   buildBreakdown,
@@ -1881,6 +1882,30 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
   }
 
+  // Backs the `finish` local tool: marks the task run terminal so the Temporal
+  // workflow tears the sandbox down. Only wired when we have both the run
+  // identifiers and a PostHog API config, i.e. a real cloud run.
+  private buildRequestFinish(
+    taskId: string | undefined,
+    taskRunId: string | undefined,
+  ): LocalToolCtx["requestFinish"] {
+    const config = this.options?.posthogApiConfig;
+    if (!config || !taskId || !taskRunId) {
+      return undefined;
+    }
+    return async (status, message) => {
+      try {
+        await new PostHogAPIClient(config).updateTaskRun(taskId, taskRunId, {
+          status,
+          ...(status === "failed" && message ? { error_message: message } : {}),
+        });
+      } catch (error) {
+        this.logger.error("finish tool failed to mark run terminal", error);
+        throw error;
+      }
+    };
+  }
+
   private async createSession(
     params: {
       cwd: string;
@@ -1939,6 +1964,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const baseBranch = meta?.baseBranch;
     const environment = meta?.environment;
     const spokenNarration = resolveSpokenNarration(meta);
+    const requestFinish = this.buildRequestFinish(taskId, meta?.taskRunId);
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
@@ -1950,8 +1976,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           taskId,
           taskRunId: meta?.taskRunId,
           baseBranch,
+          requestFinish,
         },
-        { environment, spokenNarration },
+        {
+          environment,
+          spokenNarration,
+          background: meta?.mode === "background",
+        },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
     };
