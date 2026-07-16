@@ -181,6 +181,21 @@ describe("McpRelayServiceImpl", () => {
     ]);
   });
 
+  it("treats an explicit null id the same as a missing id (fire-and-forget)", async () => {
+    const service = makeService("srv");
+
+    const execution = await service.execute("run-1", "srv", {
+      jsonrpc: "2.0",
+      id: null,
+      method: "notifications/initialized",
+    });
+
+    expect(execution).toEqual({});
+    expect(service.transports[0].sent).toEqual([
+      { jsonrpc: "2.0", id: null, method: "notifications/initialized" },
+    ]);
+  });
+
   it("replaces a response over 256 KB with a -32003 error", async () => {
     const service = makeService("srv");
 

@@ -9,6 +9,7 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import {
   type ClaudeJsonMcpServerEntry,
   loadUserClaudeJsonMcpServerEntries,
+  sanitizeHeaders,
 } from "@posthog/agent/adapters/claude/session/mcp-config";
 import {
   ROOT_LOGGER,
@@ -37,16 +38,6 @@ interface RelayConnection {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function sanitizeStringRecord(
-  value: unknown,
-): Record<string, string> | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const entries = Object.entries(value as Record<string, unknown>).filter(
-    (entry): entry is [string, string] => typeof entry[1] === "string",
-  );
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 /**
@@ -120,8 +111,9 @@ export class McpRelayServiceImpl implements McpRelayService {
       return { error: { code: -32000, message: errorMessage(err) } };
     }
 
-    if (payload.id === undefined) {
+    if (payload.id === undefined || payload.id === null) {
       // JSON-RPC notification: fire-and-forget, no response correlation.
+      // Matches the sandbox's own notification check (mcp-relay-server.ts).
       try {
         await connection.transport.send(payload as JSONRPCMessage);
       } catch (err) {
@@ -161,7 +153,7 @@ export class McpRelayServiceImpl implements McpRelayService {
     const type = typeof raw.type === "string" ? raw.type : undefined;
     const url = typeof raw.url === "string" ? raw.url : undefined;
     const command = typeof raw.command === "string" ? raw.command : undefined;
-    const headers = sanitizeStringRecord(raw.headers);
+    const headers = sanitizeHeaders(raw.headers);
 
     if ((type === undefined || type === "stdio") && command) {
       const args = Array.isArray(raw.args)
@@ -170,7 +162,7 @@ export class McpRelayServiceImpl implements McpRelayService {
       return new StdioClientTransport({
         command,
         args,
-        env: { ...getDefaultEnvironment(), ...sanitizeStringRecord(raw.env) },
+        env: { ...getDefaultEnvironment(), ...sanitizeHeaders(raw.env) },
       });
     }
     if (type === "sse" && url) {
@@ -293,7 +285,7 @@ export class McpRelayServiceImpl implements McpRelayService {
       pending.resolve({
         error: {
           code: -32003,
-          message: "Relayed MCP response exceeds 256 KB",
+          message: `Relayed MCP response exceeds ${MAX_RESPONSE_BYTES / 1000} KB`,
         },
       });
       return;

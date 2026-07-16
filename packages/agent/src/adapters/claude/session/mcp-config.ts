@@ -85,7 +85,9 @@ export function loadUserClaudeJsonMcpServers(
   return servers;
 }
 
-function sanitizeHeaders(headers: unknown): Record<string, string> | undefined {
+export function sanitizeHeaders(
+  headers: unknown,
+): Record<string, string> | undefined {
   if (!headers || typeof headers !== "object") return undefined;
   const entries = Object.entries(headers as Record<string, unknown>).filter(
     (entry): entry is [string, string] => typeof entry[1] === "string",
