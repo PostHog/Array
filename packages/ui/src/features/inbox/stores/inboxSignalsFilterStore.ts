@@ -31,6 +31,10 @@ interface InboxSignalsFilterActions {
   toggleSourceProduct: (source: SourceProduct) => void;
   togglePriority: (priority: SignalReportPriority) => void;
   setPriorityFilter: (priorities: SignalReportPriority[]) => void;
+  /** Clear the source filter back to "Any" (empty = all sources). */
+  clearSourceProductFilter: () => void;
+  /** Clear the priority filter back to "Any" (empty = all priorities). */
+  clearPriorityFilter: () => void;
   /** Reset all filters when a deep link arrives so the linked report isn't hidden. */
   resetFilters: () => void;
 }
@@ -74,6 +78,8 @@ export const useInboxSignalsFilterStore = create<InboxSignalsFilterStore>()(
         set({
           priorityFilter: Array.from(new Set(priorities)),
         }),
+      clearSourceProductFilter: () => set({ sourceProductFilter: [] }),
+      clearPriorityFilter: () => set({ priorityFilter: [] }),
       resetFilters: () =>
         set({
           searchQuery: "",
