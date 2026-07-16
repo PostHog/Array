@@ -5177,7 +5177,6 @@ describe("SessionService", () => {
           model: "gpt-5.4",
           reasoningLevel: "high",
           resumeFromRunId: "run-123",
-          spokenNarration: true,
         }),
       );
     });

@@ -404,7 +404,6 @@ export class TaskCreationSaga extends Saga<
             prAuthorshipMode,
             autoPublish: input.cloudAutoPublish,
             rtkEnabled: input.cloudRtkEnabled,
-            spokenNarration: input.spokenNarration,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,

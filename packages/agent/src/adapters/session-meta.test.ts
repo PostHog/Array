@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  resolveCloudSpokenNarration,
-  resolveSpokenNarration,
-} from "./session-meta";
+import { resolveSpokenNarration } from "./session-meta";
 
 describe("resolveSpokenNarration", () => {
   afterEach(() => {
@@ -48,20 +45,6 @@ describe("resolveSpokenNarration", () => {
     ({ meta, expected }) => {
       vi.stubEnv("IS_SANDBOX", "1");
       expect(resolveSpokenNarration(meta)).toBe(expected);
-    },
-  );
-});
-
-describe("resolveCloudSpokenNarration", () => {
-  it.each([
-    { state: { spoken_narration: true }, expected: true },
-    { state: { spoken_narration: false }, expected: false },
-    { state: {}, expected: false },
-    { state: undefined, expected: false },
-  ])(
-    "resolves explicit cloud run opt-in to $expected",
-    ({ state, expected }) => {
-      expect(resolveCloudSpokenNarration(state)).toBe(expected);
     },
   );
 });

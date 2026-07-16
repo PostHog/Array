@@ -27,19 +27,4 @@ describe("prepareTaskInput", () => {
     });
     expect(input.customInstructions).toBeUndefined();
   });
-
-  it.each([
-    { workspaceMode: "cloud" as const, expected: true },
-    { workspaceMode: "local" as const, expected: undefined },
-    { workspaceMode: "worktree" as const, expected: undefined },
-  ])(
-    "passes spoken narration through only for cloud (%s)",
-    ({ workspaceMode, expected }) => {
-      const input = prepareTaskInput("do the thing", [], {
-        workspaceMode,
-        spokenNarration: true,
-      });
-      expect(input.spokenNarration).toBe(expected);
-    },
-  );
 });

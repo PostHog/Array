@@ -19,7 +19,6 @@ export interface CreateTaskRunClientOptions {
   prAuthorshipMode?: PrAuthorshipMode;
   autoPublish?: boolean;
   rtkEnabled?: boolean;
-  spokenNarration?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;

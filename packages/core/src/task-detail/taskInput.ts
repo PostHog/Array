@@ -32,7 +32,6 @@ export interface PrepareTaskInputOptions {
   customInstructions?: string;
   autoPublishCloudRuns?: boolean;
   rtkEnabledCloud?: boolean;
-  spokenNarration?: boolean;
   allowNoRepo?: boolean;
   importedMcpServers?: CloudMcpServerImport[];
   relayedMcpServers?: CloudMcpServerRelayDesignation[];
@@ -71,7 +70,6 @@ export function prepareTaskInput(
       options.signalReportId && isCloud ? "signal_report" : undefined,
     cloudAutoPublish: isCloud ? options.autoPublishCloudRuns : undefined,
     cloudRtkEnabled: isCloud ? options.rtkEnabledCloud : undefined,
-    spokenNarration: isCloud ? options.spokenNarration : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,

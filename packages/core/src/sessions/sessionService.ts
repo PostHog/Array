@@ -3408,7 +3408,6 @@ export class SessionService {
           prAuthorshipMode,
           autoPublish: previousState.auto_publish === true || undefined,
           rtkEnabled: this.d.settings.rtkEnabledCloud,
-          spokenNarration: this.d.settings.spokenNarrationEnabled === true,
           runSource: getCloudRunSource(previousState),
           signalReportId:
             typeof previousState.signal_report_id === "string"

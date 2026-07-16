@@ -154,7 +154,6 @@ describe("TaskCreationSaga", () => {
       reasoningLevel: "high",
       cloudAutoPublish: true,
       cloudRtkEnabled: false,
-      spokenNarration: true,
     });
 
     expect(result.success).toBe(true);
@@ -173,7 +172,6 @@ describe("TaskCreationSaga", () => {
       prAuthorshipMode: "user",
       autoPublish: true,
       rtkEnabled: false,
-      spokenNarration: true,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
