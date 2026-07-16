@@ -236,8 +236,14 @@ const mockSpeechNotifier = vi.hoisted(() => ({
   speak: vi.fn(),
 }));
 
+const mockFeatureFlags = vi.hoisted(() => ({
+  isEnabled: vi.fn(() => false),
+  onFlagsLoaded: vi.fn(() => vi.fn()),
+}));
+
 const mockSettingsState = vi.hoisted(() => ({
   customInstructions: "",
+  spokenNotifications: false,
   syncCustomInstructionsFromFile: false,
   syncedCustomInstructions: null as {
     path: string;
@@ -314,6 +320,9 @@ vi.mock("@posthog/di/container", () => ({
     if (typeof token === "function" && token.name === "SpeechNotifier") {
       return mockSpeechNotifier;
     }
+    if (token === Symbol.for("posthog.ui.featureFlags")) {
+      return mockFeatureFlags;
+    }
     throw new Error(`resolveService: unmocked token ${String(token)}`);
   },
 }));
@@ -382,7 +391,11 @@ vi.mock("@posthog/core/sessions/sessionEvents", async () => {
 });
 
 import { toast } from "@posthog/ui/primitives/toast";
-import { getSessionService, resetSessionService } from "./sessionServiceHost";
+import {
+  getSessionService,
+  resetSessionService,
+  shouldEnableSpokenNarration,
+} from "./sessionServiceHost";
 
 // --- Test Fixtures ---
 
@@ -426,6 +439,8 @@ describe("SessionService", () => {
     mockConvertStoredEntriesToEvents.mockImplementation(() => []);
     resetSessionService();
     mockSettingsState.customInstructions = "";
+    mockSettingsState.spokenNotifications = false;
+    mockFeatureFlags.isEnabled.mockReturnValue(false);
     mockSettingsState.syncCustomInstructionsFromFile = false;
     mockSettingsState.syncedCustomInstructions = null;
     mockGetIsOnline.mockReturnValue(true);
@@ -512,6 +527,42 @@ describe("SessionService", () => {
     it("handles reset when no instance exists", () => {
       expect(() => resetSessionService()).not.toThrow();
     });
+  });
+
+  describe("spoken narration availability", () => {
+    it.each([
+      {
+        userOptedIn: true,
+        flagEnabled: true,
+        isDevelopment: false,
+        expected: true,
+      },
+      {
+        userOptedIn: false,
+        flagEnabled: true,
+        isDevelopment: false,
+        expected: false,
+      },
+      {
+        userOptedIn: true,
+        flagEnabled: false,
+        isDevelopment: false,
+        expected: false,
+      },
+      {
+        userOptedIn: true,
+        flagEnabled: false,
+        isDevelopment: true,
+        expected: true,
+      },
+    ])(
+      "returns $expected for opt-in=$userOptedIn flag=$flagEnabled dev=$isDevelopment",
+      ({ userOptedIn, flagEnabled, isDevelopment, expected }) => {
+        expect(
+          shouldEnableSpokenNarration(userOptedIn, flagEnabled, isDevelopment),
+        ).toBe(expected);
+      },
+    );
   });
 
   describe("connectToTask", () => {
@@ -5036,6 +5087,8 @@ describe("SessionService", () => {
 
     it("preserves codex runtime selection when resuming a terminal cloud run", async () => {
       const service = getSessionService();
+      mockSettingsState.spokenNotifications = true;
+      mockFeatureFlags.isEnabled.mockReturnValue(true);
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
         createMockSession({
           isCloud: true,

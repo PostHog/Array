@@ -1,9 +1,13 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import { classifyGatewayLimitError } from "@posthog/shared";
 import {
   buildPosthogPropertyHeaderRecord,
   type PosthogProperties,
 } from "@posthog/shared/posthog-property-headers";
 import { inject, injectable } from "inversify";
+import type { AuthService } from "../auth/auth";
+import { AUTH_SERVICE } from "../auth/auth.module";
+import { AuthServiceEvent } from "../auth/schemas";
 import {
   LLM_GATEWAY_HOST,
   type LlmGatewayAuth,
@@ -25,6 +29,8 @@ import {
 // the cheapest model rather than the gateway default.
 export const HELPER_GATEWAY_MODEL = "claude-haiku-4-5";
 
+export const FREE_TIER_GATEWAY_MODEL = "@cf/zai-org/glm-5.2";
+
 export class LlmGatewayError extends Error {
   constructor(
     message: string,
@@ -44,15 +50,25 @@ export class LlmGatewayService {
     host: LlmGatewayHost,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
+    @inject(AUTH_SERVICE)
+    authService: AuthService,
   ) {
     this.auth = host;
     this.endpoints = host;
     this.log = logger.scope("llm-gateway");
+    let orgId = authService.getState().currentOrgId;
+    authService.on(AuthServiceEvent.StateChanged, (state) => {
+      if (state.currentOrgId === orgId) return;
+      orgId = state.currentOrgId;
+      this.lastKnownCodeUsageSubscribed = null;
+    });
   }
 
   private readonly auth: LlmGatewayAuth;
   private readonly endpoints: LlmGatewayEndpoints;
   private readonly log: LlmGatewayLogger;
+
+  private lastKnownCodeUsageSubscribed: boolean | null = null;
 
   async prompt(
     messages: LlmMessage[],
@@ -71,10 +87,46 @@ export class LlmGatewayService {
       posthogProperties?: PosthogProperties;
     } = {},
   ): Promise<PromptOutput> {
+    const requested = options.model ?? this.endpoints.defaultModel;
+    const model =
+      this.lastKnownCodeUsageSubscribed === false
+        ? FREE_TIER_GATEWAY_MODEL
+        : requested;
+    try {
+      return await this.sendPrompt(messages, { ...options, model });
+    } catch (error) {
+      const isModelGate =
+        error instanceof LlmGatewayError &&
+        error.statusCode === 403 &&
+        classifyGatewayLimitError(error.message) === "model_gate";
+      if (!isModelGate || model === FREE_TIER_GATEWAY_MODEL) throw error;
+      this.lastKnownCodeUsageSubscribed = false;
+      this.log.warn("Model gated for free tier, retrying on free-tier model", {
+        model,
+        fallbackModel: FREE_TIER_GATEWAY_MODEL,
+      });
+      return await this.sendPrompt(messages, {
+        ...options,
+        model: FREE_TIER_GATEWAY_MODEL,
+      });
+    }
+  }
+
+  private async sendPrompt(
+    messages: LlmMessage[],
+    options: {
+      system?: string;
+      maxTokens?: number;
+      model: string;
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      posthogProperties?: PosthogProperties;
+    },
+  ): Promise<PromptOutput> {
     const {
       system,
       maxTokens,
-      model = this.endpoints.defaultModel,
+      model,
       signal,
       timeoutMs = 60_000,
       posthogProperties,
@@ -154,8 +206,11 @@ export class LlmGatewayService {
         });
       }
 
+      const detail =
+        typeof errorData?.detail === "string" ? errorData.detail : undefined;
       const errorMessage =
         errorData?.error?.message ||
+        detail ||
         `HTTP ${response.status}: ${response.statusText}`;
       const errorType = errorData?.error?.type || "unknown_error";
       const errorCode = errorData?.error?.code;
@@ -223,7 +278,11 @@ export class LlmGatewayService {
       );
     }
 
-    return usageOutput.parse(await response.json());
+    const usage = usageOutput.parse(await response.json());
+    if (usage.code_usage_subscribed !== undefined) {
+      this.lastKnownCodeUsageSubscribed = usage.code_usage_subscribed;
+    }
+    return usage;
   }
 
   async invalidatePlanCache(): Promise<void> {

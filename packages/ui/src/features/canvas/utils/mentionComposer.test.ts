@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   contentToDoc,
   docToContent,
+  filterComposerMentionCandidates,
   filterMentionCandidates,
 } from "./mentionComposer";
 
@@ -65,6 +66,22 @@ describe("filterMentionCandidates", () => {
 
   it("returns empty when nothing matches", () => {
     expect(filterMentionCandidates(members, "zzz")).toEqual([]);
+  });
+});
+
+describe("filterComposerMentionCandidates", () => {
+  it("offers the agent before matching teammates when enabled", () => {
+    expect(filterComposerMentionCandidates(members, "a", true)).toEqual([
+      { kind: "agent" },
+      { kind: "member", member: ann },
+      { kind: "member", member: raquel },
+    ]);
+  });
+
+  it("does not offer the agent when forwarding is unavailable", () => {
+    expect(filterComposerMentionCandidates(members, "agent", false)).toEqual(
+      [],
+    );
   });
 });
 

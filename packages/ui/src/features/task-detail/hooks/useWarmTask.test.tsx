@@ -18,6 +18,7 @@ vi.mock("../../../shell/logger", () => ({
 }));
 
 import { useWarmTask } from "./useWarmTask";
+import { takeWarmTaskLease } from "./warmTaskLease";
 
 interface Props {
   workspaceMode: WorkspaceMode;
@@ -28,6 +29,8 @@ interface Props {
   runtimeAdapter?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
 }
 
 const cloudTyping: Props = {
@@ -199,6 +202,103 @@ describe("useWarmTask", () => {
       reasoning_effort: "high",
     });
     expect(mockClient.warmTask).toHaveBeenCalledTimes(2);
+  });
+
+  it("forwards sandbox configuration and re-warms when the image changes", async () => {
+    const { rerender } = renderHook((props: Props) => useWarmTask(props), {
+      initialProps: {
+        ...cloudTyping,
+        sandboxEnvironmentId: "environment-123",
+        customImageId: "image-123",
+      },
+    });
+    await flushDebounce();
+    expect(mockClient.warmTask).toHaveBeenLastCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      ...NULL_RUNTIME,
+      sandbox_environment_id: "environment-123",
+      custom_image_id: "image-123",
+    });
+
+    rerender({
+      ...cloudTyping,
+      sandboxEnvironmentId: "environment-123",
+      customImageId: "image-456",
+    });
+    await flushDebounce();
+    expect(mockClient.warmTask).toHaveBeenLastCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      ...NULL_RUNTIME,
+      sandbox_environment_id: "environment-123",
+      custom_image_id: "image-456",
+    });
+    expect(mockClient.warmTask).toHaveBeenCalledTimes(2);
+  });
+
+  it("warms only the latest image when selection changes during the debounce", async () => {
+    const { rerender } = renderHook((props: Props) => useWarmTask(props), {
+      initialProps: { ...cloudTyping, customImageId: "image-123" },
+    });
+
+    rerender({ ...cloudTyping, customImageId: "image-456" });
+    await flushDebounce();
+
+    expect(mockClient.warmTask).toHaveBeenCalledOnce();
+    expect(mockClient.warmTask).toHaveBeenCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      ...NULL_RUNTIME,
+      custom_image_id: "image-456",
+    });
+  });
+
+  it("keeps the latest image lease when warm responses complete out of order", async () => {
+    type WarmResponse = { task_id: string; run_id: string };
+    let resolveFirstWarm!: (value: WarmResponse) => void;
+    let resolveSecondWarm!: (value: WarmResponse) => void;
+    const firstWarm = new Promise<WarmResponse>((resolve) => {
+      resolveFirstWarm = resolve;
+    });
+    const secondWarm = new Promise<WarmResponse>((resolve) => {
+      resolveSecondWarm = resolve;
+    });
+    mockClient.warmTask
+      .mockReturnValueOnce(firstWarm)
+      .mockReturnValueOnce(secondWarm);
+
+    const { rerender } = renderHook((props: Props) => useWarmTask(props), {
+      initialProps: { ...cloudTyping, customImageId: "image-123" },
+    });
+    await flushDebounce();
+
+    rerender({ ...cloudTyping, customImageId: "image-456" });
+    await flushDebounce();
+
+    await act(async () => {
+      resolveSecondWarm({ task_id: "task-2", run_id: "run-2" });
+      await secondWarm;
+    });
+    await act(async () => {
+      resolveFirstWarm({ task_id: "task-1", run_id: "run-1" });
+      await firstWarm;
+    });
+
+    expect(
+      takeWarmTaskLease({
+        repository: "acme/repo",
+        branch: "main",
+        runtimeAdapter: null,
+        model: null,
+        reasoningEffort: null,
+        sandboxEnvironmentId: null,
+        customImageId: "image-456",
+      }),
+    ).toEqual({ taskId: "task-2", runId: "run-2" });
   });
 
   it("warms again for a new selection after a failed warm", async () => {

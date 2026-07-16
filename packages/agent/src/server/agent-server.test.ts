@@ -1240,6 +1240,328 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("broadcastEvent", () => {
+    function exposeBroadcastEvent(testServer: AgentServer) {
+      return testServer as unknown as {
+        eventStreamSender: {
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
+        } | null;
+        pendingEvents: Record<string, unknown>[];
+        session: unknown;
+        broadcastEvent(event: Record<string, unknown>): void;
+      };
+    }
+
+    it("enqueues and buffers events raised before a session is assigned", () => {
+      // Regression: an MCP relay request can fire the instant the client
+      // subprocess starts, ahead of session assignment. broadcastEvent must
+      // not silently drop it.
+      const testServer = exposeBroadcastEvent(createServer());
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.session = null;
+
+      const event = {
+        type: "mcp_request",
+        requestId: "req-1",
+        server: "slack",
+      };
+      testServer.broadcastEvent(event);
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(event);
+      expect(testServer.pendingEvents).toEqual([event]);
+    });
+
+    it("buffers events with no event stream sender configured and no session", () => {
+      const testServer = exposeBroadcastEvent(createServer());
+      testServer.session = null;
+
+      const event = {
+        type: "mcp_request",
+        requestId: "req-1",
+        server: "slack",
+      };
+      expect(() => testServer.broadcastEvent(event)).not.toThrow();
+
+      expect(testServer.pendingEvents).toEqual([event]);
+    });
+  });
+
+  describe("relayed MCP server tool permissions", () => {
+    function exposeCloudClient(testServer: AgentServer) {
+      return testServer as unknown as {
+        config: { relayMcpServers?: string[]; mode?: string };
+        session: { hasDesktopConnected?: boolean } | null;
+        eventStreamSender: unknown;
+        relayPermissionToClient: (params: unknown) => Promise<unknown>;
+        createCloudClient(payload: {
+          run_id: string;
+          task_id: string;
+          team_id: number;
+          user_id: number;
+          distinct_id: string;
+          mode?: "interactive" | "background";
+        }): {
+          requestPermission(params: unknown): Promise<{
+            outcome: { outcome: string; optionId?: string };
+            _meta?: Record<string, unknown>;
+          }>;
+        };
+      };
+    }
+
+    function permissionRequestFor(mcpToolName: string) {
+      return {
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+        toolCall: {
+          kind: "other",
+          _meta: { claudeCode: { toolName: mcpToolName } },
+          rawInput: {},
+        },
+      };
+    }
+
+    // Codex never writes `_meta.claudeCode`; it populates the neutral
+    // `_meta.posthog` channel with a structured `mcp` descriptor and sets
+    // rawInput to the tool arguments (no toolName). The gate must still fire.
+    function codexPermissionRequestFor(server: string, tool: string) {
+      return {
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+        toolCall: {
+          kind: "other",
+          _meta: {
+            posthog: {
+              toolName: `mcp__${server}__${tool}`,
+              mcp: { server, tool },
+            },
+          },
+          rawInput: { some: "arg" },
+        },
+      };
+    }
+
+    const basePayload = {
+      run_id: "run-1",
+      task_id: "task-1",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "user-1",
+    };
+
+    it("relays a relayed-server tool call when the desktop is connected", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+      expect(result).toEqual({
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      });
+    });
+
+    it("relays when only the durable event stream is reachable (no desktop session)", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      await requestPermission(permissionRequestFor("mcp__slack__send_message"));
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+    });
+
+    it("denies a relayed-server tool call instead of auto-approving when no client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it("denies a relayed-server tool call in background mode even when a client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient({
+        ...basePayload,
+        mode: "background",
+      });
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it("does not treat a tool on a non-relayed server as always-ask", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__posthog__query"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({
+        outcome: "selected",
+        optionId: "allow_once",
+      });
+    });
+
+    it("treats a codex relay tool call (posthog _meta channel) as always-ask", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      await requestPermission(
+        codexPermissionRequestFor("slack", "send_message"),
+      );
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+    });
+
+    it("denies a codex relay tool call when no client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        codexPermissionRequestFor("slack", "send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+  });
+
+  describe("refresh_session relay re-append", () => {
+    function exposeRefresh(testServer: AgentServer) {
+      return testServer as unknown as {
+        session: {
+          clientConnection: { extMethod: ReturnType<typeof vi.fn> };
+        } | null;
+        mcpRelayServer: { mcpServers: unknown[] } | null;
+        executeCommand(
+          method: string,
+          params: Record<string, unknown>,
+        ): Promise<unknown>;
+      };
+    }
+
+    it("re-appends the loopback relay entries so a refresh doesn't drop them", async () => {
+      const testServer = exposeRefresh(createServer());
+      const extMethod = vi.fn(async () => ({ refreshed: true }));
+      testServer.session = { clientConnection: { extMethod } };
+      const relayEntry = {
+        type: "http",
+        name: "slack",
+        url: "http://127.0.0.1:5555/relay/slack",
+        headers: [{ name: "Authorization", value: "Bearer secret" }],
+      };
+      testServer.mcpRelayServer = { mcpServers: [relayEntry] };
+
+      // Django's refresh list carries posthog + imported, never the relay entries.
+      await testServer.executeCommand("refresh_session", {
+        mcpServers: [
+          { type: "http", name: "posthog", url: "https://mcp", headers: [] },
+        ],
+      });
+
+      expect(extMethod).toHaveBeenCalledOnce();
+      const forwarded = (extMethod.mock.calls[0] as unknown[])[1] as {
+        mcpServers: Array<{ name: string }>;
+      };
+      expect(forwarded.mcpServers.map((s) => s.name)).toEqual([
+        "posthog",
+        "slack",
+      ]);
+
+      // Detach the fake session so afterEach's stop() short-circuits before
+      // touching the partial session/relay stubs.
+      testServer.session = null;
+    });
+
+    it("does not duplicate a relay entry already present in the refresh list", async () => {
+      const testServer = exposeRefresh(createServer());
+      const extMethod = vi.fn(async () => ({ refreshed: true }));
+      testServer.session = { clientConnection: { extMethod } };
+      testServer.mcpRelayServer = {
+        mcpServers: [
+          {
+            type: "http",
+            name: "slack",
+            url: "http://127.0.0.1:5555/relay/slack",
+            headers: [],
+          },
+        ],
+      };
+
+      await testServer.executeCommand("refresh_session", {
+        mcpServers: [
+          {
+            type: "http",
+            name: "slack",
+            url: "http://127.0.0.1:5555/relay/slack",
+            headers: [],
+          },
+        ],
+      });
+
+      const forwarded = (extMethod.mock.calls[0] as unknown[])[1] as {
+        mcpServers: Array<{ name: string }>;
+      };
+      expect(forwarded.mcpServers.map((s) => s.name)).toEqual(["slack"]);
+
+      testServer.session = null;
+    });
+  });
+
   describe("GET /events", () => {
     it("returns 401 without authorization header", async () => {
       await createServer().start();

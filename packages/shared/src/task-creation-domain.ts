@@ -2,6 +2,10 @@ import type { Adapter } from "./adapter";
 import type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 import type { Task } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
+import type {
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
+} from "./local-mcp-domain";
 import type { WorkspaceMode } from "./workspace";
 import type { Workspace } from "./workspace-domain";
 
@@ -67,6 +71,18 @@ export interface TaskCreationInput {
    * first message instead, to avoid double-injecting.
    */
   customInstructions?: string;
+  /**
+   * Local (~/.claude.json) MCP servers classified as importable, forwarded to
+   * the cloud sandbox in the run-creation payload. Cloud-only; local sessions
+   * already read the user's config directly.
+   */
+  importedMcpServers?: CloudMcpServerImport[];
+  /**
+   * Desktop-only local MCP servers (stdio / private URL) designated for
+   * relaying into the cloud run via the creating desktop
+   * (docs/cloud-mcp-relay.md). Names only. Cloud-only.
+   */
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
   /**
    * When true, the task may be created without a repo/branch. Used by the
    * channels "generic chat box": the agent decides at runtime whether it needs

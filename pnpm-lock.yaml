@@ -1504,6 +1504,9 @@ importers:
       '@hono/trpc-server':
         specifier: 'catalog:'
         version: 0.3.4(@trpc/server@11.17.0(typescript@5.9.3))(hono@4.11.7)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@parcel/watcher':
         specifier: 'catalog:'
         version: 2.5.6

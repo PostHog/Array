@@ -8,13 +8,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
 import { type Adapter, GLM_MODEL_FLAG } from "@posthog/shared";
+import { gateRestrictedModelPick } from "@posthog/ui/features/billing/modelGate";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { ModelRadioItem } from "@posthog/ui/features/sessions/components/ModelRadioItem";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import {
   flattenSelectOptions,
@@ -63,6 +64,9 @@ export function ModelSelector({
   if (!selectOption || options.length === 0) return null;
 
   const handleChange = (value: string) => {
+    // A plan-restricted model opens the upgrade gate instead of becoming
+    // the selection.
+    if (gateRestrictedModelPick(options, value)) return;
     onModelChange?.(value);
 
     if (!taskId) return;
@@ -110,9 +114,7 @@ export function ModelSelector({
                 {index > 0 && <DropdownMenuSeparator />}
                 <MenuLabel>{group.name}</MenuLabel>
                 {group.options.map((model) => (
-                  <DropdownMenuRadioItem key={model.value} value={model.value}>
-                    <span className="whitespace-nowrap">{model.name}</span>
-                  </DropdownMenuRadioItem>
+                  <ModelRadioItem key={model.value} model={model} />
                 ))}
               </Fragment>
             ))}
@@ -123,9 +125,7 @@ export function ModelSelector({
             onValueChange={handleChange}
           >
             {options.map((model) => (
-              <DropdownMenuRadioItem key={model.value} value={model.value}>
-                <span className="whitespace-nowrap">{model.name}</span>
-              </DropdownMenuRadioItem>
+              <ModelRadioItem key={model.value} model={model} />
             ))}
           </DropdownMenuRadioGroup>
         )}

@@ -50,13 +50,12 @@ export interface TurnCompleteParams {
   usage: TurnCompleteUsage;
 }
 
-/** The four component counts the caller accumulates; total is computed here. */
-export interface AccumulatedUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cachedReadTokens: number;
-  cachedWriteTokens: number;
-}
+type TurnCompleteUsageInput = {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cachedReadTokens?: number | null;
+  cachedWriteTokens?: number | null;
+};
 
 /**
  * `_posthog/turn_complete` — fired when a prompt turn finishes. `totalTokens` is the
@@ -65,21 +64,22 @@ export interface AccumulatedUsage {
 export function buildTurnCompleteParams(
   sessionId: string,
   stopReason: StopReason,
-  usage: AccumulatedUsage,
+  usage?: TurnCompleteUsageInput | null,
 ): TurnCompleteParams {
+  const inputTokens = usage?.inputTokens ?? 0;
+  const outputTokens = usage?.outputTokens ?? 0;
+  const cachedReadTokens = usage?.cachedReadTokens ?? 0;
+  const cachedWriteTokens = usage?.cachedWriteTokens ?? 0;
   return {
     sessionId,
     stopReason,
     usage: {
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cachedReadTokens: usage.cachedReadTokens,
-      cachedWriteTokens: usage.cachedWriteTokens,
+      inputTokens,
+      outputTokens,
+      cachedReadTokens,
+      cachedWriteTokens,
       totalTokens:
-        usage.inputTokens +
-        usage.outputTokens +
-        usage.cachedReadTokens +
-        usage.cachedWriteTokens,
+        inputTokens + outputTokens + cachedReadTokens + cachedWriteTokens,
     },
   };
 }
