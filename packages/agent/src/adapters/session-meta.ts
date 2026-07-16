@@ -23,12 +23,12 @@ interface SpokenNarrationSource {
 /**
  * Spoken narration is strictly opt-in: it is on only when a caller explicitly
  * sets `spokenNarration` true at session start. The desktop is the only client
- * that can play audio and the only place that knows the feature flag, the
- * user's setting, and whether an ElevenLabs key is configured — so it computes
- * that boolean and passes it. Everything else (headless cloud runs like Slack
- * threads and Signals scouts, sandboxes, local runs without the setting) stays
- * silent, so the `speak` tool and its instructions never load and never cost
- * tokens where nothing is listening. Shared by the Claude and Codex adapters.
+ * that can play audio and the only place that knows the feature flag and the
+ * user's setting, so it computes that boolean and passes it. Everything else
+ * (headless cloud runs like Slack threads and Signals scouts, sandboxes, local
+ * runs without the setting) stays silent, so the `speak` tool and its
+ * instructions never load and never cost tokens where nothing is listening.
+ * Shared by the Claude and Codex adapters.
  */
 export function resolveSpokenNarration(
   meta: SpokenNarrationSource | undefined,

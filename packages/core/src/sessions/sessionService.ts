@@ -336,7 +336,7 @@ export interface SessionServiceDeps {
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
     spokenNotifications?: boolean;
-    elevenLabsKeyConfigured?: boolean;
+    spokenNarrationEnabled?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1092,7 +1092,7 @@ export class SessionService {
         customInstructions,
         rtkEnabledLocal,
         spokenNotifications,
-        elevenLabsKeyConfigured,
+        spokenNarrationEnabled,
       } = this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
@@ -1100,7 +1100,7 @@ export class SessionService {
         repoPath,
         rtkEnabled: rtkEnabledLocal,
         spokenNarration:
-          spokenNotifications === true && elevenLabsKeyConfigured === true,
+          spokenNotifications === true && spokenNarrationEnabled === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1424,7 +1424,7 @@ export class SessionService {
       customInstructions: startCustomInstructions,
       rtkEnabledLocal,
       spokenNotifications,
-      elevenLabsKeyConfigured,
+      spokenNarrationEnabled,
     } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
@@ -1438,7 +1438,7 @@ export class SessionService {
       customInstructions: startCustomInstructions || undefined,
       rtkEnabled: rtkEnabledLocal,
       spokenNarration:
-        spokenNotifications === true && elevenLabsKeyConfigured === true,
+        spokenNotifications === true && spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,

@@ -50,9 +50,9 @@ export const SPEAK_TOOL_DESCRIPTION =
  * it to the speech queue, exactly like completion/permission notifications are
  * pure side effects off the event stream. Gated on `spokenNarration`, which is
  * strictly opt-in (see `resolveSpokenNarration`): the desktop passes it true
- * only when the feature flag, the user's setting, and an ElevenLabs key are all
- * in place. Headless cloud runs (Slack threads, Signals scouts) never enable
- * it, so the tool and its instructions never load and never cost tokens there.
+ * only when the feature flag and the user's setting are both enabled. Headless
+ * cloud runs (Slack threads, Signals scouts) never enable it, so the tool and
+ * its instructions never load and never cost tokens there.
  */
 export const speakTool = defineLocalTool({
   name: SPEAK_TOOL_NAME,

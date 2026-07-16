@@ -94,8 +94,8 @@ export const startSessionInput = z.object({
   /**
    * The user's spoken-narration setting at session start. Gates the agent's
    * speak tool and its prompt instructions. Strictly opt-in: only the desktop
-   * sets it true (feature flag + setting + ElevenLabs key); when absent the
-   * adapter leaves narration off, so headless runs never load the tool.
+   * sets it true (feature flag + setting); when absent the adapter leaves
+   * narration off, so headless runs never load the tool.
    */
   spokenNarration: z.boolean().optional(),
 });
