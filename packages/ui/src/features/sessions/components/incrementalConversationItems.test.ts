@@ -143,6 +143,22 @@ const childToolCallMsg = (
     _meta: { claudeCode: { parentToolCallId } },
   });
 
+const childThoughtChunk = (
+  ts: number,
+  text: string,
+  parentToolCallId: string,
+) =>
+  updateMsg(ts, {
+    sessionUpdate: "agent_thought_chunk",
+    content: { type: "text", text },
+    _meta: {
+      posthog: {
+        toolName: "subagent_activity",
+        parentToolCallId,
+      },
+    },
+  });
+
 // --- normalization (cycle-free, Map-resolved) -----------------------------
 
 function normContext(ctx: TurnContext) {
@@ -504,5 +520,29 @@ describe("createIncrementalConversationBuilder", () => {
       throw new Error("expected agent session_update row");
     }
     expect(row.turnContext.childItems.get("agent1")?.length).toBe(1);
+  });
+
+  it("marks nested subagent thoughts complete when the turn finishes", () => {
+    const inc = createIncrementalConversationBuilder();
+    const messages = [
+      userPromptMsg(1, 1, "go"),
+      toolCallMsg(2, "agent1", {
+        _meta: { posthog: { toolName: "spawn_agent" } },
+      }),
+      childThoughtChunk(3, "investigating", "agent1"),
+      promptResponseMsg(4, 1),
+    ];
+
+    const result = inc.update(messages, false);
+    const row = result.items.find((item) => item.type === "session_update");
+    if (row?.type !== "session_update") {
+      throw new Error("expected agent session_update row");
+    }
+    const thought = row.turnContext.childItems.get("agent1")?.[0];
+    expect(thought).toMatchObject({
+      type: "session_update",
+      thoughtComplete: true,
+      update: { sessionUpdate: "agent_thought_chunk" },
+    });
   });
 });

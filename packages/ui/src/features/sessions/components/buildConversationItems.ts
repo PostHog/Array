@@ -174,7 +174,17 @@ function isThoughtItem(
 }
 
 export function markThoughtCompletion(items: ConversationItem[]) {
+  markThoughtCompletionInItems(items, new Set());
+}
+
+function markThoughtCompletionInItems(
+  items: ConversationItem[],
+  visited: Set<ConversationItem[]>,
+) {
+  if (visited.has(items)) return;
+  visited.add(items);
   const seenContexts = new Set<TurnContext>();
+  const itemContexts = new Set<TurnContext>();
 
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
@@ -186,6 +196,13 @@ export function markThoughtCompletion(items: ConversationItem[]) {
 
     if (item.type === "session_update") {
       seenContexts.add(item.turnContext);
+      itemContexts.add(item.turnContext);
+    }
+  }
+
+  for (const context of itemContexts) {
+    for (const children of context.childItems.values()) {
+      markThoughtCompletionInItems(children, visited);
     }
   }
 }

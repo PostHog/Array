@@ -518,6 +518,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     this.threadId = threadId;
     this.sessionId = threadId;
+    this.restoreSubagentRelationships(thread);
     if (method === APP_SERVER_METHODS.THREAD_START && params.meta?.nativeGoal) {
       await this.restoreGoal(params.meta.nativeGoal);
     }
@@ -1325,9 +1326,28 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       return;
     }
     const item = (params as { item?: AppServerItem })?.item;
+    this.captureSubagentRelationshipItem(item, senderThreadId);
+  }
+
+  private restoreSubagentRelationships(
+    thread: AppServerThread | undefined,
+  ): void {
+    for (const turn of thread?.turns ?? []) {
+      for (const item of turn.items ?? []) {
+        this.captureSubagentRelationshipItem(item, item.senderThreadId);
+      }
+    }
+  }
+
+  private captureSubagentRelationshipItem(
+    item: AppServerItem | undefined,
+    senderThreadId: string | undefined,
+  ): void {
     if (
       item?.type !== "collabAgentToolCall" ||
-      item.tool !== "spawnAgent" ||
+      (item.tool !== "spawnAgent" &&
+        item.tool !== "resumeAgent" &&
+        item.tool !== "sendInput") ||
       !item.id ||
       !item.receiverThreadIds?.length
     ) {

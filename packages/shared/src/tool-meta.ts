@@ -63,7 +63,10 @@ export function readAgentToolName(meta: unknown): string | undefined {
 /** Parent subagent tool call: neutral channel first, legacy fallback. */
 export function readParentToolCallId(meta: unknown): string | undefined {
   const m = asToolCallMeta(meta);
-  return m?.posthog?.parentToolCallId ?? m?.claudeCode?.parentToolCallId;
+  const canonical = m?.posthog?.parentToolCallId;
+  if (typeof canonical === "string" && canonical.length > 0) return canonical;
+  const legacy = m?.claudeCode?.parentToolCallId;
+  return typeof legacy === "string" && legacy.length > 0 ? legacy : undefined;
 }
 
 /**

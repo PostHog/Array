@@ -67,6 +67,24 @@ describe("readParentToolCallId", () => {
       }),
     ).toBe("parent-2");
   });
+
+  it("ignores malformed canonical metadata and uses a valid legacy fallback", () => {
+    expect(
+      readParentToolCallId({
+        posthog: { toolName: "Bash", parentToolCallId: {} },
+        claudeCode: { parentToolCallId: "parent-3" },
+      }),
+    ).toBe("parent-3");
+  });
+
+  it("returns undefined for empty or non-string parent ids", () => {
+    expect(
+      readParentToolCallId({ posthog: { parentToolCallId: "" } }),
+    ).toBeUndefined();
+    expect(
+      readParentToolCallId({ claudeCode: { parentToolCallId: 123 } }),
+    ).toBeUndefined();
+  });
 });
 
 describe("readMcpToolDescriptor / readMcpToolName", () => {
