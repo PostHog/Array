@@ -3522,106 +3522,72 @@ describe("SessionService", () => {
       },
     );
 
-    it("reconciles superseded chunks without discarding later-turn events", async () => {
+    it("reconciles repeated prompt occurrences and promptless live tails", async () => {
       const service = getSessionService();
       const ancestorPrompt = {
         type: "acp_message" as const,
         ts: 1700000010,
         message: {
           jsonrpc: "2.0" as const,
-          id: 0,
-          method: "session/prompt",
-          params: { prompt: [{ type: "text", text: "ancestor request" }] },
-        },
-      };
-      const firstPrompt = {
-        type: "acp_message" as const,
-        ts: 1700000040,
-        message: {
-          jsonrpc: "2.0" as const,
           id: 1,
           method: "session/prompt",
-          params: { prompt: [{ type: "text", text: "first request" }] },
+          params: { prompt: [{ type: "text", text: "repeat request" }] },
         },
       };
-      const persistedFirstPrompt = {
-        ...firstPrompt,
+      const currentLivePrompt = {
+        type: "acp_message" as const,
+        ts: 1700000040,
+        message: ancestorPrompt.message,
+      };
+      const persistedCurrentPrompt = {
+        ...currentLivePrompt,
         ts: 1700000041,
       };
-      const persistedAgentMessage = {
+      const persistedAncestorMessage = {
         type: "acp_message" as const,
-        ts: 1700000060,
+        ts: 1700000020,
         message: {
           jsonrpc: "2.0" as const,
           method: "session/update",
           params: {
             update: {
               sessionUpdate: "agent_message",
-              content: { type: "text", text: "complete" },
+              content: { type: "text", text: "ancestor complete" },
             },
           },
         },
       };
-      const inheritedLiveChunk = {
+      const currentLiveChunk = {
         type: "acp_message" as const,
         ts: 1700000050,
         message: {
           jsonrpc: "2.0" as const,
           method: "session/update",
           params: {
-            sessionId: "parent-session",
+            sessionId: "current-session",
             update: {
               sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: "partial" },
+              content: { type: "text", text: "current partial" },
             },
           },
         },
       };
-      const sameTimestampCompletion = {
+      const ancestorCompletion = {
         type: "acp_message" as const,
-        ts: 1700000060,
+        ts: 1700000030,
         message: {
           jsonrpc: "2.0" as const,
           method: "_posthog/turn_complete",
           params: { stopReason: "end_turn" },
         },
       };
-      const ancestorCompletion = {
-        ...sameTimestampCompletion,
-        ts: 1700000020,
-      };
-      const secondPrompt = {
-        type: "acp_message" as const,
+      const currentCompletion = {
+        ...ancestorCompletion,
         ts: 1700000060,
-        message: {
-          jsonrpc: "2.0" as const,
-          id: 2,
-          method: "session/prompt",
-          params: { prompt: [{ type: "text", text: "second request" }] },
-        },
       };
-      const unrelatedSameTimestampChunk = {
+      const promptlessLiveOnlyEvent = {
         type: "acp_message" as const,
-        ts: 1700000060,
-        message: {
-          jsonrpc: "2.0" as const,
-          method: "session/update",
-          params: {
-            sessionId: "parent-session",
-            update: {
-              sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: "new response" },
-            },
-          },
-        },
-      };
-      const laterTurnCompletion = {
-        ...sameTimestampCompletion,
-        ts: 1700000090,
-      };
-      const newerLiveEvent = {
-        type: "acp_message" as const,
-        ts: 1700000120,
+        ts: 1700000035,
         message: {
           jsonrpc: "2.0" as const,
           method: "_posthog/usage_update",
@@ -3634,13 +3600,12 @@ describe("SessionService", () => {
         status: "connected",
         isCloud: true,
         events: [
-          firstPrompt,
-          inheritedLiveChunk,
-          sameTimestampCompletion,
-          secondPrompt,
-          unrelatedSameTimestampChunk,
-          laterTurnCompletion,
-          newerLiveEvent,
+          promptlessLiveOnlyEvent,
+          persistedAncestorMessage,
+          ancestorCompletion,
+          currentLivePrompt,
+          currentLiveChunk,
+          currentCompletion,
         ],
         processedLineCount: 1,
       });
@@ -3661,11 +3626,9 @@ describe("SessionService", () => {
       mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([
         ancestorPrompt,
+        persistedAncestorMessage,
         ancestorCompletion,
-        persistedFirstPrompt,
-        persistedAgentMessage,
-        sameTimestampCompletion,
-        secondPrompt,
+        persistedCurrentPrompt,
       ]);
 
       service.watchCloudTask(
@@ -3691,14 +3654,12 @@ describe("SessionService", () => {
           expect.objectContaining({
             events: [
               ancestorPrompt,
+              persistedAncestorMessage,
               ancestorCompletion,
-              persistedFirstPrompt,
-              persistedAgentMessage,
-              sameTimestampCompletion,
-              secondPrompt,
-              unrelatedSameTimestampChunk,
-              laterTurnCompletion,
-              newerLiveEvent,
+              persistedCurrentPrompt,
+              promptlessLiveOnlyEvent,
+              currentLiveChunk,
+              currentCompletion,
             ],
           }),
         );

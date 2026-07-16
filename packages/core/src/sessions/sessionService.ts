@@ -545,67 +545,119 @@ function cloudHydrationMessageKey(event: AcpMessage): string {
   return JSON.stringify(event.message);
 }
 
-interface HydratedEventCursor {
-  eventKeys: string[];
-  nextIndex: number;
+interface HydrationTurn {
+  events: AcpMessage[];
+  promptKey?: string;
+  taskRunId?: string;
 }
 
-interface HydratedTurnQueue {
-  turns: HydratedEventCursor[];
-  nextTurnIndex: number;
-}
-
-function consumeHydratedEvent(
-  cursor: HydratedEventCursor,
-  eventKey: string,
-): boolean {
-  while (cursor.nextIndex < cursor.eventKeys.length) {
-    const hydratedEventKey = cursor.eventKeys[cursor.nextIndex];
-    cursor.nextIndex += 1;
-    if (hydratedEventKey === eventKey) return true;
+function sessionEventTaskRunMarker(event: AcpMessage): string | undefined {
+  if (!isJsonRpcNotification(event.message)) return undefined;
+  const params = (event.message.params ?? {}) as {
+    runId?: unknown;
+    taskRunId?: unknown;
+  };
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.SDK_SESSION) &&
+    typeof params.taskRunId === "string"
+  ) {
+    return params.taskRunId;
   }
-  return false;
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.RUN_STARTED) &&
+    typeof params.runId === "string"
+  ) {
+    return params.runId;
+  }
+  return undefined;
 }
 
-function discardEventsAlreadyHydrated(
+function splitHydrationTurns(events: AcpMessage[]): HydrationTurn[] {
+  const turns: HydrationTurn[] = [];
+  let taskRunId: string | undefined;
+  let current: HydrationTurn = { events: [] };
+  const finishCurrent = (): void => {
+    if (current.events.length > 0) {
+      turns.push(current);
+    }
+  };
+
+  for (const event of events) {
+    const marker = sessionEventTaskRunMarker(event);
+    if (marker) {
+      finishCurrent();
+      taskRunId = marker;
+      current = { events: [event], taskRunId };
+      continue;
+    }
+
+    const promptKey = sessionPromptTurnKey(event);
+    if (promptKey) {
+      finishCurrent();
+      current = { events: [event], promptKey, taskRunId };
+      continue;
+    }
+    current.events.push(event);
+  }
+  finishCurrent();
+  return turns;
+}
+
+function hydrationTurnScopesMatch(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  return (
+    liveTurn.taskRunId === undefined ||
+    hydratedTurn.taskRunId === undefined ||
+    liveTurn.taskRunId === hydratedTurn.taskRunId
+  );
+}
+
+function hydrationTurnsMatch(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  liveEventKeys: Set<string> | undefined,
+): boolean {
+  if (!hydrationTurnScopesMatch(liveTurn, hydratedTurn)) return false;
+  if (liveTurn.promptKey !== undefined) {
+    return liveTurn.promptKey === hydratedTurn.promptKey;
+  }
+  if (!liveEventKeys) return false;
+  return hydratedTurn.events.some((event) =>
+    liveEventKeys.has(cloudHydrationMessageKey(event)),
+  );
+}
+
+function discardExactHydratedEvents(
   liveEvents: AcpMessage[],
   hydratedEvents: AcpMessage[],
 ): AcpMessage[] {
-  const beforeFirstPrompt: HydratedEventCursor = {
-    eventKeys: [],
-    nextIndex: 0,
-  };
-  const turnsByPrompt = new Map<string, HydratedTurnQueue>();
-  let hydratedTurn = beforeFirstPrompt;
-  for (const event of hydratedEvents) {
-    const promptKey = sessionPromptTurnKey(event);
-    if (promptKey) {
-      const queue = turnsByPrompt.get(promptKey) ?? {
-        turns: [],
-        nextTurnIndex: 0,
-      };
-      hydratedTurn = { eventKeys: [], nextIndex: 0 };
-      queue.turns.push(hydratedTurn);
-      turnsByPrompt.set(promptKey, queue);
-      continue;
-    }
-    hydratedTurn.eventKeys.push(cloudHydrationMessageKey(event));
+  const keep = new Array<boolean>(liveEvents.length).fill(true);
+  const hydratedPositions = new Map<string, number[]>();
+  for (let index = 0; index < hydratedEvents.length; index += 1) {
+    const eventKey = cloudHydrationMessageKey(hydratedEvents[index]);
+    const positions = hydratedPositions.get(eventKey) ?? [];
+    positions.push(index);
+    hydratedPositions.set(eventKey, positions);
   }
-
-  let liveTurn: HydratedEventCursor | null = beforeFirstPrompt;
-  return liveEvents.filter((event) => {
-    const promptKey = sessionPromptTurnKey(event);
-    if (promptKey) {
-      const queue = turnsByPrompt.get(promptKey);
-      liveTurn =
-        queue && queue.nextTurnIndex < queue.turns.length
-          ? queue.turns[queue.nextTurnIndex++]
-          : null;
-      return liveTurn === null;
+  let hydratedIndex = hydratedEvents.length - 1;
+  for (let liveIndex = liveEvents.length - 1; liveIndex >= 0; liveIndex -= 1) {
+    const liveKey = cloudHydrationMessageKey(liveEvents[liveIndex]);
+    const positions = hydratedPositions.get(liveKey);
+    if (!positions) continue;
+    while (
+      positions.length > 0 &&
+      positions[positions.length - 1] > hydratedIndex
+    ) {
+      positions.pop();
     }
-    if (liveTurn === null) return true;
-    return !consumeHydratedEvent(liveTurn, cloudHydrationMessageKey(event));
-  });
+    const matchedIndex = positions.pop();
+    if (matchedIndex === undefined) continue;
+    keep[liveIndex] = false;
+    hydratedIndex = matchedIndex - 1;
+  }
+  return liveEvents.filter((_event, index) => keep[index]);
 }
 
 function agentMessageUpdateKind(
@@ -643,7 +695,6 @@ function agentMessageUpdateKind(
 }
 
 interface AgentMessagePosition {
-  turnKey?: string;
   messageIndex: number;
   chunkRunActive: boolean;
 }
@@ -653,18 +704,6 @@ function sessionPromptTurnKey(event: AcpMessage): string | undefined {
     event.message.method === "session/prompt"
     ? cloudHydrationMessageKey(event)
     : undefined;
-}
-
-function resetAgentMessagePositionForPrompt(
-  position: AgentMessagePosition,
-  event: AcpMessage,
-): boolean {
-  const turnKey = sessionPromptTurnKey(event);
-  if (!turnKey) return false;
-  position.turnKey = turnKey;
-  position.messageIndex = 0;
-  position.chunkRunActive = false;
-  return true;
 }
 
 function finishAgentMessageChunkRun(position: AgentMessagePosition): void {
@@ -677,13 +716,13 @@ function discardChunksSupersededByHydratedMessages(
   liveEvents: AcpMessage[],
   hydratedEvents: AcpMessage[],
 ): AcpMessage[] {
-  const hydratedMessagePositions = new Map<string, Set<number>>();
+  const hydratedMessagePositions = new Set<number>();
   const hydratedPosition: AgentMessagePosition = {
     messageIndex: 0,
     chunkRunActive: false,
   };
   for (const event of hydratedEvents) {
-    if (resetAgentMessagePositionForPrompt(hydratedPosition, event)) continue;
+    if (sessionPromptTurnKey(event)) continue;
     const updateKind = agentMessageUpdateKind(event);
     if (updateKind === "ignored") continue;
     if (updateKind === "chunk") {
@@ -691,13 +730,7 @@ function discardChunksSupersededByHydratedMessages(
       continue;
     }
     if (updateKind === "final") {
-      if (hydratedPosition.turnKey) {
-        const positions =
-          hydratedMessagePositions.get(hydratedPosition.turnKey) ??
-          new Set<number>();
-        positions.add(hydratedPosition.messageIndex);
-        hydratedMessagePositions.set(hydratedPosition.turnKey, positions);
-      }
+      hydratedMessagePositions.add(hydratedPosition.messageIndex);
       hydratedPosition.messageIndex += 1;
       hydratedPosition.chunkRunActive = false;
       continue;
@@ -716,7 +749,7 @@ function discardChunksSupersededByHydratedMessages(
   };
   let discardChunkRun = false;
   return liveEvents.filter((event) => {
-    if (resetAgentMessagePositionForPrompt(livePosition, event)) {
+    if (sessionPromptTurnKey(event)) {
       discardChunkRun = false;
       return true;
     }
@@ -725,12 +758,9 @@ function discardChunksSupersededByHydratedMessages(
     if (updateKind === "chunk") {
       if (!livePosition.chunkRunActive) {
         livePosition.chunkRunActive = true;
-        discardChunkRun =
-          livePosition.turnKey !== undefined &&
-          (hydratedMessagePositions
-            .get(livePosition.turnKey)
-            ?.has(livePosition.messageIndex) ??
-            false);
+        discardChunkRun = hydratedMessagePositions.has(
+          livePosition.messageIndex,
+        );
       }
       return !discardChunkRun;
     }
@@ -743,6 +773,61 @@ function discardChunksSupersededByHydratedMessages(
     discardChunkRun = false;
     return true;
   });
+}
+
+function reconcileLiveEventsWithHydratedEvents(
+  liveEvents: AcpMessage[],
+  hydratedEvents: AcpMessage[],
+): AcpMessage[] {
+  const liveTurns = splitHydrationTurns(liveEvents);
+  const hydratedTurns = splitHydrationTurns(hydratedEvents);
+  const reconciledTurns = new Array<AcpMessage[]>(liveTurns.length);
+  let hydratedTurnIndex = hydratedTurns.length - 1;
+
+  for (
+    let liveTurnIndex = liveTurns.length - 1;
+    liveTurnIndex >= 0;
+    liveTurnIndex -= 1
+  ) {
+    const liveTurn = liveTurns[liveTurnIndex];
+    const liveEventKeys =
+      liveTurn.promptKey === undefined
+        ? new Set(liveTurn.events.map(cloudHydrationMessageKey))
+        : undefined;
+    let matchedHydratedTurnIndex = -1;
+    for (
+      let candidateIndex = hydratedTurnIndex;
+      candidateIndex >= 0;
+      candidateIndex -= 1
+    ) {
+      if (
+        hydrationTurnsMatch(
+          liveTurn,
+          hydratedTurns[candidateIndex],
+          liveEventKeys,
+        )
+      ) {
+        matchedHydratedTurnIndex = candidateIndex;
+        break;
+      }
+    }
+    if (matchedHydratedTurnIndex === -1) {
+      reconciledTurns[liveTurnIndex] = liveTurn.events;
+      continue;
+    }
+
+    const hydratedTurn = hydratedTurns[matchedHydratedTurnIndex];
+    reconciledTurns[liveTurnIndex] = discardExactHydratedEvents(
+      discardChunksSupersededByHydratedMessages(
+        liveTurn.events,
+        hydratedTurn.events,
+      ),
+      hydratedTurn.events,
+    );
+    hydratedTurnIndex = matchedHydratedTurnIndex - 1;
+  }
+
+  return reconciledTurns.flat();
 }
 
 export function derivePendingPermissionRequests(
@@ -4874,8 +4959,8 @@ export class SessionService {
 
     let events = convertStoredEntriesToEvents(rawEntries);
     if (isResumeRun && session.events.length > 0) {
-      const inheritedEvents = discardEventsAlreadyHydrated(
-        discardChunksSupersededByHydratedMessages(session.events, events),
+      const inheritedEvents = reconcileLiveEventsWithHydratedEvents(
+        session.events,
         events,
       );
       events = [...events, ...inheritedEvents];
