@@ -9,7 +9,7 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import {
   type ClaudeJsonMcpServerEntry,
   loadUserClaudeJsonMcpServerEntries,
-  sanitizeHeaders,
+  parseClaudeJsonTransport,
 } from "@posthog/agent/adapters/claude/session/mcp-config";
 import {
   ROOT_LOGGER,
@@ -148,31 +148,29 @@ export class McpRelayServiceImpl implements McpRelayService {
 
   /** Seam for tests: constructs the raw transport for a resolved entry. */
   protected createTransport(entry: ClaudeJsonMcpServerEntry): Transport {
-    // ~/.claude.json is hand-editable, so treat the parsed config as untyped.
-    const raw = entry.config as Record<string, unknown>;
-    const type = typeof raw.type === "string" ? raw.type : undefined;
-    const url = typeof raw.url === "string" ? raw.url : undefined;
-    const command = typeof raw.command === "string" ? raw.command : undefined;
-    const headers = sanitizeHeaders(raw.headers);
-
-    if ((type === undefined || type === "stdio") && command) {
-      const args = Array.isArray(raw.args)
-        ? raw.args.filter((arg): arg is string => typeof arg === "string")
-        : undefined;
+    // Read the untyped ~/.claude.json entry through the shared normalizer so
+    // this and the descriptor's LocalMcpTransport can't drift on how a
+    // type-less or legacy bare-url entry is interpreted.
+    const transport = parseClaudeJsonTransport(entry.config);
+    if (transport.kind === "stdio") {
       return new StdioClientTransport({
-        command,
-        args,
-        env: { ...getDefaultEnvironment(), ...sanitizeHeaders(raw.env) },
+        command: transport.command,
+        args: transport.args,
+        env: { ...getDefaultEnvironment(), ...transport.env },
       });
     }
-    if (type === "sse" && url) {
-      return new SSEClientTransport(new URL(url), {
-        requestInit: headers ? { headers } : undefined,
+    if (transport.kind === "sse") {
+      return new SSEClientTransport(new URL(transport.url), {
+        requestInit: transport.headers
+          ? { headers: transport.headers }
+          : undefined,
       });
     }
-    if ((type === "http" || type === undefined) && url) {
-      return new StreamableHTTPClientTransport(new URL(url), {
-        requestInit: headers ? { headers } : undefined,
+    if (transport.kind === "http") {
+      return new StreamableHTTPClientTransport(new URL(transport.url), {
+        requestInit: transport.headers
+          ? { headers: transport.headers }
+          : undefined,
       });
     }
     throw new Error(

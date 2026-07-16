@@ -165,7 +165,6 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
-export { isPrivateIpv4Octets } from "./private-network";
 export {
   buildPrOutput,
   mergePrUrls,
@@ -173,6 +172,10 @@ export {
   readPrSummaries,
   readPrUrls,
 } from "./pr-urls";
+export {
+  isPrivateIpv4Octets,
+  isPrivateIpv6Literal,
+} from "./private-network";
 export {
   type CloudRegion,
   formatRegionBadge,

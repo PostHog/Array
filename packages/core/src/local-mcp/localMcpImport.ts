@@ -2,7 +2,7 @@ import type {
   CloudMcpServerImport,
   LocalMcpServerDescriptor,
 } from "@posthog/shared";
-import { isPrivateIpv4Octets } from "@posthog/shared";
+import { isPrivateIpv4Octets, isPrivateIpv6Literal } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { LOCAL_MCP_WORKSPACE_CLIENT } from "./identifiers";
 
@@ -73,17 +73,9 @@ export function isPrivateHostname(hostname: string): boolean {
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
   if (host === "" || host === "localhost") return true;
 
-  if (host.includes(":")) {
-    // IPv6
-    if (host === "::" || host === "::1") return true;
-    const v4Mapped = host.match(/^::ffff:(.+)$/)?.[1];
-    if (v4Mapped) {
-      const octets = parseIpv4(v4Mapped);
-      return octets ? isPrivateIpv4Octets(octets[0], octets[1]) : false;
-    }
-    // fc00::/7 unique-local, fe80::/10 link-local
-    return /^(f[cd]|fe[89ab])/.test(host);
-  }
+  // IPv6 literal: the shared kernel covers loopback/unspecified, link-local,
+  // unique-local, and IPv4-mapped (incl. the hex-group form URL normalizes to).
+  if (host.includes(":")) return isPrivateIpv6Literal(host);
 
   const octets = parseIpv4(host);
   if (octets) return isPrivateIpv4Octets(octets[0], octets[1]);

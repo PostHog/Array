@@ -95,33 +95,70 @@ export function sanitizeHeaders(
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-function toTransport(config: McpServerConfig): LocalMcpTransport {
+/**
+ * A raw ~/.claude.json entry parsed into a normalized transport, including the
+ * stdio `env` that the relay executor needs to spawn the process (the
+ * host-agnostic {@link LocalMcpTransport} deliberately drops it as secrets).
+ * Both the descriptor normalizer ({@link toTransport}) and the relay's SDK
+ * transport builder read entries through here, so they can't drift on how a
+ * legacy bare-`url` or type-less entry is interpreted.
+ */
+export type ParsedClaudeJsonTransport =
+  | { kind: "http" | "sse"; url: string; headers?: Record<string, string> }
+  | {
+      kind: "stdio";
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
+  | { kind: "unknown" };
+
+export function parseClaudeJsonTransport(
+  config: McpServerConfig,
+): ParsedClaudeJsonTransport {
   // ~/.claude.json is hand-editable, so treat the parsed config as untyped.
   const raw = config as Record<string, unknown>;
   const type = typeof raw.type === "string" ? raw.type : undefined;
+  const url = typeof raw.url === "string" ? raw.url : undefined;
+  const command = typeof raw.command === "string" ? raw.command : undefined;
 
-  if ((type === "http" || type === "sse") && typeof raw.url === "string") {
-    return { type, url: raw.url, headers: sanitizeHeaders(raw.headers) };
+  if ((type === "http" || type === "sse") && url) {
+    return { kind: type, url, headers: sanitizeHeaders(raw.headers) };
   }
-  if (
-    (type === undefined || type === "stdio") &&
-    typeof raw.command === "string"
-  ) {
+  if ((type === undefined || type === "stdio") && command) {
     const args = Array.isArray(raw.args)
       ? raw.args.filter((arg): arg is string => typeof arg === "string")
       : undefined;
-    return { type: "stdio", command: raw.command, args };
+    return { kind: "stdio", command, args, env: sanitizeHeaders(raw.env) };
   }
   // Legacy entries can carry a bare `url` with no `type`; streamable HTTP is
   // the current default transport, so read them as http.
-  if (type === undefined && typeof raw.url === "string") {
-    return {
-      type: "http",
-      url: raw.url,
-      headers: sanitizeHeaders(raw.headers),
-    };
+  if (type === undefined && url) {
+    return { kind: "http", url, headers: sanitizeHeaders(raw.headers) };
   }
-  return { type: "unknown" };
+  return { kind: "unknown" };
+}
+
+function toTransport(config: McpServerConfig): LocalMcpTransport {
+  const transport = parseClaudeJsonTransport(config);
+  switch (transport.kind) {
+    case "http":
+    case "sse":
+      return {
+        type: transport.kind,
+        url: transport.url,
+        headers: transport.headers,
+      };
+    case "stdio":
+      // Drop `env` — the descriptor shape excludes stdio secrets.
+      return {
+        type: "stdio",
+        command: transport.command,
+        args: transport.args,
+      };
+    default:
+      return { type: "unknown" };
+  }
 }
 
 /**
