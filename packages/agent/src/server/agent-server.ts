@@ -1528,12 +1528,12 @@ export class AgentServer {
     let acpSessionId: string | null = null;
     if (nativeResume) {
       try {
-          await clientConnection.resumeSession({
-            sessionId: nativeResume.sessionId,
-            cwd: sessionCwd,
+        await clientConnection.resumeSession({
+          sessionId: nativeResume.sessionId,
+          cwd: sessionCwd,
           mcpServers: sessionMcpServers,
           _meta: { ...effectiveSessionMeta, sessionId: nativeResume.sessionId },
-          });
+        });
         acpSessionId = nativeResume.sessionId;
         this.nativeResume = nativeResume;
         this.logger.debug("ACP session resumed", {
