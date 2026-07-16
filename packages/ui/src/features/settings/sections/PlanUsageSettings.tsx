@@ -6,7 +6,6 @@ import {
 import {
   codeUsageMeter,
   formatResetTime,
-  formatUsageBreakdown,
   formatUsdAmount,
   isCodeUsageFreeTier,
 } from "@posthog/core/billing/usageDisplay";
@@ -179,20 +178,10 @@ export function PlanUsageSettings() {
                 label={freeTier ? "Monthly free usage" : "Usage this period"}
                 percent={meter.percent}
                 valueLabel={`${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)}${freeTier ? " included" : ""}`}
-                detail={[
-                  meter.exceeded ? "Limit exceeded." : null,
-                  // Spell out how the merged limit is composed — "$70" on its
-                  // own reads as a mystery number to an org that set $50.
+                detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt)}`}
+                breakdown={
                   meter.breakdown
-                    ? `${formatUsageBreakdown(meter.breakdown)}.`
-                    : null,
-                  formatResetTime(meter.resetAt),
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                markerPercent={
-                  meter.breakdown
-                    ? (meter.breakdown.includedUsd / meter.limitUsd) * 100
+                    ? { ...meter.breakdown, usedUsd: meter.usedUsd }
                     : undefined
                 }
                 color={meter.exceeded ? "red" : undefined}

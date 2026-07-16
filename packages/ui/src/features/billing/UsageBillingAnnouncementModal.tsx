@@ -25,10 +25,6 @@ export function UsageBillingAnnouncementModal() {
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const { usage } = useUsage({ enabled: isOpen });
 
-  // A subscribed org's limit_usd merges the included $20 with the configured
-  // spend limit — quote the recovered spend limit, the number the org set.
-  // Free orgs (whose limit_usd is just the first bullet's $20) get the
-  // default-limit line instead.
   const spendLimitUsd = codeOrgSpendLimitUsd(usage);
 
   useEffect(() => {

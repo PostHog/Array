@@ -71,9 +71,6 @@ export function UsageButton() {
   const resetLabel = formatResetTime(
     meter.kind === "dollars" ? meter.resetAt : meter.bucket.reset_at,
   );
-  // The subscribed meter's limit is a merged number (included allowance +
-  // configured spend limit); without the split, "$70" matches nothing the
-  // user ever set.
   const breakdownLabel =
     meter.kind === "dollars" && meter.breakdown
       ? formatUsageBreakdown(meter.breakdown)
