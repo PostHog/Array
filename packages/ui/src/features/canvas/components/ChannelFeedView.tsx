@@ -396,9 +396,7 @@ function ReplyFooter({
             </AvatarFallback>
           </Avatar>
         </AvatarGroup>
-        <ThreadItemRepliesLabel className="text-(--muted-foreground)">
-          Reply
-        </ThreadItemRepliesLabel>
+        <ThreadItemRepliesLabel>Reply</ThreadItemRepliesLabel>
       </ThreadItemReplies>
     );
   }

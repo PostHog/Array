@@ -9,7 +9,6 @@ import {
   filterComposerMentionCandidates,
 } from "@posthog/ui/features/canvas/utils/mentionComposer";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { Text } from "@radix-ui/themes";
 import Mention, { type MentionNodeAttrs } from "@tiptap/extension-mention";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -274,19 +273,16 @@ export function MentionComposer({
                     )}
                   </AvatarFallback>
                 </Avatar>
-                <Text size="1" weight="medium" className="truncate">
+                <span className="truncate font-medium text-xs">
                   {candidate.kind === "agent"
                     ? "Agent"
                     : userDisplayName(candidate.member)}
-                </Text>
-                <Text
-                  size="1"
-                  className="ml-auto shrink-0 truncate text-muted-foreground"
-                >
+                </span>
+                <span className="ml-auto shrink-0 truncate text-muted-foreground text-xs">
                   {candidate.kind === "agent"
                     ? "Send to agent"
                     : candidate.member.email}
-                </Text>
+                </span>
               </button>
             ))}
           </div>

@@ -25,10 +25,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   InputGroupAddon,
   InputGroupButton,
-  Skeleton,
-  SkeletonText,
   Spinner,
   ThreadItem,
   ThreadItemAction,
@@ -59,8 +62,11 @@ import {
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
+  useDeleteTaskThreadMessage,
+  usePostTaskThreadMessage,
+  usePostTaskThreadMessageToAgent,
+  useSendTaskThreadMessageToAgent,
   useTaskThread,
-  useTaskThreadMutations,
 } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
@@ -202,10 +208,10 @@ function AgentStatusChip({ status }: { status: ThreadAgentStatus }) {
   switch (status.phase) {
     case "active":
       return (
-        <span className="flex items-center gap-1 text-muted-foreground">
+        <Badge variant="info">
           <Spinner className="size-3" />
-          <span className="text-xs">{status.label}</span>
-        </span>
+          {status.label}
+        </Badge>
       );
     case "needs_input":
       return <Badge variant="warning">{status.label}</Badge>;
@@ -298,23 +304,16 @@ export function UserPromptRow({
   );
 }
 
-function ThreadTimelineSkeleton() {
+function ThreadLoadingState() {
   return (
-    <ThreadItemGroup aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <ThreadItem key={i}>
-          <ThreadItemGutter>
-            <Skeleton className="size-8 rounded-full" />
-          </ThreadItemGutter>
-          <ThreadItemContent>
-            <ThreadItemHeader>
-              <Skeleton className="h-3.5 w-24 rounded" />
-            </ThreadItemHeader>
-            <SkeletonText lines={i === 1 ? 3 : 2} />
-          </ThreadItemContent>
-        </ThreadItem>
-      ))}
-    </ThreadItemGroup>
+    <Empty className="h-full border-0">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Spinner />
+        </EmptyMedia>
+        <EmptyTitle>Loading thread</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -338,14 +337,12 @@ function ThreadConversation({
   const { data: currentUser } = useCurrentUser({ client });
 
   const { messages, isLoading } = useTaskThread(taskId);
-  const {
-    postMessage,
-    postMessageToAgent,
-    deleteMessage,
-    sendToAgent,
-    isPosting,
-    isSendingToAgent,
-  } = useTaskThreadMutations(taskId);
+  const { postMessage, isPosting } = usePostTaskThreadMessage(taskId);
+  const { postMessageToAgent, isPostingToAgent } =
+    usePostTaskThreadMessageToAgent(taskId);
+  const { deleteMessage } = useDeleteTaskThreadMessage(taskId);
+  const { sendToAgent, isSending } = useSendTaskThreadMessageToAgent(taskId);
+  const isSendingToAgent = isPostingToAgent || isSending;
   const { members } = useOrgMembers();
 
   const {
@@ -549,15 +546,21 @@ function ThreadConversation({
       )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {!isReady ? (
-          <ThreadTimelineSkeleton />
+          <ThreadLoadingState />
         ) : isEmpty ? (
-          <div className="px-2 py-6 text-center">
-            <p className="text-muted-foreground text-xs">
-              Discuss this task with your team. The agent's status shows up here
-              too; messages stay between humans unless the task author sends one
-              to the agent.
-            </p>
-          </div>
+          <Empty className="h-full border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <RobotIcon size={18} />
+              </EmptyMedia>
+              <EmptyTitle>No messages yet</EmptyTitle>
+              <EmptyDescription>
+                Discuss this task with your team. The agent's status shows up
+                here too; messages stay between humans unless the task author
+                sends one to the agent.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <ThreadItemGroup>
             {timeline.map((row) =>
@@ -671,11 +674,7 @@ export function ThreadPanel({
   }
 
   if (!task) {
-    return (
-      <div className="flex h-full min-w-0 flex-col items-center justify-center bg-gray-1">
-        <Spinner />
-      </div>
-    );
+    return <ThreadLoadingState />;
   }
 
   return (

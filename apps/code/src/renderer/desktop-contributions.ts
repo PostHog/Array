@@ -1,6 +1,7 @@
 import { agentChatCoreModule } from "@posthog/core/agent-chat/agentChat.module";
 import { autoresearchCoreModule } from "@posthog/core/autoresearch/autoresearch.module";
 import { billingCoreModule } from "@posthog/core/billing/billing.module";
+import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
@@ -36,6 +37,7 @@ export function registerDesktopContributions(): void {
     autoresearchCoreModule,
     billingUiModule,
     billingCoreModule,
+    taskThreadCoreModule,
     browserTabsUiModule,
     cloneUiModule,
     connectivityUiModule,

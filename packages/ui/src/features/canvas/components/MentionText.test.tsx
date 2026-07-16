@@ -1,4 +1,3 @@
-import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MentionText } from "./MentionText";
@@ -6,12 +5,10 @@ import { MentionText } from "./MentionText";
 describe("MentionText", () => {
   it("uses the shared mention styles and emphasizes the current user", () => {
     render(
-      <Theme>
-        <MentionText
-          content="@[Alice](alice@example.com) and @[Bob](bob@example.com)"
-          currentUserEmail="bob@example.com"
-        />
-      </Theme>,
+      <MentionText
+        content="@[Alice](alice@example.com) and @[Bob](bob@example.com)"
+        currentUserEmail="bob@example.com"
+      />,
     );
 
     expect(screen.getByText("@Alice")).toHaveClass("mention-chip");

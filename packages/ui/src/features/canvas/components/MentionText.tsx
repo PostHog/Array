@@ -1,6 +1,5 @@
 import { splitMentionSegments } from "@posthog/shared";
 import { splitLinkSegments } from "@posthog/ui/features/canvas/utils/linkify";
-import { Text } from "@radix-ui/themes";
 import { Fragment, useMemo } from "react";
 import "./mention-chip.css";
 
@@ -52,7 +51,7 @@ export function MentionText({
   }, [content]);
   const selfEmail = currentUserEmail?.toLowerCase();
   return (
-    <Text size="1" className={className}>
+    <span className={`text-xs ${className ?? ""}`}>
       {segments.map(({ segment, key }) => {
         if (segment.type === "mention") {
           return (
@@ -84,6 +83,6 @@ export function MentionText({
         }
         return <Fragment key={key}>{segment.text}</Fragment>;
       })}
-    </Text>
+    </span>
   );
 }

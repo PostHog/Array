@@ -6,15 +6,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockClient = vi.hoisted(() => ({
   createTaskThreadMessage: vi.fn(),
-  createTaskThreadMessageForAgent: vi.fn(),
   sendTaskThreadMessageToAgent: vi.fn(),
+}));
+const mockTaskThreadService = vi.hoisted(() => ({
+  postMessageToAgent: vi.fn(),
 }));
 
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
   useOptionalAuthenticatedClient: () => mockClient,
 }));
+vi.mock("@posthog/di/react", () => ({
+  useService: () => mockTaskThreadService,
+}));
 
-import { useTaskThreadMutations } from "./useTaskThread";
+import { usePostTaskThreadMessageToAgent } from "./useTaskThread";
 
 let queryClient: QueryClient;
 
@@ -34,7 +39,7 @@ function message(overrides?: Partial<TaskThreadMessage>): TaskThreadMessage {
   };
 }
 
-describe("useTaskThreadMutations", () => {
+describe("usePostTaskThreadMessageToAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryClient = new QueryClient({
@@ -43,19 +48,21 @@ describe("useTaskThreadMutations", () => {
   });
 
   it("posts an @agent message through the combined client operation", async () => {
-    mockClient.createTaskThreadMessageForAgent.mockResolvedValue({
+    mockTaskThreadService.postMessageToAgent.mockResolvedValue({
       message: message({ forwarded_to_agent_at: "2026-07-16T00:00:01Z" }),
       sendError: null,
     });
-    const { result } = renderHook(() => useTaskThreadMutations("task-id"), {
-      wrapper,
-    });
+    const { result } = renderHook(
+      () => usePostTaskThreadMessageToAgent("task-id"),
+      { wrapper },
+    );
 
     await act(async () => {
       await result.current.postMessageToAgent("@agent investigate this");
     });
 
-    expect(mockClient.createTaskThreadMessageForAgent).toHaveBeenCalledWith(
+    expect(mockTaskThreadService.postMessageToAgent).toHaveBeenCalledWith(
+      mockClient,
       "task-id",
       "@agent investigate this",
     );
@@ -63,13 +70,14 @@ describe("useTaskThreadMutations", () => {
 
   it("returns a forwarding error after the message has been posted", async () => {
     const sendError = new Error("No active run");
-    mockClient.createTaskThreadMessageForAgent.mockResolvedValue({
+    mockTaskThreadService.postMessageToAgent.mockResolvedValue({
       message: message(),
       sendError,
     });
-    const { result } = renderHook(() => useTaskThreadMutations("task-id"), {
-      wrapper,
-    });
+    const { result } = renderHook(
+      () => usePostTaskThreadMessageToAgent("task-id"),
+      { wrapper },
+    );
 
     let outcome: Awaited<
       ReturnType<typeof result.current.postMessageToAgent>
@@ -81,6 +89,6 @@ describe("useTaskThreadMutations", () => {
     });
 
     expect(outcome).toEqual({ message: message(), sendError });
-    expect(mockClient.createTaskThreadMessageForAgent).toHaveBeenCalledTimes(1);
+    expect(mockTaskThreadService.postMessageToAgent).toHaveBeenCalledTimes(1);
   });
 });
