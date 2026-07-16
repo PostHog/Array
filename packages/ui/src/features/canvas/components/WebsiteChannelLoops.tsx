@@ -1,4 +1,6 @@
 import { PlusIcon, RepeatIcon } from "@phosphor-icons/react";
+import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
+import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
@@ -16,6 +18,10 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const { data: loops, isLoading, isError } = useLoops();
   const { channels } = useChannels();
   const channel = channels.find((c) => c.id === channelId);
+
+  useSetHeaderContent(
+    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
+  );
 
   const attachedLoops = useMemo(
     () =>
