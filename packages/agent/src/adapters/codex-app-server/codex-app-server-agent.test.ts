@@ -1961,9 +1961,23 @@ describe("CodexAppServerAgent", () => {
     } as unknown as PromptRequest);
 
     // The single turn/completed resolves both the original and the folded prompt.
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 45,
+          inputTokens: 30,
+          cachedInputTokens: 5,
+          outputTokens: 10,
+        },
+      },
+    });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    expect((await first).stopReason).toBe("end_turn");
-    expect((await second).stopReason).toBe("end_turn");
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toMatchObject({
+      stopReason: "end_turn",
+      usage: { totalTokens: 45 },
+    });
+    expect(secondResult).toEqual({ stopReason: "end_turn" });
 
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect(steer?.params).toMatchObject({
@@ -2126,7 +2140,19 @@ describe("CodexAppServerAgent", () => {
       },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    await done;
+    const result = await done;
+
+    expect(result).toEqual({
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 60,
+        outputTokens: 30,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 0,
+        thoughtTokens: 5,
+        totalTokens: 100,
+      },
+    });
 
     const turnComplete = extNotifications.find(
       (n) => n.method === "_posthog/turn_complete",
@@ -2818,6 +2844,16 @@ describe("CodexAppServerAgent", () => {
         text: "The implementation plan is ready.",
       },
     });
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 30,
+          inputTokens: 20,
+          outputTokens: 10,
+          reasoningOutputTokens: 2,
+        },
+      },
+    });
     stub.emit("turn/completed", {
       turn: { id: "turn_1", status: "completed" },
     });
@@ -2826,10 +2862,31 @@ describe("CodexAppServerAgent", () => {
     await waitUntil(
       () => stub.requests.filter((r) => r.method === "turn/start").length >= 2,
     );
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 50,
+          inputTokens: 35,
+          cachedInputTokens: 5,
+          outputTokens: 10,
+          reasoningOutputTokens: 3,
+        },
+      },
+    });
     stub.emit("turn/completed", {
       turn: { id: "turn_2", status: "completed" },
     });
-    expect((await done).stopReason).toBe("end_turn");
+    expect(await done).toEqual({
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 55,
+        outputTokens: 20,
+        cachedReadTokens: 5,
+        cachedWriteTokens: 0,
+        thoughtTokens: 5,
+        totalTokens: 80,
+      },
+    });
 
     // The approval renders as the plan-approval UI (switch_mode + the plan text).
     expect(permissionRequests).toHaveLength(1);
