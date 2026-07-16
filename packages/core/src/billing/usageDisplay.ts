@@ -1,10 +1,54 @@
-import type { UsageOutput } from "../usage/schemas";
+import type { UsageBucket, UsageOutput } from "../usage/schemas";
 
 /** Confirmed free tier only — an absent `code_usage_subscribed` is unknown, never free. */
 export function isCodeUsageFreeTier(
   usage: Pick<UsageOutput, "code_usage_subscribed"> | null | undefined,
 ): boolean {
   return usage?.code_usage_subscribed === false;
+}
+
+export type CodeUsageMeter =
+  | {
+      kind: "dollars";
+      usedUsd: number;
+      limitUsd: number;
+      percent: number;
+      exceeded: boolean;
+      resetAt: string;
+    }
+  | { kind: "bucket"; bucket: UsageBucket }
+  | { kind: "hidden" };
+
+/**
+ * What the usage meter should show. Billing's org-level dollars win when
+ * present; a free-tier org without them falls back to its per-user valve
+ * bucket; anything else shows nothing — per-user valve percentages are
+ * meaningless for a subscribed org, and unknown must not render as free.
+ */
+export function codeUsageMeter(
+  usage: UsageOutput | null | undefined,
+): CodeUsageMeter {
+  if (!usage) return { kind: "hidden" };
+  const usedUsd = usage.ai_credits?.used_usd;
+  const limitUsd = usage.ai_credits?.limit_usd;
+  if (usedUsd != null && limitUsd != null && limitUsd > 0) {
+    return {
+      kind: "dollars",
+      usedUsd,
+      limitUsd,
+      percent: Math.min(100, Math.round((usedUsd / limitUsd) * 100)),
+      exceeded: usage.ai_credits?.exhausted === true,
+      resetAt: usage.billing_period_end ?? usage.sustained.reset_at,
+    };
+  }
+  if (isCodeUsageFreeTier(usage)) {
+    return { kind: "bucket", bucket: usage.sustained };
+  }
+  return { kind: "hidden" };
+}
+
+export function formatUsdAmount(amount: number): string {
+  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
 }
 
 export function isUsageExceeded(usage: UsageOutput): boolean {

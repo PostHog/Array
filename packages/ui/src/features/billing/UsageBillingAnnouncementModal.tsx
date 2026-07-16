@@ -1,4 +1,5 @@
 import { ArrowSquareOut, CreditCard } from "@phosphor-icons/react";
+import { formatUsdAmount } from "@posthog/core/billing/usageDisplay";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
@@ -85,9 +86,7 @@ export function UsageBillingAnnouncementModal() {
               {limitUsd != null ? (
                 <>
                   • Your organization's spend limit is{" "}
-                  <Text weight="medium">
-                    {`$${Number.isInteger(limitUsd) ? limitUsd : limitUsd.toFixed(2)}/month`}
-                  </Text>{" "}
+                  <Text weight="medium">{`${formatUsdAmount(limitUsd)}/month`}</Text>{" "}
                   — adjust it any time in billing settings.
                 </>
               ) : (

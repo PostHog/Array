@@ -3,7 +3,12 @@ import {
   CreditCard,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { isCodeUsageFreeTier } from "@posthog/core/billing/usageDisplay";
+import {
+  codeUsageMeter,
+  formatResetTime,
+  formatUsdAmount,
+  isCodeUsageFreeTier,
+} from "@posthog/core/billing/usageDisplay";
 import {
   Empty,
   EmptyDescription,
@@ -60,6 +65,7 @@ export function PlanUsageSettings() {
   const freeTier = isCodeUsageFreeTier(usage);
   const subscribed = usage?.code_usage_subscribed === true;
   const orgLimitReached = usage?.ai_credits?.exhausted === true;
+  const meter = codeUsageMeter(usage);
 
   const openBilling = () => {
     if (billingUrl) window.open(billingUrl, "_blank");
@@ -167,11 +173,21 @@ export function PlanUsageSettings() {
               >
                 <Spinner size="2" />
               </Flex>
-            ) : freeTier && usage ? (
+            ) : meter.kind === "dollars" ? (
+              <UsageMeter
+                label={freeTier ? "Monthly free usage" : "Usage this period"}
+                percent={meter.percent}
+                valueLabel={`${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)}${freeTier ? " included" : ""}`}
+                detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt)}`}
+                color={meter.exceeded ? "red" : undefined}
+              />
+            ) : meter.kind === "bucket" ? (
               <UsageMeter
                 label="Monthly free usage"
-                bucket={usage.sustained}
-                color={usage.sustained.exceeded ? "red" : undefined}
+                percent={meter.bucket.used_percent}
+                valueLabel={`${meter.bucket.used_percent.toFixed(2)}%`}
+                detail={`${meter.bucket.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.bucket.reset_at)}`}
+                color={meter.bucket.exceeded ? "red" : undefined}
               />
             ) : (
               <Flex
