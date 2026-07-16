@@ -559,51 +559,119 @@ describe("CloudTaskService", () => {
     expect(sessionLogsCalls).toEqual([]);
   });
 
-  it("falls back to the paginated API when a chain log download fails", async () => {
+  it.each([
+    ["a chain download fails", 403],
+    ["every chain object is missing", 404],
+  ])(
+    "falls back to the paginated API when %s",
+    async (_scenario, storageStatus) => {
+      const updates: unknown[] = [];
+      service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+      mockNetFetch.mockImplementation((input: string | Request) => {
+        const url = typeof input === "string" ? input : input.url;
+        if (url.includes("/session_logs/")) {
+          return Promise.resolve(
+            createJsonResponse([consoleLogEntry("from api")], 200, {
+              "X-Has-More": "false",
+            }),
+          );
+        }
+        if (url.startsWith("https://storage.example/")) {
+          return Promise.resolve(
+            new Response("unavailable", { status: storageStatus }),
+          );
+        }
+        return Promise.resolve(
+          createJsonResponse({
+            id: "run-1",
+            status: "completed",
+            stage: null,
+            output: null,
+            error_message: null,
+            branch: "main",
+            updated_at: "2026-01-01T00:00:00Z",
+            log_urls: ["https://storage.example/run-1.jsonl?sig=1"],
+          }),
+        );
+      });
+
+      service.watch({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+      });
+
+      await waitFor(() =>
+        updates.some((u) => (u as { kind?: string }).kind === "snapshot"),
+      );
+
+      const snapshot = updates.find(
+        (u) => (u as { kind?: string }).kind === "snapshot",
+      ) as { newEntries: unknown[] };
+      expect(snapshot.newEntries).toEqual([consoleLogEntry("from api")]);
+    },
+  );
+
+  it("shares one history fetch when a subscriber attaches mid-bootstrap", async () => {
     const updates: unknown[] = [];
     service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
 
+    const sessionLogsOffsets: string[] = [];
+    let releasePage: () => void = () => {};
     mockNetFetch.mockImplementation((input: string | Request) => {
       const url = typeof input === "string" ? input : input.url;
       if (url.includes("/session_logs/")) {
-        return Promise.resolve(
-          createJsonResponse([consoleLogEntry("from api")], 200, {
-            "X-Has-More": "false",
-          }),
-        );
-      }
-      if (url.startsWith("https://storage.example/")) {
-        return Promise.resolve(new Response("expired", { status: 403 }));
+        sessionLogsOffsets.push(new URL(url).searchParams.get("offset") ?? "");
+        return new Promise<Response>((resolve) => {
+          releasePage = () =>
+            resolve(
+              createJsonResponse([consoleLogEntry("only page")], 200, {
+                "X-Has-More": "false",
+              }),
+            );
+        });
       }
       return Promise.resolve(
         createJsonResponse({
           id: "run-1",
-          status: "completed",
+          status: "in_progress",
           stage: null,
           output: null,
           error_message: null,
           branch: "main",
           updated_at: "2026-01-01T00:00:00Z",
-          log_urls: ["https://storage.example/run-1.jsonl?sig=1"],
         }),
       );
     });
+    mockStreamFetch.mockResolvedValue(createOpenSseResponse(""));
 
-    service.watch({
+    const watchInput = {
       taskId: "task-1",
       runId: "run-1",
       apiHost: "https://app.example.com",
       teamId: 2,
-    });
+    };
+    service.watch(watchInput);
+    await waitFor(() => sessionLogsOffsets.length > 0);
+    service.watch(watchInput);
+    releasePage();
 
-    await waitFor(() =>
-      updates.some((u) => (u as { kind?: string }).kind === "snapshot"),
+    await waitFor(
+      () =>
+        updates.filter((u) => (u as { kind?: string }).kind === "snapshot")
+          .length >= 2,
     );
 
-    const snapshot = updates.find(
+    // A second concurrent page fetch would corrupt the shared resume progress.
+    expect(sessionLogsOffsets).toEqual(["0"]);
+    const snapshots = updates.filter(
       (u) => (u as { kind?: string }).kind === "snapshot",
-    ) as { newEntries: unknown[] };
-    expect(snapshot.newEntries).toEqual([consoleLogEntry("from api")]);
+    ) as Array<{ newEntries: unknown[] }>;
+    for (const snapshot of snapshots) {
+      expect(snapshot.newEntries).toEqual([consoleLogEntry("only page")]);
+    }
   });
 
   it("resumes paginated history from the last fetched page after a retry", async () => {

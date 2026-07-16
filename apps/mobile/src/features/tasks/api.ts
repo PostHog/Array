@@ -113,6 +113,9 @@ function isRetryableError(error: unknown): boolean {
     return error.status >= 500 && error.status < 600;
   }
   if (error instanceof Error) {
+    if (error.name === "AbortError" || error.name === "TimeoutError") {
+      return true;
+    }
     const message = error.message.toLowerCase();
     if (message.includes("network")) return true;
     if (message.includes("timeout")) return true;
@@ -719,8 +722,7 @@ export async function fetchSessionLogs(
         offset: String(options.offset ?? 0),
       });
 
-      // Big runs can take the server a long time per page (it re-reads the whole
-      // log chain each request), so this needs far more than the default budget.
+      // The server re-reads the whole log chain per page, so big runs need a generous budget.
       const response = await authedFetch(
         `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
         { signal: createTimeoutSignal(120_000) },

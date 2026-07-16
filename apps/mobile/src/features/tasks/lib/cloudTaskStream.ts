@@ -828,7 +828,8 @@ async function fetchHistoricalEntries(
   if (run.log_urls?.length) {
     const chainEntries = await fetchChainLogEntries(watcher, run.log_urls);
     if (watcher.stopped || watcher.failed) return null;
-    if (chainEntries) return chainEntries;
+    // An all-empty chain read falls through: a misdirected presigned 404 must not mask real data.
+    if (chainEntries?.length) return chainEntries;
   }
 
   const paginated = await fetchAllSessionLogs(watcher);
@@ -856,7 +857,10 @@ async function fetchChainLogEntries(
     const chunk = await fetchS3LogEntries(watcher, logUrl);
     if (watcher.stopped || watcher.failed) return null;
     if (chunk === null) return null;
-    entries.push(...chunk);
+    // Per-entry push: spreading a huge chunk into push() overflows the engine's argument limit.
+    for (const entry of chunk) {
+      entries.push(entry);
+    }
   }
   return entries;
 }
@@ -866,8 +870,7 @@ async function fetchS3LogEntries(
   logUrl: string,
 ): Promise<StoredLogEntry[] | null> {
   try {
-    // Chain logs of long-running tasks can be hundreds of MB; RN fetch buffers
-    // the whole body, so the budget covers the full download, not just TTFB.
+    // RN fetch buffers the whole body, so the budget must cover a full multi-hundred-MB download.
     const response = await fetch(logUrl, {
       signal: createTimeoutSignal(120_000),
     });

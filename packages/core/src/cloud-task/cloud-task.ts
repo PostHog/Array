@@ -15,6 +15,7 @@ import {
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { inject, injectable, preDestroy } from "inversify";
+import { parseSessionLogContent } from "../sessions/sessionLogs";
 import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
 import { CLOUD_TASK_AUTH, type ICloudTaskAuth } from "./identifiers";
 import {
@@ -41,14 +42,11 @@ const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
-// Session-logs pages of a big run can take the server well past the 30s default
-// authenticatedFetch timeout (it re-reads the whole log chain per page), so give
-// each page an explicit, generous budget and retry transient failures.
+// The server re-reads the whole log chain per page, so big runs need far more than the 30s auth default.
 const SESSION_LOG_PAGE_TIMEOUT_MS = 120_000;
 const SESSION_LOG_PAGE_RETRIES = 2;
 const SESSION_LOG_PAGE_RETRY_DELAY_MS = 2_000;
-// Presigned log downloads are unbounded in size, so cap idle time between chunks
-// rather than total duration.
+// Presigned log downloads are unbounded in size, so cap idle time between chunks, not total duration.
 const LOG_DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 
 // Authoritative end-of-stream sentinel, matched on the SSE event name (event.event, not data.type).
@@ -95,8 +93,7 @@ interface TaskRunResponse {
   branch?: string | null;
   updated_at?: string;
   completed_at?: string | null;
-  /** Presigned S3 URLs for every log in the run's resume chain, oldest first.
-   *  Absent on old servers; empty when the server can't presign. */
+  // Presigned resume-chain log URLs, oldest first; absent on old servers, empty when presigning fails.
   log_urls?: string[] | null;
 }
 
@@ -173,11 +170,16 @@ interface WatcherState {
   durableStreamEnabled: boolean;
   // Presigned resume-chain log URLs from the last run fetch; null on old servers or presign failure.
   logUrls: string[] | null;
-  /** Paginated history progress that survives watcher retries: the log is append-only, so pages
-   *  already fetched stay valid and a retry resumes from `offset` instead of restarting at 0. */
-  sessionLogsProgress: { offset: number; entries: StoredLogEntry[] } | null;
+  // Paginated pages already fetched; survives watcher retries (the log is append-only) so a retry resumes.
+  sessionLogsProgress: StoredLogEntry[] | null;
   // Incremented per bootstrapWatcher call so a superseded bootstrap's awaited work is discarded.
   bootstrapGeneration: number;
+  // Single-flight history fetch: concurrent callers of the same generation share one run.
+  historyFetch: {
+    generation: number;
+    promise: Promise<StoredLogEntry[] | null>;
+  } | null;
+  historyAbortController: AbortController | null;
 }
 
 function watcherKey(taskId: string, runId: string): string {
@@ -419,6 +421,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     watcher.sseAbortController?.abort();
     watcher.sseAbortController = null;
+    watcher.historyAbortController?.abort();
 
     if (watcher.batchFlushTimeoutId) {
       clearTimeout(watcher.batchFlushTimeoutId);
@@ -462,8 +465,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.streamBaseUrl = null;
     watcher.streamReadToken = null;
     watcher.durableStreamEnabled = false;
-    // sessionLogsProgress is deliberately retained: the log is append-only, so history
-    // pages fetched before the failure stay valid and the retry resumes where it left off.
+    // sessionLogsProgress is deliberately retained: the log is append-only, so the retry resumes.
   }
 
   async sendCommand(input: SendCommandInput): Promise<SendCommandOutput> {
@@ -661,6 +663,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       logUrls: null,
       sessionLogsProgress: null,
       bootstrapGeneration: 0,
+      historyFetch: null,
+      historyAbortController: null,
     };
 
     this.watchers.set(key, watcher);
@@ -673,6 +677,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     if (!watcher) return;
 
     watcher.sseAbortController?.abort();
+    watcher.historyAbortController?.abort();
 
     if (watcher.reconnectTimeoutId) {
       clearTimeout(watcher.reconnectTimeoutId);
@@ -1463,6 +1468,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
     watcher.sseAbortController?.abort();
     watcher.sseAbortController = null;
+    watcher.historyAbortController?.abort();
 
     this.emit(CloudTaskEvent.Update, {
       taskId: watcher.taskId,
@@ -1702,60 +1708,93 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     return changed;
   }
 
-  // Loads a run's full history: straight from the presigned resume-chain log objects when the
-  // server provides them, else via the paginated session_logs API. The direct download avoids
-  // the API's per-page full-chain re-read, which times out on runs with very large histories.
-  private async fetchHistoricalEntries(
+  // Presigned chain download when available (the paginated API re-reads the whole chain per page).
+  private fetchHistoricalEntries(
     watcher: WatcherState,
     generation: number,
+  ): Promise<StoredLogEntry[] | null> {
+    if (watcher.historyFetch?.generation === generation) {
+      return watcher.historyFetch.promise;
+    }
+
+    watcher.historyAbortController?.abort();
+    const controller = new AbortController();
+    watcher.historyAbortController = controller;
+
+    const promise = this.fetchHistoricalEntriesInner(
+      watcher,
+      generation,
+      controller.signal,
+    ).finally(() => {
+      if (watcher.historyFetch?.promise === promise) {
+        watcher.historyFetch = null;
+      }
+      if (watcher.historyAbortController === controller) {
+        watcher.historyAbortController = null;
+      }
+    });
+    watcher.historyFetch = { generation, promise };
+    return promise;
+  }
+
+  private async fetchHistoricalEntriesInner(
+    watcher: WatcherState,
+    generation: number,
+    signal: AbortSignal,
   ): Promise<StoredLogEntry[] | null> {
     if (watcher.logUrls?.length) {
       const chainEntries = await this.fetchChainLogEntries(
         watcher,
         watcher.logUrls,
         generation,
+        signal,
       );
-      if (watcher.bootstrapGeneration !== generation) return null;
-      if (chainEntries) {
+      if (
+        watcher.bootstrapGeneration !== generation ||
+        watcher.failed ||
+        signal.aborted
+      ) {
+        return null;
+      }
+      // An all-empty chain read falls through: a misdirected presigned 404 must not mask real data.
+      if (chainEntries?.length) {
         watcher.sessionLogsProgress = null;
         return chainEntries;
       }
     }
 
-    return this.fetchAllSessionLogs(watcher, generation);
+    return this.fetchAllSessionLogs(watcher, generation, signal);
   }
 
   private async fetchChainLogEntries(
     watcher: WatcherState,
     logUrls: string[],
     generation: number,
+    signal: AbortSignal,
   ): Promise<StoredLogEntry[] | null> {
     const entries: StoredLogEntry[] = [];
 
     for (const logUrl of logUrls) {
-      const content = await this.downloadLogObject(watcher, logUrl);
+      const chunk = await this.downloadLogEntries(watcher, logUrl, signal);
       if (watcher.bootstrapGeneration !== generation) return null;
-      if (content === null) return null;
-
-      for (const line of content.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          entries.push(JSON.parse(trimmed) as StoredLogEntry);
-        } catch {
-          // Malformed lines are skipped, matching the server-side JSONL parser.
-        }
+      if (chunk === null) return null;
+      for (const entry of chunk) {
+        entries.push(entry);
       }
     }
 
     return entries;
   }
 
-  private async downloadLogObject(
+  private async downloadLogEntries(
     watcher: WatcherState,
     logUrl: string,
-  ): Promise<string | null> {
+    signal: AbortSignal,
+  ): Promise<StoredLogEntry[] | null> {
     const controller = new AbortController();
+    const onOuterAbort = () => controller.abort();
+    signal.addEventListener("abort", onOuterAbort, { once: true });
+    if (signal.aborted) controller.abort();
     let idleTimer = setTimeout(
       () => controller.abort(),
       LOG_DOWNLOAD_IDLE_TIMEOUT_MS,
@@ -1767,18 +1806,24 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         LOG_DOWNLOAD_IDLE_TIMEOUT_MS,
       );
     };
+    const entries: StoredLogEntry[] = [];
+    const parseInto = (segment: string) => {
+      if (!segment.trim()) return;
+      for (const entry of parseSessionLogContent(segment).rawEntries) {
+        entries.push(entry);
+      }
+    };
 
     try {
-      // Presigned URL: plain fetch. S3 rejects requests that carry both query
-      // signing and an Authorization header, so this must not go through auth.
+      // Plain fetch: S3 rejects presigned requests that also carry an Authorization header.
       const response = await fetch(logUrl, {
         method: "GET",
         signal: controller.signal,
       });
 
       if (response.status === 404) {
-        // The run has not written its log object yet.
-        return "";
+        // The run has not written this log object yet.
+        return entries;
       }
 
       if (!response.ok) {
@@ -1791,21 +1836,28 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       }
 
       if (!response.body) {
-        return await response.text();
+        parseInto(await response.text());
+        return entries;
       }
 
       resetIdleTimer();
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let content = "";
+      let pending = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         resetIdleTimer();
-        content += decoder.decode(value, { stream: true });
+        pending += decoder.decode(value, { stream: true });
+        const lastNewline = pending.lastIndexOf("\n");
+        if (lastNewline === -1) continue;
+        // Parse completed lines as they arrive so memory stays O(entries), not O(raw log bytes).
+        parseInto(pending.slice(0, lastNewline));
+        pending = pending.slice(lastNewline + 1);
       }
-      content += decoder.decode();
-      return content;
+      pending += decoder.decode();
+      parseInto(pending);
+      return entries;
     } catch (error) {
       this.log.warn("Cloud task log object download error", {
         taskId: watcher.taskId,
@@ -1815,12 +1867,14 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return null;
     } finally {
       clearTimeout(idleTimer);
+      signal.removeEventListener("abort", onOuterAbort);
     }
   }
 
   private async fetchSessionLogsPage(
     watcher: WatcherState,
     offset: number,
+    signal: AbortSignal,
   ): Promise<SessionLogsPage | null> {
     const url = new URL(
       `${watcher.apiHost}/api/projects/${watcher.teamId}/tasks/${watcher.taskId}/runs/${watcher.runId}/session_logs/`,
@@ -1833,7 +1887,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         url.toString(),
         {
           method: "GET",
-          signal: AbortSignal.timeout(SESSION_LOG_PAGE_TIMEOUT_MS),
+          signal: AbortSignal.any([
+            signal,
+            AbortSignal.timeout(SESSION_LOG_PAGE_TIMEOUT_MS),
+          ]),
         },
       );
 
@@ -1873,19 +1930,30 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher: WatcherState,
     offset: number,
     generation: number,
+    signal: AbortSignal,
   ): Promise<SessionLogsPage | null> {
     for (let attempt = 0; attempt <= SESSION_LOG_PAGE_RETRIES; attempt++) {
       if (attempt > 0) {
-        await sleepWithBackoff(attempt - 1, {
-          initialDelayMs: SESSION_LOG_PAGE_RETRY_DELAY_MS,
-        });
-        if (watcher.bootstrapGeneration !== generation || watcher.failed) {
+        await sleepWithBackoff(
+          attempt - 1,
+          { initialDelayMs: SESSION_LOG_PAGE_RETRY_DELAY_MS },
+          signal,
+        );
+        if (
+          watcher.bootstrapGeneration !== generation ||
+          watcher.failed ||
+          signal.aborted
+        ) {
           return null;
         }
       }
-      const page = await this.fetchSessionLogsPage(watcher, offset);
+      const page = await this.fetchSessionLogsPage(watcher, offset, signal);
       if (page) return page;
-      if (watcher.bootstrapGeneration !== generation || watcher.failed) {
+      if (
+        watcher.bootstrapGeneration !== generation ||
+        watcher.failed ||
+        signal.aborted
+      ) {
         return null;
       }
     }
@@ -1895,15 +1963,17 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private async fetchAllSessionLogs(
     watcher: WatcherState,
     generation: number,
+    signal: AbortSignal,
   ): Promise<StoredLogEntry[] | null> {
-    const progress = watcher.sessionLogsProgress ?? { offset: 0, entries: [] };
-    watcher.sessionLogsProgress = progress;
+    const entries = watcher.sessionLogsProgress ?? [];
+    watcher.sessionLogsProgress = entries;
 
     while (true) {
       const page = await this.fetchSessionLogsPageWithRetry(
         watcher,
-        progress.offset,
+        entries.length,
         generation,
+        signal,
       );
       if (watcher.bootstrapGeneration !== generation) return null;
       if (!page) {
@@ -1911,11 +1981,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return null;
       }
 
-      progress.entries.push(...page.entries);
-      progress.offset += page.entries.length;
+      for (const entry of page.entries) {
+        entries.push(entry);
+      }
       if (!page.hasMore || page.entries.length === 0) {
         watcher.sessionLogsProgress = null;
-        return progress.entries;
+        return entries;
       }
     }
   }

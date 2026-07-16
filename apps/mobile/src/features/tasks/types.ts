@@ -64,8 +64,7 @@ export interface TaskRun {
   environment?: "local" | "cloud";
   status: TaskRunStatus;
   log_url: string;
-  /** Presigned S3 URLs for every log in the run's resume chain, oldest first.
-   *  Absent on old servers; empty when the server can't presign. */
+  // Presigned resume-chain log URLs, oldest first; absent on old servers, empty when presigning fails.
   log_urls?: string[];
   error_message: string | null;
   reasoning_effort?: string | null;
