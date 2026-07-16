@@ -71,21 +71,23 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 // the callers fall through to `return []`.
 const GATEWAY_FETCH_TIMEOUT_MS = 10_000;
 
-// Authed and anonymous responses differ (free-tier marks are authed-only),
-// so cache entries are keyed on auth presence.
+// Restriction marks are identity-scoped (free-tier marks are authed-only and
+// differ per org), so cache entries are keyed on the exact token — an org
+// switch in the same process must never be served the old org's marks. A
+// token rotation just costs one refetch.
 interface ModelsCache<T> {
   models: T[];
   expiry: number;
   url: string;
-  authed: boolean;
+  token: string | null;
 }
 
 function readModelsCache<T>(
   cache: ModelsCache<T> | null,
   url: string,
-  authed: boolean,
+  token: string | null,
 ): T[] | null {
-  if (!cache || cache.url !== url || cache.authed !== authed) return null;
+  if (!cache || cache.url !== url || cache.token !== token) return null;
   return Date.now() < cache.expiry ? cache.models : null;
 }
 
@@ -103,8 +105,8 @@ export async function fetchGatewayModels(
     return [];
   }
 
-  const authed = Boolean(options?.authToken);
-  const cached = readModelsCache(gatewayModelsCache, gatewayUrl, authed);
+  const token = options?.authToken ?? null;
+  const cached = readModelsCache(gatewayModelsCache, gatewayUrl, token);
   if (cached) return cached;
 
   const modelsUrl = `${gatewayUrl}/v1/models`;
@@ -127,7 +129,7 @@ export async function fetchGatewayModels(
       models,
       expiry: Date.now() + CACHE_TTL,
       url: gatewayUrl,
-      authed,
+      token,
     };
     return models;
   } catch {
@@ -182,8 +184,8 @@ export async function fetchModelsList(
     return [];
   }
 
-  const authed = Boolean(options?.authToken);
-  const cached = readModelsCache(modelsListCache, gatewayUrl, authed);
+  const token = options?.authToken ?? null;
+  const cached = readModelsCache(modelsListCache, gatewayUrl, token);
   if (cached) return cached;
 
   try {
@@ -215,7 +217,7 @@ export async function fetchModelsList(
       models: results,
       expiry: Date.now() + CACHE_TTL,
       url: gatewayUrl,
-      authed,
+      token,
     };
     return results;
   } catch {
