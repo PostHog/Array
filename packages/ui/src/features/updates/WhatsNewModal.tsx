@@ -1,5 +1,6 @@
 import { X } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { useBillingAnnouncementVisible } from "@posthog/ui/features/billing/useBillingAnnouncementVisible";
 import { ReleaseNotesSections } from "@posthog/ui/features/updates/ReleaseNotesSections";
 import {
   groupReleases,
@@ -42,6 +43,9 @@ function ChangelogSkeleton() {
 export function WhatsNewModal() {
   const isOpen = useWhatsNewStore((state) => state.isOpen);
   const close = useWhatsNewStore((state) => state.close);
+  // The blocking billing announcement takes the stage alone — the post-update
+  // auto-open waits here until it's acknowledged, then appears.
+  const billingAnnouncementVisible = useBillingAnnouncementVisible();
   const prefetchForActiveUpdate = useHasActiveUpdate();
   const hostTRPC = useHostTRPC();
   const { data: currentVersion, isError: isVersionError } = useQuery(
@@ -63,7 +67,7 @@ export function WhatsNewModal() {
 
   return (
     <Dialog.Root
-      open={isOpen}
+      open={isOpen && !billingAnnouncementVisible}
       onOpenChange={(open) => {
         if (!open) close();
       }}

@@ -368,7 +368,7 @@ describe("LlmGatewayService.fetchUsage", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       createJsonResponse({
         ...USAGE_BODY,
-        ai_credits: { exhausted: true },
+        ai_credits: { exhausted: true, used_usd: 12.4, limit_usd: 50 },
         code_usage_subscribed: true,
       }),
     );
@@ -377,7 +377,25 @@ describe("LlmGatewayService.fetchUsage", () => {
     const usage = await service.fetchUsage();
 
     expect(usage.ai_credits?.exhausted).toBe(true);
+    expect(usage.ai_credits?.used_usd).toBe(12.4);
+    expect(usage.ai_credits?.limit_usd).toBe(50);
     expect(usage.code_usage_subscribed).toBe(true);
+  });
+
+  it("parses ai_credits with null spend numbers from an unsynced org", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({
+        ...USAGE_BODY,
+        ai_credits: { exhausted: false, used_usd: null, limit_usd: null },
+      }),
+    );
+    const { service } = createService(fetchMock);
+
+    const usage = await service.fetchUsage();
+
+    expect(usage.ai_credits?.exhausted).toBe(false);
+    expect(usage.ai_credits?.used_usd).toBeNull();
+    expect(usage.ai_credits?.limit_usd).toBeNull();
   });
 
   it("feeds code_usage_subscribed into helper model routing", async () => {

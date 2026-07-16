@@ -1,5 +1,4 @@
 import { ArrowSquareOut, CreditCard } from "@phosphor-icons/react";
-import { USAGE_BILLING_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
@@ -7,8 +6,9 @@ import { track } from "../../shell/analytics";
 import { openExternalUrl } from "../../shell/openExternal";
 import { getBillingUrl } from "../../utils/urls";
 import { useAuthStateValue } from "../auth/store";
-import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
 import { useBillingAnnouncementStore } from "./billingAnnouncementStore";
+import { useBillingAnnouncementVisible } from "./useBillingAnnouncementVisible";
+import { useUsage } from "./useUsage";
 
 /**
  * One-time blocking announcement of the usage-based billing cutover. The
@@ -16,14 +16,17 @@ import { useBillingAnnouncementStore } from "./billingAnnouncementStore";
  * acknowledged.
  */
 export function UsageBillingAnnouncementModal() {
-  const armed = useFeatureFlag(USAGE_BILLING_FLAG);
-  const acknowledged = useBillingAnnouncementStore((s) => s.acknowledged);
-  const hasHydrated = useBillingAnnouncementStore((s) => s._hasHydrated);
+  const isOpen = useBillingAnnouncementVisible();
   const acknowledge = useBillingAnnouncementStore((s) => s.acknowledge);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  const isLoggedIn = useAuthStateValue((state) => state.currentOrgId !== null);
+  const { usage } = useUsage({ enabled: isOpen });
 
-  const isOpen = armed && isLoggedIn && hasHydrated && !acknowledged;
+  // A free org's limit_usd is its included allocation (the first bullet's
+  // $20), not a spend limit — the org-specific line is for subscribed orgs.
+  const limitUsd =
+    usage?.code_usage_subscribed === true
+      ? (usage.ai_credits?.limit_usd ?? null)
+      : null;
 
   useEffect(() => {
     if (isOpen) {
@@ -79,8 +82,20 @@ export function UsageBillingAnnouncementModal() {
               • Premium models need a payment method; an open model stays free.
             </Text>
             <Text color="gray">
-              • A default <Text weight="medium">$50/month</Text> spend limit
-              applies — adjust it any time in billing settings.
+              {limitUsd != null ? (
+                <>
+                  • Your organization's spend limit is{" "}
+                  <Text weight="medium">
+                    {`$${Number.isInteger(limitUsd) ? limitUsd : limitUsd.toFixed(2)}/month`}
+                  </Text>{" "}
+                  — adjust it any time in billing settings.
+                </>
+              ) : (
+                <>
+                  • A default <Text weight="medium">$50/month</Text> spend
+                  limit applies — adjust it any time in billing settings.
+                </>
+              )}
             </Text>
           </Flex>
           <Flex justify="end" gap="3" mt="2">
