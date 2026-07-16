@@ -40,6 +40,10 @@ import { getSuggestedBranchName } from "../utils/getSuggestedBranchName";
 
 const COMBOBOX_LIMIT = 50;
 
+// Shared so the two "still loading branches" render sites (the empty-list
+// spinner and the seeded-default row) can never drift out of sync on a copy edit.
+const LOADING_BRANCHES_LABEL = "Loading branches…";
+
 // Sentinel value for the "Create new branch" action. Rendered as a real
 // ComboboxItem in the list footer so it's reachable by keyboard, not a
 // plain button the combobox's roving focus skips over.
@@ -472,7 +476,7 @@ export function BranchSelector({
         ) : null}
 
         {branchListLoading && branches.length === 0 ? (
-          <LoadingRow label="Loading branches…" />
+          <LoadingRow label={LOADING_BRANCHES_LABEL} />
         ) : (
           <ComboboxEmpty>No branches found.</ComboboxEmpty>
         )}
@@ -540,7 +544,9 @@ export function BranchSelector({
           item while the remote list loads. A loading row directly below it
           makes clear the rest of the branches are still on the way.
         */}
-        {seededDefaultBranch ? <LoadingRow label="Loading branches…" /> : null}
+        {seededDefaultBranch ? (
+          <LoadingRow label={LOADING_BRANCHES_LABEL} />
+        ) : null}
 
         {isCloudMode && cloudBranchesHasMore ? (
           <ComboboxListFooter>
