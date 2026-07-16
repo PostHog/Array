@@ -173,6 +173,15 @@ export function LoopForm({ loop }: LoopFormProps) {
                   onChange={(e) => patch({ name: e.target.value })}
                 />
               </Field>
+              <Field label="Description">
+                <TextField.Root
+                  size="2"
+                  value={values.description}
+                  placeholder="A short summary shown on the Loops list"
+                  disabled={isSubmitting}
+                  onChange={(e) => patch({ description: e.target.value })}
+                />
+              </Field>
               <Field label="Instructions" required>
                 <TextArea
                   value={values.instructions}
