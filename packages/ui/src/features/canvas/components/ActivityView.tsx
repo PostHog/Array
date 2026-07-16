@@ -104,7 +104,7 @@ function ActivityRow({
           <MentionText
             content={item.content}
             currentUserEmail={currentUserEmail}
-            className="mt-1 block whitespace-pre-wrap break-words"
+            className="mt-1 block whitespace-pre-wrap break-words text-xs"
           />
         </span>
       </button>

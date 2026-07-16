@@ -43,7 +43,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -116,15 +116,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // onboarding checklist. Describe-mode: seeds a plan session for this context.
   const [contextMdDialogOpen, setContextMdDialogOpen] = useState(false);
 
-  const threadTaskId = useThreadPanelStore((s) => s.taskId);
+  const threadTaskId = useThreadPanelStore(
+    (s) => s.openByChannel[channelId] ?? null,
+  );
   const openThread = useThreadPanelStore((s) => s.openThread);
   const closeThread = useThreadPanelStore((s) => s.closeThread);
-
-  // A thread from another channel shouldn't linger when switching feeds.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-close per channel
-  useEffect(() => {
-    closeThread();
-  }, [closeThread, channelId]);
 
   const handleSuggestionSelect = useCallback(
     (prompt: string, mode?: string) => {
@@ -180,21 +176,23 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [backendChannel?.id, channelId, fileTask, invalidateFeed, queryClient],
   );
 
-  // The task route's mount effect points the panel at the task, so navigating
-  // is enough here.
-  const handleOpenTask = useCallback(
-    (task: Task) => {
+  const handleOpenFull = useCallback(
+    (taskId: string) => {
       void navigate({
         to: "/website/$channelId/tasks/$taskId",
-        params: { channelId, taskId: task.id },
+        params: { channelId, taskId },
       });
     },
     [channelId, navigate],
   );
+  const handleOpenTask = useCallback(
+    (task: Task) => handleOpenFull(task.id),
+    [handleOpenFull],
+  );
 
   const handleOpenThread = useCallback(
-    (task: Task) => openThread(task.id),
-    [openThread],
+    (task: Task) => openThread(channelId, task.id),
+    [channelId, openThread],
   );
 
   const threadTask = threadTaskId
@@ -271,6 +269,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     <div className="flex h-full min-w-0 bg-gray-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelFeedView
+          channelId={channelId}
           tasks={tasks}
           pending={visiblePending}
           systemMessages={systemMessages}
@@ -297,8 +296,10 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       {threadTaskId && (
         <ThreadSidebar
           taskId={threadTaskId}
+          channelId={channelId}
           task={threadTask}
-          onClose={closeThread}
+          onClose={() => closeThread(channelId)}
+          onOpenFull={() => handleOpenFull(threadTaskId)}
         />
       )}
 
