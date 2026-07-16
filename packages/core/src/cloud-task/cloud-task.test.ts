@@ -483,6 +483,203 @@ describe("CloudTaskService", () => {
     expect(messages()).toEqual(["before retry", "after retry"]);
   });
 
+  const consoleLogEntry = (message: string) => ({
+    type: "notification",
+    timestamp: "2026-01-01T00:00:01Z",
+    notification: {
+      jsonrpc: "2.0",
+      method: "_posthog/console",
+      params: { sessionId: "run-1", level: "info", message },
+    },
+  });
+
+  it("bootstraps history from presigned chain log urls without touching session_logs", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const sessionLogsCalls: string[] = [];
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        sessionLogsCalls.push(url);
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      if (url.startsWith("https://storage.example/run-0.jsonl")) {
+        return Promise.resolve(
+          new Response(
+            `${JSON.stringify(consoleLogEntry("ancestor 1"))}\n${JSON.stringify(consoleLogEntry("ancestor 2"))}\n`,
+          ),
+        );
+      }
+      if (url.startsWith("https://storage.example/run-1.jsonl")) {
+        // No trailing newline: the final line of a log object is still a complete entry.
+        return Promise.resolve(
+          new Response(JSON.stringify(consoleLogEntry("current"))),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "completed",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+          log_urls: [
+            "https://storage.example/run-0.jsonl?sig=1",
+            "https://storage.example/run-1.jsonl?sig=2",
+          ],
+        }),
+      );
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some((u) => (u as { kind?: string }).kind === "snapshot"),
+    );
+
+    const snapshot = updates.find(
+      (u) => (u as { kind?: string }).kind === "snapshot",
+    ) as { newEntries: unknown[]; totalEntryCount: number };
+    expect(snapshot.newEntries).toEqual([
+      consoleLogEntry("ancestor 1"),
+      consoleLogEntry("ancestor 2"),
+      consoleLogEntry("current"),
+    ]);
+    expect(snapshot.totalEntryCount).toBe(3);
+    expect(sessionLogsCalls).toEqual([]);
+  });
+
+  it("falls back to the paginated API when a chain log download fails", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([consoleLogEntry("from api")], 200, {
+            "X-Has-More": "false",
+          }),
+        );
+      }
+      if (url.startsWith("https://storage.example/")) {
+        return Promise.resolve(new Response("expired", { status: 403 }));
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "completed",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+          log_urls: ["https://storage.example/run-1.jsonl?sig=1"],
+        }),
+      );
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() =>
+      updates.some((u) => (u as { kind?: string }).kind === "snapshot"),
+    );
+
+    const snapshot = updates.find(
+      (u) => (u as { kind?: string }).kind === "snapshot",
+    ) as { newEntries: unknown[] };
+    expect(snapshot.newEntries).toEqual([consoleLogEntry("from api")]);
+  });
+
+  it("resumes paginated history from the last fetched page after a retry", async () => {
+    vi.useFakeTimers();
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const sessionLogsOffsets: string[] = [];
+    let failPageFetches = true;
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        const offset = new URL(url).searchParams.get("offset") ?? "";
+        sessionLogsOffsets.push(offset);
+        if (offset === "0") {
+          return Promise.resolve(
+            createJsonResponse([consoleLogEntry("page one")], 200, {
+              "X-Has-More": "true",
+            }),
+          );
+        }
+        if (failPageFetches) {
+          return Promise.reject(new Error("socket hang up"));
+        }
+        return Promise.resolve(
+          createJsonResponse([consoleLogEntry("page two")], 200, {
+            "X-Has-More": "false",
+          }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "completed",
+          stage: null,
+          output: null,
+          error_message: null,
+          branch: "main",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    // Page 0 succeeds; the offset-1 page fails all retry attempts and the
+    // watcher surfaces a retryable error instead of a snapshot.
+    await waitFor(
+      () => updates.some((u) => (u as { kind?: string }).kind === "error"),
+      30_000,
+    );
+    expect(sessionLogsOffsets).toEqual(["0", "1", "1", "1"]);
+
+    failPageFetches = false;
+    await service.retry("task-1", "run-1");
+    await waitFor(
+      () => updates.some((u) => (u as { kind?: string }).kind === "snapshot"),
+      30_000,
+    );
+
+    // The retry resumed from offset 1 instead of refetching page 0.
+    expect(sessionLogsOffsets).toEqual(["0", "1", "1", "1", "1"]);
+    const snapshot = updates.find(
+      (u) => (u as { kind?: string }).kind === "snapshot",
+    ) as { newEntries: unknown[] };
+    expect(snapshot.newEntries).toEqual([
+      consoleLogEntry("page one"),
+      consoleLogEntry("page two"),
+    ]);
+  });
+
   it("reconnects with Last-Event-ID after a stream error", async () => {
     vi.useFakeTimers();
 

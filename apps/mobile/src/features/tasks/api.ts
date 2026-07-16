@@ -719,9 +719,11 @@ export async function fetchSessionLogs(
         offset: String(options.offset ?? 0),
       });
 
+      // Big runs can take the server a long time per page (it re-reads the whole
+      // log chain each request), so this needs far more than the default budget.
       const response = await authedFetch(
         `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/session_logs/?${params}`,
-        { signal: createTimeoutSignal(10_000) },
+        { signal: createTimeoutSignal(120_000) },
       );
 
       if (!response.ok) {

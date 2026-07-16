@@ -8,7 +8,11 @@ import {
   type IAnalytics,
 } from "@posthog/platform/analytics";
 import type { StoredLogEntry } from "@posthog/shared";
-import { serializeError, TypedEventEmitter } from "@posthog/shared";
+import {
+  serializeError,
+  sleepWithBackoff,
+  TypedEventEmitter,
+} from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { inject, injectable, preDestroy } from "inversify";
 import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
@@ -37,6 +41,15 @@ const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
+// Session-logs pages of a big run can take the server well past the 30s default
+// authenticatedFetch timeout (it re-reads the whole log chain per page), so give
+// each page an explicit, generous budget and retry transient failures.
+const SESSION_LOG_PAGE_TIMEOUT_MS = 120_000;
+const SESSION_LOG_PAGE_RETRIES = 2;
+const SESSION_LOG_PAGE_RETRY_DELAY_MS = 2_000;
+// Presigned log downloads are unbounded in size, so cap idle time between chunks
+// rather than total duration.
+const LOG_DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 
 // Authoritative end-of-stream sentinel, matched on the SSE event name (event.event, not data.type).
 // The client stops on it without consulting run status.
@@ -82,6 +95,9 @@ interface TaskRunResponse {
   branch?: string | null;
   updated_at?: string;
   completed_at?: string | null;
+  /** Presigned S3 URLs for every log in the run's resume chain, oldest first.
+   *  Absent on old servers; empty when the server can't presign. */
+  log_urls?: string[] | null;
 }
 
 interface TaskRunStateEvent {
@@ -155,6 +171,13 @@ interface WatcherState {
   streamReadToken: string | null;
   // True once stream_token resolved. False for old servers (404), which fall back to status polling.
   durableStreamEnabled: boolean;
+  // Presigned resume-chain log URLs from the last run fetch; null on old servers or presign failure.
+  logUrls: string[] | null;
+  /** Paginated history progress that survives watcher retries: the log is append-only, so pages
+   *  already fetched stay valid and a retry resumes from `offset` instead of restarting at 0. */
+  sessionLogsProgress: { offset: number; entries: StoredLogEntry[] } | null;
+  // Incremented per bootstrapWatcher call so a superseded bootstrap's awaited work is discarded.
+  bootstrapGeneration: number;
 }
 
 function watcherKey(taskId: string, runId: string): string {
@@ -439,6 +462,8 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.streamBaseUrl = null;
     watcher.streamReadToken = null;
     watcher.durableStreamEnabled = false;
+    // sessionLogsProgress is deliberately retained: the log is append-only, so history
+    // pages fetched before the failure stay valid and the retry resumes where it left off.
   }
 
   async sendCommand(input: SendCommandInput): Promise<SendCommandOutput> {
@@ -633,6 +658,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       streamBaseUrl: null,
       streamReadToken: null,
       durableStreamEnabled: false,
+      logUrls: null,
+      sessionLogsProgress: null,
+      bootstrapGeneration: 0,
     };
 
     this.watchers.set(key, watcher);
@@ -668,11 +696,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.failed = false;
     watcher.needsPostBootstrapReconnect = false;
     watcher.needsStopAfterBootstrap = false;
+    watcher.bootstrapGeneration += 1;
+    const generation = watcher.bootstrapGeneration;
 
     const run = await this.fetchTaskRun(watcher);
     const currentWatcher = this.watchers.get(key);
     if (!currentWatcher || currentWatcher !== watcher) return;
-    if (watcher.failed) return;
+    if (watcher.failed || watcher.bootstrapGeneration !== generation) return;
 
     if (!run) {
       this.failWatcher(key, {
@@ -684,6 +714,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     this.applyTaskRunState(watcher, run);
+    watcher.logUrls = run.log_urls?.length ? run.log_urls : null;
 
     if (
       !isTerminalStatus(run.status) &&
@@ -697,10 +728,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     if (isTerminalStatus(run.status)) {
-      const historicalEntries = await this.fetchAllSessionLogs(watcher);
+      const historicalEntries = await this.fetchHistoricalEntries(
+        watcher,
+        generation,
+      );
       const terminalWatcher = this.watchers.get(key);
       if (!terminalWatcher || terminalWatcher !== watcher) return;
-      if (watcher.failed) return;
+      if (watcher.failed || watcher.bootstrapGeneration !== generation) return;
       if (!historicalEntries) {
         this.failWatcher(key, {
           title: "Failed to load task history",
@@ -734,10 +768,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.bufferedLogBatches = [];
     void this.connectSse(key, { startLatest: true });
 
-    const historicalEntries = await this.fetchAllSessionLogs(watcher);
+    const historicalEntries = await this.fetchHistoricalEntries(
+      watcher,
+      generation,
+    );
     const bootstrappingWatcher = this.watchers.get(key);
     if (!bootstrappingWatcher || bootstrappingWatcher !== watcher) return;
-    if (watcher.failed) return;
+    if (watcher.failed || watcher.bootstrapGeneration !== generation) return;
     if (!historicalEntries) {
       this.failWatcher(key, {
         title: "Failed to load cloud run history",
@@ -1339,7 +1376,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     const watcher = this.watchers.get(key);
     if (!watcher || watcher.failed) return;
 
-    const historicalEntries = await this.fetchAllSessionLogs(watcher);
+    const historicalEntries = await this.fetchHistoricalEntries(
+      watcher,
+      watcher.bootstrapGeneration,
+    );
     const currentWatcher = this.watchers.get(key);
     if (!currentWatcher || currentWatcher !== watcher || watcher.failed) {
       return;
@@ -1662,6 +1702,122 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     return changed;
   }
 
+  // Loads a run's full history: straight from the presigned resume-chain log objects when the
+  // server provides them, else via the paginated session_logs API. The direct download avoids
+  // the API's per-page full-chain re-read, which times out on runs with very large histories.
+  private async fetchHistoricalEntries(
+    watcher: WatcherState,
+    generation: number,
+  ): Promise<StoredLogEntry[] | null> {
+    if (watcher.logUrls?.length) {
+      const chainEntries = await this.fetchChainLogEntries(
+        watcher,
+        watcher.logUrls,
+        generation,
+      );
+      if (watcher.bootstrapGeneration !== generation) return null;
+      if (chainEntries) {
+        watcher.sessionLogsProgress = null;
+        return chainEntries;
+      }
+    }
+
+    return this.fetchAllSessionLogs(watcher, generation);
+  }
+
+  private async fetchChainLogEntries(
+    watcher: WatcherState,
+    logUrls: string[],
+    generation: number,
+  ): Promise<StoredLogEntry[] | null> {
+    const entries: StoredLogEntry[] = [];
+
+    for (const logUrl of logUrls) {
+      const content = await this.downloadLogObject(watcher, logUrl);
+      if (watcher.bootstrapGeneration !== generation) return null;
+      if (content === null) return null;
+
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          entries.push(JSON.parse(trimmed) as StoredLogEntry);
+        } catch {
+          // Malformed lines are skipped, matching the server-side JSONL parser.
+        }
+      }
+    }
+
+    return entries;
+  }
+
+  private async downloadLogObject(
+    watcher: WatcherState,
+    logUrl: string,
+  ): Promise<string | null> {
+    const controller = new AbortController();
+    let idleTimer = setTimeout(
+      () => controller.abort(),
+      LOG_DOWNLOAD_IDLE_TIMEOUT_MS,
+    );
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(
+        () => controller.abort(),
+        LOG_DOWNLOAD_IDLE_TIMEOUT_MS,
+      );
+    };
+
+    try {
+      // Presigned URL: plain fetch. S3 rejects requests that carry both query
+      // signing and an Authorization header, so this must not go through auth.
+      const response = await fetch(logUrl, {
+        method: "GET",
+        signal: controller.signal,
+      });
+
+      if (response.status === 404) {
+        // The run has not written its log object yet.
+        return "";
+      }
+
+      if (!response.ok) {
+        this.log.warn("Cloud task log object download failed", {
+          taskId: watcher.taskId,
+          runId: watcher.runId,
+          status: response.status,
+        });
+        return null;
+      }
+
+      if (!response.body) {
+        return await response.text();
+      }
+
+      resetIdleTimer();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let content = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        resetIdleTimer();
+        content += decoder.decode(value, { stream: true });
+      }
+      content += decoder.decode();
+      return content;
+    } catch (error) {
+      this.log.warn("Cloud task log object download error", {
+        taskId: watcher.taskId,
+        runId: watcher.runId,
+        error,
+      });
+      return null;
+    } finally {
+      clearTimeout(idleTimer);
+    }
+  }
+
   private async fetchSessionLogsPage(
     watcher: WatcherState,
     offset: number,
@@ -1677,6 +1833,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         url.toString(),
         {
           method: "GET",
+          signal: AbortSignal.timeout(SESSION_LOG_PAGE_TIMEOUT_MS),
         },
       );
 
@@ -1712,24 +1869,54 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
+  private async fetchSessionLogsPageWithRetry(
+    watcher: WatcherState,
+    offset: number,
+    generation: number,
+  ): Promise<SessionLogsPage | null> {
+    for (let attempt = 0; attempt <= SESSION_LOG_PAGE_RETRIES; attempt++) {
+      if (attempt > 0) {
+        await sleepWithBackoff(attempt - 1, {
+          initialDelayMs: SESSION_LOG_PAGE_RETRY_DELAY_MS,
+        });
+        if (watcher.bootstrapGeneration !== generation || watcher.failed) {
+          return null;
+        }
+      }
+      const page = await this.fetchSessionLogsPage(watcher, offset);
+      if (page) return page;
+      if (watcher.bootstrapGeneration !== generation || watcher.failed) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   private async fetchAllSessionLogs(
     watcher: WatcherState,
+    generation: number,
   ): Promise<StoredLogEntry[] | null> {
-    const entries: StoredLogEntry[] = [];
-    let offset = 0;
+    const progress = watcher.sessionLogsProgress ?? { offset: 0, entries: [] };
+    watcher.sessionLogsProgress = progress;
 
     while (true) {
-      const page = await this.fetchSessionLogsPage(watcher, offset);
+      const page = await this.fetchSessionLogsPageWithRetry(
+        watcher,
+        progress.offset,
+        generation,
+      );
+      if (watcher.bootstrapGeneration !== generation) return null;
       if (!page) {
+        // Progress is kept so the next watcher retry resumes from this offset.
         return null;
       }
 
-      entries.push(...page.entries);
+      progress.entries.push(...page.entries);
+      progress.offset += page.entries.length;
       if (!page.hasMore || page.entries.length === 0) {
-        return entries;
+        watcher.sessionLogsProgress = null;
+        return progress.entries;
       }
-
-      offset += page.entries.length;
     }
   }
 

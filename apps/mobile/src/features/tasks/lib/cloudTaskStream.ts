@@ -805,14 +805,18 @@ async function fetchTaskRunState(
 
 /**
  * Loads the historical log entries for the run, mirroring the desktop's
- * dual-source strategy:
- *  1. Try the paginated `session_logs/` API — the live source while a run
+ * strategy:
+ *  1. Prefer the presigned resume-chain `log_urls` (S3 NDJSON, oldest
+ *     first) when the server provides them. Downloading straight from S3
+ *     avoids the paginated API's per-page full-chain re-read, which times
+ *     out on runs with very large histories.
+ *  2. Try the paginated `session_logs/` API — the live source while a run
  *     is active. For older / archived runs this can come back empty even
  *     though the canonical log exists on S3.
- *  2. Fall back to the run's presigned `log_url` (S3 NDJSON), which is the
+ *  3. Fall back to the run's presigned `log_url` (S3 NDJSON), which is the
  *     canonical archive for completed runs.
  *
- * Returns `null` only when both sources fail outright (so the bootstrap can
+ * Returns `null` only when the sources fail outright (so the bootstrap can
  * surface a retryable error). An empty paginated result is treated as "no
  * data yet" and falls through to S3 — if S3 also has nothing we return the
  * empty array so the snapshot can still flip the session to `"connected"`.
@@ -821,6 +825,12 @@ async function fetchHistoricalEntries(
   watcher: WatcherState,
   run: TaskRun,
 ): Promise<StoredLogEntry[] | null> {
+  if (run.log_urls?.length) {
+    const chainEntries = await fetchChainLogEntries(watcher, run.log_urls);
+    if (watcher.stopped || watcher.failed) return null;
+    if (chainEntries) return chainEntries;
+  }
+
   const paginated = await fetchAllSessionLogs(watcher);
   if (watcher.stopped || watcher.failed) return null;
   if (paginated && paginated.length > 0) return paginated;
@@ -837,13 +847,29 @@ async function fetchHistoricalEntries(
   return paginated ?? null;
 }
 
+async function fetchChainLogEntries(
+  watcher: WatcherState,
+  logUrls: string[],
+): Promise<StoredLogEntry[] | null> {
+  const entries: StoredLogEntry[] = [];
+  for (const logUrl of logUrls) {
+    const chunk = await fetchS3LogEntries(watcher, logUrl);
+    if (watcher.stopped || watcher.failed) return null;
+    if (chunk === null) return null;
+    entries.push(...chunk);
+  }
+  return entries;
+}
+
 async function fetchS3LogEntries(
   watcher: WatcherState,
   logUrl: string,
 ): Promise<StoredLogEntry[] | null> {
   try {
+    // Chain logs of long-running tasks can be hundreds of MB; RN fetch buffers
+    // the whole body, so the budget covers the full download, not just TTFB.
     const response = await fetch(logUrl, {
-      signal: createTimeoutSignal(15_000),
+      signal: createTimeoutSignal(120_000),
     });
     if (response.status === 404) {
       // No archived log yet for this run — not an error, just no data.
