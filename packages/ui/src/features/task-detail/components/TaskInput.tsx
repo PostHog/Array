@@ -435,10 +435,10 @@ export function TaskInput({
   const liveCloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
   // Serve the persisted default branch until the live list resolves, so the
   // majority "start on trunk" case pre-selects trunk with zero wait on a cold
-  // start. The cached value is best-effort: `cloudDefaultBranch` switches to the
-  // live value the moment it arrives, but the picker's auto-select only fires
-  // while nothing is selected — so a default branch renamed since it was cached
-  // (rare) would leave the seeded name selected until the user picks another.
+  // start. The cached value is best-effort: if it's stale (a default branch
+  // renamed since it was cached), `cloudDefaultBranch` switches to the live
+  // value on arrival and BranchSelector re-selects it — as long as the user
+  // hasn't picked a branch of their own in the meantime.
   const cloudDefaultBranch =
     liveCloudDefaultBranch ??
     (selectedCloudRepository

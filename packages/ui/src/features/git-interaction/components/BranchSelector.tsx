@@ -144,8 +144,19 @@ export function BranchSelector({
   const isSelectionOnly = workspaceMode === "worktree" || isCloudMode;
   const displayedBranch = isSelectionOnly ? selectedBranch : currentBranch;
 
+  // The branch we auto-selected, so we can tell our own pick apart from one the
+  // user made. Lets us correct a stale default (e.g. a cached "trunk" that the
+  // live list later contradicts) without ever clobbering a deliberate choice.
+  const autoSelectedBranchRef = useRef<string | null>(null);
   useEffect(() => {
-    if (isSelectionOnly && defaultBranch && !selectedBranch && onBranchSelect) {
+    if (!isSelectionOnly || !defaultBranch || !onBranchSelect) return;
+    // Adopt the default when nothing is selected yet, or when the default has
+    // changed out from under a value we ourselves auto-selected — but leave a
+    // user's own selection alone.
+    const selectionIsOurs =
+      !selectedBranch || selectedBranch === autoSelectedBranchRef.current;
+    if (selectionIsOurs && selectedBranch !== defaultBranch) {
+      autoSelectedBranchRef.current = defaultBranch;
       onBranchSelect(defaultBranch);
     }
   }, [isSelectionOnly, defaultBranch, selectedBranch, onBranchSelect]);
