@@ -3076,3 +3076,211 @@ describe("CloudTaskService", () => {
     ).toHaveLength(3);
   });
 });
+
+describe("CloudTaskService MCP relay", () => {
+  let relayService: CloudTaskService;
+  let mcpRelayExecutor: {
+    execute: ReturnType<typeof vi.fn>;
+    closeRun: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    const scopedLog = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const loggerMock = { ...scopedLog, scope: vi.fn(() => scopedLog) };
+    const analyticsMock = { track: vi.fn() };
+    mcpRelayExecutor = {
+      execute: vi.fn(async () => ({
+        payload: { jsonrpc: "2.0", id: 1, result: {} },
+      })),
+      closeRun: vi.fn(async () => {}),
+    };
+    relayService = new CloudTaskService(
+      mockAuthService as never,
+      analyticsMock as never,
+      loggerMock,
+      mcpRelayExecutor as never,
+    );
+
+    mockNetFetch.mockReset();
+    mockStreamFetch.mockReset();
+    mockStreamTokenFetch.mockReset();
+    mockStreamTokenFetch.mockImplementation(() =>
+      Promise.resolve(
+        createJsonResponse({ token: "test-token", stream_base_url: null }),
+      ),
+    );
+    mockAuthService.authenticatedFetch.mockReset();
+    vi.stubGlobal("fetch", fetchRouter);
+    mockAuthService.authenticatedFetch.mockImplementation(
+      async (input: string | Request, init?: RequestInit) => {
+        return fetchRouter(input, {
+          ...init,
+          headers: {
+            ...(init?.headers ?? {}),
+            Authorization: "Bearer token",
+          },
+        });
+      },
+    );
+  });
+
+  afterEach(() => {
+    relayService.unwatchAll();
+    vi.unstubAllGlobals();
+  });
+
+  function mcpRequestSseLine(
+    overrides: Partial<{
+      requestId: string;
+      server: string;
+      expiresAt: string;
+    }> = {},
+  ): string {
+    const event = {
+      type: "mcp_request",
+      requestId: overrides.requestId ?? "req-1",
+      server: overrides.server ?? "slack",
+      payload: { jsonrpc: "2.0", id: 1, method: "initialize" },
+      expiresAt:
+        overrides.expiresAt ?? new Date(Date.now() + 60_000).toISOString(),
+    };
+    return `data: ${JSON.stringify(event)}\n\n`;
+  }
+
+  function watchRun(runId: string): void {
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse({
+        id: runId,
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+    relayService.watch({
+      taskId: "task-1",
+      runId,
+      apiHost: "https://app.example.com",
+      teamId: 2,
+      resumeFromEntryCount: 0,
+    });
+  }
+
+  it("drops a relay request for a server the run never designated", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(mcpRequestSseLine({ server: "slack" })),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["grafana"]);
+    watchRun("run-1");
+
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it("executes a designated relay request exactly once and posts mcp_response", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({ requestId: "req-1", server: "slack" }) +
+          mcpRequestSseLine({ requestId: "req-1", server: "slack" }),
+      ),
+    );
+    mockNetFetch.mockResolvedValueOnce(createJsonResponse({ result: {} }));
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+    // The duplicate line above must not trigger a second execution.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).toHaveBeenCalledOnce();
+    expect(mcpRelayExecutor.execute).toHaveBeenCalledWith(
+      "run-1",
+      "slack",
+      expect.objectContaining({ method: "initialize" }),
+    );
+
+    await waitFor(() =>
+      mockNetFetch.mock.calls.some(([url]) =>
+        (url as string).includes("/command/"),
+      ),
+    );
+    const commandCall = mockNetFetch.mock.calls.find(([url]) =>
+      (url as string).includes("/command/"),
+    );
+    const body = JSON.parse((commandCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual(
+      expect.objectContaining({
+        method: "mcp_response",
+        params: {
+          requestId: "req-1",
+          server: "slack",
+          payload: { jsonrpc: "2.0", id: 1, result: {} },
+        },
+      }),
+    );
+  });
+
+  it("evicts a run's relay designation once the run reaches a terminal status", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        `data: ${JSON.stringify({
+          type: "task_run_state",
+          status: "completed",
+          updated_at: "2026-01-01T00:00:01Z",
+        })}\n\n${mcpRequestSseLine({ server: "slack" })}`,
+      ),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it("drops an expired relay request without executing it", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({
+          server: "slack",
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        }),
+      ),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it("sends no mcp_response for a fire-and-forget relay execution", async () => {
+    mcpRelayExecutor.execute.mockResolvedValueOnce({});
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(mcpRequestSseLine({ server: "slack" })),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(
+      mockNetFetch.mock.calls.some(([url]) =>
+        (url as string).includes("/command/"),
+      ),
+    ).toBe(false);
+  });
+});

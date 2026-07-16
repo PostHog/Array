@@ -42,6 +42,7 @@ const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
+const MAX_HANDLED_RELAY_REQUEST_IDS = 1_000;
 
 // Authoritative end-of-stream sentinel, matched on the SSE event name (event.event, not data.type).
 // The client stops on it without consulting run status.
@@ -400,7 +401,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private markRelayRequestHandled(requestId: string): void {
     this.handledRelayRequestIds.add(requestId);
     this.handledRelayRequestOrder.push(requestId);
-    if (this.handledRelayRequestOrder.length > 1000) {
+    if (this.handledRelayRequestOrder.length > MAX_HANDLED_RELAY_REQUEST_IDS) {
       const evicted = this.handledRelayRequestOrder.shift();
       if (evicted) this.handledRelayRequestIds.delete(evicted);
     }
@@ -771,15 +772,15 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   }
 
   private stopWatcher(key: string): void {
-    const stopping = this.watchers.get(key);
-    if (stopping && this.relayDesignations.has(stopping.runId)) {
+    const watcher = this.watchers.get(key);
+    if (!watcher) return;
+
+    if (this.relayDesignations.has(watcher.runId)) {
       // No watcher → no relay events → nothing executes; release the run's
       // live server connections (stdio children included). They reopen
       // lazily if the run is watched again.
-      void this.mcpRelayExecutor?.closeRun?.(stopping.runId).catch(() => {});
+      void this.mcpRelayExecutor?.closeRun?.(watcher.runId).catch(() => {});
     }
-    const watcher = this.watchers.get(key);
-    if (!watcher) return;
 
     watcher.sseAbortController?.abort();
 
@@ -1799,6 +1800,12 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.lastSandboxAlive = nextSandboxAlive;
     if (updatedAt) {
       watcher.lastStatusUpdatedAt = updatedAt;
+    }
+
+    // A terminal run gets no further relay requests; drop its designation so
+    // the map doesn't grow for the lifetime of the app session.
+    if (isTerminalStatus(watcher.lastStatus)) {
+      this.relayDesignations.delete(watcher.runId);
     }
 
     return changed;
