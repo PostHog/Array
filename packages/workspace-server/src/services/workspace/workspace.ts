@@ -1487,13 +1487,24 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       this.getLocalWorktreePathIfExists(mainRepoPath),
     ]);
 
+    // One pass over associations and registered folders up front; per-candidate
+    // lookups would re-query the workspace tables once per worktree.
+    const occupiedPaths = new Set(
+      this.getAllTaskAssociations().flatMap((assoc) =>
+        assoc.mode === "worktree" ? [assoc.path] : [],
+      ),
+    );
+    const registeredFolderPaths = new Set(
+      this.repositoryRepo.findAll().map((repo) => repo.path),
+    );
+
     return linkedWorktrees
       .filter(
         (wt) =>
           wt.branch !== null &&
           wt.worktreePath !== localStashPath &&
-          !this.repositoryRepo.findByPath(wt.worktreePath) &&
-          this.getWorktreeTasks(wt.worktreePath).length === 0,
+          !registeredFolderPaths.has(wt.worktreePath) &&
+          !occupiedPaths.has(wt.worktreePath),
       )
       .map((wt) => ({
         worktreePath: wt.worktreePath,

@@ -98,7 +98,6 @@ export function buildWorktreeAdoptionInput(options: {
     workspaceMode: "worktree",
     branch: options.branch,
     reuseExistingWorktree: true,
-    worktreeAdoption: true,
   };
 }
 

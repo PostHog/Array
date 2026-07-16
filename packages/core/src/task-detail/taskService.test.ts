@@ -49,9 +49,9 @@ function makeService(): TaskService {
 }
 
 describe("TaskService.createTask validation", () => {
-  it("rejects a promptless input without the adoption or import markers", async () => {
+  it("rejects an input with neither content nor a taskDescription", async () => {
     const result = await makeService().createTask({
-      taskDescription: "feature/orphan",
+      content: "   ",
       repoPath: "/repo",
       workspaceMode: "worktree",
     });

@@ -31,13 +31,6 @@ export interface TaskCreationInput {
   // When a worktree is already checked out on the branch, opt in to reusing it
   // for this task instead of creating a new one (set after the user confirms).
   reuseExistingWorktree?: boolean;
-  /**
-   * Start-from-worktree flow: the task is created around an existing task-less
-   * worktree with no typed prompt — the synthesized taskDescription (the branch
-   * name) names the task and the agent session starts idle. Callers pair this
-   * with reuseExistingWorktree and branch.
-   */
-  worktreeAdoption?: boolean;
   githubIntegrationId?: number;
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;

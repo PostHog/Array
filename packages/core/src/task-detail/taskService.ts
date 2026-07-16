@@ -61,14 +61,11 @@ export class TaskService {
       hasRepo: !!input.repository,
     });
 
-    // Imported Claude Code sessions carry a transcript, not a typed prompt, so
-    // they supply a taskDescription instead of content. Worktree-adoption tasks
-    // have no prompt either — the user types their first message in the opened
-    // chat — so they too rely on a synthesized taskDescription.
+    // Promptless flows (imported Claude Code sessions, worktree adoption)
+    // synthesize a taskDescription instead of typed content; either one names
+    // the task, so either satisfies validation.
     const hasDescription =
-      !!input.content?.trim() ||
-      ((!!input.importedClaudeSession || !!input.worktreeAdoption) &&
-        !!input.taskDescription?.trim());
+      !!input.content?.trim() || !!input.taskDescription?.trim();
     if (!hasDescription) {
       return {
         success: false,

@@ -1,5 +1,6 @@
 import { CaretDownIcon, CaretRightIcon, Plus } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { INDENT_SIZE } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { useState } from "react";
@@ -46,7 +47,7 @@ export function SidebarSection({
           className="flex w-full items-center justify-between pl-2 not-hover:aria-expanded:bg-transparent"
           style={{
             marginTop: addSpacingBefore ? "12px" : undefined,
-            paddingLeft: depth ? `${depth * 8 + 8}px` : undefined,
+            paddingLeft: depth ? `${depth * INDENT_SIZE + 8}px` : undefined,
           }}
           onContextMenu={onContextMenu}
           onMouseEnter={() => setIsHovered(true)}

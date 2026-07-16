@@ -42,7 +42,6 @@ describe("buildWorktreeAdoptionInput", () => {
       workspaceMode: "worktree",
       branch: "feature/orphan",
       reuseExistingWorktree: true,
-      worktreeAdoption: true,
     });
     // No content: the saga must not build an initial prompt, so the agent
     // session starts idle in the adopted worktree.
