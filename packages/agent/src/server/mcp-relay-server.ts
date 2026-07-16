@@ -7,8 +7,6 @@ import type { RemoteMcpServer } from "./schemas";
 export const DEFAULT_RELAY_TIMEOUT_MS = 60_000;
 /** Request payloads above this are rejected before any event is emitted. */
 export const DEFAULT_MAX_REQUEST_BYTES = 64_000;
-/** No desktop activity for this long → relay endpoints answer 503. */
-export const DEFAULT_DESKTOP_IDLE_MS = 2 * 60_000;
 
 /** JSON-RPC error: the desktop app did not answer within the timeout. */
 export const RELAY_TIMEOUT_CODE = -32001;
@@ -33,12 +31,19 @@ export interface McpRelayServerConfig {
   servers: string[];
   /** Broadcast an event over the durable stream + SSE (agent-server seam). */
   emitEvent: (event: Record<string, unknown>) => void;
-  /** Millisecond timestamp of the last observed desktop activity, or null. */
-  getDesktopSeenAt: () => number | null;
+  /**
+   * Whether any client could service a relay request. Mirrors the permission
+   * relay's `hasReachableClient`: a direct SSE viewer OR an active durable
+   * event stream (the desktop reads the durable stream via the agent-proxy
+   * without ever connecting to the sandbox, so a stricter "saw the desktop
+   * directly" signal would 503 every request in that topology). False only
+   * when the run is genuinely headless — but headless runs never designate
+   * relay servers, so this is defense in depth.
+   */
+  hasReachableClient: () => boolean;
   logger: Logger;
   requestTimeoutMs?: number;
   maxRequestBytes?: number;
-  desktopIdleMs?: number;
   now?: () => number;
 }
 
@@ -139,12 +144,6 @@ export class McpRelayServer {
     return this.config.now ? this.config.now() : Date.now();
   }
 
-  private desktopIsIdle(): boolean {
-    const seenAt = this.config.getDesktopSeenAt();
-    const idleMs = this.config.desktopIdleMs ?? DEFAULT_DESKTOP_IDLE_MS;
-    return seenAt === null || this.now() - seenAt > idleMs;
-  }
-
   private createApp(): Hono {
     const app = new Hono();
 
@@ -159,9 +158,15 @@ export class McpRelayServer {
         return c.json({ error: `Unknown relay server: ${server}` }, 404);
       }
 
-      if (this.stopped || this.desktopIsIdle()) {
+      if (this.stopped || !this.config.hasReachableClient()) {
         // 503 (not a 60s hang): Claude reports a clean MCP connection error,
         // and reachability probes can treat the endpoint as unreachable.
+        this.config.logger.debug(
+          "MCP relay endpoint 503: no reachable client",
+          {
+            server,
+          },
+        );
         return c.json(
           {
             error: "MCP relay requires the desktop app, which is not connected",
@@ -213,6 +218,12 @@ export class McpRelayServer {
         payload,
         expiresAt,
       };
+      this.config.logger.debug("MCP relay request", {
+        server,
+        requestId,
+        method: payload.method,
+        isNotification: payload.id === undefined || payload.id === null,
+      });
 
       // Notifications (no id) are fire-and-forget: emit and acknowledge.
       if (payload.id === undefined || payload.id === null) {

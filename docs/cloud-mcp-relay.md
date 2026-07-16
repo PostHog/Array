@@ -95,11 +95,14 @@ Per incoming HTTP request:
 JSON-RPC *notifications* (no `id`) are relayed fire-and-forget: emit the
 event, answer 202 immediately.
 
-Liveness: the agent server already knows whether a client is reachable
-(`hasReachableClient`, used to decide question relaying). The relay adds a
-stricter signal — `desktopSeenAt`, bumped on every SSE attach and every
-received command. When no desktop activity for 2 minutes, relay endpoints
-return **HTTP 503** instead of accepting requests, so:
+Liveness: relay endpoints 503 when no client can service the request,
+reusing the permission relay's `hasReachableClient` (a direct SSE viewer OR
+an active durable event stream). An earlier design used a stricter
+`desktopSeenAt` timestamp, but in the durable-ingest topology the desktop
+reads the run's stream through the agent-proxy and never connects to the
+sandbox, so that stricter signal 503s every request — `hasReachableClient`
+is the correct gate. Relay endpoints only exist when a desktop designated
+servers at creation, so a non-headless run is the precondition anyway. So:
 
 - Claude gets an MCP connection error it reports cleanly, not a 60 s hang.
 - Codex-style reachability probes (which treat any HTTP response as

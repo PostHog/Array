@@ -22,7 +22,7 @@ let active: McpRelayServer | null = null;
 
 async function startRelay(options?: {
   servers?: string[];
-  desktopSeenAt?: () => number | null;
+  hasReachableClient?: () => boolean;
   requestTimeoutMs?: number;
   maxRequestBytes?: number;
 }): Promise<Harness> {
@@ -30,7 +30,7 @@ async function startRelay(options?: {
   const relay = new McpRelayServer({
     servers: options?.servers ?? ["slack"],
     emitEvent: (event) => events.push(event),
-    getDesktopSeenAt: options?.desktopSeenAt ?? (() => Date.now()),
+    hasReachableClient: options?.hasReachableClient ?? (() => true),
     logger,
     requestTimeoutMs: options?.requestTimeoutMs ?? 200,
     maxRequestBytes: options?.maxRequestBytes,
@@ -189,9 +189,9 @@ describe("McpRelayServer", () => {
     await expect.poll(() => events.length).toBe(1);
   });
 
-  it("answers 503 when the desktop has not been seen recently", async () => {
+  it("answers 503 when no client can service the relay", async () => {
     const { events, post } = await startRelay({
-      desktopSeenAt: () => Date.now() - 10 * 60_000,
+      hasReachableClient: () => false,
     });
     const response = await post("slack", {
       jsonrpc: "2.0",

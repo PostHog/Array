@@ -386,12 +386,6 @@ export class AgentServer {
     }
   >();
   private mcpRelayServer: McpRelayServer | null = null;
-  /**
-   * Last observed desktop activity (SSE attach or received command), for the
-   * MCP relay's 503-when-idle liveness signal. Stricter than
-   * `hasDesktopConnected`, which is a one-way "ever connected" flag.
-   */
-  private desktopSeenAt: number | null = null;
 
   /**
    * Start loopback relay endpoints for the run's designated desktop-only MCP
@@ -405,7 +399,13 @@ export class AgentServer {
       this.mcpRelayServer = new McpRelayServer({
         servers: names,
         emitEvent: (event) => this.broadcastEvent(event),
-        getDesktopSeenAt: () => this.desktopSeenAt,
+        // Same reachability signal as the permission relay: a direct SSE
+        // viewer or an active durable event stream. The desktop reads the
+        // durable stream through the agent-proxy without connecting to the
+        // sandbox, so anything stricter would 503 every request.
+        hasReachableClient: () =>
+          Boolean(this.session?.hasDesktopConnected) ||
+          this.eventStreamSender !== null,
         logger: this.logger,
       });
       await this.mcpRelayServer.start();
@@ -580,7 +580,6 @@ export class AgentServer {
           }, SSE_KEEPALIVE_INTERVAL_MS);
 
           try {
-            this.desktopSeenAt = Date.now();
             if (
               !this.session ||
               this.session.payload.run_id !== payload.run_id
@@ -639,8 +638,6 @@ export class AgentServer {
       if (!this.session || this.session.payload.run_id !== payload.run_id) {
         return c.json({ error: "No active session for this run" }, 400);
       }
-
-      this.desktopSeenAt = Date.now();
 
       const rawBody = await c.req.json().catch(() => null);
       const parseResult = jsonRpcRequestSchema.safeParse(rawBody);
