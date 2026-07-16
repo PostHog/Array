@@ -66,6 +66,7 @@ export function PlanUsageSettings() {
   const subscribed = usage?.code_usage_subscribed === true;
   const orgLimitReached = usage?.ai_credits?.exhausted === true;
   const meter = codeUsageMeter(usage);
+  const usageIsPerUser = meter.kind === "bucket";
 
   const openBilling = () => {
     if (billingUrl) window.open(billingUrl, "_blank");
@@ -163,7 +164,16 @@ export function PlanUsageSettings() {
           </Flex>
 
           <Flex direction="column" gap="3">
-            <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
+            <Flex direction="column" gap="1">
+              <Text className="font-medium text-(--gray-9) text-sm">
+                {usageIsPerUser ? "Your usage" : "Organization usage"}
+              </Text>
+              <Text className="text-(--gray-11) text-[13px]">
+                {usageIsPerUser
+                  ? "Your personal free-tier allowance for this period."
+                  : "Usage-based billing shared across your whole organization."}
+              </Text>
+            </Flex>
             {usageLoading ? (
               <Flex
                 align="center"
@@ -178,7 +188,7 @@ export function PlanUsageSettings() {
                 label={freeTier ? "Monthly free usage" : "Usage this period"}
                 percent={meter.percent}
                 valueLabel={`${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)}${freeTier ? " included" : ""}`}
-                detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt)}`}
+                detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt, { label: "Billing period ends" })}`}
                 breakdown={
                   meter.breakdown
                     ? { ...meter.breakdown, usedUsd: meter.usedUsd }

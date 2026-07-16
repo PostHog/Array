@@ -88,14 +88,14 @@ export function isUsageExceeded(usage: UsageOutput): boolean {
 
 export function formatResetTime(
   resetAtIso: string,
-  now: number = Date.now(),
+  { now = Date.now(), label = "Resets" }: { now?: number; label?: string } = {},
 ): string {
   const parsed = Date.parse(resetAtIso);
   const ms = Number.isNaN(parsed) ? 0 : Math.max(0, parsed - now);
 
   const totalMinutes = Math.ceil(ms / 60_000);
-  if (totalMinutes <= 0) return "Resets shortly";
-  if (totalMinutes < 60) return `Resets in ${totalMinutes}m`;
+  if (totalMinutes <= 0) return `${label} shortly`;
+  if (totalMinutes < 60) return `${label} in ${totalMinutes}m`;
 
   const totalHours = ms / 3_600_000;
   if (totalHours < 24) {
@@ -106,8 +106,8 @@ export function formatResetTime(
       minutes = 0;
     }
     return minutes === 0
-      ? `Resets in ${hours}h`
-      : `Resets in ${hours}h ${minutes}m`;
+      ? `${label} in ${hours}h`
+      : `${label} in ${hours}h ${minutes}m`;
   }
 
   const target = new Date(now + ms);
@@ -120,5 +120,5 @@ export function formatResetTime(
     minute: "2-digit",
     timeZoneName: "short",
   });
-  return `Resets ${date} at ${time}`;
+  return `${label} ${date} at ${time}`;
 }
