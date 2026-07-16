@@ -3,7 +3,11 @@ import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { AgentServer } from "./agent-server";
-import { claudeCodeConfigSchema, mcpServersSchema } from "./schemas";
+import {
+  claudeCodeConfigSchema,
+  mcpServersSchema,
+  relayMcpServerNamesSchema,
+} from "./schemas";
 
 const envSchema = z.object({
   JWT_PUBLIC_KEY: z
@@ -106,6 +110,10 @@ program
     "--mcpServers <json>",
     "MCP servers config as JSON array (ACP McpServer[] format)",
   )
+  .option(
+    "--relayMcpServers <json>",
+    "Desktop-relayed MCP server names as JSON array (docs/cloud-mcp-relay.md)",
+  )
   .option("--createPr <boolean>", "Whether this run may publish changes")
   .option(
     "--autoPublish <boolean>",
@@ -144,6 +152,11 @@ program
       options.mcpServers,
       mcpServersSchema,
       "--mcpServers",
+    );
+    const relayMcpServers = parseJsonOption(
+      options.relayMcpServers,
+      relayMcpServerNamesSchema,
+      "--relayMcpServers",
     );
     const claudeCode = parseJsonOption(
       options.claudeCodeConfig,
@@ -194,6 +207,7 @@ program
       createPr,
       autoPublish,
       mcpServers,
+      relayMcpServers,
       baseBranch: options.baseBranch,
       claudeCode,
       allowedDomains,

@@ -25,7 +25,6 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
-import { useSeat } from "@posthog/ui/features/billing/useSeat";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { AdvancedSettings } from "@posthog/ui/features/settings/sections/AdvancedSettings";
@@ -48,6 +47,7 @@ import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/setti
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import * as nav from "@posthog/ui/router/navigationBridge";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Avatar, Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import { type ReactNode, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -81,6 +81,18 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
   { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
 ];
+
+// Settings that only make sense with a local filesystem/host (local worktrees,
+// terminal, the local `claude` CLI, the desktop app itself). Hidden on the
+// cloud-only web host.
+const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
+  "workspaces",
+  "worktrees",
+  "terminal",
+  "claude-code",
+  "discord",
+  "updates",
+]);
 
 const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   general: "General",
@@ -153,18 +165,34 @@ export function SettingsPanel({
   );
   const client = useOptionalAuthenticatedClient();
   const { data: user } = useCurrentUser({ client });
-  const { seat, planLabel } = useSeat();
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const { localWorkspaces } = useHostCapabilities();
   const logoutMutation = useLogoutMutation();
 
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const sidebarItems = useMemo(
     () =>
-      billingEnabled || spendAnalysisEnabled
-        ? SIDEBAR_ITEMS
-        : SIDEBAR_ITEMS.filter((item) => item.id !== "plan-usage"),
-    [billingEnabled, spendAnalysisEnabled],
+      SIDEBAR_ITEMS.filter((item) => {
+        if (
+          item.id === "plan-usage" &&
+          !billingEnabled &&
+          !spendAnalysisEnabled
+        )
+          return false;
+        if (!localWorkspaces && LOCAL_ONLY_CATEGORIES.has(item.id))
+          return false;
+        return true;
+      }),
+    [billingEnabled, spendAnalysisEnabled, localWorkspaces],
   );
+
+  // Guard direct navigation (URL, deep link, programmatic openSettings) to a
+  // category hidden on this host. Fall back to General so a hidden section is
+  // never rendered.
+  const resolvedCategory: SettingsCategory =
+    !localWorkspaces && LOCAL_ONLY_CATEGORIES.has(activeCategory)
+      ? "general"
+      : activeCategory;
 
   useHotkeys("escape", close, {
     enabled: true,
@@ -173,12 +201,12 @@ export function SettingsPanel({
     preventDefault: true,
   });
 
-  const ActiveComponent = CATEGORY_COMPONENTS[activeCategory];
+  const ActiveComponent = CATEGORY_COMPONENTS[resolvedCategory];
 
   const activeCategoryIcon = SIDEBAR_ITEMS.find(
     (item) =>
-      item.id === activeCategory ||
-      (item.id === "environments" && activeCategory === "cloud-environments"),
+      item.id === resolvedCategory ||
+      (item.id === "environments" && resolvedCategory === "cloud-environments"),
   )?.icon;
 
   const initials = getUserInitials(user);
@@ -204,11 +232,6 @@ export function SettingsPanel({
               <Text truncate className="font-medium text-sm">
                 {user.email}
               </Text>
-              {seat && (
-                <Text className="text-(--gray-9) text-[13px]">
-                  {planLabel} Plan
-                </Text>
-              )}
             </Flex>
           </Flex>
         )}
@@ -226,9 +249,9 @@ export function SettingsPanel({
           <div className="flex flex-col pt-2">
             {sidebarItems.map((item) => {
               const isActive =
-                activeCategory === item.id ||
+                resolvedCategory === item.id ||
                 (item.id === "environments" &&
-                  activeCategory === "cloud-environments");
+                  resolvedCategory === "cloud-environments");
               return (
                 <SidebarNavItem
                   key={item.id}
@@ -298,7 +321,7 @@ export function SettingsPanel({
                       <span className="text-gray-10">{activeCategoryIcon}</span>
                     )}
                     <Text className="font-medium text-lg leading-6.5">
-                      {CATEGORY_TITLES[activeCategory]}
+                      {CATEGORY_TITLES[resolvedCategory]}
                     </Text>
                   </Flex>
                 )}

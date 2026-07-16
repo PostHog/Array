@@ -8,6 +8,7 @@ import {
   isAnthropicModel,
   isBlockedModelId,
   isCloudflareModel,
+  pickAllowedModel,
 } from "./gateway-models";
 
 const model = (id: string, owned_by = ""): GatewayModel => ({
@@ -16,6 +17,7 @@ const model = (id: string, owned_by = ""): GatewayModel => ({
   context_window: 128000,
   supports_streaming: true,
   supports_vision: false,
+  allowed: true,
 });
 
 describe("formatGatewayModelName", () => {
@@ -27,6 +29,7 @@ describe("formatGatewayModelName", () => {
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
+        allowed: true,
       }),
     ).toBe("Claude Opus 4.8");
   });
@@ -39,6 +42,7 @@ describe("formatGatewayModelName", () => {
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
+        allowed: true,
       }),
     ).toBe("gpt-5.5");
   });
@@ -51,6 +55,7 @@ describe("formatGatewayModelName", () => {
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
+        allowed: true,
       }),
     ).toBe("gpt-5.5");
   });
@@ -63,6 +68,7 @@ describe("formatGatewayModelName", () => {
         context_window: 128000,
         supports_streaming: true,
         supports_vision: false,
+        allowed: true,
       }),
     ).toBe("glm-5.2");
   });
@@ -167,6 +173,60 @@ describe("gateway model fetch timeout", () => {
   );
 });
 
+describe("gateway models cache", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const modelsResponse = (allowed: boolean) =>
+    new Response(
+      JSON.stringify({
+        object: "list",
+        data: [
+          {
+            id: "claude-opus-4-8",
+            owned_by: "anthropic",
+            context_window: 200000,
+            supports_streaming: true,
+            supports_vision: true,
+            allowed,
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  // Restriction marks are org-scoped: an org switch swaps the token in the
+  // same process, and the old org's marks must not be served to the new one.
+  it("does not serve one token's marks to another token", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(modelsResponse(false))
+      .mockResolvedValueOnce(modelsResponse(true));
+    const gatewayUrl = "https://gateway.token-key-test";
+
+    const first = await fetchGatewayModels({ gatewayUrl, authToken: "tok-a" });
+    const second = await fetchGatewayModels({ gatewayUrl, authToken: "tok-b" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(first[0]?.allowed).toBe(false);
+    expect(second[0]?.allowed).toBe(true);
+  });
+
+  it("serves the cached list to the same token without refetching", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(modelsResponse(false));
+    const gatewayUrl = "https://gateway.token-cache-hit-test";
+
+    await fetchGatewayModels({ gatewayUrl, authToken: "tok-a" });
+    const cached = await fetchGatewayModels({ gatewayUrl, authToken: "tok-a" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(cached[0]?.allowed).toBe(false);
+  });
+});
+
 describe("isCloudflareModel", () => {
   it.each([
     { id: "@cf/zai-org/glm-5.2", owned_by: "cloudflare", expected: true },
@@ -187,5 +247,48 @@ describe("isCloudflareModel", () => {
     const glm = model("@cf/zai-org/glm-5.2", "cloudflare");
     expect(isCloudflareModel(glm)).toBe(true);
     expect(isAnthropicModel(glm)).toBe(false);
+  });
+});
+
+describe("pickAllowedModel", () => {
+  const entry = (id: string, allowed: boolean) => ({ id, allowed });
+
+  it.each([
+    [
+      "keeps an allowed preferred model",
+      [entry("claude-opus-4-8", true)],
+      "claude-opus-4-8",
+      "claude-opus-4-8",
+    ],
+    [
+      "keeps a preferred model absent from the list",
+      [entry("claude-opus-4-8", true)],
+      "claude-sonnet-5",
+      "claude-sonnet-5",
+    ],
+    [
+      "moves a restricted preferred model to the newest allowed one",
+      [
+        entry("claude-opus-4-8", false),
+        entry("claude-sonnet-4-6", true),
+        entry("@cf/zai-org/glm-5.2", true),
+      ],
+      "claude-opus-4-8",
+      "@cf/zai-org/glm-5.2",
+    ],
+    [
+      "keeps the preferred model when everything is restricted",
+      [entry("claude-opus-4-8", false)],
+      "claude-opus-4-8",
+      "claude-opus-4-8",
+    ],
+    [
+      "keeps the preferred model when the list is empty",
+      [],
+      "claude-opus-4-8",
+      "claude-opus-4-8",
+    ],
+  ] as const)("%s", (_name, models, preferred, expected) => {
+    expect(pickAllowedModel(models, preferred)).toBe(expected);
   });
 });

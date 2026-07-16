@@ -1,6 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { Saga } from "@posthog/shared";
-import { POSTHOG_NOTIFICATIONS } from "../acp-extensions";
+import { type NativeGoalState, POSTHOG_NOTIFICATIONS } from "../acp-extensions";
 import type { PostHogAPIClient } from "../posthog-api";
 import type {
   DeviceInfo,
@@ -37,6 +37,7 @@ export interface ResumeOutput {
   lastDevice?: DeviceInfo;
   logEntryCount: number;
   sessionId: string | null;
+  nativeGoal?: NativeGoalState | null;
 }
 
 export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
@@ -91,6 +92,9 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
     const sessionId = await this.readOnlyStep("find_session_id", () =>
       Promise.resolve(this.findSessionId(entries)),
     );
+    const nativeGoal = await this.readOnlyStep("find_native_goal", () =>
+      Promise.resolve(this.findNativeGoal(entries)),
+    );
 
     this.log.info("Resume state rebuilt", {
       turns: conversation.length,
@@ -106,6 +110,7 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       lastDevice,
       logEntryCount: entries.length,
       sessionId,
+      nativeGoal,
     };
   }
 
@@ -116,7 +121,45 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
       interrupted: false,
       logEntryCount: 0,
       sessionId: null,
+      nativeGoal: undefined,
     };
+  }
+
+  private findNativeGoal(
+    entries: StoredNotification[],
+  ): NativeGoalState | null | undefined {
+    const statuses = new Set<NativeGoalState["status"]>([
+      "active",
+      "paused",
+      "blocked",
+      "usageLimited",
+      "budgetLimited",
+      "complete",
+    ]);
+    const methods = new Set([
+      POSTHOG_NOTIFICATIONS.CODEX_GOAL,
+      `_${POSTHOG_NOTIFICATIONS.CODEX_GOAL}`,
+    ]);
+    for (let index = entries.length - 1; index >= 0; index--) {
+      const notification = entries[index].notification;
+      if (!methods.has(notification?.method ?? "")) continue;
+      const goal = (notification?.params as { goal?: unknown } | undefined)
+        ?.goal;
+      if (goal === null) return null;
+      if (!goal || typeof goal !== "object") continue;
+      const value = goal as Record<string, unknown>;
+      if (
+        typeof value.objective === "string" &&
+        typeof value.status === "string" &&
+        statuses.has(value.status as NativeGoalState["status"])
+      ) {
+        return {
+          objective: value.objective,
+          status: value.status as NativeGoalState["status"],
+        };
+      }
+    }
+    return undefined;
   }
 
   private findSessionId(entries: StoredNotification[]): string | null {

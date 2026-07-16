@@ -25,6 +25,7 @@ import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
 import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
 import { AutoresearchComposerControls } from "../../autoresearch/AutoresearchComposerControls";
@@ -188,6 +189,8 @@ export function TaskInput({
     setLastUsedAdapter,
     lastUsedCloudRepository,
     setLastUsedCloudRepository,
+    cachedCloudDefaultBranchMap,
+    setCachedCloudDefaultBranch,
     allowBypassPermissions,
     setLastUsedEnvironment,
     getLastUsedEnvironment,
@@ -317,6 +320,8 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
+  // Force cloud mode on cloud-only hosts (web).
+  const { localWorkspaces } = useHostCapabilities();
   const cloudModeEnabled = useCloudModeEnabled();
   const flagsLoaded = useFeatureFlagsLoaded();
   const reposReady = areReposReady({
@@ -327,6 +332,7 @@ export function TaskInput({
 
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
+    if (!localWorkspaces) return "cloud";
     return resolveWorkspaceModePreference({
       preferredMode: lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE,
       cloudModeEnabled,
@@ -353,6 +359,7 @@ export function TaskInput({
     const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
     if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
+    if (!localWorkspaces) return;
     setWorkspaceModeState(
       resolveWorkspaceModePreference({
         preferredMode,
@@ -365,6 +372,7 @@ export function TaskInput({
     settingsHydrated,
     lastUsedWorkspaceMode,
     initialCloudRepository,
+    localWorkspaces,
     cloudSignalsSettled,
     cloudModeEnabled,
     hasGithubIntegration,
@@ -424,7 +432,33 @@ export function TaskInput({
     cloudBranchSearchQuery,
   );
   const cloudBranches = cloudBranchData?.branches;
-  const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  const liveCloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  // Serve the persisted default branch until the live list resolves, so the
+  // majority "start on trunk" case pre-selects trunk with zero wait on a cold
+  // start. The cached value is best-effort: if it's stale (a default branch
+  // renamed since it was cached), `cloudDefaultBranch` switches to the live
+  // value on arrival and BranchSelector re-selects it — as long as the user
+  // hasn't picked a branch of their own in the meantime.
+  const cloudDefaultBranch =
+    liveCloudDefaultBranch ??
+    (selectedCloudRepository
+      ? (cachedCloudDefaultBranchMap[selectedCloudRepository] ?? null)
+      : null);
+
+  // Persist the freshly loaded default branch so the next cold start can
+  // pre-select trunk immediately.
+  useEffect(() => {
+    if (selectedCloudRepository && liveCloudDefaultBranch) {
+      setCachedCloudDefaultBranch(
+        selectedCloudRepository,
+        liveCloudDefaultBranch,
+      );
+    }
+  }, [
+    selectedCloudRepository,
+    liveCloudDefaultBranch,
+    setCachedCloudDefaultBranch,
+  ]);
 
   const {
     branchOpen,
@@ -696,6 +730,8 @@ export function TaskInput({
     runtimeAdapter: adapter ?? null,
     model: effectiveModel,
     reasoningEffort: effectiveReasoningLevel,
+    sandboxEnvironmentId: workspaceMode === "cloud" ? selectedCloudEnvId : null,
+    customImageId: workspaceMode === "cloud" ? selectedCustomImageId : null,
   });
 
   const branchForTaskCreation =
@@ -1311,7 +1347,7 @@ export function TaskInput({
                     <span className="shrink-0 text-gray-10">Using:</span>
                     <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
                       {onContextChipClick ? (
-                        <Tooltip content="View this context">
+                        <Tooltip content="View this CONTEXT.md">
                           <button
                             type="button"
                             onClick={onContextChipClick}
@@ -1331,11 +1367,11 @@ export function TaskInput({
                           </span>
                         </>
                       )}
-                      <Tooltip content="Don't include this context">
+                      <Tooltip content="Don't include this CONTEXT.md">
                         <button
                           type="button"
                           onClick={() => setChannelContextDismissed(true)}
-                          aria-label="Remove context from prompt"
+                          aria-label="Remove CONTEXT.md from prompt"
                           className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
                         >
                           <X size={12} />

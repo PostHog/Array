@@ -9,7 +9,6 @@ export interface LlmGatewayAuth {
 export interface LlmGatewayEndpoints {
   messagesUrl(apiHost: string): string;
   usageUrl(apiHost: string): string;
-  invalidatePlanCacheUrl(apiHost: string): string;
   defaultModel: string;
 }
 

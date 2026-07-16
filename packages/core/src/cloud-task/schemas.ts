@@ -64,11 +64,21 @@ export const sendCommandInput = z.object({
     "close",
     "permission_response",
     "set_config_option",
+    "mcp_response",
   ]),
   params: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type SendCommandInput = z.infer<typeof sendCommandInput>;
+
+export const designateRelayedMcpServersInput = z.object({
+  runId: z.string(),
+  servers: z.array(z.string().min(1)).max(20),
+});
+
+export type DesignateRelayedMcpServersInput = z.infer<
+  typeof designateRelayedMcpServersInput
+>;
 
 export const sendCommandOutput = z.object({
   success: z.boolean(),

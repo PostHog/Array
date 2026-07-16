@@ -96,6 +96,27 @@ export const refreshSessionParamsSchema = z.object({
   mcpServers: mcpServersSchema,
 });
 
+/**
+ * Names of desktop-only local MCP servers designated for relaying into this
+ * run (docs/cloud-mcp-relay.md). Names only — the sandbox never learns the
+ * server's configuration.
+ */
+export const relayMcpServerNamesSchema = z
+  .array(z.string().min(1).max(64))
+  .max(20);
+
+/** Desktop → sandbox reply to an `mcp_request` event. */
+export const mcpResponseParamsSchema = z
+  .object({
+    requestId: z.string().min(1, "requestId is required"),
+    server: z.string().min(1, "server is required"),
+    payload: z.record(z.string(), z.unknown()).optional(),
+    error: z.object({ code: z.number(), message: z.string() }).optional(),
+  })
+  .refine((params) => Boolean(params.payload) !== Boolean(params.error), {
+    error: "Exactly one of payload or error is required",
+  });
+
 export const closeParamsSchema = z
   .object({
     localGitState: handoffLocalGitStateSchema.optional(),
@@ -116,6 +137,9 @@ export const commandParamsSchemas = {
   refresh_session: refreshSessionParamsSchema,
   "posthog/refresh_session": refreshSessionParamsSchema,
   "_posthog/refresh_session": refreshSessionParamsSchema,
+  mcp_response: mcpResponseParamsSchema,
+  "posthog/mcp_response": mcpResponseParamsSchema,
+  "_posthog/mcp_response": mcpResponseParamsSchema,
 } as const;
 
 export type CommandMethod = keyof typeof commandParamsSchemas;

@@ -7,6 +7,10 @@ import {
 } from "@posthog/host-router/client";
 import { HostTRPCProvider } from "@posthog/host-router/react";
 import type { HostRouter } from "@posthog/host-router/router";
+import {
+  FEATURE_FLAGS,
+  type FeatureFlags,
+} from "@posthog/ui/features/feature-flags/identifiers";
 import { DIFF_WORKER_FACTORY } from "@posthog/ui/shell/diffWorkerHost";
 import { IMPERATIVE_QUERY_CLIENT } from "@posthog/ui/shell/queryClient";
 import type { Decorator } from "@storybook/react-vite";
@@ -93,9 +97,21 @@ function inertServiceStub(): unknown {
 // A ServiceContainer that resolves the few services stories genuinely need and
 // falls back to an inert stub for everything else. `isBound` stays truthful so
 // `useServiceOptional` still returns null for unbound optional services.
+// Stubs are cached per service id: hooks use the resolved service as an
+// effect/memo dependency (e.g. useFeatureFlag), and a fresh Proxy per `get`
+// re-fires those effects every render — an infinite setState loop.
 function storyContainer(bindings: Container): ServiceContainer {
+  const stubs = new Map<unknown, unknown>();
+  const stubFor = (id: unknown) => {
+    let stub = stubs.get(id);
+    if (!stub) {
+      stub = inertServiceStub();
+      stubs.set(id, stub);
+    }
+    return stub;
+  };
   return {
-    get: (id) => (bindings.isBound(id) ? bindings.get(id) : inertServiceStub()),
+    get: (id) => (bindings.isBound(id) ? bindings.get(id) : stubFor(id)),
     getAll: (id) => (bindings.isBound(id) ? bindings.getAll(id) : []),
     isBound: (id) => bindings.isBound(id),
     bind: (id) => bindings.bind(id),
@@ -132,6 +148,12 @@ function createProviderStack(): ProviderStack {
     .toConstantValue(noopHostClient);
   bindings.bind(IMPERATIVE_QUERY_CLIENT).toConstantValue(queryClient);
   bindings.bind(DIFF_WORKER_FACTORY).toConstantValue(() => stubWorker);
+  // Real (not inert-proxy) flags: isEnabled must return an actual boolean, or
+  // every flag reads as enabled and useFeatureFlag's state never settles.
+  bindings.bind<FeatureFlags>(FEATURE_FLAGS).toConstantValue({
+    isEnabled: () => false,
+    onFlagsLoaded: () => () => {},
+  });
   const container = storyContainer(bindings);
   setRootContainer(container);
 

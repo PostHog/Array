@@ -40,8 +40,14 @@ export function InboxSearchFilterBar({
   const toggleSourceProduct = useInboxSignalsFilterStore(
     (s) => s.toggleSourceProduct,
   );
+  const clearSourceProductFilter = useInboxSignalsFilterStore(
+    (s) => s.clearSourceProductFilter,
+  );
   const priorityFilter = useInboxSignalsFilterStore((s) => s.priorityFilter);
   const togglePriority = useInboxSignalsFilterStore((s) => s.togglePriority);
+  const setPriorityFilter = useInboxSignalsFilterStore(
+    (s) => s.setPriorityFilter,
+  );
 
   const activeSort = INBOX_SORT_OPTIONS.find(
     (option) =>
@@ -73,6 +79,10 @@ export function InboxSearchFilterBar({
         active={sourceProductFilter.length > 0}
       >
         <Flex direction="column" gap="0">
+          <InboxFilterAnyItem
+            active={sourceProductFilter.length === 0}
+            onClick={clearSourceProductFilter}
+          />
           {INBOX_SOURCE_OPTIONS.map((option) => {
             const isActive = sourceProductFilter.includes(option.value);
             return (
@@ -132,6 +142,10 @@ export function InboxSearchFilterBar({
         active={priorityFilter.length > 0}
       >
         <Flex direction="column" gap="0">
+          <InboxFilterAnyItem
+            active={priorityFilter.length === 0}
+            onClick={() => setPriorityFilter([])}
+          />
           {INBOX_PRIORITY_OPTIONS.map((option) => {
             const isActive = priorityFilter.includes(option.value);
             return (
@@ -157,6 +171,23 @@ export function InboxSearchFilterBar({
         </Flex>
       </InboxFilterPopover>
     </Flex>
+  );
+}
+
+function InboxFilterAnyItem({
+  active,
+  onClick,
+}: {
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={FILTER_ITEM_CLASS} onClick={onClick}>
+      <span className="truncate">Any</span>
+      {active ? (
+        <CheckIcon size={12} className="shrink-0 text-gray-12" />
+      ) : null}
+    </button>
   );
 }
 

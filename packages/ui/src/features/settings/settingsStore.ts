@@ -107,6 +107,10 @@ interface SettingsStore {
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
   cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+  // Last-known default ("trunk") branch per cloud repo, keyed by lowercased
+  // "owner/repo". Persisted so a cold start can pre-select trunk in the branch
+  // picker immediately, before the (slow) live branch list resolves.
+  cachedCloudDefaultBranchMap: Record<string, string>;
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
@@ -126,6 +130,7 @@ interface SettingsStore {
   setCachedCloudRepositoryMap: (
     map: Record<string, UserRepositoryIntegrationRef>,
   ) => void;
+  setCachedCloudDefaultBranch: (repo: string, branch: string) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -289,6 +294,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
+      cachedCloudDefaultBranchMap: {},
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
@@ -308,6 +314,16 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedCloudRepository: repo }),
       setCachedCloudRepositoryMap: (map) =>
         set({ cachedCloudRepositoryMap: map }),
+      setCachedCloudDefaultBranch: (repo, branch) =>
+        set((state) => {
+          if (state.cachedCloudDefaultBranchMap[repo] === branch) return {};
+          return {
+            cachedCloudDefaultBranchMap: {
+              ...state.cachedCloudDefaultBranchMap,
+              [repo]: branch,
+            },
+          };
+        }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -498,6 +514,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
+        cachedCloudDefaultBranchMap: state.cachedCloudDefaultBranchMap,
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,

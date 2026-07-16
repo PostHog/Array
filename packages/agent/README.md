@@ -126,6 +126,8 @@ start()
 
 The two tapping layers are distinct. The inner tap (from `createAcpConnection`) persists to logs. The outer tap (in `AgentServer`) broadcasts to SSE. This means log persistence works for both cloud and local, while SSE broadcast is cloud-only.
 
+Adapters must remove provider notifications that do not belong to the active parent session before writing ACP updates. Persisted ACP updates do not retain enough provider-specific identity to separate a subagent transcript or completion from its parent safely during cloud replay.
+
 ### HTTP endpoints
 
 | Method | Path       | Auth | Description                                              |

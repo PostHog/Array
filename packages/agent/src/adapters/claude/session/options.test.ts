@@ -5,7 +5,7 @@ import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
-import { buildSessionOptions } from "./options";
+import { buildSessionOptions, buildSystemPrompt } from "./options";
 import { SettingsManager } from "./settings";
 
 const GIT_COMMIT_HOOK_INPUT = {
@@ -405,5 +405,68 @@ describe("buildSessionOptions", () => {
 
       expect(headers).toBe(expected);
     });
+  });
+});
+
+describe("buildSystemPrompt", () => {
+  const promptText = (prompt: Options["systemPrompt"]): string => {
+    if (typeof prompt === "string") return prompt;
+    if (Array.isArray(prompt)) return prompt.join("\n");
+    return prompt?.append ?? "";
+  };
+
+  const prompts = [
+    { name: "default preset", customPrompt: undefined },
+    { name: "string prompt", customPrompt: "You are a test agent." },
+    {
+      name: "preset with append",
+      customPrompt: {
+        type: "preset",
+        preset: "claude_code",
+        append: "Custom append.",
+      },
+    },
+  ];
+
+  it.each(prompts)(
+    "appends the narration block with narration on ($name)",
+    ({ customPrompt }) => {
+      const prompt = buildSystemPrompt(customPrompt, { spokenNarration: true });
+      expect(promptText(prompt)).toContain("# Spoken Narration");
+    },
+  );
+
+  it.each(prompts)(
+    "omits the narration block with narration off ($name)",
+    ({ customPrompt }) => {
+      const prompt = buildSystemPrompt(customPrompt, {
+        spokenNarration: false,
+      });
+      expect(promptText(prompt)).not.toContain("Spoken Narration");
+    },
+  );
+
+  it.each(prompts)(
+    "omits the narration block when opts are absent ($name)",
+    ({ customPrompt }) => {
+      const prompt = buildSystemPrompt(customPrompt);
+      expect(promptText(prompt)).not.toContain("Spoken Narration");
+    },
+  );
+
+  it("keeps the custom prompt ahead of the appended instructions", () => {
+    const prompt = buildSystemPrompt("You are a test agent.", {
+      spokenNarration: true,
+    });
+    expect(typeof prompt).toBe("string");
+    expect(prompt).toMatch(/^You are a test agent\./);
+  });
+
+  it("keeps the custom append ahead of the appended instructions", () => {
+    const prompt = buildSystemPrompt(
+      { type: "preset", preset: "claude_code", append: "Custom append." },
+      { spokenNarration: true },
+    );
+    expect(promptText(prompt)).toMatch(/^Custom append\./);
   });
 });

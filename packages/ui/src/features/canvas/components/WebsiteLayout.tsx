@@ -19,6 +19,7 @@ import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTe
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFrameHost";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   useDashboard,
   useDashboardMutations,
@@ -32,6 +33,8 @@ import {
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
+import { TaskHeaderActions } from "@posthog/ui/features/task-detail/components/TaskHeaderActions";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
@@ -299,7 +302,14 @@ export function WebsiteLayout() {
 
   const channelId = params.channelId;
   const dashboardId = params.dashboardId;
+  const taskId = params.taskId;
   const base = channelId ? `/website/${channelId}` : "/website";
+
+  const { data: tasks } = useTasks();
+  const { tasks: filedTasks } = useChannelTasks(channelId);
+  const channelTask = filedTasks.some((record) => record.taskId === taskId)
+    ? tasks?.find((task) => task.id === taskId)
+    : undefined;
 
   const { channels } = useChannels();
   const channelName = channelId
@@ -329,7 +339,14 @@ export function WebsiteLayout() {
           gap="2"
           className="h-10 shrink-0 border-gray-6 border-b px-3"
         >
-          {headerContent}
+          <Flex
+            align="center"
+            justify="between"
+            className="h-full min-w-0 flex-1 overflow-hidden"
+          >
+            {headerContent}
+          </Flex>
+          {channelTask && <TaskHeaderActions task={channelTask} />}
         </Flex>
       )}
 

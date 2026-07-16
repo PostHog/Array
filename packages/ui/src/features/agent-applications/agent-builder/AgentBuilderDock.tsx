@@ -23,7 +23,6 @@ import { useAgentChatPendingApproval } from "../hooks/useAgentChatPendingApprova
 import { agentIngressBaseUrl } from "../utils/ingress";
 import { AgentBuilderMcpConnectDialog } from "./AgentBuilderMcpConnectDialog";
 import { AgentBuilderSecretForm } from "./AgentBuilderSecretForm";
-import { AgentBuilderSeedDialog } from "./AgentBuilderSeedDialog";
 import {
   AGENT_BUILDER_CHAT_ID,
   AGENT_BUILDER_SLUG,
@@ -322,37 +321,22 @@ export function AgentBuilderDock() {
     setPendingMcpConnect(null);
   }
 
-  // Edit-with-AI hand-offs: send the seeded prompt once when a new seed lands.
-  // An empty dock starts immediately; if a chat is already in progress, confirm
-  // whether to start fresh or continue (so a deliberate "New agent" / "Edit with
-  // AI" doesn't silently wipe or append onto an unrelated conversation).
+  // Contextual hand-offs ("New agent" / "Edit with AI" / …): prefill the
+  // seeded prompt into the composer when a new seed lands — never send it. The
+  // user reviews and hits send, so opening the dock doesn't fire a chat on its
+  // own. Prefilling is non-destructive, so no start-fresh-vs-continue prompt is
+  // needed: it drops into whatever chat is open, and the header "New chat" (+)
+  // clears first if the user wants a fresh conversation.
   const lastSeedRef = useRef(0);
-  const [seedConfirm, setSeedConfirm] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ text: string; token: number } | null>(
+    null,
+  );
   useEffect(() => {
     if (!seed || seed.seq === lastSeedRef.current) return;
     lastSeedRef.current = seed.seq;
     consumeSeed(seed.seq);
-    if (chat.messages.length === 0) {
-      chat.send(seed.prompt);
-    } else {
-      setSeedConfirm(seed.prompt);
-    }
-  }, [seed, chat, consumeSeed]);
-
-  function seedStartFresh() {
-    if (!seedConfirm) return;
-    setPendingSecret(null);
-    setPendingMcpConnect(null);
-    chat.newChat();
-    setLastSession(null);
-    chat.send(seedConfirm);
-    setSeedConfirm(null);
-  }
-  function seedContinue() {
-    if (!seedConfirm) return;
-    chat.send(seedConfirm);
-    setSeedConfirm(null);
-  }
+    setDraft({ text: seed.prompt, token: seed.seq });
+  }, [seed, consumeSeed]);
 
   return (
     <Flex
@@ -432,6 +416,7 @@ export function AgentBuilderDock() {
           placeholder={placeholder}
           emptyState={<AgentBuilderEmptyState page={page} onPick={chat.send} />}
           emptyHint="Ask the agent builder to inspect, debug, or edit your agents. It can see what you're looking at and walk you there."
+          draft={draft ?? undefined}
           belowConversation={
             pendingApproval ? (
               <AgentChatPendingApprovalCard
@@ -458,14 +443,6 @@ export function AgentBuilderDock() {
           onCancel={chat.cancel}
         />
       )}
-
-      <AgentBuilderSeedDialog
-        open={seedConfirm != null}
-        prompt={seedConfirm ?? ""}
-        onStartFresh={seedStartFresh}
-        onContinue={seedContinue}
-        onCancel={() => setSeedConfirm(null)}
-      />
 
       <AgentBuilderMcpConnectDialog
         pending={pendingMcpConnect}

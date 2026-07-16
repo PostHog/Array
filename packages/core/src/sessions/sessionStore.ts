@@ -1,11 +1,12 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import type {
-  AcpMessage,
-  AgentSession,
-  OptimisticItem,
-  PermissionRequest,
-  QueuedMessage,
-  TaskRunStatus,
+import {
+  type AcpMessage,
+  type AgentSession,
+  type OptimisticItem,
+  type PermissionRequest,
+  type QueuedMessage,
+  sendableQueuePrefixLength,
+  type TaskRunStatus,
 } from "@posthog/shared";
 import { setAutoFreeze } from "immer";
 import { immer } from "zustand/middleware/immer";
@@ -31,6 +32,55 @@ export const sessionStore = createStore<SessionState>()(
     taskIdIndex: {},
   })),
 );
+
+/**
+ * How many messages to drain off the head of a queue, honoring both options:
+ * `stopAtEdited` caps at the in-place edit boundary (nothing from the message
+ * being edited onward); `max` caps the count. The turn-end auto-drain passes
+ * `max: 1` so queued messages send one turn at a time instead of merged into
+ * one prompt; cancel/recall pass neither and take the whole queue.
+ */
+function drainCutoff(
+  session: AgentSession,
+  options?: { stopAtEdited?: boolean; max?: number },
+): number {
+  const sendable = options?.stopAtEdited
+    ? sendableQueuePrefixLength(session)
+    : session.messageQueue.length;
+  return options?.max != null ? Math.min(sendable, options.max) : sendable;
+}
+
+/**
+ * Drain messages off the head of the queue, honoring {@link drainCutoff}.
+ * Reads the queue from the frozen committed state BEFORE entering the immer
+ * draft, otherwise the returned items are proxies that get revoked when
+ * setState exits and any later access throws "Cannot perform 'get' on a proxy
+ * that has been revoked".
+ */
+function drainQueueHead(
+  taskId: string,
+  options?: { stopAtEdited?: boolean; max?: number },
+): QueuedMessage[] {
+  const state = sessionStore.getState();
+  const taskRunId = state.taskIdIndex[taskId];
+  if (!taskRunId) return [];
+  const session = state.sessions[taskRunId];
+  if (!session || session.messageQueue.length === 0) return [];
+
+  const cutoff = drainCutoff(session, options);
+  if (cutoff === 0) return [];
+
+  const drained = session.messageQueue.slice(0, cutoff);
+  sessionStore.setState((draft) => {
+    const trid = draft.taskIdIndex[taskId];
+    if (!trid) return;
+    const draftSession = draft.sessions[trid];
+    if (draftSession) {
+      draftSession.messageQueue = draftSession.messageQueue.slice(cutoff);
+    }
+  });
+  return drained;
+}
 
 export const sessionStoreSetters = {
   setSession: (session: AgentSession) => {
@@ -197,52 +247,100 @@ export const sessionStoreSetters = {
     });
   },
 
-  dequeueMessagesAsText: (taskId: string): string | null => {
-    // Read the queue from the frozen committed state BEFORE entering the
-    // immer draft — same rationale as `dequeueMessages`: anything captured
-    // through a draft proxy can be revoked when setState exits.
-    const state = sessionStore.getState();
-    const taskRunId = state.taskIdIndex[taskId];
-    if (!taskRunId) return null;
-    const session = state.sessions[taskRunId];
-    if (!session || session.messageQueue.length === 0) return null;
-
-    const combined = session.messageQueue
-      .map((msg) => msg.content)
-      .join("\n\n");
-    sessionStore.setState((draft) => {
-      const trid = draft.taskIdIndex[taskId];
-      if (!trid) return;
-      const draftSession = draft.sessions[trid];
-      if (draftSession) draftSession.messageQueue = [];
-    });
-    return combined;
-  },
-
-  dequeueMessages: (taskId: string): QueuedMessage[] => {
-    // Read the queue from the frozen committed state BEFORE entering the
-    // immer draft, otherwise the items returned are proxies that get
-    // revoked when setState exits and any later access throws
-    // "Cannot perform 'get' on a proxy that has been revoked".
-    const state = sessionStore.getState();
-    const taskRunId = state.taskIdIndex[taskId];
-    if (!taskRunId) return [];
-    const session = state.sessions[taskRunId];
-    if (!session || session.messageQueue.length === 0) return [];
-
-    const queuedMessages = [...session.messageQueue];
-
-    sessionStore.setState((draft) => {
-      const trid = draft.taskIdIndex[taskId];
-      if (!trid) return;
-      const draftSession = draft.sessions[trid];
-      if (draftSession) {
-        draftSession.messageQueue = [];
+  /**
+   * Move a queued message to a new position, preserving its identity. Used by
+   * the drag-to-reorder affordance: the queue drains in array order, so the
+   * order the user sees is the order the messages send.
+   */
+  moveQueuedMessage: (taskId: string, fromIndex: number, toIndex: number) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (!session) return;
+      const queue = session.messageQueue;
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= queue.length ||
+        toIndex >= queue.length ||
+        fromIndex === toIndex
+      ) {
+        return;
       }
+      const [moved] = queue.splice(fromIndex, 1);
+      if (moved) queue.splice(toIndex, 0, moved);
     });
-
-    return queuedMessages;
   },
+
+  /**
+   * Replace a queued message's content in place, keeping its id, position, and
+   * queue timestamp. Used by edit-in-place: the message is edited in the
+   * composer and re-serialized here without leaving the queue.
+   */
+  updateQueuedMessage: (
+    taskId: string,
+    messageId: string,
+    patch: { content: string; rawPrompt?: string | ContentBlock[] },
+  ) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (!session) return;
+      const message = session.messageQueue.find((m) => m.id === messageId);
+      if (!message) return;
+      message.content = patch.content;
+      message.rawPrompt = patch.rawPrompt;
+    });
+  },
+
+  /**
+   * Mark a queued message as being edited in the composer. While set it holds
+   * back the auto-drain: the message and everything after it stay queued (only
+   * the messages before it may send) until the edit is saved or cancelled.
+   */
+  setEditingQueuedMessage: (taskId: string, messageId: string) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (session) session.editingQueuedId = messageId;
+    });
+  },
+
+  /** Release the in-place edit hold set by {@link setEditingQueuedMessage}. */
+  clearEditingQueuedMessage: (taskId: string) => {
+    sessionStore.setState((state) => {
+      const taskRunId = state.taskIdIndex[taskId];
+      if (!taskRunId) return;
+      const session = state.sessions[taskRunId];
+      if (session) session.editingQueuedId = undefined;
+    });
+  },
+
+  /**
+   * Drain messages off the head of the queue as one combined string. See
+   * {@link drainCutoff} for the `stopAtEdited`/`max` semantics; cancel/recall
+   * pass no options and pull the whole queue back into the composer.
+   */
+  dequeueMessagesAsText: (
+    taskId: string,
+    options?: { stopAtEdited?: boolean; max?: number },
+  ): string | null => {
+    const drained = drainQueueHead(taskId, options);
+    if (drained.length === 0) return null;
+    return drained.map((msg) => msg.content).join("\n\n");
+  },
+
+  /**
+   * Drain messages off the head of the queue as raw messages. See
+   * {@link dequeueMessagesAsText} for the `stopAtEdited`/`max` semantics.
+   */
+  dequeueMessages: (
+    taskId: string,
+    options?: { stopAtEdited?: boolean; max?: number },
+  ): QueuedMessage[] => drainQueueHead(taskId, options),
 
   /**
    * Splice messages back at the head of the queue. Used to roll back a

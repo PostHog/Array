@@ -74,6 +74,19 @@ const RATE_LIMIT_PATTERNS = [
   "[429]",
 ] as const;
 
+export type GatewayLimitCause = "model_gate" | "org_limit";
+
+const MODEL_GATE_PATTERNS = ["needs a paid posthog plan"] as const;
+
+const ORG_LIMIT_PATTERNS = [
+  "reached its posthog code usage limit",
+  "reached its usage limit for this billing period",
+  // Per-user free valves — billed orgs have none, so these always mean the
+  // free tier is used up.
+  "user burst rate limit exceeded",
+  "user sustained rate limit exceeded",
+] as const;
+
 const FATAL_SESSION_ERROR_PATTERNS = [
   "internal error",
   "process exited",
@@ -121,6 +134,17 @@ export function isRateLimitError(
   );
 }
 
+export function classifyGatewayLimitError(
+  errorMessage: string,
+  errorDetails?: string,
+): GatewayLimitCause | null {
+  const matches = (patterns: readonly string[]) =>
+    includesAny(errorMessage, patterns) || includesAny(errorDetails, patterns);
+  if (matches(MODEL_GATE_PATTERNS)) return "model_gate";
+  if (matches(ORG_LIMIT_PATTERNS)) return "org_limit";
+  return null;
+}
+
 export function isTransientUpstreamError(
   errorMessage: string,
   errorDetails?: string,
@@ -137,6 +161,9 @@ export function isFatalSessionError(
 ): boolean {
   if (isRateLimitError(errorMessage, errorDetails)) return false;
   if (isTransientUpstreamError(errorMessage, errorDetails)) return false;
+  if (classifyGatewayLimitError(errorMessage, errorDetails) === "model_gate") {
+    return false;
+  }
   return (
     includesAny(errorMessage, FATAL_SESSION_ERROR_PATTERNS) ||
     includesAny(errorDetails, FATAL_SESSION_ERROR_PATTERNS)

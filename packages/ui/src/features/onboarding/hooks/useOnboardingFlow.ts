@@ -17,8 +17,10 @@ import { useHostTRPCClient } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useActiveRepoStore } from "@posthog/ui/shell/activeRepoStore";
 import { track } from "@posthog/ui/shell/analytics";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHasImportableConfig } from "./useHasImportableConfig";
 
@@ -26,10 +28,14 @@ export type { DetectedRepo };
 
 export function useOnboardingFlow() {
   const hostClient = useHostTRPCClient();
+  const { localWorkspaces } = useHostCapabilities();
   const currentStep = useOnboardingStore((state) => state.currentStep);
   const setCurrentStep = useOnboardingStore((state) => state.setCurrentStep);
   const selectedDirectory = useActiveRepoStore((state) => state.path);
   const setSelectedDirectory = useActiveRepoStore((state) => state.setPath);
+  const setLastUsedCloudRepository = useSettingsStore(
+    (state) => state.setLastUsedCloudRepository,
+  );
   const directionRef = useRef<1 | -1>(1);
 
   const [detectedRepo, setDetectedRepo] = useState<DetectedRepo | null>(null);
@@ -37,6 +43,8 @@ export function useOnboardingFlow() {
   const hasRehydrated = useRef(false);
 
   useEffect(() => {
+    // Cloud-only hosts have no local git to detect against.
+    if (!localWorkspaces) return;
     if (hasRehydrated.current || !selectedDirectory) return;
     hasRehydrated.current = true;
     setIsDetectingRepo(true);
@@ -45,12 +53,24 @@ export function useOnboardingFlow() {
       .then((result) => setDetectedRepo(toDetectedRepo(result)))
       .catch(() => {})
       .finally(() => setIsDetectingRepo(false));
-  }, [selectedDirectory, hostClient]);
+  }, [selectedDirectory, hostClient, localWorkspaces]);
 
   const handleDirectoryChange = useCallback(
     async (path: string) => {
       setSelectedDirectory(path);
       setDetectedRepo(null);
+
+      // Cloud-only: `path` is a remote "owner/repo" reference. Persist it as the
+      // last-used cloud repository so the task input prefills it.
+      if (!localWorkspaces) {
+        setLastUsedCloudRepository(path || null);
+        track(ANALYTICS_EVENTS.ONBOARDING_FOLDER_SELECTED, {
+          has_git_remote: !!path,
+          repository_provider: "github",
+        });
+        return;
+      }
+
       if (!path) return;
 
       setIsDetectingRepo(true);
@@ -75,7 +95,12 @@ export function useOnboardingFlow() {
         setIsDetectingRepo(false);
       }
     },
-    [setSelectedDirectory, hostClient],
+    [
+      setSelectedDirectory,
+      setLastUsedCloudRepository,
+      hostClient,
+      localWorkspaces,
+    ],
   );
 
   const hasCodeAccess = useAuthStateValue((state) => state.hasCodeAccess);

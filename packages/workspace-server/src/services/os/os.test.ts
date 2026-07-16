@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockReadFile = vi.hoisted(() => vi.fn());
 const mockStat = vi.hoisted(() => vi.fn());
+const mockRealpath = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs", () => {
   const promises = {
     readFile: mockReadFile,
     stat: mockStat,
+    realpath: mockRealpath,
     access: vi.fn(),
     writeFile: vi.fn(),
     unlink: vi.fn(),
@@ -54,6 +56,7 @@ function createService() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockRealpath.mockImplementation(async (p: string) => p);
 });
 
 describe("OsService.showMessageBox", () => {
@@ -246,6 +249,276 @@ describe("OsService.getUserAgentInstructions", () => {
   it("truncates oversized files and flags the truncation", async () => {
     const { service } = createService();
     givenFiles({ [claudePath]: "x".repeat(25_000) });
+
+    const result = await service.getUserAgentInstructions();
+    expect(result?.content).toHaveLength(20_000);
+    expect(result?.truncated).toBe(true);
+  });
+});
+
+describe("OsService.getUserAgentInstructions @-import expansion", () => {
+  const home = os.homedir();
+  const claudeDir = path.join(home, ".claude");
+  const claudePath = path.join(claudeDir, "CLAUDE.md");
+  const aPath = path.join(claudeDir, "a.md");
+  const bPath = path.join(claudeDir, "b.md");
+  const engineeringPath = path.join(claudeDir, "engineering.md");
+
+  function givenFiles(files: Record<string, string>) {
+    mockReadFile.mockImplementation(async (filePath: string) => {
+      if (filePath in files) return files[filePath];
+      throw new Error("ENOENT");
+    });
+  }
+
+  it.each([
+    {
+      label: "leaves files without imports untouched",
+      files: { [claudePath]: "just plain rules\nno imports here" },
+      expected: "just plain rules\nno imports here",
+    },
+    {
+      label: "inlines a single relative import",
+      files: {
+        [claudePath]: "top rules\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "top rules\nengineering rules",
+    },
+    {
+      label: "recursively inlines nested imports",
+      files: {
+        [claudePath]: "@./a.md",
+        [aPath]: "A\n@./b.md",
+        [bPath]: "B",
+      },
+      expected: "A\nB",
+    },
+    {
+      label: "leaves the reference literal on a cycle",
+      files: {
+        [claudePath]: "@./a.md",
+        [aPath]: "A\n@./a.md",
+      },
+      expected: "A\n@./a.md",
+    },
+    {
+      label: "leaves a missing import as its literal reference",
+      files: { [claudePath]: "top\n@./missing.md" },
+      expected: "top\n@./missing.md",
+    },
+    {
+      label: "does not expand imports inside inline code spans",
+      files: {
+        [claudePath]: "mention `@./engineering.md` literally",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "mention `@./engineering.md` literally",
+    },
+    {
+      label: "does not expand imports inside fenced code blocks",
+      files: {
+        [claudePath]: "```\n@./engineering.md\n```",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n@./engineering.md\n```",
+    },
+    {
+      label: "a shorter fence line does not close a longer fence",
+      files: {
+        [claudePath]: "````\n```\n@./engineering.md\n```\n````",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "````\n```\n@./engineering.md\n```\n````",
+    },
+    {
+      label: "a longer fence line closes a shorter fence",
+      files: {
+        [claudePath]: "```\n@./engineering.md\n````\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n@./engineering.md\n````\nengineering rules",
+    },
+    {
+      label: "a backtick fence line does not close a tilde fence",
+      files: {
+        [claudePath]: "~~~\n```\n@./engineering.md\n~~~",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "~~~\n```\n@./engineering.md\n~~~",
+    },
+    {
+      label: "a tilde fence line does not close a backtick fence",
+      files: {
+        [claudePath]: "```\n~~~\n@./engineering.md\n```",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n~~~\n@./engineering.md\n```",
+    },
+    {
+      label: "expands after a normally closed fence",
+      files: {
+        [claudePath]: "```\n@./engineering.md\n```\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n@./engineering.md\n```\nengineering rules",
+    },
+    {
+      label: "a fence line with an info string is not a closer",
+      files: {
+        [claudePath]: "```\n@./engineering.md\n``` js\n@./engineering.md\n```",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```\n@./engineering.md\n``` js\n@./engineering.md\n```",
+    },
+    {
+      label:
+        "a backtick run with backticks in its info string is a span, not a fence",
+      files: {
+        [claudePath]: "```@x```\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "```@x```\nengineering rules",
+    },
+    {
+      label: "keeps an indented code line after a blank line literal",
+      files: {
+        [claudePath]: "intro\n\n    @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n    @./engineering.md",
+    },
+    {
+      label: "keeps a tab-indented code line after a blank line literal",
+      files: {
+        [claudePath]: "intro\n\n\t@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n\t@./engineering.md",
+    },
+    {
+      label: "expands an indented list continuation without a preceding blank",
+      files: {
+        [claudePath]: "- see:\n    @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "- see:\n    engineering rules",
+    },
+    {
+      label:
+        "an indented code block survives internal blanks and ends on dedent",
+      files: {
+        [claudePath]:
+          "intro\n\n    @./engineering.md\n\nafter @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n    @./engineering.md\n\nafter engineering rules",
+    },
+    {
+      label: "a three-space indent is not an indented code block",
+      files: {
+        [claudePath]: "intro\n\n   @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n   engineering rules",
+    },
+    {
+      label: "a four-space-indented fence line is indented code, not a fence",
+      files: {
+        [claudePath]: "intro\n\n    ````\n@./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "intro\n\n    ````\nengineering rules",
+    },
+    {
+      label: "does not expand imports inside double-backtick code spans",
+      files: {
+        [claudePath]: "see `` @./engineering.md `` then @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "see `` @./engineering.md `` then engineering rules",
+    },
+    {
+      label: "a double-backtick span may contain a single backtick",
+      files: {
+        [claudePath]: "`` a`b `` @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "`` a`b `` engineering rules",
+    },
+    {
+      label: "expands after an unmatched backtick run",
+      files: {
+        [claudePath]: "a lone ` backtick then @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "a lone ` backtick then engineering rules",
+    },
+    {
+      label: "expands outside a span at the start of a line",
+      files: {
+        [claudePath]: "`@./engineering.md` and @./engineering.md",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "`@./engineering.md` and engineering rules",
+    },
+    {
+      label: "expands between two code spans",
+      files: {
+        [claudePath]: "`a` @./engineering.md `b`",
+        [engineeringPath]: "engineering rules",
+      },
+      expected: "`a` engineering rules `b`",
+    },
+  ])("$label", async ({ files, expected }) => {
+    const { service } = createService();
+    givenFiles(files);
+
+    const result = await service.getUserAgentInstructions();
+    expect(result?.content).toBe(expected);
+    expect(result?.truncated).toBe(false);
+  });
+
+  it("stops following imports past the max depth", async () => {
+    const { service } = createService();
+    const chain = path.join(claudeDir, "d5.md");
+    givenFiles({
+      [claudePath]: "@./d1.md",
+      [path.join(claudeDir, "d1.md")]: "1\n@./d2.md",
+      [path.join(claudeDir, "d2.md")]: "2\n@./d3.md",
+      [path.join(claudeDir, "d3.md")]: "3\n@./d4.md",
+      [path.join(claudeDir, "d4.md")]: "4\n@./d5.md",
+      [chain]: "5",
+    });
+
+    const result = await service.getUserAgentInstructions();
+    expect(result?.content).toBe("1\n2\n3\n4\n@./d5.md");
+  });
+
+  it("resolves relative imports against a symlinked file's real directory", async () => {
+    const { service } = createService();
+    const realDir = path.join(path.sep, "dotfiles", "claude");
+    const realClaudePath = path.join(realDir, "CLAUDE.md");
+    const realEngineeringPath = path.join(realDir, "engineering.md");
+
+    mockRealpath.mockImplementation(async (p: string) =>
+      p === claudePath ? realClaudePath : p,
+    );
+    givenFiles({
+      [claudePath]: "root\n@./engineering.md",
+      [realEngineeringPath]: "engineering rules from dotfiles",
+    });
+
+    const result = await service.getUserAgentInstructions();
+    expect(result?.content).toBe("root\nengineering rules from dotfiles");
+  });
+
+  it("applies the length cap after expansion", async () => {
+    const { service } = createService();
+    givenFiles({
+      [claudePath]: "@./big.md",
+      [path.join(claudeDir, "big.md")]: "x".repeat(25_000),
+    });
 
     const result = await service.getUserAgentInstructions();
     expect(result?.content).toHaveLength(20_000);

@@ -72,6 +72,7 @@ import {
   WORKSPACE_SERVER_SERVICE,
   WORKSPACE_SERVICE,
 } from "./di/tokens";
+import { setupExternalLinkPermissionHandlers } from "./external-links";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
@@ -360,6 +361,7 @@ app.whenReady().then(async () => {
     `Logs: main=${getLogFilePath()} chromium=${getChromiumLogFilePath() ?? "(disabled)"} network=${getNetworkLogFilePath()}`,
   );
   ensureClaudeConfigDir();
+  setupExternalLinkPermissionHandlers(session.fromPartition("persist:main"));
   registerMcpSandboxProtocol();
   installRendererNetworkLogging(
     session.fromPartition("persist:main").webRequest,

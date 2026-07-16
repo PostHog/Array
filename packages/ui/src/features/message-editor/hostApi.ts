@@ -72,12 +72,6 @@ export function getGhStatus(): Promise<GhStatus> {
   return hostClient().git.getGhStatus.query();
 }
 
-export function readAbsoluteFile(input: {
-  filePath: string;
-}): Promise<string | null> {
-  return hostClient().fs.readAbsoluteFile.query(input);
-}
-
 export function selectDirectory(): Promise<string | null> {
   return hostClient().os.selectDirectory.query();
 }

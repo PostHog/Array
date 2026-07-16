@@ -4,6 +4,10 @@ import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import type { JSONContent } from "@tiptap/react";
 
+export type ComposerMentionCandidate =
+  | { kind: "agent" }
+  | { kind: "member"; member: UserBasic };
+
 /** Members matching the query, best-first: name prefix, word prefix, email, substring. */
 export function filterMentionCandidates(
   members: UserBasic[],
@@ -30,6 +34,24 @@ export function filterMentionCandidates(
     )
     .slice(0, limit)
     .map((entry) => entry.member);
+}
+
+export function filterComposerMentionCandidates(
+  members: UserBasic[],
+  query: string,
+  includeAgent: boolean,
+  limit = 8,
+): ComposerMentionCandidate[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  const includeAgentCandidate =
+    includeAgent && (!normalizedQuery || "agent".startsWith(normalizedQuery));
+  const memberLimit = Math.max(0, limit - (includeAgentCandidate ? 1 : 0));
+  return [
+    ...(includeAgentCandidate ? [{ kind: "agent" as const }] : []),
+    ...filterMentionCandidates(members, query, memberLimit).map(
+      (member): ComposerMentionCandidate => ({ kind: "member", member }),
+    ),
+  ];
 }
 
 /** Serialize the composer's editor doc back to content with inline mention tokens. */

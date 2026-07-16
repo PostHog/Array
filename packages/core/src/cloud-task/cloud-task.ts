@@ -8,11 +8,21 @@ import {
   type IAnalytics,
 } from "@posthog/platform/analytics";
 import type { StoredLogEntry } from "@posthog/shared";
-import { serializeError, TypedEventEmitter } from "@posthog/shared";
+import {
+  mcpToolKey,
+  posthogToolMeta,
+  serializeError,
+  TypedEventEmitter,
+} from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import { inject, injectable, preDestroy } from "inversify";
+import { inject, injectable, optional, preDestroy } from "inversify";
 import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
-import { CLOUD_TASK_AUTH, type ICloudTaskAuth } from "./identifiers";
+import {
+  CLOUD_TASK_AUTH,
+  type ICloudTaskAuth,
+  MCP_RELAY_EXECUTOR,
+  type McpRelayExecutor,
+} from "./identifiers";
 import {
   CloudTaskEvent,
   type CloudTaskEvents,
@@ -37,6 +47,16 @@ const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
+const MAX_HANDLED_RELAY_REQUEST_IDS = 1_000;
+const MCP_RELAY_METHODS_WITHOUT_APPROVAL = new Set([
+  "initialize",
+  "notifications/initialized",
+  "ping",
+  "tools/list",
+  "prompts/list",
+  "resources/list",
+  "resources/templates/list",
+]);
 
 // Authoritative end-of-stream sentinel, matched on the SSE event name (event.event, not data.type).
 // The client stops on it without consulting run status.
@@ -200,6 +220,89 @@ function isPermissionRequestEvent(
   );
 }
 
+interface McpRequestEventData {
+  type: "mcp_request";
+  requestId: string;
+  server: string;
+  payload: Record<string, unknown>;
+  expiresAt: string;
+}
+
+function isMcpRequestEvent(data: unknown): data is McpRequestEventData {
+  if (typeof data !== "object" || data === null) return false;
+  const candidate = data as Partial<McpRequestEventData>;
+  return (
+    candidate.type === "mcp_request" &&
+    typeof candidate.requestId === "string" &&
+    typeof candidate.server === "string" &&
+    typeof candidate.payload === "object" &&
+    candidate.payload !== null
+  );
+}
+
+/** Prefix marking a desktop-issued relay approval prompt, so `sendCommand` can
+ *  resolve its response locally instead of POSTing it to the sandbox. */
+const RELAY_APPROVAL_REQUEST_PREFIX = "relay-approval:";
+
+const RELAY_KEY_SEPARATOR = "";
+
+function relayApprovalKey(
+  runId: string,
+  server: string,
+  kind: "method" | "tool",
+  name: string,
+): string {
+  return [runId, server, kind, name].join(RELAY_KEY_SEPARATOR);
+}
+
+interface RelayApprovalRequest {
+  approvalKey: string;
+  title: string;
+  toolName: string;
+  rawInput: Record<string, unknown>;
+  mcp: { server: string; tool: string };
+}
+
+function relayApprovalRequest(
+  runId: string,
+  server: string,
+  payload: Record<string, unknown>,
+): RelayApprovalRequest | null {
+  const method =
+    typeof payload.method === "string" ? payload.method : "unknown";
+  if (MCP_RELAY_METHODS_WITHOUT_APPROVAL.has(method)) return null;
+
+  const params =
+    payload.params && typeof payload.params === "object"
+      ? (payload.params as Record<string, unknown>)
+      : {};
+
+  if (method === "tools/call") {
+    const tool = typeof params.name === "string" ? params.name : "unknown";
+    const args =
+      params.arguments && typeof params.arguments === "object"
+        ? (params.arguments as Record<string, unknown>)
+        : {};
+    const toolName = mcpToolKey({ server, tool });
+    return {
+      approvalKey: relayApprovalKey(runId, server, "tool", tool),
+      title: `The agent wants to call ${tool} (${server}) on your machine`,
+      toolName,
+      rawInput: { ...args, toolName },
+      mcp: { server, tool },
+    };
+  }
+
+  const toolName = `mcp:${server}:${method}`;
+  return {
+    approvalKey: relayApprovalKey(runId, server, "method", method),
+    title: `The agent wants to send ${method} to ${server} on your machine`,
+    toolName,
+    rawInput: { method, params },
+    mcp: { server, tool: method },
+  };
+}
+
 function isKeepaliveEvent(event: SseEvent): boolean {
   return (
     event.event === "keepalive" ||
@@ -344,9 +447,263 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     private readonly analytics: IAnalytics,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
+    @inject(MCP_RELAY_EXECUTOR)
+    @optional()
+    private readonly mcpRelayExecutor: McpRelayExecutor | null = null,
   ) {
     super();
     this.log = logger.scope("cloud-task");
+  }
+
+  /**
+   * Relay-designated server names per run (docs/cloud-mcp-relay.md).
+   * In-memory by design: only the client that created a run in this app
+   * session may execute relay requests for it; requests for undesignated
+   * runs or names are dropped.
+   */
+  private readonly relayDesignations = new Map<string, Set<string>>();
+  /** requestId dedupe — the event stream is at-least-once and replays on reconnect. */
+  private readonly handledRelayRequestIds = new Set<string>();
+  private readonly handledRelayRequestOrder: string[] = [];
+
+  /** Sensitive relay requests require desktop-owned approval. */
+  private readonly relayAlwaysApprovals = new Set<string>();
+  /** Desktop-issued relay approval prompts awaiting a task-view answer. */
+  private readonly pendingLocalRelayPrompts = new Map<
+    string,
+    {
+      runId: string;
+      resolve: (outcome: {
+        optionId: string | null;
+        customInput?: string;
+      }) => void;
+    }
+  >();
+
+  designateRelayedMcpServers(runId: string, servers: string[]): void {
+    if (servers.length === 0) return;
+    this.relayDesignations.set(runId, new Set(servers));
+    this.log.info("Designated relayed MCP servers for run", {
+      runId,
+      servers,
+    });
+  }
+
+  private markRelayRequestHandled(requestId: string): void {
+    this.handledRelayRequestIds.add(requestId);
+    this.handledRelayRequestOrder.push(requestId);
+    if (this.handledRelayRequestOrder.length > MAX_HANDLED_RELAY_REQUEST_IDS) {
+      const evicted = this.handledRelayRequestOrder.shift();
+      if (evicted) this.handledRelayRequestIds.delete(evicted);
+    }
+  }
+
+  private async handleMcpRelayRequest(
+    watcher: WatcherState,
+    data: McpRequestEventData,
+  ): Promise<void> {
+    if (!this.mcpRelayExecutor) return;
+    const designated = this.relayDesignations.get(watcher.runId);
+    if (!designated?.has(data.server)) {
+      // Not created by this client, or a name the run never declared.
+      return;
+    }
+    if (this.handledRelayRequestIds.has(data.requestId)) return;
+    this.markRelayRequestHandled(data.requestId);
+
+    const expiresAt = Date.parse(data.expiresAt);
+    if (this.relayRequestExpired(expiresAt)) {
+      this.log.info("Dropping expired MCP relay request", {
+        runId: watcher.runId,
+        server: data.server,
+        requestId: data.requestId,
+      });
+      return;
+    }
+
+    const approvalRequest = relayApprovalRequest(
+      watcher.runId,
+      data.server,
+      data.payload,
+    );
+    if (approvalRequest) {
+      const approval = await this.ensureRelayRequestApproval(
+        watcher,
+        approvalRequest,
+        expiresAt,
+      );
+      if (!approval.approved) {
+        // Expired prompts get no response: the sandbox has already timed the
+        // request out, and a late mcp_response would be rejected as unknown.
+        if (!approval.expired) {
+          await this.sendRelayResponse(watcher, data, {
+            error: { code: -32000, message: approval.message },
+          });
+        }
+        return;
+      }
+      if (this.relayRequestExpired(expiresAt)) return;
+    }
+
+    let execution: {
+      payload?: Record<string, unknown>;
+      error?: { code: number; message: string };
+    };
+    try {
+      execution = await this.mcpRelayExecutor.execute(
+        watcher.runId,
+        data.server,
+        data.payload,
+      );
+    } catch (error) {
+      execution = {
+        error: {
+          code: -32000,
+          message:
+            error instanceof Error
+              ? error.message
+              : "MCP relay execution failed",
+        },
+      };
+    }
+
+    // Fire-and-forget notifications produce no response payload or error.
+    if (!execution.payload && !execution.error) return;
+
+    await this.sendRelayResponse(watcher, data, execution);
+  }
+
+  private relayRequestExpired(expiresAt: number): boolean {
+    return Number.isFinite(expiresAt) && expiresAt < Date.now();
+  }
+
+  private async sendRelayResponse(
+    watcher: WatcherState,
+    data: McpRequestEventData,
+    execution: {
+      payload?: Record<string, unknown>;
+      error?: { code: number; message: string };
+    },
+  ): Promise<void> {
+    try {
+      await this.sendCommand({
+        taskId: watcher.taskId,
+        runId: watcher.runId,
+        apiHost: watcher.apiHost,
+        teamId: watcher.teamId,
+        method: "mcp_response",
+        params: {
+          requestId: data.requestId,
+          server: data.server,
+          ...(execution.payload
+            ? { payload: execution.payload }
+            : { error: execution.error }),
+        },
+      });
+    } catch (error) {
+      // The sandbox times the request out on its own; nothing to unwind here.
+      this.log.warn("Failed to deliver mcp_response command", {
+        runId: watcher.runId,
+        requestId: data.requestId,
+        error: serializeError(error),
+      });
+    }
+  }
+
+  private async ensureRelayRequestApproval(
+    watcher: WatcherState,
+    request: RelayApprovalRequest,
+    expiresAt: number,
+  ): Promise<
+    { approved: true } | { approved: false; expired: boolean; message: string }
+  > {
+    const { runId } = watcher;
+    if (this.relayAlwaysApprovals.has(request.approvalKey)) {
+      return { approved: true };
+    }
+
+    const requestId = `${RELAY_APPROVAL_REQUEST_PREFIX}${globalThis.crypto.randomUUID()}`;
+    this.emit(CloudTaskEvent.Update, {
+      taskId: watcher.taskId,
+      runId,
+      kind: "permission_request" as const,
+      requestId,
+      toolCall: {
+        toolCallId: requestId,
+        title: request.title,
+        kind: "other",
+        rawInput: request.rawInput,
+        _meta: posthogToolMeta({
+          toolName: request.toolName,
+          mcp: request.mcp,
+        }),
+      },
+      options: [
+        { kind: "allow_once", name: "Yes", optionId: "allow" },
+        {
+          kind: "allow_always",
+          name: "Yes, always allow",
+          optionId: "allow_always",
+        },
+        {
+          kind: "reject_once",
+          name: "Type here to tell the agent what to do differently",
+          optionId: "reject",
+          _meta: { customInput: true },
+        },
+      ],
+    });
+
+    const outcome = await new Promise<{
+      optionId: string | null;
+      customInput?: string;
+    }>((resolve) => {
+      this.pendingLocalRelayPrompts.set(requestId, { runId, resolve });
+      // The sandbox abandons the request at expiresAt; keep waiting any longer
+      // and an approval would execute a call whose result nothing consumes.
+      const waitMs = Number.isFinite(expiresAt)
+        ? Math.max(0, expiresAt - Date.now())
+        : 60_000;
+      const timer = setTimeout(() => {
+        if (this.pendingLocalRelayPrompts.delete(requestId)) {
+          resolve({ optionId: null });
+        }
+      }, waitMs);
+      timer.unref?.();
+    });
+
+    if (outcome.optionId === "allow_always") {
+      this.relayAlwaysApprovals.add(request.approvalKey);
+      return { approved: true };
+    }
+    if (outcome.optionId === "allow") return { approved: true };
+    if (outcome.optionId === null) {
+      return {
+        approved: false,
+        expired: true,
+        message: "The user did not respond in time.",
+      };
+    }
+    return {
+      approved: false,
+      expired: false,
+      message: outcome.customInput
+        ? `The user denied this MCP request: ${outcome.customInput}`
+        : "The user denied this MCP request.",
+    };
+  }
+
+  /** Drop a terminal run's relay approval state and abandon its open prompts. */
+  private evictRelayApprovalState(runId: string): void {
+    const prefix = `${runId}${RELAY_KEY_SEPARATOR}`;
+    for (const key of [...this.relayAlwaysApprovals]) {
+      if (key.startsWith(prefix)) this.relayAlwaysApprovals.delete(key);
+    }
+    for (const [requestId, prompt] of [...this.pendingLocalRelayPrompts]) {
+      if (prompt.runId !== runId) continue;
+      this.pendingLocalRelayPrompts.delete(requestId);
+      prompt.resolve({ optionId: null });
+    }
   }
 
   watch(input: WatchInput): void {
@@ -442,6 +799,27 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   }
 
   async sendCommand(input: SendCommandInput): Promise<SendCommandOutput> {
+    if (input.method === "permission_response") {
+      const params = input.params ?? {};
+      const requestId =
+        typeof params.requestId === "string" ? params.requestId : null;
+      if (requestId?.startsWith(RELAY_APPROVAL_REQUEST_PREFIX)) {
+        // A desktop-issued relay approval: resolve it locally — the sandbox
+        // never saw this prompt, so there is nothing to POST.
+        const pending = this.pendingLocalRelayPrompts.get(requestId);
+        this.pendingLocalRelayPrompts.delete(requestId);
+        pending?.resolve({
+          optionId:
+            typeof params.optionId === "string" ? params.optionId : null,
+          customInput:
+            typeof params.customInput === "string"
+              ? params.customInput
+              : undefined,
+        });
+        return { success: true };
+      }
+    }
+
     const url = `${input.apiHost}/api/projects/${input.teamId}/tasks/${input.taskId}/runs/${input.runId}/command/`;
     const body = {
       jsonrpc: "2.0",
@@ -643,6 +1021,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   private stopWatcher(key: string): void {
     const watcher = this.watchers.get(key);
     if (!watcher) return;
+
+    if (this.relayDesignations.has(watcher.runId)) {
+      // No watcher → no relay events → nothing executes; release the run's
+      // live server connections (stdio children included). They reopen
+      // lazily if the run is watched again.
+      void this.mcpRelayExecutor?.closeRun?.(watcher.runId).catch(() => {});
+    }
 
     watcher.sseAbortController?.abort();
 
@@ -1215,6 +1600,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       watcher.seenEventIds.add(eventId);
     }
 
+    if (isMcpRequestEvent(event.data)) {
+      void this.handleMcpRelayRequest(watcher, event.data);
+      return null;
+    }
+
     if (isPermissionRequestEvent(event.data)) {
       this.emit(CloudTaskEvent.Update, {
         taskId: watcher.taskId,
@@ -1657,6 +2047,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     watcher.lastSandboxAlive = nextSandboxAlive;
     if (updatedAt) {
       watcher.lastStatusUpdatedAt = updatedAt;
+    }
+
+    // A terminal run gets no further relay requests; drop its designation and
+    // approval state so the maps don't grow for the lifetime of the app session.
+    if (isTerminalStatus(watcher.lastStatus)) {
+      this.relayDesignations.delete(watcher.runId);
+      this.evictRelayApprovalState(watcher.runId);
     }
 
     return changed;

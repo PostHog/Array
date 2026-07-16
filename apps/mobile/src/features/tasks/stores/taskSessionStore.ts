@@ -360,6 +360,10 @@ interface TaskSessionStore {
     attachments?: PendingAttachment[],
   ) => Promise<void>;
   flushQueuedMessages: (taskId: string) => Promise<void>;
+  /** Flush the queue only if the agent is idle. Used after an in-place edit is
+   *  saved or cancelled: the turn may have ended while the user was editing, so
+   *  nothing else would trigger the turn-end drain. A no-op mid-turn. */
+  flushQueuedMessagesIfIdle: (taskId: string) => void;
   /** Drop one queued message and resend it now as a steer (interrupt + resend). */
   steerQueuedMessage: (taskId: string, messageId: string) => Promise<void>;
   setConfigOption: (
@@ -864,7 +868,9 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     if (flushingTasks.has(taskId)) return;
     flushingTasks.add(taskId);
     try {
-      const drained = useMessageQueueStore.getState().drain(taskId);
+      const drained = useMessageQueueStore
+        .getState()
+        .drain(taskId, { stopAtEdited: true });
       if (drained.length === 0) return;
 
       const { text, attachments } = combineQueuedMessages(drained);
@@ -879,6 +885,21 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       }
     } finally {
       flushingTasks.delete(taskId);
+    }
+  },
+
+  flushQueuedMessagesIfIdle: (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (
+      session?.status === "connected" &&
+      !session.isPromptPending &&
+      !session.terminalStatus &&
+      !session.isCompacting &&
+      useMessageQueueStore.getState().getQueue(taskId).length > 0
+    ) {
+      get()
+        .flushQueuedMessages(taskId)
+        .catch((err) => log.warn("Queue flush failed", err));
     }
   },
 
