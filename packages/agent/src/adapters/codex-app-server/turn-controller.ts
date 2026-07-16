@@ -1,7 +1,7 @@
-import type { StopReason } from "@agentclientprotocol/sdk";
+import type { PromptResponse, StopReason } from "@agentclientprotocol/sdk";
 
 interface PendingTurn {
-  resolve: (reason: StopReason) => void;
+  resolve: (response: PromptResponse) => void;
   reject: (err: Error) => void;
 }
 
@@ -13,13 +13,13 @@ interface PendingTurn {
 export class TurnController {
   private turnId?: string;
   private pending?: PendingTurn;
-  private completion?: Promise<StopReason>;
+  private completion?: Promise<PromptResponse>;
   private generation = 0;
   private readonly cancelled = new Set<string>();
 
-  begin(): { completion: Promise<StopReason>; turn: number } {
+  begin(): { completion: Promise<PromptResponse>; turn: number } {
     const turn = ++this.generation;
-    this.completion = new Promise<StopReason>((resolve, reject) => {
+    this.completion = new Promise<PromptResponse>((resolve, reject) => {
       this.pending = { resolve, reject };
     });
     return { completion: this.completion, turn };
@@ -49,8 +49,8 @@ export class TurnController {
   }
 
   /** Await the in-flight turn's completion (the steer path reuses the original). */
-  awaitCompletion(): Promise<StopReason> {
-    return this.completion ?? Promise.resolve("end_turn");
+  awaitCompletion(): Promise<PromptResponse> {
+    return this.completion ?? Promise.resolve({ stopReason: "end_turn" });
   }
 
   /** Atomically claim the pending turn (clears the slot + turnId synchronously), or undefined if already claimed. */
@@ -96,7 +96,7 @@ export class TurnController {
   /** Resolve and clear everything on session close. */
   close(reason: StopReason): void {
     this.turnId = undefined;
-    this.pending?.resolve(reason);
+    this.pending?.resolve({ stopReason: reason });
     this.pending = undefined;
     this.completion = undefined;
     this.cancelled.clear();
