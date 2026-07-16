@@ -189,17 +189,53 @@ describe("McpRelayServer", () => {
     await expect.poll(() => events.length).toBe(1);
   });
 
-  it("answers 503 when no client can service the relay", async () => {
+  it("503s only after a client has been reachable and then went away", async () => {
+    let reachable = true;
     const { events, post } = await startRelay({
-      hasReachableClient: () => false,
+      hasReachableClient: () => reachable,
+      requestTimeoutMs: 30,
     });
+    // First request establishes reachability (times out here since no
+    // response is delivered, but that's fine — it marks the endpoint live).
+    await post("slack", { jsonrpc: "2.0", id: 1, method: "x" });
+    expect(events).toHaveLength(1);
+
+    reachable = false;
     const response = await post("slack", {
       jsonrpc: "2.0",
-      id: 1,
+      id: 2,
       method: "x",
     });
     expect(response.status).toBe(503);
-    expect(events).toHaveLength(0);
+    expect(events).toHaveLength(1);
+  });
+
+  it("buffers the startup request instead of 503ing before any client attaches", async () => {
+    let reachable = false;
+    const { relay, events, post } = await startRelay({
+      hasReachableClient: () => reachable,
+      requestTimeoutMs: 2_000,
+    });
+    // Session-start handshake fires before the event relay attaches.
+    const responsePromise = post("slack", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+    });
+    await expect.poll(() => events.length).toBe(1);
+    const event = events[0] as { requestId: string };
+
+    // Client attaches ~now and answers the buffered request.
+    reachable = true;
+    const relayed = { jsonrpc: "2.0", id: 1, result: {} };
+    relay.resolveResponse({
+      requestId: event.requestId,
+      server: "slack",
+      payload: relayed,
+    });
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(relayed);
   });
 
   it("answers 401 without the per-run bearer and 404 for undesignated names", async () => {

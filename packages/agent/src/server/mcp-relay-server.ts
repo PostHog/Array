@@ -67,6 +67,14 @@ export class McpRelayServer {
   private server: ServerType | null = null;
   private port: number | null = null;
   private stopped = false;
+  /**
+   * Whether a client has ever been reachable. Before the first client attaches
+   * (a ~2s startup window while the event relay connects), we must NOT 503 —
+   * an MCP client connects to each server once at session start, and a 503 in
+   * that window makes it drop the server permanently. The request is buffered
+   * and delivered when the client attaches, so it resolves within the timeout.
+   */
+  private everReachable = false;
 
   constructor(private readonly config: McpRelayServerConfig) {
     this.serverNames = new Set(config.servers);
@@ -158,9 +166,16 @@ export class McpRelayServer {
         return c.json({ error: `Unknown relay server: ${server}` }, 404);
       }
 
-      if (this.stopped || !this.config.hasReachableClient()) {
-        // 503 (not a 60s hang): Claude reports a clean MCP connection error,
-        // and reachability probes can treat the endpoint as unreachable.
+      const reachable = this.config.hasReachableClient();
+      if (reachable) this.everReachable = true;
+
+      // Only 503 once a client has been reachable and then went away (a
+      // genuine mid-run desktop disconnect). Before the first client ever
+      // attaches, buffer the request instead — an MCP client connects once at
+      // session start, and 503ing that startup handshake makes it drop the
+      // server for the whole run. The buffered request resolves when the
+      // client attaches or times out.
+      if (this.stopped || (this.everReachable && !reachable)) {
         this.config.logger.debug(
           "MCP relay endpoint 503: no reachable client",
           {
