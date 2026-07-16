@@ -692,13 +692,22 @@ export class TaskCreationSaga extends Saga<
           runtimeAdapter: input.adapter ?? null,
           model: input.model ?? null,
           reasoningEffort: input.reasoningLevel ?? null,
+          sandboxEnvironmentId: input.sandboxEnvironmentId ?? null,
+          customImageId: input.customImageId ?? null,
         })
       : null;
+
+    const requiresConfiguredWarm = Boolean(
+      input.sandboxEnvironmentId || input.customImageId,
+    );
 
     const needsAttachments =
       transport.filePaths.length > 0 || transport.skillBundles.length > 0;
     if (!needsAttachments) {
-      return base;
+      return {
+        ...base,
+        suppressWarmReuse: requiresConfiguredWarm && !lease,
+      };
     }
     if (!lease) {
       return { ...base, suppressWarmReuse: true };
@@ -787,6 +796,14 @@ export class TaskCreationSaga extends Saga<
           reasoning_effort:
             input.workspaceMode === "cloud"
               ? (input.reasoningLevel ?? null)
+              : undefined,
+          sandbox_environment_id:
+            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+              ? input.sandboxEnvironmentId
+              : undefined,
+          custom_image_id:
+            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+              ? input.customImageId
               : undefined,
           signal_report: input.signalReportId ?? undefined,
           channel: input.channelId ?? undefined,
