@@ -18,4 +18,22 @@ describe("MentionText", () => {
       "mention-chip--self",
     );
   });
+
+  it("highlights a literal agent mention", () => {
+    render(<MentionText content="@agent investigate this" />);
+
+    expect(screen.getByText("@agent")).toHaveClass("mention-chip");
+  });
+
+  it("does not highlight agent text inside another token", () => {
+    render(<MentionText content="person@agent.com" />);
+
+    expect(screen.queryByText("@agent")).not.toBeInTheDocument();
+  });
+
+  it("inherits the surrounding message text size", () => {
+    render(<MentionText content="A thread reply" />);
+
+    expect(screen.getByText("A thread reply")).not.toHaveClass("text-xs");
+  });
 });

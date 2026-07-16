@@ -6,6 +6,7 @@ import "./mention-chip.css";
 type RenderSegment =
   | { type: "text"; text: string }
   | { type: "link"; text: string; href: string }
+  | { type: "agent"; text: string }
   | { type: "mention"; name: string; email: string };
 
 // The plain (not-the-viewer) mention chip look, also used by surfaces that
@@ -35,6 +36,22 @@ export function MentionText({
       entries.push({ segment, key: `${offset}` });
       offset += length;
     };
+    const pushText = (text: string) => {
+      let cursor = 0;
+      for (const match of text.matchAll(/(^|\s)(@agent)\b/gi)) {
+        const mentionStart = (match.index ?? 0) + match[1].length;
+        for (const part of splitLinkSegments(
+          text.slice(cursor, mentionStart),
+        )) {
+          push(part, part.text.length);
+        }
+        push({ type: "agent", text: match[2] }, match[2].length);
+        cursor = mentionStart + match[2].length;
+      }
+      for (const part of splitLinkSegments(text.slice(cursor))) {
+        push(part, part.text.length);
+      }
+    };
     for (const segment of splitMentionSegments(content)) {
       if (segment.type === "mention") {
         push(
@@ -42,17 +59,22 @@ export function MentionText({
           segment.text.length,
         );
       } else {
-        for (const part of splitLinkSegments(segment.text)) {
-          push(part, part.text.length);
-        }
+        pushText(segment.text);
       }
     }
     return entries;
   }, [content]);
   const selfEmail = currentUserEmail?.toLowerCase();
   return (
-    <span className={`text-xs ${className ?? ""}`}>
+    <span className={className}>
       {segments.map(({ segment, key }) => {
+        if (segment.type === "agent") {
+          return (
+            <span key={key} className={mentionChipClass}>
+              {segment.text}
+            </span>
+          );
+        }
         if (segment.type === "mention") {
           return (
             <span
