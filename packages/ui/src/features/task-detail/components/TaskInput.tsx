@@ -83,12 +83,14 @@ import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
 } from "../hooks/useInitialRepoSelectionFromFolderId";
+import { useLocalMcpCloudServers } from "../hooks/useLocalMcpCloudServers";
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
 import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
+import { LocalMcpServersButton } from "./LocalMcpServersButton";
 import {
   type SuggestedPrompt,
   SuggestedPromptCard,
@@ -802,6 +804,17 @@ export function TaskInput({
     [autoresearchService],
   );
 
+  const localMcpServers = useLocalMcpCloudServers(
+    effectiveWorkspaceMode === "cloud",
+  );
+  const importedMcpServers = useMemo(
+    () =>
+      localMcpServers.flatMap((server) =>
+        server.remote ? [server.remote] : [],
+      ),
+    [localMcpServers],
+  );
+
   const {
     isCreatingTask,
     canSubmit,
@@ -836,6 +849,7 @@ export function TaskInput({
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
     allowNoRepo,
+    importedMcpServers,
   });
 
   // Wraps the prompt in the autoresearch kickoff: protocol preamble first,
@@ -1172,6 +1186,12 @@ export function TaskInput({
                       anchor={buttonGroupRef}
                     />
                   </ButtonGroup>
+                )}
+                {workspaceMode === "cloud" && (
+                  <LocalMcpServersButton
+                    servers={localMcpServers}
+                    disabled={isCreatingTask}
+                  />
                 )}
                 {!allowNoRepo && workspaceMode !== "cloud" && (
                   <AdditionalDirectoriesButton

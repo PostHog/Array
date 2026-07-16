@@ -1,5 +1,6 @@
 import type {
   Adapter,
+  CloudMcpServerImport,
   CloudRunSource,
   PrAuthorshipMode,
 } from "@posthog/shared";
@@ -21,6 +22,7 @@ export interface CreateTaskRunClientOptions {
   signalReportId?: string;
   initialPermissionMode?: string;
   homeQuickAction?: string;
+  importedMcpServers?: CloudMcpServerImport[];
 }
 
 export interface StartTaskRunClientOptions {

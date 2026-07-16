@@ -13,6 +13,7 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
+  type CloudMcpServerImport,
   PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
   type WorkspaceMode,
@@ -87,6 +88,8 @@ interface UseTaskCreationOptions {
    * whether it needs one and attaches it lazily.
    */
   allowNoRepo?: boolean;
+  /** Importable local MCP servers to forward into a cloud run's sandbox. */
+  importedMcpServers?: CloudMcpServerImport[];
   onTaskCreated?: (task: Task) => void;
   /**
    * Side effect run with the created task in addition to (not instead of)
@@ -176,6 +179,7 @@ export function useTaskCreation({
   channelName,
   channelId,
   allowNoRepo,
+  importedMcpServers,
   onTaskCreated,
   onTaskCreatedEffect,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
@@ -353,6 +357,7 @@ export function useTaskCreation({
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
+          importedMcpServers,
         });
 
         if (executionMode) {
@@ -523,6 +528,7 @@ export function useTaskCreation({
       allowNoRepo,
       bluebirdEnabled,
       personalChannel?.id,
+      importedMcpServers,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
