@@ -1,7 +1,8 @@
 # Design: relaying local MCP servers into cloud task runs
 
-Status: **implemented** (same PR as the import work), behind the
-`posthog-code-mcp-relay` feature flag. Follows
+Status: **implemented** (same PR as the import work), behind the same
+`posthog-code-local-mcp-import` flag as the import (one feature, one flag).
+Follows
 [cloud-mcp-import.md](./cloud-mcp-import.md) (which handles the easy case:
 url-based servers on public hosts). Sandbox side: `McpRelayServer`
 (`packages/agent/src/server/mcp-relay-server.ts`). Desktop execution:
@@ -252,4 +253,4 @@ persisted, with caps and the no-secrets rule above.**
 3. Desktop `McpRelayService` + core forwarding seam + tests.
 4. Creation-payload plumbing (`relayed_mcp_servers`) + composer UX flips the
    "Requires your machine" annotation to "Relayed via your machine".
-5. Enable `posthog-code-mcp-relay` for staff once the Django side lands.
+5. Enable `posthog-code-local-mcp-import` for staff once the Django side lands.

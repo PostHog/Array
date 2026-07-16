@@ -13,7 +13,6 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
-  MCP_RELAY_FLAG,
   PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
   type WorkspaceMode,
@@ -35,7 +34,6 @@ import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
 import { useUsageLimitStore } from "../../billing/usageLimitStore";
-import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { useLocalMcpCloudServers } from "../../local-mcp/useLocalMcpCloudServers";
 import {
   contentToPlainText,
@@ -198,7 +196,6 @@ export function useTaskCreation({
   // Importable local MCP servers for cloud runs, self-fetched like the
   // additional-directory defaults above rather than threaded in by callers.
   const localMcpServers = useLocalMcpCloudServers(workspaceMode === "cloud");
-  const mcpRelayEnabled = useFeatureFlag(MCP_RELAY_FLAG);
   const taskService = useService<TaskService>(TASK_SERVICE);
   const clearTaskInputReportAssociation = useTaskInputPrefillStore(
     (s) => s.clearReportAssociation,
@@ -363,11 +360,9 @@ export function useTaskCreation({
           importedMcpServers: localMcpServers.flatMap((server) =>
             server.remote ? [server.remote] : [],
           ),
-          relayedMcpServers: mcpRelayEnabled
-            ? localMcpServers
-                .filter((server) => server.availability === "requires_desktop")
-                .map((server) => ({ name: server.name }))
-            : undefined,
+          relayedMcpServers: localMcpServers
+            .filter((server) => server.availability === "requires_desktop")
+            .map((server) => ({ name: server.name })),
         });
 
         if (executionMode) {
@@ -539,7 +534,6 @@ export function useTaskCreation({
       bluebirdEnabled,
       personalChannel?.id,
       localMcpServers,
-      mcpRelayEnabled,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,
