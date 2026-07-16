@@ -72,6 +72,11 @@ describe("deriveThreadAgentStatus", () => {
       input: { hasActivity: true, hasPullRequest: true },
       expected: { phase: "complete", label: "Shipped" },
     },
+    {
+      name: "reports settled work without a pull request as done",
+      input: { hasActivity: true },
+      expected: { phase: "complete", label: "Done" },
+    },
   ])("$name", ({ input, expected }) => {
     expect(deriveThreadAgentStatus(input)).toEqual(expected);
   });

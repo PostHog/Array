@@ -211,7 +211,7 @@ function AgentStatusChip({ status }: { status: ThreadAgentStatus }) {
   }
 }
 
-function AgentTurnRow({
+export function AgentTurnRow({
   message,
   status,
   streaming,
@@ -232,20 +232,25 @@ function AgentTurnRow({
       <ThreadItemContent>
         <ThreadItemHeader>
           <ThreadItemAuthor>Agent</ThreadItemAuthor>
-          {status && <AgentStatusChip status={status} />}
           {message?.timestamp !== undefined && (
             <ThreadTimestamp
               dateTime={new Date(message.timestamp).toISOString()}
             />
           )}
         </ThreadItemHeader>
-        {message?.text && (
+        {(message?.text || status) && (
           <ThreadItemBody>
             <div className="rounded-md border border-border bg-muted px-2 py-1.5">
-              {streaming ? (
-                <ChatStreamingMarkdown content={message.text} />
-              ) : (
-                <ChatMarkdown content={message.text} />
+              {message?.text &&
+                (streaming ? (
+                  <ChatStreamingMarkdown content={message.text} />
+                ) : (
+                  <ChatMarkdown content={message.text} />
+                ))}
+              {status && (
+                <div className={message?.text ? "mt-2" : undefined}>
+                  <AgentStatusChip status={status} />
+                </div>
               )}
             </div>
           </ThreadItemBody>

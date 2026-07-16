@@ -99,7 +99,7 @@ export function deriveThreadAgentStatus({
   }
   return {
     phase: "complete",
-    label: hasPullRequest ? "Shipped" : "Ready to ship",
+    label: hasPullRequest ? "Shipped" : "Done",
   };
 }
 
