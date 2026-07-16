@@ -1216,6 +1216,13 @@ export class AgentServer {
         const resolved = this.mcpRelayServer?.resolveResponse(
           params as unknown as McpRelayResponse,
         );
+        // Logged so the desktop's response behavior is visible from the
+        // readable sandbox side, not just the (often invisible) desktop logs.
+        this.logger.debug("MCP relay response received", {
+          requestId: String(params.requestId),
+          server: String(params.server),
+          resolved,
+        });
         if (!resolved) {
           throw new Error(
             `No pending MCP relay request found for id: ${String(params.requestId)}`,

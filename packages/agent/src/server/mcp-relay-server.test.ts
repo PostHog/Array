@@ -179,11 +179,40 @@ describe("McpRelayServer", () => {
     expect(events).toHaveLength(0);
   });
 
-  it("relays notifications fire-and-forget with a 202", async () => {
+  it("answers the initialize handshake locally without relaying", async () => {
+    // Even with no reachable client, the connection must establish so the
+    // real (slow-to-spawn) server isn't dropped during startup.
+    const { events, post } = await startRelay({
+      hasReachableClient: () => false,
+    });
+    const response = await post("slack", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18" },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      result: { protocolVersion: string; capabilities: { tools: unknown } };
+    };
+    expect(body.result.protocolVersion).toBe("2025-06-18");
+    expect(body.result.capabilities.tools).toBeDefined();
+    expect(events).toHaveLength(0);
+
+    // The paired initialized notification is also answered locally.
+    const notified = await post("slack", {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    });
+    expect(notified.status).toBe(202);
+    expect(events).toHaveLength(0);
+  });
+
+  it("relays non-initialize notifications fire-and-forget with a 202", async () => {
     const { events, post } = await startRelay();
     const response = await post("slack", {
       jsonrpc: "2.0",
-      method: "notifications/initialized",
+      method: "notifications/cancelled",
     });
     expect(response.status).toBe(202);
     await expect.poll(() => events.length).toBe(1);
@@ -216,11 +245,11 @@ describe("McpRelayServer", () => {
       hasReachableClient: () => reachable,
       requestTimeoutMs: 2_000,
     });
-    // Session-start handshake fires before the event relay attaches.
+    // A relayed request (tools/list) fires before the event relay attaches.
     const responsePromise = post("slack", {
       jsonrpc: "2.0",
       id: 1,
-      method: "initialize",
+      method: "tools/list",
     });
     await expect.poll(() => events.length).toBe(1);
     const event = events[0] as { requestId: string };
