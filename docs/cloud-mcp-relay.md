@@ -180,12 +180,21 @@ const mcpResponseParamsSchema = z.object({
 A relayed tool call is the cloud agent executing something **on the user's
 machine or network with the user's local privileges**. Decisions:
 
-1. **Always-ask by default.** Relayed servers' tools default to
-   `needs_approval` through the existing MCP tool-approval mechanism
-   (`McpToolApprovals`), regardless of the run's permission mode — an `auto`
-   or `allow-all` cloud run still prompts (via the existing
-   permission-request relay) before each relayed tool call. Users can
-   allowlist individual tools, which persists like other tool approvals.
+1. **Always-ask, enforced on the desktop.** The desktop refuses to execute a
+   relayed `tools/call` until the user has approved it, in
+   `CloudTaskService.handleMcpRelayRequest`. This is the real trust boundary:
+   the sandbox's own prompt can't be relied on (a compromised sandbox could
+   emit `mcp_request` events without ever asking), and it is adapter-neutral —
+   codex has no per-MCP-call approval hook, so a harness-side gate would leave
+   GPT runs unguarded. The claude adapter *also* prompts (its always-ask
+   `McpToolApprovals` path); to avoid a double prompt, the user's answer to
+   that sandbox prompt is routed through `sendCommand`, where an allow is
+   converted into a consume-once pass (or an always-allow, per run + server +
+   tool) for the matching relayed call — so a harness that asks and one that
+   doesn't both end at exactly one prompt. "Always allow" is scoped to the run
+   and dropped when the run reaches a terminal status; a plain allow covers a
+   single call with identical arguments. A denial (with optional feedback) is
+   returned to the sandbox as a JSON-RPC error rather than executed.
 2. **No configuration crosses the wire.** The sandbox only ever names a
    server; what "grafana" means (command line, env, URL, headers) is resolved
    from local config on the desktop. A compromised sandbox cannot make the
