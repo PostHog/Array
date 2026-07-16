@@ -15,6 +15,7 @@ import { MenuLabel } from "@posthog/quill";
 import { getFileName } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { DraggableFolder } from "@posthog/ui/features/sidebar/components/DraggableFolder";
 import { GroupWorktreesSection } from "@posthog/ui/features/sidebar/components/GroupWorktreesSection";
@@ -189,6 +190,9 @@ export function TaskListView({
     (state) => state.resetHistoryVisibleCount,
   );
   const { folders } = useFolders();
+  const showSidebarWorktrees = useSettingsStore(
+    (state) => state.showSidebarWorktrees,
+  );
   const view = useAppView();
   const isOnTaskInput =
     view.type === "task-input" || view.type === "task-pending";
@@ -370,7 +374,7 @@ export function TaskListView({
                         />
                       ))
                     )}
-                    {folder && (
+                    {folder && showSidebarWorktrees && (
                       <GroupWorktreesSection
                         groupId={group.id}
                         mainRepoPath={folder.mainRepoPath ?? folder.path}

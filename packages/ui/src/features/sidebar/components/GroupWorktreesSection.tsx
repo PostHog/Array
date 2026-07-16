@@ -13,15 +13,20 @@ interface GroupWorktreesSectionProps {
 /**
  * Nested "Worktrees" dropdown at the bottom of a repo group listing the repo's
  * task-less worktrees. Clicking one starts a task in that worktree and opens
- * its chat + shell. Renders nothing when the repo has no adoptable worktrees.
+ * its chat + shell. Collapsed by default; renders nothing when the repo has no
+ * adoptable worktrees.
  */
 export function GroupWorktreesSection({
   groupId,
   mainRepoPath,
 }: GroupWorktreesSectionProps) {
   const worktrees = useAdoptableWorktrees(mainRepoPath);
-  const collapsedSections = useSidebarStore((state) => state.collapsedSections);
-  const toggleSection = useSidebarStore((state) => state.toggleSection);
+  const expandedWorktreeSections = useSidebarStore(
+    (state) => state.expandedWorktreeSections,
+  );
+  const toggleWorktreeSection = useSidebarStore(
+    (state) => state.toggleWorktreeSection,
+  );
   const { startTask, startingBranches } =
     useStartTaskFromWorktree(mainRepoPath);
 
@@ -34,8 +39,8 @@ export function GroupWorktreesSection({
       label={`Worktrees (${worktrees.length})`}
       icon={<TreeStructure size={14} className="text-gray-10" />}
       depth={1}
-      isExpanded={!collapsedSections.has(sectionId)}
-      onToggle={() => toggleSection(sectionId)}
+      isExpanded={expandedWorktreeSections.has(sectionId)}
+      onToggle={() => toggleWorktreeSection(sectionId)}
       tooltipContent="Worktrees without a task — click one to start a task there"
     >
       {worktrees.map((worktree) => {
