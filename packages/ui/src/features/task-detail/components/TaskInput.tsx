@@ -730,6 +730,8 @@ export function TaskInput({
     runtimeAdapter: adapter ?? null,
     model: effectiveModel,
     reasoningEffort: effectiveReasoningLevel,
+    sandboxEnvironmentId: workspaceMode === "cloud" ? selectedCloudEnvId : null,
+    customImageId: workspaceMode === "cloud" ? selectedCustomImageId : null,
   });
 
   const branchForTaskCreation =

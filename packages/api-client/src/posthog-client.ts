@@ -2817,6 +2817,8 @@ export class PostHogAPIClient {
     runtime_adapter?: string | null;
     model?: string | null;
     reasoning_effort?: string | null;
+    sandbox_environment_id?: string | null;
+    custom_image_id?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/warm/`;
@@ -2833,6 +2835,12 @@ export class PostHogAPIClient {
           runtime_adapter: options.runtime_adapter ?? null,
           model: options.model ?? null,
           reasoning_effort: options.reasoning_effort ?? null,
+          ...(options.sandbox_environment_id
+            ? { sandbox_environment_id: options.sandbox_environment_id }
+            : {}),
+          ...(options.custom_image_id
+            ? { custom_image_id: options.custom_image_id }
+            : {}),
         }),
       },
     });
