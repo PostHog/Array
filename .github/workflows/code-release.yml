@@ -724,11 +724,23 @@ jobs:
 
       # The channel-file upload is the S3 publish flip: updaters only see the
       # new version once these land, after every platform's binaries are up.
+      # Stage all files first, then flip with server-side copies, so a failed
+      # runner upload can never leave the feed advertising a mixed release
+      # (e.g. macOS on the new version while Windows still serves the old one).
+      # Copies preserve the staged objects' cache-control metadata.
       - name: Publish channel files to the S3 update feed
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          aws s3 cp /tmp/releases.json "s3://posthog-desktop-app-releases-prod-us/stable/releases.json" \
-            --cache-control "no-cache"
-          aws s3 cp /tmp/latest-mac.yml "s3://posthog-desktop-app-releases-prod-us/stable/latest-mac.yml" \
-            --cache-control "no-cache"
-          aws s3 cp /tmp/win-manifest/latest.yml "s3://posthog-desktop-app-releases-prod-us/stable/latest.yml" \
-            --cache-control "no-cache"
+          FEED="s3://posthog-desktop-app-releases-prod-us/stable"
+          STAGING="$FEED/.staging/v$APP_VERSION"
+
+          aws s3 cp /tmp/latest-mac.yml "$STAGING/latest-mac.yml" --cache-control "no-cache"
+          aws s3 cp /tmp/win-manifest/latest.yml "$STAGING/latest.yml" --cache-control "no-cache"
+          aws s3 cp /tmp/releases.json "$STAGING/releases.json" --cache-control "no-cache"
+
+          aws s3 cp "$STAGING/latest-mac.yml" "$FEED/latest-mac.yml"
+          aws s3 cp "$STAGING/latest.yml" "$FEED/latest.yml"
+          aws s3 cp "$STAGING/releases.json" "$FEED/releases.json"
+
+          aws s3 rm --recursive "$STAGING/" || echo "staging cleanup failed; harmless"
