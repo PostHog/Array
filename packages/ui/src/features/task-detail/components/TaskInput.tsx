@@ -189,6 +189,8 @@ export function TaskInput({
     setLastUsedAdapter,
     lastUsedCloudRepository,
     setLastUsedCloudRepository,
+    cachedCloudDefaultBranchMap,
+    setCachedCloudDefaultBranch,
     allowBypassPermissions,
     setLastUsedEnvironment,
     getLastUsedEnvironment,
@@ -430,7 +432,30 @@ export function TaskInput({
     cloudBranchSearchQuery,
   );
   const cloudBranches = cloudBranchData?.branches;
-  const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  const liveCloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  // Serve the persisted default branch until the live list resolves, so the
+  // majority "start on trunk" case pre-selects trunk with zero wait on a cold
+  // start. Falls through to the fresh value the moment it arrives.
+  const cloudDefaultBranch =
+    liveCloudDefaultBranch ??
+    (selectedCloudRepository
+      ? (cachedCloudDefaultBranchMap[selectedCloudRepository] ?? null)
+      : null);
+
+  // Persist the freshly loaded default branch so the next cold start can
+  // pre-select trunk immediately.
+  useEffect(() => {
+    if (selectedCloudRepository && liveCloudDefaultBranch) {
+      setCachedCloudDefaultBranch(
+        selectedCloudRepository,
+        liveCloudDefaultBranch,
+      );
+    }
+  }, [
+    selectedCloudRepository,
+    liveCloudDefaultBranch,
+    setCachedCloudDefaultBranch,
+  ]);
 
   const {
     branchOpen,
