@@ -1,5 +1,6 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { Badge } from "@posthog/ui/primitives/Badge";
+import { navigateToTaskDetail } from "@posthog/ui/router/navigationBridge";
 import { Flex, Text } from "@radix-ui/themes";
 
 function statusColor(
@@ -28,32 +29,34 @@ function formatRelativeDate(iso: string | null): string {
 
 export function LoopRunRow({ run }: { run: LoopSchemas.LoopRun }) {
   return (
-    <Flex
-      align="center"
-      justify="between"
-      gap="3"
-      className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2.5"
+    <button
+      type="button"
+      onClick={() => navigateToTaskDetail(run.task_id)}
+      title="Open this run to see the agent's activity"
+      className="w-full rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2.5 text-left transition-colors hover:bg-(--gray-3)"
     >
-      <Flex direction="column" className="min-w-0 gap-0.5">
-        <Flex align="center" gap="2">
-          <Badge color={statusColor(run.status)}>{run.status}</Badge>
-          <Text className="text-[12px] text-gray-11">
-            {formatRelativeDate(run.created_at)}
-          </Text>
+      <Flex align="center" justify="between" gap="3">
+        <Flex direction="column" className="min-w-0 gap-0.5">
+          <Flex align="center" gap="2">
+            <Badge color={statusColor(run.status)}>{run.status}</Badge>
+            <Text className="text-[12px] text-gray-11">
+              {formatRelativeDate(run.created_at)}
+            </Text>
+          </Flex>
+          {run.error_message ? (
+            <Text className="truncate text-(--red-11) text-[11.5px]">
+              {run.error_message}
+            </Text>
+          ) : run.branch ? (
+            <Text className="truncate text-[11.5px] text-gray-10 [font-family:var(--font-mono)]">
+              {run.branch}
+            </Text>
+          ) : null}
         </Flex>
-        {run.error_message ? (
-          <Text className="truncate text-(--red-11) text-[11.5px]">
-            {run.error_message}
-          </Text>
-        ) : run.branch ? (
-          <Text className="truncate text-[11.5px] text-gray-10 [font-family:var(--font-mono)]">
-            {run.branch}
-          </Text>
-        ) : null}
+        <Text className="shrink-0 text-[11px] text-gray-10 uppercase">
+          {run.environment}
+        </Text>
       </Flex>
-      <Text className="shrink-0 text-[11px] text-gray-10 uppercase">
-        {run.environment}
-      </Text>
-    </Flex>
+    </button>
   );
 }
