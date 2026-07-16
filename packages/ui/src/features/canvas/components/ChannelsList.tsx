@@ -57,16 +57,25 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import {
+  normalizeChannelName,
   PERSONAL_CHANNEL_NAME,
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useUnreadChannelIds } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { hostClient } from "../hostClient";
 
 // One actionable entry in a channel's menu, rendered the same whether it
@@ -291,7 +300,14 @@ function ChannelMenu({
 
 // One channel in the list: a "# name" row that navigates to the channel home.
 // No expansion — the channel's surfaces live in the in-channel top nav.
-function ChannelSection({ channel }: { channel: Channel }) {
+function ChannelSection({
+  channel,
+  isUnread,
+}: {
+  channel: Channel;
+  /** Bolds the name: activity here the viewer hasn't seen. */
+  isUnread?: boolean;
+}) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const base = `/website/${channel.id}`;
@@ -343,7 +359,8 @@ function ChannelSection({ channel }: { channel: Channel }) {
               <HashIcon size={14} className="shrink-0 text-gray-9" />
               <span
                 className={cn(
-                  "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+                  "truncate text-[13px] text-gray-12 group-hover/chan:pr-8",
+                  isUnread ? "font-bold" : "font-medium",
                   menuOpen && "pr-8",
                 )}
               >
@@ -495,9 +512,12 @@ function PersonalChannelRow() {
   const { channels } = useChannels();
   const { createChannel, isCreating } = useChannelMutations();
   // Listing backend channels lazily provisions the personal channel server-side.
-  useTaskChannels();
+  const { personalChannel } = useTaskChannels();
   // The "+" dropdown (New task / New canvas), mirroring a shared channel row.
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const unreadChannelIds = useUnreadChannelIds();
+  const isUnread =
+    !!personalChannel && unreadChannelIds.has(personalChannel.id);
 
   const meFolder = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
   const createAndOpenCanvas = useCreateAndOpenDashboard(meFolder?.id);
@@ -561,7 +581,12 @@ function PersonalChannelRow() {
         className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
       >
         <HashIcon size={14} className="shrink-0 text-gray-9" />
-        <span className="truncate font-medium text-[13px] text-gray-12">
+        <span
+          className={cn(
+            "truncate text-[13px] text-gray-12",
+            isUnread ? "font-bold" : "font-medium",
+          )}
+        >
           {PERSONAL_CHANNEL_NAME}
         </span>
         {/* The lock and the hover "+" share the right edge, so fade the lock
@@ -703,6 +728,21 @@ export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
 
+  // Unread activity is keyed by backend channel id, while these rows are folder
+  // channels — joined by name, the same bridge useBackendChannel walks. Resolved
+  // once here rather than per row, so the list mounts one lookup, not 46.
+  const { channels: backendChannels } = useTaskChannels();
+  const unreadChannelIds = useUnreadChannelIds();
+  const unreadNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const channel of backendChannels) {
+      if (unreadChannelIds.has(channel.id)) names.add(channel.name);
+    }
+    return names;
+  }, [backendChannels, unreadChannelIds]);
+  const isUnread = (channel: Channel) =>
+    unreadNames.has(normalizeChannelName(channel.name));
+
   // The "me" folder renders as the pinned personal row, not a shared channel.
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
@@ -733,7 +773,11 @@ export function ChannelsList() {
         {starred.length > 0 && (
           <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
             {starred.map((channel) => (
-              <ChannelSection key={channel.id} channel={channel} />
+              <ChannelSection
+                key={channel.id}
+                channel={channel}
+                isUnread={isUnread(channel)}
+              />
             ))}
           </ChannelGroup>
         )}
@@ -745,7 +789,11 @@ export function ChannelsList() {
             </Empty>
           )}
           {others.map((channel) => (
-            <ChannelSection key={channel.id} channel={channel} />
+            <ChannelSection
+              key={channel.id}
+              channel={channel}
+              isUnread={isUnread(channel)}
+            />
           ))}
         </ChannelGroup>
       </Flex>
