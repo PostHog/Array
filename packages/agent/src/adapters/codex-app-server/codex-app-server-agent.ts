@@ -1011,6 +1011,11 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       ],
       rawInput: { plan: proposal.text },
     };
+    await this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call",
+      ...toolCall,
+      status: "in_progress",
+    });
     const options = [
       {
         optionId: "auto",
@@ -1053,8 +1058,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     });
     const settled = await Promise.race([permission, cancelled]);
     this.planHandoffCancel = undefined;
-    if (!settled) return { kind: "stay" };
+    if (!settled) {
+      await this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
     if (settled.failed) {
+      await this.completePlanApprovalToolCall(toolCallId, "failed");
       this.logger.warn("plan implementation prompt failed; staying in plan", {
         error: String(settled.err),
       });
@@ -1066,23 +1075,61 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     const response = settled.res;
     if (this.session.cancelled || response.outcome.outcome !== "selected") {
+      await this.completePlanApprovalToolCall(toolCallId, "failed");
       return { kind: "stay" };
     }
     const optionId = response.outcome.optionId;
-    if (!offered.has(optionId)) return { kind: "stay" };
-    if (optionId === "auto") return { kind: "implement", mode: "auto" };
+    if (!offered.has(optionId)) {
+      await this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
+    if (optionId === "auto") {
+      await this.completePlanApprovalToolCall(toolCallId, "completed");
+      return { kind: "implement", mode: "auto" };
+    }
     // Double-gated: only ever offered under ALLOW_BYPASS, and re-checked here.
     if (optionId === "full-access" && ALLOW_BYPASS) {
+      await this.completePlanApprovalToolCall(toolCallId, "completed");
       return { kind: "implement", mode: "full-access" };
     }
     if (optionId === "reject_with_feedback") {
       const feedback = (response as { _meta?: { customInput?: unknown } })._meta
         ?.customInput;
       if (typeof feedback === "string" && feedback.trim()) {
+        await this.completePlanApprovalToolCall(toolCallId, "failed");
         return { kind: "feedback", feedback: feedback.trim() };
       }
     }
+    await this.completePlanApprovalToolCall(toolCallId, "failed");
     return { kind: "stay" };
+  }
+
+  private async completePlanApprovalToolCall(
+    toolCallId: string,
+    status: "completed" | "failed",
+  ): Promise<void> {
+    await this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call_update",
+      toolCallId,
+      status,
+    });
+  }
+
+  private async emitPlanApprovalToolCall(
+    update: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.client.sessionUpdate({
+        sessionId: this.sessionId,
+        update,
+      } as unknown as Parameters<AgentSideConnection["sessionUpdate"]>[0]);
+    } catch (error) {
+      this.logger.warn("Failed to emit plan approval tool call update", {
+        error: String(error),
+        sessionUpdate: update.sessionUpdate,
+        toolCallId: update.toolCallId,
+      });
+    }
   }
 
   /** Emit a plain agent message (user-facing status the model didn't produce). */

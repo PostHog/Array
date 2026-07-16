@@ -84,6 +84,15 @@ describe("PlanApprovalView", () => {
     expect(screen.getByText(PLAN_MARKER)).toBeInTheDocument();
   });
 
+  it("shows the rejected status when the plan tool call fails", () => {
+    renderView({ toolCall: makeToolCall({ status: "failed" }) });
+
+    expect(screen.getByText(/\(plan rejected\)/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /show plan/i }),
+    ).toBeInTheDocument();
+  });
+
   it("omits the toggle when there is no plan text available", () => {
     renderView({
       toolCall: makeToolCall({

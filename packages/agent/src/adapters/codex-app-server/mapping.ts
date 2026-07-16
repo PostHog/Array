@@ -41,18 +41,9 @@ export function mapAppServerNotification(
         },
       };
     }
-    // Plan-mode proposal streaming as agent prose (codex strips it from agentMessage deltas).
-    case APP_SERVER_NOTIFICATIONS.PLAN_DELTA: {
-      const delta = readStringField(params, "delta");
-      if (!delta) return null;
-      return {
-        sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: delta },
-        },
-      };
-    }
+    // Plan deltas are buffered by the adapter for the structured approval UI.
+    case APP_SERVER_NOTIFICATIONS.PLAN_DELTA:
+      return null;
     case APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED: {
       // Context indicator: renderer reads `used`/`size`; detailed breakdown comes via `_posthog/usage_update`.
       const usage = readTokenUsage(params);

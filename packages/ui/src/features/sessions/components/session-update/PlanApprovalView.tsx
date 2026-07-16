@@ -16,7 +16,7 @@ export function PlanApprovalView({
   turnComplete,
 }: ToolViewProps) {
   const { content } = toolCall;
-  const { isComplete, wasCancelled } = useToolCallStatus(
+  const { isComplete, isFailed, wasCancelled } = useToolCallStatus(
     toolCall.status,
     turnCancelled,
     turnComplete,
@@ -45,7 +45,8 @@ export function PlanApprovalView({
     return null;
   }, [content, toolCall.rawInput]);
 
-  const showResult = isComplete || wasCancelled;
+  const wasRejected = isFailed || wasCancelled;
+  const showResult = isComplete || wasRejected;
   const canTogglePlan = showResult && !!planText;
   const planContentId = `plan-content-${toolCall.toolCallId}`;
 
@@ -58,7 +59,7 @@ export function PlanApprovalView({
         Plan approved — proceeding with implementation
       </Text>
     </>
-  ) : wasCancelled ? (
+  ) : wasRejected ? (
     <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
   ) : null;
 
