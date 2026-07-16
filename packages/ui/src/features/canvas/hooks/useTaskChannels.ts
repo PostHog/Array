@@ -71,7 +71,6 @@ export function useTaskChannels(options?: { enabled?: boolean }): {
 export function useBackendChannel(channelName: string | undefined): {
   channel: TaskChannel | undefined;
   isLoading: boolean;
-  resolveFailed: boolean;
 } {
   const normalized = channelName ? normalizeChannelName(channelName) : "";
   const isPersonal = normalized === PERSONAL_CHANNEL_NAME;
@@ -133,8 +132,11 @@ export function useBackendChannel(channelName: string | undefined): {
 
   return {
     channel: existing,
-    isLoading: isLoading || (!existing && isResolving),
-    /** The resolve settled in failure — callers must not wait on it forever. */
-    resolveFailed,
+    // Loading spans the whole identity resolution — the list fetch, the gap
+    // before the resolve effect fires, and the resolve itself — so callers
+    // never see a "not loading, no channel" flash for a name that is still
+    // resolving. A failed resolve settles it.
+    isLoading:
+      isLoading || (!!normalized && !isPersonal && !existing && !resolveFailed),
   };
 }
