@@ -1,5 +1,8 @@
 import { ArrowSquareOut, CreditCard } from "@phosphor-icons/react";
-import { formatUsdAmount } from "@posthog/core/billing/usageDisplay";
+import {
+  codeOrgSpendLimitUsd,
+  formatUsdAmount,
+} from "@posthog/core/billing/usageDisplay";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
@@ -22,12 +25,7 @@ export function UsageBillingAnnouncementModal() {
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const { usage } = useUsage({ enabled: isOpen });
 
-  // A free org's limit_usd is its included allocation (the first bullet's
-  // $20), not a spend limit — the org-specific line is for subscribed orgs.
-  const limitUsd =
-    usage?.code_usage_subscribed === true
-      ? (usage.ai_credits?.limit_usd ?? null)
-      : null;
+  const spendLimitUsd = codeOrgSpendLimitUsd(usage);
 
   useEffect(() => {
     if (isOpen) {
@@ -83,10 +81,10 @@ export function UsageBillingAnnouncementModal() {
               • Premium models need a payment method; an open model stays free.
             </Text>
             <Text color="gray">
-              {limitUsd != null ? (
+              {spendLimitUsd != null ? (
                 <>
                   • Your organization's spend limit is{" "}
-                  <Text weight="medium">{`${formatUsdAmount(limitUsd)}/month`}</Text>{" "}
+                  <Text weight="medium">{`${formatUsdAmount(spendLimitUsd)}/month`}</Text>{" "}
                   — adjust it any time in billing settings.
                 </>
               ) : (

@@ -45,6 +45,7 @@ import {
   classifyAgentError,
   isPromptTooLongError,
 } from "../adapters/error-classification";
+import { appendRtkGuidanceForCodex } from "../adapters/rtk-guidance";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
   SIGNED_MERGE_QUALIFIED_TOOL_NAME,
@@ -3022,9 +3023,11 @@ export class AgentServer {
   private buildCodexInstructions(
     systemPrompt: string | { append: string },
   ): string {
-    return typeof systemPrompt === "string"
-      ? systemPrompt
-      : systemPrompt.append;
+    const instructions =
+      typeof systemPrompt === "string" ? systemPrompt : systemPrompt.append;
+    // Codex has no command-rewrite hook (see rtk-guidance.ts), so RTK is
+    // adopted through the developer instructions instead.
+    return appendRtkGuidanceForCodex(instructions);
   }
 
   /**
