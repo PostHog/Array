@@ -17,6 +17,8 @@ interface SidebarSectionProps {
   onNewTask?: () => void;
   newTaskTooltip?: string;
   dragHandleRef?: React.RefCallback<HTMLButtonElement>;
+  /** Indents the header for sections nested inside another section. */
+  depth?: number;
 }
 
 export function SidebarSection({
@@ -31,6 +33,7 @@ export function SidebarSection({
   onNewTask,
   newTaskTooltip,
   dragHandleRef,
+  depth,
 }: SidebarSectionProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -43,6 +46,7 @@ export function SidebarSection({
           className="flex w-full items-center justify-between pl-2 not-hover:aria-expanded:bg-transparent"
           style={{
             marginTop: addSpacingBefore ? "12px" : undefined,
+            paddingLeft: depth ? `${depth * 8 + 8}px` : undefined,
           }}
           onContextMenu={onContextMenu}
           onMouseEnter={() => setIsHovered(true)}

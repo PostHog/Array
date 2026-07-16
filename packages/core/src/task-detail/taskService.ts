@@ -62,10 +62,13 @@ export class TaskService {
     });
 
     // Imported Claude Code sessions carry a transcript, not a typed prompt, so
-    // they supply a taskDescription instead of content.
+    // they supply a taskDescription instead of content. Worktree-adoption tasks
+    // have no prompt either — the user types their first message in the opened
+    // chat — so they too rely on a synthesized taskDescription.
     const hasDescription =
       !!input.content?.trim() ||
-      (!!input.importedClaudeSession && !!input.taskDescription?.trim());
+      ((!!input.importedClaudeSession || !!input.worktreeAdoption) &&
+        !!input.taskDescription?.trim());
     if (!hasDescription) {
       return {
         success: false,

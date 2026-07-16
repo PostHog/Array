@@ -16,7 +16,11 @@ export interface PromptHistorySelectedProperties {
 
 type ExecutionType = "cloud" | "local";
 export type RepositoryProvider = "github" | "gitlab" | "local" | "none";
-type TaskCreatedFrom = "cli" | "command-menu" | "home-quick-action";
+type TaskCreatedFrom =
+  | "cli"
+  | "command-menu"
+  | "home-quick-action"
+  | "sidebar-worktree";
 type RepositorySelectSource = "task-creation" | "task-detail";
 type GitActionType =
   | "push"

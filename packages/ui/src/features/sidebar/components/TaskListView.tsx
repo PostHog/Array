@@ -17,6 +17,7 @@ import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { DraggableFolder } from "@posthog/ui/features/sidebar/components/DraggableFolder";
+import { GroupWorktreesSection } from "@posthog/ui/features/sidebar/components/GroupWorktreesSection";
 import { TaskItem } from "@posthog/ui/features/sidebar/components/items/TaskItem";
 import { SidebarSection } from "@posthog/ui/features/sidebar/components/SidebarSection";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -368,6 +369,12 @@ export function TaskListView({
                           depth={1}
                         />
                       ))
+                    )}
+                    {folder && (
+                      <GroupWorktreesSection
+                        groupId={group.id}
+                        mainRepoPath={folder.mainRepoPath ?? folder.path}
+                      />
                     )}
                   </SidebarSection>
                 </DraggableFolder>

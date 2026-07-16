@@ -1472,6 +1472,36 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
     return others.map((wt) => ({ path: wt.worktreePath, branch: wt.branch }));
   }
 
+  /**
+   * Linked worktrees (any location) that no task uses and a new task could
+   * adopt: checked out on a real branch, not themselves a registered folder,
+   * and not the hidden stash worktree that backgrounds the local checkout.
+   * The sidebar offers these as one-click "start a task in this worktree"
+   * entries; adoption goes through createWorkspace with reuseExistingWorktree.
+   */
+  async listAdoptableWorktrees(
+    mainRepoPath: string,
+  ): Promise<Array<{ worktreePath: string; branch: string }>> {
+    const [linkedWorktrees, localStashPath] = await Promise.all([
+      listLinkedWorktrees(mainRepoPath),
+      this.getLocalWorktreePathIfExists(mainRepoPath),
+    ]);
+
+    return linkedWorktrees
+      .filter(
+        (wt) =>
+          wt.branch !== null &&
+          wt.worktreePath !== localStashPath &&
+          !this.repositoryRepo.findByPath(wt.worktreePath) &&
+          this.getWorktreeTasks(wt.worktreePath).length === 0,
+      )
+      .map((wt) => ({
+        worktreePath: wt.worktreePath,
+        // Narrowed by the branch !== null filter above.
+        branch: wt.branch as string,
+      }));
+  }
+
   async deleteWorktree(
     mainRepoPath: string,
     worktreePath: string,
