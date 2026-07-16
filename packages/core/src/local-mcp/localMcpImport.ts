@@ -1,5 +1,7 @@
 import type {
+  Adapter,
   CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   LocalMcpServerDescriptor,
 } from "@posthog/shared";
 import { isPrivateIpv4Octets, isPrivateIpv6Literal } from "@posthog/shared";
@@ -139,6 +141,53 @@ export function classifyLocalMcpServer(
       ),
     },
   };
+}
+
+/** Mirrors the run-creation API's per-field caps (MAX_RELAYED_MCP_SERVERS). */
+const MAX_RELAYED_MCP_SERVERS = 20;
+
+export interface LocalMcpServersForRun {
+  imported: CloudMcpServerImport[];
+  relayed: CloudMcpServerRelayDesignation[];
+}
+
+/**
+ * Split classified local servers into the run-creation payload's imported and
+ * relayed lists for the run's adapter.
+ *
+ * Claude tolerates an unreachable configured server, so importable (public
+ * URL) servers go straight into the sandbox config. Codex hard-fails the whole
+ * session on any unreachable MCP server, so for codex runs importable servers
+ * ride the relay instead: the loopback relay endpoint always answers codex's
+ * reachability probe, and the desktop executes the server from local config —
+ * public URLs included. Desktop-only servers relay for every adapter.
+ */
+export function partitionLocalMcpServersForRun(
+  servers: LocalMcpCloudClassification[],
+  adapter: Adapter | undefined,
+): LocalMcpServersForRun {
+  const relayImportable = adapter === "codex";
+  const imported = relayImportable
+    ? []
+    : servers.flatMap((server) => (server.remote ? [server.remote] : []));
+  const relayed = servers
+    .filter(
+      (server) =>
+        server.availability === "requires_desktop" ||
+        (relayImportable && server.availability === "importable"),
+    )
+    // Desktop-only servers first: unlike importables they have no other
+    // transport, so they must survive the count cap.
+    .sort((a, b) =>
+      a.availability === b.availability
+        ? 0
+        : a.availability === "requires_desktop"
+          ? -1
+          : 1,
+    )
+    .slice(0, MAX_RELAYED_MCP_SERVERS)
+    .map((server) => ({ name: server.name }));
+  return { imported, relayed };
 }
 
 @injectable()

@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   classifyLocalMcpServer,
   isPrivateHostname,
+  type LocalMcpCloudClassification,
   LocalMcpImportService,
   type LocalMcpWorkspaceClient,
+  partitionLocalMcpServersForRun,
 } from "./localMcpImport";
 
 describe("isPrivateHostname", () => {
@@ -193,5 +195,56 @@ describe("LocalMcpImportService", () => {
       ["server", "importable"],
       ["local", "requires_desktop"],
     ]);
+  });
+});
+
+describe("partitionLocalMcpServersForRun", () => {
+  const importable = (name: string): LocalMcpCloudClassification => ({
+    name,
+    availability: "importable",
+    reason: "public_url",
+    remote: {
+      type: "http",
+      name,
+      url: `https://${name}.example.com/mcp`,
+      headers: [],
+    },
+  });
+  const desktopOnly = (name: string): LocalMcpCloudClassification => ({
+    name,
+    availability: "requires_desktop",
+    reason: "stdio_transport",
+  });
+  const servers = [
+    importable("grafana"),
+    desktopOnly("slack"),
+    { name: "posthog", availability: "built_in", reason: "reserved_name" },
+    { name: "broken", availability: "unsupported", reason: "invalid_url" },
+  ] as LocalMcpCloudClassification[];
+
+  it.each([
+    ["claude", "claude"],
+    ["unset", undefined],
+  ] as const)("imports public servers for the %s adapter", (_name, adapter) => {
+    const result = partitionLocalMcpServersForRun(servers, adapter);
+    expect(result.imported.map((s) => s.name)).toEqual(["grafana"]);
+    expect(result.relayed).toEqual([{ name: "slack" }]);
+  });
+
+  it("relays importable servers instead of importing them for codex", () => {
+    const result = partitionLocalMcpServersForRun(servers, "codex");
+    expect(result.imported).toEqual([]);
+    expect(result.relayed).toEqual([{ name: "slack" }, { name: "grafana" }]);
+  });
+
+  it("keeps desktop-only servers when the codex relay list hits the cap", () => {
+    const many = [
+      ...Array.from({ length: 15 }, (_, i) => importable(`pub-${i}`)),
+      ...Array.from({ length: 10 }, (_, i) => desktopOnly(`desk-${i}`)),
+    ];
+    const result = partitionLocalMcpServersForRun(many, "codex");
+    expect(result.relayed).toHaveLength(20);
+    const names = result.relayed.map((s) => s.name);
+    for (let i = 0; i < 10; i++) expect(names).toContain(`desk-${i}`);
   });
 });

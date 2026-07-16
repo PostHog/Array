@@ -114,13 +114,21 @@ echoed back from the run detail API), and excluded from logs/analytics.
 PostHog MCP and installation-derived servers. No other transformation — the
 payload shape is already `remoteMcpServerSchema`.
 
-**Adapter caveat**: codex-acp hard-fails on unreachable MCP servers, which is
-why the desktop prunes them for local Codex sessions
-(`filterReachableMcpServers` in
-`packages/workspace-server/src/services/agent/agent.ts`). The sandbox agent
-server does no such pruning. Either restrict `imported_mcp_servers` to
-`runtime_adapter == "claude"` initially, or add an equivalent reachability
-probe to the sandbox before session start for Codex runs.
+**Adapter caveat (resolved for Codex via the relay)**: codex-acp hard-fails a
+session when any configured MCP server is unreachable, and the sandbox agent
+server does no reachability pruning. So imported (direct-URL) servers only go
+into the sandbox config for the Claude adapter — the backend gates
+`get_imported_mcp_server_configs` on `runtime_adapter in {claude, unset}` as
+belt-and-braces. For Codex runs the client instead routes importable servers
+through the **relay** (`partitionLocalMcpServersForRun` in
+`packages/core/src/local-mcp/localMcpImport.ts` puts them in
+`relayed_mcp_servers` when the run's adapter is codex): the loopback relay
+endpoint always answers codex's reachability probe, and the desktop executes
+the server from local config — public-URL servers included. Desktop-only
+servers relay for every adapter. Net effect: a GPT user keeps all their local
+servers, at the cost of one desktop hop per call. `relayed_mcp_servers` is
+capped at 20 (matching the backend), and desktop-only servers are kept ahead
+of importables when the cap bites, since they have no other transport.
 
 ## Auth: header staleness and rotation
 
