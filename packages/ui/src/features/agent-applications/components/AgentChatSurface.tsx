@@ -8,7 +8,13 @@ import {
 import type { AcpMessage } from "@posthog/shared";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
-import { type KeyboardEvent, type ReactNode, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 /**
  * The conversation + composer half of a deployed-agent chat, shared by the
@@ -28,6 +34,7 @@ export function AgentChatSurface({
   composerDisabledReason,
   scrollX = true,
   placeholder = "Message this agent…",
+  draft,
   onSend,
   onCancel,
 }: {
@@ -50,6 +57,10 @@ export function AgentChatSurface({
   scrollX?: boolean;
   /** Composer placeholder. */
   placeholder?: string;
+  /** When set, prefills the composer with `text` (without sending). Bump
+   * `token` each time a new draft should repopulate the input — the same text
+   * re-applies on a fresh token so re-triggering a seeded prompt works. */
+  draft?: { text: string; token: number };
   onSend: (text: string) => void;
   onCancel: () => void;
 }) {
@@ -84,6 +95,7 @@ export function AgentChatSurface({
         isStreaming={isStreaming}
         placeholder={placeholder}
         disabledReason={composerDisabledReason}
+        draft={draft}
         onSend={onSend}
         onCancel={onCancel}
       />
@@ -95,17 +107,33 @@ function Composer({
   isStreaming,
   placeholder,
   disabledReason,
+  draft,
   onSend,
   onCancel,
 }: {
   isStreaming: boolean;
   placeholder: string;
   disabledReason?: string;
+  draft?: { text: string; token: number };
   onSend: (text: string) => void;
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
   const parked = !!disabledReason;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Prefill (but don't send) when a new draft lands — a seeded prompt drops into
+  // the composer for the user to review, edit, and send. Keyed on `token` so the
+  // same prompt re-applies on a fresh trigger. Never clobber text the user has
+  // already typed but not sent: if the composer is non-empty, leave it as-is
+  // (still focusing it) so a seeded prompt is genuinely non-destructive.
+  const lastDraftToken = useRef<number | null>(null);
+  useEffect(() => {
+    if (!draft || draft.token === lastDraftToken.current) return;
+    lastDraftToken.current = draft.token;
+    setText((current) => (current.trim() ? current : draft.text));
+    textareaRef.current?.focus();
+  }, [draft]);
 
   function submit() {
     if (parked) return;
@@ -132,6 +160,7 @@ function Composer({
     <div className="shrink-0 px-3 pt-2 pb-3">
       <InputGroup className="h-auto cursor-text bg-card focus-within:ring-1 focus-within:ring-purple-9">
         <InputGroupTextarea
+          ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}

@@ -68,9 +68,10 @@ export function UsageButton() {
     meter.kind === "dollars"
       ? `${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)} used`
       : `${percent}% used`;
-  const resetLabel = formatResetTime(
-    meter.kind === "dollars" ? meter.resetAt : meter.bucket.reset_at,
-  );
+  const resetLabel =
+    meter.kind === "dollars"
+      ? formatResetTime(meter.resetAt, { label: "Billing period ends" })
+      : formatResetTime(meter.bucket.reset_at);
   const breakdownLabel =
     meter.kind === "dollars" && meter.breakdown
       ? formatUsageBreakdown(meter.breakdown)
