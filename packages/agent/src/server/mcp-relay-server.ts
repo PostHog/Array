@@ -222,36 +222,6 @@ export class McpRelayServer {
         });
       }
 
-      // Answer the MCP `initialize` handshake locally. The real server may be
-      // a slow-to-spawn stdio process on the user's machine; making connection
-      // establishment wait on a cross-machine round trip + process spawn blows
-      // the client's init timeout, and the server is dropped for the run. As a
-      // pass-through proxy we advertise tools capability and echo the client's
-      // protocol version; `tools/list` and tool calls relay for real (with
-      // generous per-request timeouts). The matching `initialized` notification
-      // is likewise answered locally.
-      if (payload.method === "initialize") {
-        const params = payload.params as
-          | { protocolVersion?: unknown }
-          | undefined;
-        const protocolVersion =
-          typeof params?.protocolVersion === "string"
-            ? params.protocolVersion
-            : "2025-06-18";
-        return c.json({
-          jsonrpc: "2.0",
-          id: payload.id,
-          result: {
-            protocolVersion,
-            capabilities: { tools: { listChanged: false } },
-            serverInfo: { name: `relay:${server}`, version: "1.0.0" },
-          },
-        });
-      }
-      if (payload.method === "notifications/initialized") {
-        return c.body(null, 202);
-      }
-
       const requestId = crypto.randomUUID();
       const timeoutMs =
         this.config.requestTimeoutMs ?? DEFAULT_RELAY_TIMEOUT_MS;
