@@ -3522,8 +3522,18 @@ describe("SessionService", () => {
       },
     );
 
-    it("reconciles superseded chunks by turn and message position", async () => {
+    it("reconciles superseded chunks without discarding later-turn events", async () => {
       const service = getSessionService();
+      const ancestorPrompt = {
+        type: "acp_message" as const,
+        ts: 1700000010,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 0,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "ancestor request" }] },
+        },
+      };
       const firstPrompt = {
         type: "acp_message" as const,
         ts: 1700000040,
@@ -3576,6 +3586,10 @@ describe("SessionService", () => {
           params: { stopReason: "end_turn" },
         },
       };
+      const ancestorCompletion = {
+        ...sameTimestampCompletion,
+        ts: 1700000020,
+      };
       const secondPrompt = {
         type: "acp_message" as const,
         ts: 1700000060,
@@ -3601,6 +3615,10 @@ describe("SessionService", () => {
           },
         },
       };
+      const laterTurnCompletion = {
+        ...sameTimestampCompletion,
+        ts: 1700000090,
+      };
       const newerLiveEvent = {
         type: "acp_message" as const,
         ts: 1700000120,
@@ -3621,6 +3639,7 @@ describe("SessionService", () => {
           sameTimestampCompletion,
           secondPrompt,
           unrelatedSameTimestampChunk,
+          laterTurnCompletion,
           newerLiveEvent,
         ],
         processedLineCount: 1,
@@ -3641,6 +3660,8 @@ describe("SessionService", () => {
       mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
       mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([
+        ancestorPrompt,
+        ancestorCompletion,
         persistedFirstPrompt,
         persistedAgentMessage,
         sameTimestampCompletion,
@@ -3669,11 +3690,14 @@ describe("SessionService", () => {
           "run-456",
           expect.objectContaining({
             events: [
+              ancestorPrompt,
+              ancestorCompletion,
               persistedFirstPrompt,
               persistedAgentMessage,
               sameTimestampCompletion,
               secondPrompt,
               unrelatedSameTimestampChunk,
+              laterTurnCompletion,
               newerLiveEvent,
             ],
           }),

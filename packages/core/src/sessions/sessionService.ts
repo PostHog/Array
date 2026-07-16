@@ -545,26 +545,66 @@ function cloudHydrationMessageKey(event: AcpMessage): string {
   return JSON.stringify(event.message);
 }
 
+interface HydratedEventCursor {
+  eventKeys: string[];
+  nextIndex: number;
+}
+
+interface HydratedTurnQueue {
+  turns: HydratedEventCursor[];
+  nextTurnIndex: number;
+}
+
+function consumeHydratedEvent(
+  cursor: HydratedEventCursor,
+  eventKey: string,
+): boolean {
+  while (cursor.nextIndex < cursor.eventKeys.length) {
+    const hydratedEventKey = cursor.eventKeys[cursor.nextIndex];
+    cursor.nextIndex += 1;
+    if (hydratedEventKey === eventKey) return true;
+  }
+  return false;
+}
+
 function discardEventsAlreadyHydrated(
   liveEvents: AcpMessage[],
   hydratedEvents: AcpMessage[],
 ): AcpMessage[] {
-  const hydratedEventCounts = new Map<string, number>();
+  const beforeFirstPrompt: HydratedEventCursor = {
+    eventKeys: [],
+    nextIndex: 0,
+  };
+  const turnsByPrompt = new Map<string, HydratedTurnQueue>();
+  let hydratedTurn = beforeFirstPrompt;
   for (const event of hydratedEvents) {
-    const key = cloudHydrationMessageKey(event);
-    hydratedEventCounts.set(key, (hydratedEventCounts.get(key) ?? 0) + 1);
+    const promptKey = sessionPromptTurnKey(event);
+    if (promptKey) {
+      const queue = turnsByPrompt.get(promptKey) ?? {
+        turns: [],
+        nextTurnIndex: 0,
+      };
+      hydratedTurn = { eventKeys: [], nextIndex: 0 };
+      queue.turns.push(hydratedTurn);
+      turnsByPrompt.set(promptKey, queue);
+      continue;
+    }
+    hydratedTurn.eventKeys.push(cloudHydrationMessageKey(event));
   }
 
+  let liveTurn: HydratedEventCursor | null = beforeFirstPrompt;
   return liveEvents.filter((event) => {
-    const key = cloudHydrationMessageKey(event);
-    const remaining = hydratedEventCounts.get(key) ?? 0;
-    if (remaining === 0) return true;
-    if (remaining === 1) {
-      hydratedEventCounts.delete(key);
-    } else {
-      hydratedEventCounts.set(key, remaining - 1);
+    const promptKey = sessionPromptTurnKey(event);
+    if (promptKey) {
+      const queue = turnsByPrompt.get(promptKey);
+      liveTurn =
+        queue && queue.nextTurnIndex < queue.turns.length
+          ? queue.turns[queue.nextTurnIndex++]
+          : null;
+      return liveTurn === null;
     }
-    return false;
+    if (liveTurn === null) return true;
+    return !consumeHydratedEvent(liveTurn, cloudHydrationMessageKey(event));
   });
 }
 
@@ -615,14 +655,6 @@ function sessionPromptTurnKey(event: AcpMessage): string | undefined {
     : undefined;
 }
 
-function agentMessagePositionKey(
-  position: AgentMessagePosition,
-): string | undefined {
-  return position.turnKey
-    ? JSON.stringify([position.turnKey, position.messageIndex])
-    : undefined;
-}
-
 function resetAgentMessagePositionForPrompt(
   position: AgentMessagePosition,
   event: AcpMessage,
@@ -645,7 +677,7 @@ function discardChunksSupersededByHydratedMessages(
   liveEvents: AcpMessage[],
   hydratedEvents: AcpMessage[],
 ): AcpMessage[] {
-  const hydratedMessagePositions = new Set<string>();
+  const hydratedMessagePositions = new Map<string, Set<number>>();
   const hydratedPosition: AgentMessagePosition = {
     messageIndex: 0,
     chunkRunActive: false,
@@ -659,8 +691,13 @@ function discardChunksSupersededByHydratedMessages(
       continue;
     }
     if (updateKind === "final") {
-      const positionKey = agentMessagePositionKey(hydratedPosition);
-      if (positionKey) hydratedMessagePositions.add(positionKey);
+      if (hydratedPosition.turnKey) {
+        const positions =
+          hydratedMessagePositions.get(hydratedPosition.turnKey) ??
+          new Set<number>();
+        positions.add(hydratedPosition.messageIndex);
+        hydratedMessagePositions.set(hydratedPosition.turnKey, positions);
+      }
       hydratedPosition.messageIndex += 1;
       hydratedPosition.chunkRunActive = false;
       continue;
@@ -688,10 +725,12 @@ function discardChunksSupersededByHydratedMessages(
     if (updateKind === "chunk") {
       if (!livePosition.chunkRunActive) {
         livePosition.chunkRunActive = true;
-        const positionKey = agentMessagePositionKey(livePosition);
         discardChunkRun =
-          positionKey !== undefined &&
-          hydratedMessagePositions.has(positionKey);
+          livePosition.turnKey !== undefined &&
+          (hydratedMessagePositions
+            .get(livePosition.turnKey)
+            ?.has(livePosition.messageIndex) ??
+            false);
       }
       return !discardChunkRun;
     }
