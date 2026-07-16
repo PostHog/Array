@@ -58,7 +58,6 @@ import {
   useUserGithubRepositories,
   useUserRepositoryIntegration,
 } from "../../integrations/useIntegrations";
-import { useLocalMcpCloudServers } from "../../local-mcp/useLocalMcpCloudServers";
 import { skillToEditorCommand } from "../../message-editor/commands";
 import { PromptHistoryDialog } from "../../message-editor/components/PromptHistoryDialog";
 import { PromptInput } from "../../message-editor/components/PromptInput";
@@ -90,7 +89,6 @@ import { useWarmTask } from "../hooks/useWarmTask";
 import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
-import { LocalMcpServersButton } from "./LocalMcpServersButton";
 import {
   type SuggestedPrompt,
   SuggestedPromptCard,
@@ -804,10 +802,6 @@ export function TaskInput({
     [autoresearchService],
   );
 
-  const localMcpServers = useLocalMcpCloudServers(
-    effectiveWorkspaceMode === "cloud",
-  );
-
   const {
     isCreatingTask,
     canSubmit,
@@ -1178,12 +1172,6 @@ export function TaskInput({
                       anchor={buttonGroupRef}
                     />
                   </ButtonGroup>
-                )}
-                {workspaceMode === "cloud" && (
-                  <LocalMcpServersButton
-                    servers={localMcpServers}
-                    disabled={isCreatingTask}
-                  />
                 )}
                 {!allowNoRepo && workspaceMode !== "cloud" && (
                   <AdditionalDirectoriesButton

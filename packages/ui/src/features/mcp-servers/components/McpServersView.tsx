@@ -3,6 +3,7 @@ import type {
   McpRecommendedServer,
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
+import { useLocalMcpCloudServers } from "@posthog/ui/features/local-mcp/useLocalMcpCloudServers";
 import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
 import { MarketplaceView } from "@posthog/ui/features/mcp-servers/components/parts/MarketplaceView";
 import { McpInstalledRail } from "@posthog/ui/features/mcp-servers/components/parts/McpInstalledRail";
@@ -75,6 +76,8 @@ export function McpServersView() {
     reauthorize,
     reauthorizePending,
   } = useMcpServers();
+
+  const localServers = useLocalMcpCloudServers(true);
 
   useEffect(() => {
     const refreshMcpState = () => {
@@ -276,6 +279,7 @@ export function McpServersView() {
       <McpInstalledRail
         installations={installationList}
         templates={serverList}
+        localServers={localServers}
         selectedInstallationId={selectedInstallationId}
         onAddCustom={() => setView({ kind: "add-custom" })}
         onSelectInstallation={(installationId) =>
