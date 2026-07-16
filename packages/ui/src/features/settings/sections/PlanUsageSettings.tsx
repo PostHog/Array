@@ -16,12 +16,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { BILLING_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { UsageMeter } from "@posthog/ui/features/billing/UsageMeter";
 import { useUsage } from "@posthog/ui/features/billing/useUsage";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SpendAnalysisSection } from "@posthog/ui/features/usage/components/SpendAnalysisSection";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import { useTrackUsageViewed } from "@posthog/ui/features/usage/useTrackUsageViewed";
@@ -30,14 +28,8 @@ import { getBillingUrl } from "@posthog/ui/utils/urls";
 import { Badge, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
 
-/**
- * Plan & usage under usage-based billing: no seats or plans to manage in-app —
- * payment methods, spend limits, and org-level usage live on the PostHog
- * billing page. The free-tier meters show the per-user allowance for
- * confirmed free-tier orgs; subscribed orgs have no per-user caps to meter.
- */
 export function PlanUsageSettings() {
-  const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  const billingEnabled = true;
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const billingUrl = getBillingUrl(cloudRegion);
@@ -52,7 +44,7 @@ export function PlanUsageSettings() {
     // refetchUsage is a refresh mutation, so it bypasses useUsage's `enabled`
     // gate — skip it for spend-only users.
     if (billingEnabled) void refetchUsage();
-  }, [refetchUsage, billingEnabled]);
+  }, [refetchUsage]);
 
   useTrackUsageViewed({
     isLoading: billingEnabled && usageLoading,
@@ -66,7 +58,6 @@ export function PlanUsageSettings() {
   const subscribed = usage?.code_usage_subscribed === true;
   const orgLimitReached = usage?.ai_credits?.exhausted === true;
   const meter = codeUsageMeter(usage);
-  const usageIsPerUser = meter.kind === "bucket";
 
   const openBilling = () => {
     if (billingUrl) window.open(billingUrl, "_blank");
@@ -164,16 +155,9 @@ export function PlanUsageSettings() {
           </Flex>
 
           <Flex direction="column" gap="3">
-            <Flex direction="column" gap="1">
-              <Text className="font-medium text-(--gray-9) text-sm">
-                {usageIsPerUser ? "Your usage" : "Organization usage"}
-              </Text>
-              <Text className="text-(--gray-11) text-[13px]">
-                {usageIsPerUser
-                  ? "Your personal free-tier allowance for this period."
-                  : "Usage-based billing shared across your whole organization."}
-              </Text>
-            </Flex>
+            <Text className="font-medium text-(--gray-9) text-sm">
+              Organization usage
+            </Text>
             {usageLoading ? (
               <Flex
                 align="center"
