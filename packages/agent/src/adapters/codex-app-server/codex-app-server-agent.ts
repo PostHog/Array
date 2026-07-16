@@ -52,7 +52,6 @@ import {
 } from "./app-server-client";
 import { handleServerRequest } from "./approvals";
 import {
-  type AccumulatedUsage,
   buildSdkSessionParams,
   buildTurnCompleteParams,
   buildUsageBreakdownParams,
@@ -162,6 +161,31 @@ function parseGoalCommand(prompt: PromptRequest["prompt"]): GoalCommand | null {
   }
 }
 
+function mergePromptUsage(
+  left: PromptResponse["usage"],
+  right: PromptResponse["usage"],
+): PromptResponse["usage"] {
+  if (!left) return right;
+  if (!right) return left;
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    cachedReadTokens:
+      (left.cachedReadTokens ?? 0) + (right.cachedReadTokens ?? 0),
+    cachedWriteTokens:
+      (left.cachedWriteTokens ?? 0) + (right.cachedWriteTokens ?? 0),
+    thoughtTokens: (left.thoughtTokens ?? 0) + (right.thoughtTokens ?? 0),
+    totalTokens: left.totalTokens + right.totalTokens,
+  };
+}
+
+function mergePromptResponses(
+  left: PromptResponse,
+  right: PromptResponse,
+): PromptResponse {
+  return { ...right, usage: mergePromptUsage(left.usage, right.usage) };
+}
+
 // The native app-server owns its config; BaseAcpAgent only calls dispose() on this.
 class NoopSettingsManager implements BaseSettingsManager {
   constructor(private cwd: string) {}
@@ -219,7 +243,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** The in-flight turn's <proposed_plan>, streamed or completed (drives the implement handoff). */
   private planProposal?: { itemId: string; text: string };
   /** Idle signal deferred while the plan handoff keeps this prompt busy. */
-  private deferredTurnComplete?: { usage: AccumulatedUsage };
+  private deferredTurnComplete?: { usage: PromptResponse["usage"] };
   /** Settles the pending plan-approval race on cancel/close/preempting prompt. */
   private planHandoffCancel?: () => void;
   private readonly mcp = new McpManager();
@@ -727,15 +751,16 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           return undefined;
         });
       this.turns.onSteered(steerRes?.turnId);
-      return { stopReason: await this.turns.awaitCompletion() };
+      const response = await this.turns.awaitCompletion();
+      return { stopReason: response.stopReason };
     }
     if (this.turns.isPending) {
       // A turn is pending but has no turnId yet, so we can't steer; fail fast.
       throw new Error("prompt() called while a turn is already in progress");
     }
 
-    const stopReason = await this.runTurn(input);
-    return { stopReason: await this.maybeOfferPlanImplementation(stopReason) };
+    const response = await this.runTurn(input);
+    return this.maybeOfferPlanImplementation(response);
   }
 
   private async handleGoalCommand(command: GoalCommand): Promise<void> {
@@ -850,7 +875,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   /** Start one codex turn and await its completion. */
-  private async runTurn(input: CodexUserInput[]): Promise<StopReason> {
+  private async runTurn(input: CodexUserInput[]): Promise<PromptResponse> {
     this.lastAgentMessage = "";
     this.resetUsage();
     this.planProposal = undefined;
@@ -895,12 +920,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
    * back into another plan turn, whose revised plan prompts again.
    */
   private async maybeOfferPlanImplementation(
-    stopReason: StopReason,
-  ): Promise<StopReason> {
-    let reason = stopReason;
+    response: PromptResponse,
+  ): Promise<PromptResponse> {
+    let result = response;
     try {
       while (
-        reason === "end_turn" &&
+        result.stopReason === "end_turn" &&
         this.config.mode === "plan" &&
         this.planProposal &&
         !this.session.cancelled
@@ -911,7 +936,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         // Re-check after the await: a cancel that raced the response wins, so a
         // late accept can never start implementation on a cancelled prompt.
         if (this.session.cancelled) {
-          reason = "cancelled";
+          result = { ...result, stopReason: "cancelled" };
           break;
         }
         // A picker change while approval was open owns the mode. Never let a
@@ -921,19 +946,25 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           this.config.setOption("mode", outcome.mode);
           this.emitCurrentMode(outcome.mode);
           this.emitConfigOptions();
-          reason = await this.runFollowUpTurn(IMPLEMENT_PLAN_MESSAGE);
+          result = mergePromptResponses(
+            result,
+            await this.runFollowUpTurn(IMPLEMENT_PLAN_MESSAGE),
+          );
           break;
         }
         if (outcome.kind === "feedback") {
-          reason = await this.runFollowUpTurn(outcome.feedback);
+          result = mergePromptResponses(
+            result,
+            await this.runFollowUpTurn(outcome.feedback),
+          );
           continue;
         }
         break;
       }
     } finally {
-      await this.flushDeferredTurnComplete(reason);
+      await this.flushDeferredTurnComplete(result.stopReason);
     }
-    return reason;
+    return result;
   }
 
   /**
@@ -949,7 +980,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   /** Run an adapter-initiated turn, echoed as a user message like a host prompt. */
-  private async runFollowUpTurn(text: string): Promise<StopReason> {
+  private async runFollowUpTurn(text: string): Promise<PromptResponse> {
     this.broadcastUserInput([{ type: "text", text }]);
     return this.runTurn(toCodexInput([{ type: "text", text }]));
   }
@@ -1448,7 +1479,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       await this.emitTurnCompleteSignal(reason, usage);
       await this.emitUsageBreakdown(contextUsed);
     }
-    pending.resolve(reason);
+    pending.resolve({
+      stopReason: reason,
+      ...(usage ? { usage } : {}),
+    });
   }
 
   /** Whether maybeOfferPlanImplementation will run for a turn that ended this way. */
@@ -1464,7 +1498,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** Emit the cloud idle signal `_posthog/turn_complete` (only with a taskRunId). */
   private async emitTurnCompleteSignal(
     reason: StopReason,
-    usage: AccumulatedUsage,
+    usage: PromptResponse["usage"],
   ): Promise<void> {
     if (!this.sessionId || !this.taskRunId) return;
     await this.client
