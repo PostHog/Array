@@ -16,6 +16,7 @@ import type {
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@agentclientprotocol/sdk";
+import { restrictedModelMeta } from "@posthog/shared";
 import {
   DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
@@ -25,6 +26,7 @@ import {
   isAnthropicModel,
   isCloudflareModel,
   isCloudflareModelId,
+  pickAllowedModel,
 } from "../gateway-models";
 import { Logger } from "../utils/logger";
 /**
@@ -136,22 +138,30 @@ export abstract class BaseAcpAgent implements Agent {
   async getModelConfigOptions(
     currentModelOverride?: string,
     gatewayUrl?: string,
+    gatewayAuthToken?: string,
   ): Promise<{
     currentModelId: string;
     options: SessionConfigSelectOption[];
   }> {
+    // Authenticated so the gateway can mark plan-restricted models —
+    // anonymous fetches see everything allowed.
     this.gatewayModels = await fetchGatewayModels(
-      gatewayUrl ? { gatewayUrl } : undefined,
+      gatewayUrl ? { gatewayUrl, authToken: gatewayAuthToken } : undefined,
     );
 
-    const options = this.gatewayModels
+    const adapterModels = this.gatewayModels
       // Cloudflare models are servable on the Claude adapter too — the gateway translates the
       // `@cf/` path onto its Anthropic-Messages surface — so include them alongside Anthropic models.
-      .filter((model) => isAnthropicModel(model) || isCloudflareModel(model))
+      .filter((model) => isAnthropicModel(model) || isCloudflareModel(model));
+
+    const options = adapterModels
       .map((model) => ({
         value: model.id,
         name: formatGatewayModelName(model),
         description: `Context: ${model.context_window.toLocaleString()} tokens`,
+        // Locked models stay listed so the picker can gate them instead of
+        // silently dropping them.
+        ...(model.allowed ? {} : { _meta: restrictedModelMeta() }),
       }))
       // Sort oldest-to-newest so the picker is deterministic and the newest
       // model lands at the end of the list, closest to the trigger.
@@ -185,6 +195,11 @@ export abstract class BaseAcpAgent implements Agent {
         currentModelId = DEFAULT_GATEWAY_MODEL;
       }
     }
+
+    // Never auto-select a model the org's plan can't use — it would 403 on
+    // the first message. An explicit user pick still goes through the
+    // picker's upgrade gate.
+    currentModelId = pickAllowedModel(adapterModels, currentModelId);
 
     if (!options.some((opt) => opt.value === currentModelId)) {
       options.unshift({

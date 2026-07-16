@@ -1,10 +1,14 @@
 import {
   ArrowSquareOut,
   CreditCard,
-  Info,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { PRO_USAGE_MULTIPLIER } from "@posthog/core/billing/usageDisplay";
+import {
+  codeUsageMeter,
+  formatResetTime,
+  formatUsdAmount,
+  isCodeUsageFreeTier,
+} from "@posthog/core/billing/usageDisplay";
 import {
   Empty,
   EmptyDescription,
@@ -12,130 +16,60 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { BILLING_FLAG, PLAN_PRO_ALPHA } from "@posthog/shared";
+import { BILLING_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import { useSwitchOrgMutation } from "@posthog/ui/features/auth/useAuthMutations";
-import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
 import { UsageMeter } from "@posthog/ui/features/billing/UsageMeter";
-import { useSeat } from "@posthog/ui/features/billing/useSeat";
 import { useUsage } from "@posthog/ui/features/billing/useUsage";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SpendAnalysisSection } from "@posthog/ui/features/usage/components/SpendAnalysisSection";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import { useTrackUsageViewed } from "@posthog/ui/features/usage/useTrackUsageViewed";
 import { track } from "@posthog/ui/shell/analytics";
-import { logger } from "@posthog/ui/shell/logger";
-import { getBillingUrl, getPostHogUrl } from "@posthog/ui/utils/urls";
-import {
-  Badge,
-  Button,
-  Callout,
-  Dialog,
-  Flex,
-  Spinner,
-  Text,
-} from "@radix-ui/themes";
-import { useEffect, useState } from "react";
+import { getBillingUrl } from "@posthog/ui/utils/urls";
+import { Badge, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
+import { useEffect } from "react";
 
-const log = logger.scope("plan-usage");
-
+/**
+ * Plan & usage under usage-based billing: no seats or plans to manage in-app —
+ * payment methods, spend limits, and org-level usage live on the PostHog
+ * billing page. The free-tier meters show the per-user allowance for
+ * confirmed free-tier orgs; subscribed orgs have no per-user caps to meter.
+ */
 export function PlanUsageSettings() {
-  const {
-    seat,
-    orgSeat,
-    isPro,
-    isOrgPro,
-    isCanceling,
-    activeUntil,
-    isLoading,
-    error,
-    redirectUrl,
-    billingOrgId,
-    hasBetterPlanElsewhere,
-  } = useSeat();
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
-  const { fetchSeat, upgradeToPro, cancelSeat, reactivateSeat, clearError } =
-    useSeatStore();
+  const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
-  const switchOrgMutation = useSwitchOrgMutation();
   const billingUrl = getBillingUrl(cloudRegion);
 
-  async function switchOrgAndRefreshSeat(orgId: string): Promise<void> {
-    await switchOrgMutation.mutateAsync(orgId);
-    await fetchSeat({ autoProvision: true });
-  }
-
-  async function openBillingPage(orgId: string | null): Promise<void> {
-    if (orgId && orgId !== currentOrgId) {
-      try {
-        await switchOrgAndRefreshSeat(orgId);
-      } catch (err) {
-        log.warn("Failed to switch org before opening billing", err);
-        return;
-      }
-    }
-    if (billingUrl) window.open(billingUrl, "_blank");
-  }
-
-  async function switchToBillingOrg(orgId: string): Promise<void> {
-    try {
-      await switchOrgAndRefreshSeat(orgId);
-    } catch (err) {
-      log.warn("Failed to switch to billing org", err);
-    }
-  }
-  const redirectFullUrl = redirectUrl
-    ? (getPostHogUrl(redirectUrl, cloudRegion) ?? billingUrl)
-    : null;
-  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
-  const spendAnalysisEnabled = useSpendAnalysisEnabled();
-
-  const isAlpha = orgSeat?.plan_key === PLAN_PRO_ALPHA;
   const {
     usage,
     isLoading: usageLoading,
     refetch: refetchUsage,
-  } = useUsage({
-    enabled: billingEnabled && seat !== null,
-  });
+  } = useUsage({ enabled: billingEnabled });
 
   useEffect(() => {
-    void fetchSeat({ autoProvision: true });
     // refetchUsage is a refresh mutation, so it bypasses useUsage's `enabled`
     // gate — skip it for spend-only users.
     if (billingEnabled) void refetchUsage();
-  }, [fetchSeat, refetchUsage, billingEnabled]);
+  }, [refetchUsage, billingEnabled]);
 
   useTrackUsageViewed({
-    isLoading: billingEnabled && (isLoading || usageLoading),
-    isPro,
+    isLoading: billingEnabled && usageLoading,
+    isPro: usage?.is_pro ?? false,
     sustainedUsedPercent: usage?.sustained.used_percent ?? null,
     burstUsedPercent: usage?.burst.used_percent ?? null,
   });
 
-  useEffect(() => {
-    if (showUpgradeDialog) {
-      track(ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN, {
-        surface: "upgrade_dialog",
-      });
-    }
-  }, [showUpgradeDialog]);
+  // Tri-state: unknown (absent field) must render as subscribed, never free.
+  const freeTier = isCodeUsageFreeTier(usage);
+  const subscribed = usage?.code_usage_subscribed === true;
+  const orgLimitReached = usage?.ai_credits?.exhausted === true;
+  const meter = codeUsageMeter(usage);
 
-  const formattedActiveUntil = activeUntil
-    ? activeUntil.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-      })
-    : null;
-
-  const daysUntilReset = activeUntil
-    ? Math.max(
-        0,
-        Math.ceil((activeUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-      )
-    : null;
+  const openBilling = () => {
+    if (billingUrl) window.open(billingUrl, "_blank");
+  };
 
   if (!billingEnabled && !spendAnalysisEnabled) {
     return (
@@ -157,25 +91,23 @@ export function PlanUsageSettings() {
     <Flex direction="column" gap="5">
       {billingEnabled && (
         <>
-          {error && !redirectUrl && (
+          {orgLimitReached && (
             <Callout.Root color="red" size="1">
               <Callout.Icon>
                 <WarningCircle size={16} />
               </Callout.Icon>
               <Callout.Text>
                 <Flex direction="column" gap="2">
-                  <Text className="text-sm">{error}</Text>
-                  <Text className="text-(--red-9) text-sm">
-                    Update your payment method in PostHog to continue.
+                  <Text className="text-sm">
+                    Your organization has reached its PostHog Code usage limit
+                    for this billing period.
                   </Text>
                   <Button
                     size="1"
                     variant="outline"
                     color="red"
                     disabled={!billingUrl}
-                    onClick={() => {
-                      void openBillingPage(billingOrgId);
-                    }}
+                    onClick={openBilling}
                     className="self-start"
                   >
                     Manage billing
@@ -186,180 +118,49 @@ export function PlanUsageSettings() {
             </Callout.Root>
           )}
 
-          {redirectUrl && (
-            <Callout.Root color="amber" size="1">
-              <Callout.Icon>
-                <WarningCircle size={16} />
-              </Callout.Icon>
-              <Callout.Text>
-                <Flex direction="column" gap="2">
-                  <Text className="text-sm">
-                    Your organization needs an active billing subscription
-                    before you can select a plan.
-                  </Text>
-                  <Button
-                    size="1"
-                    variant="outline"
-                    color="amber"
-                    disabled={!redirectFullUrl}
-                    onClick={() => {
-                      if (redirectFullUrl)
-                        window.open(redirectFullUrl, "_blank");
-                      clearError();
-                    }}
-                    className="self-start"
-                  >
-                    Set up billing
-                    <ArrowSquareOut size={12} />
-                  </Button>
-                </Flex>
-              </Callout.Text>
-            </Callout.Root>
-          )}
-
-          {hasBetterPlanElsewhere && seat?.organization_name && (
-            <Callout.Root color="blue" size="1">
-              <Callout.Icon>
-                <Info size={16} />
-              </Callout.Icon>
-              <Callout.Text>
-                <Flex direction="column" gap="2">
-                  <Text className="text-sm">
-                    You have a Pro plan on{" "}
-                    <Text weight="medium">{seat.organization_name}</Text>. Usage
-                    on this page reflects your current organization.
-                  </Text>
-                  {billingOrgId && (
-                    <Flex direction="column" gap="1" className="self-start">
-                      <Button
-                        size="1"
-                        variant="outline"
-                        disabled={switchOrgMutation.isPending}
-                        onClick={() => {
-                          void switchToBillingOrg(billingOrgId);
-                        }}
-                      >
-                        {switchOrgMutation.isPending ? (
-                          <Spinner size="1" />
-                        ) : (
-                          `Switch to ${seat.organization_name ?? "Pro org"}`
-                        )}
-                      </Button>
-                      {switchOrgMutation.isError && (
-                        <Text className="text-(--red-11) text-[12px]">
-                          Switching failed. Try again or switch from the
-                          sidebar.
-                        </Text>
-                      )}
-                    </Flex>
-                  )}
-                </Flex>
-              </Callout.Text>
-            </Callout.Root>
-          )}
-
-          <Flex gap="3">
-            {orgSeat ? (
-              <>
-                <PlanCard
-                  name="Free"
-                  price="$0"
-                  period="/mo"
-                  isCurrent={!isOrgPro}
-                />
-                <PlanCard
-                  name="Pro"
-                  price="$200"
-                  period="/mo"
-                  badge={`${PRO_USAGE_MULTIPLIER}× Free usage`}
-                  isCurrent={isOrgPro && !isAlpha}
-                  resetLabel={
-                    isOrgPro && !isAlpha && isCanceling && formattedActiveUntil
-                      ? `Cancels ${formattedActiveUntil}`
-                      : isOrgPro &&
-                          !isAlpha &&
-                          formattedActiveUntil &&
-                          daysUntilReset !== null
-                        ? `Resets ${formattedActiveUntil} (${daysUntilReset} days)`
-                        : undefined
-                  }
-                  action={
-                    isAlpha ? null : isOrgPro ? (
-                      isCanceling ? (
-                        <Button
-                          size="1"
-                          variant="solid"
-                          onClick={reactivateSeat}
-                          disabled={isLoading}
-                          className="self-start"
-                        >
-                          {isLoading ? <Spinner size="1" /> : "Reactivate"}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="1"
-                          variant="outline"
-                          color="red"
-                          onClick={cancelSeat}
-                          disabled={isLoading}
-                          className="self-start"
-                        >
-                          {isLoading ? <Spinner size="1" /> : "Cancel plan"}
-                        </Button>
-                      )
-                    ) : (
-                      <Button
-                        size="1"
-                        variant="solid"
-                        onClick={() => {
-                          track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
-                            surface: "plan_page_card",
-                          });
-                          setShowUpgradeDialog(true);
-                        }}
-                        disabled={isLoading}
-                        className="self-start"
-                      >
-                        {isLoading ? <Spinner size="1" /> : "Upgrade"}
-                      </Button>
-                    )
-                  }
-                />
-              </>
-            ) : (
-              <Flex
-                align="center"
-                justify="center"
-                p="6"
-                className="flex-1 rounded-(--radius-3) border border-(--gray-5)"
-              >
-                {isLoading ? (
-                  <Spinner size="2" />
-                ) : (
-                  <Text color="gray" className="text-sm">
-                    No plan selected
-                  </Text>
-                )}
-              </Flex>
-            )}
-          </Flex>
-
-          {isAlpha && (
-            <Flex
-              p="4"
-              className="rounded-(--radius-3) border border-(--accent-7) bg-(--accent-2)"
-            >
-              <Flex direction="column" gap="2">
-                <Text className="font-medium text-sm">Extended Alpha Plan</Text>
+          <Flex
+            direction="column"
+            gap="3"
+            p="4"
+            className="rounded-(--radius-3) border border-(--gray-5)"
+          >
+            <Flex align="center" justify="between">
+              <Flex direction="column" gap="1">
+                <Text className="font-bold text-base">
+                  {freeTier ? "Free tier" : "Usage-based billing"}
+                </Text>
                 <Text className="text-(--gray-11) text-sm">
-                  You're on the free Pro plan with full Pro features until June
-                  4, 2026. Once your alpha seat expires, you'll be moved to the
-                  free plan automatically and will be able to upgrade to the Pro
-                  plan.
+                  {freeTier
+                    ? "Your organization's first $20 of usage each month is included, with access to open models. Add a payment method to unlock premium models — you only pay for what you use."
+                    : "Your organization pays for PostHog Code usage at cost — no seats, no subscriptions. The first $20 each month is included."}
                 </Text>
               </Flex>
+              {subscribed && (
+                <Badge variant="soft" color="green" radius="full">
+                  Active
+                </Badge>
+              )}
             </Flex>
-          )}
+            <Button
+              size="1"
+              variant={freeTier ? "solid" : "outline"}
+              disabled={!billingUrl}
+              onClick={() => {
+                if (freeTier) {
+                  track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
+                    surface: "plan_page_card",
+                  });
+                }
+                openBilling();
+              }}
+              className="self-start"
+            >
+              {freeTier
+                ? "Add payment method"
+                : "Manage billing and spend limits"}
+              <ArrowSquareOut size={12} />
+            </Button>
+          </Flex>
 
           <Flex direction="column" gap="3">
             <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
@@ -372,185 +173,52 @@ export function PlanUsageSettings() {
               >
                 <Spinner size="2" />
               </Flex>
-            ) : usage ? (
-              <Flex direction="column" gap="3">
-                <UsageMeter
-                  label="Monthly"
-                  bucket={usage.sustained}
-                  color={usage.sustained.exceeded ? "red" : undefined}
-                />
-                <UsageMeter
-                  label="Daily"
-                  bucket={usage.burst}
-                  color={usage.burst.exceeded ? "red" : undefined}
-                />
-              </Flex>
+            ) : meter.kind === "dollars" ? (
+              <UsageMeter
+                label={freeTier ? "Monthly free usage" : "Usage this period"}
+                percent={meter.percent}
+                valueLabel={`${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)}${freeTier ? " included" : ""}`}
+                detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt)}`}
+                color={meter.exceeded ? "red" : undefined}
+              />
+            ) : meter.kind === "bucket" ? (
+              <UsageMeter
+                label="Monthly free usage"
+                percent={meter.bucket.used_percent}
+                valueLabel={`${meter.bucket.used_percent.toFixed(2)}%`}
+                detail={`${meter.bucket.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.bucket.reset_at)}`}
+                color={meter.bucket.exceeded ? "red" : undefined}
+              />
             ) : (
-              <Flex
-                direction="column"
-                gap="3"
-                p="4"
-                className="rounded-(--radius-3) border border-(--gray-5)"
-              >
-                <Text color="gray" className="text-sm">
-                  Unable to load usage data
-                </Text>
-              </Flex>
-            )}
-          </Flex>
-
-          {isOrgPro && (
-            <Flex direction="column" gap="3">
-              <Text className="font-medium text-(--gray-9) text-sm">
-                Billing
-              </Text>
               <Flex
                 align="center"
                 justify="between"
                 p="4"
                 className="rounded-(--radius-3) border border-(--gray-5)"
               >
-                <Flex align="center" gap="3">
-                  <CreditCard size={18} className="text-(--gray-9)" />
-                  <Text className="text-sm">Manage billing and invoices</Text>
-                </Flex>
-                <Button
-                  size="1"
-                  variant="outline"
-                  disabled={!billingUrl}
-                  onClick={() => {
-                    void openBillingPage(billingOrgId);
-                  }}
-                >
-                  Open
-                  <ArrowSquareOut size={12} />
-                </Button>
-              </Flex>
-            </Flex>
-          )}
-          <Dialog.Root
-            open={showUpgradeDialog}
-            onOpenChange={setShowUpgradeDialog}
-          >
-            <Dialog.Content maxWidth="420px" size="2">
-              <Dialog.Title className="text-base">Upgrade to Pro</Dialog.Title>
-              <Dialog.Description color="gray" className="text-sm">
-                Pro is for teams using Code as part of their daily development
-                workflow: longer cloud runs, repeated agent iterations, and
-                fewer stops as work scales.{" "}
-                {seat?.organization_name ? (
-                  <Text weight="medium">{seat.organization_name}</Text>
-                ) : (
-                  "Your organization"
-                )}{" "}
-                will be charged $200/month for {PRO_USAGE_MULTIPLIER}× the Free
-                usage limit.
-              </Dialog.Description>
-              <Flex
-                align="start"
-                gap="2"
-                mt="3"
-                p="3"
-                className="rounded-(--radius-2) bg-(--gray-2)"
-              >
-                <Info size={14} className="mt-[2px] shrink-0 text-(--gray-9)" />
-                <Text className="text-(--gray-11) text-[13px]">
-                  Your first charge is prorated for the remainder of the current
-                  billing cycle, then $200/month thereafter.
+                <Text color="gray" className="text-sm">
+                  {usage
+                    ? "Usage is billed to your organization. View detailed usage and spend in PostHog."
+                    : "Unable to load usage data"}
                 </Text>
-              </Flex>
-              <Flex justify="end" gap="3" mt="4">
-                <Dialog.Close>
-                  <Button variant="soft" color="gray" size="2">
-                    Cancel
+                {usage && (
+                  <Button
+                    size="1"
+                    variant="outline"
+                    disabled={!billingUrl}
+                    onClick={openBilling}
+                  >
+                    View usage
+                    <ArrowSquareOut size={12} />
                   </Button>
-                </Dialog.Close>
-                <Button
-                  size="2"
-                  onClick={async () => {
-                    track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
-                      surface: "upgrade_dialog",
-                    });
-                    setShowUpgradeDialog(false);
-                    await upgradeToPro();
-                  }}
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Spinner size="1" /> : "Subscribe - $200/mo"}
-                </Button>
+                )}
               </Flex>
-            </Dialog.Content>
-          </Dialog.Root>
+            )}
+          </Flex>
         </>
       )}
 
       {spendAnalysisEnabled && <SpendAnalysisSection />}
-    </Flex>
-  );
-}
-
-interface PlanCardProps {
-  name: string;
-  price: string;
-  period: string;
-  isCurrent: boolean;
-  resetLabel?: string;
-  badge?: string;
-  action?: React.ReactNode;
-}
-
-function PlanCard({
-  name,
-  price,
-  period,
-  isCurrent,
-  resetLabel,
-  badge,
-  action,
-}: PlanCardProps) {
-  return (
-    <Flex
-      direction="column"
-      justify="between"
-      gap="3"
-      p="4"
-      style={{
-        border: isCurrent
-          ? "1px solid var(--accent-7)"
-          : "1px solid var(--gray-5)",
-        opacity: isCurrent ? 1 : 0.7,
-      }}
-      className="relative flex-1 rounded-(--radius-3)"
-    >
-      {badge && (
-        <Badge variant="soft" radius="full" className="absolute top-4 right-4">
-          {badge}
-        </Badge>
-      )}
-      <Flex direction="column" gap="3">
-        <Flex direction="column" gap="1">
-          <Text
-            style={{
-              color: isCurrent ? "var(--accent-9)" : "var(--gray-9)",
-              letterSpacing: "0.05em",
-            }}
-            className="font-medium text-[13px]"
-          >
-            {isCurrent ? "CURRENT PLAN" : name.toUpperCase()}
-          </Text>
-          <Flex align="baseline" gap="2">
-            <Text className="font-bold text-xl">{name}</Text>
-            <Text className="text-(--gray-11) text-base">
-              {price}
-              <Text className="text-(--gray-9) text-[13px]">{period}</Text>
-            </Text>
-          </Flex>
-          {resetLabel && (
-            <Text className="text-(--gray-9) text-[13px]">{resetLabel}</Text>
-          )}
-        </Flex>
-      </Flex>
-      {action}
     </Flex>
   );
 }

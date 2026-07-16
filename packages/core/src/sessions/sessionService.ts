@@ -14,6 +14,7 @@ import {
   type Adapter,
   type AgentSession,
   type CloudRegion,
+  classifyGatewayLimitError,
   type ExecutionMode,
   flattenSelectOptions,
   getBackoffDelay,
@@ -174,6 +175,7 @@ export interface SessionTrpc {
     retry: TrpcMutation;
     sendCommand: TrpcMutation;
     stop: TrpcMutation;
+    designateRelayedMcpServers: TrpcMutation;
     onUpdate: TrpcSubscription;
   };
   handoff: {
@@ -2712,15 +2714,18 @@ export class SessionService {
 
       this.d.store.clearOptimisticItems(session.taskRunId);
 
-      if (isRateLimitError(errorMessage, errorDetails)) {
-        this.d.log.warn("Rate limit exceeded, showing usage limit modal", {
+      const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
+
+      if (limitCause !== null || isRateLimitError(errorMessage, errorDetails)) {
+        this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
+          cause: limitCause,
         });
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show();
+        this.d.usageLimit.show(limitCause ? { cause: limitCause } : undefined);
         return { stopReason: "rate_limited" };
       }
 
@@ -4470,6 +4475,22 @@ export class SessionService {
    * status triggers full teardown from within handleCloudTaskUpdate via
    * stopCloudTaskWatch().
    */
+  /**
+   * Register this client as the relay executor for a run's desktop-only MCP
+   * servers (docs/cloud-mcp-relay.md). Called by the creation saga — only the
+   * creating client may execute relay requests.
+   */
+  async designateRelayedMcpServers(
+    runId: string,
+    servers: string[],
+  ): Promise<void> {
+    if (servers.length === 0) return;
+    await this.d.trpc.cloudTask.designateRelayedMcpServers.mutate({
+      runId,
+      servers,
+    });
+  }
+
   watchCloudTask(
     taskId: string,
     runId: string,

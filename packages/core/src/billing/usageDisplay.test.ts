@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { UsageOutput } from "../usage/schemas";
-import { formatResetTime, isUsageExceeded } from "./usageDisplay";
+import {
+  codeUsageMeter,
+  formatResetTime,
+  formatUsdAmount,
+  isCodeUsageFreeTier,
+  isUsageExceeded,
+} from "./usageDisplay";
 
 function makeUsage(
   overrides: Partial<{
@@ -53,6 +59,92 @@ describe("isUsageExceeded", () => {
   });
 });
 
+describe("isCodeUsageFreeTier", () => {
+  it.each([
+    [false, true],
+    [true, false],
+    // Absent means unknown, never free.
+    [undefined, false],
+  ] as const)("code_usage_subscribed=%s -> %s", (subscribed, expected) => {
+    expect(isCodeUsageFreeTier({ code_usage_subscribed: subscribed })).toBe(
+      expected,
+    );
+  });
+
+  it("treats missing usage as not confirmed free", () => {
+    expect(isCodeUsageFreeTier(null)).toBe(false);
+    expect(isCodeUsageFreeTier(undefined)).toBe(false);
+  });
+});
+
+describe("codeUsageMeter", () => {
+  it("prefers billing's org dollars when both numbers are present", () => {
+    const meter = codeUsageMeter({
+      ...makeUsage(),
+      code_usage_subscribed: true,
+      ai_credits: { exhausted: false, used_usd: 12.4, limit_usd: 50 },
+      billing_period_end: "2026-06-01T00:00:00.000Z",
+    });
+    expect(meter).toEqual({
+      kind: "dollars",
+      usedUsd: 12.4,
+      limitUsd: 50,
+      percent: 25,
+      exceeded: false,
+      resetAt: "2026-06-01T00:00:00.000Z",
+    });
+  });
+
+  it("marks the dollars meter exceeded from the org bucket and falls back to the sustained reset", () => {
+    const meter = codeUsageMeter({
+      ...makeUsage(),
+      code_usage_subscribed: false,
+      ai_credits: { exhausted: true, used_usd: 20, limit_usd: 20 },
+    });
+    expect(meter).toMatchObject({
+      kind: "dollars",
+      percent: 100,
+      exceeded: true,
+      resetAt: "2026-05-01T13:00:00.000Z",
+    });
+  });
+
+  it.each([
+    ["missing numbers", { exhausted: false }],
+    ["null numbers", { exhausted: false, used_usd: null, limit_usd: null }],
+    ["a zero limit", { exhausted: false, used_usd: 0, limit_usd: 0 }],
+  ])("falls back to the free-tier valve bucket with %s", (_name, aiCredits) => {
+    const usage: UsageOutput = {
+      ...makeUsage(),
+      code_usage_subscribed: false,
+      ai_credits: aiCredits,
+    };
+    expect(codeUsageMeter(usage)).toEqual({
+      kind: "bucket",
+      bucket: usage.sustained,
+    });
+  });
+
+  it("hides the meter for a subscribed or unknown org without dollars", () => {
+    expect(
+      codeUsageMeter({ ...makeUsage(), code_usage_subscribed: true }),
+    ).toEqual({ kind: "hidden" });
+    expect(codeUsageMeter(makeUsage())).toEqual({ kind: "hidden" });
+    expect(codeUsageMeter(null)).toEqual({ kind: "hidden" });
+  });
+});
+
+describe("formatUsdAmount", () => {
+  it.each([
+    [50, "$50"],
+    [12.4, "$12.40"],
+    [0.5, "$0.50"],
+    [0, "$0"],
+  ])("formats %s as %s", (amount, expected) => {
+    expect(formatUsdAmount(amount)).toBe(expected);
+  });
+});
+
 describe("formatResetTime", () => {
   const NOW = Date.parse("2026-05-01T12:00:00.000Z");
   const isoAt = (msFromNow: number) => new Date(NOW + msFromNow).toISOString();
@@ -72,6 +164,11 @@ describe("formatResetTime", () => {
       name: "returns hours only when minutes round to 0",
       resetAt: isoAt(4 * 3600 * 1000),
       expected: "Resets in 4h",
+    },
+    {
+      name: "rolls the hour instead of showing 60 minutes",
+      resetAt: isoAt((23 * 3600 + 59 * 60 + 40) * 1000),
+      expected: "Resets in 24h",
     },
     {
       name: "returns localized date when over 24h away",

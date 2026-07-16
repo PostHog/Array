@@ -12,6 +12,9 @@ export interface GatewayModel {
   display_name?: string;
   context_window?: number;
   supports_vision?: boolean;
+  // Free-tier model gate: authenticated fetches mark models outside the
+  // caller's plan. Absence (anonymous fetch or older gateway) means allowed.
+  allowed?: boolean;
 }
 
 type ModelFamily = "anthropic" | "openai" | "cloudflare";
@@ -181,12 +184,14 @@ export function fallbackModelConfigs(
 
 async function fetchGatewayModels(
   region: CloudRegion,
+  apiKey?: string,
 ): Promise<GatewayModel[]> {
   if (process.env.PI_OFFLINE || process.env.HARNESS_STATIC_MODELS) {
     return [];
   }
   try {
     const response = await fetch(`${getLlmGatewayUrl(region)}/v1/models`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
       signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -201,12 +206,17 @@ async function fetchGatewayModels(
 
 export async function resolveModelConfigs(
   region: CloudRegion,
+  apiKey?: string,
 ): Promise<ProviderModelConfig[]> {
-  const live = await fetchGatewayModels(region);
+  const live = await fetchGatewayModels(region, apiKey);
   if (live.length === 0) {
     return fallbackModelConfigs(region);
   }
-  return live
-    .filter((model) => Boolean(model.id))
-    .map((model) => toModelConfig(model, region));
+  const withIds = live.filter((model) => Boolean(model.id));
+  // pi has no locked-model rendering, so restricted models are dropped. The
+  // free tier always includes a servable model; guard against empty anyway.
+  const usable = withIds.filter((model) => model.allowed !== false);
+  return (usable.length > 0 ? usable : withIds).map((model) =>
+    toModelConfig(model, region),
+  );
 }

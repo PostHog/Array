@@ -19,7 +19,12 @@ import type {
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
-import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
+import { RequestError } from "@agentclientprotocol/sdk";
+import {
+  classifyGatewayLimitError,
+  mcpToolKey,
+  posthogToolMeta,
+} from "@posthog/shared";
 import {
   type NativeGoalState,
   POSTHOG_NOTIFICATIONS,
@@ -1245,11 +1250,27 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     if (method === APP_SERVER_NOTIFICATIONS.ERROR) {
       // A non-retried fatal error: resolve the turn so prompt() returns rather than hangs.
-      const willRetry = (params as { willRetry?: boolean })?.willRetry;
+      const { willRetry, error } = (params ?? {}) as {
+        willRetry?: boolean;
+        error?: { message?: string };
+      };
       if (willRetry === false) {
         this.logger.warn("codex app-server fatal error notification", {
           params,
         });
+        const message = error?.message ?? "";
+        // A gateway billing denial rejects the prompt so the host classifies
+        // it and shows the upgrade gate. It must be a RequestError: a plain
+        // Error serializes to a bare "Internal error" at the ACP boundary,
+        // which the host reads as fatal and answers with a respawn loop.
+        if (classifyGatewayLimitError(message) !== null) {
+          if (this.compactionActive) {
+            this.compactionActive = false;
+            this.emitCompactionBoundary();
+          }
+          this.turns.fail(RequestError.internalError(undefined, message));
+          return;
+        }
         void this.finalizeTurn("refusal");
       }
     }
