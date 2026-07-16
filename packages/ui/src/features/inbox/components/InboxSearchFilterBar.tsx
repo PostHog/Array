@@ -45,8 +45,8 @@ export function InboxSearchFilterBar({
   );
   const priorityFilter = useInboxSignalsFilterStore((s) => s.priorityFilter);
   const togglePriority = useInboxSignalsFilterStore((s) => s.togglePriority);
-  const clearPriorityFilter = useInboxSignalsFilterStore(
-    (s) => s.clearPriorityFilter,
+  const setPriorityFilter = useInboxSignalsFilterStore(
+    (s) => s.setPriorityFilter,
   );
 
   const activeSort = INBOX_SORT_OPTIONS.find(
@@ -144,7 +144,7 @@ export function InboxSearchFilterBar({
         <Flex direction="column" gap="0">
           <InboxFilterAnyItem
             active={priorityFilter.length === 0}
-            onClick={clearPriorityFilter}
+            onClick={() => setPriorityFilter([])}
           />
           {INBOX_PRIORITY_OPTIONS.map((option) => {
             const isActive = priorityFilter.includes(option.value);

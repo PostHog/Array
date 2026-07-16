@@ -71,10 +71,10 @@ describe("inboxSignalsFilterStore", () => {
     ]);
   });
 
-  it("clearPriorityFilter resets priorities back to Any (empty)", () => {
+  it("setPriorityFilter resets priorities back to Any (empty)", () => {
     useInboxSignalsFilterStore.getState().setPriorityFilter(["P0", "P1"]);
 
-    useInboxSignalsFilterStore.getState().clearPriorityFilter();
+    useInboxSignalsFilterStore.getState().setPriorityFilter([]);
 
     expect(useInboxSignalsFilterStore.getState().priorityFilter).toEqual([]);
   });
