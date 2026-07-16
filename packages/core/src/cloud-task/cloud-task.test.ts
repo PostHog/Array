@@ -3283,4 +3283,49 @@ describe("CloudTaskService MCP relay", () => {
       ),
     ).toBe(false);
   });
+
+  it("posts a -32000 mcp_response when the executor throws", async () => {
+    mcpRelayExecutor.execute.mockRejectedValueOnce(new Error("spawn failed"));
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({ requestId: "req-1", server: "slack" }),
+      ),
+    );
+    mockNetFetch.mockResolvedValueOnce(createJsonResponse({ result: {} }));
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() =>
+      mockNetFetch.mock.calls.some(([url]) =>
+        (url as string).includes("/command/"),
+      ),
+    );
+    const commandCall = mockNetFetch.mock.calls.find(([url]) =>
+      (url as string).includes("/command/"),
+    );
+    const body = JSON.parse((commandCall?.[1] as RequestInit).body as string);
+    // A thrown executor error must still answer the sandbox — otherwise it hangs to timeout.
+    expect(body).toEqual(
+      expect.objectContaining({
+        method: "mcp_response",
+        params: {
+          requestId: "req-1",
+          server: "slack",
+          error: { code: -32000, message: "spawn failed" },
+        },
+      }),
+    );
+  });
+
+  it("closes the run's relay connections when the run is unwatched", async () => {
+    mockStreamFetch.mockResolvedValue(createOpenSseResponse(""));
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+
+    relayService.unwatch("task-1", "run-1");
+    await waitFor(() => mcpRelayExecutor.closeRun.mock.calls.length > 0);
+
+    expect(mcpRelayExecutor.closeRun).toHaveBeenCalledWith("run-1");
+  });
 });

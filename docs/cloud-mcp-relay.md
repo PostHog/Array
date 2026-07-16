@@ -95,21 +95,30 @@ Per incoming HTTP request:
 JSON-RPC *notifications* (no `id`) are relayed fire-and-forget: emit the
 event, answer 202 immediately.
 
-Liveness: relay endpoints 503 when no client can service the request,
-reusing the permission relay's `hasReachableClient` (a direct SSE viewer OR
-an active durable event stream). An earlier design used a stricter
-`desktopSeenAt` timestamp, but in the durable-ingest topology the desktop
-reads the run's stream through the agent-proxy and never connects to the
-sandbox, so that stricter signal 503s every request — `hasReachableClient`
-is the correct gate. Relay endpoints only exist when a desktop designated
+Liveness: the relay endpoints use the permission relay's `hasReachableClient`
+signal (a direct SSE viewer OR an active durable event stream) but must not
+503 during the ~2 s startup window before the first client attaches — an MCP
+client connects to each server once at session start, so a 503 there drops
+the server for the whole run. So the endpoint tracks `everReachable` and only
+503s once a client has been reachable and then went away (a genuine mid-run
+desktop disconnect). Before the first client ever attaches, the request is
+buffered — `broadcastEvent` already buffers-and-replays events until a
+controller attaches — and resolves when the client arrives or the request
+times out. (An earlier design gated purely on a `desktopSeenAt` timestamp,
+which 503'd the startup handshake in the durable-ingest topology, where the
+desktop reads the run's stream through the agent-proxy and never connects to
+the sandbox directly; that's why the gate is `everReachable`-then-lost, not
+"seen recently".) Relay endpoints only exist when a desktop designated
 servers at creation, so a non-headless run is the precondition anyway. So:
 
-- Claude gets an MCP connection error it reports cleanly, not a 60 s hang.
-- Codex-style reachability probes (which treat any HTTP response as
-  reachable but connection failures as not — see `isMcpServerReachable` in
-  `packages/workspace-server/src/services/agent/agent.ts`) must be extended
-  in the sandbox to treat 503 from loopback relay endpoints as unreachable
-  when pruning for Codex sessions.
+- Claude gets a clean MCP error on a genuine mid-run disconnect, not a 60 s
+  hang, and its session-start handshake is never dropped by a startup 503.
+- Codex reachability probes treat any HTTP response (including the buffered
+  200 or a 503) as reachable and connection failures as not — see
+  `isMcpServerReachable` in
+  `packages/workspace-server/src/services/agent/agent.ts` — so a loopback
+  relay endpoint always probes as reachable and is never pruned from a Codex
+  session.
 
 Headless-started runs (web/mobile/Slack) have no desktop: those creation
 paths never declare relayed servers, so the endpoints simply don't exist.
@@ -232,7 +241,8 @@ persisted, with caps and the no-secrets rule above.**
 
 | Failure | Behavior |
 | --- | --- |
-| Desktop offline at call time | Loopback endpoint 503s; agent sees "requires the desktop app" MCP error; Codex pruning treats the server as unreachable. |
+| Desktop never attaches (offline from session start) | Request buffers until it times out (60 s) → agent gets JSON-RPC `-32001`; the endpoint does **not** 503 during startup (that would drop the server for the whole run). |
+| Desktop disconnects mid-run (was reachable, now gone) | Endpoint 503s (`everReachable && !reachable`); agent sees a clean "requires the desktop app" MCP error rather than a hang. |
 | Desktop disconnects mid-call | Sandbox timeout fires (60 s), agent gets JSON-RPC `-32001`. |
 | Desktop reconnects after backlog | Replayed `mcp_request` events past `expiresAt` are dropped; unexpired ones are deduped by `requestId`. |
 | stdio process crashes | Desktop replies with `error`; next request lazily respawns. |
@@ -241,8 +251,9 @@ persisted, with caps and the no-secrets rule above.**
 ## Testing plan
 
 - Sandbox: unit tests for the correlation map — resolve, timeout, late
-  response, oversized payload, notification fire-and-forget, 503 when no
-  desktop seen (Vitest, faked clock).
+  response, oversized payload, notification fire-and-forget, startup
+  buffering before any client attaches, and 503 only after a client was
+  reachable and then went away (Vitest).
 - Desktop: unit tests for `McpRelayService` — name designation enforcement,
   requestId dedupe, expiry drop, stdio spawn failure → error reply (faked
   MCP client).

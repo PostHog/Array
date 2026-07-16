@@ -21,6 +21,7 @@ import {
   buildPrOutput,
   getErrorMessage,
   mergePrUrls,
+  readMcpToolDescriptor,
   readPrUrls,
 } from "@posthog/shared";
 import { unzipSync } from "fflate";
@@ -1180,13 +1181,31 @@ export class AgentServer {
           return { refreshed: true };
         }
 
+        // refresh_session replaces the session's MCP server list wholesale, and
+        // Django's refresh rebuilds it from posthog + user + imported configs —
+        // it can't include the relay loopback entries, whose URL and per-run
+        // bearer live only here. Re-append them so a mid-run refresh (token
+        // rotation, follow-up past the refresh window) doesn't silently drop
+        // every relayed server from the session.
+        const relayServers = this.mcpRelayServer?.mcpServers ?? [];
+        const refreshedMcpServers = [
+          ...mcpServers,
+          ...relayServers.filter(
+            (relay) =>
+              !mcpServers.some(
+                (s: { name?: unknown }) => s?.name === relay.name,
+              ),
+          ),
+        ];
+
         this.logger.debug("Refresh session requested", {
-          serverCount: mcpServers.length,
+          serverCount: refreshedMcpServers.length,
+          relayServerCount: relayServers.length,
         });
 
         return await this.session.clientConnection.extMethod(
           POSTHOG_METHODS.REFRESH_SESSION,
-          { mcpServers },
+          { mcpServers: refreshedMcpServers },
         );
       }
 
@@ -3638,19 +3657,21 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
         // (docs/cloud-mcp-relay.md). Without a reachable client, deny rather
         // than auto-approve.
         {
-          const meta = params.toolCall?._meta as
-            | { claudeCode?: { toolName?: string } }
-            | undefined;
+          // Read the MCP server through the adapter-neutral `_meta.posthog`
+          // channel (codex writes `_meta.posthog.mcp`, Claude writes the legacy
+          // `_meta.claudeCode.toolName`; readMcpToolDescriptor handles both),
+          // falling back to Claude's `rawInput.toolName`. Keying off only the
+          // Claude channel would silently skip this gate for codex and let a
+          // relayed tool auto-run in non-asking modes.
           const rawInput = params.toolCall?.rawInput as
             | { toolName?: string }
             | undefined;
-          const permissionToolName =
-            meta?.claudeCode?.toolName ?? rawInput?.toolName;
           const mcpServerName =
-            typeof permissionToolName === "string" &&
-            permissionToolName.startsWith("mcp__")
-              ? permissionToolName.split("__")[1]
-              : undefined;
+            readMcpToolDescriptor(params.toolCall?._meta)?.server ??
+            (typeof rawInput?.toolName === "string" &&
+            rawInput.toolName.startsWith("mcp__")
+              ? rawInput.toolName.split("__")[1]
+              : undefined);
           if (
             mcpServerName &&
             (this.config.relayMcpServers ?? []).includes(mcpServerName)

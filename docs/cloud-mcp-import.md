@@ -50,10 +50,10 @@ private-network URLs) need the desktop **relay** — see
    just stays desktop-only, while the reverse would ship an unreachable server
    (or leak headers) to the sandbox.
 
-3. **Show** — the cloud task composer renders `LocalMcpServersButton`
-   (`packages/ui/src/features/task-detail/components/LocalMcpServersButton.tsx`),
-   a list of the user's servers annotated "Available in cloud" / "Requires
-   your machine" / "Not available in cloud".
+3. **Show** — the MCP servers view rail renders `LocalMcpRailSection`
+   (`packages/ui/src/features/local-mcp/LocalMcpRailSection.tsx`), listing the
+   user's local servers annotated "Available in cloud" / "Relayed via your
+   machine" / "Built into cloud runs" / "Not available in cloud".
 
 4. **Send** — importable servers are included in the run-creation payload
    (`imported_mcp_servers` in `buildCloudRunRequestBody`,
