@@ -40,7 +40,7 @@ type Mode = "rendered" | "edit";
 
 // Initial markdown shown when a folder has no instructions yet — gives both
 // humans and agents a structural starting point instead of a blank screen.
-const EMPTY_TEMPLATE = "# Folder context\n\nDescribe what lives here.\n";
+const EMPTY_TEMPLATE = "# Channel context\n\nDescribe what lives here.\n";
 
 interface WebsiteContextProps {
   channelId: string;
@@ -301,7 +301,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               size="2"
               rows={24}
               placeholder={
-                "# Folder context\n\nWrite markdown describing this folder…"
+                "# Channel context\n\nWrite markdown describing this channel…"
               }
               className="font-[var(--code-font-family)]"
             />

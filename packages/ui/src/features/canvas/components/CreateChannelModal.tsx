@@ -12,7 +12,6 @@ import {
   FieldError,
   FieldLabel,
   Input,
-  Switch,
   Textarea,
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -21,7 +20,7 @@ import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerat
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { type CSSProperties, useState } from "react";
 
 // Matches Slack's "Create a channel" naming constraint.
 const MAX_CONTEXT_NAME_LENGTH = 80;
@@ -38,10 +37,12 @@ interface CreateChannelModalProps {
 }
 
 // Two dialogs in one, split on `existingContext`:
-// - Create mode: names the context, creates it, and lands the user in its feed
-//   (the intro card there carries onboarding). An off-by-default toggle reveals
-//   the description textarea to also launch the context.md plan session at
-//   creation time.
+// - Create mode: two steps. Step one names the channel; "Next" advances to step
+//   two, which asks what it's about. Nothing is created until that second step
+//   resolves — "Create" makes the channel and launches the context.md plan
+//   session seeded by the description, "Skip" makes the channel alone. Either
+//   way the user lands in the channel's feed, whose intro card carries the
+//   onboarding (and offers context.md later if skipped).
 // - Describe mode: the "Create your context.md" dialog (opened from the intro
 //   card or the CONTEXT.md empty state). A single textarea whose text seeds
 //   a plan-mode session that builds the context's CONTEXT.md with the user.
@@ -56,8 +57,8 @@ export function CreateChannelModal({
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  // Create mode's opt-in "also plan the context.md now" toggle.
-  const [withContextMd, setWithContextMd] = useState(false);
+  // Create mode's step. Describe mode has no name step, so it starts past it.
+  const [step, setStep] = useState<"name" | "describe">("name");
 
   // Reset the fields each time the modal opens so a previous draft never
   // lingers. Adjusted inline during render (prev-prop comparison) rather than in
@@ -68,7 +69,7 @@ export function CreateChannelModal({
     if (open) {
       setName("");
       setDescription("");
-      setWithContextMd(false);
+      setStep("name");
     }
   }
 
@@ -77,20 +78,16 @@ export function CreateChannelModal({
   const remaining = MAX_CONTEXT_NAME_LENGTH - name.length;
   const nameError = isDescribeMode ? null : validateChannelName(trimmedName);
 
-  // The description textarea is live in describe mode and in create mode once
-  // the toggle is on; either way it must be filled to submit.
-  const needsDescription = isDescribeMode || withContextMd;
   const busy = isCreating || isStarting;
-  const canSubmit =
-    !busy &&
-    (isDescribeMode ? true : !!trimmedName && !nameError) &&
-    (!needsDescription || !!trimmedDescription);
+  const canAdvance = !busy && !!trimmedName && !nameError;
+  // "Create" seeds the plan session, so it needs the description; "Skip" is the
+  // way through without one.
+  const canDescribe = !busy && !!trimmedDescription;
 
-  // Create mode: create the context, then land in the channel — its feed opens
-  // with the intro (name, creation line, context.md card) and the "joined" row,
-  // both derived from the channel row. With the toggle on, also launch the
-  // plan session that builds context.md, seeded by the description.
-  const submitCreate = async () => {
+  // Create the channel and land in its feed — the intro (name, creation line,
+  // context.md card) and "joined" row there are derived from the channel row.
+  // With a description, also launch the plan session that builds context.md.
+  const submitCreate = async (withContextMd: boolean) => {
     let contextId: string;
     try {
       const channel = await createChannel(trimmedName);
@@ -107,7 +104,7 @@ export function CreateChannelModal({
         surface: "sidebar",
         success: false,
       });
-      toast.error("Couldn't create context", {
+      toast.error("Couldn't create channel", {
         description: error instanceof Error ? error.message : String(error),
       });
       return;
@@ -160,14 +157,83 @@ export function CreateChannelModal({
     });
   };
 
-  const submit = async () => {
-    if (!canSubmit) return;
+  // The description step's primary action: seed context.md, for a channel that
+  // already exists (describe mode) or one this dialog is about to create.
+  const submitDescribeStep = async () => {
+    if (!canDescribe) return;
     if (isDescribeMode) {
       await submitDescribe();
     } else {
-      await submitCreate();
+      await submitCreate(true);
     }
   };
+
+  const descriptionField = (
+    <Field>
+      {/* In create mode the nested dialog's title asks the question, so the
+          label would just repeat it. */}
+      {isDescribeMode && (
+        <FieldLabel htmlFor="context-description">
+          What's this channel about?
+        </FieldLabel>
+      )}
+      <Textarea
+        id="context-description"
+        autoFocus
+        rows={4}
+        value={description}
+        placeholder={DESCRIPTION_PLACEHOLDER}
+        disabled={busy}
+        onChange={(e) => setDescription(e.target.value)}
+        onKeyDown={(e) => {
+          // ⌘/Ctrl+Enter submits; a bare Enter stays a newline.
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            void submitDescribeStep();
+          }
+        }}
+      />
+    </Field>
+  );
+
+  // Describe mode is only ever the one dialog — the channel already exists, so
+  // there's no name step to nest under.
+  if (isDescribeMode) {
+    return (
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!busy) onOpenChange(next);
+        }}
+      >
+        <DialogContent showCloseButton={false} className="sm:max-w-lg">
+          {/* No visible header here — the textarea's label carries the dialog;
+              the title stays for screen readers. */}
+          <DialogTitle className="sr-only">Create your context.md</DialogTitle>
+          <DialogBody viewportClassName="flex flex-col gap-4">
+            {descriptionField}
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose
+              render={
+                <Button variant="outline" disabled={busy}>
+                  Cancel
+                </Button>
+              }
+            />
+            <Button
+              variant="primary"
+              disabled={!canDescribe}
+              loading={busy}
+              onClick={submitDescribeStep}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -176,84 +242,45 @@ export function CreateChannelModal({
         if (!busy) onOpenChange(next);
       }}
     >
-      <DialogContent showCloseButton={false} className="sm:max-w-lg">
-        {isDescribeMode ? (
-          // No visible header in describe mode — the textarea's label carries
-          // the dialog; the title stays for screen readers.
-          <DialogTitle className="sr-only">Create your context.md</DialogTitle>
-        ) : (
-          <DialogHeader>
-            <DialogTitle>Create a context</DialogTitle>
-          </DialogHeader>
-        )}
+      {/* quill stacks a nested dialog by pushing the *parent* down, which would
+          leave step one peeking below step two. Invert it: pin this step at the
+          base gap and drop step two below it (see its content), so the stack
+          reads first-on-top. Inline style because these are CSS variables. */}
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-lg"
+        style={{ "--quill-dialog-top-gap": "max(1rem, 10vh)" } as CSSProperties}
+      >
+        <DialogHeader>
+          <DialogTitle>Create a channel</DialogTitle>
+        </DialogHeader>
 
         <DialogBody viewportClassName="flex flex-col gap-4">
-          {!isDescribeMode && (
-            <>
-              <Field>
-                <FieldLabel htmlFor="context-name">Name</FieldLabel>
-                <Input
-                  id="context-name"
-                  autoFocus
-                  value={name}
-                  placeholder="e.g. mobile"
-                  maxLength={MAX_CONTEXT_NAME_LENGTH}
-                  disabled={busy}
-                  onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void submit();
-                    }
-                  }}
-                />
-                {nameError ? (
-                  <FieldError>{nameError}</FieldError>
-                ) : (
-                  <span className="text-gray-9 text-xs tabular-nums">
-                    {remaining} left
-                  </span>
-                )}
-              </Field>
-              <label
-                htmlFor="context-with-md"
-                className="flex cursor-pointer items-center gap-2 text-sm"
-              >
-                <Switch
-                  id="context-with-md"
-                  className="shrink-0"
-                  checked={withContextMd}
-                  disabled={busy}
-                  onCheckedChange={(checked) => setWithContextMd(!!checked)}
-                />
-                Plan its context.md now
-              </label>
-            </>
-          )}
-
-          {needsDescription && (
-            <Field>
-              <FieldLabel htmlFor="context-description">
-                What's this context about?
-              </FieldLabel>
-              <Textarea
-                id="context-description"
-                autoFocus={isDescribeMode}
-                rows={4}
-                value={description}
-                placeholder={DESCRIPTION_PLACEHOLDER}
-                disabled={busy}
-                onChange={(e) => setDescription(e.target.value)}
-                onKeyDown={(e) => {
-                  // ⌘/Ctrl+Enter submits; a bare Enter stays a newline.
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    void submit();
-                  }
-                }}
-              />
-            </Field>
-          )}
+          <Field>
+            <FieldLabel htmlFor="context-name">Name</FieldLabel>
+            <Input
+              id="context-name"
+              autoFocus
+              value={name}
+              placeholder="e.g. mobile"
+              maxLength={MAX_CONTEXT_NAME_LENGTH}
+              disabled={busy}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (canAdvance) setStep("describe");
+                }
+              }}
+            />
+            {nameError ? (
+              <FieldError>{nameError}</FieldError>
+            ) : (
+              <span className="text-gray-9 text-xs tabular-nums">
+                {remaining} left
+              </span>
+            )}
+          </Field>
         </DialogBody>
 
         <DialogFooter>
@@ -266,13 +293,63 @@ export function CreateChannelModal({
           />
           <Button
             variant="primary"
-            disabled={!canSubmit}
-            loading={busy}
-            onClick={submit}
+            disabled={!canAdvance}
+            onClick={() => setStep("describe")}
           >
-            {needsDescription ? "Plan and create" : "Create"}
+            Next
           </Button>
         </DialogFooter>
+
+        {/* Step two, nested inside step one rather than replacing it: quill
+            scales and dims a parent that has a nested dialog open, so the name
+            step stays visible behind — the stack is the affordance that says
+            there's another step. Dismissing it (Escape) returns here. */}
+        <Dialog
+          open={step === "describe"}
+          onOpenChange={(next) => {
+            if (!busy && !next) setStep("name");
+          }}
+        >
+          <DialogContent
+            showCloseButton={false}
+            className="sm:max-w-lg"
+            // Sits below the name step, whose scaled-down top edge stays visible
+            // above this one.
+            style={
+              {
+                "--quill-dialog-top-gap": "max(1rem, 10vh + 1.5rem)",
+              } as CSSProperties
+            }
+          >
+            <DialogHeader>
+              <DialogTitle>What's this channel about?</DialogTitle>
+            </DialogHeader>
+
+            <DialogBody viewportClassName="flex flex-col gap-4">
+              {descriptionField}
+            </DialogBody>
+
+            <DialogFooter>
+              {/* Skip still creates the channel — it only forgoes the
+                  context.md, which the channel's intro card offers later. */}
+              <Button
+                variant="default"
+                disabled={busy}
+                onClick={() => void submitCreate(false)}
+              >
+                Skip
+              </Button>
+              <Button
+                variant="primary"
+                disabled={!canDescribe}
+                loading={busy}
+                onClick={submitDescribeStep}
+              >
+                Create
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

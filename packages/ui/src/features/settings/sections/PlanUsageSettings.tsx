@@ -179,6 +179,11 @@ export function PlanUsageSettings() {
                 percent={meter.percent}
                 valueLabel={`${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)}${freeTier ? " included" : ""}`}
                 detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt)}`}
+                breakdown={
+                  meter.breakdown
+                    ? { ...meter.breakdown, usedUsd: meter.usedUsd }
+                    : undefined
+                }
                 color={meter.exceeded ? "red" : undefined}
               />
             ) : meter.kind === "bucket" ? (

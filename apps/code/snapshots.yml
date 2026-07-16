@@ -96,6 +96,26 @@ snapshots:
         hash: v1.k4693efd2.b76d39ed8142d4449cb5befcde538bb11a6bffcbed66e81bdc3aa8e2746b7e06.GSIfBsgE-3RYuqlLUpluZ87C6-KjBUaTj2eu_a5elZ8
     autoresearch-runtime-stats--with-context-usage--light:
         hash: v1.k4693efd2.18889b5eda942cd19b0f7be00a87925d632529ca4111fac180d6339f7d34d1ca.X3s9IXrx2-TdQaJEjf1td3hwvNzeIp3Xq3uQh9Gwt5A
+    billing-usagemeter--exceeded--dark:
+        hash: v1.k4693efd2.dc026c5cace4e44c4cc713b95654e278d7bf0439a4862e9ceea39a033974815d.m5Be4dAOwwmt-UlEnhbhrKiym1rlGUiGZ4oyUonUoVg
+    billing-usagemeter--exceeded--light:
+        hash: v1.k4693efd2.850bf1e451a18981d9e3be653837dd282c6be289ac9c0826ff6a981ac67e1e38.1GwpfJ_4dUlMO7TXp8AOM5YmJuItGGB50ihKkkeIFgg
+    billing-usagemeter--free-tier--dark:
+        hash: v1.k4693efd2.164d54cac22cfa05dbbf25fae1a62e77c496b1981dcaff6b8e1ab07fc802f5e0.Gh75uI1vHbGWAgKun41BYoX6LZBYX_FVI7Qu-rFlDV4
+    billing-usagemeter--free-tier--light:
+        hash: v1.k4693efd2.5e220fe66fac4c54b4cb9f5ac6ec1054e0b709374fee2c58fdba782f5b2888df.W5la88YA6uOSc1tg30raKaRy12plPGxXl5o7uowL2gc
+    billing-usagemeter--subscribed-past-included--dark:
+        hash: v1.k4693efd2.ac987b7184aaa4f8895d9b75c6b7e1177efcb9a21cca0668caf533ee0d5eaab3.2Mq2GLXV83ebM8LKhTQY8csv6BeskWv5yPu8NSAQ20Y
+    billing-usagemeter--subscribed-past-included--light:
+        hash: v1.k4693efd2.0c4a37beaceb37baab57e6da98321b236c20127731fd5eaeb61677de4580c204.fZ2eDGlkEijZjHQyatiHtP39EFYT6EO1Vn_f8Tz7b0E
+    billing-usagemeter--subscribed-with-breakdown--dark:
+        hash: v1.k4693efd2.f74f8f76e51ee14e427423e1757859e3f001b13e6a43d1e7310b5b0cbbb570b5.eMwK2csA86oBarnAya99W87MfP6Z6PMfdjwbCmnPrw4
+    billing-usagemeter--subscribed-with-breakdown--light:
+        hash: v1.k4693efd2.1335dba8bf16980c987882641619e114584343ec50bb69b3c01e63507a13756b._v7_6tsVMmW3WixSeFN-puHQVeIxf9AAGxFZ8Ni97YQ
+    billing-usagemeter--zero-spend-limit--dark:
+        hash: v1.k4693efd2.1d199b2c4bba8034cb18fb5b49866b64a6eb3311591add5f58ec288710dce2e9.FCc9egSaO1Onih417yciSYKNROe8zqDZyyS6xuXCZGw
+    billing-usagemeter--zero-spend-limit--light:
+        hash: v1.k4693efd2.b50c18736bbde45fc89f4c0ac7fd616286e5c1ecc2a56910fffca13eaa13d8a2.31z4F0JmvMeR4yqk5pjs_OQ3MypnM2miZI9al4wuc8c
     components-permissions-permissionselector--create-new-file--dark:
         hash: v1.k4693efd2.c54203a4e636b83b3d24d7ed9c4ace8659db87cd8f231d9dc2ecc03320e31646.epDm7LebiLzlp0uuZBrE-Obt_anAn0xsE8bHFnm5vos
     components-permissions-permissionselector--create-new-file--light:

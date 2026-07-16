@@ -193,7 +193,7 @@ export function useOpenHomeCanvas(): (channel: {
         });
       } catch (error) {
         log.error("Failed to open home canvas", { error });
-        toast.error("Couldn't open context home", {
+        toast.error("Couldn't open channel home", {
           description: error instanceof Error ? error.message : String(error),
         });
       }
@@ -202,25 +202,34 @@ export function useOpenHomeCanvas(): (channel: {
   );
 }
 
-/** Create an empty canvas in a channel, enter edit mode, and navigate to it. */
+/**
+ * Create an empty canvas in a channel, enter edit mode, and navigate to it.
+ * `opts.channelId` overrides the bound channel, for callers whose channel is
+ * provisioned lazily and so has no id at render time (the "me" row).
+ */
 export function useCreateAndOpenDashboard(
   channelId: string | undefined,
-): (opts?: { templateId?: string; name?: string }) => Promise<void> {
+): (opts?: {
+  templateId?: string;
+  name?: string;
+  channelId?: string;
+}) => Promise<void> {
   const navigate = useNavigate();
   const { createDashboard } = useDashboardMutations();
   const setEditing = useDashboardEditStore((s) => s.setEditing);
 
   return useCallback(
     async (opts) => {
-      if (!channelId) return;
+      const targetChannelId = opts?.channelId ?? channelId;
+      if (!targetChannelId) return;
       const templateId = opts?.templateId ?? "freeform";
       const name = opts?.name ?? UNTITLED_CANVAS_NAME;
       try {
-        const record = await createDashboard(channelId, name, templateId);
+        const record = await createDashboard(targetChannelId, name, templateId);
         setEditing(record.id, true);
         await navigate({
           to: "/website/$channelId/dashboards/$dashboardId",
-          params: { channelId, dashboardId: record.id },
+          params: { channelId: targetChannelId, dashboardId: record.id },
         });
       } catch (error) {
         log.error("Failed to create canvas", { error });
