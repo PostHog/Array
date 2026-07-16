@@ -45,6 +45,7 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/createCanvasAnalytics";
+import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
   useChannelStars,
   useChannelStarToggle,
@@ -506,10 +507,12 @@ function PersonalChannelRow() {
       pathname.startsWith(`/website/${meFolder.id}/`));
 
   // The "me" folder is created on first use, so every action resolves the id
-  // rather than closing over it — the row is actionable before it exists.
+  // rather than closing over it — the row is actionable before it exists. The
+  // create is shared (ensurePersonalChannel) so a row click racing its "+" menu
+  // can't provision two.
   const ensureFolderId = async (): Promise<string | undefined> => {
     try {
-      return (meFolder ?? (await createChannel(PERSONAL_CHANNEL_NAME))).id;
+      return (await ensurePersonalChannel(channels, createChannel)).id;
     } catch (error) {
       toast.error("Couldn't open me", {
         description: error instanceof Error ? error.message : String(error),
@@ -738,9 +741,7 @@ export function ChannelsList() {
         <ChannelGroup sectionId={CHANNELS_SECTION_ID} label="Channels">
           {!isLoading && channels.length === 0 && (
             <Empty className="px-2 py-1 text-subtle-foreground text-xs">
-              <EmptyHeader className="text-left">
-                No channels other channels yet.
-              </EmptyHeader>
+              <EmptyHeader className="text-left">No channels yet.</EmptyHeader>
             </Empty>
           )}
           {others.map((channel) => (

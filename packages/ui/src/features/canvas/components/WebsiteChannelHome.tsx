@@ -64,8 +64,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
 
   // The folder channel maps onto a backend channel (by name; "me" → the
   // personal channel), which owns the task feed and threads.
-  const { channel: backendChannel, isLoading: isResolvingChannel } =
-    useBackendChannel(channelName);
+  const {
+    channel: backendChannel,
+    isLoading: isResolvingChannel,
+    resolveFailed,
+  } = useBackendChannel(channelName);
   const { tasks, isLoading: isLoadingFeed } = useChannelFeed(
     backendChannel?.id,
   );
@@ -75,11 +78,12 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // channel over the network (a POST), so treating that window as "not loading"
   // flashes the welcome/suggestions empty state before the feed appears. Fold
   // the whole identity resolution in: we can't call a channel empty until we
-  // know which channel it is.
+  // know which channel it is — but stop waiting once the resolve has failed,
+  // or the spinner would never end.
   const isLoading =
     isLoadingChannels ||
     isResolvingChannel ||
-    (!!channelName && !backendChannel) ||
+    (!!channelName && !backendChannel && !resolveFailed) ||
     isLoadingFeed;
   // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
   // backend channel — the same id the feed tasks use, not the folder id.
