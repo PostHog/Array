@@ -2,6 +2,7 @@ import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
 import type {
   Adapter,
   CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   TaskCreationInput,
   WorkspaceMode,
 } from "@posthog/shared";
@@ -33,6 +34,7 @@ export interface PrepareTaskInputOptions {
   rtkEnabledCloud?: boolean;
   allowNoRepo?: boolean;
   importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 export function prepareTaskInput(
@@ -76,6 +78,7 @@ export function prepareTaskInput(
     customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
     importedMcpServers: isCloud ? options.importedMcpServers : undefined,
+    relayedMcpServers: isCloud ? options.relayedMcpServers : undefined,
   };
 }
 

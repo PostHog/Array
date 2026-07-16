@@ -32,6 +32,7 @@ import { localMcpRouter } from "@posthog/host-router/routers/local-mcp.router";
 import { logsRouter } from "@posthog/host-router/routers/logs.router";
 import { mcpAppsRouter } from "@posthog/host-router/routers/mcp-apps.router";
 import { mcpCallbackRouter } from "@posthog/host-router/routers/mcp-callback.router";
+import { mcpRelayRouter } from "@posthog/host-router/routers/mcp-relay.router";
 import { notificationRouter } from "@posthog/host-router/routers/notification.router";
 import { oauthRouter } from "@posthog/host-router/routers/oauth.router";
 import { onboardingImportRouter } from "@posthog/host-router/routers/onboarding-import.router";
@@ -90,6 +91,7 @@ export const trpcRouter = router({
   localMcp: localMcpRouter,
   mcpApps: mcpAppsRouter,
   mcpCallback: mcpCallbackRouter,
+  mcpRelay: mcpRelayRouter,
   notification: notificationRouter,
   oauth: oauthRouter,
   onboardingImport: onboardingImportRouter,

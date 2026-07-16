@@ -39,3 +39,13 @@ export interface CloudMcpServerImport {
   url: string;
   headers: Array<{ name: string; value: string }>;
 }
+
+/**
+ * A desktop-only local MCP server designated for relaying into a cloud run
+ * (docs/cloud-mcp-relay.md). Names only — the sandbox never learns the
+ * server's command, env, URL, or headers; the desktop resolves the name
+ * against local config at execution time.
+ */
+export interface CloudMcpServerRelayDesignation {
+  name: string;
+}

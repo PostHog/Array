@@ -122,10 +122,27 @@ export function getCachedMcpTools(): McpToolMetadata[] {
   return [...mcpToolMetadataCache.values()];
 }
 
+/**
+ * Servers whose tools default to needs_approval when no per-tool state is
+ * cached. Seeded with the run's relayed MCP servers: relayed tools execute on
+ * the user's machine, so they always ask regardless of permission mode
+ * (docs/cloud-mcp-relay.md security posture).
+ */
+const alwaysAskMcpServers = new Set<string>();
+
+export function setAlwaysAskMcpServers(serverNames: string[]): void {
+  alwaysAskMcpServers.clear();
+  for (const name of serverNames) alwaysAskMcpServers.add(name);
+}
+
 export function getMcpToolApprovalState(
   toolName: string,
 ): McpToolApprovalState | undefined {
-  return mcpToolMetadataCache.get(toolName)?.approvalState;
+  const explicit = mcpToolMetadataCache.get(toolName)?.approvalState;
+  if (explicit) return explicit;
+  const server = toolName.split("__")[1];
+  if (server && alwaysAskMcpServers.has(server)) return "needs_approval";
+  return undefined;
 }
 
 export function setMcpToolApprovalStates(approvals: McpToolApprovals): void {

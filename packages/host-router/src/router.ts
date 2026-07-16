@@ -31,6 +31,7 @@ import { localMcpRouter } from "./routers/local-mcp.router";
 import { logsRouter } from "./routers/logs.router";
 import { mcpAppsRouter } from "./routers/mcp-apps.router";
 import { mcpCallbackRouter } from "./routers/mcp-callback.router";
+import { mcpRelayRouter } from "./routers/mcp-relay.router";
 import { notificationRouter } from "./routers/notification.router";
 import { oauthRouter } from "./routers/oauth.router";
 import { onboardingImportRouter } from "./routers/onboarding-import.router";
@@ -82,6 +83,7 @@ export const hostRouter = router({
   logs: logsRouter,
   mcpApps: mcpAppsRouter,
   mcpCallback: mcpCallbackRouter,
+  mcpRelay: mcpRelayRouter,
   notification: notificationRouter,
   oauth: oauthRouter,
   onboardingImport: onboardingImportRouter,

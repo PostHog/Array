@@ -10,9 +10,14 @@ import {
 import type { StoredLogEntry } from "@posthog/shared";
 import { serializeError, TypedEventEmitter } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import { inject, injectable, preDestroy } from "inversify";
+import { inject, injectable, optional, preDestroy } from "inversify";
 import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
-import { CLOUD_TASK_AUTH, type ICloudTaskAuth } from "./identifiers";
+import {
+  CLOUD_TASK_AUTH,
+  type ICloudTaskAuth,
+  MCP_RELAY_EXECUTOR,
+  type McpRelayExecutor,
+} from "./identifiers";
 import {
   CloudTaskEvent,
   type CloudTaskEvents,
@@ -200,6 +205,26 @@ function isPermissionRequestEvent(
   );
 }
 
+interface McpRequestEventData {
+  type: "mcp_request";
+  requestId: string;
+  server: string;
+  payload: Record<string, unknown>;
+  expiresAt: string;
+}
+
+function isMcpRequestEvent(data: unknown): data is McpRequestEventData {
+  if (typeof data !== "object" || data === null) return false;
+  const candidate = data as Partial<McpRequestEventData>;
+  return (
+    candidate.type === "mcp_request" &&
+    typeof candidate.requestId === "string" &&
+    typeof candidate.server === "string" &&
+    typeof candidate.payload === "object" &&
+    candidate.payload !== null
+  );
+}
+
 function isKeepaliveEvent(event: SseEvent): boolean {
   return (
     event.event === "keepalive" ||
@@ -344,9 +369,114 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     private readonly analytics: IAnalytics,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
+    @inject(MCP_RELAY_EXECUTOR)
+    @optional()
+    private readonly mcpRelayExecutor: McpRelayExecutor | null = null,
   ) {
     super();
     this.log = logger.scope("cloud-task");
+  }
+
+  /**
+   * Relay-designated server names per run (docs/cloud-mcp-relay.md).
+   * In-memory by design: only the client that created a run in this app
+   * session may execute relay requests for it; requests for undesignated
+   * runs or names are dropped.
+   */
+  private readonly relayDesignations = new Map<string, Set<string>>();
+  /** requestId dedupe — the event stream is at-least-once and replays on reconnect. */
+  private readonly handledRelayRequestIds = new Set<string>();
+  private readonly handledRelayRequestOrder: string[] = [];
+
+  designateRelayedMcpServers(runId: string, servers: string[]): void {
+    if (servers.length === 0) return;
+    this.relayDesignations.set(runId, new Set(servers));
+    this.log.info("Designated relayed MCP servers for run", {
+      runId,
+      servers,
+    });
+  }
+
+  private markRelayRequestHandled(requestId: string): void {
+    this.handledRelayRequestIds.add(requestId);
+    this.handledRelayRequestOrder.push(requestId);
+    if (this.handledRelayRequestOrder.length > 1000) {
+      const evicted = this.handledRelayRequestOrder.shift();
+      if (evicted) this.handledRelayRequestIds.delete(evicted);
+    }
+  }
+
+  private async handleMcpRelayRequest(
+    watcher: WatcherState,
+    data: McpRequestEventData,
+  ): Promise<void> {
+    if (!this.mcpRelayExecutor) return;
+    const designated = this.relayDesignations.get(watcher.runId);
+    if (!designated?.has(data.server)) {
+      // Not created by this client, or a name the run never declared.
+      return;
+    }
+    if (this.handledRelayRequestIds.has(data.requestId)) return;
+    this.markRelayRequestHandled(data.requestId);
+
+    const expiresAt = Date.parse(data.expiresAt);
+    if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
+      this.log.info("Dropping expired MCP relay request", {
+        runId: watcher.runId,
+        server: data.server,
+        requestId: data.requestId,
+      });
+      return;
+    }
+
+    let execution: {
+      payload?: Record<string, unknown>;
+      error?: { code: number; message: string };
+    };
+    try {
+      execution = await this.mcpRelayExecutor.execute(
+        watcher.runId,
+        data.server,
+        data.payload,
+      );
+    } catch (error) {
+      execution = {
+        error: {
+          code: -32000,
+          message:
+            error instanceof Error
+              ? error.message
+              : "MCP relay execution failed",
+        },
+      };
+    }
+
+    // Fire-and-forget notifications produce no response payload or error.
+    if (!execution.payload && !execution.error) return;
+
+    try {
+      await this.sendCommand({
+        taskId: watcher.taskId,
+        runId: watcher.runId,
+        apiHost: watcher.apiHost,
+        teamId: watcher.teamId,
+        method: "mcp_response",
+        params: {
+          requestId: data.requestId,
+          server: data.server,
+          ...(execution.payload
+            ? { payload: execution.payload }
+            : { error: execution.error }),
+        },
+      });
+    } catch (error) {
+      // The sandbox times the request out on its own; nothing to unwind here.
+      this.log.warn("Failed to deliver mcp_response command", {
+        runId: watcher.runId,
+        requestId: data.requestId,
+        error: serializeError(error),
+      });
+    }
   }
 
   watch(input: WatchInput): void {
@@ -641,6 +771,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
   }
 
   private stopWatcher(key: string): void {
+    const stopping = this.watchers.get(key);
+    if (stopping && this.relayDesignations.has(stopping.runId)) {
+      // No watcher → no relay events → nothing executes; release the run's
+      // live server connections (stdio children included). They reopen
+      // lazily if the run is watched again.
+      void this.mcpRelayExecutor?.closeRun?.(stopping.runId).catch(() => {});
+    }
     const watcher = this.watchers.get(key);
     if (!watcher) return;
 
@@ -1213,6 +1350,11 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         return null;
       }
       watcher.seenEventIds.add(eventId);
+    }
+
+    if (isMcpRequestEvent(event.data)) {
+      void this.handleMcpRelayRequest(watcher, event.data);
+      return null;
     }
 
     if (isPermissionRequestEvent(event.data)) {

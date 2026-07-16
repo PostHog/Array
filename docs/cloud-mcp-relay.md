@@ -1,9 +1,19 @@
 # Design: relaying local MCP servers into cloud task runs
 
-Status: **design — not implemented**. Implementation is gated on review of
-this document, ships behind a `posthog-code-mcp-relay` feature flag, and
-follows [cloud-mcp-import.md](./cloud-mcp-import.md) (which handles the easy
-case: url-based servers on public hosts).
+Status: **implemented** (same PR as the import work), behind the
+`posthog-code-mcp-relay` feature flag. Follows
+[cloud-mcp-import.md](./cloud-mcp-import.md) (which handles the easy case:
+url-based servers on public hosts). Sandbox side: `McpRelayServer`
+(`packages/agent/src/server/mcp-relay-server.ts`). Desktop execution:
+`McpRelayService` (`packages/workspace-server/src/services/mcp-relay/`).
+Client coordination: `CloudTaskService.handleMcpRelayRequest`
+(`packages/core/src/cloud-task/cloud-task.ts`). Django broker: PR #68954.
+
+Implementation notes where reality refined the design: relay designations are
+held in memory by the creating client's main process — an app restart drops
+them, and relayed servers stop working for in-flight runs (they 503 after the
+liveness window) rather than surviving a handoff. Tool allowlisting for
+relayed servers persists for the session lifetime, not to the backend.
 
 ## Problem
 

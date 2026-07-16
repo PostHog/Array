@@ -129,6 +129,7 @@ export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export type {
   CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   LocalMcpServerDescriptor,
   LocalMcpServerScope,
   LocalMcpTransport,

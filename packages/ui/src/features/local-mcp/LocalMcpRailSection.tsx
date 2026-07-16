@@ -1,6 +1,8 @@
 import { Plugs } from "@phosphor-icons/react";
 import type { LocalMcpCloudClassification } from "@posthog/core/local-mcp/localMcpImport";
+import { MCP_RELAY_FLAG } from "@posthog/shared";
 import { Flex, Text } from "@radix-ui/themes";
+import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
 
 const AVAILABILITY_LABELS: Record<
   LocalMcpCloudClassification["availability"],
@@ -10,6 +12,15 @@ const AVAILABILITY_LABELS: Record<
   requires_desktop: "Requires your machine",
   built_in: "Built into cloud runs",
   unsupported: "Not available in cloud",
+};
+
+/** With the relay enabled, desktop-only servers ride along via this machine. */
+const RELAY_AVAILABILITY_LABELS: Record<
+  LocalMcpCloudClassification["availability"],
+  string
+> = {
+  ...AVAILABILITY_LABELS,
+  requires_desktop: "Relayed via your machine",
 };
 
 interface LocalMcpRailSectionProps {
@@ -27,6 +38,8 @@ export function LocalMcpRailSection({
   servers,
   search,
 }: LocalMcpRailSectionProps) {
+  const relayEnabled = useFeatureFlag(MCP_RELAY_FLAG);
+  const labels = relayEnabled ? RELAY_AVAILABILITY_LABELS : AVAILABILITY_LABELS;
   const query = search.trim().toLowerCase();
   const visible = query
     ? servers.filter((server) => server.name.toLowerCase().includes(query))
@@ -74,7 +87,7 @@ export function LocalMcpRailSection({
               {server.name}
             </Text>
             <Text color="gray" truncate className="text-[10px] leading-none">
-              {AVAILABILITY_LABELS[server.availability]}
+              {labels[server.availability]}
             </Text>
           </Flex>
         </div>
