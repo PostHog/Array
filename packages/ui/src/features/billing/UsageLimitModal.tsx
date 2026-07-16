@@ -57,7 +57,7 @@ export function UsageLimitModal() {
             <Dialog.Title className="mb-0">{content.title}</Dialog.Title>
           </Flex>
           <Dialog.Description>
-            <Text color="gray" className="text-sm">
+            <Text color="gray" className="whitespace-pre-line text-sm">
               {content.description}
             </Text>
           </Dialog.Description>

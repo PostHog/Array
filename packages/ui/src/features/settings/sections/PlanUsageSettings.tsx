@@ -131,8 +131,8 @@ export function PlanUsageSettings() {
                 </Text>
                 <Text className="text-(--gray-11) text-sm">
                   {freeTier
-                    ? "Your organization's first $20 of usage each month is included, with access to open models. Add a payment method to unlock premium models — you only pay for what you use."
-                    : "Your organization pays for PostHog Code usage at cost — no seats, no subscriptions. The first $20 each month is included."}
+                    ? "Your org's first $20 of usage each month is included, with access to open models. Add a payment method to unlock premium models, and only pay for what you use."
+                    : "Your organization pays for PostHog Code usage at cost. The first $20 each month is included."}
                 </Text>
               </Flex>
               {subscribed && (

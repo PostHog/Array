@@ -18,7 +18,7 @@ export function usageLimitContent(args: {
     return {
       title: "Unlock premium models",
       description:
-        "This model isn't included in the free tier. Add a payment method to your organization to unlock all models — you only pay for what you use. You can keep working now by switching to an included model.",
+        "To use this model, add a payment method to your account. Your first $20 of usage is on us each month - you only pay for what you use beyond that.\n\nOr, you can keep working now by switching to an open-source model.",
       actionLabel: "Add payment method",
       dismissLabel: "Not now",
     };
@@ -30,7 +30,7 @@ export function usageLimitContent(args: {
         title: "Free usage used up",
         description: `Your organization has used up its included PostHog Code usage.${
           resetLabel ? ` ${resetLabel}.` : ""
-        } Add a payment method to keep going — you only pay for what you use.`,
+        } Add a payment method to keep going.`,
         actionLabel: "Add payment method",
         dismissLabel: "Not now",
       };

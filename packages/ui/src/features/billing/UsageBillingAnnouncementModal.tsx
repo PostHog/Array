@@ -68,29 +68,29 @@ export function UsageBillingAnnouncementModal() {
           </Flex>
           <Dialog.Description>
             <Text className="text-sm">
-              Seat-based plans are gone — PostHog Code is now usage-based. You
-              only pay for what you use.
+              Seat-based plans are gone. PostHog Code is now usage-based.
             </Text>
           </Dialog.Description>
           <Flex direction="column" gap="2" className="text-sm">
             <Text color="gray">
-              • The first <Text weight="medium">$20</Text> of usage each month
-              is included.
+              • Every organization gets $20 of free usage per month. You only
+              pay for what you use beyond that.
             </Text>
             <Text color="gray">
-              • Premium models need a payment method; an open model stays free.
+              • Open-source models are available for everyone. To use frontier
+              models you'll need a card on file.
             </Text>
             <Text color="gray">
               {spendLimitUsd != null ? (
                 <>
-                  • Your organization's spend limit is{" "}
-                  <Text weight="medium">{`${formatUsdAmount(spendLimitUsd)}/month`}</Text>{" "}
-                  — adjust it any time in billing settings.
+                  • Your organization's billing limit is{" "}
+                  <Text weight="medium">{`${formatUsdAmount(spendLimitUsd)}/mo`}</Text>
+                  , adjustable anytime in your settings.
                 </>
               ) : (
                 <>
-                  • A default <Text weight="medium">$50/month</Text> spend limit
-                  applies — adjust it any time in billing settings.
+                  • There's a default <Text weight="medium">$50/mo</Text>{" "}
+                  billing limit, adjustable anytime in your settings.
                 </>
               )}
             </Text>

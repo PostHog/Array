@@ -9,7 +9,7 @@ describe("usageLimitContent", () => {
       subscribed: false,
     });
     expect(content.title).toBe("Unlock premium models");
-    expect(content.description).toContain("This model isn't");
+    expect(content.description).toContain("open-source model");
     expect(content.actionLabel).toBe("Add payment method");
   });
 
