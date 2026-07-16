@@ -238,6 +238,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private environment?: "local" | "cloud";
   private readonly commandOutputs = new Map<string, string>();
   private readonly subagentParents = new Map<string, string>();
+  private readonly pendingSubagentNotifications = new Map<
+    string,
+    SessionNotification[]
+  >();
   /** Extra writable roots for this session, folded into workspaceWrite sandbox turns. */
   private additionalDirectories?: string[];
   /** The session workspace stays writable when extra roots are applied per turn. */
@@ -463,6 +467,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.cancelNextGoalTurn = false;
     this.nativeGoalTurnId = undefined;
     this.subagentParents.clear();
+    this.pendingSubagentNotifications.clear();
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
@@ -1164,6 +1169,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   async closeSession(): Promise<void> {
     this.commandOutputs.clear();
     this.subagentParents.clear();
+    this.pendingSubagentNotifications.clear();
     this.nativeGoalTurnId = undefined;
     this.session.abortController.abort();
     this.session.cancelled = true;
@@ -1183,7 +1189,11 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     const notificationThreadId = readNotificationThreadId(params);
     const isMainThread =
       !notificationThreadId || notificationThreadId === this.threadId;
-    this.captureSubagentRelationship(method, params, notificationThreadId);
+    const relatedSubagentThreadIds = this.captureSubagentRelationship(
+      method,
+      params,
+      notificationThreadId,
+    );
     const mappedParams = isMainThread
       ? this.withBufferedCommandOutput(method, params)
       : params;
@@ -1198,10 +1208,19 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         ? notification
         : this.mapSubagentNotification(notification, notificationThreadId);
       if (visibleNotification) {
-        void this.client
-          .sessionUpdate(visibleNotification)
-          .catch((err) => this.logger.warn("sessionUpdate failed", err));
-        this.appendNotification(this.sessionId, visibleNotification);
+        this.emitSessionNotification(visibleNotification);
+      } else if (
+        notification &&
+        notificationThreadId &&
+        isSubagentActivityNotification(notification)
+      ) {
+        const pending =
+          this.pendingSubagentNotifications.get(notificationThreadId) ?? [];
+        pending.push(notification);
+        this.pendingSubagentNotifications.set(notificationThreadId, pending);
+      }
+      for (const threadId of relatedSubagentThreadIds) {
+        this.flushSubagentNotifications(threadId);
       }
     }
 
@@ -1318,15 +1337,15 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     method: string,
     params: unknown,
     senderThreadId: string | undefined,
-  ): void {
+  ): string[] {
     if (
       method !== APP_SERVER_NOTIFICATIONS.ITEM_STARTED &&
       method !== APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED
     ) {
-      return;
+      return [];
     }
     const item = (params as { item?: AppServerItem })?.item;
-    this.captureSubagentRelationshipItem(item, senderThreadId);
+    return this.captureSubagentRelationshipItem(item, senderThreadId);
   }
 
   private restoreSubagentRelationships(
@@ -1342,7 +1361,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private captureSubagentRelationshipItem(
     item: AppServerItem | undefined,
     senderThreadId: string | undefined,
-  ): void {
+  ): string[] {
     if (
       item?.type !== "collabAgentToolCall" ||
       (item.tool !== "spawnAgent" &&
@@ -1351,7 +1370,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       !item.id ||
       !item.receiverThreadIds?.length
     ) {
-      return;
+      return [];
     }
     const parentToolCallId =
       senderThreadId && senderThreadId !== this.threadId
@@ -1359,6 +1378,30 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         : item.id;
     for (const receiverThreadId of item.receiverThreadIds) {
       this.subagentParents.set(receiverThreadId, parentToolCallId);
+    }
+    return item.receiverThreadIds;
+  }
+
+  private emitSessionNotification(notification: SessionNotification): void {
+    if (!this.sessionId) return;
+    void this.client
+      .sessionUpdate(notification)
+      .catch((err) => this.logger.warn("sessionUpdate failed", err));
+    this.appendNotification(this.sessionId, notification);
+  }
+
+  private flushSubagentNotifications(threadId: string): void {
+    const pending = this.pendingSubagentNotifications.get(threadId);
+    if (!pending) return;
+    this.pendingSubagentNotifications.delete(threadId);
+    for (const notification of pending) {
+      const visibleNotification = this.mapSubagentNotification(
+        notification,
+        threadId,
+      );
+      if (visibleNotification) {
+        this.emitSessionNotification(visibleNotification);
+      }
     }
   }
 
@@ -1369,18 +1412,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (!notification || !threadId) return null;
     const parentToolCallId = this.subagentParents.get(threadId);
     if (!parentToolCallId) return null;
-    const update = notification.update as SessionNotification["update"] & {
-      _meta?: Record<string, unknown>;
-      toolCallId?: string;
-    };
-    if (
-      update.sessionUpdate !== "agent_message_chunk" &&
-      update.sessionUpdate !== "agent_thought_chunk" &&
-      update.sessionUpdate !== "tool_call" &&
-      update.sessionUpdate !== "tool_call_update"
-    ) {
-      return null;
-    }
+    if (!isSubagentActivityNotification(notification)) return null;
+    const update = notification.update;
     const toolCallId = update.toolCallId
       ? subagentToolCallId(threadId, update.toolCallId)
       : undefined;
@@ -1827,6 +1860,23 @@ function readNotificationThreadId(params: unknown): string | undefined {
 
 function subagentToolCallId(threadId: string, toolCallId: string): string {
   return `subagent:${threadId}:${toolCallId}`;
+}
+
+function isSubagentActivityNotification(
+  notification: SessionNotification,
+): notification is SessionNotification & {
+  update: SessionNotification["update"] & {
+    _meta?: Record<string, unknown>;
+    toolCallId?: string;
+  };
+} {
+  const { sessionUpdate } = notification.update;
+  return (
+    sessionUpdate === "agent_message_chunk" ||
+    sessionUpdate === "agent_thought_chunk" ||
+    sessionUpdate === "tool_call" ||
+    sessionUpdate === "tool_call_update"
+  );
 }
 
 /** The codex thread config override map: folds in MCP servers + makes extra workspace roots writable. Undefined when empty. */

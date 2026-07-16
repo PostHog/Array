@@ -395,6 +395,62 @@ describe("CodexAppServerAgent", () => {
     },
   );
 
+  it("buffers child activity until its parent tool call arrives", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+      "turn/start": { turn: { id: "turn_1", status: "inProgress" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    const promptDone = agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "delegate" }],
+    } as unknown as PromptRequest);
+
+    stub.emit("item/agentMessage/delta", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      itemId: "message_1",
+      delta: "early child activity",
+    });
+    expect(JSON.stringify(sessionUpdates)).not.toContain(
+      "early child activity",
+    );
+
+    stub.emit("item/started", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn_1",
+        tool: "spawnAgent",
+        receiverThreadIds: ["subagent_1"],
+        status: "inProgress",
+      },
+    });
+
+    const serializedUpdates = JSON.stringify(sessionUpdates);
+    expect(serializedUpdates).toContain("early child activity");
+    expect(serializedUpdates).toContain('"parentToolCallId":"spawn_1"');
+    expect(serializedUpdates.indexOf("spawn_agent")).toBeLessThan(
+      serializedUpdates.indexOf("early child activity"),
+    );
+
+    stub.emit("turn/completed", {
+      threadId: "thr_1",
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await promptDone;
+  });
+
   it.each([
     {
       label: "reads an empty goal",
