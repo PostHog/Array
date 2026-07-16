@@ -54,9 +54,7 @@ type GatewaySlice = Pick<UsageHost, "fetchUsage">;
 let emitAuthState: (currentOrgId: string | null) => void = () => {};
 
 function makeAuthService(): AuthService {
-  const listeners = new Set<
-    (state: { currentOrgId: string | null }) => void
-  >();
+  const listeners = new Set<(state: { currentOrgId: string | null }) => void>();
   emitAuthState = (currentOrgId) => {
     for (const listener of [...listeners]) {
       listener({ currentOrgId });
