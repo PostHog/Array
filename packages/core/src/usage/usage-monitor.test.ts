@@ -75,6 +75,7 @@ function makeUsage(overrides?: {
     user_id: 42,
     is_rate_limited: false,
     is_pro: overrides?.isPro ?? false,
+    code_usage_subscribed: false,
     billing_period_end:
       overrides?.billingPeriodEnd === undefined
         ? null
@@ -245,6 +246,32 @@ describe("UsageMonitorService", () => {
     expect(updates).toHaveLength(2);
     expect(updates[1].burst.used_percent).toBe(35);
   });
+
+  it.each([
+    ["subscribed", true],
+    ["unknown", undefined],
+  ] as const)(
+    "does not emit thresholds for a %s org's internal valves",
+    async (_name, subscribed) => {
+      const usage = {
+        ...makeUsage({ sustainedPercent: 90 }),
+        code_usage_subscribed: subscribed,
+      };
+      service = makeService(mockGateway(usage), makeActivityMonitor());
+      const thresholds: unknown[] = [];
+      const updates: unknown[] = [];
+      service.on(UsageMonitorEvent.ThresholdCrossed, (e) =>
+        thresholds.push(e),
+      );
+      service.on(UsageMonitorEvent.UsageUpdated, (u) => updates.push(u));
+
+      await service.fetchOnce();
+
+      expect(thresholds).toHaveLength(0);
+      // The snapshot still flows to the meters.
+      expect(updates).toHaveLength(1);
+    },
+  );
 
   // The titlebar meter keys off this bit; a subscribe flip must not wait for
   // some other field to change.

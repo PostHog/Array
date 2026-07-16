@@ -28,22 +28,25 @@ export class BillingContribution implements Contribution {
       onData: (event) => {
         const resetLabel = formatResetTime(event.resetAt);
 
+        // The monitor only emits thresholds for confirmed free-tier orgs, so
+        // the free-usage framing (and the org_limit cause) is always right.
         if (event.threshold === 100) {
           if (event.userIsActive) {
-            useUsageLimitStore.getState().show({ resetAt: event.resetAt });
+            useUsageLimitStore
+              .getState()
+              .show({ resetAt: event.resetAt, cause: "org_limit" });
             return;
           }
-          toast.error("Usage limit reached", {
+          toast.error("Free usage used up", {
             id: `usage-threshold-${event.bucket}-100`,
             description: resetLabel,
           });
           return;
         }
 
-        const limitName =
-          event.bucket === "burst" ? "daily limit" : "monthly limit";
+        const period = event.bucket === "burst" ? "daily" : "monthly";
         toast.warning(
-          `You've used ${Math.round(event.usedPercent)}% of your ${limitName}`,
+          `You've used ${Math.round(event.usedPercent)}% of your ${period} free usage`,
           {
             id: `usage-threshold-${event.bucket}-${event.threshold}`,
             description: resetLabel,

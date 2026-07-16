@@ -1,6 +1,7 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
+import { isCodeUsageFreeTier } from "../billing/usageDisplay";
 import { USAGE_HOST, type UsageHost, type UsageLogger } from "./identifiers";
 import {
   USAGE_THRESHOLDS,
@@ -125,6 +126,9 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   }
 
   private processUsage(usage: UsageOutput): void {
+    // Valve thresholds are a free-tier concept — a subscribed org's valves
+    // are internal rails, and unknown must never read as free.
+    if (!isCodeUsageFreeTier(usage)) return;
     const userId = usage.user_id.toString();
     const product = usage.product;
     this.maybeEmit(usage, "burst", usage.burst, userId, product, usage.is_pro);
