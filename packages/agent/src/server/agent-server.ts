@@ -45,6 +45,7 @@ import {
   classifyAgentError,
   isPromptTooLongError,
 } from "../adapters/error-classification";
+import { resolveCloudSpokenNarration } from "../adapters/session-meta";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
   SIGNED_MERGE_QUALIFIED_TOOL_NAME,
@@ -1497,6 +1498,7 @@ export class AgentServer {
       allowedDomains: this.config.allowedDomains,
       jsonSchema: preTask?.json_schema ?? null,
       permissionMode: initialPermissionMode,
+      spokenNarration: resolveCloudSpokenNarration(runState),
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };

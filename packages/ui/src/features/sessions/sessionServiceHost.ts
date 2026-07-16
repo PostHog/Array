@@ -58,6 +58,14 @@ export { SessionService };
 
 const log = logger.scope("session-service");
 
+export function shouldEnableSpokenNarration(
+  userOptedIn: boolean,
+  flagEnabled: boolean,
+  isDevelopment: boolean,
+): boolean {
+  return userOptedIn && (flagEnabled || isDevelopment);
+}
+
 function hostClient(): HostTrpcClient {
   return resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
 }
@@ -122,10 +130,13 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       return {
         ...state,
         customInstructions: getEffectiveCustomInstructions(state),
-        spokenNarrationEnabled:
+        spokenNarrationEnabled: shouldEnableSpokenNarration(
+          state.spokenNotifications,
           resolveService<FeatureFlags>(FEATURE_FLAGS).isEnabled(
             SPOKEN_NARRATION_FLAG,
-          ) || import.meta.env.DEV,
+          ),
+          import.meta.env.DEV,
+        ),
       };
     },
     usageLimit: {

@@ -613,6 +613,8 @@ interface CloudRunOptions {
   autoPublish?: boolean;
   /** Only false is sent: opts the run out of rtk command-output compression. */
   rtkEnabled?: boolean;
+  /** Explicit desktop opt-in; omitted for headless/background callers. */
+  spokenNarration?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
@@ -707,6 +709,9 @@ function buildCloudRunRequestBody(
   }
   if (options?.rtkEnabled === false) {
     body.rtk_enabled = false;
+  }
+  if (options?.spokenNarration !== undefined) {
+    body.spoken_narration = options.spokenNarration;
   }
   if (options?.runSource) {
     body.run_source = options.runSource;

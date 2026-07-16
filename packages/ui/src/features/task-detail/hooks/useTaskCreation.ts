@@ -15,6 +15,7 @@ import {
   type Adapter,
   ANALYTICS_EVENTS,
   PROJECT_BLUEBIRD_FLAG,
+  SPOKEN_NARRATION_FLAG,
   type TaskCreationInput,
   type WorkspaceMode,
 } from "@posthog/shared";
@@ -219,6 +220,10 @@ export function useTaskCreation({
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
+  const spokenNarrationEnabled = useFeatureFlag(
+    SPOKEN_NARRATION_FLAG,
+    import.meta.env.DEV,
+  );
   const { personalChannel } = useTaskChannels({ enabled: bluebirdEnabled });
 
   const hasRequiredPath = allowNoRepo
@@ -372,6 +377,8 @@ export function useTaskCreation({
           customInstructions: getEffectiveCustomInstructions(settings),
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
+          spokenNarration:
+            settings.spokenNotifications && spokenNarrationEnabled,
           allowNoRepo,
           importedMcpServers: localMcpServersForRun.imported,
           relayedMcpServers: localMcpServersForRun.relayed,
@@ -544,6 +551,7 @@ export function useTaskCreation({
       channelId,
       allowNoRepo,
       bluebirdEnabled,
+      spokenNarrationEnabled,
       personalChannel?.id,
       localMcpServers,
       localMcpServersLoading,

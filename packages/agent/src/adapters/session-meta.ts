@@ -20,6 +20,10 @@ interface SpokenNarrationSource {
   spokenNarration?: boolean;
 }
 
+interface SpokenNarrationRunState {
+  spoken_narration?: unknown;
+}
+
 /**
  * Spoken narration is strictly opt-in: it is on only when a caller explicitly
  * sets `spokenNarration` true at session start. The desktop is the only client
@@ -34,4 +38,10 @@ export function resolveSpokenNarration(
   meta: SpokenNarrationSource | undefined,
 ): boolean {
   return meta?.spokenNarration === true;
+}
+
+export function resolveCloudSpokenNarration(
+  state: SpokenNarrationRunState | undefined,
+): boolean {
+  return state?.spoken_narration === true;
 }

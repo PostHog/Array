@@ -25,6 +25,7 @@ describe("PostHogAPIClient", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      spokenNarration: true,
     });
 
     expect(post).toHaveBeenCalledWith(
@@ -37,6 +38,7 @@ describe("PostHogAPIClient", () => {
           runtime_adapter: "codex",
           model: "gpt-5.4",
           reasoning_effort: "high",
+          spoken_narration: true,
         }),
       }),
     );

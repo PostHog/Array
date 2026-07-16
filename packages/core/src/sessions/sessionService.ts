@@ -1088,19 +1088,14 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const {
-        customInstructions,
-        rtkEnabledLocal,
-        spokenNotifications,
-        spokenNarrationEnabled,
-      } = this.d.settings;
+      const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
+        this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
-        spokenNarration:
-          spokenNotifications === true && spokenNarrationEnabled === true,
+        spokenNarration: spokenNarrationEnabled === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1423,7 +1418,6 @@ export class SessionService {
     const {
       customInstructions: startCustomInstructions,
       rtkEnabledLocal,
-      spokenNotifications,
       spokenNarrationEnabled,
     } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
@@ -1437,8 +1431,7 @@ export class SessionService {
       adapter,
       customInstructions: startCustomInstructions || undefined,
       rtkEnabled: rtkEnabledLocal,
-      spokenNarration:
-        spokenNotifications === true && spokenNarrationEnabled === true,
+      spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
@@ -3415,6 +3408,7 @@ export class SessionService {
           prAuthorshipMode,
           autoPublish: previousState.auto_publish === true || undefined,
           rtkEnabled: this.d.settings.rtkEnabledCloud,
+          spokenNarration: this.d.settings.spokenNarrationEnabled === true,
           runSource: getCloudRunSource(previousState),
           signalReportId:
             typeof previousState.signal_report_id === "string"

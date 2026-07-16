@@ -52,6 +52,8 @@ export interface TaskCreationInput {
    * meaningful: it opts the run out of the server-side default (enabled).
    */
   cloudRtkEnabled?: boolean;
+  /** Explicit desktop opt-in for spoken narration in interactive cloud runs. */
+  spokenNarration?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**
