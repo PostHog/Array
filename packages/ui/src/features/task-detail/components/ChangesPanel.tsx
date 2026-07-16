@@ -5,6 +5,8 @@ import {
   FilePlus,
   MinusIcon,
   PlusIcon,
+  StackIcon,
+  TreeStructure,
 } from "@phosphor-icons/react";
 import { getFileExtension } from "@posthog/shared";
 import {
@@ -19,6 +21,7 @@ import {
   DropdownMenu,
   Flex,
   IconButton,
+  SegmentedControl,
   Spinner,
   Text,
 } from "@radix-ui/themes";
@@ -47,10 +50,15 @@ import { useCloudChangedFiles } from "../hooks/useCloudChangedFiles";
 import { useDiscardFile } from "../hooks/useDiscardFile";
 import { useStageToggle } from "../hooks/useStageToggle";
 import { ChangesTreeView } from "./ChangesTreeView";
+import type { ChangesGrouping } from "./changesTree";
 
 interface ChangesPanelProps {
   taskId: string;
   task: Task;
+}
+
+interface GroupedChangesPanelProps extends ChangesPanelProps {
+  grouping: ChangesGrouping;
 }
 
 interface ChangedFileItemProps {
@@ -63,6 +71,7 @@ interface ChangedFileItemProps {
   onStageToggle?: (file: ChangedFile) => void;
   onDiscard?: (file: ChangedFile, fileName: string) => void;
   depth?: number;
+  showFullPath?: boolean;
 }
 
 function CompactIconButton({
@@ -99,6 +108,7 @@ function ChangedFileItem({
   onStageToggle,
   onDiscard,
   depth = 0,
+  showFullPath = false,
 }: ChangedFileItemProps) {
   const requestScrollToFile = useReviewNavigationStore(
     (state) => state.requestScrollToFile,
@@ -283,6 +293,7 @@ function ChangedFileItem({
     <Tooltip content={tooltipContent} side="top" delayDuration={500}>
       <TreeFileRow
         fileName={fileName}
+        displayName={showFullPath ? file.path : fileName}
         depth={depth}
         isActive={isActive}
         onClick={handleClick}
@@ -296,7 +307,11 @@ function ChangedFileItem({
   );
 }
 
-function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
+function CloudChangesPanel({
+  taskId,
+  task,
+  grouping,
+}: GroupedChangesPanelProps) {
   const {
     prUrl,
     effectiveBranch,
@@ -313,7 +328,7 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
   const effectiveFiles = changedFiles;
 
   const renderFile = useCallback(
-    (file: ChangedFile, depth: number) => (
+    (file: ChangedFile, depth: number, showFullPath: boolean) => (
       <ChangedFileItem
         key={file.path}
         file={file}
@@ -321,6 +336,7 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
         fileKey={file.path}
         isActive={activeFilePath === file.path}
         depth={depth}
+        showFullPath={showFullPath}
       />
     ),
     [taskId, activeFilePath],
@@ -379,7 +395,11 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
   return (
     <Box height="100%" overflowY="auto" py="2" id="changes-panel-cloud">
       <Flex direction="column">
-        <ChangesTreeView files={effectiveFiles} renderFile={renderFile} />
+        <ChangesTreeView
+          files={effectiveFiles}
+          grouping={grouping}
+          renderFile={renderFile}
+        />
         {isRunActive && (
           <Flex align="center" gap="2" px="3" py="2">
             <Spinner size="1" />
@@ -395,15 +415,55 @@ function CloudChangesPanel({ taskId, task }: ChangesPanelProps) {
 
 export function ChangesPanel({ taskId, task }: ChangesPanelProps) {
   const isCloud = useIsCloudTask(taskId);
+  const isExpanded = useReviewNavigationStore(
+    (state) => state.reviewModes[taskId] === "expanded",
+  );
+  const [grouping, setGrouping] = useState<ChangesGrouping>("directory");
 
-  if (isCloud) {
-    return <CloudChangesPanel taskId={taskId} task={task} />;
+  const content = isCloud ? (
+    <CloudChangesPanel taskId={taskId} task={task} grouping={grouping} />
+  ) : (
+    <LocalChangesPanel taskId={taskId} task={task} grouping={grouping} />
+  );
+
+  if (!isExpanded) {
+    return content;
   }
 
-  return <LocalChangesPanel taskId={taskId} task={task} />;
+  return (
+    <Flex direction="column" className="h-full min-h-0">
+      <Flex className="shrink-0 border-(--gray-5) border-b px-2 py-1.5">
+        <SegmentedControl.Root
+          value={grouping}
+          size="1"
+          onValueChange={(value) => setGrouping(value as ChangesGrouping)}
+          aria-label="Changed files grouping"
+          className="w-full"
+        >
+          <SegmentedControl.Item value="directory">
+            <span className="inline-flex items-center gap-1.5">
+              <TreeStructure size={12} />
+              Folders
+            </span>
+          </SegmentedControl.Item>
+          <SegmentedControl.Item value="file-type">
+            <span className="inline-flex items-center gap-1.5">
+              <StackIcon size={12} />
+              File type
+            </span>
+          </SegmentedControl.Item>
+        </SegmentedControl.Root>
+      </Flex>
+      <Box className="min-h-0 flex-1">{content}</Box>
+    </Flex>
+  );
 }
 
-function LocalChangesPanel({ taskId, task }: ChangesPanelProps) {
+function LocalChangesPanel({
+  taskId,
+  task,
+  grouping,
+}: GroupedChangesPanelProps) {
   const { effectiveSource, prUrl, linkedBranch } =
     useEffectiveDiffSource(taskId);
   const repoPath = useCwd(taskId);
@@ -414,21 +474,29 @@ function LocalChangesPanel({ taskId, task }: ChangesPanelProps) {
         taskId={taskId}
         repoPath={repoPath}
         branch={linkedBranch}
+        grouping={grouping}
       />
     );
   }
 
   if (effectiveSource === "pr") {
-    return <PrChangesPanel taskId={taskId} prUrl={prUrl} />;
+    return <PrChangesPanel taskId={taskId} prUrl={prUrl} grouping={grouping} />;
   }
 
-  return <LocalWorkingTreeChangesPanel taskId={taskId} task={task} />;
+  return (
+    <LocalWorkingTreeChangesPanel
+      taskId={taskId}
+      task={task}
+      grouping={grouping}
+    />
+  );
 }
 
 function LocalWorkingTreeChangesPanel({
   taskId,
   task: _task,
-}: ChangesPanelProps) {
+  grouping,
+}: GroupedChangesPanelProps) {
   const workspace = useWorkspace(taskId);
   const repoPath = useCwd(taskId);
   const activeFilePath = useReviewNavigationStore(
@@ -446,7 +514,7 @@ function LocalWorkingTreeChangesPanel({
   const hasStagedFiles = stagedFiles.length > 0;
 
   const renderLocalFile = useCallback(
-    (file: ChangedFile, depth: number) => {
+    (file: ChangedFile, depth: number, showFullPath: boolean) => {
       const key = makeFileKey(file.staged, file.path);
       return (
         <ChangedFileItem
@@ -460,6 +528,7 @@ function LocalWorkingTreeChangesPanel({
           onStageToggle={handleStageToggle}
           onDiscard={handleDiscard}
           depth={depth}
+          showFullPath={showFullPath}
         />
       );
     },
@@ -512,7 +581,11 @@ function LocalWorkingTreeChangesPanel({
                 </Text>
               </Flex>
             )}
-            <ChangesTreeView files={files} renderFile={renderLocalFile} />
+            <ChangesTreeView
+              files={files}
+              grouping={grouping}
+              renderFile={renderLocalFile}
+            />
           </Fragment>
         ))}
       </Flex>
@@ -526,6 +599,7 @@ interface RemoteChangesListProps {
   isLoading: boolean;
   emptyMessage: string;
   panelId: string;
+  grouping: ChangesGrouping;
 }
 
 function RemoteChangesList({
@@ -534,13 +608,14 @@ function RemoteChangesList({
   isLoading,
   emptyMessage,
   panelId,
+  grouping,
 }: RemoteChangesListProps) {
   const activeFilePath = useReviewNavigationStore(
     (s) => s.activeFilePaths[taskId] ?? null,
   );
 
   const renderFile = useCallback(
-    (file: ChangedFile, depth: number) => (
+    (file: ChangedFile, depth: number, showFullPath: boolean) => (
       <ChangedFileItem
         key={file.path}
         file={file}
@@ -548,6 +623,7 @@ function RemoteChangesList({
         fileKey={file.path}
         isActive={activeFilePath === file.path}
         depth={depth}
+        showFullPath={showFullPath}
       />
     ),
     [taskId, activeFilePath],
@@ -564,7 +640,11 @@ function RemoteChangesList({
   return (
     <Box height="100%" overflowY="auto" py="2" id={panelId}>
       <Flex direction="column">
-        <ChangesTreeView files={files} renderFile={renderFile} />
+        <ChangesTreeView
+          files={files}
+          grouping={grouping}
+          renderFile={renderFile}
+        />
       </Flex>
     </Box>
   );
@@ -574,10 +654,12 @@ function BranchChangesPanel({
   taskId,
   repoPath,
   branch,
+  grouping,
 }: {
   taskId: string;
   repoPath: string | undefined;
   branch: string | null;
+  grouping: ChangesGrouping;
 }) {
   const { data: files = [], isLoading } = useLocalBranchChangedFiles(
     repoPath ?? null,
@@ -595,6 +677,7 @@ function BranchChangesPanel({
       isLoading={isLoading}
       emptyMessage="No file changes in branch"
       panelId="changes-panel-branch"
+      grouping={grouping}
     />
   );
 }
@@ -602,9 +685,11 @@ function BranchChangesPanel({
 function PrChangesPanel({
   taskId,
   prUrl,
+  grouping,
 }: {
   taskId: string;
   prUrl: string | null;
+  grouping: ChangesGrouping;
 }) {
   const { data: files = [], isLoading } = usePrChangedFiles(prUrl);
 
@@ -619,6 +704,7 @@ function PrChangesPanel({
       isLoading={isLoading}
       emptyMessage="No file changes in pull request"
       panelId="changes-panel-pr"
+      grouping={grouping}
     />
   );
 }

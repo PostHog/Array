@@ -69,6 +69,7 @@ export function TreeDirectoryRow({
 
 interface TreeFileRowProps {
   fileName: string;
+  displayName?: string;
   depth: number;
   isActive?: boolean;
   title?: string;
@@ -83,6 +84,7 @@ interface TreeFileRowProps {
 
 export function TreeFileRow({
   fileName,
+  displayName = fileName,
   depth,
   isActive = false,
   title,
@@ -118,7 +120,7 @@ export function TreeFileRow({
       />
       <FileIcon filename={fileName} size={14} />
       <span className="ml-[4px] min-w-0 flex-1 select-none overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">
-        {fileName}
+        {displayName}
       </span>
       {trailing}
     </Flex>
