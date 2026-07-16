@@ -336,6 +336,7 @@ export interface SessionServiceDeps {
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
     spokenNotifications?: boolean;
+    spokenNarrationEnabled?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1087,14 +1088,14 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions, rtkEnabledLocal, spokenNotifications } =
+      const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
         this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
-        spokenNarration: spokenNotifications === true,
+        spokenNarration: spokenNarrationEnabled === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1417,7 +1418,7 @@ export class SessionService {
     const {
       customInstructions: startCustomInstructions,
       rtkEnabledLocal,
-      spokenNotifications,
+      spokenNarrationEnabled,
     } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
@@ -1430,7 +1431,7 @@ export class SessionService {
       adapter,
       customInstructions: startCustomInstructions || undefined,
       rtkEnabled: rtkEnabledLocal,
-      spokenNarration: spokenNotifications === true,
+      spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
