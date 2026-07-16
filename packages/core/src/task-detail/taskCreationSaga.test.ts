@@ -687,6 +687,48 @@ describe("TaskCreationSaga", () => {
     });
   });
 
+  it.each([
+    {
+      selection: "sandbox environment",
+      input: { sandboxEnvironmentId: "environment-123" },
+      expectedRunOptions: { sandboxEnvironmentId: "environment-123" },
+    },
+    {
+      selection: "custom image",
+      input: { customImageId: "image-123" },
+      expectedRunOptions: { customImageId: "image-123" },
+    },
+  ])(
+    "starts a cold run for a selected $selection",
+    async ({ input, expectedRunOptions }) => {
+      const createdTask = createTask();
+      const startedTask = createTask({ latest_run: createRun() });
+      const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+      const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+      const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+      const saga = makeSaga({
+        createTask: createTaskMock,
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+      });
+
+      const result = await saga.run({
+        content: "Ship the fix",
+        repository: "posthog/posthog",
+        workspaceMode: "cloud",
+        branch: "main",
+        ...input,
+      });
+
+      expect(result.success).toBe(true);
+      expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+      expect(createTaskRunMock).toHaveBeenCalledWith(
+        "task-123",
+        expect.objectContaining(expectedRunOptions),
+      );
+    },
+  );
+
   it("uses the selected user GitHub integration for cloud task creation", async () => {
     const createdTask = createTask({
       github_user_integration: "user-integration-123",

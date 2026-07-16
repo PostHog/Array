@@ -685,6 +685,10 @@ export class TaskCreationSaga extends Saga<
       augmented,
     };
 
+    if (input.sandboxEnvironmentId || input.customImageId) {
+      return { ...base, suppressWarmReuse: true };
+    }
+
     const lease = input.repository
       ? this.deps.host.takeWarmTaskLease({
           repository: input.repository,
