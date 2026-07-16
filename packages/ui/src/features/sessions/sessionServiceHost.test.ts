@@ -3522,8 +3522,22 @@ describe("SessionService", () => {
       },
     );
 
-    it("does not retain a live chunk superseded by coalesced resume history", async () => {
+    it("reconciles superseded chunks by turn and message position", async () => {
       const service = getSessionService();
+      const firstPrompt = {
+        type: "acp_message" as const,
+        ts: 1700000040,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 1,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "first request" }] },
+        },
+      };
+      const persistedFirstPrompt = {
+        ...firstPrompt,
+        ts: 1700000041,
+      };
       const persistedAgentMessage = {
         type: "acp_message" as const,
         ts: 1700000060,
@@ -3540,7 +3554,7 @@ describe("SessionService", () => {
       };
       const inheritedLiveChunk = {
         type: "acp_message" as const,
-        ts: 1700000060,
+        ts: 1700000050,
         message: {
           jsonrpc: "2.0" as const,
           method: "session/update",
@@ -3562,6 +3576,31 @@ describe("SessionService", () => {
           params: { stopReason: "end_turn" },
         },
       };
+      const secondPrompt = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          id: 2,
+          method: "session/prompt",
+          params: { prompt: [{ type: "text", text: "second request" }] },
+        },
+      };
+      const unrelatedSameTimestampChunk = {
+        type: "acp_message" as const,
+        ts: 1700000060,
+        message: {
+          jsonrpc: "2.0" as const,
+          method: "session/update",
+          params: {
+            sessionId: "parent-session",
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: "new response" },
+            },
+          },
+        },
+      };
       const newerLiveEvent = {
         type: "acp_message" as const,
         ts: 1700000120,
@@ -3576,7 +3615,14 @@ describe("SessionService", () => {
         taskId: "task-123",
         status: "connected",
         isCloud: true,
-        events: [inheritedLiveChunk, sameTimestampCompletion, newerLiveEvent],
+        events: [
+          firstPrompt,
+          inheritedLiveChunk,
+          sameTimestampCompletion,
+          secondPrompt,
+          unrelatedSameTimestampChunk,
+          newerLiveEvent,
+        ],
         processedLineCount: 1,
       });
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
@@ -3595,7 +3641,10 @@ describe("SessionService", () => {
       mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
       mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
       mockConvertStoredEntriesToEvents.mockReturnValueOnce([
+        persistedFirstPrompt,
         persistedAgentMessage,
+        sameTimestampCompletion,
+        secondPrompt,
       ]);
 
       service.watchCloudTask(
@@ -3620,8 +3669,11 @@ describe("SessionService", () => {
           "run-456",
           expect.objectContaining({
             events: [
+              persistedFirstPrompt,
               persistedAgentMessage,
               sameTimestampCompletion,
+              secondPrompt,
+              unrelatedSameTimestampChunk,
               newerLiveEvent,
             ],
           }),

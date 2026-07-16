@@ -541,13 +541,36 @@ function suffixPrefixOverlap(left: string[], right: string[]): number {
   return prefixLengths[prefixLengths.length - 1];
 }
 
-function cloudHydrationEventKey(event: AcpMessage): string {
-  return JSON.stringify([event.ts, event.message]);
+function cloudHydrationMessageKey(event: AcpMessage): string {
+  return JSON.stringify(event.message);
+}
+
+function discardEventsAlreadyHydrated(
+  liveEvents: AcpMessage[],
+  hydratedEvents: AcpMessage[],
+): AcpMessage[] {
+  const hydratedEventCounts = new Map<string, number>();
+  for (const event of hydratedEvents) {
+    const key = cloudHydrationMessageKey(event);
+    hydratedEventCounts.set(key, (hydratedEventCounts.get(key) ?? 0) + 1);
+  }
+
+  return liveEvents.filter((event) => {
+    const key = cloudHydrationMessageKey(event);
+    const remaining = hydratedEventCounts.get(key) ?? 0;
+    if (remaining === 0) return true;
+    if (remaining === 1) {
+      hydratedEventCounts.delete(key);
+    } else {
+      hydratedEventCounts.set(key, remaining - 1);
+    }
+    return false;
+  });
 }
 
 function agentMessageUpdateKind(
   event: AcpMessage,
-): "final" | "chunk" | undefined {
+): "final" | "chunk" | "ignored" | undefined {
   const message = event.message;
   if (!isJsonRpcNotification(message) || message.method !== "session/update") {
     return undefined;
@@ -564,31 +587,122 @@ function agentMessageUpdateKind(
   )?.update;
   if (update?.sessionUpdate === "agent_message") return "final";
   if (update?.sessionUpdate === "agent_message_chunk") return "chunk";
+  if (update?.sessionUpdate === "agent_thought_chunk") {
+    const content = update.content as
+      | { type?: string; text?: string; thinking?: string }
+      | null
+      | undefined;
+    if (
+      (content?.type === "text" && !content.text) ||
+      (content?.type === "thinking" && !content.thinking)
+    ) {
+      return "ignored";
+    }
+  }
   return undefined;
+}
+
+interface AgentMessagePosition {
+  turnKey?: string;
+  messageIndex: number;
+  chunkRunActive: boolean;
+}
+
+function sessionPromptTurnKey(event: AcpMessage): string | undefined {
+  return isJsonRpcRequest(event.message) &&
+    event.message.method === "session/prompt"
+    ? cloudHydrationMessageKey(event)
+    : undefined;
+}
+
+function agentMessagePositionKey(
+  position: AgentMessagePosition,
+): string | undefined {
+  return position.turnKey
+    ? JSON.stringify([position.turnKey, position.messageIndex])
+    : undefined;
+}
+
+function resetAgentMessagePositionForPrompt(
+  position: AgentMessagePosition,
+  event: AcpMessage,
+): boolean {
+  const turnKey = sessionPromptTurnKey(event);
+  if (!turnKey) return false;
+  position.turnKey = turnKey;
+  position.messageIndex = 0;
+  position.chunkRunActive = false;
+  return true;
+}
+
+function finishAgentMessageChunkRun(position: AgentMessagePosition): void {
+  if (!position.chunkRunActive) return;
+  position.messageIndex += 1;
+  position.chunkRunActive = false;
 }
 
 function discardChunksSupersededByHydratedMessages(
   liveEvents: AcpMessage[],
   hydratedEvents: AcpMessage[],
 ): AcpMessage[] {
-  // SessionLogWriter timestamps a coalesced agent_message with the first
-  // chunk's timestamp. Use that stable group boundary to discard the entire
-  // inherited chunk run once persisted history has the authoritative message.
-  const hydratedMessageStarts = new Set(
-    hydratedEvents
-      .filter((event) => agentMessageUpdateKind(event) === "final")
-      .map((event) => event.ts),
-  );
+  const hydratedMessagePositions = new Set<string>();
+  const hydratedPosition: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
+  for (const event of hydratedEvents) {
+    if (resetAgentMessagePositionForPrompt(hydratedPosition, event)) continue;
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "ignored") continue;
+    if (updateKind === "chunk") {
+      hydratedPosition.chunkRunActive = true;
+      continue;
+    }
+    if (updateKind === "final") {
+      const positionKey = agentMessagePositionKey(hydratedPosition);
+      if (positionKey) hydratedMessagePositions.add(positionKey);
+      hydratedPosition.messageIndex += 1;
+      hydratedPosition.chunkRunActive = false;
+      continue;
+    }
+    finishAgentMessageChunkRun(hydratedPosition);
+  }
+
+  // SessionLogWriter treats consecutive chunks as one assistant message. A
+  // direct agent_message replaces that buffered message, while a later chunk
+  // run after a tool/update boundary is a separate message. Match those
+  // turn-local message positions instead of timestamps so direct finals and
+  // same-millisecond events reconcile correctly.
+  const livePosition: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
   let discardChunkRun = false;
   return liveEvents.filter((event) => {
-    if (agentMessageUpdateKind(event) !== "chunk") {
+    if (resetAgentMessagePositionForPrompt(livePosition, event)) {
       discardChunkRun = false;
       return true;
     }
-    if (hydratedMessageStarts.has(event.ts)) {
-      discardChunkRun = true;
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "ignored") return true;
+    if (updateKind === "chunk") {
+      if (!livePosition.chunkRunActive) {
+        livePosition.chunkRunActive = true;
+        const positionKey = agentMessagePositionKey(livePosition);
+        discardChunkRun =
+          positionKey !== undefined &&
+          hydratedMessagePositions.has(positionKey);
+      }
+      return !discardChunkRun;
     }
-    return !discardChunkRun;
+    if (updateKind === "final") {
+      livePosition.messageIndex += 1;
+      livePosition.chunkRunActive = false;
+    } else {
+      finishAgentMessageChunkRun(livePosition);
+    }
+    discardChunkRun = false;
+    return true;
   });
 }
 
@@ -4721,17 +4835,11 @@ export class SessionService {
 
     let events = convertStoredEntriesToEvents(rawEntries);
     if (isResumeRun && session.events.length > 0) {
-      const eventKeys = new Set(events.map(cloudHydrationEventKey));
-      const inheritedEvents = discardChunksSupersededByHydratedMessages(
-        session.events,
+      const inheritedEvents = discardEventsAlreadyHydrated(
+        discardChunksSupersededByHydratedMessages(session.events, events),
         events,
       );
-      events = [
-        ...events,
-        ...inheritedEvents.filter(
-          (event) => !eventKeys.has(cloudHydrationEventKey(event)),
-        ),
-      ];
+      events = [...events, ...inheritedEvents];
       const watcher = this.cloudTaskWatchers.get(taskId);
       const hasLeafLocalWatcherCursor =
         watcher?.runId === taskRunId &&
