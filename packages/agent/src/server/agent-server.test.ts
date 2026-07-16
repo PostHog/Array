@@ -1240,6 +1240,56 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("broadcastEvent", () => {
+    function exposeBroadcastEvent(testServer: AgentServer) {
+      return testServer as unknown as {
+        eventStreamSender: {
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
+        } | null;
+        pendingEvents: Record<string, unknown>[];
+        session: unknown;
+        broadcastEvent(event: Record<string, unknown>): void;
+      };
+    }
+
+    it("enqueues and buffers events raised before a session is assigned", () => {
+      // Regression: an MCP relay request can fire the instant the client
+      // subprocess starts, ahead of session assignment. broadcastEvent must
+      // not silently drop it.
+      const testServer = exposeBroadcastEvent(createServer());
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.session = null;
+
+      const event = {
+        type: "mcp_request",
+        requestId: "req-1",
+        server: "slack",
+      };
+      testServer.broadcastEvent(event);
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(event);
+      expect(testServer.pendingEvents).toEqual([event]);
+    });
+
+    it("buffers events with no event stream sender configured and no session", () => {
+      const testServer = exposeBroadcastEvent(createServer());
+      testServer.session = null;
+
+      const event = {
+        type: "mcp_request",
+        requestId: "req-1",
+        server: "slack",
+      };
+      expect(() => testServer.broadcastEvent(event)).not.toThrow();
+
+      expect(testServer.pendingEvents).toEqual([event]);
+    });
+  });
+
   describe("GET /events", () => {
     it("returns 401 without authorization header", async () => {
       await createServer().start();

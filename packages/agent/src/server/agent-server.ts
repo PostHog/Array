@@ -4263,14 +4263,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   }
 
   private broadcastEvent(event: Record<string, unknown>): void {
-    if (!this.session) return;
-
     this.eventStreamSender?.enqueue(event);
 
     if (this.session?.sseController) {
       this.sendSseEvent(this.session.sseController, event);
     } else {
-      // Buffer events during initialization (sseController not yet attached)
+      // Buffers events raised before a session exists yet (e.g. an MCP relay
+      // request fired the instant the client subprocess starts, ahead of
+      // `this.session` assignment) or before its SSE controller attaches.
       this.pendingEvents.push(event);
     }
   }
