@@ -2992,6 +2992,64 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("coalesces streamed plan snapshots in notification history", async () => {
+    const { agent, stub } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "first" });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: " second" });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: " third" });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await done;
+
+    const session = (
+      agent as unknown as {
+        session: {
+          notificationHistory: Array<{ update?: Record<string, unknown> }>;
+        };
+      }
+    ).session;
+    const streamedUpdates = session.notificationHistory.filter(
+      (notification) =>
+        notification.update?.sessionUpdate === "tool_call_update" &&
+        notification.update.status === "in_progress",
+    );
+    expect(streamedUpdates).toHaveLength(1);
+    expect(streamedUpdates[0].update?.rawInput).toEqual({
+      plan: "first second third",
+    });
+  });
+
+  it("caps streamed plans before rendering or storing them", async () => {
+    const { agent, stub, permissionRequests, sessionUpdates } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "a".repeat(75_000) });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "b".repeat(75_000) });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await done;
+
+    const renderedPlans = sessionUpdates.flatMap((notification) => {
+      const rawInput = notification.update?.rawInput as
+        | { plan?: unknown }
+        | undefined;
+      return typeof rawInput?.plan === "string" ? [rawInput.plan] : [];
+    });
+    const approvalPlan = permissionRequests[0].toolCall.rawInput as {
+      plan: string;
+    };
+    expect(renderedPlans.every((plan) => plan.length <= 100_000)).toBe(true);
+    expect(approvalPlan.plan).toHaveLength(100_000);
+  });
+
   it("stays in plan mode when the handoff is rejected without feedback", async () => {
     const { agent, stub, sessionUpdates, permissionRequests } = makePlanAgent({
       outcome: { outcome: "selected", optionId: "reject_with_feedback" },

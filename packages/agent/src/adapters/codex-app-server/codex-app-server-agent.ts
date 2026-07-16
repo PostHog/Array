@@ -115,6 +115,8 @@ type GoalCommand =
   | { kind: "resume" }
   | { kind: "set"; objective: string };
 
+const MAX_PLAN_PROPOSAL_CHARS = 100_000;
+
 type CodexSkill = {
   name?: string;
   description?: string;
@@ -1168,7 +1170,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       sessionId: this.sessionId,
       update,
     } as unknown as Parameters<AgentSideConnection["sessionUpdate"]>[0];
-    this.appendNotification(this.sessionId, notification);
+    this.appendPlanApprovalNotification(notification);
     void this.client.sessionUpdate(notification).catch((error) => {
       this.logger.warn("Failed to emit plan approval tool call update", {
         error: String(error),
@@ -1176,6 +1178,36 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         toolCallId: update.toolCallId,
       });
     });
+  }
+
+  private appendPlanApprovalNotification(
+    notification: Parameters<AgentSideConnection["sessionUpdate"]>[0],
+  ): void {
+    const update = notification.update as Record<string, unknown>;
+    if (
+      update.sessionUpdate === "tool_call_update" &&
+      update.status === "in_progress" &&
+      typeof update.toolCallId === "string"
+    ) {
+      for (
+        let index = this.session.notificationHistory.length - 1;
+        index >= 0;
+        index--
+      ) {
+        const previous = this.session.notificationHistory[index] as unknown as {
+          update?: Record<string, unknown>;
+        };
+        if (
+          previous.update?.sessionUpdate === "tool_call_update" &&
+          previous.update.status === "in_progress" &&
+          previous.update.toolCallId === update.toolCallId
+        ) {
+          this.session.notificationHistory[index] = notification;
+          return;
+        }
+      }
+    }
+    this.appendNotification(this.sessionId, notification);
   }
 
   /** Emit a plain agent message (user-facing status the model didn't produce). */
@@ -1459,7 +1491,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       params as { item?: { type?: string; id?: string; text?: string } }
     )?.item;
     if (item?.type === "plan" && typeof item.text === "string" && item.text) {
-      this.planProposal = { itemId: item.id ?? "codex-plan", text: item.text };
+      this.planProposal = {
+        itemId: item.id ?? "codex-plan",
+        text: item.text.slice(0, MAX_PLAN_PROPOSAL_CHARS),
+      };
       if (this.config.mode === "plan" && this.streamedPlanToolCallId) {
         this.emitPlanProposal(
           this.buildPlanApprovalToolCall(this.planProposal),
@@ -1482,7 +1517,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         : (this.planProposal?.itemId ?? "codex-plan");
     const previousText =
       this.planProposal?.itemId === proposalId ? this.planProposal.text : "";
-    this.planProposal = { itemId: proposalId, text: previousText + delta };
+    const remainingChars = MAX_PLAN_PROPOSAL_CHARS - previousText.length;
+    if (remainingChars <= 0) return;
+    this.planProposal = {
+      itemId: proposalId,
+      text: previousText + delta.slice(0, remainingChars),
+    };
     if (this.config.mode === "plan") {
       this.emitPlanProposal(
         this.buildPlanApprovalToolCall(this.planProposal),
