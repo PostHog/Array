@@ -2,6 +2,7 @@ import type {
   CloudMcpServerImport,
   LocalMcpServerDescriptor,
 } from "@posthog/shared";
+import { isPrivateIpv4Octets } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { LOCAL_MCP_WORKSPACE_CLIENT } from "./identifiers";
 
@@ -51,14 +52,6 @@ function parseIpv4(host: string): [number, number, number, number] | null {
   return octets as [number, number, number, number];
 }
 
-function isPrivateIpv4([a, b]: [number, number, number, number]): boolean {
-  if (a === 0 || a === 10 || a === 127) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT, incl. Tailscale IPs
-  if (a === 169 && b === 254) return true; // link-local
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  return a === 192 && b === 168;
-}
-
 const PRIVATE_HOST_SUFFIXES = [
   ".local",
   ".localhost",
@@ -86,14 +79,14 @@ export function isPrivateHostname(hostname: string): boolean {
     const v4Mapped = host.match(/^::ffff:(.+)$/)?.[1];
     if (v4Mapped) {
       const octets = parseIpv4(v4Mapped);
-      return octets ? isPrivateIpv4(octets) : false;
+      return octets ? isPrivateIpv4Octets(octets[0], octets[1]) : false;
     }
     // fc00::/7 unique-local, fe80::/10 link-local
     return /^(f[cd]|fe[89ab])/.test(host);
   }
 
   const octets = parseIpv4(host);
-  if (octets) return isPrivateIpv4(octets);
+  if (octets) return isPrivateIpv4Octets(octets[0], octets[1]);
 
   // Bare intranet names ("nas", "router") only resolve on the local network.
   if (!host.includes(".")) return true;

@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { isPrivateIpv4Octets } from "@posthog/shared";
 import { LRUCache } from "lru-cache";
 import TurndownService from "turndown";
 import { Type } from "typebox";
@@ -70,18 +71,7 @@ function isBlockedHost(rawHostname: string): boolean {
   if (lower === "localhost" || lower.endsWith(".localhost")) return true;
 
   const v4 = ipv4Octets(hostname);
-  if (v4) {
-    const [a, b] = v4;
-    if (a === 127) return true; // loopback (127.0.0.0/8)
-    if (a === 10) return true; // private (10.0.0.0/8)
-    if (a === 0) return true; // "this network" (0.0.0.0/8)
-    if (a === 169 && b === 254) return true; // link-local incl. cloud metadata (169.254.0.0/16)
-    if (a === 172 && b >= 16 && b <= 31) return true; // private (172.16.0.0/12)
-    if (a === 192 && b === 168) return true; // private (192.168.0.0/16)
-    if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT (100.64.0.0/10)
-    if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking (198.18.0.0/15)
-    return false;
-  }
+  if (v4) return isPrivateIpv4Octets(v4[0], v4[1]);
 
   if (isIP(hostname) === 6) {
     if (lower === "::1") return true; // loopback
