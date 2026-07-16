@@ -1,0 +1,16 @@
+--- a/dist/react-hotkeys-hook.esm.js
++++ b/dist/react-hotkeys-hook.esm.js
+@@ -206,7 +206,12 @@
+     metaKey = e.metaKey,
+     shiftKey = e.shiftKey,
+     altKey = e.altKey;
+-  var keyCode = mapKey(code);
++  var layoutKey = mapKey(pressedKeyUppercase);
++  // PostHog patch: prefer the layout-aware key (event.key). Fall back to the physical
++  // event.code only when a modifier such as macOS Option turns event.key into a
++  // non-alphanumeric glyph, so single-letter shortcuts match the printed letter on
++  // non-QWERTY layouts (Dvorak, AZERTY, ...) instead of the QWERTY key at that slot.
++  var keyCode = /^[a-z0-9]$/.test(layoutKey) ? layoutKey : mapKey(code);
+   var pressedKey = pressedKeyUppercase.toLowerCase();
+   if (!(keys != null && keys.includes(keyCode)) && !(keys != null && keys.includes(pressedKey)) && !['ctrl', 'control', 'unknown', 'meta', 'alt', 'shift', 'os'].includes(keyCode)) {
+     return false;
