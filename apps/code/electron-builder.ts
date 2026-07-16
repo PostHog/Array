@@ -132,11 +132,12 @@ const config: Configuration = {
     packageName: "posthog-code",
   },
 
+  // Installs built from this config poll the S3 feed. Installs built before
+  // the feed moved poll GitHub Releases on PostHog/code, so CI dual-publishes
+  // there until that fleet drains.
   publish: {
-    provider: "github",
-    owner: "PostHog",
-    repo: "code",
-    releaseType: "draft",
+    provider: "generic",
+    url: "https://posthog-desktop-app-releases-prod-us.s3.us-east-1.amazonaws.com/stable",
   },
 };
 

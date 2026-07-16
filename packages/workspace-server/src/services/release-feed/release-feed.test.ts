@@ -1,44 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GitHubReleasesService } from "./github-releases";
+import { ReleaseFeedService } from "./release-feed";
 
-const sampleReleases = [
-  {
-    tag_name: "v1.2.0",
-    name: "v1.2.0",
-    body: "## Notes\n- thing",
-    draft: false,
-    prerelease: false,
-    published_at: "2026-06-20T00:00:00Z",
-    html_url: "https://github.com/PostHog/code/releases/tag/v1.2.0",
-  },
-  {
-    tag_name: "v1.1.0",
-    name: "",
-    body: null,
-    draft: false,
-    prerelease: true,
-    published_at: "2026-06-10T00:00:00Z",
-    html_url: "https://github.com/PostHog/code/releases/tag/v1.1.0",
-  },
-  {
-    tag_name: "v1.3.0-draft",
-    name: "draft",
-    body: "x",
-    draft: true,
-    prerelease: false,
-    published_at: null,
-    html_url: "https://github.com/PostHog/code/releases/tag/v1.3.0-draft",
-  },
-];
+const sampleFeed = {
+  releases: [
+    {
+      version: "1.2.0",
+      name: "v1.2.0",
+      notes: "## Notes\n- thing",
+      date: "2026-06-20T00:00:00Z",
+      isPrerelease: false,
+      htmlUrl: "https://github.com/PostHog/code/releases/tag/v1.2.0",
+    },
+    {
+      version: "1.1.0",
+      name: "v1.1.0",
+      notes: "",
+      date: "2026-06-10T00:00:00Z",
+      isPrerelease: true,
+      htmlUrl: "https://github.com/PostHog/code/releases/tag/v1.1.0",
+    },
+  ],
+};
 
-describe("GitHubReleasesService", () => {
+describe("ReleaseFeedService", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,
-      json: async () => sampleReleases,
+      json: async () => sampleFeed,
     }));
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -47,26 +38,22 @@ describe("GitHubReleasesService", () => {
     vi.unstubAllGlobals();
   });
 
-  it("maps releases, strips the v prefix and drops drafts", async () => {
-    const service = new GitHubReleasesService();
+  it("returns the parsed feed", async () => {
+    const service = new ReleaseFeedService();
     const { releases } = await service.listReleases();
 
     expect(releases).toHaveLength(2);
-    expect(releases[0]).toEqual({
-      version: "1.2.0",
-      name: "v1.2.0",
-      notes: "## Notes\n- thing",
-      date: "2026-06-20T00:00:00Z",
-      isPrerelease: false,
-      htmlUrl: "https://github.com/PostHog/code/releases/tag/v1.2.0",
+    expect(releases[0]).toEqual(sampleFeed.releases[0]);
+  });
+
+  it("rejects a malformed feed payload", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ releases: [{ version: 123 }] }),
     });
-    // empty name falls back to the tag; null body becomes an empty string
-    expect(releases[1]).toMatchObject({
-      version: "1.1.0",
-      name: "v1.1.0",
-      notes: "",
-      isPrerelease: true,
-    });
+    const service = new ReleaseFeedService();
+    await expect(service.listReleases()).rejects.toThrow();
   });
 
   it.each([
@@ -76,7 +63,7 @@ describe("GitHubReleasesService", () => {
   ])(
     "a fresh cache is a hit for expectVersion $expectVersion only when it contains it ($expectedFetches fetches)",
     async ({ expectVersion, expectedFetches }) => {
-      const service = new GitHubReleasesService();
+      const service = new ReleaseFeedService();
       await service.listReleases();
       await service.listReleases(expectVersion);
       expect(fetchMock).toHaveBeenCalledTimes(expectedFetches);
@@ -84,24 +71,25 @@ describe("GitHubReleasesService", () => {
   );
 
   it("caches the refetched list once it contains the expected version", async () => {
-    const service = new GitHubReleasesService();
+    const service = new ReleaseFeedService();
     await service.listReleases();
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => [
-        {
-          tag_name: "v1.3.0",
-          name: "v1.3.0",
-          body: "new",
-          draft: false,
-          prerelease: false,
-          published_at: "2026-06-30T00:00:00Z",
-          html_url: "https://github.com/PostHog/code/releases/tag/v1.3.0",
-        },
-        ...sampleReleases,
-      ],
+      json: async () => ({
+        releases: [
+          {
+            version: "1.3.0",
+            name: "v1.3.0",
+            notes: "new",
+            date: "2026-06-30T00:00:00Z",
+            isPrerelease: false,
+            htmlUrl: "https://github.com/PostHog/code/releases/tag/v1.3.0",
+          },
+          ...sampleFeed.releases,
+        ],
+      }),
     });
     const second = await service.listReleases("1.3.0");
     expect(second.releases[0].version).toBe("1.3.0");
@@ -112,7 +100,7 @@ describe("GitHubReleasesService", () => {
   });
 
   it("dedupes concurrent cache misses into a single fetch", async () => {
-    const service = new GitHubReleasesService();
+    const service = new ReleaseFeedService();
     const [first, second] = await Promise.all([
       service.listReleases(),
       service.listReleases("1.3.0"),
@@ -124,7 +112,7 @@ describe("GitHubReleasesService", () => {
 
   it("concurrent callers both reject when the shared fetch fails, and inFlight is cleared so subsequent calls retry", async () => {
     fetchMock.mockRejectedValueOnce(new Error("network error"));
-    const service = new GitHubReleasesService();
+    const service = new ReleaseFeedService();
 
     const [result1, result2] = await Promise.allSettled([
       service.listReleases(),
@@ -140,7 +128,7 @@ describe("GitHubReleasesService", () => {
 
   it("waits out a cooldown before refetching a still-missing version", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
-    const service = new GitHubReleasesService();
+    const service = new ReleaseFeedService();
     await service.listReleases("9.9.9");
     await service.listReleases("9.9.9");
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -153,7 +141,7 @@ describe("GitHubReleasesService", () => {
 
   it("serves stale cache when a version-miss refetch fails, without retrying within the cooldown", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
-    const service = new GitHubReleasesService();
+    const service = new ReleaseFeedService();
     const first = await service.listReleases();
 
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
@@ -169,13 +157,13 @@ describe("GitHubReleasesService", () => {
 
   it("throws on non-ok responses", async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
-    const service = new GitHubReleasesService();
+    const service = new ReleaseFeedService();
     await expect(service.listReleases()).rejects.toThrow();
   });
 
   it("serves stale cache when a later refetch fails", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(0);
-    const service = new GitHubReleasesService();
+    const service = new ReleaseFeedService();
     const first = await service.listReleases();
 
     nowSpy.mockReturnValue(11 * 60_000);
