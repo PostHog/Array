@@ -33,6 +33,16 @@ describe("usageLimitContent", () => {
     },
   );
 
+  it("includes the reset hint in the free-tier copy when available", () => {
+    const content = usageLimitContent({
+      cause: "org_limit",
+      resetLabel: "Resets in 3h",
+      subscribed: false,
+    });
+    expect(content.title).toBe("Free usage used up");
+    expect(content.description).toContain("Resets in 3h");
+  });
+
   it("renders generic copy without a billing CTA when the cause is unknown", () => {
     const content = usageLimitContent({
       cause: null,

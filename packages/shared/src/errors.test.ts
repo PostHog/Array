@@ -111,6 +111,13 @@ describe("classifyGatewayLimitError", () => {
       "Your team has reached its usage limit for this billing period.",
       "org_limit",
     ],
+    [
+      // Per-user free valves fire only for unsubscribed orgs; the modal's
+      // subscribed bit picks the free-tier copy.
+      "Rate limit exceeded: User burst rate limit exceeded",
+      "org_limit",
+    ],
+    ["Rate limit exceeded: User sustained rate limit exceeded", "org_limit"],
   ])("classifies %j as %s", (message, expected) => {
     expect(classifyGatewayLimitError(message)).toBe(expected);
   });
@@ -127,8 +134,6 @@ describe("classifyGatewayLimitError", () => {
   it.each([
     "Rate limit exceeded",
     "Rate limit exceeded: Product rate limit exceeded",
-    // Per-user valves are a pre-cutover mechanism; generic copy handles them.
-    "Rate limit exceeded: User burst rate limit exceeded",
     "Your team has used its monthly PostHog AI credits.",
     "network down",
   ])("returns null for %j", (message) => {

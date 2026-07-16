@@ -28,8 +28,9 @@ export function usageLimitContent(args: {
     if (subscribed === false) {
       return {
         title: "Free usage used up",
-        description:
-          "Your organization has used its included PostHog Code usage for this billing period. Add a payment method to keep going — you only pay for what you use.",
+        description: `Your organization has used up its included PostHog Code usage.${
+          resetLabel ? ` ${resetLabel}.` : ""
+        } Add a payment method to keep going — you only pay for what you use.`,
         actionLabel: "Add payment method",
         dismissLabel: "Not now",
       };

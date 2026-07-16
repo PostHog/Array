@@ -81,6 +81,10 @@ const MODEL_GATE_PATTERNS = ["needs a paid posthog plan"] as const;
 const ORG_LIMIT_PATTERNS = [
   "reached its posthog code usage limit",
   "reached its usage limit for this billing period",
+  // Per-user free valves — billed orgs have none, so these always mean the
+  // free tier is used up.
+  "user burst rate limit exceeded",
+  "user sustained rate limit exceeded",
 ] as const;
 
 const FATAL_SESSION_ERROR_PATTERNS = [

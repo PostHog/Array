@@ -156,6 +156,11 @@ describe("SessionService gateway billing denials", () => {
       expectedShow: { cause: "org_limit" },
     },
     {
+      case: "a free-tier valve 429",
+      message: "Rate limit exceeded: User burst rate limit exceeded",
+      expectedShow: { cause: "org_limit" },
+    },
+    {
       case: "an unclassified rate limit",
       message: "[429] Too many requests",
       expectedShow: undefined,
