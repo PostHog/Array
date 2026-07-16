@@ -1,29 +1,30 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { RefundButton } from "./RefundButton";
+import { ArchiveRefundDialog } from "./ArchiveRefundDialog";
 
 /**
- * The refund action, made to feel good rather than punitive. Hover to catch the
- * gold sheen and coin flip; confirm to celebrate an honest refund with a
- * coins-flying-back flourish. Styled apart from the primary CTAs on purpose so
- * "refund" never reads as "use the product".
+ * Archive and refund, combined into one honest flow. Click Archive, then
+ * optionally tick "Also refund" to unfurl the gold panel — the confirm button
+ * turns to gold and confirming celebrates with confetti and a coins-fly-back
+ * flourish. Refund stays a deliberate opt-in, never confused with the primary
+ * "use the product" CTAs.
  */
-const meta: Meta<typeof RefundButton> = {
-  title: "Components/Refund/RefundButton",
-  component: RefundButton,
+const meta: Meta<typeof ArchiveRefundDialog> = {
+  title: "Components/Refund/ArchiveRefundDialog",
+  component: ArchiveRefundDialog,
   parameters: { layout: "centered" },
   args: {
     amountLabel: "$4.20",
-    // Pretend the network took a beat so the "Refunding…" state is visible.
-    onRefund: () =>
+    // Pretend the network took a beat so the submitting state is visible.
+    onArchive: () =>
       new Promise<void>((resolve) => window.setTimeout(resolve, 700)),
   },
   argTypes: {
-    onRefund: { action: "refunded" },
+    onArchive: { action: "archived" },
   },
 };
 
 export default meta;
-type Story = StoryObj<typeof RefundButton>;
+type Story = StoryObj<typeof ArchiveRefundDialog>;
 
 export const Default: Story = {};
 
@@ -35,9 +36,9 @@ export const Disabled: Story = {
   args: { disabled: true },
 };
 
-export const RefundFails: Story = {
+export const ArchiveFails: Story = {
   args: {
-    onRefund: () =>
+    onArchive: () =>
       new Promise<void>((_, reject) =>
         window.setTimeout(
           () => reject(new Error("Payment provider declined the refund")),
@@ -49,7 +50,7 @@ export const RefundFails: Story = {
 
 /**
  * How it sits next to the other review-bar actions — the point of the thread.
- * Refund reads as its own, warmer thing beside the neutral/primary buttons.
+ * A single Archive button, not a second confusable Refund button beside it.
  */
 export const InAReviewBar: Story = {
   render: (args) => (
@@ -60,7 +61,7 @@ export const InAReviewBar: Story = {
       >
         Discuss
       </button>
-      <RefundButton {...args} />
+      <ArchiveRefundDialog {...args} />
       <button
         type="button"
         className="rounded bg-(--accent-9) px-2 py-1 text-sm text-white"
