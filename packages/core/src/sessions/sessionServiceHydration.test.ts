@@ -1,0 +1,123 @@
+import type { AcpMessage } from "@posthog/shared";
+import { describe, expect, it } from "vitest";
+import { reconcileLiveEventsWithHydratedEvents } from "./sessionService";
+
+function prompt(id: number, text: string, ts: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      id,
+      method: "session/prompt",
+      params: { prompt: [{ type: "text", text }] },
+    },
+  };
+}
+
+function agentMessage(text: string, ts: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "agent_message",
+          content: { type: "text", text },
+        },
+      },
+    },
+  };
+}
+
+function agentMessageChunk(text: string, ts: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      },
+    },
+  };
+}
+
+function toolCall(toolCallId: string, ts: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId,
+          title: "Run command",
+          kind: "execute",
+          status: "completed",
+        },
+      },
+    },
+  };
+}
+
+function turnComplete(ts: number): AcpMessage {
+  return {
+    type: "acp_message",
+    ts,
+    message: {
+      jsonrpc: "2.0",
+      method: "_posthog/turn_complete",
+      params: { stopReason: "end_turn" },
+    },
+  };
+}
+
+describe("resume hydration reconciliation", () => {
+  it("discards a stale completed tail from an earlier leaf turn", () => {
+    const firstResponse = agentMessage("first response", 20);
+    const firstCompletion = turnComplete(30);
+    const hydratedEvents = [
+      prompt(1, "first request", 10),
+      firstResponse,
+      firstCompletion,
+      prompt(2, "second request", 40),
+    ];
+
+    expect(
+      reconcileLiveEventsWithHydratedEvents(
+        [
+          { ...firstResponse, ts: 21 },
+          { ...firstCompletion, ts: 31 },
+        ],
+        hydratedEvents,
+      ),
+    ).toEqual([]);
+  });
+
+  it("preserves a new assistant response after an overlapping tool boundary", () => {
+    const boundary = toolCall("tool-1", 30);
+    const nextResponse = agentMessageChunk("after tool", 40);
+    const completion = turnComplete(50);
+    const hydratedEvents = [
+      prompt(1, "run a command", 10),
+      agentMessage("before tool", 20),
+      boundary,
+    ];
+
+    expect(
+      reconcileLiveEventsWithHydratedEvents(
+        [{ ...boundary, ts: 31 }, nextResponse, completion],
+        hydratedEvents,
+      ),
+    ).toEqual([nextResponse, completion]);
+  });
+});
