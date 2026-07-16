@@ -356,11 +356,26 @@ function ChannelSection({
               }}
               className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
-              <HashIcon size={14} className="shrink-0 text-gray-9" />
+              <HashIcon
+                size={14}
+                weight={isUnread ? "bold" : undefined}
+                className={cn(
+                  "shrink-0",
+                  isUnread || isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground group-hover/button:text-foreground",
+                )}
+              />
               <span
                 className={cn(
-                  "truncate text-[13px] text-gray-12 group-hover/chan:pr-8",
+                  "truncate text-[13px] group-hover/chan:pr-8",
+                  // Bold is unread's alone; full contrast is shared with the
+                  // channel you're in. Either way there's no hover brighten
+                  // left to do, so those rows skip it.
                   isUnread ? "font-bold" : "font-medium",
+                  isUnread || isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground group-hover/button:text-foreground",
                   menuOpen && "pr-8",
                 )}
               >
@@ -580,11 +595,23 @@ function PersonalChannelRow() {
         onClick={() => void open()}
         className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
       >
-        <HashIcon size={14} className="shrink-0 text-gray-9" />
+        <HashIcon
+          size={14}
+          weight={isUnread ? "bold" : undefined}
+          className={cn(
+            "shrink-0",
+            isUnread || isActive
+              ? "text-foreground"
+              : "text-muted-foreground group-hover/button:text-foreground",
+          )}
+        />
         <span
           className={cn(
-            "truncate text-[13px] text-gray-12",
+            "truncate text-[13px]",
             isUnread ? "font-bold" : "font-medium",
+            isUnread || isActive
+              ? "text-foreground"
+              : "text-muted-foreground group-hover/button:text-foreground",
           )}
         >
           {PERSONAL_CHANNEL_NAME}
@@ -594,7 +621,7 @@ function PersonalChannelRow() {
         <LockSimpleIcon
           size={12}
           className={cn(
-            "ml-auto shrink-0 text-gray-9 transition-opacity",
+            "ml-auto shrink-0 text-chrome-foreground transition-opacity",
             newMenuOpen
               ? "opacity-0"
               : "opacity-100 group-hover/chan:opacity-0",
