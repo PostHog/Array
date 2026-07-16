@@ -189,6 +189,8 @@ export function TaskInput({
     setLastUsedAdapter,
     lastUsedCloudRepository,
     setLastUsedCloudRepository,
+    cachedCloudDefaultBranchMap,
+    setCachedCloudDefaultBranch,
     allowBypassPermissions,
     setLastUsedEnvironment,
     getLastUsedEnvironment,
@@ -430,7 +432,33 @@ export function TaskInput({
     cloudBranchSearchQuery,
   );
   const cloudBranches = cloudBranchData?.branches;
-  const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  const liveCloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  // Serve the persisted default branch until the live list resolves, so the
+  // majority "start on trunk" case pre-selects trunk with zero wait on a cold
+  // start. The cached value is best-effort: if it's stale (a default branch
+  // renamed since it was cached), `cloudDefaultBranch` switches to the live
+  // value on arrival and BranchSelector re-selects it — as long as the user
+  // hasn't picked a branch of their own in the meantime.
+  const cloudDefaultBranch =
+    liveCloudDefaultBranch ??
+    (selectedCloudRepository
+      ? (cachedCloudDefaultBranchMap[selectedCloudRepository] ?? null)
+      : null);
+
+  // Persist the freshly loaded default branch so the next cold start can
+  // pre-select trunk immediately.
+  useEffect(() => {
+    if (selectedCloudRepository && liveCloudDefaultBranch) {
+      setCachedCloudDefaultBranch(
+        selectedCloudRepository,
+        liveCloudDefaultBranch,
+      );
+    }
+  }, [
+    selectedCloudRepository,
+    liveCloudDefaultBranch,
+    setCachedCloudDefaultBranch,
+  ]);
 
   const {
     branchOpen,

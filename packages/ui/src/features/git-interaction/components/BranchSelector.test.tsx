@@ -75,6 +75,133 @@ describe("BranchSelector cloud mode", () => {
     expect(screen.getByRole("combobox", { name: "Branch" })).toBeEnabled();
   });
 
+  it("seeds the default branch as a pickable item with a loading row while the cloud list loads", async () => {
+    const user = userEvent.setup();
+    renderInTheme(
+      <BranchSelector
+        repoPath="owner/repo"
+        currentBranch={null}
+        defaultBranch="main"
+        workspaceMode="cloud"
+        cloudBranches={[]}
+        cloudBranchesLoading={true}
+        cloudSearchQuery=""
+        selectedBranch="main"
+        onBranchSelect={vi.fn()}
+        onCloudSearchChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Branch" }));
+
+    expect(await screen.findByRole("option", { name: "main" })).toBeVisible();
+    expect(screen.getByText("Loading branches…")).toBeVisible();
+    // The seeded row makes the list non-empty, so the empty-state stays gated
+    // off (Base UI only reveals it when the content group is data-empty) — it
+    // keeps the `hidden` class rather than flashing "No branches found." above
+    // the trunk row.
+    expect(screen.getByText("No branches found.")).toHaveClass("hidden");
+  });
+
+  it("does not seed the default branch once the user is searching", async () => {
+    const user = userEvent.setup();
+    renderInTheme(
+      <BranchSelector
+        repoPath="owner/repo"
+        currentBranch={null}
+        defaultBranch="main"
+        workspaceMode="cloud"
+        cloudBranches={[]}
+        cloudBranchesLoading={true}
+        cloudSearchQuery="feat"
+        onBranchSelect={vi.fn()}
+        onCloudSearchChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Branch" }));
+
+    expect(screen.queryByRole("option", { name: "main" })).toBeNull();
+  });
+
+  it("re-selects the default when a stale cached default is replaced by the live one", () => {
+    const onBranchSelect = vi.fn();
+    const { rerender } = renderInTheme(
+      <BranchSelector
+        repoPath="owner/repo"
+        currentBranch={null}
+        defaultBranch="master"
+        workspaceMode="cloud"
+        cloudBranches={[]}
+        cloudBranchesLoading={true}
+        cloudSearchQuery=""
+        selectedBranch={null}
+        onBranchSelect={onBranchSelect}
+        onCloudSearchChange={vi.fn()}
+      />,
+    );
+
+    // Auto-selected the (stale) cached default.
+    expect(onBranchSelect).toHaveBeenLastCalledWith("master");
+
+    // Parent commits that selection; then the live default arrives differing.
+    rerender(
+      <Theme>
+        <BranchSelector
+          repoPath="owner/repo"
+          currentBranch={null}
+          defaultBranch="main"
+          workspaceMode="cloud"
+          cloudBranches={["main"]}
+          cloudBranchesLoading={false}
+          cloudSearchQuery=""
+          selectedBranch="master"
+          onBranchSelect={onBranchSelect}
+          onCloudSearchChange={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(onBranchSelect).toHaveBeenLastCalledWith("main");
+  });
+
+  it("does not override a branch the user picked when the default later changes", () => {
+    const onBranchSelect = vi.fn();
+    const { rerender } = renderInTheme(
+      <BranchSelector
+        repoPath="owner/repo"
+        currentBranch={null}
+        defaultBranch="master"
+        workspaceMode="cloud"
+        cloudBranches={["master", "feature-x"]}
+        cloudBranchesLoading={false}
+        cloudSearchQuery=""
+        selectedBranch="feature-x"
+        onBranchSelect={onBranchSelect}
+        onCloudSearchChange={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <Theme>
+        <BranchSelector
+          repoPath="owner/repo"
+          currentBranch={null}
+          defaultBranch="main"
+          workspaceMode="cloud"
+          cloudBranches={["main", "feature-x"]}
+          cloudBranchesLoading={false}
+          cloudSearchQuery=""
+          selectedBranch="feature-x"
+          onBranchSelect={onBranchSelect}
+          onCloudSearchChange={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(onBranchSelect).not.toHaveBeenCalled();
+  });
+
   it("surfaces the 'Use input as branch name' action when the typed value is new", async () => {
     const user = userEvent.setup();
     renderInTheme(
