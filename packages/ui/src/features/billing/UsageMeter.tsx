@@ -6,6 +6,9 @@ interface UsageMeterProps {
   valueLabel: string;
   detail: string;
   color?: "red";
+  // Where a boundary inside the limit falls (e.g. the end of the included
+  // allowance), as a percent of the bar. Rendered as a notch over the track.
+  markerPercent?: number;
 }
 
 export function UsageMeter({
@@ -14,8 +17,11 @@ export function UsageMeter({
   valueLabel,
   detail,
   color,
+  markerPercent,
 }: UsageMeterProps) {
   const borderColor = color === "red" ? "var(--red-7)" : "var(--gray-5)";
+  const showMarker =
+    markerPercent != null && markerPercent > 0 && markerPercent < 100;
 
   return (
     <Flex
@@ -31,11 +37,20 @@ export function UsageMeter({
         <Text className="font-medium text-sm">{label}</Text>
         <Text className="font-medium text-sm">{valueLabel}</Text>
       </Flex>
-      <Progress
-        value={percent}
-        size="2"
-        color={color === "red" ? "red" : undefined}
-      />
+      <div className="relative">
+        <Progress
+          value={percent}
+          size="2"
+          color={color === "red" ? "red" : undefined}
+        />
+        {showMarker && (
+          <div
+            aria-hidden
+            className="absolute inset-y-0 w-px bg-(--gray-1)"
+            style={{ left: `${markerPercent}%` }}
+          />
+        )}
+      </div>
       <Text className="text-(--gray-9) text-[13px]">{detail}</Text>
     </Flex>
   );
