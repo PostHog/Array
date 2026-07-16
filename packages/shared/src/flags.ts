@@ -19,7 +19,3 @@ export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
 /** Spoken narration (agent speaks via the `speak` tool). Gated for a staged rollout. */
 export const SPOKEN_NARRATION_FLAG = "posthog-code-spoken-narration";
-// Gates the whole local-MCP-in-cloud-runs feature: importing url-based
-// servers into the sandbox and relaying desktop-only servers over the durable
-// channel (docs/cloud-mcp-import.md, docs/cloud-mcp-relay.md).
-export const LOCAL_MCP_IMPORT_FLAG = "posthog-code-local-mcp-import";

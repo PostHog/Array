@@ -4,9 +4,7 @@ import type {
   LocalMcpImportService,
 } from "@posthog/core/local-mcp/localMcpImport";
 import { useServiceOptional } from "@posthog/di/react";
-import { LOCAL_MCP_IMPORT_FLAG } from "@posthog/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useFeatureFlag } from "../feature-flags/useFeatureFlag";
 
 // Stable identity so consumers' memo deps don't churn while data is absent.
 const NO_SERVERS: LocalMcpCloudClassification[] = [];
@@ -14,7 +12,7 @@ const NO_SERVERS: LocalMcpCloudClassification[] = [];
 /**
  * The user's local (~/.claude.json) MCP servers classified by cloud
  * availability. Empty on hosts without a local workspace (web/mobile — the
- * service is only bound on desktop) and while the feature flag is off.
+ * service is only bound on desktop).
  */
 export function useLocalMcpCloudServers(
   enabled: boolean,
@@ -22,12 +20,11 @@ export function useLocalMcpCloudServers(
   const service = useServiceOptional<LocalMcpImportService>(
     LOCAL_MCP_IMPORT_SERVICE,
   );
-  const flagEnabled = useFeatureFlag(LOCAL_MCP_IMPORT_FLAG);
 
   const query = useQuery({
     queryKey: ["local-mcp-cloud-availability"],
     queryFn: () => (service ? service.getCloudAvailability() : NO_SERVERS),
-    enabled: enabled && flagEnabled && !!service,
+    enabled: enabled && !!service,
     staleTime: 30_000,
   });
 
