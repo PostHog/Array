@@ -1290,6 +1290,143 @@ describe("AgentServer HTTP Mode", () => {
     });
   });
 
+  describe("relayed MCP server tool permissions", () => {
+    function exposeCloudClient(testServer: AgentServer) {
+      return testServer as unknown as {
+        config: { relayMcpServers?: string[]; mode?: string };
+        session: { hasDesktopConnected?: boolean } | null;
+        eventStreamSender: unknown;
+        relayPermissionToClient: (params: unknown) => Promise<unknown>;
+        createCloudClient(payload: {
+          run_id: string;
+          task_id: string;
+          team_id: number;
+          user_id: number;
+          distinct_id: string;
+          mode?: "interactive" | "background";
+        }): {
+          requestPermission(params: unknown): Promise<{
+            outcome: { outcome: string; optionId?: string };
+            _meta?: Record<string, unknown>;
+          }>;
+        };
+      };
+    }
+
+    function permissionRequestFor(mcpToolName: string) {
+      return {
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+        toolCall: {
+          kind: "other",
+          _meta: { claudeCode: { toolName: mcpToolName } },
+          rawInput: {},
+        },
+      };
+    }
+
+    const basePayload = {
+      run_id: "run-1",
+      task_id: "task-1",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "user-1",
+    };
+
+    it("relays a relayed-server tool call when the desktop is connected", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+      expect(result).toEqual({
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      });
+    });
+
+    it("relays when only the durable event stream is reachable (no desktop session)", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      await requestPermission(permissionRequestFor("mcp__slack__send_message"));
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+    });
+
+    it("denies a relayed-server tool call instead of auto-approving when no client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it("denies a relayed-server tool call in background mode even when a client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient({
+        ...basePayload,
+        mode: "background",
+      });
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it("does not treat a tool on a non-relayed server as always-ask", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__posthog__query"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({
+        outcome: "selected",
+        optionId: "allow_once",
+      });
+    });
+  });
+
   describe("GET /events", () => {
     it("returns 401 without authorization header", async () => {
       await createServer().start();

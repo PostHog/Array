@@ -399,13 +399,7 @@ export class AgentServer {
       this.mcpRelayServer = new McpRelayServer({
         servers: names,
         emitEvent: (event) => this.broadcastEvent(event),
-        // Same reachability signal as the permission relay: a direct SSE
-        // viewer or an active durable event stream. The desktop reads the
-        // durable stream through the agent-proxy without connecting to the
-        // sandbox, so anything stricter would 503 every request.
-        hasReachableClient: () =>
-          Boolean(this.session?.hasDesktopConnected) ||
-          this.eventStreamSender !== null,
+        hasReachableClient: () => this.hasReachableClient(),
         logger: this.logger,
       });
       await this.mcpRelayServer.start();
@@ -489,6 +483,17 @@ export class AgentServer {
     }
 
     return this.getRuntimeAdapter() === "codex" ? "auto" : "default";
+  }
+
+  // A direct SSE viewer or an active durable event stream both count: the
+  // desktop reads the durable stream through the agent-proxy without ever
+  // connecting to the sandbox, so requiring hasDesktopConnected alone would
+  // 503/auto-deny every relayed request and permission prompt.
+  private hasReachableClient(): boolean {
+    return (
+      Boolean(this.session?.hasDesktopConnected) ||
+      this.eventStreamSender !== null
+    );
   }
 
   private shouldRelayPermissionToClient(mode: PermissionMode): boolean {
@@ -3650,10 +3655,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
             mcpServerName &&
             (this.config.relayMcpServers ?? []).includes(mcpServerName)
           ) {
-            const hasReachableClient =
-              Boolean(this.session?.hasDesktopConnected) ||
-              this.eventStreamSender !== null;
-            if (mode !== "background" && hasReachableClient) {
+            if (mode !== "background" && this.hasReachableClient()) {
               return this.relayPermissionToClient(params);
             }
             return {
@@ -3683,15 +3685,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
             sessionPermissionMode,
           );
 
-          // With durable event ingest nothing connects to GET /events, so
-          // hasDesktopConnected stays false even while the web/desktop task
-          // views follow the run through the agent-proxy stream. Those views
-          // render permission_request frames and answer via
-          // permission_response, so an active event stream counts as a
-          // reachable client for questions.
-          const hasReachableClient =
-            Boolean(this.session?.hasDesktopConnected) ||
-            this.eventStreamSender !== null;
+          const hasReachableClient = this.hasReachableClient();
 
           // A background run has no human to answer a relayed approval
           // (hasDesktopConnected is true from the event-relay reader), so
