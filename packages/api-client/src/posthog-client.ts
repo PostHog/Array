@@ -2630,6 +2630,21 @@ export class PostHogAPIClient {
     return (await response.json()) as TaskThreadMessage;
   }
 
+  async createTaskThreadMessageForAgent(
+    taskId: string,
+    content: string,
+  ): Promise<{ message: TaskThreadMessage; sendError: unknown | null }> {
+    const message = await this.createTaskThreadMessage(taskId, content);
+    try {
+      return {
+        message: await this.sendTaskThreadMessageToAgent(taskId, message.id),
+        sendError: null,
+      };
+    } catch (sendError) {
+      return { message, sendError };
+    }
+  }
+
   async deleteTaskThreadMessage(
     taskId: string,
     messageId: string,

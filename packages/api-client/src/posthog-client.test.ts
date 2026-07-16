@@ -1,3 +1,4 @@
+import type { TaskThreadMessage } from "@posthog/shared/domain-types";
 import { describe, expect, it, vi } from "vitest";
 import { PostHogAPIClient } from "./posthog-client";
 
@@ -1694,5 +1695,68 @@ describe("PostHogAPIClient", () => {
         });
       });
     });
+  });
+});
+
+describe("task thread messages", () => {
+  function message(
+    overrides: Partial<TaskThreadMessage> = {},
+  ): TaskThreadMessage {
+    return {
+      id: "message-id",
+      task: "task-id",
+      content: "@agent investigate this",
+      created_at: "2026-07-16T00:00:00Z",
+      ...overrides,
+    };
+  }
+
+  it("creates a message before forwarding it to the agent", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    const create = vi
+      .spyOn(client, "createTaskThreadMessage")
+      .mockResolvedValue(message());
+    const send = vi
+      .spyOn(client, "sendTaskThreadMessageToAgent")
+      .mockResolvedValue(
+        message({ forwarded_to_agent_at: "2026-07-16T00:00:01Z" }),
+      );
+
+    await client.createTaskThreadMessageForAgent(
+      "task-id",
+      "@agent investigate this",
+    );
+
+    expect(create).toHaveBeenCalledWith("task-id", "@agent investigate this");
+    expect(send).toHaveBeenCalledWith("task-id", "message-id");
+    expect(create.mock.invocationCallOrder[0]).toBeLessThan(
+      send.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("returns the created message when forwarding fails", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    const sendError = new Error("No active run");
+    vi.spyOn(client, "createTaskThreadMessage").mockResolvedValue(message());
+    vi.spyOn(client, "sendTaskThreadMessageToAgent").mockRejectedValue(
+      sendError,
+    );
+
+    await expect(
+      client.createTaskThreadMessageForAgent(
+        "task-id",
+        "@agent investigate this",
+      ),
+    ).resolves.toEqual({ message: message(), sendError });
   });
 });

@@ -68,6 +68,12 @@ export interface ThreadAgentStatus {
   label: string;
 }
 
+const AGENT_MENTION_PATTERN = /(^|\s)@agent\b/i;
+
+export function hasAgentMention(content: string): boolean {
+  return AGENT_MENTION_PATTERN.test(content);
+}
+
 export function deriveThreadAgentStatus({
   hasActivity = false,
   hasError = false,

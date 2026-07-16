@@ -1,10 +1,12 @@
+import { RobotIcon } from "@phosphor-icons/react";
 import { Avatar, AvatarFallback, InputGroup } from "@posthog/quill";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import {
+  type ComposerMentionCandidate,
   contentToDoc,
   docToContent,
-  filterMentionCandidates,
+  filterComposerMentionCandidates,
 } from "@posthog/ui/features/canvas/utils/mentionComposer";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { Text } from "@radix-ui/themes";
@@ -23,6 +25,7 @@ interface MentionComposerProps {
   onSubmit: () => void;
   /** The taggable pool; typically the org's members. */
   members: UserBasic[];
+  allowAgentMention?: boolean;
   onMentionInsert?: (member: UserBasic) => void;
   placeholder?: string;
   rows?: number;
@@ -40,8 +43,8 @@ const EDITOR_CLASS =
   "w-full px-2.5 py-2 outline-none break-words [overflow-wrap:break-word] [white-space:pre-wrap] [word-break:break-word]";
 
 interface SuggestionSession {
-  items: UserBasic[];
-  command: (member: UserBasic) => void;
+  items: ComposerMentionCandidate[];
+  command: (candidate: ComposerMentionCandidate) => void;
 }
 
 /**
@@ -55,6 +58,7 @@ export function MentionComposer({
   onValueChange,
   onSubmit,
   members,
+  allowAgentMention = false,
   onMentionInsert,
   placeholder,
   rows,
@@ -78,6 +82,8 @@ export function MentionComposer({
   // latest props and popup state.
   const membersRef = useRef(members);
   membersRef.current = members;
+  const allowAgentMentionRef = useRef(allowAgentMention);
+  allowAgentMentionRef.current = allowAgentMention;
   const onValueChangeRef = useRef(onValueChange);
   onValueChangeRef.current = onValueChange;
   const onSubmitRef = useRef(onSubmit);
@@ -121,11 +127,21 @@ export function MentionComposer({
             char: "@",
             allowSpaces: true,
             items: ({ query }) =>
-              filterMentionCandidates(membersRef.current, query),
-            // The suggestion pipeline carries whole members, not node attrs,
-            // so member data survives into `command`.
+              filterComposerMentionCandidates(
+                membersRef.current,
+                query,
+                allowAgentMentionRef.current,
+              ),
             command: ({ editor: e, range, props }) => {
-              const member = props as unknown as UserBasic;
+              const candidate = props as unknown as ComposerMentionCandidate;
+              if (candidate.kind === "agent") {
+                e.chain()
+                  .focus()
+                  .insertContentAt(range, { type: "text", text: "@agent " })
+                  .run();
+                return;
+              }
+              const { member } = candidate;
               e.chain()
                 .focus()
                 .insertContentAt(range, [
@@ -143,17 +159,17 @@ export function MentionComposer({
                 setDismissed(false);
                 setSelectedIndex(0);
                 setSession({
-                  items: props.items as unknown as UserBasic[],
-                  command: (member) =>
-                    props.command(member as unknown as MentionNodeAttrs),
+                  items: props.items as unknown as ComposerMentionCandidate[],
+                  command: (candidate) =>
+                    props.command(candidate as unknown as MentionNodeAttrs),
                 });
               },
               onUpdate: (props) => {
                 setSelectedIndex(0);
                 setSession({
-                  items: props.items as unknown as UserBasic[],
-                  command: (member) =>
-                    props.command(member as unknown as MentionNodeAttrs),
+                  items: props.items as unknown as ComposerMentionCandidate[],
+                  command: (candidate) =>
+                    props.command(candidate as unknown as MentionNodeAttrs),
                 });
               },
               onKeyDown: ({ event }) => {
@@ -172,8 +188,8 @@ export function MentionComposer({
                   return true;
                 }
                 if (event.key === "Enter" || event.key === "Tab") {
-                  const member = items[highlightedRef.current];
-                  if (member) sessionRef.current?.command(member);
+                  const candidate = items[highlightedRef.current];
+                  if (candidate) sessionRef.current?.command(candidate);
                   return true;
                 }
                 return false;
@@ -227,37 +243,49 @@ export function MentionComposer({
         <div className="absolute inset-x-0 bottom-full z-50 mb-1 flex flex-col overflow-hidden rounded-md border border-[var(--gray-a6)] bg-[var(--color-panel-solid)] text-[13px] shadow-lg">
           <div
             role="listbox"
-            aria-label="Mention a teammate"
+            aria-label="Mention a teammate or agent"
             className="max-h-56 overflow-y-auto py-1"
           >
-            {session.items.map((member, index) => (
+            {session.items.map((candidate, index) => (
               <button
                 type="button"
                 role="option"
                 aria-selected={index === highlightedIndex}
-                key={member.uuid}
+                key={
+                  candidate.kind === "agent" ? "agent" : candidate.member.uuid
+                }
                 ref={(el) => {
                   itemRefs.current[index] = el;
                 }}
                 // Keep focus in the editor so insertion lands at the caret.
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => session.command(member)}
+                onClick={() => session.command(candidate)}
                 onMouseEnter={() => setSelectedIndex(index)}
                 className={`flex w-full items-center gap-2 border-none px-2 py-1 text-left ${
                   index === highlightedIndex ? "bg-[var(--accent-a4)]" : ""
                 }`}
               >
                 <Avatar size="xs" className="shrink-0">
-                  <AvatarFallback>{getUserInitials(member)}</AvatarFallback>
+                  <AvatarFallback>
+                    {candidate.kind === "agent" ? (
+                      <RobotIcon size={12} />
+                    ) : (
+                      getUserInitials(candidate.member)
+                    )}
+                  </AvatarFallback>
                 </Avatar>
                 <Text size="1" weight="medium" className="truncate">
-                  {userDisplayName(member)}
+                  {candidate.kind === "agent"
+                    ? "Agent"
+                    : userDisplayName(candidate.member)}
                 </Text>
                 <Text
                   size="1"
                   className="ml-auto shrink-0 truncate text-muted-foreground"
                 >
-                  {member.email}
+                  {candidate.kind === "agent"
+                    ? "Send to agent"
+                    : candidate.member.email}
                 </Text>
               </button>
             ))}

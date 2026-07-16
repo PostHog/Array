@@ -60,6 +60,14 @@ export function useTaskThreadMutations(taskId: string | undefined) {
     onSuccess: invalidate,
   });
 
+  const postToAgentMutation = useMutation({
+    mutationFn: async (content: string) => {
+      if (!client || !taskId) throw new Error("Not authenticated");
+      return client.createTaskThreadMessageForAgent(taskId, content);
+    },
+    onSuccess: invalidate,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (messageId: string) => {
       if (!client || !taskId) throw new Error("Not authenticated");
@@ -78,10 +86,13 @@ export function useTaskThreadMutations(taskId: string | undefined) {
 
   return {
     postMessage: (content: string) => postMutation.mutateAsync(content),
+    postMessageToAgent: (content: string) =>
+      postToAgentMutation.mutateAsync(content),
     deleteMessage: (messageId: string) => deleteMutation.mutateAsync(messageId),
     sendToAgent: (messageId: string) =>
       sendToAgentMutation.mutateAsync(messageId),
     isPosting: postMutation.isPending,
-    isSendingToAgent: sendToAgentMutation.isPending,
+    isSendingToAgent:
+      postToAgentMutation.isPending || sendToAgentMutation.isPending,
   };
 }

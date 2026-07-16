@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { AgentTurnRow } from "./ThreadPanel";
+import { AgentTurnRow, UserPromptRow } from "./ThreadPanel";
 
 describe("AgentTurnRow", () => {
   it.each([
@@ -15,5 +15,19 @@ describe("AgentTurnRow", () => {
     expect(author.parentElement).not.toContainElement(status);
     expect(author.closest("article")).toContainElement(status);
     expect(status.closest('[data-slot="thread-item-body"]')).not.toBeNull();
+  });
+});
+
+describe("UserPromptRow", () => {
+  it("prefixes direct task prompts with @agent", () => {
+    render(
+      <UserPromptRow
+        message={{ id: "prompt", text: "Investigate this", timestamp: 1 }}
+        author={{ id: 1, uuid: "user", email: "user@example.com" }}
+      />,
+    );
+
+    expect(screen.getByText("@agent")).toBeInTheDocument();
+    expect(screen.getByText("Investigate this")).toBeInTheDocument();
   });
 });

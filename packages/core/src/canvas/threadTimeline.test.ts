@@ -2,8 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
+  hasAgentMention,
   shouldSuspendThreadSession,
 } from "./threadTimeline";
+
+describe("hasAgentMention", () => {
+  it.each([
+    ["at the start", "@agent investigate this", true],
+    ["after other text", "Could you @Agent check this?", true],
+    ["inside an email-like token", "person@agent.com", false],
+    ["as part of a longer handle", "@agents", false],
+    ["without a mention", "human-only note", false],
+  ])("detects an agent mention %s", (_name, content, expected) => {
+    expect(hasAgentMention(content)).toBe(expected);
+  });
+});
 
 describe("buildThreadTimeline", () => {
   it("interleaves prompts, human replies, and agent turns chronologically", () => {

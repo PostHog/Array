@@ -10,6 +10,7 @@ import {
 import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
+  hasAgentMention,
   shouldSuspendThreadSession,
   type ThreadAgentMessage,
   type ThreadAgentStatus,
@@ -50,7 +51,10 @@ import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
-import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import {
+  MentionText,
+  mentionChipClass,
+} from "@posthog/ui/features/canvas/components/MentionText";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
@@ -260,7 +264,7 @@ export function AgentTurnRow({
   );
 }
 
-function UserPromptRow({
+export function UserPromptRow({
   message,
   author,
 }: {
@@ -284,7 +288,7 @@ function UserPromptRow({
           )}
         </ThreadItemHeader>
         <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
-          {message.text}
+          <span className={mentionChipClass}>@agent</span> {message.text}
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>
@@ -333,6 +337,7 @@ function ThreadConversation({
   const { messages, isLoading } = useTaskThread(taskId);
   const {
     postMessage,
+    postMessageToAgent,
     deleteMessage,
     sendToAgent,
     isPosting,
@@ -442,16 +447,38 @@ function ThreadConversation({
     !isTerminalStatus(task.latest_run.status) &&
     !isSendingToAgent;
 
-  const submit = () => {
+  const submit = async () => {
     const content = draft.trim();
-    if (!content || isPosting) return;
+    if (!content || isPosting || isSendingToAgent) return;
+    const sendToAgentRequested = hasAgentMention(content);
+    if (sendToAgentRequested && (!isTaskAuthor || !canForward)) {
+      toast.error("Couldn't send to agent", {
+        description:
+          "Only the task author can @agent while the task has an active run.",
+      });
+      return;
+    }
     setDraft("");
-    postMessage(content).catch((error: unknown) => {
+    try {
+      if (sendToAgentRequested) {
+        const { sendError } = await postMessageToAgent(content);
+        if (sendError) {
+          toast.error("Message posted, but couldn't send it to the agent", {
+            description:
+              sendError instanceof Error
+                ? sendError.message
+                : String(sendError),
+          });
+        }
+      } else {
+        await postMessage(content);
+      }
+    } catch (error) {
       setDraft(content);
       toast.error("Couldn't post message", {
         description: error instanceof Error ? error.message : String(error),
       });
-    });
+    }
   };
 
   const handleSendToAgent = (messageId: string) => {
@@ -574,8 +601,9 @@ function ThreadConversation({
           onValueChange={setDraft}
           onSubmit={submit}
           members={members}
+          allowAgentMention={isTaskAuthor && canForward}
           onMentionInsert={handleMentionInsert}
-          placeholder="Reply in thread… @ to tag a teammate"
+          placeholder="Reply in thread… @agent sends to the agent"
           rows={2}
           inputClassName="max-h-40 text-[13px]"
         >
@@ -585,7 +613,7 @@ function ThreadConversation({
                 variant="primary"
                 size="icon-sm"
                 aria-label="Send"
-                disabled={!draft.trim() || isPosting}
+                disabled={!draft.trim() || isPosting || isSendingToAgent}
                 onClick={submit}
               >
                 <PaperPlaneRightIcon size={14} />
