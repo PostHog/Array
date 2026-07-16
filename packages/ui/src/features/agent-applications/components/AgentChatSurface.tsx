@@ -124,12 +124,14 @@ function Composer({
 
   // Prefill (but don't send) when a new draft lands — a seeded prompt drops into
   // the composer for the user to review, edit, and send. Keyed on `token` so the
-  // same prompt re-applies on a fresh trigger.
+  // same prompt re-applies on a fresh trigger. Never clobber text the user has
+  // already typed but not sent: if the composer is non-empty, leave it as-is
+  // (still focusing it) so a seeded prompt is genuinely non-destructive.
   const lastDraftToken = useRef<number | null>(null);
   useEffect(() => {
     if (!draft || draft.token === lastDraftToken.current) return;
     lastDraftToken.current = draft.token;
-    setText(draft.text);
+    setText((current) => (current.trim() ? current : draft.text));
     textareaRef.current?.focus();
   }, [draft]);
 
