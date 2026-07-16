@@ -1279,8 +1279,11 @@ export class AgentServer {
     });
 
     if (this.config.repoReadyFile && gatewayEnv.anthropicBaseUrl) {
+      // Authed so this cache-warm matches the session's own authed fetch
+      // (the models cache is keyed on auth presence).
       void fetchGatewayModels({
         gatewayUrl: gatewayEnv.anthropicBaseUrl,
+        authToken: gatewayEnv.anthropicAuthToken,
       }).catch(() => {});
     }
 

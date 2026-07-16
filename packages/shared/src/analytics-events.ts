@@ -974,7 +974,8 @@ export type UpgradePromptShownSurface =
   | "usage_limit_modal"
   | "upgrade_dialog"
   | "titlebar_card"
-  | "billing_announcement";
+  | "billing_announcement"
+  | "model_picker";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
@@ -983,7 +984,8 @@ export type UpgradePromptClickedSurface =
   | "titlebar_card"
   | "plan_page_card"
   | "upgrade_dialog"
-  | "billing_announcement";
+  | "billing_announcement"
+  | "model_picker";
 
 export type UpgradePromptCause = "model_gate" | "org_limit";
 

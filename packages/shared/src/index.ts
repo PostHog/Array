@@ -133,7 +133,12 @@ export {
   mentionsToPlainText,
   splitMentionSegments,
 } from "./mentions";
-export { defaultEligibleModel } from "./models";
+export {
+  defaultEligibleModel,
+  isRestrictedModelOption,
+  RESTRICTED_MODEL_META_KEY,
+  restrictedModelMeta,
+} from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
