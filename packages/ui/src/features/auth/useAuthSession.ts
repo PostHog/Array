@@ -1,6 +1,7 @@
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { BILLING_FLAG } from "@posthog/shared";
 import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
+import { USAGE_QUERY_KEY } from "@posthog/ui/features/billing/useUsage";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import {
   identifyUser,
@@ -113,6 +114,9 @@ function useSeatSync(
 ): void {
   const queryClient = useQueryClient();
   useEffect(() => {
+    // Usage is identity-scoped billing data — drop the cached snapshot so a
+    // new sign-in never renders the previous account's spend.
+    queryClient.removeQueries({ queryKey: USAGE_QUERY_KEY });
     if (!authIdentity || !billingEnabled) {
       useSeatStore.getState().reset();
       return;

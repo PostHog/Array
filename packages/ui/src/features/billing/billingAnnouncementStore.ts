@@ -24,7 +24,14 @@ export const useBillingAnnouncementStore = create<BillingAnnouncementState>()(
       storage: electronStorage,
       partialize: (state) => ({ acknowledged: state.acknowledged }),
       onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
+        if (state) {
+          state.setHasHydrated(true);
+          return;
+        }
+        // Failed storage read: fail open as unacknowledged — re-showing the
+        // one-time announcement beats never showing it, and the in-memory
+        // acknowledgment still dismisses it for the rest of the session.
+        useBillingAnnouncementStore.setState({ _hasHydrated: true });
       },
     },
   ),

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthService } from "../auth/auth";
 import type { UsageHost } from "./identifiers";
 import { UsageMonitorEvent } from "./monitor-schemas";
 import type { UsageOutput } from "./schemas";
@@ -50,6 +51,26 @@ function makeLogger() {
 
 type GatewaySlice = Pick<UsageHost, "fetchUsage">;
 
+let emitAuthState: (currentOrgId: string | null) => void = () => {};
+
+function makeAuthService(): AuthService {
+  const listeners = new Set<
+    (state: { currentOrgId: string | null }) => void
+  >();
+  emitAuthState = (currentOrgId) => {
+    for (const listener of [...listeners]) {
+      listener({ currentOrgId });
+    }
+  };
+  return {
+    getState: () => ({ currentOrgId: "org-1" }),
+    on: (
+      _event: string,
+      listener: (state: { currentOrgId: string | null }) => void,
+    ) => listeners.add(listener),
+  } as unknown as AuthService;
+}
+
 function makeService(
   gateway: GatewaySlice,
   activity: ActivitySlice,
@@ -59,7 +80,7 @@ function makeService(
     ...activity,
     ...makeThresholdStore(),
   };
-  return new UsageMonitorService(host, makeLogger());
+  return new UsageMonitorService(host, makeLogger(), makeAuthService());
 }
 
 function makeUsage(overrides?: {
@@ -273,6 +294,65 @@ describe("UsageMonitorService", () => {
 
   // The titlebar meter keys off this bit; a subscribe flip must not wait for
   // some other field to change.
+  it("emits UsageUpdated when only the org spend numbers change", async () => {
+    const updates: UsageOutput[] = [];
+    const gateway = {
+      fetchUsage: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ...makeUsage(),
+          ai_credits: { exhausted: false, used_usd: 12.4, limit_usd: 50 },
+        })
+        .mockResolvedValueOnce({
+          ...makeUsage(),
+          ai_credits: { exhausted: false, used_usd: 13.1, limit_usd: 50 },
+        }),
+    } as unknown as GatewaySlice;
+    service = makeService(gateway, makeActivityMonitor());
+    service.on(UsageMonitorEvent.UsageUpdated, (u) => updates.push(u));
+
+    await service.fetchOnce();
+    await service.fetchOnce();
+
+    expect(updates).toHaveLength(2);
+    expect(updates[1].ai_credits?.used_usd).toBe(13.1);
+  });
+
+  it("forgets the snapshot and refetches when the organization changes", async () => {
+    const gateway = mockGateway(makeUsage());
+    service = makeService(gateway, makeActivityMonitor());
+    await service.fetchOnce();
+    expect(service.getLatest()).not.toBeNull();
+
+    emitAuthState("org-2");
+
+    expect(service.getLatest()).toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(gateway.fetchUsage).toHaveBeenCalledTimes(2);
+    expect(service.getLatest()).not.toBeNull();
+  });
+
+  it("keeps the snapshot across same-org auth changes", async () => {
+    service = makeService(mockGateway(makeUsage()), makeActivityMonitor());
+    await service.fetchOnce();
+
+    emitAuthState("org-1");
+
+    expect(service.getLatest()).not.toBeNull();
+  });
+
+  it("clears the snapshot on sign-out without scheduling a refetch", async () => {
+    const gateway = mockGateway(makeUsage());
+    service = makeService(gateway, makeActivityMonitor());
+    await service.fetchOnce();
+
+    emitAuthState(null);
+
+    expect(service.getLatest()).toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(gateway.fetchUsage).toHaveBeenCalledTimes(1);
+  });
+
   it("emits UsageUpdated when only the subscription bit flips", async () => {
     const updates: UsageOutput[] = [];
     const gateway = {

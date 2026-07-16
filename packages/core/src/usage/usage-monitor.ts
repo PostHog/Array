@@ -1,6 +1,9 @@
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import { TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable, postConstruct, preDestroy } from "inversify";
+import type { AuthService } from "../auth/auth";
+import { AUTH_SERVICE } from "../auth/auth.module";
+import { AuthServiceEvent } from "../auth/schemas";
 import { isCodeUsageFreeTier } from "../billing/usageDisplay";
 import { USAGE_HOST, type UsageHost, type UsageLogger } from "./identifiers";
 import {
@@ -34,10 +37,21 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
     private readonly host: UsageHost,
     @inject(ROOT_LOGGER)
     logger: RootLogger,
+    @inject(AUTH_SERVICE)
+    authService: AuthService,
   ) {
     super();
     this.log = logger.scope("usage-monitor");
     this.thresholdsSeen = { ...this.host.getThresholdsSeen() };
+    // The snapshot is identity-scoped billing data: a signed-in account must
+    // never be served the previous account's spend.
+    let orgId = authService.getState().currentOrgId;
+    authService.on(AuthServiceEvent.StateChanged, (state) => {
+      if (state.currentOrgId === orgId) return;
+      orgId = state.currentOrgId;
+      this.latestUsage = null;
+      if (state.currentOrgId !== null) this.requestRefresh();
+    });
   }
 
   private readonly log: UsageLogger;
@@ -251,6 +265,8 @@ function isSameUsage(a: UsageOutput | null, b: UsageOutput): boolean {
     a.billing_period_end === b.billing_period_end &&
     a.code_usage_subscribed === b.code_usage_subscribed &&
     a.ai_credits?.exhausted === b.ai_credits?.exhausted &&
+    a.ai_credits?.used_usd === b.ai_credits?.used_usd &&
+    a.ai_credits?.limit_usd === b.ai_credits?.limit_usd &&
     isSameBucket(a.burst, b.burst) &&
     isSameBucket(a.sustained, b.sustained)
   );
