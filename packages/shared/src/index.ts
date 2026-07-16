@@ -127,6 +127,12 @@ export {
 export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
+export type {
+  CloudMcpServerImport,
+  LocalMcpServerDescriptor,
+  LocalMcpServerScope,
+  LocalMcpTransport,
+} from "./local-mcp-domain";
 export {
   formatMention,
   type MentionSegment,
