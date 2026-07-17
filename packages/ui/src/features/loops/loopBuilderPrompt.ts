@@ -6,8 +6,10 @@
  */
 export function buildLoopBuilderPrompt({
   instructions,
+  context,
 }: {
   instructions?: string;
+  context?: { folderId: string; name: string };
 }): string {
   const seed = instructions?.trim();
 
@@ -19,8 +21,11 @@ ${
   seed
     ? `Here's what I want automated:\n\n${seed}\n`
     : `Start by asking me what I want automated, and offer a couple of concrete ideas.\n`
-}
-How to build it:
+}${
+  context
+    ? `This loop is being created for the context "#${context.name}". In the config you assemble, set \`context_target\` to {"folder_id": "${context.folderId}", "name": "${context.name}", "outputs": {"post_to_feed": true}} so its runs post to that context's feed. Keep it a personal loop.\n\n`
+    : ""
+}How to build it:
 
 1. Call \`loops-list\` first so you don't duplicate an existing loop.
 2. Turn what I want into a clear set of loop instructions (the prompt the loop runs on every fire). Infer what you reasonably can rather than over-asking.

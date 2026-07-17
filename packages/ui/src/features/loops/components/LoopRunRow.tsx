@@ -1,8 +1,22 @@
+import {
+  Check,
+  CircleNotch,
+  Clock,
+  GitBranch,
+  type Icon,
+  Lightning,
+  Play,
+  Timer,
+  Warning,
+  X,
+} from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { cn } from "@posthog/quill";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToTaskDetail } from "@posthog/ui/router/navigationBridge";
 import { Flex, Text } from "@radix-ui/themes";
+import type { ReactNode } from "react";
 
 function statusColor(
   status: LoopSchemas.LoopRunStatusEnum,
@@ -18,6 +32,20 @@ function statusColor(
       return "blue";
     default:
       return "gray";
+  }
+}
+
+function statusIcon(status: LoopSchemas.LoopRunStatusEnum): Icon {
+  switch (status) {
+    case "completed":
+      return Check;
+    case "failed":
+    case "cancelled":
+      return X;
+    case "in_progress":
+      return CircleNotch;
+    default:
+      return Clock;
   }
 }
 
@@ -46,26 +74,45 @@ function formatDuration(ms: number): string {
   return remMin ? `${hr}h ${remMin}m` : `${hr}h`;
 }
 
-function durationLabel(run: LoopSchemas.LoopRun): string {
+function runDuration(run: LoopSchemas.LoopRun): string {
+  if (run.status === "queued" || run.status === "not_started") return "";
   const start = new Date(run.created_at).getTime();
   if (Number.isNaN(start)) return "";
-  if (run.completed_at) {
-    const end = new Date(run.completed_at).getTime();
-    if (!Number.isNaN(end)) return `ran ${formatDuration(end - start)}`;
-  }
-  if (run.status === "in_progress")
-    return `running ${formatDuration(Date.now() - start)}`;
-  if (run.status === "queued") return "queued";
-  return "";
+  const end = run.completed_at
+    ? new Date(run.completed_at).getTime()
+    : Date.now();
+  if (Number.isNaN(end)) return "";
+  return formatDuration(end - start);
+}
+
+function MetaItem({
+  icon: IconComponent,
+  mono = false,
+  children,
+}: {
+  icon: Icon;
+  mono?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Flex align="center" gap="1" className="min-w-0">
+      <IconComponent size={12} weight="bold" className="shrink-0 text-gray-9" />
+      <Text
+        className={cn(
+          "truncate text-[11.5px] text-gray-10",
+          mono && "[font-family:var(--font-mono)]",
+        )}
+      >
+        {children}
+      </Text>
+    </Flex>
+  );
 }
 
 export function LoopRunRow({ run }: { run: LoopSchemas.LoopRun }) {
-  const meta = [
-    formatRelative(run.created_at),
-    durationLabel(run),
-    run.environment,
-    run.loop_trigger_id ? "Triggered" : "Manual",
-  ].filter(Boolean);
+  const StatusIcon = statusIcon(run.status);
+  const duration = runDuration(run);
+  const triggered = Boolean(run.loop_trigger_id);
 
   return (
     <Flex
@@ -74,24 +121,45 @@ export function LoopRunRow({ run }: { run: LoopSchemas.LoopRun }) {
       gap="3"
       className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2.5"
     >
-      <Flex direction="column" className="min-w-0 gap-1">
+      <Flex direction="column" className="min-w-0 gap-1.5">
         <Flex align="center" gap="2" wrap="wrap">
-          <Badge color={statusColor(run.status)}>{run.status}</Badge>
+          <Badge color={statusColor(run.status)}>
+            <StatusIcon
+              size={10}
+              weight="bold"
+              className={cn(run.status === "in_progress" && "animate-spin")}
+            />
+            {run.status.replaceAll("_", " ")}
+          </Badge>
           <Text
             className="text-[12px] text-gray-11"
             title={new Date(run.created_at).toLocaleString()}
           >
-            {meta.join(" · ")}
+            {formatRelative(run.created_at)}
           </Text>
         </Flex>
+        <Flex align="center" gap="3" wrap="wrap" className="min-w-0">
+          {run.branch ? (
+            <MetaItem icon={GitBranch} mono>
+              {run.branch}
+            </MetaItem>
+          ) : null}
+          {duration ? <MetaItem icon={Timer}>{duration}</MetaItem> : null}
+          <MetaItem icon={triggered ? Lightning : Play}>
+            {triggered ? "Triggered" : "Manual"}
+          </MetaItem>
+        </Flex>
         {run.error_message ? (
-          <Text className="truncate text-(--red-11) text-[11.5px]">
-            {run.error_message}
-          </Text>
-        ) : run.branch ? (
-          <Text className="truncate text-[11.5px] text-gray-10 [font-family:var(--font-mono)]">
-            {run.branch}
-          </Text>
+          <Flex align="center" gap="1" className="min-w-0">
+            <Warning
+              size={12}
+              weight="bold"
+              className="shrink-0 text-(--red-11)"
+            />
+            <Text className="truncate text-(--red-11) text-[11.5px]">
+              {run.error_message}
+            </Text>
+          </Flex>
         ) : null}
       </Flex>
       <Button

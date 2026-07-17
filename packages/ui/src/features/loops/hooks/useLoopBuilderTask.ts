@@ -25,8 +25,13 @@ interface UseLoopBuilderTaskReturn {
  * cloud task seeded with a canned instruction prompt. The user's typed text rides
  * in through a ref so the fixed `buildInput` closure reads the latest submission.
  */
-export function useLoopBuilderTask(): UseLoopBuilderTaskReturn {
+export function useLoopBuilderTask(context?: {
+  folderId: string;
+  name: string;
+}): UseLoopBuilderTaskReturn {
   const instructionsRef = useRef("");
+  const contextRef = useRef(context);
+  contextRef.current = context;
   const { repositories } = useUserRepositoryIntegration();
   const lastUsedCloudRepository = useSettingsStore(
     (state) => state.lastUsedCloudRepository,
@@ -41,6 +46,7 @@ export function useLoopBuilderTask(): UseLoopBuilderTaskReturn {
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
       const prompt = buildLoopBuilderPrompt({
         instructions: instructionsRef.current,
+        context: contextRef.current,
       });
       return {
         content: prompt,
