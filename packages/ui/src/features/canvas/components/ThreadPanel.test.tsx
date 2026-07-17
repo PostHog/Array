@@ -1,5 +1,7 @@
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
   AgentStatusLine,
@@ -7,6 +9,17 @@ import {
   UserPromptRow,
 } from "./ThreadPanel";
 import { agentTurns } from "./threadAgentTurns";
+
+// Rows resolve team avatars through a query; disable fetching so tests stay
+// offline and rows render their initials fallback.
+function renderRow(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { enabled: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+  );
+}
 
 describe("agentTurns", () => {
   it("accumulates every text chunk in one agent turn", () => {
@@ -51,7 +64,7 @@ describe("AgentStatusLine", () => {
 
 describe("ThreadMessageRow", () => {
   it("renders backend-authored agent announcements as Agent", () => {
-    render(
+    renderRow(
       <ThreadMessageRow
         message={{
           id: "announcement",
@@ -76,7 +89,7 @@ describe("ThreadMessageRow", () => {
   });
 
   it("renders system announcements as System without human actions", () => {
-    render(
+    renderRow(
       <ThreadMessageRow
         message={{
           id: "system-announcement",
@@ -103,7 +116,7 @@ describe("ThreadMessageRow", () => {
   });
 
   it("keeps legacy authorless rows as human messages", () => {
-    render(
+    renderRow(
       <ThreadMessageRow
         message={{
           id: "legacy-message",
@@ -129,7 +142,7 @@ describe("ThreadMessageRow", () => {
 
 describe("UserPromptRow", () => {
   it("prefixes direct task prompts with @agent", () => {
-    render(
+    renderRow(
       <UserPromptRow
         message={{ id: "prompt", text: "Investigate this", timestamp: 1 }}
         author={{ id: 1, uuid: "user", email: "user@example.com" }}
@@ -141,7 +154,7 @@ describe("UserPromptRow", () => {
   });
 
   it("hides forwarded thread attribution and duplicate agent mentions", () => {
-    render(
+    renderRow(
       <UserPromptRow
         message={{
           id: "prompt",

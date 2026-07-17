@@ -53,13 +53,13 @@ import type {
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import {
   MentionText,
   mentionChipClass,
 } from "@posthog/ui/features/canvas/components/MentionText";
+import { TeamMemberAvatar } from "@posthog/ui/features/canvas/components/TeamMemberAvatar";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { agentTurns } from "@posthog/ui/features/canvas/components/threadAgentTurns";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
@@ -114,17 +114,19 @@ export function ThreadMessageRow({
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>
-            {isAgent ? (
-              <RobotIcon size={14} />
-            ) : isSystem ? (
-              "S"
-            ) : (
-              getUserInitials(message.author)
-            )}
-          </AvatarFallback>
-        </Avatar>
+        {isAgent || isSystem ? (
+          <Avatar size="lg" className="sticky top-2">
+            <AvatarFallback>
+              {isAgent ? <RobotIcon size={14} /> : "S"}
+            </AvatarFallback>
+          </Avatar>
+        ) : (
+          <TeamMemberAvatar
+            user={message.author}
+            size="lg"
+            className="sticky top-2"
+          />
+        )}
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
@@ -266,9 +268,7 @@ export function UserPromptRow({
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
-        </Avatar>
+        <TeamMemberAvatar user={author} size="lg" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>

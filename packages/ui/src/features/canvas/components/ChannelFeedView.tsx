@@ -38,9 +38,9 @@ import {
 } from "@posthog/quill";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
-import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
+import { TeamMemberAvatar } from "@posthog/ui/features/canvas/components/TeamMemberAvatar";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
@@ -396,9 +396,11 @@ function ReplyFooter({
     <ThreadItemReplies onClick={onOpenThread} className="mt-1">
       <AvatarGroup size="xs">
         {authors.map((author, index) => (
-          <Avatar key={author?.uuid ?? index} size="xs">
-            <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
-          </Avatar>
+          <TeamMemberAvatar
+            key={author?.uuid ?? index}
+            user={author}
+            size="xs"
+          />
         ))}
       </AvatarGroup>
       <ThreadItemRepliesLabel>
@@ -583,15 +585,15 @@ function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
     <ChatMessageScrollerItem messageId={message.id}>
       <ThreadItem className="rounded-none py-1 pr-8">
         <ThreadItemGutter>
-          <Avatar>
-            <AvatarFallback>
-              {message.author ? (
-                getUserInitials(message.author)
-              ) : (
+          {message.author ? (
+            <TeamMemberAvatar user={message.author} />
+          ) : (
+            <Avatar>
+              <AvatarFallback>
                 <RobotIcon size={16} />
-              )}
-            </AvatarFallback>
-          </Avatar>
+              </AvatarFallback>
+            </Avatar>
+          )}
         </ThreadItemGutter>
         <ThreadItemContent className="min-w-0">
           <ThreadItemHeader>
