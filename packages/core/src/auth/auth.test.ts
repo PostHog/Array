@@ -1466,7 +1466,9 @@ describe("AuthService", () => {
       },
     );
 
-    it("loads project-scoped OAuth access without calling the organization endpoint", async () => {
+    // Regression for #3279: the current-org fallback still strands the picker
+    // when the backend rejects team-scoped tokens on organization endpoints.
+    it("loads project-scoped OAuth access when organization access is forbidden", async () => {
       let orgCalls = 0;
       let projectCalls = 0;
       vi.stubGlobal(
