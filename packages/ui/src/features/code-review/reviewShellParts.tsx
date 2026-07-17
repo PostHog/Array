@@ -50,15 +50,19 @@ export function findRenderedScrollAnchor(
 
 export function findActiveScrollKey(root: HTMLElement): string | null {
   const rootTop = root.getBoundingClientRect().top;
+  let activeScrollKey: string | null = null;
   for (const anchor of root.querySelectorAll<HTMLElement>(
     SCROLL_ANCHOR_SELECTOR,
   )) {
     const scrollKey = anchor.dataset.scrollKey;
-    if (scrollKey && anchor.getBoundingClientRect().bottom > rootTop + 1) {
-      return scrollKey;
+    if (!scrollKey) continue;
+    if (anchor.getBoundingClientRect().top <= rootTop + 1) {
+      activeScrollKey = scrollKey;
+      continue;
     }
+    return activeScrollKey ?? scrollKey;
   }
-  return null;
+  return activeScrollKey;
 }
 
 export function useDiffOptions() {

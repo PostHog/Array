@@ -127,7 +127,7 @@ describe("review scroll anchors", () => {
     expect(findRenderedScrollAnchor(root, "src/[id]/file.ts")).toBe(anchor);
   });
 
-  it("selects the first rendered file crossing the scroll root top", () => {
+  it("selects the last file starting at or above the scroll root top", () => {
     const root = document.createElement("div");
     const above = document.createElement("div");
     const active = document.createElement("div");
@@ -142,5 +142,22 @@ describe("review scroll anchors", () => {
     setRect(below, 180, 280);
 
     expect(findActiveScrollKey(root)).toBe("active.ts");
+  });
+
+  it("does not select a tall expanded file above the jump target", () => {
+    const root = document.createElement("div");
+    const expandedAbove = document.createElement("div");
+    const target = document.createElement("div");
+    const below = document.createElement("div");
+    expandedAbove.dataset.scrollKey = "expanded-above.ts";
+    target.dataset.scrollKey = "target.ts";
+    below.dataset.scrollKey = "below.ts";
+    root.append(expandedAbove, target, below);
+    setRect(root, 100, 500);
+    setRect(expandedAbove, -1000, 500);
+    setRect(target, 100, 180);
+    setRect(below, 180, 260);
+
+    expect(findActiveScrollKey(root)).toBe("target.ts");
   });
 });
