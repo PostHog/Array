@@ -714,10 +714,12 @@ If a repository IS genuinely required, attach one in this priority order:
    * service without starting an agent session. A cloud run's agent lives in the
    * sandbox, so getOrCreateSession never runs on the desktop and the mcp-apps
    * service has no config to fetch a UI-app resource through — the review card
-   * then fails with "No server config for: posthog" and renders as text. The
-   * task view calls this when a cloud-run tool result carries a UI app.
+   * then fails with "No server config for: posthog" and renders as text.
+   * Invoked via the config resolver registered in the constructor.
    */
-  async ensureMcpAppsServerConfigs(credentials: Credentials): Promise<void> {
+  private async ensureMcpAppsServerConfigs(
+    credentials: Credentials,
+  ): Promise<void> {
     const { servers } =
       await this.agentAuthAdapter.buildMcpServers(credentials);
     this.mcpAppsService.addServerConfigs(
