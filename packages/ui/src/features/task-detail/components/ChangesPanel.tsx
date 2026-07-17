@@ -1,5 +1,6 @@
 import {
   ArrowCounterClockwiseIcon,
+  CheckSquare,
   CodeIcon,
   CopyIcon,
   FilePlus,
@@ -29,6 +30,8 @@ import { TreeFileRow } from "../../../primitives/TreeDirectoryRow";
 import { track } from "../../../shell/analytics";
 import { useEffectiveDiffSource } from "../../code-review/hooks/useEffectiveDiffSource";
 import { useReviewNavigationStore } from "../../code-review/reviewNavigationStore";
+import { isFileViewed } from "../../code-review/reviewShellParts";
+import { useReviewViewedContext } from "../../code-review/reviewViewedContext";
 import { useExternalAppAction } from "../../external-apps/useExternalAppAction";
 import { useExternalApps } from "../../external-apps/useExternalApps";
 import {
@@ -107,6 +110,7 @@ function ChangedFileItem({
   const { detectedApps } = useExternalApps();
   const workspace = useWorkspace(taskId);
   const { openForFile } = useFileContextMenu();
+  const viewedContext = useReviewViewedContext();
 
   const [isHovered, setIsHovered] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -117,6 +121,10 @@ function ChangedFileItem({
   const fileName = file.path.split("/").pop() || file.path;
   const fullPath = repoPath ? `${repoPath}/${file.path}` : file.path;
   const indicator = getStatusIndicator(file.status);
+  const currentSignature = viewedContext?.currentSignatures.get(fileKey);
+  const viewed =
+    currentSignature !== undefined &&
+    isFileViewed(viewedContext?.viewedRecord[fileKey], currentSignature);
 
   const handleClick = () => {
     track(ANALYTICS_EVENTS.FILE_DIFF_VIEWED, {
@@ -276,6 +284,14 @@ function ChangedFileItem({
       >
         {indicator.label}
       </Badge>
+      {viewed && (
+        <CheckSquare
+          aria-label="Viewed"
+          size={13}
+          weight="fill"
+          className="shrink-0 text-(--accent-9)"
+        />
+      )}
     </>
   );
 

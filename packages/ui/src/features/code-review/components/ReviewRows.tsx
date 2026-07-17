@@ -83,9 +83,10 @@ export const PatchRow = memo(function PatchRow({
         onDiscard={onDiscard}
         onStage={onStage}
         staged={staged}
+        viewedKey={itemKey}
       />
     ),
-    [collapsed, onToggle, onOpenFile, onDiscard, onStage, staged],
+    [collapsed, onToggle, onOpenFile, onDiscard, onStage, staged, itemKey],
   );
 
   // Binary files (images, video, archives, …) have no meaningful textual diff;
@@ -176,6 +177,7 @@ export const UntrackedRow = memo(function UntrackedRow({
       onDiscard={onDiscard}
       onStage={onStage}
       taskId={taskId}
+      viewedKey={itemKey}
     />
   );
 });
@@ -215,6 +217,7 @@ export const RemoteRow = memo(function RemoteRow({
       onToggle={onToggle}
       commentThreads={commentThreads}
       externalUrl={externalUrl}
+      viewedKey={file.path}
     />
   );
 });
@@ -228,6 +231,7 @@ function UntrackedFileDiff({
   onToggle,
   onDiscard,
   onStage,
+  viewedKey,
 }: {
   file: ChangedFile;
   repoPath: string;
@@ -237,6 +241,7 @@ function UntrackedFileDiff({
   onToggle: () => void;
   onDiscard?: () => void;
   onStage?: () => void;
+  viewedKey?: string;
 }) {
   const [containerRef, inView] = useInView<HTMLDivElement>({
     rootMargin: REVIEW_PREFETCH_ROOT_MARGIN,
@@ -278,6 +283,7 @@ function UntrackedFileDiff({
         reason="line-limit"
         collapsed={collapsed}
         onToggle={onToggle}
+        viewedKey={viewedKey}
       />
     );
   }
@@ -301,6 +307,7 @@ function UntrackedFileDiff({
               onDiscard={onDiscard}
               onStage={onStage}
               staged={false}
+              viewedKey={viewedKey}
             />
           )}
         />
@@ -312,6 +319,7 @@ function UntrackedFileDiff({
           deletions={0}
           collapsed={collapsed}
           onToggle={onToggle}
+          viewedKey={viewedKey}
         />
       )}
     </div>

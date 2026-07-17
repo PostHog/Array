@@ -36,30 +36,40 @@ export function MentionText({
       entries.push({ segment, key: `${offset}` });
       offset += length;
     };
-    const pushText = (text: string) => {
+    const pushAgentMentions = (text: string) => {
       let cursor = 0;
       for (const match of text.matchAll(/(^|\s)(@agent)\b/gi)) {
         const mentionStart = (match.index ?? 0) + match[1].length;
-        for (const part of splitLinkSegments(
-          text.slice(cursor, mentionStart),
-        )) {
-          push(part, part.text.length);
+        if (mentionStart > cursor) {
+          push(
+            { type: "text", text: text.slice(cursor, mentionStart) },
+            mentionStart - cursor,
+          );
         }
         push({ type: "agent", text: match[2] }, match[2].length);
         cursor = mentionStart + match[2].length;
       }
-      for (const part of splitLinkSegments(text.slice(cursor))) {
-        push(part, part.text.length);
+      if (cursor < text.length) {
+        push({ type: "text", text: text.slice(cursor) }, text.length - cursor);
       }
     };
-    for (const segment of splitMentionSegments(content)) {
-      if (segment.type === "mention") {
-        push(
-          { type: "mention", name: segment.name, email: segment.email },
-          segment.text.length,
-        );
+    const pushMentions = (text: string) => {
+      for (const segment of splitMentionSegments(text)) {
+        if (segment.type === "mention") {
+          push(
+            { type: "mention", name: segment.name, email: segment.email },
+            segment.text.length,
+          );
+        } else {
+          pushAgentMentions(segment.text);
+        }
+      }
+    };
+    for (const segment of splitLinkSegments(content)) {
+      if (segment.type === "link") {
+        push(segment, segment.text.length);
       } else {
-        pushText(segment.text);
+        pushMentions(segment.text);
       }
     }
     return entries;
