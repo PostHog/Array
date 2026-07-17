@@ -35,6 +35,8 @@ export interface UserBasic {
   last_name?: string;
   email: string;
   is_email_verified?: boolean | null;
+  /** Profile photo URL; not served by the backend yet, read when it arrives. */
+  avatar_url?: string | null;
 }
 
 /** One row from the org members list; trimmed to what mention pickers need. */

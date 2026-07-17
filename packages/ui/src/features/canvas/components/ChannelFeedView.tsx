@@ -38,9 +38,9 @@ import {
 } from "@posthog/quill";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import { UserAvatar } from "@posthog/ui/features/avatars/UserAvatar";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
-import { TeamMemberAvatar } from "@posthog/ui/features/canvas/components/TeamMemberAvatar";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
@@ -396,11 +396,7 @@ function ReplyFooter({
     <ThreadItemReplies onClick={onOpenThread} className="mt-1">
       <AvatarGroup size="xs">
         {authors.map((author, index) => (
-          <TeamMemberAvatar
-            key={author?.uuid ?? index}
-            user={author}
-            size="xs"
-          />
+          <UserAvatar key={author?.uuid ?? index} user={author} size="xs" />
         ))}
       </AvatarGroup>
       <ThreadItemRepliesLabel>
@@ -586,7 +582,7 @@ function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
       <ThreadItem className="rounded-none py-1 pr-8">
         <ThreadItemGutter>
           {message.author ? (
-            <TeamMemberAvatar user={message.author} />
+            <UserAvatar user={message.author} />
           ) : (
             <Avatar>
               <AvatarFallback>

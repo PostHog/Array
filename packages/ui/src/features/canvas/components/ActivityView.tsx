@@ -13,8 +13,8 @@ import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
+import { UserAvatar } from "@posthog/ui/features/avatars/UserAvatar";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
-import { TeamMemberAvatar } from "@posthog/ui/features/canvas/components/TeamMemberAvatar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
 import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
@@ -66,7 +66,7 @@ function ActivityRow({
         className="flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary"
       >
         <span className="relative mt-0.5 shrink-0">
-          <TeamMemberAvatar user={item.author} size="xs" />
+          <UserAvatar user={item.author} size="xs" />
           {isNew && (
             <span
               className="-top-0.5 -right-0.5 absolute h-2 w-2 rounded-full bg-(--red-9)"

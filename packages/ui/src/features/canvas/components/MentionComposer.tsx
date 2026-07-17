@@ -1,7 +1,7 @@
 import { RobotIcon } from "@phosphor-icons/react";
 import { Avatar, AvatarFallback, InputGroup } from "@posthog/quill";
 import type { UserBasic } from "@posthog/shared/domain-types";
-import { TeamMemberAvatar } from "@posthog/ui/features/canvas/components/TeamMemberAvatar";
+import { UserAvatar } from "@posthog/ui/features/avatars/UserAvatar";
 import {
   type ComposerMentionCandidate,
   contentToDoc,
@@ -271,7 +271,7 @@ export function MentionComposer({
                     </AvatarFallback>
                   </Avatar>
                 ) : (
-                  <TeamMemberAvatar
+                  <UserAvatar
                     user={candidate.member}
                     size="xs"
                     className="shrink-0"

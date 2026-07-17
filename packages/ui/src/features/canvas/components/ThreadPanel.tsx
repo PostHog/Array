@@ -53,13 +53,13 @@ import type {
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
+import { UserAvatar } from "@posthog/ui/features/avatars/UserAvatar";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import {
   MentionText,
   mentionChipClass,
 } from "@posthog/ui/features/canvas/components/MentionText";
-import { TeamMemberAvatar } from "@posthog/ui/features/canvas/components/TeamMemberAvatar";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { agentTurns } from "@posthog/ui/features/canvas/components/threadAgentTurns";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
@@ -121,7 +121,7 @@ export function ThreadMessageRow({
             </AvatarFallback>
           </Avatar>
         ) : (
-          <TeamMemberAvatar
+          <UserAvatar
             user={message.author}
             size="lg"
             className="sticky top-2"
@@ -268,7 +268,7 @@ export function UserPromptRow({
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <TeamMemberAvatar user={author} size="lg" className="sticky top-2" />
+        <UserAvatar user={author} size="lg" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
