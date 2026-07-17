@@ -286,10 +286,14 @@ export function compareModelsForPicker(a: string, b: string): number {
 
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
 
-// Uppercase the acronym, keep the version attached, title-case any suffix:
-// "gpt-5.6-sol" -> "GPT-5.6 Sol", "glm-5.2" -> "GLM-5.2".
+const KNOWN_ACRONYMS = new Set(["gpt", "glm"]);
+
+// For a known acronym, uppercase it, keep the version attached, and title-case
+// any suffix: "gpt-5.6-sol" -> "GPT-5.6 Sol", "glm-5.2" -> "GLM-5.2". Other ids
+// stay lowercase to avoid mangling ordinary names (e.g. "llama-3.1-8b").
 function formatProviderModelName(modelId: string): string {
   const [acronym, version, ...suffix] = modelId.split("-");
+  if (!KNOWN_ACRONYMS.has(acronym.toLowerCase())) return modelId.toLowerCase();
   const head = version
     ? `${acronym.toUpperCase()}-${version}`
     : acronym.toUpperCase();

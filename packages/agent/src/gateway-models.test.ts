@@ -74,6 +74,19 @@ describe("formatGatewayModelName", () => {
     ).toBe("GLM-5.2");
   });
 
+  it("leaves non-acronym Cloudflare models lowercase", () => {
+    expect(
+      formatGatewayModelName({
+        id: "@cf/meta/llama-3.1-8b-instruct",
+        owned_by: "cloudflare",
+        context_window: 128000,
+        supports_streaming: true,
+        supports_vision: false,
+        allowed: true,
+      }),
+    ).toBe("llama-3.1-8b-instruct");
+  });
+
   it("blocks deprecated Claude gateway models", () => {
     expect(isBlockedModelId("claude-opus-4-5")).toBe(true);
     expect(isBlockedModelId("claude-opus-4-6")).toBe(true);
