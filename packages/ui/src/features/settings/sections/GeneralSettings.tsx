@@ -7,6 +7,7 @@ import {
   COLLAPSE_MODE_OPTIONS,
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { ProfilePictureRow } from "@posthog/ui/features/settings/components/ProfilePictureRow";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
@@ -252,6 +253,8 @@ export function GeneralSettings() {
           </Button>
         </SettingRow>
       )}
+
+      {isAuthenticated && <ProfilePictureRow />}
 
       {/* Appearance */}
       <Text className="mb-2 pt-4 font-medium text-sm">Appearance</Text>

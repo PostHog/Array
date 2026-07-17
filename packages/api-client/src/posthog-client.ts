@@ -1399,6 +1399,16 @@ export class PostHogAPIClient {
     return data;
   }
 
+  /** Update the signed-in user's profile picture; null removes it. */
+  async updateCurrentUserAvatar(avatarUrl: string | null): Promise<void> {
+    await this.api.patch("/api/users/{uuid}/", {
+      path: { uuid: "@me" },
+      // Not in the generated schema yet (the backend field is new); same
+      // interim shape switchOrganization uses.
+      body: { avatar_url: avatarUrl } as Record<string, unknown>,
+    });
+  }
+
   // Desktop file system — the backend surface that backs canvas channels
   // (top-level folders) and dashboards. These routes aren't in the generated
   // OpenAPI client, so we use the raw fetcher.

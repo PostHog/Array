@@ -1,5 +1,12 @@
-import type { UserBasic } from "@posthog/shared/domain-types";
 import { useQuery } from "@tanstack/react-query";
+
+/** The user fields avatar resolution needs; `UserBasic` and the full user satisfy it. */
+export interface AvatarUser {
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+}
 
 // Same convention as PostHog cloud's ProfilePicture: Gravatar keyed by the
 // account email, d=404 so accounts without one fall through to the initials
@@ -24,7 +31,7 @@ export async function gravatarUrl(email: string): Promise<string | null> {
  * user has neither — callers keep their initials fallback.
  */
 export function useUserAvatar(
-  user: UserBasic | null | undefined,
+  user: AvatarUser | null | undefined,
 ): string | null {
   const email = user?.email ?? null;
   const { data } = useQuery({

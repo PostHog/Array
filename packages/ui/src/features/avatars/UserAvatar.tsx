@@ -1,7 +1,9 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@posthog/quill";
-import type { UserBasic } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
-import { useUserAvatar } from "@posthog/ui/features/avatars/useUserAvatar";
+import {
+  type AvatarUser,
+  useUserAvatar,
+} from "@posthog/ui/features/avatars/useUserAvatar";
 
 /**
  * A user's avatar: their profile photo when one resolves, initials otherwise
@@ -13,7 +15,7 @@ export function UserAvatar({
   size,
   className,
 }: {
-  user: UserBasic | null | undefined;
+  user: AvatarUser | null | undefined;
   size?: "lg" | "default" | "sm" | "xs";
   className?: string;
 }) {
