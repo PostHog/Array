@@ -163,9 +163,6 @@ export abstract class BaseAcpAgent implements Agent {
         // silently dropping them.
         ...(model.allowed ? {} : { _meta: restrictedModelMeta() }),
       }))
-      // Group by family, then oldest-to-newest within each family, so the
-      // picker is deterministic and reads logically instead of interleaving
-      // families by raw version number.
       .sort((a, b) => compareModelsForPicker(a.value, b.value));
 
     // Models the Claude adapter can drive: Anthropic ids, plus Cloudflare `@cf/` ids the gateway

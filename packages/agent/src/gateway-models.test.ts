@@ -48,7 +48,7 @@ describe("formatGatewayModelName", () => {
     ).toBe("GPT-5.5");
   });
 
-  it("strips the openai/ prefix and uppercases GPT", () => {
+  it("strips the openai/ prefix, uppercases GPT, and title-cases the suffix", () => {
     expect(
       formatGatewayModelName({
         id: "openai/gpt-5.6-sol",
@@ -58,7 +58,7 @@ describe("formatGatewayModelName", () => {
         supports_vision: true,
         allowed: true,
       }),
-    ).toBe("GPT-5.6-sol");
+    ).toBe("GPT-5.6 Sol");
   });
 
   it("formats Cloudflare models as the final path segment with GLM uppercased", () => {
@@ -119,28 +119,24 @@ describe("getClaudeModelRecency", () => {
 });
 
 describe("compareModelsForPicker", () => {
-  it("groups models by family, then orders each family oldest to newest", () => {
+  it("groups models by family, most capable first, newest version first", () => {
     // Models as the gateway might return them — arbitrary order.
     const gatewayOrder = [
       "claude-fable-5",
-      "claude-opus-4-8",
+      "claude-opus-4-7",
       "claude-mystery",
       "claude-sonnet-5",
       "claude-haiku-4-5",
       "claude-sonnet-4-6",
-      "claude-opus-4-7",
+      "claude-opus-4-8",
     ];
     const displayed = [...gatewayOrder].sort(compareModelsForPicker);
-    // Families are ordered most-capable first and each stays contiguous (both
-    // Sonnets together, both Opuses together) instead of interleaving by raw
-    // version number. Within a family, versions run oldest-to-newest.
-    // Unknown/non-Anthropic models trail the known families.
     expect(displayed).toEqual([
       "claude-fable-5",
-      "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-sonnet-4-6",
+      "claude-opus-4-7",
       "claude-sonnet-5",
+      "claude-sonnet-4-6",
       "claude-haiku-4-5",
       "claude-mystery",
     ]);
