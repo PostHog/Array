@@ -223,23 +223,16 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       return existing;
     }
 
-    // Deduplicate concurrent connection attempts
+    // Deduplicate concurrent connection attempts. The pending entry must cover
+    // the config-resolver await too, or two concurrent first fetches for the
+    // same server would both resolve and connect, leaking a connection.
     const pending = this.pendingConnections.get(serverName);
     if (pending) {
       this.log.info("Joining pending MCP connection attempt", { serverName });
       return pending;
     }
 
-    let config = this.serverConfigs.get(serverName);
-    if (!config && this.configResolver) {
-      await this.configResolver(serverName);
-      config = this.serverConfigs.get(serverName);
-    }
-    if (!config) {
-      throw new Error(`No server config for: ${serverName}`);
-    }
-
-    const connectionPromise = this.createConnection(config);
+    const connectionPromise = this.resolveConfigAndConnect(serverName);
     this.pendingConnections.set(serverName, connectionPromise);
 
     try {
@@ -249,6 +242,20 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     } finally {
       this.pendingConnections.delete(serverName);
     }
+  }
+
+  private async resolveConfigAndConnect(
+    serverName: string,
+  ): Promise<ServerConnection> {
+    let config = this.serverConfigs.get(serverName);
+    if (!config && this.configResolver) {
+      await this.configResolver(serverName);
+      config = this.serverConfigs.get(serverName);
+    }
+    if (!config) {
+      throw new Error(`No server config for: ${serverName}`);
+    }
+    return this.createConnection(config);
   }
 
   private async createConnection(
