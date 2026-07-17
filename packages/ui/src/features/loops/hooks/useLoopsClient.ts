@@ -1,5 +1,6 @@
 import { buildApiFetcher, createApiClient } from "@posthog/api-client";
 import type { ApiClient } from "@posthog/api-client/generated";
+import { getPosthogApiClientAppVersion } from "@posthog/api-client/posthog-client";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { getCloudUrlFromRegion } from "@posthog/shared";
 import { useMemo } from "react";
@@ -41,7 +42,7 @@ export function useLoopsClient(): LoopsApiClient | null {
           hostClient.auth.refreshAccessToken
             .mutate()
             .then((r) => r.accessToken),
-        appVersion: "unknown",
+        appVersion: getPosthogApiClientAppVersion(),
       }),
       baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl,
     );

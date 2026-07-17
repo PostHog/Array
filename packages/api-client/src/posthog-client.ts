@@ -117,6 +117,10 @@ export function setPosthogApiClientAppVersion(version: string): void {
   clientAppVersion = version;
 }
 
+export function getPosthogApiClientAppVersion(): string {
+  return clientAppVersion;
+}
+
 export class SandboxCustomImagesDisabledError extends Error {
   constructor(message?: string) {
     super(message ?? "Custom sandbox images are not enabled");
