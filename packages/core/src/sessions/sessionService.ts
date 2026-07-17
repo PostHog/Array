@@ -807,6 +807,30 @@ interface HydrationEventOverlap {
   liveEventIndex: number;
 }
 
+interface HydrationEventPosition {
+  turnIndex: number;
+  eventIndex: number;
+}
+
+type HydrationEventIndex = Map<number, HydrationEventPosition[]>;
+
+function indexHydratedTurnEvents(
+  hydratedTurns: HydrationTurn[],
+): HydrationEventIndex {
+  const positionsByHash: HydrationEventIndex = new Map();
+  for (let turnIndex = 0; turnIndex < hydratedTurns.length; turnIndex += 1) {
+    const turn = hydratedTurns[turnIndex];
+    for (let eventIndex = 0; eventIndex < turn.events.length; eventIndex += 1) {
+      if (!isStrongPromptlessOverlapEvent(turn.events[eventIndex])) continue;
+      const hash = turn.eventHashes[eventIndex];
+      const positions = positionsByHash.get(hash) ?? [];
+      positions.push({ turnIndex, eventIndex });
+      positionsByHash.set(hash, positions);
+    }
+  }
+  return positionsByHash;
+}
+
 function isStrongPromptlessOverlapEvent(event: AcpMessage): boolean {
   if (!isJsonRpcNotification(event.message)) return false;
   if (event.message.method !== "session/update") return false;
@@ -893,9 +917,96 @@ function agentMessageIndexBeforeEvent(
   return position.messageIndex;
 }
 
+function promptlessTailStrictlyPredatesPrompt(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  const promptTimestamp = hydratedTurn.promptEvent?.ts;
+  return (
+    promptTimestamp === undefined ||
+    liveTurn.events.every((event) => event.ts < promptTimestamp)
+  );
+}
+
+interface IndexedHydrationEventOverlap extends HydrationEventOverlap {
+  hydratedTurnIndex: number;
+}
+
+function latestEventPositionAtOrBeforeTurn(
+  positions: HydrationEventPosition[],
+  maximumTurnIndex: number,
+): number {
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle].turnIndex <= maximumTurnIndex) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findIndexedPromptlessOverlap(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
+  minimumTurnIndex: number,
+  maximumTurnIndex: number,
+): IndexedHydrationEventOverlap | undefined {
+  let latestMatch: IndexedHydrationEventOverlap | undefined;
+  for (
+    let liveEventIndex = liveTurn.events.length - 1;
+    liveEventIndex >= 0;
+    liveEventIndex -= 1
+  ) {
+    const liveEvent = liveTurn.events[liveEventIndex];
+    if (!isStrongPromptlessOverlapEvent(liveEvent)) continue;
+    const positions = hydratedEventIndex.get(
+      liveTurn.eventHashes[liveEventIndex],
+    );
+    if (!positions) continue;
+    for (
+      let positionIndex = latestEventPositionAtOrBeforeTurn(
+        positions,
+        maximumTurnIndex,
+      );
+      positionIndex >= 0;
+      positionIndex -= 1
+    ) {
+      const position = positions[positionIndex];
+      if (position.turnIndex < minimumTurnIndex) break;
+      if (latestMatch && position.turnIndex < latestMatch.hydratedTurnIndex) {
+        break;
+      }
+      const hydratedTurn = hydratedTurns[position.turnIndex];
+      const hydratedEvent = hydratedTurn.events[position.eventIndex];
+      if (
+        !isStrongPromptlessOverlapEvent(hydratedEvent) ||
+        !hydrationTurnScopesMatch(liveTurn, hydratedTurn) ||
+        !cloudHydrationMessagesEqual(liveEvent, hydratedEvent)
+      ) {
+        continue;
+      }
+      latestMatch = {
+        hydratedTurnIndex: position.turnIndex,
+        hydratedEventIndex: position.eventIndex,
+        liveEventIndex,
+      };
+      break;
+    }
+  }
+  return latestMatch;
+}
+
 function findPromptlessHydrationTurn(
   liveTurn: HydrationTurn,
   hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
   maximum: number,
 ): PromptlessHydrationMatch | undefined {
   if (maximum < 0) return undefined;
@@ -910,29 +1021,53 @@ function findPromptlessHydrationTurn(
       minimum -= 1;
     }
   }
-  for (
-    let hydratedTurnIndex = maximum;
-    hydratedTurnIndex >= minimum;
-    hydratedTurnIndex -= 1
-  ) {
-    const hydratedTurn = hydratedTurns[hydratedTurnIndex];
-    const overlap = findHydrationEventOverlap(
-      liveTurn,
-      hydratedTurn,
-      hydratedTurnIndex === maximum,
-    );
-    if (!overlap) continue;
+  const newestHydratedTurn = hydratedTurns[maximum];
+  const newestOverlap = findHydrationEventOverlap(
+    liveTurn,
+    newestHydratedTurn,
+    true,
+  );
+  if (newestOverlap) {
     return {
-      hydratedTurnIndex,
+      hydratedTurnIndex: maximum,
       liveMessageIndexOffset:
         agentMessageIndexBeforeEvent(
-          hydratedTurn.events,
-          overlap.hydratedEventIndex,
+          newestHydratedTurn.events,
+          newestOverlap.hydratedEventIndex,
         ) -
-        agentMessageIndexBeforeEvent(liveTurn.events, overlap.liveEventIndex),
+        agentMessageIndexBeforeEvent(
+          liveTurn.events,
+          newestOverlap.liveEventIndex,
+        ),
     };
   }
-  return undefined;
+  if (
+    maximum === minimum ||
+    !promptlessTailStrictlyPredatesPrompt(liveTurn, newestHydratedTurn)
+  ) {
+    return undefined;
+  }
+  const olderOverlap = findIndexedPromptlessOverlap(
+    liveTurn,
+    hydratedTurns,
+    hydratedEventIndex,
+    minimum,
+    maximum - 1,
+  );
+  if (!olderOverlap) return undefined;
+  const hydratedTurn = hydratedTurns[olderOverlap.hydratedTurnIndex];
+  return {
+    hydratedTurnIndex: olderOverlap.hydratedTurnIndex,
+    liveMessageIndexOffset:
+      agentMessageIndexBeforeEvent(
+        hydratedTurn.events,
+        olderOverlap.hydratedEventIndex,
+      ) -
+      agentMessageIndexBeforeEvent(
+        liveTurn.events,
+        olderOverlap.liveEventIndex,
+      ),
+  };
 }
 
 function discardExactHydratedEvents(
@@ -1107,6 +1242,7 @@ export function reconcileLiveEventsWithHydratedEvents(
   const liveTurns = splitHydrationTurns(liveEvents);
   const hydratedTurns = splitHydrationTurns(hydratedEvents);
   const promptPositions = indexHydratedPromptTurns(hydratedTurns);
+  const hydratedEventIndex = indexHydratedTurnEvents(hydratedTurns);
   const reconciledTurns = new Array<AcpMessage[]>(liveTurns.length);
   let hydratedTurnIndex = hydratedTurns.length - 1;
 
@@ -1127,6 +1263,7 @@ export function reconcileLiveEventsWithHydratedEvents(
       const promptlessMatch = findPromptlessHydrationTurn(
         liveTurn,
         hydratedTurns,
+        hydratedEventIndex,
         hydratedTurnIndex,
       );
       if (promptlessMatch) {

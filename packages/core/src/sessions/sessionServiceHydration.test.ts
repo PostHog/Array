@@ -120,4 +120,22 @@ describe("resume hydration reconciliation", () => {
       ),
     ).toEqual([nextResponse, completion]);
   });
+
+  it("preserves an identical response belonging to the unmatched current prompt", () => {
+    const currentResponse = agentMessage("Done", 50);
+    const currentCompletion = turnComplete(60);
+    const hydratedEvents = [
+      prompt(1, "first request", 10),
+      agentMessage("Done", 20),
+      turnComplete(30),
+      prompt(2, "second request", 40),
+    ];
+
+    expect(
+      reconcileLiveEventsWithHydratedEvents(
+        [currentResponse, currentCompletion],
+        hydratedEvents,
+      ),
+    ).toEqual([currentResponse, currentCompletion]);
+  });
 });
