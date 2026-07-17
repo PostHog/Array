@@ -30,10 +30,15 @@ export const FORGE_RUN_APP_BIN = path.join(
   FORGE_RUN_APP,
   "Contents/MacOS/PostHog Code",
 );
-// Squirrel swaps bundle contents in place, so the old-named .app dir gains the renamed binary.
+// Squirrel installs the update under the update bundle's own name, so the swap renames the .app on disk.
+export const FORGE_RUN_APP_UPDATED = path.join(
+  FORGE_RUN_DIR,
+  path.basename(RUN_APP),
+);
 export const FORGE_RUN_APP_BIN_UPDATED = path.join(
-  FORGE_RUN_APP,
-  "Contents/MacOS/PostHog",
+  FORGE_RUN_APP_UPDATED,
+  "Contents/MacOS",
+  path.basename(RUN_APP_BIN),
 );
 
 export const MAIN_LOG = path.join(homedir(), ".posthog-code/logs/main.log");
@@ -114,6 +119,14 @@ export function readBundleVersion(appPath: string): string {
     ],
     { encoding: "utf8" },
   ).trim();
+}
+
+export function readBundleVersionIfPresent(appPath: string): string | null {
+  try {
+    return readBundleVersion(appPath);
+  } catch {
+    return null;
+  }
 }
 
 export function readMainLog(): string {
