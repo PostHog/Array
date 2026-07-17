@@ -144,6 +144,17 @@ export function BrowserPanel({
   const handleLoadingChange = useCallback((loading: boolean) => {
     setIsLoading(loading);
   }, []);
+  const handleReload = useCallback(() => {
+    setLoadError(null);
+    browserViewRef.current?.reload();
+  }, []);
+  const handleReloadOrStop = useCallback(() => {
+    if (isLoading) {
+      browserViewRef.current?.stop();
+      return;
+    }
+    handleReload();
+  }, [handleReload, isLoading]);
 
   const navigate = useCallback((raw: string) => {
     const browserView = browserViewRef.current;
@@ -192,11 +203,7 @@ export function BrowserPanel({
           size="icon-sm"
           aria-label={isLoading ? "Stop loading" : "Reload"}
           data-attr="browser-tab-reload"
-          onClick={() =>
-            isLoading
-              ? browserViewRef.current?.stop()
-              : browserViewRef.current?.reload()
-          }
+          onClick={handleReloadOrStop}
         >
           {isLoading ? <X size={14} /> : <ArrowClockwise size={14} />}
         </Button>

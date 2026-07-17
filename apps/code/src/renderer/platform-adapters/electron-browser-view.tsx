@@ -1,3 +1,4 @@
+import { BROWSER_WEBVIEW_PARTITION } from "@posthog/shared/constants";
 import type {
   BrowserViewHandle,
   BrowserViewProps,
@@ -75,7 +76,7 @@ export function ElectronBrowserView({
     <webview
       ref={webviewRef}
       src={initialUrl}
-      partition="persist:browser"
+      partition={BROWSER_WEBVIEW_PARTITION}
       style={{ height: "100%", width: "100%" }}
     />
   );

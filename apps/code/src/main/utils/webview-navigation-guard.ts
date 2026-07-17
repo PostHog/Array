@@ -3,7 +3,8 @@
 // normalizeAddress is only a convenience on top of this. about:blank is allowed
 // solely as the src a new blank browser tab mounts with before
 // the user enters a url.
-const ALLOWED_WEBVIEW_SCHEMES = new Set(["http:", "https:"]);
+const LOOPBACK_HOSTS = new Set(["localhost", "0.0.0.0", "[::1]"]);
+const LOOPBACK_IPV4 = /^127\./;
 
 // Blocks the cloud instance-metadata endpoint. On cloud VMs it returns IAM /
 // service-account credentials to any local caller, so a hostile page that
@@ -41,6 +42,10 @@ export function safeProtocol(url: string): string {
   }
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  return LOOPBACK_HOSTS.has(hostname) || LOOPBACK_IPV4.test(hostname);
+}
+
 export function isAllowedWebviewNavigation(url: string): boolean {
   let parsed: URL;
   try {
@@ -49,8 +54,7 @@ export function isAllowedWebviewNavigation(url: string): boolean {
     return false;
   }
   if (parsed.href === "about:blank") return true;
-  return (
-    ALLOWED_WEBVIEW_SCHEMES.has(parsed.protocol) &&
-    !isBlockedWebviewHost(parsed.hostname)
-  );
+  if (isBlockedWebviewHost(parsed.hostname)) return false;
+  if (parsed.protocol === "https:") return true;
+  return parsed.protocol === "http:" && isLoopbackHost(parsed.hostname);
 }

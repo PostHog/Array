@@ -1,5 +1,6 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { AutoresearchPanel } from "../../autoresearch/AutoresearchPanel";
+import { useBrowserEnabled } from "../../browser/BrowserPanel";
 import { CodeEditorPanel } from "../../code-editor/components/CodeEditorPanel";
 import {
   LazyCloudReviewPage as CloudReviewPage,
@@ -28,6 +29,7 @@ export function TabContentRenderer({
   task,
 }: TabContentRendererProps) {
   const isCloud = useIsWorkspaceCloudRun(taskId);
+  const browserEnabled = useBrowserEnabled();
   const { data } = tab;
 
   switch (data.type) {
@@ -78,6 +80,7 @@ export function TabContentRenderer({
       return <AutoresearchPanel taskId={taskId} />;
 
     case "browser":
+      if (!browserEnabled) return null;
       return <TaskBrowserTab url={data.url} tabId={tab.id} taskId={taskId} />;
 
     case "other":

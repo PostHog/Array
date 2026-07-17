@@ -4,11 +4,17 @@ import { Flex, Text } from "@radix-ui/themes";
 import type React from "react";
 import { useMemo } from "react";
 import { useHostCapabilities } from "../../../shell/useHostCapabilities";
+import { useBrowserEnabled } from "../../browser/BrowserPanel";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { useTabInjection } from "../hooks/usePanelLayoutHooks";
 import type { SplitDirection } from "../panelLayoutStore";
 import type { LeafPanel } from "../panelTypes";
-import { type AddableTabKind, TabbedPanel } from "./TabbedPanel";
+import {
+  type AddableTabKind,
+  getAddableTabKinds,
+  isPanelTabAvailable,
+} from "../tabAvailability";
+import { TabbedPanel } from "./TabbedPanel";
 
 interface LeafNodeRendererProps {
   node: LeafPanel;
@@ -43,14 +49,24 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
 }) => {
   const isCloud = useIsWorkspaceCloudRun(taskId);
   const { localWorkspaces } = useHostCapabilities();
-  // Hide the terminal for cloud runs, and on cloud-only hosts (web).
-  const hideTerminal = isCloud || !localWorkspaces;
+  const browserEnabled = useBrowserEnabled();
+  const availability = useMemo(
+    () => ({
+      browserEnabled,
+      terminalEnabled: !isCloud && localWorkspaces,
+    }),
+    [browserEnabled, isCloud, localWorkspaces],
+  );
+  const addableTabKinds = useMemo(
+    () => getAddableTabKinds(availability),
+    [availability],
+  );
   const inputTabs = useMemo(
     () =>
-      hideTerminal
-        ? node.content.tabs.filter((t) => t.data.type !== "terminal")
-        : node.content.tabs,
-    [node.content.tabs, hideTerminal],
+      node.content.tabs.filter((tab) =>
+        isPanelTabAvailable(tab.data.type, availability),
+      ),
+    [node.content.tabs, availability],
   );
   const tabs = useTabInjection(inputTabs, node.id, taskId, task, closeTab);
   const activeTabId = tabs.some((t) => t.id === node.content.activeTabId)
@@ -94,7 +110,12 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       onPanelFocus={onPanelFocus}
       draggingTabId={draggingTabId}
       draggingTabPanelId={draggingTabPanelId}
-      onAddTab={hideTerminal ? undefined : (kind) => onAddTab(node.id, kind)}
+      onAddTab={
+        addableTabKinds.length > 0
+          ? (kind) => onAddTab(node.id, kind)
+          : undefined
+      }
+      addableTabKinds={addableTabKinds}
       onSplitPanel={(direction) => onSplitPanel(node.id, direction)}
       emptyState={cloudEmptyState}
     />

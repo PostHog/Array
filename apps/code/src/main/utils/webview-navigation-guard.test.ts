@@ -29,6 +29,11 @@ describe("isAllowedWebviewNavigation", () => {
   it.each([
     ["https://posthog.com", true],
     ["http://localhost:3000", true],
+    ["http://127.0.0.2:3000", true],
+    ["http://0.0.0.0:3000", true],
+    ["http://[::1]:3000", true],
+    ["http://posthog.com", false],
+    ["http://192.168.1.5", false],
     ["about:blank", true],
     ["about:srcdoc", false],
     ["about:config", false],

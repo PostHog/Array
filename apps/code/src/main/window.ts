@@ -34,6 +34,10 @@ import {
   windowStateStore,
 } from "./utils/store";
 import {
+  hardenWebviewPreferences,
+  isAllowedWebviewAttachment,
+} from "./utils/webview-attach-policy";
+import {
   isAllowedWebviewNavigation,
   safeProtocol,
 } from "./utils/webview-navigation-guard";
@@ -141,11 +145,20 @@ function hardenWebviewSession(session: Electron.Session): void {
 }
 
 function setupWebviewHandlers(window: BrowserWindow): void {
-  window.webContents.on("will-attach-webview", (_event, webPreferences) => {
-    webPreferences.preload = undefined;
-    webPreferences.nodeIntegration = false;
-    webPreferences.contextIsolation = true;
-  });
+  window.webContents.on(
+    "will-attach-webview",
+    (event, webPreferences, params) => {
+      if (!isAllowedWebviewAttachment(params)) {
+        event.preventDefault();
+        log.warn("Blocked disallowed webview attachment", {
+          src: params.src,
+          partition: params.partition,
+        });
+        return;
+      }
+      hardenWebviewPreferences(webPreferences);
+    },
+  );
 
   window.webContents.on("did-attach-webview", (_event, guest) => {
     hardenWebviewSession(guest.session);

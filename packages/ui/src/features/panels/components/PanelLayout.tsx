@@ -12,9 +12,9 @@ import {
 import type { SplitDirection } from "../panelLayoutStore";
 import { usePanelLayoutStore } from "../panelLayoutStore";
 import type { PanelNode } from "../panelTypes";
+import type { AddableTabKind } from "../tabAvailability";
 import { GroupNodeRenderer } from "./GroupNodeRenderer";
 import { LeafNodeRenderer } from "./LeafNodeRenderer";
-import type { AddableTabKind } from "./TabbedPanel";
 
 interface PanelLayoutProps {
   taskId: string;

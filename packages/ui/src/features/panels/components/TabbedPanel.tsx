@@ -12,19 +12,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
-import { useBrowserEnabled } from "@posthog/ui/features/browser/BrowserPanel";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
+import type { AddableTabKind } from "@posthog/ui/features/panels/tabAvailability";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Box, Flex } from "@radix-ui/themes";
 import type React from "react";
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { PanelTab } from "./PanelTab";
-
-// One kind-dispatching callback so new kinds don't thread another onAddX prop
-// through every panel component.
-export type AddableTabKind = "terminal" | "browser";
 
 const activeTabStyle: React.CSSProperties = {
   height: "100%",
@@ -88,6 +84,7 @@ interface TabbedPanelProps {
   draggingTabId?: string | null;
   draggingTabPanelId?: string | null;
   onAddTab?: (kind: AddableTabKind) => void;
+  addableTabKinds?: readonly AddableTabKind[];
   onSplitPanel?: (direction: SplitDirection) => void;
   rightContent?: React.ReactNode;
   emptyState?: React.ReactNode;
@@ -104,13 +101,18 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   draggingTabId = null,
   draggingTabPanelId = null,
   onAddTab,
+  addableTabKinds = [],
   onSplitPanel,
   rightContent,
   emptyState,
 }) => {
   const hostClient = useHostTRPCClient();
 
-  const browserEnabled = useBrowserEnabled();
+  const singleAddableTabKind =
+    addableTabKinds.length === 1 ? addableTabKinds[0] : undefined;
+  const hasMultipleAddableTabKinds = addableTabKinds.length > 1;
+  const canAddTerminal = addableTabKinds.includes("terminal");
+  const canAddBrowser = addableTabKinds.includes("browser");
 
   const handleSplitClick = async () => {
     const result = await hostClient.contextMenu.showSplitContextMenu.mutate();
@@ -220,20 +222,37 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {/* With only one addable kind a menu is pointless — the "+" adds
-                a terminal directly, as it always has. */}
-            {content.droppable && onAddTab && !browserEnabled && (
-              <Tooltip content="New terminal" side="bottom">
+            {content.droppable && onAddTab && singleAddableTabKind && (
+              <Tooltip
+                content={
+                  singleAddableTabKind === "terminal"
+                    ? "New terminal"
+                    : "New browser tab"
+                }
+                side="bottom"
+              >
                 <TabBarButton
-                  ariaLabel="Add terminal"
-                  dataAttr="panel-add-terminal"
-                  onClick={() => onAddTab("terminal")}
+                  ariaLabel={
+                    singleAddableTabKind === "terminal"
+                      ? "Add terminal"
+                      : "Add browser tab"
+                  }
+                  dataAttr={
+                    singleAddableTabKind === "terminal"
+                      ? "panel-add-terminal"
+                      : "panel-add-browser-tab"
+                  }
+                  onClick={() => onAddTab(singleAddableTabKind)}
                 >
-                  <Plus size={14} />
+                  {singleAddableTabKind === "terminal" ? (
+                    <Plus size={14} />
+                  ) : (
+                    <Globe size={14} />
+                  )}
                 </TabBarButton>
               </Tooltip>
             )}
-            {content.droppable && onAddTab && browserEnabled && (
+            {content.droppable && onAddTab && hasMultipleAddableTabKinds && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -248,20 +267,24 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                   sideOffset={4}
                   className="min-w-[140px]"
                 >
-                  <DropdownMenuItem
-                    data-attr="panel-add-terminal"
-                    onClick={() => onAddTab("terminal")}
-                  >
-                    <Terminal size={14} />
-                    Terminal
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    data-attr="panel-add-browser-tab"
-                    onClick={() => onAddTab("browser")}
-                  >
-                    <Globe size={14} />
-                    Browser
-                  </DropdownMenuItem>
+                  {canAddTerminal && (
+                    <DropdownMenuItem
+                      data-attr="panel-add-terminal"
+                      onClick={() => onAddTab("terminal")}
+                    >
+                      <Terminal size={14} />
+                      Terminal
+                    </DropdownMenuItem>
+                  )}
+                  {canAddBrowser && (
+                    <DropdownMenuItem
+                      data-attr="panel-add-browser-tab"
+                      onClick={() => onAddTab("browser")}
+                    >
+                      <Globe size={14} />
+                      Browser
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
