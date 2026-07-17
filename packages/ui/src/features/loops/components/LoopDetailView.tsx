@@ -207,7 +207,20 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           {runsQuery.isLoading ? (
             <div className="h-16 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
           ) : runs.length === 0 ? (
-            <Text className="text-[12.5px] text-gray-10">No runs yet</Text>
+            <Flex
+              direction="column"
+              align="center"
+              gap="1"
+              className="rounded-(--radius-2) border border-(--gray-5) border-dashed px-6 py-8 text-center"
+            >
+              <Text className="font-medium text-[12.5px] text-gray-12">
+                No runs yet
+              </Text>
+              <Text className="max-w-sm text-[11.5px] text-gray-10 leading-snug">
+                Runs show up here once this loop fires. Trigger one with Run
+                now, or wait for its next trigger.
+              </Text>
+            </Flex>
           ) : (
             <Flex direction="column" gap="2">
               {runs.map((run) => (
