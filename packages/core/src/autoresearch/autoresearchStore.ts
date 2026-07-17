@@ -3,6 +3,7 @@ import {
   type AutoresearchEndReason,
   type AutoresearchInterruptionReason,
   type AutoresearchIteration,
+  type AutoresearchPauseInterval,
   type AutoresearchPhase,
   type AutoresearchResearchFinding,
   type AutoresearchRun,
@@ -73,6 +74,20 @@ export const autoresearchStoreActions = {
 
   setPhase(runId: string, phase: AutoresearchPhase | null): void {
     updateRun(runId, (run) => ({ ...run, phase }));
+  },
+
+  setPauseTiming(
+    runId: string,
+    pausedAt: number | null,
+    pausedDurationMs: number,
+    pauseIntervals: AutoresearchPauseInterval[],
+  ): void {
+    updateRun(runId, (run) => ({
+      ...run,
+      pausedAt,
+      pausedDurationMs,
+      pauseIntervals,
+    }));
   },
 
   setRunStatus(

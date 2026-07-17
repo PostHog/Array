@@ -1,6 +1,7 @@
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import type { AutoresearchRun } from "@posthog/core/autoresearch/schemas";
-import { Badge, Skeleton, Spinner, Text } from "@radix-ui/themes";
+import { Spinner } from "@posthog/quill";
+import { Badge, Skeleton, Text } from "@radix-ui/themes";
 
 export interface SessionActivity {
   status: "connecting" | "connected" | "disconnected" | "error";
@@ -21,7 +22,11 @@ export function PreBaselineState({
   return (
     <div className="flex flex-col gap-4" aria-live="polite">
       <div className="flex items-start gap-3 rounded-md border border-blue-6 bg-blue-2 px-3 py-3">
-        {live && <Spinner size="2" className="mt-0.5 shrink-0" />}
+        {live && (
+          <span className="relative mt-0.5 size-5 shrink-0">
+            <Spinner className="size-5 motion-safe:animate-spin motion-reduce:animate-none" />
+          </span>
+        )}
         <div>
           <Text as="div" size="2" weight="medium">
             {activity.title}
@@ -32,8 +37,13 @@ export function PreBaselineState({
         </div>
       </div>
 
+      <BaselineStatCards
+        maxIterations={run.config.maxIterations}
+        loading={live}
+      />
+
       {live ? (
-        <BaselineDashboardSkeleton maxIterations={run.config.maxIterations} />
+        <BaselineDashboardSkeleton />
       ) : (
         <div className="rounded-md border border-gray-5 bg-gray-2 px-3 py-4 text-center">
           <Text size="1" color="gray">
@@ -166,38 +176,12 @@ function ResearchFindings({ run }: { run: AutoresearchRun }) {
   );
 }
 
-function BaselineDashboardSkeleton({
-  maxIterations,
-}: {
-  maxIterations: number;
-}) {
+function BaselineDashboardSkeleton() {
   return (
     <output
       className="flex flex-col gap-4"
       aria-label="Loading autoresearch metrics"
     >
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          ["Best", "w-16"],
-          ["Last", "w-16"],
-          ["Iterations", "w-12"],
-          ["Target", "w-14"],
-        ].map(([title, width]) => (
-          <div key={title} className="rounded-md border border-gray-5 p-3">
-            <Text as="div" size="1" color="gray">
-              {title}
-            </Text>
-            {title === "Iterations" ? (
-              <Text as="div" size="4" weight="medium" className="mt-1">
-                0 / {maxIterations}
-              </Text>
-            ) : (
-              <Skeleton className={`mt-2 h-6 ${width}`} />
-            )}
-          </div>
-        ))}
-      </div>
-
       <div className="flex h-[220px] flex-col justify-between rounded-md border border-gray-5 bg-gray-2 p-3">
         <div className="flex flex-col gap-3">
           <Skeleton className="h-3 w-full" />
@@ -220,5 +204,65 @@ function BaselineDashboardSkeleton({
         </div>
       </div>
     </output>
+  );
+}
+
+function BaselineStatCards({
+  maxIterations,
+  loading,
+}: {
+  maxIterations: number;
+  loading: boolean;
+}) {
+  return (
+    <section
+      aria-label="Autoresearch metric summary"
+      className="grid @min-[360px]:grid-cols-2 @min-[700px]:grid-cols-4 grid-cols-1 gap-2"
+    >
+      {[
+        ["Best", "w-16"],
+        ["Last", "w-16"],
+        ["Iterations", "w-12"],
+        ["Target", "w-14"],
+      ].map(([title, width]) => (
+        <div key={title} className="rounded-md border border-gray-5 p-3">
+          <Text as="div" size="1" color="gray">
+            {title}
+          </Text>
+          <BaselineStatValue
+            title={title}
+            width={width}
+            maxIterations={maxIterations}
+            loading={loading}
+          />
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function BaselineStatValue({
+  title,
+  width,
+  maxIterations,
+  loading,
+}: {
+  title: string;
+  width: string;
+  maxIterations: number;
+  loading: boolean;
+}) {
+  if (title === "Iterations") {
+    return (
+      <Text as="div" size="4" weight="medium" className="mt-1">
+        0 / {maxIterations}
+      </Text>
+    );
+  }
+  if (loading) return <Skeleton className={`mt-2 h-6 ${width}`} />;
+  return (
+    <Text as="div" size="4" color="gray" className="mt-1">
+      —
+    </Text>
   );
 }
