@@ -23,7 +23,7 @@ export function useBrowserEnabled(): boolean {
   const BrowserView = useServiceOptional<BrowserViewComponent>(
     BROWSER_VIEW_COMPONENT,
   );
-  const featureEnabled = useFeatureFlag(BROWSER_TAB_FLAG);
+  const featureEnabled = useFeatureFlag(BROWSER_TAB_FLAG, import.meta.env.DEV);
   return BrowserView !== undefined && featureEnabled;
 }
 
