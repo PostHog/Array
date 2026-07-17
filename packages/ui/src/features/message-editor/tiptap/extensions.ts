@@ -1,9 +1,20 @@
+import CodeBlock from "@tiptap/extension-code-block";
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
+import { CodeBlockArrowExit } from "./CodeBlockArrowExit";
 import { createCommandMention } from "./CommandMention";
 import { createFileMention } from "./FileMention";
 import { createIssueMention } from "./IssueMention";
 import { MentionChipNode } from "./MentionChipNode";
+
+// The stock CodeBlock input rules convert "``` " (trailing space) as well as
+// Enter; the composer only creates a fence on Shift+Enter (handled in
+// useTiptapEditor via convertFenceLine), so drop them entirely.
+const ComposerCodeBlock = CodeBlock.extend({
+  addInputRules() {
+    return [];
+  },
+}).configure({ HTMLAttributes: { class: "composer-code-block" } });
 
 export interface EditorExtensionsOptions {
   sessionId: string;
@@ -11,6 +22,7 @@ export interface EditorExtensionsOptions {
   fileMentions?: boolean;
   issueMentions?: boolean;
   commands?: boolean;
+  codeBlocks?: boolean;
 }
 
 export function getEditorExtensions(options: EditorExtensionsOptions) {
@@ -20,6 +32,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions) {
     fileMentions = true,
     issueMentions = true,
     commands = true,
+    codeBlocks = false,
   } = options;
 
   const extensions = [
@@ -34,11 +47,17 @@ export function getEditorExtensions(options: EditorExtensionsOptions) {
       bold: false,
       italic: false,
       strike: false,
-      code: false,
+      code: codeBlocks
+        ? { HTMLAttributes: { class: "composer-inline-code" } }
+        : false,
     }),
     Placeholder.configure({ placeholder }),
     MentionChipNode,
   ];
+
+  if (codeBlocks) {
+    extensions.push(ComposerCodeBlock, CodeBlockArrowExit);
+  }
 
   if (fileMentions) {
     extensions.push(createFileMention(sessionId));

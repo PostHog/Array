@@ -38,6 +38,10 @@ vi.mock("../../skills/useSkills", () => ({
   useSkills: () => ({ data: [] }),
 }));
 
+vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
+  useFeatureFlag: () => false,
+}));
+
 vi.mock("../draftStore", () => ({
   useDraftStore: Object.assign(
     (selector: (s: unknown) => unknown) =>

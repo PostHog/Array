@@ -42,6 +42,7 @@ import { getGithubIssue, getGithubPullRequest } from "../hostApi";
 import { usePasteUndoStore } from "../pasteUndoStore";
 import { usePromptHistoryStore } from "../promptHistoryStore";
 import { findChipRangeById } from "../tiptap/chipRange";
+import { convertFenceLine, inCodeBlock } from "../tiptap/codeFence";
 import { getEditorExtensions } from "../tiptap/extensions";
 import {
   type DraftContext,
@@ -69,6 +70,7 @@ export interface UseTiptapEditorOptions {
     commands?: boolean;
     bashMode?: boolean;
   };
+  codeBlocks?: boolean;
   clearOnSubmit?: boolean;
   getPromptHistory?: () => string[];
   onPromptRecall?: PromptRecallHandler;
@@ -259,6 +261,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     autoFocus = false,
     context,
     capabilities = {},
+    codeBlocks = false,
     clearOnSubmit = true,
     getPromptHistory,
     onPromptRecall,
@@ -339,6 +342,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         placeholder,
         fileMentions,
         commands,
+        codeBlocks,
       }),
       editable: !disabled,
       autofocus: autoFocus ? "end" : false,
@@ -376,9 +380,47 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             return true;
           }
 
+          if (
+            codeBlocks &&
+            view.editable &&
+            event.key === "Enter" &&
+            event.shiftKey &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !hasVisibleSuggestionPopup(sessionId)
+          ) {
+            // Inside a code block, Shift+Enter adds a newline (Enter is
+            // reserved for submit; Tiptap's hard-break shortcut would
+            // otherwise exit the block via exitCode).
+            if (inCodeBlock(view)) {
+              event.preventDefault();
+              view.dispatch(view.state.tr.insertText("\n").scrollIntoView());
+              return true;
+            }
+            // Shift+Enter on a ``` fence line creates the code block (the
+            // only trigger — the stock space/enter input rules are
+            // disabled). On any other line Shift+Enter keeps its usual
+            // hard-break behavior.
+            if (convertFenceLine(view)) {
+              event.preventDefault();
+              return true;
+            }
+          }
+
           if (isSendMessageSubmitKey(event)) {
-            if (!view.editable || submitDisabledRef.current) return false;
+            if (!view.editable) return false;
             if (hasVisibleSuggestionPopup(sessionId)) return false;
+            if (submitDisabledRef.current) {
+              // With code blocks on, Enter is reserved for submit — only
+              // Shift+Enter makes a line — so a disabled submit swallows the
+              // key instead of letting ProseMirror split the paragraph.
+              if (codeBlocks) {
+                event.preventDefault();
+                return true;
+              }
+              return false;
+            }
             event.preventDefault();
             historyActions.reset();
             submitRef.current();
@@ -394,6 +436,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
             !event.metaKey &&
             !event.ctrlKey
           ) {
+            // Inside a code block, arrows navigate or exit the block
+            // (CodeBlock's exitOnArrowDown / CodeBlockArrowExit) — never
+            // history recall or queued-message dequeue.
+            if (codeBlocks && inCodeBlock(view)) return false;
+
             const historyGetter = getPromptHistoryRef.current;
             if (!taskId && !historyGetter && !onPromptRecallRef.current) {
               return false;
@@ -722,7 +769,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         callbackRefs.current.onBlur?.();
       },
     },
-    [sessionId, disabled, fileMentions, commands, placeholder],
+    [sessionId, disabled, fileMentions, commands, placeholder, codeBlocks],
   );
 
   const draft = useDraftSync(editor, sessionId, context);
@@ -851,7 +898,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
       editor.commands.focus("end");
       // Paragraphs, not the doc wrapper, so it appends rather than replaces.
       editor.commands.insertContent(
-        editorContentToTiptapJson(content).content ?? [],
+        editorContentToTiptapJson(content, {
+          codeBlocks: !!editor.schema.nodes.codeBlock,
+        }).content ?? [],
       );
       draft.saveDraft(editor, attachments);
     },

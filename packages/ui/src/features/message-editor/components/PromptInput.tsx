@@ -2,7 +2,9 @@ import "./message-editor.css";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { ArrowUp, Stop } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
+import { PROMPT_CODE_BLOCKS_FLAG } from "@posthog/shared";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { cycleModeOption } from "@posthog/ui/features/sessions/sessionStore";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
@@ -155,6 +157,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
     const clearFocusRequest = useDraftStore((s) => s.actions.clearFocusRequest);
     const slotMachineMode = useSettingsStore((s) => s.slotMachineMode);
     const { data: skills } = useSkills();
+    const codeBlocksEnabled =
+      useFeatureFlag(PROMPT_CODE_BLOCKS_FLAG) || import.meta.env.DEV;
 
     const {
       editor,
@@ -189,6 +193,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
         bashMode: enableBashMode,
         commands: enableCommands,
       },
+      codeBlocks: codeBlocksEnabled,
       getPromptHistory,
       onPromptRecall,
       onBeforeSubmit,
