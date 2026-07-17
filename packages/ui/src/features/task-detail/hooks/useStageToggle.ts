@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { logger } from "../../../shell/logger";
 import { invalidateGitWorkingTreeQueries } from "../../git-interaction/gitCacheKeys";
 import { updateGitCacheFromSnapshot } from "../../git-interaction/utils/updateGitCache";
+import { getStageTogglePaths } from "./stageTogglePaths";
 
 const log = logger.scope("use-stage-toggle");
 
@@ -21,7 +22,7 @@ export function useStageToggle(repoPath: string | undefined) {
       try {
         const result = await endpoint.mutateAsync({
           directoryPath: repoPath,
-          paths: [file.originalPath ?? file.path],
+          paths: getStageTogglePaths(file),
         });
         updateGitCacheFromSnapshot(queryClient, repoPath, result);
         invalidateGitWorkingTreeQueries(repoPath);
