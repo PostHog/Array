@@ -1524,6 +1524,139 @@ describe("AuthService", () => {
         },
       });
     });
+
+    it("merges organization and project scopes", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1", name: "Org 1" },
+              }),
+            } as unknown as Response;
+          }
+          if (url.endsWith("/api/organizations/org-1/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                name: "Org 1",
+                teams: [{ id: 11, name: "Organization Project" }],
+              }),
+            } as unknown as Response;
+          }
+          if (url.endsWith("/api/projects/42/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                id: 42,
+                name: "Scoped Project",
+                organization: "org-1",
+              }),
+            } as unknown as Response;
+          }
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: ["org-1"], scopedTeams: [42] }),
+      );
+
+      await service.login("us");
+
+      expect(service.getState().orgProjectsMap["org-1"].projects).toEqual([
+        { id: 11, name: "Organization Project" },
+        { id: 42, name: "Scoped Project" },
+      ]);
+    });
+
+    it("aligns the current organization with the restored scoped project", async () => {
+      seedStoredSession({
+        selectedProjectId: 84,
+        scopeVersion: OAUTH_SCOPE_VERSION - 1,
+      });
+      await service.initialize();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1", name: "Org 1" },
+              }),
+            } as unknown as Response;
+          }
+          const projectMatch = url.match(/\/api\/projects\/(42|84)\/$/);
+          if (projectMatch) {
+            const projectId = Number(projectMatch[1]);
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                id: projectId,
+                name: `Project ${projectId}`,
+                organization: projectId === 42 ? "org-1" : "org-2",
+              }),
+            } as unknown as Response;
+          }
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: [], scopedTeams: [42, 84] }),
+      );
+
+      await service.login("us");
+
+      expect(service.getState()).toMatchObject({
+        currentOrgId: "org-2",
+        currentProjectId: 84,
+      });
+    });
+
+    it("rejects authentication when a scoped project cannot be loaded permanently", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | Request) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/api/users/@me/")) {
+            return {
+              ok: true,
+              json: vi.fn().mockResolvedValue({
+                uuid: "user-1",
+                organization: { id: "org-1", name: "Org 1" },
+              }),
+            } as unknown as Response;
+          }
+          if (url.endsWith("/api/projects/42/")) {
+            return { ok: false, status: 403 } as Response;
+          }
+          return {
+            ok: true,
+            json: vi.fn().mockResolvedValue({ has_access: true }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+      );
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ scopedOrgs: [], scopedTeams: [42] }),
+      );
+
+      await expect(service.login("us")).rejects.toThrow(
+        "Unable to load OAuth-scoped project 42",
+      );
+      expect(service.getState().status).toBe("anonymous");
+    });
   });
 
   describe("switchOrg", () => {

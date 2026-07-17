@@ -57,6 +57,7 @@ interface InMemorySession {
   orgProjectsMap: OrgProjectsMap;
   currentOrgId: string | null;
   currentProjectId: number | null;
+  scopedOrgIds: string[];
   scopedProjectIds: number[];
   orgProjectsIncomplete: boolean;
 }
@@ -647,28 +648,15 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       );
     const previousMap = this.session?.orgProjectsMap ?? {};
     const { map: orgProjectsMap, incomplete: orgProjectsIncomplete } =
-      scopedOrgIds.length > 0
-        ? await this.buildOrgProjectsMap(
-            tokenResponse.access_token,
-            options.cloudRegion,
-            scopedOrgIds,
-            previousMap,
-          )
-        : scopedProjectIds.length > 0
-          ? await this.buildScopedProjectMap(
-              tokenResponse.access_token,
-              options.cloudRegion,
-              scopedProjectIds,
-              currentOrgId,
-              currentOrgName,
-              previousMap,
-            )
-          : await this.buildOrgProjectsMap(
-              tokenResponse.access_token,
-              options.cloudRegion,
-              currentOrgId ? [currentOrgId] : [],
-              previousMap,
-            );
+      await this.buildAuthorizedProjectsMap({
+        accessToken: tokenResponse.access_token,
+        cloudRegion: options.cloudRegion,
+        scopedOrgIds,
+        scopedProjectIds,
+        currentOrgId,
+        currentOrgName,
+        previousMap,
+      });
     const lastPrefs = accountKey
       ? this.authPreference.get(accountKey, options.cloudRegion)
       : null;
@@ -680,8 +668,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       lastSelectedOrgId: lastPrefs?.lastSelectedOrgId ?? null,
     });
 
-    const resolvedCurrentOrgId =
-      currentOrgId && orgProjectsMap[currentOrgId]
+    const resolvedCurrentOrgId = currentProjectId
+      ? (findOrgForProject(orgProjectsMap, currentProjectId, currentOrgId) ??
+        currentOrgId)
+      : currentOrgId && orgProjectsMap[currentOrgId]
         ? currentOrgId
         : (Object.keys(orgProjectsMap)[0] ?? currentOrgId);
     const session: InMemorySession = {
@@ -693,11 +683,73 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       orgProjectsMap,
       currentOrgId: resolvedCurrentOrgId,
       currentProjectId,
+      scopedOrgIds,
       scopedProjectIds,
       orgProjectsIncomplete,
     };
 
     return session;
+  }
+  private async buildAuthorizedProjectsMap(input: {
+    accessToken: string;
+    cloudRegion: CloudRegion;
+    scopedOrgIds: string[];
+    scopedProjectIds: number[];
+    currentOrgId: string | null;
+    currentOrgName: string | null;
+    previousMap: OrgProjectsMap;
+  }): Promise<{ map: OrgProjectsMap; incomplete: boolean }> {
+    const orgIdsToFetch =
+      input.scopedOrgIds.length > 0
+        ? input.scopedOrgIds
+        : input.scopedProjectIds.length === 0 && input.currentOrgId
+          ? [input.currentOrgId]
+          : [];
+    const [orgResult, projectResult] = await Promise.all([
+      this.buildOrgProjectsMap(
+        input.accessToken,
+        input.cloudRegion,
+        orgIdsToFetch,
+        input.previousMap,
+      ),
+      input.scopedProjectIds.length > 0
+        ? this.buildScopedProjectMap(
+            input.accessToken,
+            input.cloudRegion,
+            input.scopedProjectIds,
+            input.currentOrgId,
+            input.currentOrgName,
+            input.previousMap,
+          )
+        : Promise.resolve({ map: {}, incomplete: false }),
+    ]);
+
+    return {
+      map: this.mergeOrgProjectsMaps(orgResult.map, projectResult.map),
+      incomplete: orgResult.incomplete || projectResult.incomplete,
+    };
+  }
+  private mergeOrgProjectsMaps(...maps: OrgProjectsMap[]): OrgProjectsMap {
+    const merged: OrgProjectsMap = {};
+    for (const map of maps) {
+      for (const [orgId, org] of Object.entries(map)) {
+        const existing = merged[orgId];
+        const projects = new Map(
+          existing?.projects.map((project) => [project.id, project]) ?? [],
+        );
+        for (const project of org.projects) {
+          projects.set(project.id, project);
+        }
+        merged[orgId] = {
+          orgName:
+            existing?.orgName && existing.orgName !== "(unknown)"
+              ? existing.orgName
+              : org.orgName,
+          projects: [...projects.values()],
+        };
+      }
+    }
+    return merged;
   }
   private async buildScopedProjectMap(
     accessToken: string,
@@ -718,7 +770,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
           projectId,
         );
         if (!result.ok) {
-          incomplete ||= result.retryable;
+          if (!result.retryable) {
+            throw new Error(`Unable to load OAuth-scoped project ${projectId}`);
+          }
+          incomplete = true;
           return;
         }
 
@@ -1277,24 +1332,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
       if (!session.orgProjectsIncomplete) return;
 
-      const orgIds = Object.keys(session.orgProjectsMap);
-      const { map, incomplete } =
-        session.scopedProjectIds.length > 0
-          ? await this.buildScopedProjectMap(
-              session.accessToken,
-              session.cloudRegion,
-              session.scopedProjectIds,
-              session.currentOrgId,
-              session.orgProjectsMap[session.currentOrgId ?? ""]?.orgName ??
-                null,
-              session.orgProjectsMap,
-            )
-          : await this.buildOrgProjectsMap(
-              session.accessToken,
-              session.cloudRegion,
-              orgIds,
-              session.orgProjectsMap,
-            );
+      const { map, incomplete } = await this.buildAuthorizedProjectsMap({
+        accessToken: session.accessToken,
+        cloudRegion: session.cloudRegion,
+        scopedOrgIds: session.scopedOrgIds,
+        scopedProjectIds: session.scopedProjectIds,
+        currentOrgId: session.currentOrgId,
+        currentOrgName:
+          session.orgProjectsMap[session.currentOrgId ?? ""]?.orgName ?? null,
+        previousMap: session.orgProjectsMap,
+      });
 
       // The session may have been replaced (logout, re-login) while the fetch
       // was in flight; committing the stale one would resurrect it.
