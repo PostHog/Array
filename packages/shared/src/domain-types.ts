@@ -796,6 +796,12 @@ export interface SignalUserAutonomyConfig {
   updated_at?: string;
 }
 
+/** Per-user PostHog Code notification preferences, served by `/api/code/user_settings/`. */
+export interface CodeUserNotificationSettings {
+  /** Send a Slack DM when someone @-mentions the user in a channel thread. Opt-in. */
+  slack_mention_notifications: boolean;
+}
+
 export interface SlackChannelOption {
   id: string;
   name: string;

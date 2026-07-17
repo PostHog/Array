@@ -55,6 +55,7 @@ import type {
   ChannelFeedMessage,
   ChannelFeedMessageEvent,
   CodeReferenceArtefact,
+  CodeUserNotificationSettings,
   CommitArtefact,
   CommitDiffResponse,
   DismissalArtefact,
@@ -4110,6 +4111,47 @@ export class PostHogAPIClient {
       );
     }
     return (await response.json()) as SignalUserAutonomyConfig;
+  }
+
+  async getCodeUserNotificationSettings(): Promise<CodeUserNotificationSettings> {
+    const url = new URL(`${this.api.baseUrl}/api/code/user_settings/`);
+    const path = "/api/code/user_settings/";
+
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch Code notification settings: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as CodeUserNotificationSettings;
+  }
+
+  async updateCodeUserNotificationSettings(updates: {
+    slack_mention_notifications: boolean;
+  }): Promise<CodeUserNotificationSettings> {
+    const url = new URL(`${this.api.baseUrl}/api/code/user_settings/`);
+    const path = "/api/code/user_settings/";
+
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify(updates),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update Code notification settings: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as CodeUserNotificationSettings;
   }
 
   async getSlackChannelsForIntegration(

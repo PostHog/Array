@@ -5,6 +5,7 @@ import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Button, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { SlackInboxNotificationsSettings } from "./SlackInboxNotificationsSettings";
+import { SlackMentionNotificationsSettings } from "./SlackMentionNotificationsSettings";
 
 export function SlackSettings() {
   const projectId = useAuthStateValue((s) => s.currentProjectId);
@@ -52,6 +53,8 @@ export function SlackSettings() {
         isLoading={isLoading}
         showHeader={false}
       />
+
+      <SlackMentionNotificationsSettings />
     </Flex>
   );
 }
