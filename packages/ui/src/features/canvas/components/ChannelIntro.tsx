@@ -55,9 +55,9 @@ export function ChannelIntro({
             <span className={mentionChipClass}>
               @{userDisplayName(creator ?? null)}
             </span>{" "}
-            created this context {creationDatePhrase(channel.created_at)}. This
+            created this channel {creationDatePhrase(channel.created_at)}. This
             is the very beginning of the{" "}
-            <Text weight="bold">{channelName}</Text> context.
+            <Text weight="bold">{channelName}</Text> channel.
           </Text>
         )}
       </div>
@@ -70,7 +70,7 @@ export function ChannelIntro({
             <ItemContent className="self-start">
               <ItemTitle>Created context.md</ItemTitle>
               <ItemDescription className="text-xs">
-                Used in all sessions within this context
+                Used in all sessions within this channel
               </ItemDescription>
             </ItemContent>
           </Item>
@@ -125,9 +125,10 @@ export function ChannelIntro({
             <Info size={18} />
           </ItemMedia>
           <ItemContent className="self-start">
-            <ItemTitle>Learn more about contexts</ItemTitle>
+            <ItemTitle>Learn more about channels</ItemTitle>
             <ItemDescription className="text-xs">
-              Context is a group of tasks that are related to a specific topic.
+              A channel is a group of tasks that are related to a specific
+              topic.
             </ItemDescription>
           </ItemContent>
         </Item>

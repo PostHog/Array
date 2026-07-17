@@ -5,12 +5,14 @@ import {
   getMcpToolMetadata,
   isMcpToolReadOnly,
   sanitizeMcpServerName,
+  setAlwaysAskMcpServers,
   setMcpToolApprovalStates,
 } from "./tool-metadata";
 
 describe("tool-metadata approval states", () => {
   beforeEach(() => {
     clearMcpToolMetadataCache();
+    setAlwaysAskMcpServers([]);
   });
 
   describe("setMcpToolApprovalStates", () => {
@@ -61,6 +63,45 @@ describe("tool-metadata approval states", () => {
         mcp__s__t: "needs_approval",
       });
       expect(getMcpToolApprovalState("mcp__s__t")).toBe("needs_approval");
+    });
+  });
+
+  describe("setAlwaysAskMcpServers", () => {
+    it("defaults tools on a relayed server to needs_approval", () => {
+      setAlwaysAskMcpServers(["slack"]);
+
+      expect(getMcpToolApprovalState("mcp__slack__send_message")).toBe(
+        "needs_approval",
+      );
+    });
+
+    it("leaves tools on other servers unaffected", () => {
+      setAlwaysAskMcpServers(["slack"]);
+
+      expect(getMcpToolApprovalState("mcp__posthog__query")).toBeUndefined();
+    });
+
+    it("lets a cached explicit approval state win over the always-ask default", () => {
+      setAlwaysAskMcpServers(["slack"]);
+      setMcpToolApprovalStates({
+        mcp__slack__send_message: "approved",
+      });
+
+      expect(getMcpToolApprovalState("mcp__slack__send_message")).toBe(
+        "approved",
+      );
+    });
+
+    it("clears previously always-ask servers when called again", () => {
+      setAlwaysAskMcpServers(["slack"]);
+      setAlwaysAskMcpServers(["grafana"]);
+
+      expect(
+        getMcpToolApprovalState("mcp__slack__send_message"),
+      ).toBeUndefined();
+      expect(getMcpToolApprovalState("mcp__grafana__query")).toBe(
+        "needs_approval",
+      );
     });
   });
 

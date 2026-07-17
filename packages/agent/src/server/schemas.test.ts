@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mcpServersSchema, validateCommandParams } from "./schemas";
+import {
+  mcpServersSchema,
+  relayMcpServerNamesSchema,
+  validateCommandParams,
+} from "./schemas";
 
 describe("mcpServersSchema", () => {
   it("accepts a valid HTTP server", () => {
@@ -233,5 +237,86 @@ describe("validateCommandParams", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts an mcp_response carrying only a payload", () => {
+    const result = validateCommandParams("_posthog/mcp_response", {
+      requestId: "req-1",
+      server: "slack",
+      payload: { jsonrpc: "2.0", id: 1, result: {} },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts an mcp_response carrying only an error", () => {
+    const result = validateCommandParams("mcp_response", {
+      requestId: "req-1",
+      server: "slack",
+      error: { code: -32000, message: "boom" },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an mcp_response with both payload and error", () => {
+    const result = validateCommandParams("mcp_response", {
+      requestId: "req-1",
+      server: "slack",
+      payload: { ok: true },
+      error: { code: -32000, message: "boom" },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an mcp_response with neither payload nor error", () => {
+    const result = validateCommandParams("mcp_response", {
+      requestId: "req-1",
+      server: "slack",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an mcp_response missing requestId or server", () => {
+    expect(
+      validateCommandParams("mcp_response", {
+        server: "slack",
+        payload: { ok: true },
+      }).success,
+    ).toBe(false);
+    expect(
+      validateCommandParams("mcp_response", {
+        requestId: "req-1",
+        payload: { ok: true },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("relayMcpServerNamesSchema", () => {
+  it("accepts a list of names and an empty list", () => {
+    expect(
+      relayMcpServerNamesSchema.safeParse(["slack", "linear"]).success,
+    ).toBe(true);
+    expect(relayMcpServerNamesSchema.safeParse([]).success).toBe(true);
+  });
+
+  it("rejects an empty-string name", () => {
+    expect(relayMcpServerNamesSchema.safeParse(["slack", ""]).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects a name longer than 64 chars", () => {
+    expect(relayMcpServerNamesSchema.safeParse(["a".repeat(65)]).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects more than 20 names", () => {
+    const names = Array.from({ length: 21 }, (_, i) => `s${i}`);
+    expect(relayMcpServerNamesSchema.safeParse(names).success).toBe(false);
   });
 });

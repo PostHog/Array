@@ -9,6 +9,8 @@ export interface WarmTaskLeaseKeyParts {
   runtimeAdapter?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
 }
 
 export function buildWarmTaskLeaseKey(parts: WarmTaskLeaseKeyParts): string {
@@ -18,6 +20,8 @@ export function buildWarmTaskLeaseKey(parts: WarmTaskLeaseKeyParts): string {
     parts.runtimeAdapter ?? "",
     parts.model ?? "",
     parts.reasoningEffort ?? "",
+    parts.sandboxEnvironmentId ?? "",
+    parts.customImageId ?? "",
   ].join(":");
 }
 

@@ -3076,3 +3076,631 @@ describe("CloudTaskService", () => {
     ).toHaveLength(3);
   });
 });
+
+describe("CloudTaskService MCP relay", () => {
+  let relayService: CloudTaskService;
+  let mcpRelayExecutor: {
+    execute: ReturnType<typeof vi.fn>;
+    closeRun: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    const scopedLog = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const loggerMock = { ...scopedLog, scope: vi.fn(() => scopedLog) };
+    const analyticsMock = { track: vi.fn() };
+    mcpRelayExecutor = {
+      execute: vi.fn(async () => ({
+        payload: { jsonrpc: "2.0", id: 1, result: {} },
+      })),
+      closeRun: vi.fn(async () => {}),
+    };
+    relayService = new CloudTaskService(
+      mockAuthService as never,
+      analyticsMock as never,
+      loggerMock,
+      mcpRelayExecutor as never,
+    );
+
+    mockNetFetch.mockReset();
+    mockStreamFetch.mockReset();
+    mockStreamTokenFetch.mockReset();
+    mockStreamTokenFetch.mockImplementation(() =>
+      Promise.resolve(
+        createJsonResponse({ token: "test-token", stream_base_url: null }),
+      ),
+    );
+    mockAuthService.authenticatedFetch.mockReset();
+    vi.stubGlobal("fetch", fetchRouter);
+    mockAuthService.authenticatedFetch.mockImplementation(
+      async (input: string | Request, init?: RequestInit) => {
+        return fetchRouter(input, {
+          ...init,
+          headers: {
+            ...(init?.headers ?? {}),
+            Authorization: "Bearer token",
+          },
+        });
+      },
+    );
+  });
+
+  afterEach(() => {
+    relayService.unwatchAll();
+    vi.unstubAllGlobals();
+  });
+
+  function mcpRequestSseLine(
+    overrides: Partial<{
+      requestId: string;
+      server: string;
+      expiresAt: string;
+      payload: Record<string, unknown>;
+    }> = {},
+  ): string {
+    const event = {
+      type: "mcp_request",
+      requestId: overrides.requestId ?? "req-1",
+      server: overrides.server ?? "slack",
+      payload: overrides.payload ?? {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+      },
+      expiresAt:
+        overrides.expiresAt ?? new Date(Date.now() + 60_000).toISOString(),
+    };
+    return `data: ${JSON.stringify(event)}\n\n`;
+  }
+
+  function toolsCallPayload(
+    args: Record<string, unknown> = { channel: "#general" },
+  ): Record<string, unknown> {
+    return {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "send_message", arguments: args },
+    };
+  }
+
+  function createControllableSseResponse(): {
+    response: Response;
+    push: (chunk: string) => void;
+  } {
+    const encoder = new TextEncoder();
+    let streamController: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+      },
+    });
+    return {
+      response: new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+      push: (chunk: string) => streamController.enqueue(encoder.encode(chunk)),
+    };
+  }
+
+  function lastPermissionRequestUpdate(
+    updates: unknown[],
+  ): { requestId: string } | undefined {
+    return [...updates]
+      .reverse()
+      .find(
+        (u): u is { kind: string; requestId: string } =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "permission_request",
+      );
+  }
+
+  function commandPosts(): unknown[] {
+    return mockNetFetch.mock.calls
+      .filter(([url]) => (url as string).includes("/command/"))
+      .map(([, init]) => JSON.parse((init as RequestInit).body as string));
+  }
+
+  function watchRun(runId: string): void {
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse({
+        id: runId,
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+    relayService.watch({
+      taskId: "task-1",
+      runId,
+      apiHost: "https://app.example.com",
+      teamId: 2,
+      resumeFromEntryCount: 0,
+    });
+  }
+
+  it("drops a relay request for a server the run never designated", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(mcpRequestSseLine({ server: "slack" })),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["grafana"]);
+    watchRun("run-1");
+
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it("executes a designated relay request exactly once and posts mcp_response", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({ requestId: "req-1", server: "slack" }) +
+          mcpRequestSseLine({ requestId: "req-1", server: "slack" }),
+      ),
+    );
+    mockNetFetch.mockResolvedValueOnce(createJsonResponse({ result: {} }));
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+    // The duplicate line above must not trigger a second execution.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).toHaveBeenCalledOnce();
+    expect(mcpRelayExecutor.execute).toHaveBeenCalledWith(
+      "run-1",
+      "slack",
+      expect.objectContaining({ method: "initialize" }),
+    );
+
+    await waitFor(() =>
+      mockNetFetch.mock.calls.some(([url]) =>
+        (url as string).includes("/command/"),
+      ),
+    );
+    const commandCall = mockNetFetch.mock.calls.find(([url]) =>
+      (url as string).includes("/command/"),
+    );
+    const body = JSON.parse((commandCall?.[1] as RequestInit).body as string);
+    expect(body).toEqual(
+      expect.objectContaining({
+        method: "mcp_response",
+        params: {
+          requestId: "req-1",
+          server: "slack",
+          payload: { jsonrpc: "2.0", id: 1, result: {} },
+        },
+      }),
+    );
+  });
+
+  it.each([
+    "initialize",
+    "notifications/initialized",
+    "ping",
+    "tools/list",
+    "prompts/list",
+    "resources/list",
+    "resources/templates/list",
+  ])("executes the %s relay method without approval", async (method) => {
+    const updates: unknown[] = [];
+    relayService.on(CloudTaskEvent.Update, (payload) => {
+      updates.push(payload);
+    });
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({
+          payload: { jsonrpc: "2.0", id: 1, method },
+        }),
+      ),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+
+    expect(lastPermissionRequestUpdate(updates)).toBeUndefined();
+  });
+
+  it("evicts a run's relay designation once the run reaches a terminal status", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        `data: ${JSON.stringify({
+          type: "task_run_state",
+          status: "completed",
+          updated_at: "2026-01-01T00:00:01Z",
+        })}\n\n${mcpRequestSseLine({ server: "slack" })}`,
+      ),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it("drops an expired relay request without executing it", async () => {
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({
+          server: "slack",
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        }),
+      ),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it("sends no mcp_response for a fire-and-forget relay execution", async () => {
+    mcpRelayExecutor.execute.mockResolvedValueOnce({});
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(mcpRequestSseLine({ server: "slack" })),
+    );
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(
+      mockNetFetch.mock.calls.some(([url]) =>
+        (url as string).includes("/command/"),
+      ),
+    ).toBe(false);
+  });
+
+  it("posts a -32000 mcp_response when the executor throws", async () => {
+    mcpRelayExecutor.execute.mockRejectedValueOnce(new Error("spawn failed"));
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        mcpRequestSseLine({ requestId: "req-1", server: "slack" }),
+      ),
+    );
+    mockNetFetch.mockResolvedValueOnce(createJsonResponse({ result: {} }));
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+
+    await waitFor(() =>
+      mockNetFetch.mock.calls.some(([url]) =>
+        (url as string).includes("/command/"),
+      ),
+    );
+    const commandCall = mockNetFetch.mock.calls.find(([url]) =>
+      (url as string).includes("/command/"),
+    );
+    const body = JSON.parse((commandCall?.[1] as RequestInit).body as string);
+    // A thrown executor error must still answer the sandbox — otherwise it hangs to timeout.
+    expect(body).toEqual(
+      expect.objectContaining({
+        method: "mcp_response",
+        params: {
+          requestId: "req-1",
+          server: "slack",
+          error: { code: -32000, message: "spawn failed" },
+        },
+      }),
+    );
+  });
+
+  it("closes the run's relay connections when the run is unwatched", async () => {
+    mockStreamFetch.mockResolvedValue(createOpenSseResponse(""));
+    relayService.designateRelayedMcpServers("run-1", ["slack"]);
+    watchRun("run-1");
+    await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+
+    relayService.unwatch("task-1", "run-1");
+    await waitFor(() => mcpRelayExecutor.closeRun.mock.calls.length > 0);
+
+    expect(mcpRelayExecutor.closeRun).toHaveBeenCalledWith("run-1");
+  });
+
+  describe("relayed MCP request approval", () => {
+    it.each([
+      "resources/read",
+      "prompts/get",
+      "resources/subscribe",
+      "custom/mutate",
+    ])("requires desktop approval for %s", async (method) => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockStreamFetch.mockResolvedValueOnce(
+        createOpenSseResponse(
+          mcpRequestSseLine({
+            payload: {
+              jsonrpc: "2.0",
+              id: 1,
+              method,
+              params: { uri: "file:///private" },
+            },
+          }),
+        ),
+      );
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+
+      expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+    });
+
+    it("executes a non-tool request after desktop approval", async () => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockNetFetch.mockResolvedValue(createJsonResponse({ result: {} }));
+      mockStreamFetch.mockResolvedValueOnce(
+        createOpenSseResponse(
+          mcpRequestSseLine({
+            payload: {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "resources/read",
+              params: { uri: "file:///private" },
+            },
+          }),
+        ),
+      );
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+      const prompt = lastPermissionRequestUpdate(updates);
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: { requestId: prompt?.requestId, optionId: "allow" },
+      });
+
+      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+
+      expect(mcpRelayExecutor.execute).toHaveBeenCalledWith(
+        "run-1",
+        "slack",
+        expect.objectContaining({ method: "resources/read" }),
+      );
+    });
+
+    it("prompts on the desktop and executes after the user allows", async () => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockNetFetch.mockResolvedValue(createJsonResponse({ result: {} }));
+      mockStreamFetch.mockResolvedValueOnce(
+        createOpenSseResponse(
+          mcpRequestSseLine({ payload: toolsCallPayload() }),
+        ),
+      );
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+      expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+
+      const prompt = lastPermissionRequestUpdate(updates);
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: { requestId: prompt?.requestId, optionId: "allow" },
+      });
+
+      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+      expect(mcpRelayExecutor.execute).toHaveBeenCalledWith(
+        "run-1",
+        "slack",
+        expect.objectContaining({ method: "tools/call" }),
+      );
+      await waitFor(() =>
+        commandPosts().some(
+          (body) => (body as { method?: string }).method === "mcp_response",
+        ),
+      );
+    });
+
+    it("answers a denial to the sandbox without executing, carrying the user's feedback", async () => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockNetFetch.mockResolvedValue(createJsonResponse({ result: {} }));
+      mockStreamFetch.mockResolvedValueOnce(
+        createOpenSseResponse(
+          mcpRequestSseLine({ payload: toolsCallPayload() }),
+        ),
+      );
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+      const prompt = lastPermissionRequestUpdate(updates);
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: {
+          requestId: prompt?.requestId,
+          optionId: "reject",
+          customInput: "use the announcements channel instead",
+        },
+      });
+
+      await waitFor(() =>
+        commandPosts().some(
+          (body) => (body as { method?: string }).method === "mcp_response",
+        ),
+      );
+      expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+      const response = commandPosts().find(
+        (body) => (body as { method?: string }).method === "mcp_response",
+      ) as { params: { error?: { message?: string } } };
+      expect(response.params.error?.message).toContain(
+        "use the announcements channel instead",
+      );
+    });
+
+    it("drops an unanswered prompt at the request's expiry without executing", async () => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockNetFetch.mockResolvedValue(createJsonResponse({ result: {} }));
+      mockStreamFetch.mockResolvedValueOnce(
+        createOpenSseResponse(
+          mcpRequestSseLine({
+            payload: toolsCallPayload(),
+            expiresAt: new Date(Date.now() + 150).toISOString(),
+          }),
+        ),
+      );
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+      expect(
+        commandPosts().some(
+          (body) => (body as { method?: string }).method === "mcp_response",
+        ),
+      ).toBe(false);
+    });
+
+    it("does not derive local approval from sandbox-controlled permission options", async () => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockNetFetch.mockResolvedValue(createJsonResponse({ result: {} }));
+      const { response, push } = createControllableSseResponse();
+      mockStreamFetch.mockResolvedValueOnce(response);
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+      await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+
+      push(
+        `data: ${JSON.stringify({
+          type: "permission_request",
+          requestId: "harness-req-1",
+          toolCall: {
+            toolCallId: "tc-1",
+            title: "The agent wants to call send_message (slack)",
+            kind: "other",
+            rawInput: {
+              channel: "#general",
+              toolName: "mcp__slack__send_message",
+            },
+          },
+          options: [{ kind: "allow_once", name: "No", optionId: "reject" }],
+        })}\n\n`,
+      );
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: { requestId: "harness-req-1", optionId: "reject" },
+      });
+
+      const updatesBeforeCall = updates.length;
+      push(mcpRequestSseLine({ payload: toolsCallPayload() }));
+      await waitFor(
+        () =>
+          updates
+            .slice(updatesBeforeCall)
+            .filter(
+              (u) => (u as { kind?: string }).kind === "permission_request",
+            ).length > 0,
+      );
+
+      expect(mcpRelayExecutor.execute).not.toHaveBeenCalled();
+
+      const desktopPrompt = lastPermissionRequestUpdate(updates);
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: { requestId: desktopPrompt?.requestId, optionId: "allow" },
+      });
+
+      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length > 0);
+    });
+
+    it("an always-allow answer covers subsequent calls to the same tool", async () => {
+      const updates: unknown[] = [];
+      relayService.on(CloudTaskEvent.Update, (payload) => {
+        updates.push(payload);
+      });
+      mockNetFetch.mockResolvedValue(createJsonResponse({ result: {} }));
+      const { response, push } = createControllableSseResponse();
+      mockStreamFetch.mockResolvedValueOnce(response);
+      relayService.designateRelayedMcpServers("run-1", ["slack"]);
+      watchRun("run-1");
+      await waitFor(() => mockStreamFetch.mock.calls.length > 0);
+
+      push(mcpRequestSseLine({ payload: toolsCallPayload() }));
+      await waitFor(() => lastPermissionRequestUpdate(updates) !== undefined);
+      const prompt = lastPermissionRequestUpdate(updates);
+      await relayService.sendCommand({
+        taskId: "task-1",
+        runId: "run-1",
+        apiHost: "https://app.example.com",
+        teamId: 2,
+        method: "permission_response",
+        params: { requestId: prompt?.requestId, optionId: "allow_always" },
+      });
+      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length === 1);
+
+      const updatesAfterFirst = updates.length;
+      // Different arguments — always-allow is per tool, not per exact call.
+      push(
+        mcpRequestSseLine({
+          requestId: "req-2",
+          payload: toolsCallPayload({ channel: "#random" }),
+        }),
+      );
+      await waitFor(() => mcpRelayExecutor.execute.mock.calls.length === 2);
+      expect(
+        updates
+          .slice(updatesAfterFirst)
+          .filter(
+            (u) => (u as { kind?: string }).kind === "permission_request",
+          ),
+      ).toEqual([]);
+    });
+  });
+});

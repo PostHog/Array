@@ -125,6 +125,8 @@ export interface ITaskCreationHost {
     runtimeAdapter?: string | null;
     model?: string | null;
     reasoningEffort?: string | null;
+    sandboxEnvironmentId?: string | null;
+    customImageId?: string | null;
   }): { taskId: string; runId: string } | null;
   uploadRunAttachments(
     client: TaskCreationApiClient,

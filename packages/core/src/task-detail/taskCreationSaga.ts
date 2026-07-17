@@ -407,12 +407,25 @@ export class TaskCreationSaga extends Saga<
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,
+            importedMcpServers: input.importedMcpServers,
+            relayedMcpServers: input.relayedMcpServers,
             initialPermissionMode:
               input.executionMode ??
               (cloudAdapter === "codex" ? "auto" : "plan"),
           });
           if (!taskRun?.id) {
             throw new Error("Failed to create cloud run");
+          }
+
+          if (input.relayedMcpServers?.length) {
+            // Best-effort: relay designation failing must not fail creation —
+            // the run still works, minus desktop-relayed servers.
+            await this.deps.sessionService
+              .designateRelayedMcpServers(
+                taskRun.id,
+                input.relayedMcpServers.map((server) => server.name),
+              )
+              .catch(() => undefined);
           }
 
           const pendingUserArtifactIds = transport
@@ -679,13 +692,22 @@ export class TaskCreationSaga extends Saga<
           runtimeAdapter: input.adapter ?? null,
           model: input.model ?? null,
           reasoningEffort: input.reasoningLevel ?? null,
+          sandboxEnvironmentId: input.sandboxEnvironmentId ?? null,
+          customImageId: input.customImageId ?? null,
         })
       : null;
+
+    const requiresConfiguredWarm = Boolean(
+      input.sandboxEnvironmentId || input.customImageId,
+    );
 
     const needsAttachments =
       transport.filePaths.length > 0 || transport.skillBundles.length > 0;
     if (!needsAttachments) {
-      return base;
+      return {
+        ...base,
+        suppressWarmReuse: requiresConfiguredWarm && !lease,
+      };
     }
     if (!lease) {
       return { ...base, suppressWarmReuse: true };
@@ -774,6 +796,14 @@ export class TaskCreationSaga extends Saga<
           reasoning_effort:
             input.workspaceMode === "cloud"
               ? (input.reasoningLevel ?? null)
+              : undefined,
+          sandbox_environment_id:
+            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+              ? input.sandboxEnvironmentId
+              : undefined,
+          custom_image_id:
+            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+              ? input.customImageId
               : undefined,
           signal_report: input.signalReportId ?? undefined,
           channel: input.channelId ?? undefined,

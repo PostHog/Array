@@ -123,6 +123,13 @@ export function buildAppServerArgs(
       : `sandbox_mode="danger-full-access"`,
   );
 
+  // The host owns approvals (surfaced via approvals.ts → requestPermission). Codex's
+  // guardian reviewer is on by default and routes approvals to its dedicated
+  // `codex-auto-review` model, which our gateway's posthog_code allowlist doesn't
+  // serve — so every review 403s. Default codex's own `user` reviewer; a caller can
+  // still override it via configOverrides, which the trailing loop appends last.
+  args.push("-c", `approvals_reviewer="user"`);
+
   // Disable the user's ambient ~/.codex MCP servers so the adapter only exposes
   // MCP servers PostHog injects per-thread; otherwise codex fails connecting to them.
   for (const name of new CodexSettingsManager(

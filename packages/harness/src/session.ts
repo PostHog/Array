@@ -33,15 +33,18 @@ export async function createHarnessSession(
 
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
-  modelRegistry.registerProvider(
-    POSTHOG_PROVIDER_NAME,
-    await resolvePosthogProvider(options),
-  );
+  const provider = await resolvePosthogProvider(options);
+  modelRegistry.registerProvider(POSTHOG_PROVIDER_NAME, provider);
 
-  const model = modelRegistry.find(
-    POSTHOG_PROVIDER_NAME,
-    options.model ?? DEFAULT_MODEL,
-  );
+  // Restricted models are dropped for free-tier orgs, so the preferred model
+  // can be absent — fall back to the first model the provider serves rather
+  // than letting pi error.
+  const fallbackModelId = provider.models?.[0]?.id;
+  const model =
+    modelRegistry.find(POSTHOG_PROVIDER_NAME, options.model ?? DEFAULT_MODEL) ??
+    (fallbackModelId
+      ? modelRegistry.find(POSTHOG_PROVIDER_NAME, fallbackModelId)
+      : undefined);
 
   const resourceLoader = new DefaultResourceLoader({
     cwd,
