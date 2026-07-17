@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Folder,
+  Globe,
   Lightning,
   Plus,
   Terminal,
@@ -19,6 +20,7 @@ interface TaskSelectorProps {
   onOpenChange: (open: boolean) => void;
   onNewTask?: () => void;
   onNewTerminal?: (cwd?: string) => void;
+  onNewBrowser?: () => void;
   onBrainrot?: () => void;
   children: ReactNode;
 }
@@ -29,6 +31,7 @@ export function TaskSelector({
   onOpenChange,
   onNewTask,
   onNewTerminal,
+  onNewBrowser,
   onBrainrot,
   children,
 }: TaskSelectorProps) {
@@ -80,6 +83,11 @@ export function TaskSelector({
     handleOpenChange(false);
     onBrainrot?.();
   }, [handleOpenChange, onBrainrot]);
+
+  const handleNewBrowser = useCallback(() => {
+    handleOpenChange(false);
+    onNewBrowser?.();
+  }, [handleOpenChange, onNewBrowser]);
 
   return (
     <Combobox.Root
@@ -172,6 +180,16 @@ export function TaskSelector({
                   >
                     <Terminal size={11} weight="bold" />
                     Terminal
+                  </button>
+                )}
+                {onNewBrowser && (
+                  <button
+                    type="button"
+                    className="combobox-footer-button"
+                    onClick={handleNewBrowser}
+                  >
+                    <Globe size={11} weight="bold" />
+                    Browser
                   </button>
                 )}
                 {onBrainrot && (

@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   BRAINROT_CELL,
   clampZoom,
+  getBrowserCellUrl,
   getCellCount,
   getCellSessionId,
   getGridDimensions,
   getTerminalCellCwd,
   getTerminalCellId,
   isBrainrotCell,
+  isBrowserCell,
   isTerminalCell,
+  makeBrowserCellValue,
   makeTerminalCellValue,
   resizeCells,
 } from "./grid";
@@ -89,6 +92,35 @@ describe("terminal cells", () => {
   ])("isTerminalCell($value) -> $expected", ({ value, expected }) => {
     expect(isTerminalCell(value)).toBe(expected);
     expect(getTerminalCellId(value)).toBeNull();
+  });
+});
+
+describe("browser cells", () => {
+  it.each([
+    "about:blank",
+    "https://posthog.com",
+    // A url containing the delimiter and prefix-like text must survive intact.
+    "https://example.com/x?to=__browser__:https://evil.com",
+  ])("round-trips %j through the cell value", (url) => {
+    const value = makeBrowserCellValue(url);
+    expect(isBrowserCell(value)).toBe(true);
+    expect(getBrowserCellUrl(value)).toBe(url);
+  });
+
+  it("round-trips an empty url (blank browser cell)", () => {
+    const value = makeBrowserCellValue("");
+    expect(isBrowserCell(value)).toBe(true);
+    expect(getBrowserCellUrl(value)).toBe("");
+  });
+
+  it.each([
+    { value: "some-task-uuid", expected: false },
+    { value: BRAINROT_CELL, expected: false },
+    { value: makeTerminalCellValue("t1"), expected: false },
+    { value: null, expected: false },
+  ])("isBrowserCell($value) -> $expected", ({ value, expected }) => {
+    expect(isBrowserCell(value)).toBe(expected);
+    expect(getBrowserCellUrl(value)).toBeNull();
   });
 });
 

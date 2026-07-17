@@ -2,7 +2,9 @@ import {
   BRAINROT_CELL,
   clampZoom,
   getCellCount,
+  isBrowserCell,
   type LayoutPreset,
+  makeBrowserCellValue,
   makeTerminalCellValue,
   resizeCells,
   ZOOM_STEP,
@@ -39,6 +41,8 @@ interface CommandCenterStoreActions {
     terminalId: string,
     cwd?: string,
   ) => void;
+  setBrowserCell: (cellIndex: number, url: string) => void;
+  updateBrowserCellUrl: (cellIndex: number, url: string) => void;
   autofillCells: (taskIds: string[]) => void;
   clearCell: (cellIndex: number) => void;
   removeTaskById: (taskId: string) => void;
@@ -134,6 +138,28 @@ export const useCommandCenterStore = create<CommandCenterStore>()(
             creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
             hasAutofilled: true,
           };
+        }),
+
+      setBrowserCell: (cellIndex, url) =>
+        set((state) => {
+          if (cellIndex < 0 || cellIndex >= state.cells.length) return state;
+          const cells = [...state.cells];
+          cells[cellIndex] = makeBrowserCellValue(url);
+          return {
+            cells,
+            activeTaskId: null,
+            activeCellIndex: cellIndex,
+            creatingCells: state.creatingCells.filter((i) => i !== cellIndex),
+            hasAutofilled: true,
+          };
+        }),
+
+      updateBrowserCellUrl: (cellIndex, url) =>
+        set((state) => {
+          if (!isBrowserCell(state.cells[cellIndex] ?? null)) return state;
+          const cells = [...state.cells];
+          cells[cellIndex] = makeBrowserCellValue(url);
+          return { cells };
         }),
 
       autofillCells: (taskIds) =>
