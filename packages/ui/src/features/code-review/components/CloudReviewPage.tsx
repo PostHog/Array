@@ -58,7 +58,10 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
 
   const currentSignatures = useMemo(() => {
     const map = new Map<string, string>();
-    for (const f of reviewFiles) map.set(f.path, changedFileSignature(f));
+    for (const f of reviewFiles) {
+      const signature = changedFileSignature(f);
+      if (signature) map.set(f.path, signature);
+    }
     return map;
   }, [reviewFiles]);
 

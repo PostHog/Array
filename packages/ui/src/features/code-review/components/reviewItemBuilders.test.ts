@@ -19,18 +19,19 @@ describe("changedFileSignature", () => {
     expect(a).not.toBe(b);
   });
 
-  it("falls back to status + line counts when there is no patch", () => {
-    const a = changedFileSignature(
-      changedFile({ linesAdded: 1, linesRemoved: 2 }),
+  it("uses the blob sha when no patch is available", () => {
+    expect(changedFileSignature(changedFile({ sha: "abc" }))).toBe(
+      "modified:abc",
     );
-    const b = changedFileSignature(
-      changedFile({ linesAdded: 1, linesRemoved: 2 }),
+    expect(changedFileSignature(changedFile({ sha: "def" }))).toBe(
+      "modified:def",
     );
-    const c = changedFileSignature(
-      changedFile({ linesAdded: 3, linesRemoved: 2 }),
-    );
-    expect(a).toBe(b);
-    expect(a).not.toBe(c);
+  });
+
+  it("returns no signature without patch content or a blob sha", () => {
+    expect(
+      changedFileSignature(changedFile({ linesAdded: 1, linesRemoved: 2 })),
+    ).toBeNull();
   });
 });
 

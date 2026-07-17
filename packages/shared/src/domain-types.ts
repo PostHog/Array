@@ -364,6 +364,7 @@ export interface ChangedFile {
   linesRemoved?: number;
   staged?: boolean;
   patch?: string; // Unified diff patch from GitHub API
+  sha?: string;
 }
 
 // External apps detection types

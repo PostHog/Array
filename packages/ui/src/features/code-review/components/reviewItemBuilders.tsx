@@ -11,13 +11,10 @@ import type { ReviewListItem } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
 import { PatchRow, RemoteRow, UntrackedRow } from "./ReviewRows";
 
-// Prefer the unified patch (changes whenever upstream content does); fall back
-// to status + line counts when no patch is available.
-export function changedFileSignature(file: ChangedFile): string {
-  return contentHash(
-    file.patch ??
-      `${file.status}:${file.linesAdded ?? 0}:${file.linesRemoved ?? 0}`,
-  );
+export function changedFileSignature(file: ChangedFile): string | null {
+  if (file.patch) return contentHash(file.patch);
+  if (file.sha) return `${file.status}:${file.sha}`;
+  return null;
 }
 
 export function patchFileSignature(

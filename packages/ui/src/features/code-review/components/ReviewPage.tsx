@@ -324,7 +324,8 @@ function LocalReviewContent({
       );
     }
     for (const f of untrackedFiles) {
-      map.set(makeFileKey(f.staged, f.path), changedFileSignature(f));
+      const signature = changedFileSignature(f);
+      if (signature) map.set(makeFileKey(f.staged, f.path), signature);
     }
     return map;
   }, [stagedParsedFiles, unstagedParsedFiles, untrackedFiles]);
@@ -497,7 +498,10 @@ function RemoteReviewPage({
 
   const currentSignatures = useMemo(() => {
     const map = new Map<string, string>();
-    for (const f of files) map.set(f.path, changedFileSignature(f));
+    for (const f of files) {
+      const signature = changedFileSignature(f);
+      if (signature) map.set(f.path, signature);
+    }
     return map;
   }, [files]);
 
