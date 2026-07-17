@@ -198,7 +198,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
                     const win = BrowserWindow.getFocusedWindow();
                     if (!win) return;
                     void win.webContents.executeJavaScript(
-                      "window.__posthogCodeTest.crash()",
+                      "window.__posthogTest.crash()",
                     );
                   },
                 },
@@ -208,7 +208,7 @@ function buildFileMenu(): MenuItemConstructorOptions {
                     const win = BrowserWindow.getFocusedWindow();
                     if (!win) return;
                     void win.webContents.executeJavaScript(
-                      "window.__posthogCodeTest.abort()",
+                      "window.__posthogTest.abort()",
                     );
                   },
                 },

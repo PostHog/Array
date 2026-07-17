@@ -1,4 +1,4 @@
-name: Release PostHog Code
+name: Release PostHog
 
 on:
   push:

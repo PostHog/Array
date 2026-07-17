@@ -286,7 +286,7 @@ Split into 5a (backend) / 5b (UI) if review size demands.
 ### PR 6a — PostHog cloud team skills: read path
 
 **posthog/posthog (separate small PR, the only non-Code work in this plan)**
-- Roll out / gate `LLM_ANALYTICS_SKILLS` for PostHog Code usage and confirm the
+- Roll out / gate `LLM_ANALYTICS_SKILLS` for PostHog usage and confirm the
   desktop OAuth token carries `llm_skill:read` and `llm_skill:write` scopes.
   No model or endpoint changes.
 
@@ -345,7 +345,7 @@ Split into 5a (backend) / 5b (UI) if review size demands.
 **Write: your skills → Codex**
 - Extend the existing bundled→Codex sync to also mirror `~/.claude/skills`
   into `~/.agents/skills` (one-way, ours out). Skills created, edited, or
-  installed in PostHog Code become available to Codex sessions automatically.
+  installed in PostHog become available to Codex sessions automatically.
 - Safety rule: never overwrite a skill in `~/.agents/skills` we didn't put
   there. Track mirrored names (small state file next to the existing sync), and
   on collision skip + surface the conflict in the tab.

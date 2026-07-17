@@ -45,7 +45,7 @@ bash apps/code/scripts/dev-update/build-pair.sh
 This runs `electron-vite build` once, then builds twice with `electron-builder`:
 
 - The new `2.0.0` artifacts are copied to `apps/code/out/dev-update-feed/` (`latest-mac.yml`, the zip and its blockmap). This is the feed.
-- The old `1.0.0` app is left at `apps/code/out/mac-arm64/PostHog Code.app`. This is what you run.
+- The old `1.0.0` app is left at `apps/code/out/mac-arm64/PostHog.app`. This is what you run.
 
 Override the versions if you want (`2.0.0` must be greater than `1.0.0`):
 
@@ -65,7 +65,7 @@ bash apps/code/scripts/dev-update/run-from-ci.sh
 # automated spec instead: AUTOMATED=1 bash apps/code/scripts/dev-update/run-from-ci.sh
 ```
 
-Needs the GitHub CLI (`gh`) authenticated, and your normal PostHog Code must be quit (the test build shares its single-instance lock and data dir). The app opens on `1.0.0` with an update available; click Download, then Restart, and it swaps and relaunches into `2.0.0`.
+Needs the GitHub CLI (`gh`) authenticated, and the installed PostHog app must be quit (the test build shares its single-instance lock and data dir). The app opens on `1.0.0` with an update available; click Download, then Restart, and it swaps and relaunches into `2.0.0`.
 
 ## 2a. Run it automated (Playwright)
 
@@ -90,7 +90,7 @@ Launch the `1.0.0` app pointed at it in another terminal:
 
 ```bash
 POSTHOG_E2E_UPDATE_FEED=http://127.0.0.1:8788 \
-  "apps/code/out/mac-arm64/PostHog Code.app/Contents/MacOS/PostHog Code"
+  "apps/code/out/mac-arm64/PostHog.app/Contents/MacOS/PostHog"
 ```
 
 The app checks on launch and the update banner shows `2.0.0` is available. Open it, click Download, watch progress, then Restart. The app quits, swaps and relaunches into `2.0.0`.
@@ -102,7 +102,7 @@ A manual run swaps `out/mac-arm64` in place, so rerun `build-pair.sh` (or just t
 - Running version: open the in-app About, or read the bundle:
   ```bash
   plutil -extract CFBundleShortVersionString raw \
-    "apps/code/out/mac-arm64/PostHog Code.app/Contents/Info.plist"
+    "apps/code/out/mac-arm64/PostHog.app/Contents/Info.plist"
   ```
 - Update logs are in the main log:
   ```bash
@@ -153,7 +153,7 @@ bash apps/code/scripts/dev-update/run-from-ci-forge.sh
 # automated spec instead: AUTOMATED=1 bash apps/code/scripts/dev-update/run-from-ci-forge.sh
 ```
 
-Needs `gh` authenticated and your normal PostHog Code quit. The CI job uploads the Forge app as a `ditto` zip (`update-old-forge-build-1.0.0`) so its symlinks and code signature survive the artifact round-trip; a plain directory upload would break both and the swap would fail.
+Needs `gh` authenticated and the installed PostHog app quit. The CI job uploads the Forge app as a `ditto` zip (`update-old-forge-build-1.0.0`) so its symlinks and code signature survive the artifact round-trip; a plain directory upload would break both and the swap would fail.
 
 ## CI
 

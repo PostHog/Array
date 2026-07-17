@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Clean PostHog Code app data from macOS
+# Clean PostHog app data from macOS
 #
 # Usage:
 #   ./scripts/clean-posthog-code-macos.sh           # Clean dev data only
@@ -50,9 +50,9 @@ for arg in "$@"; do
 done
 
 if [ "$CLEAN_ALL" = true ]; then
-  echo "Cleaning all PostHog Code data from macOS..."
+  echo "Cleaning all PostHog data from macOS..."
 else
-  echo "Cleaning PostHog Code dev data from macOS..."
+  echo "Cleaning PostHog dev data from macOS..."
 fi
 echo ""
 
