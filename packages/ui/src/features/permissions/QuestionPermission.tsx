@@ -309,6 +309,7 @@ export function QuestionPermission({
       }
       multiSelect={isOnSubmitStep ? false : isMultiSelect}
       hideSubmitButton={isOnSubmitStep}
+      resizable
       allowCustomInput={!isOnSubmitStep}
       customInputPlaceholder="Type your answer..."
       currentStep={activeStep}

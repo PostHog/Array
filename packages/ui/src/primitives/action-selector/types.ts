@@ -30,6 +30,13 @@ export interface ActionSelectorProps {
   initialSelections?: string[];
   initialCustomInput?: string;
   hideSubmitButton?: boolean;
+  /**
+   * When true, the card can be resized vertically via a drag handle at its top
+   * edge: dragging down shrinks it (revealing more of the transcript above),
+   * dragging up grows it back (capped at 80vh). Inner content scrolls within
+   * the chosen height.
+   */
+  resizable?: boolean;
   onSelect: (optionId: string, customInput?: string) => void;
   onMultiSelect?: (optionIds: string[], customInput?: string) => void;
   onCancel?: () => void;

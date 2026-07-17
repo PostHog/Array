@@ -1,11 +1,16 @@
 import { compactHomePath } from "@posthog/shared";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isCancelOption, isSubmitOption } from "./constants";
 import { OptionRow } from "./OptionRow";
 import { StepTabs } from "./StepTabs";
 import type { ActionSelectorProps } from "./types";
 import { useActionSelectorState } from "./useActionSelectorState";
+
+// Floor keeps the options and submit row visible even at the smallest size;
+// ceiling matches the card's default `max-h-[80vh]` cap.
+const MIN_CARD_HEIGHT = 160;
+const MAX_CARD_HEIGHT_FRACTION = 0.8;
 
 export function ActionSelector({
   title,
@@ -20,6 +25,7 @@ export function ActionSelector({
   initialSelections,
   initialCustomInput,
   hideSubmitButton = false,
+  resizable = false,
   onSelect,
   onMultiSelect,
   onCancel,
@@ -75,6 +81,68 @@ export function ActionSelector({
   const handleCancel = useCallback(() => {
     onCancel?.();
   }, [onCancel]);
+
+  // User-chosen height in px once the card has been dragged; null means the
+  // card sizes naturally under its `max-h-[80vh]` cap.
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef({ y: 0, height: 0 });
+
+  const handleResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      e.preventDefault();
+      resizeStartRef.current = {
+        y: e.clientY,
+        height: container.getBoundingClientRect().height,
+      };
+      setIsResizing(true);
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+    },
+    [containerRef],
+  );
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const { y, height } = resizeStartRef.current;
+      // Dragging up (clientY decreases) grows the card; down shrinks it,
+      // revealing more of the transcript above.
+      const next = height + (y - e.clientY);
+      const max = window.innerHeight * MAX_CARD_HEIGHT_FRACTION;
+      setCardHeight(Math.max(MIN_CARD_HEIGHT, Math.min(max, next)));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // If the card unmounts mid-drag no mouseup fires — clear the global cursor
+  // and text-selection lock so the app isn't left stuck.
+  const isResizingRef = useRef(isResizing);
+  isResizingRef.current = isResizing;
+  useEffect(
+    () => () => {
+      if (isResizingRef.current) {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+    },
+    [],
+  );
 
   const handlersRef = useRef({
     moveUp,
@@ -226,9 +294,32 @@ export function ActionSelector({
       }}
       style={{
         outline: "none",
+        ...(resizable && cardHeight !== null ? { height: cardHeight } : {}),
       }}
-      className="flex max-h-[80vh] flex-col rounded-(--radius-3) border border-(--gray-6) bg-(--gray-1)"
+      className="relative flex max-h-[80vh] flex-col rounded-(--radius-3) border border-(--gray-6) bg-(--gray-1)"
     >
+      {resizable && (
+        // Drag handle riding the top edge — the card is anchored to the bottom
+        // of the chat, so dragging up grows it and dragging down shrinks it.
+        <Box
+          aria-hidden
+          onMouseDown={handleResizeMouseDown}
+          className="group absolute inset-x-0 top-0 z-10 flex h-2 cursor-row-resize items-start justify-center"
+        >
+          <span
+            className={`mt-0.5 h-1 w-10 rounded-full transition-colors ${
+              isResizing
+                ? "bg-(--gray-8)"
+                : "bg-(--gray-6) group-hover:bg-(--gray-8)"
+            }`}
+          />
+        </Box>
+      )}
+      {isResizing && (
+        // Keeps the row-resize cursor while the pointer crosses content that
+        // sets its own cursor.
+        <Box className="fixed inset-0 z-[200] cursor-row-resize" />
+      )}
       <Flex direction="column" gap="2" className="min-h-0 flex-1">
         {hasSteps && steps && (
           <StepTabs
