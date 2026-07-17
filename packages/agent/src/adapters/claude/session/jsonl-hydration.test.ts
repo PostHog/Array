@@ -35,6 +35,17 @@ function toolEntry(
   return entry(sessionUpdate, { _meta: { claudeCode: meta } });
 }
 
+function notificationEntry(
+  method: string,
+  params: Record<string, unknown> = {},
+): StoredEntry {
+  return {
+    type: "notification",
+    timestamp: new Date().toISOString(),
+    notification: { jsonrpc: "2.0", method, params },
+  };
+}
+
 describe("getSessionJsonlPath", () => {
   it("constructs path from sessionId and cwd", () => {
     const original = process.env.CLAUDE_CONFIG_DIR;
@@ -115,6 +126,47 @@ describe("rebuildConversation", () => {
       },
     ];
     expect(rebuildConversation(entries)).toEqual([]);
+  });
+
+  it.each([
+    { method: "_posthog/conversation_cleared" },
+    { method: "__posthog/conversation_cleared" },
+  ])("drops turns before a $method marker (/clear boundary)", ({ method }) => {
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "old" } }),
+      entry("agent_message", {
+        content: { type: "text", text: "old reply" },
+      }),
+      notificationEntry(method, { sessionId: "sdk-new" }),
+      entry("user_message", { content: { type: "text", text: "new" } }),
+      entry("agent_message", {
+        content: { type: "text", text: "new reply" },
+      }),
+    ]);
+
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toMatchObject({
+      role: "user",
+      content: [{ type: "text", text: "new" }],
+    });
+    expect(turns[1]).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "new reply" }],
+    });
+  });
+
+  it("drops an in-progress assistant turn at a clear marker", () => {
+    const turns = rebuildConversation([
+      entry("user_message", { content: { type: "text", text: "old" } }),
+      entry("agent_message_chunk", {
+        content: { type: "text", text: "partial" },
+      }),
+      notificationEntry("_posthog/conversation_cleared", {
+        sessionId: "sdk-new",
+      }),
+    ]);
+
+    expect(turns).toEqual([]);
   });
 
   it("produces a single user turn from user_message", () => {

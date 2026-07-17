@@ -56,6 +56,9 @@ export type Turn = {
 
 export type Session = BaseSession & {
   query: Query;
+  /** Id of the underlying SDK session. Equal to the ACP session id until a
+   * /clear swaps in a fresh SDK session; resume/refresh must target this id. */
+  sdkSessionId: string;
   /** The Options object passed to query() — mutating it affects subsequent prompts */
   queryOptions: Options;
   /** Rebuilds the in-process ("sdk") signed-commit server with a fresh instance

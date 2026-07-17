@@ -302,6 +302,31 @@ describe("buildConversationItems", () => {
     expect(result.isCompacting).toBe(false);
   });
 
+  it("renders a conversation_cleared divider after a /clear", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "/clear"),
+        {
+          type: "acp_message",
+          ts: 2,
+          message: {
+            jsonrpc: "2.0",
+            method: "_posthog/conversation_cleared",
+            params: { sessionId: "sdk-new" },
+          },
+        },
+      ],
+      null,
+    );
+
+    const clearedItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" &&
+        i.update.sessionUpdate === "conversation_cleared",
+    );
+    expect(clearedItems).toHaveLength(1);
+  });
+
   it("renders a terminal refusal as a status row carrying the explanation", () => {
     const result = buildConversationItems(
       [

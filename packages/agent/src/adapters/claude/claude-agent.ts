@@ -478,6 +478,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       isLocalOnlyCommand = true;
     }
 
+    if (commandMatch?.[1] === "/clear") {
+      // Handled by the adapter, never forwarded to the SDK (whose own /clear
+      // is unreliable in this embedding — see UPSTREAM.md "Hide /clear").
+      return this.clearConversation(params);
+    }
+
     if (commandMatch && !isLocalOnlyCommand) {
       await this.refreshSlashCommandsForPrompt(commandMatch[1]);
     }
@@ -1520,6 +1526,172 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     return { refreshed: true };
   }
 
+  /** Retire the current consumer and SDK query so a replacement Query can be
+   *  swapped in place (refreshSession, clearConversation). The generation bump
+   *  makes the retired consumer exit quietly. */
+  private async retireQuery(session: Session): Promise<void> {
+    session.queryGeneration += 1;
+    const oldConsumer = session.consumer;
+    session.consumer = undefined;
+    session.cancelController?.abort();
+    session.cancelController = undefined;
+
+    // Abort FIRST so any stuck in-flight HTTP request unblocks — otherwise
+    // interrupt() can deadlock waiting on an API call that never returns.
+    // Callers allocate a fresh controller for the new Query so aborting
+    // the old one doesn't poison it.
+    session.abortController.abort();
+    try {
+      await session.query.interrupt();
+    } catch (error) {
+      this.logger.debug("Ignoring interrupt error while retiring query", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    session.input.end();
+    if (oldConsumer) {
+      // Bounded so a wedged old query can't block the swap.
+      await withTimeout(oldConsumer, 5_000);
+    }
+  }
+
+  /**
+   * `/clear` — drop the conversation and start over in place.
+   *
+   * The SDK's own /clear is not forwarded (see UPSTREAM.md "Hide /clear");
+   * instead the current Query is retired and a brand-new SDK session (fresh
+   * session id, no resume) is swapped in under the same ACP session. The
+   * session log stays append-only: a `conversation_cleared` marker records
+   * the boundary (rehydration rebuilds only post-clear turns) and an updated
+   * `sdk_session` mapping points future resumes at the fresh SDK session.
+   */
+  private async clearConversation(
+    params: PromptRequest,
+  ): Promise<PromptResponse> {
+    const session = this.session;
+    if (session.queryClosed) {
+      throw RequestError.internalError(undefined, SESSION_ENDED_MESSAGE);
+    }
+    if (session.activeTurn !== null || session.turnQueue.length > 0) {
+      await this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: "Cannot clear the conversation while a turn is in progress. Wait for it to finish (or cancel it) and try again.",
+          },
+        },
+      });
+      return { stopReason: "end_turn" };
+    }
+
+    this.logger.info("Clearing conversation", { sessionId: params.sessionId });
+
+    // Broadcast before the marker so the `/clear` prompt itself lands on the
+    // pre-clear side of the rehydration boundary.
+    await this.broadcastUserMessage(params);
+
+    await this.retireQuery(session);
+
+    const newSdkSessionId = uuidv7();
+    const newAbortController = new AbortController();
+    const {
+      sessionId: _dropSessionId,
+      resume: _dropResume,
+      forkSession: _dropFork,
+      ...rest
+    } = session.queryOptions;
+
+    // Rebuild the in-process ("sdk") server fresh; reusing the prior instance
+    // throws "Already connected to a transport".
+    const freshInProcess = session.buildInProcessMcpServers();
+
+    const newOptions: Options = {
+      ...rest,
+      mcpServers: {
+        ...externalMcpServers(rest.mcpServers),
+        ...freshInProcess,
+      },
+      sessionId: newSdkSessionId,
+      abortController: newAbortController,
+      // `rest.model` is the creation-time value; the user may have switched
+      // models since, so re-root the new Query on the live session model.
+      ...(session.modelId && { model: toSdkModelId(session.modelId) }),
+    };
+
+    const newInput = new Pushable<SDKUserMessage>();
+    const newQuery = query({ prompt: newInput, options: newOptions });
+
+    session.query = newQuery;
+    session.input = newInput;
+    session.queryOptions = newOptions;
+    session.abortController = newAbortController;
+    session.queryClosed = false;
+
+    const result = await withTimeout(
+      newQuery.initializationResult(),
+      SESSION_VALIDATION_TIMEOUT_MS,
+    );
+    if (result.result === "timeout") {
+      this.terminateQuery(newQuery, newAbortController);
+      session.queryClosed = true;
+      throw new RequestError(
+        -32603,
+        `Conversation clear timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+        { sessionId: params.sessionId },
+      );
+    }
+    session.knownSlashCommands = collectKnownSlashCommands(
+      result.value.commands,
+    );
+    session.fastModeEnabled = fastModeStateEnabled(
+      result.value.fast_mode_state,
+    );
+
+    // Future resumes (refreshSession, desktop reconnect, cloud rehydration)
+    // must target the fresh SDK session. `this.sessionId` (the ACP-visible
+    // id) stays stable — clients keep addressing the session with it.
+    session.sdkSessionId = newSdkSessionId;
+
+    const hadTasks = session.taskState.size > 0;
+    session.taskState.clear();
+    this.toolUseStreamCache.clear();
+    this.emittedToolCalls.clear();
+
+    if (session.taskRunId) {
+      await this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
+        taskRunId: session.taskRunId,
+        sessionId: newSdkSessionId,
+        adapter: "claude",
+      });
+    }
+    await this.client.extNotification(
+      POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
+      { sessionId: newSdkSessionId },
+    );
+    if (hadTasks) {
+      await this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: { sessionUpdate: "plan", entries: [] },
+      });
+    }
+    await this.client.sessionUpdate({
+      sessionId: params.sessionId,
+      update: {
+        sessionUpdate: "usage_update",
+        used: 0,
+        size:
+          session.lastContextWindowSize ??
+          this.getContextWindowForModel(session.modelId ?? ""),
+      },
+    });
+
+    this.refreshMcpMetadata(newQuery);
+    return { stopReason: "end_turn" };
+  }
+
   private async refreshSession(
     mcpServers: Record<string, McpServerConfig>,
   ): Promise<void> {
@@ -1542,31 +1714,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       sessionId: this.sessionId,
     });
 
-    // Retire the old consumer: the generation bump makes it exit quietly.
-    prev.queryGeneration += 1;
-    const oldConsumer = prev.consumer;
-    prev.consumer = undefined;
-    prev.cancelController?.abort();
-    prev.cancelController = undefined;
-
-    // Abort FIRST so any stuck in-flight HTTP request unblocks — otherwise
-    // interrupt() can deadlock waiting on an API call that never returns.
-    // We allocate a fresh controller for the new Query below so aborting
-    // the old one doesn't poison it.
-    prev.abortController.abort();
-    try {
-      await prev.query.interrupt();
-    } catch (error) {
-      this.logger.debug("Ignoring interrupt error during session refresh", {
-        sessionId: this.sessionId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    prev.input.end();
-    if (oldConsumer) {
-      // Bounded so a wedged old query can't block the refresh.
-      await withTimeout(oldConsumer, 5_000);
-    }
+    await this.retireQuery(prev);
 
     // Reuse every option from the running session; swap mcpServers, re-root
     // identity on `resume` instead of `sessionId`, and give the new Query a
@@ -1587,7 +1735,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const newOptions: Options = {
       ...rest,
       mcpServers: { ...mcpServers, ...freshInProcess },
-      resume: this.sessionId,
+      resume: prev.sdkSessionId,
       forkSession: false,
       abortController: newAbortController,
       // `rest.model` is the creation-time value; the user may have switched
@@ -2106,6 +2254,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const session: Session = {
       query: q,
+      sdkSessionId: sessionId,
       queryOptions: options,
       buildInProcessMcpServers,
       localToolsServerNames,
@@ -2424,10 +2573,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     });
   }
 
+  /** Matches the ACP session id, or the underlying SDK session id after a
+   *  /clear (desktop hosts re-key on the sdk_session notification). */
+  hasSession(sessionId: string): boolean {
+    return (
+      this.sessionId === sessionId || this.session?.sdkSessionId === sessionId
+    );
+  }
+
   private getExistingSessionState(
     sessionId: string,
   ): NewSessionResponse | null {
-    if (this.sessionId !== sessionId || !this.session) return null;
+    if (!this.hasSession(sessionId) || !this.session) return null;
 
     const availableModes = getAvailableModes();
     const modes: SessionModeState = {
@@ -2601,7 +2758,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   ): Promise<void> {
     let info: Awaited<ReturnType<typeof getSessionInfo>>;
     try {
-      info = await getSessionInfo(sessionId, { dir: session.cwd });
+      // The SDK stores session info under the SDK session id, which diverges
+      // from the client-addressed id after a /clear.
+      info = await getSessionInfo(session.sdkSessionId ?? sessionId, {
+        dir: session.cwd,
+      });
     } catch (error) {
       this.logger.warn("Failed to read session info for title update", {
         sessionId,

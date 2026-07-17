@@ -701,6 +701,12 @@ function handleNotification(
     return;
   }
 
+  if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED)) {
+    ensureImplicitTurn(b, ts);
+    pushItem(b, { sessionUpdate: "conversation_cleared" });
+    return;
+  }
+
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.STATUS)) {
     ensureImplicitTurn(b, ts);
     const params = msg.params as {

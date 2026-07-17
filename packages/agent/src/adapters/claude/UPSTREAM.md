@@ -365,7 +365,9 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - **Model alias version match** (#702, e1e1c69): Refuse cross-version alias matches in `resolveModelPreference`
   so `claude-opus-4-6` doesn't get copied onto the `opus` alias when it resolves to 4.7.
 - **Hide /clear** (#705, cfce130): `/clear` removed from advertised commands; clients should use
-  `session/new` for the same effect.
+  `session/new` for the same effect. Superseded: PostHog Code now implements `/clear` itself in
+  `clearConversation` (prompt() intercepts it and swaps in a fresh SDK session; a
+  `_posthog/conversation_cleared` log marker bounds rehydration), still never forwarding it to the SDK.
 - **No-op ping events** (#698, 694221a): `streamEventToAcpNotifications` no-ops `ping` keep-alive events
   instead of falling through to `unreachable` and spamming stderr.
 

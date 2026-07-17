@@ -163,10 +163,18 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
   }
 
   private findSessionId(entries: StoredNotification[]): string | null {
-    const runStarted = POSTHOG_NOTIFICATIONS.RUN_STARTED;
+    // RUN_STARTED carries the session id the run booted with; a later
+    // CONVERSATION_CLEARED (/clear) supersedes it with the fresh SDK session
+    // id it swapped in. Latest entry of either kind wins.
+    const methods = new Set([
+      POSTHOG_NOTIFICATIONS.RUN_STARTED,
+      `_${POSTHOG_NOTIFICATIONS.RUN_STARTED}`,
+      POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
+      `_${POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED}`,
+    ]);
     for (let i = entries.length - 1; i >= 0; i--) {
       const method = entries[i].notification?.method;
-      if (method === runStarted || method === `_${runStarted}`) {
+      if (method && methods.has(method)) {
         const params = entries[i].notification?.params as
           | { sessionId?: string }
           | undefined;
@@ -219,13 +227,27 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
   private rebuildConversation(
     entries: StoredNotification[],
   ): ConversationTurn[] {
-    const turns: ConversationTurn[] = [];
+    let turns: ConversationTurn[] = [];
     let currentAssistantContent: ContentBlock[] = [];
     let currentToolCalls: ToolCallInfo[] = [];
+
+    const clearedMethods = new Set([
+      POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
+      `_${POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED}`,
+    ]);
 
     for (const entry of entries) {
       const method = entry.notification?.method;
       const params = entry.notification?.params as Record<string, unknown>;
+
+      // /clear starts an empty conversation: everything before the marker is
+      // gone from the model's context and must not be rehydrated.
+      if (method && clearedMethods.has(method)) {
+        turns = [];
+        currentAssistantContent = [];
+        currentToolCalls = [];
+        continue;
+      }
 
       if (method === "session/update" && params?.update) {
         const update = params.update as Record<string, unknown>;
