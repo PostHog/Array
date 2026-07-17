@@ -82,6 +82,25 @@ export function prepareTaskInput(
   };
 }
 
+/**
+ * Input for starting a task from an existing task-less worktree (the sidebar's
+ * one-click adoption). No content: the agent session starts idle and the user
+ * types the first message in the opened chat. The branch doubles as the task
+ * description so the task is named after it.
+ */
+export function buildWorktreeAdoptionInput(options: {
+  repoPath: string;
+  branch: string;
+}): TaskCreationInput {
+  return {
+    taskDescription: options.branch,
+    repoPath: options.repoPath,
+    workspaceMode: "worktree",
+    branch: options.branch,
+    reuseExistingWorktree: true,
+  };
+}
+
 const ERROR_TITLES: Record<string, string> = {
   repo_detection: "Failed to detect repository",
   task_creation: "Failed to create task",

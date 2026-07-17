@@ -16,6 +16,7 @@ import { useDeleteTask } from "../../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../../tasks/useTasks";
 import { WORKSPACE_QUERY_KEY } from "../../../workspace/identifiers";
 import { SettingRow } from "../../SettingRow";
+import { useSettingsStore } from "../../settingsStore";
 import { WorktreeGroupSection } from "./WorktreeGroupSection";
 
 const log = logger.scope("worktrees-settings");
@@ -25,6 +26,12 @@ export function WorktreesSettings() {
   const trpc = useHostTRPC();
   const hostClient = useHostTRPCClient();
   const { settings, updateSettings } = useSuspensionSettings();
+  const showSidebarWorktrees = useSettingsStore(
+    (state) => state.showSidebarWorktrees,
+  );
+  const setShowSidebarWorktrees = useSettingsStore(
+    (state) => state.setShowSidebarWorktrees,
+  );
   const { mutateAsync: deleteTask } = useDeleteTask();
   const [deletingWorktrees, setDeletingWorktrees] = useState<Set<string>>(
     new Set(),
@@ -133,6 +140,16 @@ export function WorktreesSettings() {
   return (
     <Flex direction="column" gap="5">
       <Flex direction="column">
+        <SettingRow
+          label="Show worktrees in sidebar"
+          description="List worktrees that have no task under each repo in the sidebar, so you can start a task in one with a click"
+        >
+          <Switch
+            checked={showSidebarWorktrees}
+            onCheckedChange={setShowSidebarWorktrees}
+            size="1"
+          />
+        </SettingRow>
         <SettingRow
           label="Automatically suspend stale worktrees"
           description="Suspend stale worktrees to save disk space. Suspended worktrees can be restored at any time. Only disable if you prefer to manage worktrees manually."

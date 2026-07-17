@@ -9,7 +9,7 @@ import {
 import type { SidebarItemAction } from "@posthog/ui/features/sidebar/types";
 import { useCallback } from "react";
 
-const INDENT_SIZE = 8;
+export const INDENT_SIZE = 8;
 
 interface SidebarItemProps {
   depth: number;

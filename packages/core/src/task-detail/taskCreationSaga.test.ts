@@ -36,6 +36,7 @@ const mockHost = vi.hoisted(() => ({
 }));
 
 import { TaskCreationSaga } from "./taskCreationSaga";
+import { buildWorktreeAdoptionInput } from "./taskInput";
 
 const host = mockHost as unknown as ITaskCreationHost;
 
@@ -1024,6 +1025,51 @@ describe("TaskCreationSaga", () => {
     ).toBeLessThan(
       vi.mocked(sessionService.connectToTask).mock.invocationCallOrder[0],
     );
+  });
+
+  it("adopts an existing worktree into a promptless task (worktree adoption)", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockResolvedValue({
+      taskId: "task-123",
+      mode: "worktree",
+      worktree: {
+        worktreePath: "/wt/orphan",
+        worktreeName: "orphan",
+        branchName: "feature/orphan",
+        baseBranch: "",
+        createdAt: "",
+      },
+      branchName: "feature/orphan",
+      linkedBranch: null,
+    });
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run(
+      buildWorktreeAdoptionInput({
+        repoPath: "/repo",
+        branch: "feature/orphan",
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    // The branch doubles as the task description so the task is named after it.
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "feature/orphan" }),
+    );
+    expect(mockHost.createWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "feature/orphan",
+        reuseExistingWorktree: true,
+      }),
+    );
+    // No typed prompt: the agent session starts idle in the adopted worktree.
+    const connectParams = vi.mocked(sessionService.connectToTask).mock
+      .calls[0][0];
+    expect(connectParams.repoPath).toBe("/wt/orphan");
+    expect(connectParams.initialPrompt).toBeUndefined();
   });
 
   it("creates the task without a repository when repo detection fails", async () => {
