@@ -37,7 +37,11 @@ import {
   useChatMessageScroller,
 } from "@posthog/quill";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
-import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import type {
+  Task,
+  TaskRunStatus,
+  UserBasic,
+} from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
@@ -410,24 +414,31 @@ function ReplyFooter({
   );
 }
 
-const FeedItem = memo(function FeedItem({
+// The human who kicked a task off in the channel, or null when the row should
+// stay agent-attributed. Only channel-started tasks (user_created) are a
+// person's doing; other origins (Slack, automations) carry a created_by who
+// didn't start it here, so they keep the agent identity — which also leaves
+// that identity free for genuine agent-authored messages in the future.
+function channelTaskStarter(task: Task): UserBasic | null {
+  return task.origin_product === "user_created"
+    ? (task.created_by ?? null)
+    : null;
+}
+
+// The presentational feed row: avatar + attribution header + body. The task
+// card and reply footer are supplied as `children` (they fetch their own data,
+// so keeping them out of here leaves the row pure and storyable); `actions` is
+// the hover toolbar.
+export function TaskFeedRow({
   task,
-  channelId,
-  inView,
-  onOpenTask,
-  onOpenThread,
+  actions,
+  children,
 }: {
   task: Task;
-  channelId: string;
-  inView: boolean;
-  onOpenTask: (task: Task) => void;
-  onOpenThread: (task: Task) => void;
+  actions?: ReactNode;
+  children?: ReactNode;
 }) {
-  // Only attribute channel-started tasks to a human: other origins (Slack,
-  // automations) carry a created_by who didn't start it here, so those stay
-  // agent-attributed to leave room for genuine agent-authored messages.
-  const starter =
-    task.origin_product === "user_created" ? task.created_by : null;
+  const starter = channelTaskStarter(task);
 
   return (
     <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
@@ -456,29 +467,54 @@ const FeedItem = memo(function FeedItem({
           {starter ? "started a new task" : "A new task was started"}
         </ThreadItemBody>
 
-        <TaskCard
-          task={task}
-          channelId={channelId}
-          onOpen={() => onOpenThread(task)}
-        />
-        <ReplyFooter
-          taskId={task.id}
-          inView={inView}
-          onOpenThread={() => onOpenThread(task)}
-        />
+        {children}
       </ThreadItemContent>
 
-      {/* Replying now lives in the always-visible ReplyFooter, so the hover
-          toolbar only carries the distinct "Open task" action. Actions anchor
-          to the row's top-right corner; a top tooltip there overhangs the panel
-          edge and gets clipped by the scroll container, so open tooltips toward
-          the content instead. */}
-      <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
-        <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
-          <ArrowSquareOutIcon size={15} />
-        </ThreadItemAction>
-      </ThreadItemActions>
+      {actions}
     </ThreadItem>
+  );
+}
+
+const FeedItem = memo(function FeedItem({
+  task,
+  channelId,
+  inView,
+  onOpenTask,
+  onOpenThread,
+}: {
+  task: Task;
+  channelId: string;
+  inView: boolean;
+  onOpenTask: (task: Task) => void;
+  onOpenThread: (task: Task) => void;
+}) {
+  return (
+    <TaskFeedRow
+      task={task}
+      actions={
+        // Replying now lives in the always-visible ReplyFooter, so the hover
+        // toolbar only carries the distinct "Open task" action. Actions anchor
+        // to the row's top-right corner; a top tooltip there overhangs the panel
+        // edge and gets clipped by the scroll container, so open tooltips toward
+        // the content instead.
+        <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
+          <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
+            <ArrowSquareOutIcon size={15} />
+          </ThreadItemAction>
+        </ThreadItemActions>
+      }
+    >
+      <TaskCard
+        task={task}
+        channelId={channelId}
+        onOpen={() => onOpenThread(task)}
+      />
+      <ReplyFooter
+        taskId={task.id}
+        inView={inView}
+        onOpenThread={() => onOpenThread(task)}
+      />
+    </TaskFeedRow>
   );
 });
 
