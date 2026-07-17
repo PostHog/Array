@@ -84,7 +84,7 @@ patchedDependencies:
     hash: 4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5
     path: patches/node-pty.patch
   react-hotkeys-hook:
-    hash: 3643630ece8bce3d76a5386eedb18b776d23bcfb9aded2ad6c840cdd284092f1
+    hash: a8cd00b963d4ae6787cc267a2345cc1b32bcba5fa1131328b8017ee0d316ab0e
     path: patches/react-hotkeys-hook.patch
 
 importers:
@@ -291,7 +291,7 @@ importers:
         version: 19.2.6(react@19.2.6)
       react-hotkeys-hook:
         specifier: ^4.4.4
-        version: 4.6.2(patch_hash=3643630ece8bce3d76a5386eedb18b776d23bcfb9aded2ad6c840cdd284092f1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 4.6.2(patch_hash=a8cd00b963d4ae6787cc267a2345cc1b32bcba5fa1131328b8017ee0d316ab0e)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react-scan:
         specifier: ^0.5.6
         version: 0.5.7(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(esbuild@0.27.2)(eslint@10.5.0(jiti@2.7.0))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rollup@4.57.1)
@@ -1348,7 +1348,7 @@ importers:
         version: 0.2.3
       react-hotkeys-hook:
         specifier: ^4.4.4
-        version: 4.6.2(patch_hash=3643630ece8bce3d76a5386eedb18b776d23bcfb9aded2ad6c840cdd284092f1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 4.6.2(patch_hash=a8cd00b963d4ae6787cc267a2345cc1b32bcba5fa1131328b8017ee0d316ab0e)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.17)(react@19.2.6)
@@ -29271,7 +29271,7 @@ snapshots:
     optionalDependencies:
       react: 19.2.6
 
-  react-hotkeys-hook@4.6.2(patch_hash=3643630ece8bce3d76a5386eedb18b776d23bcfb9aded2ad6c840cdd284092f1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  react-hotkeys-hook@4.6.2(patch_hash=a8cd00b963d4ae6787cc267a2345cc1b32bcba5fa1131328b8017ee0d316ab0e)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)

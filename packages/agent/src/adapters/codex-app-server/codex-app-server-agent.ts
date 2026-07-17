@@ -72,7 +72,11 @@ import {
   APP_SERVER_NOTIFICATIONS,
   APP_SERVER_REQUESTS,
 } from "./protocol";
-import { type CodexSandboxPolicy, SessionConfigState } from "./session-config";
+import {
+  type CodexSandboxPolicy,
+  type RawModel,
+  SessionConfigState,
+} from "./session-config";
 import {
   type CodexAppServerProcess,
   type CodexAppServerProcessOptions,
@@ -590,7 +594,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   private async loadModelConfig(): Promise<void> {
     try {
-      const res = await this.rpc.request<{ data?: any[] }>(
+      const res = await this.rpc.request<{ data?: RawModel[] }>(
         APP_SERVER_METHODS.MODEL_LIST,
         {},
       );
