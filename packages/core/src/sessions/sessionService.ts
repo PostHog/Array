@@ -84,6 +84,7 @@ import {
   convertStoredEntriesToEvents,
   createUserShellExecuteEvent,
   extractPromptText,
+  getStoredLogEventPosition,
   getUserShellExecutesSinceLastPrompt,
   hasSessionPromptEvent,
   isTurnCompleteEvent,
@@ -526,6 +527,880 @@ function entriesScopedToTaskRun(
     }
     return currentTaskRunId === taskRunId;
   });
+}
+
+function appendHydrationHash(hash: number, value: string): number {
+  let nextHash = hash;
+  for (let index = 0; index < value.length; index += 1) {
+    nextHash ^= value.charCodeAt(index);
+    nextHash = Math.imul(nextHash, 16_777_619);
+  }
+  return nextHash >>> 0;
+}
+
+function hashHydrationValue(value: unknown, hash = 2_166_136_261): number {
+  if (value === null) return appendHydrationHash(hash, "null");
+  if (Array.isArray(value)) {
+    let nextHash = appendHydrationHash(hash, "[");
+    for (const item of value) {
+      nextHash = hashHydrationValue(item, nextHash);
+      nextHash = appendHydrationHash(nextHash, ",");
+    }
+    return appendHydrationHash(nextHash, "]");
+  }
+  switch (typeof value) {
+    case "boolean":
+      return appendHydrationHash(hash, value ? "true" : "false");
+    case "number":
+      return appendHydrationHash(hash, `number:${value}`);
+    case "string":
+      return appendHydrationHash(hash, `string:${value}`);
+    case "undefined":
+      return appendHydrationHash(hash, "undefined");
+    case "object": {
+      let nextHash = appendHydrationHash(hash, "{");
+      const record = value as Record<string, unknown>;
+      for (const key of Object.keys(record).sort()) {
+        nextHash = appendHydrationHash(nextHash, key);
+        nextHash = hashHydrationValue(record[key], nextHash);
+      }
+      return appendHydrationHash(nextHash, "}");
+    }
+    default:
+      return appendHydrationHash(hash, typeof value);
+  }
+}
+
+function hydrationValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== typeof right) {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    return (
+      left.length === right.length &&
+      left.every((value, index) => hydrationValuesEqual(value, right[index]))
+    );
+  }
+  if (typeof left !== "object" || typeof right !== "object") return false;
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(rightRecord, key) &&
+        hydrationValuesEqual(leftRecord[key], rightRecord[key]),
+    )
+  );
+}
+
+function cloudHydrationMessageHash(event: AcpMessage): number {
+  return hashHydrationValue(event.message);
+}
+
+function cloudHydrationMessagesEqual(
+  left: AcpMessage,
+  right: AcpMessage,
+): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  if (leftPosition && rightPosition) {
+    return (
+      leftPosition.taskRunId === rightPosition.taskRunId &&
+      leftPosition.entryIndex === rightPosition.entryIndex
+    );
+  }
+  return hydrationValuesEqual(left.message, right.message);
+}
+
+function cloudHydrationPositionsEqual(
+  left: AcpMessage,
+  right: AcpMessage,
+): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  return (
+    leftPosition !== undefined &&
+    rightPosition !== undefined &&
+    leftPosition.taskRunId === rightPosition.taskRunId &&
+    leftPosition.entryIndex === rightPosition.entryIndex
+  );
+}
+
+interface HydrationTurn {
+  events: AcpMessage[];
+  eventHashes: number[];
+  promptEvent?: AcpMessage;
+  promptHash?: number;
+  taskRunId?: string;
+}
+
+interface HydrationPromptPositions {
+  all: number[];
+  unscoped: number[];
+  byTaskRunId: Map<string, number[]>;
+}
+
+function sessionEventTaskRunMarker(event: AcpMessage): string | undefined {
+  if (!isJsonRpcNotification(event.message)) return undefined;
+  const params = (event.message.params ?? {}) as {
+    runId?: unknown;
+    taskRunId?: unknown;
+  };
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.SDK_SESSION) &&
+    typeof params.taskRunId === "string"
+  ) {
+    return params.taskRunId;
+  }
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.RUN_STARTED) &&
+    typeof params.runId === "string"
+  ) {
+    return params.runId;
+  }
+  return undefined;
+}
+
+function splitHydrationTurns(events: AcpMessage[]): HydrationTurn[] {
+  const turns: HydrationTurn[] = [];
+  let taskRunId: string | undefined;
+  let currentEvents: AcpMessage[] = [];
+  let currentPromptEvent: AcpMessage | undefined;
+  const finishCurrent = (): void => {
+    if (currentEvents.length === 0) return;
+    turns.push({
+      events: currentEvents,
+      eventHashes: currentEvents.map(cloudHydrationMessageHash),
+      promptEvent: currentPromptEvent,
+      promptHash: currentPromptEvent
+        ? cloudHydrationMessageHash(currentPromptEvent)
+        : undefined,
+      taskRunId,
+    });
+  };
+
+  for (const event of events) {
+    const marker = sessionEventTaskRunMarker(event);
+    if (marker) {
+      finishCurrent();
+      taskRunId = marker;
+      currentEvents = [event];
+      currentPromptEvent = undefined;
+      continue;
+    }
+
+    if (isSessionPromptEvent(event)) {
+      finishCurrent();
+      currentEvents = [event];
+      currentPromptEvent = event;
+      continue;
+    }
+    currentEvents.push(event);
+  }
+  finishCurrent();
+  return turns;
+}
+
+function hydrationTurnScopesMatch(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  return (
+    liveTurn.taskRunId === undefined ||
+    hydratedTurn.taskRunId === undefined ||
+    liveTurn.taskRunId === hydratedTurn.taskRunId
+  );
+}
+
+function indexHydratedPromptTurns(
+  hydratedTurns: HydrationTurn[],
+): Map<number, HydrationPromptPositions> {
+  const positionsByPrompt = new Map<number, HydrationPromptPositions>();
+  for (let index = 0; index < hydratedTurns.length; index += 1) {
+    const turn = hydratedTurns[index];
+    if (turn.promptHash === undefined) continue;
+    let positions = positionsByPrompt.get(turn.promptHash);
+    if (!positions) {
+      positions = {
+        all: [],
+        unscoped: [],
+        byTaskRunId: new Map(),
+      };
+      positionsByPrompt.set(turn.promptHash, positions);
+    }
+    positions.all.push(index);
+    if (turn.taskRunId === undefined) {
+      positions.unscoped.push(index);
+      continue;
+    }
+    const scopedPositions = positions.byTaskRunId.get(turn.taskRunId) ?? [];
+    scopedPositions.push(index);
+    positions.byTaskRunId.set(turn.taskRunId, scopedPositions);
+  }
+  return positionsByPrompt;
+}
+
+function latestPositionIndexAtOrBefore(
+  positions: number[] | undefined,
+  maximum: number,
+): number {
+  if (!positions || positions.length === 0) return -1;
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle] <= maximum) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findPromptHydrationTurn(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  positionsByPrompt: Map<number, HydrationPromptPositions>,
+  maximum: number,
+): number {
+  const livePrompt = liveTurn.promptEvent;
+  if (livePrompt === undefined || liveTurn.promptHash === undefined) {
+    return -1;
+  }
+  const positions = positionsByPrompt.get(liveTurn.promptHash);
+  if (!positions) return -1;
+  const matchingPosition = (
+    candidatePositions: number[] | undefined,
+  ): number => {
+    if (!candidatePositions) return -1;
+    let candidateIndex = latestPositionIndexAtOrBefore(
+      candidatePositions,
+      maximum,
+    );
+    while (candidateIndex >= 0) {
+      const position = candidatePositions[candidateIndex];
+      const hydratedPrompt = hydratedTurns[position].promptEvent;
+      if (
+        hydratedPrompt &&
+        cloudHydrationMessagesEqual(livePrompt, hydratedPrompt)
+      ) {
+        return position;
+      }
+      candidateIndex -= 1;
+    }
+    return -1;
+  };
+  if (liveTurn.taskRunId === undefined) {
+    return matchingPosition(positions.all);
+  }
+  return Math.max(
+    matchingPosition(positions.byTaskRunId.get(liveTurn.taskRunId)),
+    matchingPosition(positions.unscoped),
+  );
+}
+
+interface PromptlessHydrationMatch {
+  hydratedTurnIndex: number;
+  liveMessageIndexOffset: number;
+}
+
+interface HydrationEventOverlap {
+  hydratedEventIndex: number;
+  liveEventIndex: number;
+}
+
+interface HydrationEventPosition {
+  turnIndex: number;
+  eventIndex: number;
+}
+
+type HydrationEventIndex = Map<number, HydrationEventPosition[]>;
+
+function indexHydratedTurnEvents(
+  hydratedTurns: HydrationTurn[],
+): HydrationEventIndex {
+  const positionsByHash: HydrationEventIndex = new Map();
+  for (let turnIndex = 0; turnIndex < hydratedTurns.length; turnIndex += 1) {
+    const turn = hydratedTurns[turnIndex];
+    for (let eventIndex = 0; eventIndex < turn.events.length; eventIndex += 1) {
+      if (!isStrongPromptlessOverlapEvent(turn.events[eventIndex])) continue;
+      const hash = turn.eventHashes[eventIndex];
+      const positions = positionsByHash.get(hash) ?? [];
+      positions.push({ turnIndex, eventIndex });
+      positionsByHash.set(hash, positions);
+    }
+  }
+  return positionsByHash;
+}
+
+function isStrongPromptlessOverlapEvent(event: AcpMessage): boolean {
+  if (!isJsonRpcNotification(event.message)) return false;
+  if (event.message.method !== "session/update") return false;
+  const update = (
+    event.message.params as { update?: { sessionUpdate?: unknown } } | undefined
+  )?.update;
+  return (
+    typeof update?.sessionUpdate === "string" &&
+    agentMessageUpdateKind(event) !== "ignored"
+  );
+}
+
+function findHydrationEventOverlap(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  allowWeakOverlap: boolean,
+): HydrationEventOverlap | undefined {
+  if (!hydrationTurnScopesMatch(liveTurn, hydratedTurn)) return undefined;
+  const hydratedPositions = new Map<number, number[]>();
+  for (
+    let hydratedIndex = 0;
+    hydratedIndex < hydratedTurn.events.length;
+    hydratedIndex += 1
+  ) {
+    const event = hydratedTurn.events[hydratedIndex];
+    if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(event)) {
+      continue;
+    }
+    const hash = hydratedTurn.eventHashes[hydratedIndex];
+    const positions = hydratedPositions.get(hash) ?? [];
+    positions.push(hydratedIndex);
+    hydratedPositions.set(hash, positions);
+  }
+  const findMatch = (
+    kind: "stable" | "boundary" | "any",
+  ): HydrationEventOverlap | undefined => {
+    for (
+      let liveIndex = liveTurn.events.length - 1;
+      liveIndex >= 0;
+      liveIndex -= 1
+    ) {
+      const liveEvent = liveTurn.events[liveIndex];
+      if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(liveEvent)) {
+        continue;
+      }
+      if (
+        kind === "boundary" &&
+        (!isStrongPromptlessOverlapEvent(liveEvent) ||
+          agentMessageUpdateKind(liveEvent) != null)
+      ) {
+        continue;
+      }
+      const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
+      if (!positions) continue;
+      for (
+        let positionIndex = positions.length - 1;
+        positionIndex >= 0;
+        positionIndex -= 1
+      ) {
+        const hydratedEventIndex = positions[positionIndex];
+        const hydratedEvent = hydratedTurn.events[hydratedEventIndex];
+        if (
+          kind === "stable" &&
+          !cloudHydrationPositionsEqual(liveEvent, hydratedEvent)
+        ) {
+          continue;
+        }
+        if (cloudHydrationMessagesEqual(liveEvent, hydratedEvent)) {
+          return { hydratedEventIndex, liveEventIndex: liveIndex };
+        }
+      }
+    }
+    return undefined;
+  };
+  return findMatch("stable") ?? findMatch("boundary") ?? findMatch("any");
+}
+
+function agentMessageIndexBeforeEvent(
+  events: AcpMessage[],
+  eventIndex: number,
+): number {
+  const position: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
+  for (let index = 0; index < eventIndex; index += 1) {
+    const updateKind = agentMessageUpdateKind(events[index]);
+    if (updateKind === "ignored") continue;
+    if (updateKind === "chunk") {
+      position.chunkRunActive = true;
+    } else if (updateKind === "final") {
+      position.messageIndex += 1;
+      position.chunkRunActive = false;
+    } else {
+      finishAgentMessageChunkRun(position);
+    }
+  }
+  return position.messageIndex;
+}
+
+function indexAgentMessagePositions(
+  events: AcpMessage[],
+  startingIndex: number,
+): WeakMap<AcpMessage, number> {
+  const positions = new WeakMap<AcpMessage, number>();
+  const position: AgentMessagePosition = {
+    messageIndex: startingIndex,
+    chunkRunActive: false,
+  };
+  for (const event of events) {
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "chunk") {
+      positions.set(event, position.messageIndex);
+      position.chunkRunActive = true;
+    } else if (updateKind === "final") {
+      positions.set(event, position.messageIndex);
+      position.messageIndex += 1;
+      position.chunkRunActive = false;
+    } else if (updateKind !== "ignored") {
+      finishAgentMessageChunkRun(position);
+    }
+  }
+  return positions;
+}
+
+function promptlessTailStrictlyPredatesPrompt(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  const promptTimestamp = hydratedTurn.promptEvent?.ts;
+  return (
+    promptTimestamp === undefined ||
+    liveTurn.events.every((event) => event.ts < promptTimestamp)
+  );
+}
+
+function hasLaterUnmatchedAssistantBoundary(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  overlap: HydrationEventOverlap,
+): boolean {
+  if (agentMessageUpdateKind(liveTurn.events[overlap.liveEventIndex]) == null) {
+    return false;
+  }
+  return hydratedTurn.events
+    .slice(overlap.hydratedEventIndex + 1)
+    .some(
+      (event) =>
+        isStrongPromptlessOverlapEvent(event) &&
+        agentMessageUpdateKind(event) == null,
+    );
+}
+
+interface IndexedHydrationEventOverlap extends HydrationEventOverlap {
+  hydratedTurnIndex: number;
+}
+
+function latestEventPositionAtOrBeforeTurn(
+  positions: HydrationEventPosition[],
+  maximumTurnIndex: number,
+): number {
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle].turnIndex <= maximumTurnIndex) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findIndexedPromptlessOverlap(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
+  minimumTurnIndex: number,
+  maximumTurnIndex: number,
+): IndexedHydrationEventOverlap | undefined {
+  let latestMatch: IndexedHydrationEventOverlap | undefined;
+  for (
+    let liveEventIndex = liveTurn.events.length - 1;
+    liveEventIndex >= 0;
+    liveEventIndex -= 1
+  ) {
+    const liveEvent = liveTurn.events[liveEventIndex];
+    if (!isStrongPromptlessOverlapEvent(liveEvent)) continue;
+    const positions = hydratedEventIndex.get(
+      liveTurn.eventHashes[liveEventIndex],
+    );
+    if (!positions) continue;
+    for (
+      let positionIndex = latestEventPositionAtOrBeforeTurn(
+        positions,
+        maximumTurnIndex,
+      );
+      positionIndex >= 0;
+      positionIndex -= 1
+    ) {
+      const position = positions[positionIndex];
+      if (position.turnIndex < minimumTurnIndex) break;
+      if (latestMatch && position.turnIndex < latestMatch.hydratedTurnIndex) {
+        break;
+      }
+      const hydratedTurn = hydratedTurns[position.turnIndex];
+      const hydratedEvent = hydratedTurn.events[position.eventIndex];
+      if (
+        !isStrongPromptlessOverlapEvent(hydratedEvent) ||
+        !hydrationTurnScopesMatch(liveTurn, hydratedTurn) ||
+        !cloudHydrationMessagesEqual(liveEvent, hydratedEvent)
+      ) {
+        continue;
+      }
+      latestMatch = {
+        hydratedTurnIndex: position.turnIndex,
+        hydratedEventIndex: position.eventIndex,
+        liveEventIndex,
+      };
+      break;
+    }
+  }
+  return latestMatch;
+}
+
+function findPromptlessHydrationTurn(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
+  maximum: number,
+): PromptlessHydrationMatch | undefined {
+  if (maximum < 0) return undefined;
+  const leafTaskRunId = hydratedTurns[maximum]?.taskRunId;
+  let minimum = 0;
+  if (leafTaskRunId !== undefined) {
+    minimum = maximum;
+    while (
+      minimum > 0 &&
+      hydratedTurns[minimum - 1].taskRunId === leafTaskRunId
+    ) {
+      minimum -= 1;
+    }
+  }
+  const newestHydratedTurn = hydratedTurns[maximum];
+  const newestOverlap = findHydrationEventOverlap(
+    liveTurn,
+    newestHydratedTurn,
+    true,
+  );
+  if (newestOverlap) {
+    if (
+      !cloudHydrationPositionsEqual(
+        liveTurn.events[newestOverlap.liveEventIndex],
+        newestHydratedTurn.events[newestOverlap.hydratedEventIndex],
+      ) &&
+      hasLaterUnmatchedAssistantBoundary(
+        liveTurn,
+        newestHydratedTurn,
+        newestOverlap,
+      )
+    ) {
+      return undefined;
+    }
+    return {
+      hydratedTurnIndex: maximum,
+      liveMessageIndexOffset:
+        agentMessageIndexBeforeEvent(
+          newestHydratedTurn.events,
+          newestOverlap.hydratedEventIndex,
+        ) -
+        agentMessageIndexBeforeEvent(
+          liveTurn.events,
+          newestOverlap.liveEventIndex,
+        ),
+    };
+  }
+  if (maximum === minimum) {
+    return undefined;
+  }
+  const olderOverlap = findIndexedPromptlessOverlap(
+    liveTurn,
+    hydratedTurns,
+    hydratedEventIndex,
+    minimum,
+    maximum - 1,
+  );
+  if (!olderOverlap) return undefined;
+  const hydratedTurn = hydratedTurns[olderOverlap.hydratedTurnIndex];
+  const hasStableOverlap = cloudHydrationPositionsEqual(
+    liveTurn.events[olderOverlap.liveEventIndex],
+    hydratedTurn.events[olderOverlap.hydratedEventIndex],
+  );
+  if (
+    !hasStableOverlap &&
+    !promptlessTailStrictlyPredatesPrompt(liveTurn, newestHydratedTurn)
+  ) {
+    return undefined;
+  }
+  return {
+    hydratedTurnIndex: olderOverlap.hydratedTurnIndex,
+    liveMessageIndexOffset:
+      agentMessageIndexBeforeEvent(
+        hydratedTurn.events,
+        olderOverlap.hydratedEventIndex,
+      ) -
+      agentMessageIndexBeforeEvent(
+        liveTurn.events,
+        olderOverlap.liveEventIndex,
+      ),
+  };
+}
+
+function discardExactHydratedEvents(
+  liveTurn: Pick<HydrationTurn, "events" | "eventHashes">,
+  hydratedTurn: Pick<HydrationTurn, "events" | "eventHashes">,
+  liveMessagePositions: WeakMap<AcpMessage, number>,
+  hydratedMessagePositions: WeakMap<AcpMessage, number>,
+): AcpMessage[] {
+  const keep = new Array<boolean>(liveTurn.events.length).fill(true);
+  const hydratedPositions = new Map<number, number[]>();
+  for (let index = 0; index < hydratedTurn.eventHashes.length; index += 1) {
+    const eventHash = hydratedTurn.eventHashes[index];
+    const positions = hydratedPositions.get(eventHash) ?? [];
+    positions.push(index);
+    hydratedPositions.set(eventHash, positions);
+  }
+  let hydratedIndex = hydratedTurn.eventHashes.length - 1;
+  for (
+    let liveIndex = liveTurn.eventHashes.length - 1;
+    liveIndex >= 0;
+    liveIndex -= 1
+  ) {
+    const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
+    if (!positions) continue;
+    let positionIndex = latestPositionIndexAtOrBefore(positions, hydratedIndex);
+    while (positionIndex >= 0) {
+      const matchedIndex = positions[positionIndex];
+      const liveMessagePosition = liveMessagePositions.get(
+        liveTurn.events[liveIndex],
+      );
+      const hydratedMessagePosition = hydratedMessagePositions.get(
+        hydratedTurn.events[matchedIndex],
+      );
+      if (
+        (liveMessagePosition !== undefined ||
+          hydratedMessagePosition !== undefined) &&
+        liveMessagePosition !== hydratedMessagePosition
+      ) {
+        positionIndex -= 1;
+        continue;
+      }
+      if (
+        cloudHydrationMessagesEqual(
+          liveTurn.events[liveIndex],
+          hydratedTurn.events[matchedIndex],
+        )
+      ) {
+        keep[liveIndex] = false;
+        hydratedIndex = matchedIndex - 1;
+        break;
+      }
+      positionIndex -= 1;
+    }
+  }
+  return liveTurn.events.filter((_event, index) => keep[index]);
+}
+
+function agentMessageUpdateKind(
+  event: AcpMessage,
+): "final" | "chunk" | "ignored" | undefined {
+  const message = event.message;
+  if (!isJsonRpcNotification(message) || message.method !== "session/update") {
+    return undefined;
+  }
+  const update = (
+    message.params as
+      | {
+          update?: {
+            sessionUpdate?: string;
+            content?: unknown;
+          };
+        }
+      | undefined
+  )?.update;
+  if (update?.sessionUpdate === "agent_message") return "final";
+  if (update?.sessionUpdate === "agent_message_chunk") return "chunk";
+  if (update?.sessionUpdate === "agent_thought_chunk") {
+    const content = update.content as
+      | { type?: string; text?: string; thinking?: string }
+      | null
+      | undefined;
+    if (
+      (content?.type === "text" && !content.text) ||
+      (content?.type === "thinking" && !content.thinking)
+    ) {
+      return "ignored";
+    }
+  }
+  return undefined;
+}
+
+interface AgentMessagePosition {
+  messageIndex: number;
+  chunkRunActive: boolean;
+}
+
+function isSessionPromptEvent(event: AcpMessage): boolean {
+  return (
+    isJsonRpcRequest(event.message) && event.message.method === "session/prompt"
+  );
+}
+
+function finishAgentMessageChunkRun(position: AgentMessagePosition): void {
+  if (!position.chunkRunActive) return;
+  position.messageIndex += 1;
+  position.chunkRunActive = false;
+}
+
+function discardChunksSupersededByHydratedMessages(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  liveMessageIndexOffset: number,
+): Pick<HydrationTurn, "events" | "eventHashes"> {
+  const hydratedMessagePositions = new Set<number>();
+  const hydratedPosition: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
+  for (const event of hydratedTurn.events) {
+    if (isSessionPromptEvent(event)) continue;
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "ignored") continue;
+    if (updateKind === "chunk") {
+      hydratedPosition.chunkRunActive = true;
+      continue;
+    }
+    if (updateKind === "final") {
+      hydratedMessagePositions.add(hydratedPosition.messageIndex);
+      hydratedPosition.messageIndex += 1;
+      hydratedPosition.chunkRunActive = false;
+      continue;
+    }
+    finishAgentMessageChunkRun(hydratedPosition);
+  }
+
+  // SessionLogWriter treats consecutive chunks as one assistant message. A
+  // direct agent_message replaces that buffered message, while a later chunk
+  // run after a tool/update boundary is a separate message. Match those
+  // turn-local message positions instead of timestamps so direct finals and
+  // same-millisecond events reconcile correctly.
+  const livePosition: AgentMessagePosition = {
+    messageIndex: Math.max(0, liveMessageIndexOffset),
+    chunkRunActive: false,
+  };
+  let discardChunkRun = false;
+  const events: AcpMessage[] = [];
+  const eventHashes: number[] = [];
+  for (
+    let eventIndex = 0;
+    eventIndex < liveTurn.events.length;
+    eventIndex += 1
+  ) {
+    const event = liveTurn.events[eventIndex];
+    let keep = true;
+    if (isSessionPromptEvent(event)) {
+      discardChunkRun = false;
+    } else {
+      const updateKind = agentMessageUpdateKind(event);
+      if (updateKind === "chunk") {
+        if (!livePosition.chunkRunActive) {
+          livePosition.chunkRunActive = true;
+          discardChunkRun = hydratedMessagePositions.has(
+            livePosition.messageIndex,
+          );
+        }
+        keep = !discardChunkRun;
+      } else if (updateKind === "final") {
+        livePosition.messageIndex += 1;
+        livePosition.chunkRunActive = false;
+        discardChunkRun = false;
+      } else if (updateKind !== "ignored") {
+        finishAgentMessageChunkRun(livePosition);
+        discardChunkRun = false;
+      }
+    }
+    if (keep) {
+      events.push(event);
+      eventHashes.push(liveTurn.eventHashes[eventIndex]);
+    }
+  }
+  return { events, eventHashes };
+}
+
+export function reconcileLiveEventsWithHydratedEvents(
+  liveEvents: AcpMessage[],
+  hydratedEvents: AcpMessage[],
+): AcpMessage[] {
+  const liveTurns = splitHydrationTurns(liveEvents);
+  const hydratedTurns = splitHydrationTurns(hydratedEvents);
+  const promptPositions = indexHydratedPromptTurns(hydratedTurns);
+  const hydratedEventIndex = indexHydratedTurnEvents(hydratedTurns);
+  const reconciledTurns = new Array<AcpMessage[]>(liveTurns.length);
+  let hydratedTurnIndex = hydratedTurns.length - 1;
+
+  for (
+    let liveTurnIndex = liveTurns.length - 1;
+    liveTurnIndex >= 0;
+    liveTurnIndex -= 1
+  ) {
+    const liveTurn = liveTurns[liveTurnIndex];
+    let liveMessageIndexOffset = 0;
+    let matchedHydratedTurnIndex = findPromptHydrationTurn(
+      liveTurn,
+      hydratedTurns,
+      promptPositions,
+      hydratedTurnIndex,
+    );
+    if (liveTurn.promptEvent === undefined) {
+      const promptlessMatch = findPromptlessHydrationTurn(
+        liveTurn,
+        hydratedTurns,
+        hydratedEventIndex,
+        hydratedTurnIndex,
+      );
+      if (promptlessMatch) {
+        matchedHydratedTurnIndex = promptlessMatch.hydratedTurnIndex;
+        liveMessageIndexOffset = promptlessMatch.liveMessageIndexOffset;
+      }
+    }
+    if (matchedHydratedTurnIndex === -1) {
+      reconciledTurns[liveTurnIndex] = liveTurn.events;
+      continue;
+    }
+
+    const hydratedTurn = hydratedTurns[matchedHydratedTurnIndex];
+    const liveMessagePositions = indexAgentMessagePositions(
+      liveTurn.events,
+      Math.max(0, liveMessageIndexOffset),
+    );
+    const hydratedMessagePositions = indexAgentMessagePositions(
+      hydratedTurn.events,
+      0,
+    );
+    reconciledTurns[liveTurnIndex] = discardExactHydratedEvents(
+      discardChunksSupersededByHydratedMessages(
+        liveTurn,
+        hydratedTurn,
+        liveMessageIndexOffset,
+      ),
+      hydratedTurn,
+      liveMessagePositions,
+      hydratedMessagePositions,
+    );
+    hydratedTurnIndex = matchedHydratedTurnIndex - 1;
+  }
+
+  return reconciledTurns.flat();
 }
 
 export function derivePendingPermissionRequests(
