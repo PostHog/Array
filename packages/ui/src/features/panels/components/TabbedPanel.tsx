@@ -1,17 +1,6 @@
 import { useDroppable } from "@dnd-kit/react";
-import {
-  Globe,
-  Plus,
-  SquareSplitHorizontalIcon,
-  Terminal,
-} from "@phosphor-icons/react";
+import { SquareSplitHorizontalIcon } from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@posthog/quill";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
@@ -19,8 +8,10 @@ import type { AddableTabKind } from "@posthog/ui/features/panels/tabAvailability
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Box, Flex } from "@radix-ui/themes";
 import type React from "react";
-import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { AddTabControl } from "./AddTabControl";
 import { PanelTab } from "./PanelTab";
+import { TabBarButton } from "./TabBarButton";
 
 const activeTabStyle: React.CSSProperties = {
   height: "100%",
@@ -35,113 +26,6 @@ const hiddenTabStyle: React.CSSProperties = {
   visibility: "hidden",
   pointerEvents: "none",
 };
-
-interface TabBarButtonProps {
-  ariaLabel: string;
-  dataAttr?: string;
-  // Optional so the button can serve as a DropdownMenuTrigger render target,
-  // where the trigger injects its own click handling.
-  onClick?: () => void;
-  children: React.ReactNode;
-}
-
-const TabBarButton = forwardRef<HTMLButtonElement, TabBarButtonProps>(
-  function TabBarButton(
-    { ariaLabel, dataAttr, onClick, children, ...props },
-    ref,
-  ) {
-    const [isHovered, setIsHovered] = useState(false);
-
-    return (
-      <button
-        ref={ref}
-        type="button"
-        aria-label={ariaLabel}
-        data-attr={dataAttr}
-        onClick={onClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        style={{
-          background: isHovered ? "var(--gray-4)" : "var(--color-background)",
-        }}
-        {...props}
-        className="flex h-[32px] w-[32px] cursor-pointer items-center justify-center border-0 border-b border-b-(--gray-6) text-(--gray-11)"
-      >
-        {children}
-      </button>
-    );
-  },
-);
-
-interface AddTabControlProps {
-  addableTabKinds: readonly AddableTabKind[];
-  onAddTab: (kind: AddableTabKind) => void;
-}
-
-function AddTabControl({ addableTabKinds, onAddTab }: AddTabControlProps) {
-  const singleAddableTabKind =
-    addableTabKinds.length === 1 ? addableTabKinds[0] : undefined;
-
-  if (singleAddableTabKind) {
-    const isTerminal = singleAddableTabKind === "terminal";
-    return (
-      <Tooltip
-        content={isTerminal ? "New terminal" : "New browser tab"}
-        side="bottom"
-      >
-        <TabBarButton
-          ariaLabel={isTerminal ? "Add terminal" : "Add browser tab"}
-          dataAttr={isTerminal ? "panel-add-terminal" : "panel-add-browser-tab"}
-          onClick={() => onAddTab(singleAddableTabKind)}
-        >
-          {isTerminal ? <Plus size={14} /> : <Globe size={14} />}
-        </TabBarButton>
-      </Tooltip>
-    );
-  }
-
-  if (addableTabKinds.length === 0) return null;
-
-  const canAddTerminal = addableTabKinds.includes("terminal");
-  const canAddBrowser = addableTabKinds.includes("browser");
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <TabBarButton ariaLabel="Add tab" dataAttr="panel-add-tab">
-            <Plus size={14} />
-          </TabBarButton>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={4}
-        className="min-w-[140px]"
-      >
-        {canAddTerminal && (
-          <DropdownMenuItem
-            data-attr="panel-add-terminal"
-            onClick={() => onAddTab("terminal")}
-          >
-            <Terminal size={14} />
-            Terminal
-          </DropdownMenuItem>
-        )}
-        {canAddBrowser && (
-          <DropdownMenuItem
-            data-attr="panel-add-browser-tab"
-            onClick={() => onAddTab("browser")}
-          >
-            <Globe size={14} />
-            Browser
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 interface TabbedPanelProps {
   panelId: string;
