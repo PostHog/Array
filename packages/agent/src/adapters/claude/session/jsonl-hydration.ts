@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import { POSTHOG_NOTIFICATIONS } from "../../../acp-extensions";
+import { isNotification, POSTHOG_NOTIFICATIONS } from "../../../acp-extensions";
 import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
@@ -113,11 +113,6 @@ export function getSessionJsonlPath(sessionId: string, cwd: string): string {
   );
 }
 
-const CONVERSATION_CLEARED_METHODS = new Set([
-  POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
-  `_${POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED}`,
-]);
-
 export function rebuildConversation(
   entries: StoredEntry[],
 ): ConversationTurn[] {
@@ -131,7 +126,7 @@ export function rebuildConversation(
 
     // /clear starts an empty conversation: everything before the marker is
     // gone from the model's context and must not be rehydrated.
-    if (method && CONVERSATION_CLEARED_METHODS.has(method)) {
+    if (isNotification(method, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED)) {
       turns = [];
       currentAssistantContent = [];
       currentToolCalls = [];

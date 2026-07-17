@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PostHogAPIClient } from "../../../posthog-api";
+import { createNotification } from "../../../sagas/test-fixtures";
 import type { StoredEntry } from "../../../types";
 import {
   conversationTurnsToJsonlEntries,
@@ -33,17 +34,6 @@ function toolEntry(
   meta: Record<string, unknown>,
 ): StoredEntry {
   return entry(sessionUpdate, { _meta: { claudeCode: meta } });
-}
-
-function notificationEntry(
-  method: string,
-  params: Record<string, unknown> = {},
-): StoredEntry {
-  return {
-    type: "notification",
-    timestamp: new Date().toISOString(),
-    notification: { jsonrpc: "2.0", method, params },
-  };
 }
 
 describe("getSessionJsonlPath", () => {
@@ -137,7 +127,7 @@ describe("rebuildConversation", () => {
       entry("agent_message", {
         content: { type: "text", text: "old reply" },
       }),
-      notificationEntry(method, { sessionId: "sdk-new" }),
+      createNotification(method, { sessionId: "sdk-new" }),
       entry("user_message", { content: { type: "text", text: "new" } }),
       entry("agent_message", {
         content: { type: "text", text: "new reply" },
@@ -161,7 +151,7 @@ describe("rebuildConversation", () => {
       entry("agent_message_chunk", {
         content: { type: "text", text: "partial" },
       }),
-      notificationEntry("_posthog/conversation_cleared", {
+      createNotification("_posthog/conversation_cleared", {
         sessionId: "sdk-new",
       }),
     ]);

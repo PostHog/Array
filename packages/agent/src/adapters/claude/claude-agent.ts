@@ -1598,7 +1598,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const newSdkSessionId = uuidv7();
     const newAbortController = new AbortController();
     const {
-      sessionId: _dropSessionId,
       resume: _dropResume,
       forkSession: _dropFork,
       ...rest
@@ -1628,7 +1627,6 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     session.input = newInput;
     session.queryOptions = newOptions;
     session.abortController = newAbortController;
-    session.queryClosed = false;
 
     const result = await withTimeout(
       newQuery.initializationResult(),
@@ -1660,33 +1658,45 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     this.toolUseStreamCache.clear();
     this.emittedToolCalls.clear();
 
+    // These four notifications are independent of one another (only the
+    // user-message broadcast above must precede them); issue them
+    // concurrently rather than paying four sequential round trips.
+    const postClearNotifications: Promise<unknown>[] = [];
     if (session.taskRunId) {
-      await this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
-        taskRunId: session.taskRunId,
-        sessionId: newSdkSessionId,
-        adapter: "claude",
-      });
+      postClearNotifications.push(
+        this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {
+          taskRunId: session.taskRunId,
+          sessionId: newSdkSessionId,
+          adapter: "claude",
+        }),
+      );
     }
-    await this.client.extNotification(
-      POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
-      { sessionId: newSdkSessionId },
+    postClearNotifications.push(
+      this.client.extNotification(POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED, {
+        sessionId: newSdkSessionId,
+      }),
     );
     if (hadTasks) {
-      await this.client.sessionUpdate({
-        sessionId: params.sessionId,
-        update: { sessionUpdate: "plan", entries: [] },
-      });
+      postClearNotifications.push(
+        this.client.sessionUpdate({
+          sessionId: params.sessionId,
+          update: { sessionUpdate: "plan", entries: [] },
+        }),
+      );
     }
-    await this.client.sessionUpdate({
-      sessionId: params.sessionId,
-      update: {
-        sessionUpdate: "usage_update",
-        used: 0,
-        size:
-          session.lastContextWindowSize ??
-          this.getContextWindowForModel(session.modelId ?? ""),
-      },
-    });
+    postClearNotifications.push(
+      this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "usage_update",
+          used: 0,
+          size:
+            session.lastContextWindowSize ??
+            this.getContextWindowForModel(session.modelId ?? ""),
+        },
+      }),
+    );
+    await Promise.all(postClearNotifications);
 
     this.refreshMcpMetadata(newQuery);
     return { stopReason: "end_turn" };
@@ -2577,7 +2587,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
    *  /clear (desktop hosts re-key on the sdk_session notification). */
   hasSession(sessionId: string): boolean {
     return (
-      this.sessionId === sessionId || this.session?.sdkSessionId === sessionId
+      super.hasSession(sessionId) || this.session?.sdkSessionId === sessionId
     );
   }
 
@@ -2597,7 +2607,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     };
 
     return {
-      sessionId,
+      // Echo the canonical ACP session id even if the caller matched via the
+      // post-/clear SDK session id (see hasSession) — clients must keep
+      // addressing the session with the stable id.
+      sessionId: this.sessionId,
       modes,
       configOptions: this.session.configOptions,
     };
@@ -2760,7 +2773,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     try {
       // The SDK stores session info under the SDK session id, which diverges
       // from the client-addressed id after a /clear.
-      info = await getSessionInfo(session.sdkSessionId ?? sessionId, {
+      info = await getSessionInfo(session.sdkSessionId, {
         dir: session.cwd,
       });
     } catch (error) {

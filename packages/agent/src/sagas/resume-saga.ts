@@ -1,6 +1,10 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { Saga } from "@posthog/shared";
-import { type NativeGoalState, POSTHOG_NOTIFICATIONS } from "../acp-extensions";
+import {
+  isNotification,
+  type NativeGoalState,
+  POSTHOG_NOTIFICATIONS,
+} from "../acp-extensions";
 import type { PostHogAPIClient } from "../posthog-api";
 import type {
   DeviceInfo,
@@ -166,15 +170,12 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
     // RUN_STARTED carries the session id the run booted with; a later
     // CONVERSATION_CLEARED (/clear) supersedes it with the fresh SDK session
     // id it swapped in. Latest entry of either kind wins.
-    const methods = new Set([
-      POSTHOG_NOTIFICATIONS.RUN_STARTED,
-      `_${POSTHOG_NOTIFICATIONS.RUN_STARTED}`,
-      POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
-      `_${POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED}`,
-    ]);
     for (let i = entries.length - 1; i >= 0; i--) {
       const method = entries[i].notification?.method;
-      if (method && methods.has(method)) {
+      if (
+        isNotification(method, POSTHOG_NOTIFICATIONS.RUN_STARTED) ||
+        isNotification(method, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED)
+      ) {
         const params = entries[i].notification?.params as
           | { sessionId?: string }
           | undefined;
@@ -231,18 +232,13 @@ export class ResumeSaga extends Saga<ResumeInput, ResumeOutput> {
     let currentAssistantContent: ContentBlock[] = [];
     let currentToolCalls: ToolCallInfo[] = [];
 
-    const clearedMethods = new Set([
-      POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
-      `_${POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED}`,
-    ]);
-
     for (const entry of entries) {
       const method = entry.notification?.method;
       const params = entry.notification?.params as Record<string, unknown>;
 
       // /clear starts an empty conversation: everything before the marker is
       // gone from the model's context and must not be rehydrated.
-      if (method && clearedMethods.has(method)) {
+      if (isNotification(method, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED)) {
         turns = [];
         currentAssistantContent = [];
         currentToolCalls = [];
