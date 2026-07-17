@@ -128,7 +128,7 @@ export function ReviewShell({
   const taskId = task.id;
   const listRef = useRef<VListHandle | null>(null);
   const lastActiveRef = useRef<string | null>(null);
-  const navigationLockUntilRef = useRef(0);
+  const navigationLockedRef = useRef(false);
 
   const workerFactory = useCallback(
     () => reviewHost.diffWorkerFactory(),
@@ -217,7 +217,7 @@ export function ReviewShell({
     const viewed =
       currentSignature !== undefined &&
       isFileViewed(viewedRecord[scrollRequest], currentSignature);
-    navigationLockUntilRef.current = Date.now() + 500;
+    navigationLockedRef.current = true;
     if (!viewed) onUncollapseFile?.(scrollRequest);
     requestAnimationFrame(() => {
       listRef.current?.scrollToIndex(targetIndex, { align: "start" });
@@ -238,8 +238,7 @@ export function ReviewShell({
 
   const handleScroll = useCallback(
     (offset: number) => {
-      if (Date.now() < navigationLockUntilRef.current) return;
-      navigationLockUntilRef.current = 0;
+      if (navigationLockedRef.current) return;
       const handle = listRef.current;
       if (!handle) return;
       const index = handle.findItemIndex(offset);
@@ -253,7 +252,7 @@ export function ReviewShell({
   );
 
   const handleUserScrollIntent = useCallback(() => {
-    navigationLockUntilRef.current = 0;
+    navigationLockedRef.current = false;
   }, []);
 
   const renderItem = useCallback(
@@ -314,7 +313,13 @@ export function ReviewShell({
             defaultBranch={defaultBranch}
           />
           <Flex className="min-h-0 flex-1">
-            <Flex direction="column" className="min-w-0 flex-1">
+            <Flex
+              direction="column"
+              className="min-w-0 flex-1"
+              onPointerDownCapture={handleUserScrollIntent}
+              onWheelCapture={handleUserScrollIntent}
+              onKeyDownCapture={handleUserScrollIntent}
+            >
               {isLoading ? (
                 <Flex
                   align="center"
@@ -342,8 +347,6 @@ export function ReviewShell({
                   shift={false}
                   style={{ scrollbarGutter: "stable" }}
                   onScroll={handleScroll}
-                  onWheel={handleUserScrollIntent}
-                  onKeyDown={handleUserScrollIntent}
                   data={items}
                 >
                   {renderItem}
