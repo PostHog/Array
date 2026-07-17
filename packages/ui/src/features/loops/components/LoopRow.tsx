@@ -20,6 +20,7 @@ export function LoopRow({ loop }: { loop: LoopSchemas.Loop }) {
               {loop.name}
             </Text>
             <Badge color={loopStatusColor(loop)}>{loopStatusLabel(loop)}</Badge>
+            <Badge color="gray">{loop.visibility}</Badge>
           </Flex>
           <Text className="truncate text-[12px] text-gray-11 leading-snug">
             {loop.description.trim()
