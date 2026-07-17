@@ -284,24 +284,4 @@ export class LlmGatewayService {
     }
     return usage;
   }
-
-  async invalidatePlanCache(): Promise<void> {
-    const auth = await this.auth.getValidAccessToken();
-    const url = this.endpoints.invalidatePlanCacheUrl(auth.apiHost);
-
-    this.log.debug("Invalidating plan cache", { url });
-
-    const response = await this.auth.authenticatedFetch(url, {
-      method: "POST",
-    });
-
-    if (!response.ok) {
-      throw new LlmGatewayError(
-        `Failed to invalidate plan cache: HTTP ${response.status}`,
-        "plan_cache_error",
-        undefined,
-        response.status,
-      );
-    }
-  }
 }

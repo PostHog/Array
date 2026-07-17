@@ -1,8 +1,5 @@
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { BILLING_FLAG } from "@posthog/shared";
-import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
 import { USAGE_QUERY_KEY } from "@posthog/ui/features/billing/useUsage";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import {
   identifyUser,
   resetUser,
@@ -108,23 +105,22 @@ function useAuthAnalyticsIdentity(
   ]);
 }
 
-function useSeatSync(
+export function useUsageIdentitySync(
   authIdentity: string | null,
-  billingEnabled: boolean,
+  orgId: string | null,
 ): void {
   const queryClient = useQueryClient();
+  // Usage is org-scoped billing data — drop the cached snapshot on any sign-in,
+  // sign-out, region, or org switch so a new org never renders the previous
+  // org's spend. authIdentity keys on region + project, which can stay constant
+  // across an org switch (e.g. between two orgs with no selected project), so
+  // depend on currentOrgId too — matching the host UsageMonitorService, which
+  // keys its snapshot on currentOrgId. Without it, a post-switch refresh that
+  // fails would leave the stale value cached.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on identity/org change
   useEffect(() => {
-    // Usage is identity-scoped billing data — drop the cached snapshot so a
-    // new sign-in never renders the previous account's spend.
     queryClient.removeQueries({ queryKey: USAGE_QUERY_KEY });
-    if (!authIdentity || !billingEnabled) {
-      useSeatStore.getState().reset();
-      return;
-    }
-
-    void useSeatStore.getState().fetchSeat({ autoProvision: true });
-    void queryClient.invalidateQueries({ queryKey: [["llmGateway"]] });
-  }, [authIdentity, billingEnabled, queryClient]);
+  }, [authIdentity, orgId, queryClient]);
 }
 
 export function useAuthSession() {
@@ -133,12 +129,10 @@ export function useAuthSession() {
   const { data: currentUser } = useCurrentUser({ client });
   const authIdentity = getAuthIdentity(authState);
 
-  const billingEnabled = useFeatureFlag(BILLING_FLAG);
-
   useAuthSubscriptionSync();
   useAuthIdentitySync(authState);
   useAuthAnalyticsIdentity(authIdentity, authState, currentUser);
-  useSeatSync(authIdentity, billingEnabled);
+  useUsageIdentitySync(authIdentity, authState.currentOrgId);
 
   return {
     authState,
