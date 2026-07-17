@@ -73,6 +73,76 @@ const TabBarButton = forwardRef<HTMLButtonElement, TabBarButtonProps>(
   },
 );
 
+interface AddTabControlProps {
+  addableTabKinds: readonly AddableTabKind[];
+  onAddTab: (kind: AddableTabKind) => void;
+}
+
+function AddTabControl({ addableTabKinds, onAddTab }: AddTabControlProps) {
+  const singleAddableTabKind =
+    addableTabKinds.length === 1 ? addableTabKinds[0] : undefined;
+
+  if (singleAddableTabKind) {
+    const isTerminal = singleAddableTabKind === "terminal";
+    return (
+      <Tooltip
+        content={isTerminal ? "New terminal" : "New browser tab"}
+        side="bottom"
+      >
+        <TabBarButton
+          ariaLabel={isTerminal ? "Add terminal" : "Add browser tab"}
+          dataAttr={isTerminal ? "panel-add-terminal" : "panel-add-browser-tab"}
+          onClick={() => onAddTab(singleAddableTabKind)}
+        >
+          {isTerminal ? <Plus size={14} /> : <Globe size={14} />}
+        </TabBarButton>
+      </Tooltip>
+    );
+  }
+
+  if (addableTabKinds.length === 0) return null;
+
+  const canAddTerminal = addableTabKinds.includes("terminal");
+  const canAddBrowser = addableTabKinds.includes("browser");
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <TabBarButton ariaLabel="Add tab" dataAttr="panel-add-tab">
+            <Plus size={14} />
+          </TabBarButton>
+        }
+      />
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={4}
+        className="min-w-[140px]"
+      >
+        {canAddTerminal && (
+          <DropdownMenuItem
+            data-attr="panel-add-terminal"
+            onClick={() => onAddTab("terminal")}
+          >
+            <Terminal size={14} />
+            Terminal
+          </DropdownMenuItem>
+        )}
+        {canAddBrowser && (
+          <DropdownMenuItem
+            data-attr="panel-add-browser-tab"
+            onClick={() => onAddTab("browser")}
+          >
+            <Globe size={14} />
+            Browser
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 interface TabbedPanelProps {
   panelId: string;
   content: PanelContent;
@@ -107,12 +177,6 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   emptyState,
 }) => {
   const hostClient = useHostTRPCClient();
-
-  const singleAddableTabKind =
-    addableTabKinds.length === 1 ? addableTabKinds[0] : undefined;
-  const hasMultipleAddableTabKinds = addableTabKinds.length > 1;
-  const canAddTerminal = addableTabKinds.includes("terminal");
-  const canAddBrowser = addableTabKinds.includes("browser");
 
   const handleSplitClick = async () => {
     const result = await hostClient.contextMenu.showSplitContextMenu.mutate();
@@ -222,71 +286,11 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {content.droppable && onAddTab && singleAddableTabKind && (
-              <Tooltip
-                content={
-                  singleAddableTabKind === "terminal"
-                    ? "New terminal"
-                    : "New browser tab"
-                }
-                side="bottom"
-              >
-                <TabBarButton
-                  ariaLabel={
-                    singleAddableTabKind === "terminal"
-                      ? "Add terminal"
-                      : "Add browser tab"
-                  }
-                  dataAttr={
-                    singleAddableTabKind === "terminal"
-                      ? "panel-add-terminal"
-                      : "panel-add-browser-tab"
-                  }
-                  onClick={() => onAddTab(singleAddableTabKind)}
-                >
-                  {singleAddableTabKind === "terminal" ? (
-                    <Plus size={14} />
-                  ) : (
-                    <Globe size={14} />
-                  )}
-                </TabBarButton>
-              </Tooltip>
-            )}
-            {content.droppable && onAddTab && hasMultipleAddableTabKinds && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <TabBarButton ariaLabel="Add tab" dataAttr="panel-add-tab">
-                      <Plus size={14} />
-                    </TabBarButton>
-                  }
-                />
-                <DropdownMenuContent
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                  className="min-w-[140px]"
-                >
-                  {canAddTerminal && (
-                    <DropdownMenuItem
-                      data-attr="panel-add-terminal"
-                      onClick={() => onAddTab("terminal")}
-                    >
-                      <Terminal size={14} />
-                      Terminal
-                    </DropdownMenuItem>
-                  )}
-                  {canAddBrowser && (
-                    <DropdownMenuItem
-                      data-attr="panel-add-browser-tab"
-                      onClick={() => onAddTab("browser")}
-                    >
-                      <Globe size={14} />
-                      Browser
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+            {content.droppable && onAddTab && (
+              <AddTabControl
+                addableTabKinds={addableTabKinds}
+                onAddTab={onAddTab}
+              />
             )}
             {/* Spacer to increase DND area */}
             {content.droppable && (
