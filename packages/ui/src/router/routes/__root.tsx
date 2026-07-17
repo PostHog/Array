@@ -34,6 +34,7 @@ import { useChannelDeepLink } from "@posthog/ui/features/canvas/hooks/useChannel
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { GlobalFilePicker } from "@posthog/ui/features/command/GlobalFilePicker";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
+import { TitleBarSearch } from "@posthog/ui/features/command/TitleBarSearch";
 import { ConnectivityBanner } from "@posthog/ui/features/connectivity/ConnectivityBanner";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
 import { useOpenTargetDeepLink } from "@posthog/ui/features/deep-links/useOpenTargetDeepLink";
@@ -418,11 +419,11 @@ function RootLayout() {
               </Flex>
             )}
           </Flex>
-          {/* Tabs work in both spaces: channel tabs under /website and plain
-              task tabs in the Code experience. The strip's route→tab effect
-              noops on param-less routes (inbox, agents, new-task), so it's safe
-              to mount everywhere. */}
-          <BrowserTabStrip />
+          <TitleBarSearch onClick={() => setCommandMenuOpen(true)} />
+          {/* Keep route/tab reconciliation mounted while the old browser-tab
+              chrome is hidden. This preserves restored routes and persisted
+              state without exposing tab-specific controls or shortcuts. */}
+          <BrowserTabStrip showTabs={false} />
           {/* Gated so an empty right-side group can't claim a no-drag rect
               in the title bar for nothing — every pixel without controls
               should drag the window. */}

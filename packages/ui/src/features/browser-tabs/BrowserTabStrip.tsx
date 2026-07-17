@@ -152,7 +152,11 @@ function isAppView(value: string): value is AppView {
   return value in APP_VIEW_META;
 }
 
-export function BrowserTabStrip() {
+interface BrowserTabStripProps {
+  showTabs?: boolean;
+}
+
+export function BrowserTabStrip({ showTabs = true }: BrowserTabStripProps) {
   const logger = useService<RootLogger>(ROOT_LOGGER);
   const snapshot = useTabsSnapshot();
   const navigate = useNavigate();
@@ -804,7 +808,7 @@ export function BrowserTabStrip() {
     {
       enableOnFormTags: true,
       enableOnContentEditable: true,
-      enabled: !isCloudRun,
+      enabled: showTabs && !isCloudRun,
     },
   );
 
@@ -818,7 +822,11 @@ export function BrowserTabStrip() {
       if (taskHasCloseableEditorTab(params.taskId)) return;
       if (activeTabId) handleClose(activeTabId);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    {
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      enabled: showTabs,
+    },
   );
 
   // With channels on, Cmd/Ctrl+1-9 switches to the Nth browser tab (in the
@@ -839,12 +847,12 @@ export function BrowserTabStrip() {
       enableOnFormTags: true,
       enableOnContentEditable: true,
       preventDefault: true,
-      enabled: channelsEnabled,
+      enabled: showTabs && channelsEnabled,
     },
     [tabs, handleSelect],
   );
 
-  return (
+  return showTabs ? (
     <TabStrip
       tabs={tabs}
       activeTabId={activeTabId}
@@ -856,5 +864,5 @@ export function BrowserTabStrip() {
       onCloseToLeft={handleCloseToLeft}
       onNewTab={isCloudRun ? undefined : handleNewTab}
     />
-  );
+  ) : null;
 }

@@ -70,8 +70,12 @@ differ. Desktop ships first.
 ## UX
 
 ### The strip
-- Lives in the Channels title bar, after a `#title-bar-left` section sized to the
-  Channels sidebar width so the strip starts flush with the content pane.
+- The browser-style strip is no longer rendered. The title bar uses a centered,
+  Slack-style search trigger that opens the existing command menu for commands,
+  channels, and tasks.
+- `BrowserTabStrip` remains mounted in reconciliation-only mode so persisted tab
+  state and restored routes continue to settle safely while tab-only controls
+  and keyboard shortcuts stay disabled.
 - Each tab is a quill `Button` (variant `default`). The active tab is elevated;
   inactive tabs are muted. Tabs **shrink to fit** — the strip never scrolls
   (`overflow-hidden`, pills `flex-1 basis-[200px]` capped at `max-w-[200px]`).
