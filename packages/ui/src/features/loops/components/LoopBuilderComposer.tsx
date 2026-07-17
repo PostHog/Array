@@ -3,21 +3,30 @@ import { Flex, IconButton, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { useLoopBuilderTask } from "../hooks/useLoopBuilderTask";
 
-const EXAMPLE_PROMPTS = [
+const DEFAULT_EXAMPLES = [
   "Summarize my open PRs every weekday morning",
   "Triage new issues and flag duplicates",
   "Draft release notes when a PR merges to main",
 ];
 
-/** The "describe what you want and an agent builds it" prompt box. Shared by the main
- * Loops page and a context's Loops tab; passing `context` attaches the built loop to it. */
+/** The "describe what you want and an agent builds it" prompt box. Passing `context` attaches
+ * the built loop to it. `quickStarts` replaces the generic example chips above the box with
+ * labeled starters (each fills the box for the user to finish). */
 export function LoopBuilderComposer({
   context,
+  placeholder = "What do you want automated?",
+  quickStarts,
 }: {
   context?: { folderId: string; name: string };
+  placeholder?: string;
+  quickStarts?: { label: string; prompt: string }[];
 }) {
   const [prompt, setPrompt] = useState("");
   const { runTask, isRunning } = useLoopBuilderTask(context);
+
+  const chips =
+    quickStarts ??
+    DEFAULT_EXAMPLES.map((prompt) => ({ label: prompt, prompt }));
 
   const start = () => {
     const text = prompt.trim();
@@ -28,14 +37,15 @@ export function LoopBuilderComposer({
   return (
     <Flex direction="column" gap="2">
       <Flex gap="2" wrap="wrap">
-        {EXAMPLE_PROMPTS.map((example) => (
+        {chips.map((chip) => (
           <button
-            key={example}
+            key={chip.label}
             type="button"
-            onClick={() => setPrompt(example)}
-            className="rounded-full border border-gray-5 bg-gray-2 px-3 py-1 text-gray-11 text-xs transition-colors hover:border-gray-7 hover:bg-gray-3"
+            disabled={isRunning}
+            onClick={() => setPrompt(chip.prompt)}
+            className="rounded-full border border-gray-5 bg-gray-2 px-3 py-1 text-gray-11 text-xs transition-colors hover:border-gray-7 hover:bg-gray-3 disabled:opacity-60"
           >
-            {example}
+            {chip.label}
           </button>
         ))}
       </Flex>
@@ -48,11 +58,7 @@ export function LoopBuilderComposer({
           value={prompt}
           rows={2}
           disabled={isRunning}
-          placeholder={
-            context
-              ? `What should this loop automate for #${context.name}?`
-              : "What do you want automated?"
-          }
+          placeholder={placeholder}
           className="w-full resize-none bg-transparent text-[13px] text-gray-12 leading-relaxed outline-none placeholder:text-gray-9 disabled:opacity-60"
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {

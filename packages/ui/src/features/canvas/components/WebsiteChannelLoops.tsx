@@ -1,4 +1,4 @@
-import { PlusIcon } from "@phosphor-icons/react";
+import { CloudIcon, PlusIcon } from "@phosphor-icons/react";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -8,16 +8,35 @@ import { useMemo } from "react";
 import { LoopBuilderComposer } from "../../loops/components/LoopBuilderComposer";
 import { LoopRow } from "../../loops/components/LoopRow";
 import { LoopsEmptyState } from "../../loops/components/LoopsEmptyState";
-import { LoopTemplatesSection } from "../../loops/components/LoopTemplatesSection";
 import { useLoops } from "../../loops/hooks/useLoops";
 import { useLoopDraftStore } from "../../loops/loopDraftStore";
 import { defaultLoopContextOutputs } from "../../loops/loopFormTypes";
-import type { LoopTemplate } from "../../loops/loopTemplates";
 import { useChannels } from "../hooks/useChannels";
 
-/** The "Loops" tab of a context: the same build experience as the main Loops page (agent
- * composer, templates, manual), but every path attaches the new loop to this context.
- * `channelId` is the desktop folder id, which matches a loop's `context_target.folder_id`. */
+function contextQuickStarts(name: string): { label: string; prompt: string }[] {
+  return [
+    {
+      label: "Digest to feed",
+      prompt: `On a schedule, post a short digest to #${name}'s feed summarizing `,
+    },
+    {
+      label: "Keep context.md current",
+      prompt: `On a schedule, update #${name}'s context.md with the latest `,
+    },
+    {
+      label: "Refresh a canvas",
+      prompt: `On a schedule, refresh a canvas in #${name} with `,
+    },
+    {
+      label: "Watch and report",
+      prompt: `Watch for changes in `,
+    },
+  ];
+}
+
+/** The "Loops" tab of a context: same layout as the main Loops page (list on top, agent
+ * composer pinned at the bottom), but the build surface is tuned to automations that feed
+ * this context. `channelId` is the desktop folder id, matching `context_target.folder_id`. */
 export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const { data: loops, isLoading, isError } = useLoops();
   const { channels } = useChannels();
@@ -36,74 +55,93 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
     [loops, channelId],
   );
 
-  const contextTarget = useMemo(
-    () => ({
-      folderId: channelId,
-      name: contextName,
-      outputs: defaultLoopContextOutputs(),
-    }),
-    [channelId, contextName],
-  );
-
   const startBlank = () => {
-    useLoopDraftStore.getState().setPrefill({ contextTarget });
-    navigateToNewLoop();
-  };
-
-  const startFromTemplate = (template: LoopTemplate) => {
-    useLoopDraftStore
-      .getState()
-      .setPrefill({ ...template.build(), contextTarget });
+    useLoopDraftStore.getState().setPrefill({
+      contextTarget: {
+        folderId: channelId,
+        name: contextName,
+        outputs: defaultLoopContextOutputs(),
+      },
+    });
     navigateToNewLoop();
   };
 
   return (
-    <Flex
-      direction="column"
-      gap="6"
-      className="mx-auto w-full max-w-4xl px-8 py-8"
-    >
-      <Flex align="center" justify="between" gap="3">
-        <Flex direction="column" gap="1" className="min-w-0">
-          <Heading className="font-bold text-xl">Loops</Heading>
-          <Text color="gray" className="text-sm">
-            Automations attached to this context. They post their runs to its
-            feed and can keep its context.md or a canvas up to date.
-          </Text>
-        </Flex>
-        <Button variant="solid" size="2" onClick={startBlank}>
-          <PlusIcon size={14} />
-          Create manually
-        </Button>
-      </Flex>
-
-      <LoopBuilderComposer
-        context={{ folderId: channelId, name: contextName }}
-      />
-
-      {isLoading ? (
-        <LoopsSkeleton />
-      ) : isError ? (
-        <EmptyNotice
-          title="Couldn't load loops"
-          hint="The loops API returned an error. Try again in a moment."
-        />
-      ) : attachedLoops.length > 0 ? (
-        <Flex direction="column" gap="3">
-          <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
-            Attached loops
-          </Text>
-          <Flex direction="column" gap="2">
-            {attachedLoops.map((loop) => (
-              <LoopRow key={loop.id} loop={loop} />
-            ))}
+    <Flex direction="column" className="h-full min-h-0">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <Flex
+          direction="column"
+          gap="6"
+          className="mx-auto w-full max-w-3xl px-8 py-8"
+        >
+          <Flex align="center" justify="between" gap="3">
+            <Flex direction="column" gap="1" className="min-w-0 max-w-[70%]">
+              <Flex align="center" gap="2">
+                <Heading className="font-bold text-2xl">
+                  Automate #{contextName}
+                </Heading>
+                <Flex
+                  align="center"
+                  className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
+                >
+                  <CloudIcon
+                    size={12}
+                    weight="fill"
+                    className="text-(--accent-11)"
+                  />
+                  <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
+                    Runs entirely in the cloud
+                  </Text>
+                </Flex>
+              </Flex>
+              <Text color="gray" className="text-sm">
+                Build a loop that posts its runs to this context's feed, or
+                keeps its context.md or a canvas up to date.
+              </Text>
+            </Flex>
+            <Button variant="solid" size="2" onClick={startBlank}>
+              <PlusIcon size={14} />
+              Create manually
+            </Button>
           </Flex>
-        </Flex>
-      ) : (
-        <LoopsEmptyState contextName={contextName} />
-      )}
 
-      <LoopTemplatesSection onSelect={startFromTemplate} />
+          {isLoading ? (
+            <LoopsSkeleton />
+          ) : isError ? (
+            <EmptyNotice
+              title="Couldn't load loops"
+              hint="The loops API returned an error. Try again in a moment."
+            />
+          ) : attachedLoops.length > 0 ? (
+            <Flex direction="column" gap="3">
+              <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
+                Attached loops
+              </Text>
+              <Flex direction="column" gap="2">
+                {attachedLoops.map((loop) => (
+                  <LoopRow key={loop.id} loop={loop} />
+                ))}
+              </Flex>
+            </Flex>
+          ) : (
+            <LoopsEmptyState contextName={contextName} />
+          )}
+        </Flex>
+      </div>
+
+      <div className="shrink-0">
+        <Flex
+          direction="column"
+          gap="2"
+          className="mx-auto w-full max-w-3xl px-8 pb-6"
+        >
+          <LoopBuilderComposer
+            context={{ folderId: channelId, name: contextName }}
+            placeholder={`What should #${contextName} keep an eye on?`}
+            quickStarts={contextQuickStarts(contextName)}
+          />
+        </Flex>
+      </div>
     </Flex>
   );
 }
