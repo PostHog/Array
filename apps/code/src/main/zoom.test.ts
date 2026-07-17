@@ -161,6 +161,27 @@ describe("window zoom", () => {
     });
   });
 
+  it("uses the in-memory zoom level when persistence fails", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+    store.save.mockImplementation(() => {});
+
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    vi.runAllTimers();
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    vi.runAllTimers();
+
+    expect({
+      persistedZoomLevel: store.state.zoomLevel,
+      zoomLevel: window.webContents.zoomLevel,
+      saved: store.save.mock.calls,
+    }).toEqual({
+      persistedZoomLevel: 0.5,
+      zoomLevel: 1.5,
+      saved: [[1], [1.5]],
+    });
+  });
+
   it("clamps invalid persisted levels before restoring", () => {
     store.get.mockReturnValue(10);
     const window = createWindow();

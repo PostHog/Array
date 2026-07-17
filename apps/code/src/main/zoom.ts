@@ -31,6 +31,7 @@ interface ZoomWindow {
 }
 
 interface ZoomState {
+  currentZoomLevel: number;
   deferredActions: Array<() => void>;
   wheelZoomDelta: number;
   wheelZoomTimeout: ReturnType<typeof setTimeout> | null;
@@ -46,6 +47,10 @@ function getSavedZoomLevel(): number {
   return clampZoomLevel(windowStateStore.get("zoomLevel", 0));
 }
 
+function getCurrentZoomLevel(window: ZoomWindow): number {
+  return zoomStates.get(window)?.currentZoomLevel ?? getSavedZoomLevel();
+}
+
 function runAfterWheelZoom(window: ZoomWindow, action: () => void): void {
   const state = zoomStates.get(window);
   if (!state?.wheelZoomTimeout) {
@@ -58,6 +63,8 @@ function runAfterWheelZoom(window: ZoomWindow, action: () => void): void {
 
 export function setWindowZoom(window: ZoomWindow, level: number): void {
   const nextLevel = clampZoomLevel(level);
+  const state = zoomStates.get(window);
+  if (state) state.currentZoomLevel = nextLevel;
   window.webContents.setZoomLevel(nextLevel);
   saveZoomLevel(nextLevel);
 }
@@ -67,19 +74,21 @@ export function adjustWindowZoom(
   delta: number | "reset",
 ): void {
   runAfterWheelZoom(window, () => {
-    const nextLevel = delta === "reset" ? 0 : getSavedZoomLevel() + delta;
+    const nextLevel =
+      delta === "reset" ? 0 : getCurrentZoomLevel(window) + delta;
     setWindowZoom(window, nextLevel);
   });
 }
 
 export function restoreWindowZoom(window: ZoomWindow): void {
   runAfterWheelZoom(window, () => {
-    window.webContents.setZoomLevel(getSavedZoomLevel());
+    window.webContents.setZoomLevel(getCurrentZoomLevel(window));
   });
 }
 
 export function setupWindowZoom(window: ZoomWindow): void {
   const state: ZoomState = {
+    currentZoomLevel: getSavedZoomLevel(),
     deferredActions: [],
     wheelZoomDelta: 0,
     wheelZoomTimeout: null,
@@ -100,7 +109,7 @@ export function setupWindowZoom(window: ZoomWindow): void {
     event.preventDefault();
     state.wheelZoomDelta += zoomDirection === "in" ? ZOOM_STEP : -ZOOM_STEP;
     state.wheelZoomTimeout ??= setTimeout(() => {
-      const nextLevel = getSavedZoomLevel() + state.wheelZoomDelta;
+      const nextLevel = state.currentZoomLevel + state.wheelZoomDelta;
       state.wheelZoomDelta = 0;
       state.wheelZoomTimeout = null;
       setWindowZoom(window, nextLevel);
