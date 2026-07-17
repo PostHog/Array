@@ -1,9 +1,10 @@
+import type { AnyExtension } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { createCommandMention } from "./CommandMention";
 import { createFileMention } from "./FileMention";
 import { createIssueMention } from "./IssueMention";
-import { MentionChipNode } from "./MentionChipNode";
+import { MentionChipNode, type MentionChipOptions } from "./MentionChipNode";
 
 export interface EditorExtensionsOptions {
   sessionId: string;
@@ -11,6 +12,8 @@ export interface EditorExtensionsOptions {
   fileMentions?: boolean;
   issueMentions?: boolean;
   commands?: boolean;
+  getPastedText?: MentionChipOptions["getPastedText"];
+  forgetPastedText?: MentionChipOptions["forgetPastedText"];
 }
 
 export function getEditorExtensions(options: EditorExtensionsOptions) {
@@ -20,9 +23,11 @@ export function getEditorExtensions(options: EditorExtensionsOptions) {
     fileMentions = true,
     issueMentions = true,
     commands = true,
+    getPastedText = () => null,
+    forgetPastedText = () => {},
   } = options;
 
-  const extensions = [
+  const extensions: AnyExtension[] = [
     StarterKit.configure({
       heading: false,
       blockquote: false,
@@ -37,7 +42,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions) {
       code: false,
     }),
     Placeholder.configure({ placeholder }),
-    MentionChipNode,
+    MentionChipNode.configure({ getPastedText, forgetPastedText }),
   ];
 
   if (fileMentions) {

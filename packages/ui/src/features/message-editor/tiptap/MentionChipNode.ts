@@ -27,6 +27,11 @@ export interface MentionChipAttrs {
   skillName?: string;
 }
 
+export interface MentionChipOptions {
+  getPastedText: (chipId: string) => string | null;
+  forgetPastedText: (chipId: string) => void;
+}
+
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     mentionChip: {
@@ -40,12 +45,19 @@ declare module "@tiptap/core" {
   }
 }
 
-export const MentionChipNode = Node.create({
+export const MentionChipNode = Node.create<MentionChipOptions>({
   name: "mentionChip",
   group: "inline",
   inline: true,
   selectable: true,
   atom: true,
+
+  addOptions() {
+    return {
+      getPastedText: () => null,
+      forgetPastedText: () => {},
+    };
+  },
 
   addAttributes() {
     return {

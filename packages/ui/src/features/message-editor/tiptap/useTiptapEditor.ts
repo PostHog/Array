@@ -114,11 +114,13 @@ async function pasteTextAsFile(
   text: string,
   pasteCountRef: React.MutableRefObject<number>,
   tracked?: TrackedAutoConvertedPaste,
+  rememberPastedText?: (chipId: string, text: string) => void,
 ): Promise<void> {
   const result = await persistTextContent(text);
   if (tracked?.status === "canceled") return;
   pasteCountRef.current += 1;
   const lineCount = text.split("\n").length;
+  if (tracked) rememberPastedText?.(tracked.chipId, text);
   insertChipWithTrailingSpace(view, {
     type: "file",
     id: result.path,
@@ -319,6 +321,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const lastAutoConvertedPasteRef = useRef<TrackedAutoConvertedPaste | null>(
     null,
   );
+  const pastedTextByChipIdRef = useRef(new Map<string, string>());
   useEffect(() => {
     return () => {
       if (lastAutoConvertedPasteRef.current) {
@@ -339,6 +342,11 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         placeholder,
         fileMentions,
         commands,
+        getPastedText: (chipId) =>
+          pastedTextByChipIdRef.current.get(chipId) ?? null,
+        forgetPastedText: (chipId) => {
+          pastedTextByChipIdRef.current.delete(chipId);
+        },
       }),
       editable: !disabled,
       autofocus: autoFocus ? "end" : false,
@@ -368,7 +376,24 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 useFeatureSettingsStore
                   .getState()
                   .markHintLearned("paste-inline");
-                await pasteTextAsFile(view, text, pasteCountRef);
+                const tracked: TrackedAutoConvertedPaste = {
+                  clipboardText: text,
+                  insertText: text,
+                  chipId: crypto.randomUUID(),
+                  kind: "file",
+                  status: "pending",
+                };
+                lastAutoConvertedPasteRef.current = tracked;
+                usePasteUndoStore.getState().setUndoableChipId(tracked.chipId);
+                await pasteTextAsFile(
+                  view,
+                  text,
+                  pasteCountRef,
+                  tracked,
+                  (chipId, pastedText) => {
+                    pastedTextByChipIdRef.current.set(chipId, pastedText);
+                  },
+                );
               } catch (_error) {
                 toast.error("Failed to paste as file attachment");
               }
@@ -549,6 +574,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
               )
             ) {
               event.preventDefault();
+              pastedTextByChipIdRef.current.delete(lastConverted.chipId);
               if (lastConverted.kind === "file") {
                 useFeatureSettingsStore
                   .getState()
@@ -652,6 +678,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                   effectiveText,
                   pasteCountRef,
                   tracked,
+                  (chipId, text) => {
+                    pastedTextByChipIdRef.current.set(chipId, text);
+                  },
                 );
                 if (tracked.status !== "canceled") {
                   showPasteHint(
@@ -780,6 +809,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
       editor.commands.clearContent();
       prevBashModeRef.current = false;
       pasteCountRef.current = 0;
+      pastedTextByChipIdRef.current.clear();
       setAttachments([]);
       draft.clearDraft();
     };
@@ -832,6 +862,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const clear = useCallback(() => {
     editor?.commands.clearContent();
     prevBashModeRef.current = false;
+    pastedTextByChipIdRef.current.clear();
     setAttachments([]);
     draft.clearDraft();
   }, [editor, draft]);
