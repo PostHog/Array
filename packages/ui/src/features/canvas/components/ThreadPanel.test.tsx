@@ -2,7 +2,13 @@ import type { ConversationItem } from "@posthog/ui/features/sessions/components/
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Avatar resolution reaches for tRPC/auth providers these row tests don't
+// mount; rows under test only need the initials fallback.
+vi.mock("@posthog/ui/features/avatars/useUserAvatar", () => ({
+  useUserAvatar: () => null,
+}));
 import {
   AgentStatusLine,
   ThreadMessageRow,
