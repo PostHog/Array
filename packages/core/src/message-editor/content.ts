@@ -21,6 +21,9 @@ export interface MentionChip {
   skillName?: string;
 }
 
+/** Chip title shown while a pasted GitHub ref's real title is being fetched. */
+export const GITHUB_REF_PLACEHOLDER_TITLE = "Loading...";
+
 export interface FileAttachment {
   id: string;
   label: string;
@@ -83,7 +86,9 @@ export function contentToXml(content: EditorContent): string {
       case "github_pr": {
         const labelMatch = chip.label.match(/^#(\d+)(?:\s*-\s*(.*))?$/);
         const number = labelMatch?.[1] ?? "";
-        const title = labelMatch?.[2] ?? "";
+        const rawTitle = labelMatch?.[2] ?? "";
+        // A chip sent before its title fetch resolves must not leak the placeholder
+        const title = rawTitle === GITHUB_REF_PLACEHOLDER_TITLE ? "" : rawTitle;
         return `<${chip.type} number="${escapeXmlAttr(number)}" title="${escapeXmlAttr(title)}" url="${escapedId}" />`;
       }
       default:

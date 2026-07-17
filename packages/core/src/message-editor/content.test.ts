@@ -6,6 +6,7 @@ import {
   xmlToContent,
   xmlToPlainText,
 } from "./content";
+import { buildGithubRefPlaceholderChip } from "./githubIssueChip";
 
 describe("xmlToContent", () => {
   it("parses a file tag into a file chip", () => {
@@ -94,6 +95,26 @@ describe("xmlToContent", () => {
     };
     expect(contentToXml(content)).toBe(
       '<github_issue number="1454" title="" url="https://github.com/org/repo/issues/1454" />',
+    );
+  });
+
+  it("serializes an unresolved github_pr placeholder chip with an empty title", () => {
+    const content: EditorContent = {
+      segments: [
+        {
+          type: "chip",
+          chip: buildGithubRefPlaceholderChip({
+            kind: "pr",
+            owner: "org",
+            repo: "repo",
+            number: 71827,
+            normalizedUrl: "https://github.com/org/repo/pull/71827",
+          }),
+        },
+      ],
+    };
+    expect(contentToXml(content)).toBe(
+      '<github_pr number="71827" title="" url="https://github.com/org/repo/pull/71827" />',
     );
   });
 

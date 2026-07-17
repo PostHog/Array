@@ -1,5 +1,5 @@
 import type { GithubRefState } from "@posthog/shared";
-import type { MentionChip } from "./content";
+import { GITHUB_REF_PLACEHOLDER_TITLE, type MentionChip } from "./content";
 import type { ParsedGithubIssueUrl } from "./githubIssueUrl";
 
 export interface GithubIssueChipSource {
@@ -43,7 +43,7 @@ export function buildGithubRefPlaceholderChip(
 ): MentionChip {
   const source = {
     number: parsed.number,
-    title: "Loading...",
+    title: GITHUB_REF_PLACEHOLDER_TITLE,
     url: parsed.normalizedUrl,
   };
   return parsed.kind === "pr"
