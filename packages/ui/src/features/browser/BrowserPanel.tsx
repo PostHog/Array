@@ -170,6 +170,14 @@ export function BrowserPanel({
     },
     [address, navigate],
   );
+  const handleAddressKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+      event.preventDefault();
+      navigate(address);
+    },
+    [address, navigate],
+  );
 
   if (!BrowserView) return null;
 
@@ -215,6 +223,7 @@ export function BrowserPanel({
             autoFocus={initialUrl.current === DEFAULT_URL}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
+            onKeyDown={handleAddressKeyDown}
             placeholder="Search or enter address"
             spellCheck={false}
             className="h-[24px] w-full rounded-(--radius-2) border-0 bg-(--gray-3) px-2 text-(--gray-12) text-[12px] outline-none focus:bg-(--gray-4)"
