@@ -1,5 +1,6 @@
-import type { AcpMessage } from "@posthog/shared";
+import type { AcpMessage, StoredLogEntry } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
+import { convertStoredEntriesToEvents } from "./sessionEvents";
 import { reconcileLiveEventsWithHydratedEvents } from "./sessionService";
 
 function prompt(id: number, text: string, ts: number): AcpMessage {
@@ -81,6 +82,14 @@ function turnComplete(ts: number): AcpMessage {
   };
 }
 
+function storedEntry(event: AcpMessage): StoredLogEntry {
+  return {
+    type: "notification",
+    timestamp: new Date(event.ts).toISOString(),
+    notification: event.message,
+  };
+}
+
 describe("resume hydration reconciliation", () => {
   it("discards a stale completed tail from an earlier leaf turn", () => {
     const firstResponse = agentMessage("first response", 20);
@@ -137,5 +146,52 @@ describe("resume hydration reconciliation", () => {
         hydratedEvents,
       ),
     ).toEqual([currentResponse, currentCompletion]);
+  });
+
+  it("preserves a repeated response when a partial live tail omits the tool boundary", () => {
+    const boundary = toolCall("tool-1", 30);
+    const repeatedResponse = agentMessage("Done", 40);
+    const completion = turnComplete(50);
+    const hydratedEvents = [
+      prompt(1, "run a command", 10),
+      agentMessage("Done", 20),
+      boundary,
+    ];
+
+    expect(
+      reconcileLiveEventsWithHydratedEvents(
+        [repeatedResponse, completion],
+        hydratedEvents,
+      ),
+    ).toEqual([repeatedResponse, completion]);
+    expect(
+      reconcileLiveEventsWithHydratedEvents(
+        [{ ...boundary, ts: 31 }, repeatedResponse, completion],
+        hydratedEvents,
+      ),
+    ).toEqual([repeatedResponse, completion]);
+  });
+
+  it("discards a positioned stale tail across a same-millisecond prompt boundary", () => {
+    const firstPrompt = prompt(1, "first request", 10);
+    const firstResponse = agentMessage("first response", 20);
+    const firstCompletion = turnComplete(40);
+    const secondPrompt = prompt(2, "second request", 40);
+    const hydratedEvents = convertStoredEntriesToEvents(
+      [firstPrompt, firstResponse, firstCompletion, secondPrompt].map(
+        storedEntry,
+      ),
+      undefined,
+      { taskRunId: "run-1", startEntryIndex: 0 },
+    );
+    const staleLiveTail = convertStoredEntriesToEvents(
+      [firstResponse, firstCompletion].map(storedEntry),
+      undefined,
+      { taskRunId: "run-1", startEntryIndex: 1 },
+    );
+
+    expect(
+      reconcileLiveEventsWithHydratedEvents(staleLiveTail, hydratedEvents),
+    ).toEqual([]);
   });
 });

@@ -322,7 +322,13 @@ vi.mock("@posthog/shared", async (importOriginal) => ({
   ),
 }));
 const mockConvertStoredEntriesToEvents = vi.hoisted(() =>
-  vi.fn<(entries: unknown[]) => unknown[]>(() => []),
+  vi.fn<
+    (
+      entries: unknown[],
+      taskDescription?: string,
+      positionOptions?: unknown,
+    ) => unknown[]
+  >(() => []),
 );
 
 vi.mock("@posthog/core/sessions/sessionEvents", async () => {
@@ -352,6 +358,7 @@ vi.mock("@posthog/core/sessions/sessionEvents", async () => {
       message: {},
     })),
     extractPromptText: vi.fn((p) => (typeof p === "string" ? p : "text")),
+    getStoredLogEventPosition: actual.getStoredLogEventPosition,
     getUserShellExecutesSinceLastPrompt: vi.fn(() => []),
     hasSessionPromptEvent: actual.hasSessionPromptEvent,
     isAbsoluteFolderPath: actual.isAbsoluteFolderPath,
@@ -3493,10 +3500,15 @@ describe("SessionService", () => {
         expect(
           mockAuthenticatedClient.getTaskRunSessionLogsResult,
         ).toHaveBeenCalledWith("task-123", "run-456", { limit: 100000 });
-        expect(mockConvertStoredEntriesToEvents).toHaveBeenCalledWith([
-          ...parentEntries,
-          ...leafEntries,
-        ]);
+        expect(mockConvertStoredEntriesToEvents).toHaveBeenCalledWith(
+          [...parentEntries, ...leafEntries],
+          undefined,
+          {
+            taskRunId: "run-456",
+            startEntryIndex: 0,
+            firstPositionedEntryIndex: parentEntries.length,
+          },
+        );
         expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
           "run-456",
           expect.objectContaining({

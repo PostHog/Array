@@ -74,6 +74,7 @@ import {
   convertStoredEntriesToEvents,
   createUserShellExecuteEvent,
   extractPromptText,
+  getStoredLogEventPosition,
   getUserShellExecutesSinceLastPrompt,
   hasSessionPromptEvent,
   isTurnCompleteEvent,
@@ -618,7 +619,29 @@ function cloudHydrationMessagesEqual(
   left: AcpMessage,
   right: AcpMessage,
 ): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  if (leftPosition && rightPosition) {
+    return (
+      leftPosition.taskRunId === rightPosition.taskRunId &&
+      leftPosition.entryIndex === rightPosition.entryIndex
+    );
+  }
   return hydrationValuesEqual(left.message, right.message);
+}
+
+function cloudHydrationPositionsEqual(
+  left: AcpMessage,
+  right: AcpMessage,
+): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  return (
+    leftPosition !== undefined &&
+    rightPosition !== undefined &&
+    leftPosition.taskRunId === rightPosition.taskRunId &&
+    leftPosition.entryIndex === rightPosition.entryIndex
+  );
 }
 
 interface HydrationTurn {
@@ -864,34 +887,48 @@ function findHydrationEventOverlap(
     positions.push(hydratedIndex);
     hydratedPositions.set(hash, positions);
   }
-  for (
-    let liveIndex = liveTurn.events.length - 1;
-    liveIndex >= 0;
-    liveIndex -= 1
-  ) {
-    const liveEvent = liveTurn.events[liveIndex];
-    if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(liveEvent)) {
-      continue;
-    }
-    const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
-    if (!positions) continue;
+  const findMatch = (
+    kind: "stable" | "boundary" | "any",
+  ): HydrationEventOverlap | undefined => {
     for (
-      let positionIndex = positions.length - 1;
-      positionIndex >= 0;
-      positionIndex -= 1
+      let liveIndex = liveTurn.events.length - 1;
+      liveIndex >= 0;
+      liveIndex -= 1
     ) {
-      const hydratedEventIndex = positions[positionIndex];
+      const liveEvent = liveTurn.events[liveIndex];
+      if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(liveEvent)) {
+        continue;
+      }
       if (
-        cloudHydrationMessagesEqual(
-          liveEvent,
-          hydratedTurn.events[hydratedEventIndex],
-        )
+        kind === "boundary" &&
+        (!isStrongPromptlessOverlapEvent(liveEvent) ||
+          agentMessageUpdateKind(liveEvent) != null)
       ) {
-        return { hydratedEventIndex, liveEventIndex: liveIndex };
+        continue;
+      }
+      const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
+      if (!positions) continue;
+      for (
+        let positionIndex = positions.length - 1;
+        positionIndex >= 0;
+        positionIndex -= 1
+      ) {
+        const hydratedEventIndex = positions[positionIndex];
+        const hydratedEvent = hydratedTurn.events[hydratedEventIndex];
+        if (
+          kind === "stable" &&
+          !cloudHydrationPositionsEqual(liveEvent, hydratedEvent)
+        ) {
+          continue;
+        }
+        if (cloudHydrationMessagesEqual(liveEvent, hydratedEvent)) {
+          return { hydratedEventIndex, liveEventIndex: liveIndex };
+        }
       }
     }
-  }
-  return undefined;
+    return undefined;
+  };
+  return findMatch("stable") ?? findMatch("boundary") ?? findMatch("any");
 }
 
 function agentMessageIndexBeforeEvent(
@@ -917,6 +954,31 @@ function agentMessageIndexBeforeEvent(
   return position.messageIndex;
 }
 
+function indexAgentMessagePositions(
+  events: AcpMessage[],
+  startingIndex: number,
+): WeakMap<AcpMessage, number> {
+  const positions = new WeakMap<AcpMessage, number>();
+  const position: AgentMessagePosition = {
+    messageIndex: startingIndex,
+    chunkRunActive: false,
+  };
+  for (const event of events) {
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "chunk") {
+      positions.set(event, position.messageIndex);
+      position.chunkRunActive = true;
+    } else if (updateKind === "final") {
+      positions.set(event, position.messageIndex);
+      position.messageIndex += 1;
+      position.chunkRunActive = false;
+    } else if (updateKind !== "ignored") {
+      finishAgentMessageChunkRun(position);
+    }
+  }
+  return positions;
+}
+
 function promptlessTailStrictlyPredatesPrompt(
   liveTurn: HydrationTurn,
   hydratedTurn: HydrationTurn,
@@ -926,6 +988,23 @@ function promptlessTailStrictlyPredatesPrompt(
     promptTimestamp === undefined ||
     liveTurn.events.every((event) => event.ts < promptTimestamp)
   );
+}
+
+function hasLaterUnmatchedAssistantBoundary(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  overlap: HydrationEventOverlap,
+): boolean {
+  if (agentMessageUpdateKind(liveTurn.events[overlap.liveEventIndex]) == null) {
+    return false;
+  }
+  return hydratedTurn.events
+    .slice(overlap.hydratedEventIndex + 1)
+    .some(
+      (event) =>
+        isStrongPromptlessOverlapEvent(event) &&
+        agentMessageUpdateKind(event) == null,
+    );
 }
 
 interface IndexedHydrationEventOverlap extends HydrationEventOverlap {
@@ -1028,6 +1107,19 @@ function findPromptlessHydrationTurn(
     true,
   );
   if (newestOverlap) {
+    if (
+      !cloudHydrationPositionsEqual(
+        liveTurn.events[newestOverlap.liveEventIndex],
+        newestHydratedTurn.events[newestOverlap.hydratedEventIndex],
+      ) &&
+      hasLaterUnmatchedAssistantBoundary(
+        liveTurn,
+        newestHydratedTurn,
+        newestOverlap,
+      )
+    ) {
+      return undefined;
+    }
     return {
       hydratedTurnIndex: maximum,
       liveMessageIndexOffset:
@@ -1041,10 +1133,7 @@ function findPromptlessHydrationTurn(
         ),
     };
   }
-  if (
-    maximum === minimum ||
-    !promptlessTailStrictlyPredatesPrompt(liveTurn, newestHydratedTurn)
-  ) {
+  if (maximum === minimum) {
     return undefined;
   }
   const olderOverlap = findIndexedPromptlessOverlap(
@@ -1056,6 +1145,16 @@ function findPromptlessHydrationTurn(
   );
   if (!olderOverlap) return undefined;
   const hydratedTurn = hydratedTurns[olderOverlap.hydratedTurnIndex];
+  const hasStableOverlap = cloudHydrationPositionsEqual(
+    liveTurn.events[olderOverlap.liveEventIndex],
+    hydratedTurn.events[olderOverlap.hydratedEventIndex],
+  );
+  if (
+    !hasStableOverlap &&
+    !promptlessTailStrictlyPredatesPrompt(liveTurn, newestHydratedTurn)
+  ) {
+    return undefined;
+  }
   return {
     hydratedTurnIndex: olderOverlap.hydratedTurnIndex,
     liveMessageIndexOffset:
@@ -1073,6 +1172,8 @@ function findPromptlessHydrationTurn(
 function discardExactHydratedEvents(
   liveTurn: Pick<HydrationTurn, "events" | "eventHashes">,
   hydratedTurn: Pick<HydrationTurn, "events" | "eventHashes">,
+  liveMessagePositions: WeakMap<AcpMessage, number>,
+  hydratedMessagePositions: WeakMap<AcpMessage, number>,
 ): AcpMessage[] {
   const keep = new Array<boolean>(liveTurn.events.length).fill(true);
   const hydratedPositions = new Map<number, number[]>();
@@ -1093,6 +1194,20 @@ function discardExactHydratedEvents(
     let positionIndex = latestPositionIndexAtOrBefore(positions, hydratedIndex);
     while (positionIndex >= 0) {
       const matchedIndex = positions[positionIndex];
+      const liveMessagePosition = liveMessagePositions.get(
+        liveTurn.events[liveIndex],
+      );
+      const hydratedMessagePosition = hydratedMessagePositions.get(
+        hydratedTurn.events[matchedIndex],
+      );
+      if (
+        (liveMessagePosition !== undefined ||
+          hydratedMessagePosition !== undefined) &&
+        liveMessagePosition !== hydratedMessagePosition
+      ) {
+        positionIndex -= 1;
+        continue;
+      }
       if (
         cloudHydrationMessagesEqual(
           liveTurn.events[liveIndex],
@@ -1277,6 +1392,14 @@ export function reconcileLiveEventsWithHydratedEvents(
     }
 
     const hydratedTurn = hydratedTurns[matchedHydratedTurnIndex];
+    const liveMessagePositions = indexAgentMessagePositions(
+      liveTurn.events,
+      Math.max(0, liveMessageIndexOffset),
+    );
+    const hydratedMessagePositions = indexAgentMessagePositions(
+      hydratedTurn.events,
+      0,
+    );
     reconciledTurns[liveTurnIndex] = discardExactHydratedEvents(
       discardChunksSupersededByHydratedMessages(
         liveTurn,
@@ -1284,6 +1407,8 @@ export function reconcileLiveEventsWithHydratedEvents(
         liveMessageIndexOffset,
       ),
       hydratedTurn,
+      liveMessagePositions,
+      hydratedMessagePositions,
     );
     hydratedTurnIndex = matchedHydratedTurnIndex - 1;
   }
@@ -5328,6 +5453,7 @@ export class SessionService {
   ): Promise<CloudHydrationResult | undefined> {
     let rawEntries: StoredLogEntry[];
     let liveStreamLineCount: number;
+    let resumeLeafEntryStartIndex: number | undefined;
     const resumeFromRunId =
       typeof runState?.resume_from_run_id === "string"
         ? runState.resume_from_run_id
@@ -5387,6 +5513,7 @@ export class SessionService {
             (entry) => !leafKeys.has(JSON.stringify(entry)),
           ),
         ];
+        resumeLeafEntryStartIndex = ancestorEntries.length;
         liveStreamLineCount = Math.max(
           leafLogs.totalLineCount,
           persistedLeafEntries.length,
@@ -5418,7 +5545,11 @@ export class SessionService {
       return;
     }
 
-    let events = convertStoredEntriesToEvents(rawEntries);
+    let events = convertStoredEntriesToEvents(rawEntries, undefined, {
+      taskRunId,
+      startEntryIndex: 0,
+      firstPositionedEntryIndex: resumeLeafEntryStartIndex,
+    });
     if (isResumeRun && session.events.length > 0) {
       const inheritedEvents = reconcileLiveEventsWithHydratedEvents(
         session.events,
@@ -6400,7 +6531,14 @@ export class SessionService {
         // Already caught up — skip duplicate entries
       } else if (plan.kind === "append-tail") {
         const entriesToAppend = update.newEntries.slice(-plan.tailCount);
-        const newEvents = convertStoredEntriesToEvents(entriesToAppend);
+        const newEvents = convertStoredEntriesToEvents(
+          entriesToAppend,
+          undefined,
+          {
+            taskRunId,
+            startEntryIndex: expectedCount - entriesToAppend.length,
+          },
+        );
         if (hasSessionPromptEvent(newEvents)) {
           this.d.store.clearTailOptimisticItems(taskRunId);
         }
@@ -6679,7 +6817,10 @@ export class SessionService {
     logUrl: string | undefined,
     processedLineCount: number,
   ): void {
-    const events = convertStoredEntriesToEvents(rawEntries);
+    const events = convertStoredEntriesToEvents(rawEntries, undefined, {
+      taskRunId,
+      startEntryIndex: 0,
+    });
     if (hasSessionPromptEvent(events)) {
       this.d.store.clearTailOptimisticItems(taskRunId);
     }
