@@ -23,7 +23,7 @@ ${
     : `Start by asking me what I want automated, and offer a couple of concrete ideas.\n`
 }${
   context
-    ? `This loop is being created for the context "#${context.name}". In the config you assemble, set \`context_target\` to {"folder_id": "${context.folderId}", "name": "${context.name}", "outputs": {"post_to_feed": true}} so its runs post to that context's feed. Keep it a personal loop.\n\n`
+    ? `This loop is being created for the context "#${context.name}". In the config you assemble, set \`context_target\` to {"folder_id": "${context.folderId}", "name": "${context.name}", "outputs": {"post_to_feed": true}} so its runs post to that context's feed. Make it a team loop: context-attached loops post to a shared feed, so the backend rejects them as personal.\n\n`
     : ""
 }How to build it:
 
@@ -35,7 +35,7 @@ ${
    - Whether it may open pull requests, and how I want to hear about runs (in-app, email, or Slack).
    - A short name.
 4. If the loop works on a repository, resolve its GitHub integration by calling \`integrations-list\` for THIS project and use that integration's real \`github_integration_id\`. Never invent or reuse an id from memory. If this project has no GitHub integration, do NOT attach a repository or guess an id: tell me to connect GitHub for this project first, or build a report-only loop if that fits what I asked for.
-5. As soon as you have a working draft and the essentials, call the PostHog MCP \`loops-review\` tool with the full assembled configuration (the same fields \`loops-create\` takes: name, instructions, runtime_adapter, triggers, behaviors, notifications, and so on). Make it a personal loop unless I ask otherwise.
+5. As soon as you have a working draft and the essentials, call the PostHog MCP \`loops-review\` tool with the full assembled configuration (the same fields \`loops-create\` takes: name, instructions, runtime_adapter, triggers, behaviors, notifications, and so on). Unless a context or I say otherwise, make it a personal loop.
 
 The \`loops-review\` card IS the review surface: it renders the whole loop for me to read and gives me a Create button. Do NOT review the loop as plain text. Never paste the drafted config into a message and ask "does this look right?", and never just narrate that it's ready and stop. The moment you have enough, call \`loops-review\`. If I ask for changes, call \`loops-review\` again with the updated config. Never call \`loops-create\` yourself: the card's Create button creates the loop once I confirm.`;
 }
