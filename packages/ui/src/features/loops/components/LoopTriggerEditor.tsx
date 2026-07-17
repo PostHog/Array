@@ -12,6 +12,12 @@ import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOpti
 import { Button } from "@posthog/ui/primitives/Button";
 import { Box, Checkbox, Flex, IconButton, Text } from "@radix-ui/themes";
 import {
+  compileCronSchedule,
+  DEFAULT_SCHEDULE_TIME,
+  parseCronSchedule,
+  type RecurringFrequency,
+} from "../loopCron";
+import {
   emptyLoopApiTriggerConfig,
   emptyLoopGithubTriggerConfig,
   emptyLoopScheduleTriggerConfig,
@@ -215,7 +221,7 @@ function TriggerCard({
   );
 }
 
-type ScheduleFrequency = "hourly" | "daily" | "weekdays" | "weekly" | "once";
+type ScheduleFrequency = RecurringFrequency | "once";
 
 const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
   { value: "hourly", label: "Hourly" },
@@ -224,6 +230,8 @@ const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
   { value: "weekly", label: "Weekly" },
   { value: "once", label: "Once" },
 ];
+
+const CUSTOM_FREQUENCY_OPTION = { value: "custom", label: "Custom" } as const;
 
 const WEEKDAY_OPTIONS = [
   { value: "0", label: "Sunday" },
@@ -235,64 +243,11 @@ const WEEKDAY_OPTIONS = [
   { value: "6", label: "Saturday" },
 ];
 
-const DEFAULT_TIME = "09:00";
-
 function localTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch {
     return "UTC";
-  }
-}
-
-interface ParsedRecurringSchedule {
-  frequency: "hourly" | "daily" | "weekdays" | "weekly";
-  time: string;
-  weekday: string;
-}
-
-/** Reads the shapes the frequency picker writes; anything else falls back to daily. */
-function parseCronSchedule(
-  cron: string | null | undefined,
-): ParsedRecurringSchedule | null {
-  if (!cron) return null;
-  const parts = cron.trim().split(/\s+/);
-  if (parts.length !== 5) return null;
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  if (dayOfMonth !== "*" || month !== "*") return null;
-  if (!/^\d{1,2}$/.test(minute)) return null;
-  if (hour === "*") {
-    return dayOfWeek === "*"
-      ? { frequency: "hourly", time: DEFAULT_TIME, weekday: "1" }
-      : null;
-  }
-  if (!/^\d{1,2}$/.test(hour)) return null;
-  const time = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
-  if (dayOfWeek === "*") return { frequency: "daily", time, weekday: "1" };
-  if (dayOfWeek === "1-5") return { frequency: "weekdays", time, weekday: "1" };
-  if (/^[0-6]$/.test(dayOfWeek)) {
-    return { frequency: "weekly", time, weekday: dayOfWeek };
-  }
-  return null;
-}
-
-function compileCronSchedule(
-  frequency: "hourly" | "daily" | "weekdays" | "weekly",
-  time: string,
-  weekday: string,
-): string {
-  const [hourPart, minutePart] = time.split(":");
-  const hour = Number(hourPart) || 0;
-  const minute = Number(minutePart) || 0;
-  switch (frequency) {
-    case "hourly":
-      return "0 * * * *";
-    case "daily":
-      return `${minute} ${hour} * * *`;
-    case "weekdays":
-      return `${minute} ${hour} * * 1-5`;
-    case "weekly":
-      return `${minute} ${hour} * * ${weekday}`;
   }
 }
 
@@ -306,15 +261,24 @@ function ScheduleTriggerFields({
   onChange: (config: LoopSchemas.LoopScheduleTriggerConfig) => void;
 }) {
   const parsed = parseCronSchedule(config.cron_expression);
-  const frequency: ScheduleFrequency = config.run_at
+  // A cron this picker didn't write (e.g. from the API or the loop builder)
+  // renders as "Custom"; recompiling it into a picker shape would silently
+  // replace the real schedule.
+  const isCustomCron = !config.run_at && !!config.cron_expression && !parsed;
+  const frequency: ScheduleFrequency | "custom" = config.run_at
     ? "once"
-    : (parsed?.frequency ?? "daily");
-  const time = parsed?.time ?? DEFAULT_TIME;
+    : isCustomCron
+      ? "custom"
+      : (parsed?.frequency ?? "daily");
+  const time = parsed?.time ?? DEFAULT_SCHEDULE_TIME;
   const weekday = parsed?.weekday ?? "1";
   const timezone = config.timezone || localTimezone();
+  const frequencyOptions = isCustomCron
+    ? [CUSTOM_FREQUENCY_OPTION, ...FREQUENCY_OPTIONS]
+    : FREQUENCY_OPTIONS;
 
   const setRecurring = (
-    nextFrequency: "hourly" | "daily" | "weekdays" | "weekly",
+    nextFrequency: RecurringFrequency,
     nextTime: string,
     nextWeekday: string,
   ) => {
@@ -329,7 +293,8 @@ function ScheduleTriggerFields({
   };
 
   const handleFrequencyChange = (value: string) => {
-    const next = value as ScheduleFrequency;
+    const next = value as ScheduleFrequency | "custom";
+    if (next === "custom") return;
     if (next === "once") {
       // The backend rejects run_at values in the past; default an hour out.
       onChange({ run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
@@ -345,7 +310,12 @@ function ScheduleTriggerFields({
       value={time}
       className="h-8 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2 text-[12.5px] text-gray-12"
       onChange={(e) => {
-        if (!e.target.value || frequency === "once" || frequency === "hourly")
+        if (
+          !e.target.value ||
+          frequency === "once" ||
+          frequency === "hourly" ||
+          frequency === "custom"
+        )
           return;
         setRecurring(frequency, e.target.value, weekday);
       }}
@@ -358,12 +328,18 @@ function ScheduleTriggerFields({
         <Box className="min-w-[150px]">
           <SettingsOptionSelect
             value={frequency}
-            options={FREQUENCY_OPTIONS}
+            options={frequencyOptions}
             disabled={disabled}
             ariaLabel="Frequency"
             onValueChange={handleFrequencyChange}
           />
         </Box>
+
+        {frequency === "custom" ? (
+          <Text className="rounded-(--radius-1) border border-border bg-(--gray-2) px-1.5 py-0.5 text-[12px] text-gray-12 [font-family:var(--font-mono)]">
+            {config.cron_expression}
+          </Text>
+        ) : null}
 
         {frequency === "daily" ||
         frequency === "weekdays" ||
