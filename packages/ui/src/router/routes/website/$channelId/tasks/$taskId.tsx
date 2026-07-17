@@ -63,7 +63,6 @@ function ChannelTaskDetailRoute() {
     <div className="flex h-full min-w-0">
       <div className="min-w-0 flex-1">
         <TaskDetail
-          key={task.id}
           task={task}
           channelName={channelName ?? "Channel"}
           channelId={channelId}

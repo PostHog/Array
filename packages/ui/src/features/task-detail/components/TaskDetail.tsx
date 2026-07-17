@@ -99,12 +99,13 @@ export function TaskDetail({
   useBlurOnEscape();
   useWorkspaceEvents(taskId);
 
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const isEditingTitle = editingTaskId === taskId;
   const { renameTask } = useRenameTask();
 
   const handleTitleEditSubmit = useCallback(
     async (newTitle: string) => {
-      setIsEditingTitle(false);
+      setEditingTaskId(null);
 
       try {
         await renameTask({
@@ -120,7 +121,7 @@ export function TaskDetail({
   );
 
   const handleTitleEditCancel = useCallback(() => {
-    setIsEditingTitle(false);
+    setEditingTaskId(null);
   }, []);
   // Inside a channel the thread also gets a "copy link" share affordance.
   // Memoized so the headerContent memo below isn't busted by unrelated renders.
@@ -157,6 +158,7 @@ export function TaskDetail({
             </span>
           }
           leafLabel={task.title}
+          editScopeKey={taskId}
           onRename={handleTitleEditSubmit}
           trailing={trailing}
         />
@@ -179,7 +181,7 @@ export function TaskDetail({
                 <Text
                   truncate
                   className="no-drag min-w-0 font-medium text-[13px]"
-                  onDoubleClick={() => setIsEditingTitle(true)}
+                  onDoubleClick={() => setEditingTaskId(taskId)}
                 >
                   {task.title}
                 </Text>
@@ -197,6 +199,7 @@ export function TaskDetail({
       isEditingTitle,
       workspaceMode,
       effectiveRepoPath,
+      taskId,
       handleTitleEditSubmit,
       handleTitleEditCancel,
     ],
@@ -265,7 +268,7 @@ export function TaskDetail({
   );
 
   return (
-    <Box height="100%" ref={containerRef}>
+    <Box data-task-detail-id={taskId} height="100%" ref={containerRef}>
       <Flex height="100%">
         <Box className={`min-w-0 flex-1 ${isExpanded ? "hidden" : ""}`}>
           <PanelLayout taskId={taskId} task={task} />
