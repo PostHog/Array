@@ -116,7 +116,6 @@ describe("getClaudeModelRecency", () => {
       getClaudeModelRecency("claude-fable-5"),
     );
   });
-
 });
 
 describe("compareModelsForPicker", () => {
