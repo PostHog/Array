@@ -20,16 +20,16 @@ ${
     ? `Here's what I want automated:\n\n${seed}\n`
     : `Start by asking me what I want automated, and offer a couple of concrete ideas.\n`
 }
-Walk me through building it:
+How to build it:
 
-1. Turn what I want into a clear set of loop instructions — the prompt the loop runs on every fire. Draft it and refine it with me.
-2. Ask me the essentials one focused question at a time (use your question tool so I can pick from options), keeping sensible defaults and inferring what you reasonably can rather than over-asking:
-   - When it runs: a schedule (e.g. weekday mornings), on a GitHub event, or only when I trigger it manually.
+1. Call \`loops-list\` first so you don't duplicate an existing loop.
+2. Turn what I want into a clear set of loop instructions (the prompt the loop runs on every fire). Infer what you reasonably can rather than over-asking.
+3. Only ask about a choice you genuinely cannot infer, one focused question at a time, using your question tool so I can pick from options (never a plain-text question). The essentials, with sensible defaults you should assume unless I say otherwise:
+   - When it runs: a schedule (e.g. weekday mornings), on a GitHub event, or manual only.
    - Whether it works on a repository (for code changes and PRs) or is report-only.
    - Whether it may open pull requests, and how I want to hear about runs (in-app, email, or Slack).
    - A short name.
-3. When you have enough, call the PostHog MCP \`loops-review\` tool with the full assembled configuration (the same fields \`loops-create\` takes: name, instructions, runtime_adapter, triggers, behaviors, notifications, and so on). This renders an interactive review card that shows me the loop and gives me a Create button. Make it a personal loop unless I ask otherwise.
-4. Do NOT call \`loops-create\` yourself — the review card's Create button creates the loop once I confirm. After you call \`loops-review\`, just tell me to review the card and create it (or tell you what to change).
+4. As soon as you have a working draft and the essentials, call the PostHog MCP \`loops-review\` tool with the full assembled configuration (the same fields \`loops-create\` takes: name, instructions, runtime_adapter, triggers, behaviors, notifications, and so on). Make it a personal loop unless I ask otherwise.
 
-Use the PostHog MCP loop tools: \`loops-list\` first so you don't duplicate an existing loop, then \`loops-review\` to present the loop for confirmation. Never call \`loops-create\` directly — the review card handles creation.`;
+The \`loops-review\` card IS the review surface: it renders the whole loop for me to read and gives me a Create button. Do NOT review the loop as plain text. Never paste the drafted config into a message and ask "does this look right?", and never just narrate that it's ready and stop. The moment you have enough, call \`loops-review\`. If I ask for changes, call \`loops-review\` again with the updated config. Never call \`loops-create\` yourself: the card's Create button creates the loop once I confirm.`;
 }
