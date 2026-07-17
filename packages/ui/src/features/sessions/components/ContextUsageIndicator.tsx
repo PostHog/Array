@@ -1,4 +1,5 @@
 import {
+  formatCostUsd,
   formatTokensCompact,
   getOverallUsageColor,
 } from "@posthog/ui/features/sessions/contextColors";
@@ -18,12 +19,18 @@ interface ContextUsageIndicatorProps {
 export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
   if (!usage) return null;
 
-  const { used, size, percentage } = usage;
+  const { used, size, percentage, cost } = usage;
   // The context window can be unknown (size 0) — show just the token count
   // rather than a misleading "X/0 · 0%".
   const hasSize = size > 0;
   const strokeDashoffset = CIRCUMFERENCE - (percentage / 100) * CIRCUMFERENCE;
   const color = getOverallUsageColor(percentage);
+  const tokenLabel = hasSize
+    ? `${formatTokensCompact(used)}/${formatTokensCompact(size)} · ${percentage}%`
+    : formatTokensCompact(used);
+  const label = cost
+    ? `${tokenLabel} · ${formatCostUsd(cost.amount)}`
+    : tokenLabel;
 
   return (
     <Popover.Root>
@@ -66,9 +73,7 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
               />
             </svg>
             <Text className="text-[13px] text-muted-foreground tabular-nums">
-              {hasSize
-                ? `${formatTokensCompact(used)}/${formatTokensCompact(size)} · ${percentage}%`
-                : formatTokensCompact(used)}
+              {label}
             </Text>
           </Flex>
         </button>

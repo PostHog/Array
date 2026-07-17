@@ -1,5 +1,6 @@
 import {
   CONTEXT_CATEGORIES,
+  formatCostUsd,
   formatTokensCompact,
   getOverallUsageColor,
 } from "@posthog/ui/features/sessions/contextColors";
@@ -13,7 +14,7 @@ interface ContextBreakdownPopoverProps {
 export function ContextBreakdownPopover({
   usage,
 }: ContextBreakdownPopoverProps) {
-  const { used, size, percentage, breakdown } = usage;
+  const { used, size, percentage, cost, breakdown } = usage;
   const fillColor = getOverallUsageColor(percentage);
   // The context window can be unknown (size 0) — show just the token count
   // rather than a misleading "~X / 0 tokens · 0% full".
@@ -70,6 +71,19 @@ export function ContextBreakdownPopover({
         <Text className="text-(--gray-10) text-[12px]">
           Detailed breakdown available after the first response.
         </Text>
+      )}
+
+      {cost && (
+        <Flex
+          align="center"
+          justify="between"
+          className="border-(--gray-4) border-t pt-2 text-[13px]"
+        >
+          <Text className="text-(--gray-11)">Estimated cost</Text>
+          <Text className="font-medium text-(--gray-12) tabular-nums">
+            {formatCostUsd(cost.amount)}
+          </Text>
+        </Flex>
       )}
     </Flex>
   );
