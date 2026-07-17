@@ -127,6 +127,8 @@ export function ReviewShell({
   const reviewHost = useService<ReviewHost>(REVIEW_HOST);
   const taskId = task.id;
   const listRef = useRef<VListHandle | null>(null);
+  const lastActiveRef = useRef<string | null>(null);
+  const navigationLockUntilRef = useRef(0);
 
   const workerFactory = useCallback(
     () => reviewHost.diffWorkerFactory(),
@@ -215,9 +217,11 @@ export function ReviewShell({
     const viewed =
       currentSignature !== undefined &&
       isFileViewed(viewedRecord[scrollRequest], currentSignature);
+    navigationLockUntilRef.current = Date.now() + 500;
     if (!viewed) onUncollapseFile?.(scrollRequest);
     requestAnimationFrame(() => {
       listRef.current?.scrollToIndex(targetIndex, { align: "start" });
+      lastActiveRef.current = scrollRequest;
       setActiveFilePath(taskId, scrollRequest);
       clearScrollRequest(taskId);
     });
@@ -232,9 +236,10 @@ export function ReviewShell({
     viewedRecord,
   ]);
 
-  const lastActiveRef = useRef<string | null>(null);
   const handleScroll = useCallback(
     (offset: number) => {
+      if (Date.now() < navigationLockUntilRef.current) return;
+      navigationLockUntilRef.current = 0;
       const handle = listRef.current;
       if (!handle) return;
       const index = handle.findItemIndex(offset);
@@ -246,6 +251,10 @@ export function ReviewShell({
     },
     [items, setActiveFilePath, taskId],
   );
+
+  const handleUserScrollIntent = useCallback(() => {
+    navigationLockUntilRef.current = 0;
+  }, []);
 
   const renderItem = useCallback(
     (item: ReviewListItem) => (
@@ -333,6 +342,8 @@ export function ReviewShell({
                   shift={false}
                   style={{ scrollbarGutter: "stable" }}
                   onScroll={handleScroll}
+                  onWheel={handleUserScrollIntent}
+                  onKeyDown={handleUserScrollIntent}
                   data={items}
                 >
                   {renderItem}
