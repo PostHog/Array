@@ -5,32 +5,26 @@ import {
   Globe,
   X,
 } from "@phosphor-icons/react";
+import { useServiceOptional } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
 import { BROWSER_TAB_FLAG } from "@posthog/shared/constants";
+import {
+  BROWSER_VIEW_COMPONENT,
+  type BrowserViewComponent,
+  type BrowserViewHandle,
+  type BrowserViewNavigation,
+} from "@posthog/ui/features/browser/identifiers";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useBrowserEnabled(): boolean {
-  return useFeatureFlag(BROWSER_TAB_FLAG) || import.meta.env.DEV;
-}
-
-// Declared locally so @posthog/ui doesn't depend on electron types.
-interface WebviewElement extends HTMLElement {
-  getURL(): string;
-  loadURL(url: string): Promise<void>;
-  reload(): void;
-  stop(): void;
-  // The webContents.navigationHistory.* deprecation does not apply here: these
-  // are <webview> element methods, still non-deprecated in Electron 42, and the
-  // element exposes no navigationHistory. Revisit only if Electron deprecates
-  // the tag methods themselves (the fix would be a main-process hop, not a
-  // rename).
-  goBack(): void;
-  goForward(): void;
-  canGoBack(): boolean;
-  canGoForward(): boolean;
+  const BrowserView = useServiceOptional<BrowserViewComponent>(
+    BROWSER_VIEW_COMPONENT,
+  );
+  const featureEnabled = useFeatureFlag(BROWSER_TAB_FLAG);
+  return BrowserView !== undefined && featureEnabled;
 }
 
 const DEFAULT_URL = "about:blank";
@@ -64,15 +58,6 @@ export function normalizeAddress(input: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
 }
 
-// Electron <webview> DOM events carry their payload as extra props on Event.
-type WebviewNavigateEvent = Event & { url: string; isMainFrame?: boolean };
-type WebviewTitleEvent = Event & { title: string };
-type WebviewFailLoadEvent = Event & {
-  errorCode: number;
-  errorDescription: string;
-  isMainFrame: boolean;
-};
-
 interface BrowserPanelProps {
   url: string;
   // Debounced settled main-frame url, for hosts that persist location.
@@ -86,7 +71,10 @@ export function BrowserPanel({
   onUrlChange,
   onTitleChange,
 }: BrowserPanelProps) {
-  const webviewRef = useRef<WebviewElement | null>(null);
+  const BrowserView = useServiceOptional<BrowserViewComponent>(
+    BROWSER_VIEW_COMPONENT,
+  );
+  const browserViewRef = useRef<BrowserViewHandle | null>(null);
   // src is set once so re-renders never reload the page; the value comes off
   // disk and must not be trusted as a raw src.
   const initialUrl = useRef(normalizeAddress(url));
@@ -131,64 +119,37 @@ export function BrowserPanel({
     [],
   );
 
-  useEffect(() => {
-    const webview = webviewRef.current;
-    if (!webview) return;
-
-    const onNavigate = (e: Event) => {
-      const ev = e as WebviewNavigateEvent;
-      // Subframe navigations must not hijack the address bar or persisted url.
-      if (ev.isMainFrame === false) return;
-      const next = ev.url ?? webview.getURL();
-      setAddress(next === DEFAULT_URL ? "" : next);
-      setCanGoBack(webview.canGoBack());
-      setCanGoForward(webview.canGoForward());
+  const handleReady = useCallback((handle: BrowserViewHandle | null) => {
+    browserViewRef.current = handle;
+  }, []);
+  const handleNavigate = useCallback(
+    (navigation: BrowserViewNavigation) => {
+      setAddress(navigation.url === DEFAULT_URL ? "" : navigation.url);
+      setCanGoBack(navigation.canGoBack);
+      setCanGoForward(navigation.canGoForward);
       setLoadError(null);
-      persistUrl(next);
-    };
-
-    const onTitle = (e: Event) => {
-      const { title } = e as WebviewTitleEvent;
-      // SPAs rewrite the title constantly; skip the host write when unchanged.
-      if (title && title !== lastLabel.current) {
-        lastLabel.current = title;
-        onTitleChangeRef.current?.(title);
-      }
-    };
-
-    const onFailLoad = (e: Event) => {
-      const ev = e as WebviewFailLoadEvent;
-      // Ignore subframe failures and user-aborted loads (errorCode -3).
-      if (ev.isMainFrame === false || ev.errorCode === -3) return;
-      setLoadError(ev.errorDescription || "Failed to load page");
-    };
-
-    const onStartLoading = () => setIsLoading(true);
-    const onStopLoading = () => setIsLoading(false);
-
-    webview.addEventListener("did-navigate", onNavigate);
-    webview.addEventListener("did-navigate-in-page", onNavigate);
-    webview.addEventListener("page-title-updated", onTitle);
-    webview.addEventListener("did-fail-load", onFailLoad);
-    webview.addEventListener("did-start-loading", onStartLoading);
-    webview.addEventListener("did-stop-loading", onStopLoading);
-
-    return () => {
-      webview.removeEventListener("did-navigate", onNavigate);
-      webview.removeEventListener("did-navigate-in-page", onNavigate);
-      webview.removeEventListener("page-title-updated", onTitle);
-      webview.removeEventListener("did-fail-load", onFailLoad);
-      webview.removeEventListener("did-start-loading", onStartLoading);
-      webview.removeEventListener("did-stop-loading", onStopLoading);
-    };
-  }, [persistUrl]);
+      persistUrl(navigation.url);
+    },
+    [persistUrl],
+  );
+  const handleTitleChange = useCallback((title: string) => {
+    if (title && title !== lastLabel.current) {
+      lastLabel.current = title;
+      onTitleChangeRef.current?.(title);
+    }
+  }, []);
+  const handleLoadError = useCallback((message: string) => {
+    setLoadError(message);
+  }, []);
+  const handleLoadingChange = useCallback((loading: boolean) => {
+    setIsLoading(loading);
+  }, []);
 
   const navigate = useCallback((raw: string) => {
-    const webview = webviewRef.current;
-    if (!webview) return;
+    const browserView = browserViewRef.current;
+    if (!browserView) return;
     setLoadError(null);
-    // Aborted / guard-vetoed loads already surface via did-fail-load.
-    webview.loadURL(normalizeAddress(raw)).catch(() => {});
+    browserView.loadURL(normalizeAddress(raw)).catch(() => {});
   }, []);
 
   const onSubmit = useCallback(
@@ -198,6 +159,8 @@ export function BrowserPanel({
     },
     [address, navigate],
   );
+
+  if (!BrowserView) return null;
 
   return (
     <Flex direction="column" height="100%" className="bg-(--color-background)">
@@ -212,7 +175,7 @@ export function BrowserPanel({
           aria-label="Back"
           data-attr="browser-tab-back"
           disabled={!canGoBack}
-          onClick={() => webviewRef.current?.goBack()}
+          onClick={() => browserViewRef.current?.goBack()}
         >
           <ArrowLeft size={14} />
         </Button>
@@ -221,7 +184,7 @@ export function BrowserPanel({
           aria-label="Forward"
           data-attr="browser-tab-forward"
           disabled={!canGoForward}
-          onClick={() => webviewRef.current?.goForward()}
+          onClick={() => browserViewRef.current?.goForward()}
         >
           <ArrowRight size={14} />
         </Button>
@@ -231,8 +194,8 @@ export function BrowserPanel({
           data-attr="browser-tab-reload"
           onClick={() =>
             isLoading
-              ? webviewRef.current?.stop()
-              : webviewRef.current?.reload()
+              ? browserViewRef.current?.stop()
+              : browserViewRef.current?.reload()
           }
         >
           {isLoading ? <X size={14} /> : <ArrowClockwise size={14} />}
@@ -274,15 +237,13 @@ export function BrowserPanel({
             </Text>
           </Flex>
         )}
-        {/* Shared persisted profile across all browser tabs/tasks is intentional
-            (stay logged in to e.g. GitHub); trade-off: shared cookies/storage.
-            No `allowpopups` — popups are denied and routed to the OS browser by
-            the guest's window-open handler (window.ts). */}
-        <webview
-          ref={webviewRef as React.Ref<HTMLElement>}
-          src={initialUrl.current}
-          partition="persist:browser"
-          style={{ height: "100%", width: "100%" }}
+        <BrowserView
+          initialUrl={initialUrl.current}
+          onReady={handleReady}
+          onNavigate={handleNavigate}
+          onTitleChange={handleTitleChange}
+          onLoadError={handleLoadError}
+          onLoadingChange={handleLoadingChange}
         />
       </Box>
     </Flex>

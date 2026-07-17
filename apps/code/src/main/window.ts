@@ -37,6 +37,7 @@ import {
   isAllowedWebviewNavigation,
   safeProtocol,
 } from "./utils/webview-navigation-guard";
+import { isAllowedWebviewPermission } from "./utils/webview-permission-policy";
 import { setupWindowZoom } from "./zoom";
 
 const log = logger.scope("window");
@@ -125,20 +126,6 @@ export function focusMainWindow(reason: string): void {
   }
 }
 
-const DENIED_WEBVIEW_PERMISSIONS = new Set([
-  "media",
-  "geolocation",
-  "notifications",
-  "midi",
-  "midiSysex",
-  "hid",
-  "serial",
-  "usb",
-  "pointerLock",
-  "idle-detection",
-  "openExternal",
-]);
-
 const hardenedWebviewSessions = new WeakSet<Electron.Session>();
 
 function hardenWebviewSession(session: Electron.Session): void {
@@ -146,10 +133,10 @@ function hardenWebviewSession(session: Electron.Session): void {
   hardenedWebviewSessions.add(session);
 
   session.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(!DENIED_WEBVIEW_PERMISSIONS.has(permission));
+    callback(isAllowedWebviewPermission(permission));
   });
-  session.setPermissionCheckHandler(
-    (_wc, permission) => !DENIED_WEBVIEW_PERMISSIONS.has(permission),
+  session.setPermissionCheckHandler((_wc, permission) =>
+    isAllowedWebviewPermission(permission),
   );
 }
 

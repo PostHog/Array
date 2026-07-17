@@ -30,6 +30,8 @@ describe("isAllowedWebviewNavigation", () => {
     ["https://posthog.com", true],
     ["http://localhost:3000", true],
     ["about:blank", true],
+    ["about:srcdoc", false],
+    ["about:config", false],
     // Blocked schemes fall through to search in the renderer; the guard vetoes.
     ["file:///etc/passwd", false],
     ["chrome://settings", false],

@@ -71,6 +71,10 @@ import {
 } from "@posthog/ui/features/auth/identifiers";
 import { authKeys } from "@posthog/ui/features/auth/useCurrentUser";
 import {
+  BROWSER_VIEW_COMPONENT,
+  type BrowserViewComponent,
+} from "@posthog/ui/features/browser/identifiers";
+import {
   FEATURE_FLAGS,
   type FeatureFlags,
 } from "@posthog/ui/features/feature-flags/identifiers";
@@ -121,6 +125,7 @@ import {
 import { ELEVENLABS_API_KEY_STORE_KEY } from "@posthog/workspace-server/services/speech/identifiers";
 import { container } from "@renderer/di/container";
 import { RendererAuthSideEffects } from "@renderer/platform-adapters/auth-side-effects";
+import { ElectronBrowserView } from "@renderer/platform-adapters/electron-browser-view";
 import { gitCacheKeyProvider } from "@renderer/platform-adapters/git-cache-keys";
 import { RendererHedgehogModeHost } from "@renderer/platform-adapters/hedgehog-mode-host";
 import { setupStore } from "@renderer/platform-adapters/setup";
@@ -445,6 +450,10 @@ container
   .inSingletonScope();
 
 container.bind(SETUP_STORE).toConstantValue(setupStore);
+
+container
+  .bind<BrowserViewComponent>(BROWSER_VIEW_COMPONENT)
+  .toConstantValue(ElectronBrowserView);
 
 container
   .bind(HOST_CAPABILITIES)

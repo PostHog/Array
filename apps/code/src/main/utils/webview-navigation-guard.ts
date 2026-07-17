@@ -1,9 +1,9 @@
 // The authoritative gate for the in-app browser guest. It runs in the main
 // process, where a guest page can't route around it; the renderer's
-// normalizeAddress is only a convenience on top of this. "about:" is allowed
-// solely for about:blank — the src a new blank browser tab mounts with before
+// normalizeAddress is only a convenience on top of this. about:blank is allowed
+// solely as the src a new blank browser tab mounts with before
 // the user enters a url.
-const ALLOWED_WEBVIEW_SCHEMES = new Set(["http:", "https:", "about:"]);
+const ALLOWED_WEBVIEW_SCHEMES = new Set(["http:", "https:"]);
 
 // Blocks the cloud instance-metadata endpoint. On cloud VMs it returns IAM /
 // service-account credentials to any local caller, so a hostile page that
@@ -48,6 +48,7 @@ export function isAllowedWebviewNavigation(url: string): boolean {
   } catch {
     return false;
   }
+  if (parsed.href === "about:blank") return true;
   return (
     ALLOWED_WEBVIEW_SCHEMES.has(parsed.protocol) &&
     !isBlockedWebviewHost(parsed.hostname)

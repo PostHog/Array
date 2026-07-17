@@ -161,6 +161,10 @@ import {
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
 import {
+  BROWSER_VIEW_COMPONENT,
+  type BrowserViewComponent,
+} from "@posthog/ui/features/browser/identifiers";
+import {
   BROWSER_TABS_CLIENT,
   type BrowserTabsClient,
 } from "@posthog/ui/features/browser-tabs/browserTabsClient";
@@ -351,6 +355,7 @@ export interface RendererBindings {
   [FILE_WATCHER_CLIENT]: FileWatcherClient;
   [FEATURE_FLAGS]: FeatureFlags;
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
+  [BROWSER_VIEW_COMPONENT]: BrowserViewComponent;
   [SETUP_STORE]: ISetupStore;
   [HOST_CAPABILITIES]: HostCapabilities;
 
