@@ -181,9 +181,6 @@ export function CreateChannelModal({
         id="context-description"
         autoFocus
         rows={4}
-        // quill's Textarea auto-grows with content (field-sizing) and is
-        // uncapped, so a long description would expand the dialog until the
-        // footer's Create button is pushed off-screen. Cap it and scroll within.
         className="max-h-[40vh] overflow-y-auto"
         value={description}
         placeholder={DESCRIPTION_PLACEHOLDER}
