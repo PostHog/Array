@@ -62,6 +62,15 @@ describe("isCanvasGenerationRunning", () => {
       false,
     ],
     ["run record terminal", run("cloud", "failed"), undefined, false],
+    // Regression: a terminal cloud run must win over a still-connected session
+    // whose cloudStatus lags non-terminal (a workflow canvas's chat panel keeps
+    // one open), else the canvas is stranded on "Generating".
+    [
+      "terminal run wins over lingering session cloudStatus",
+      run("cloud", "completed"),
+      session("connected", "in_progress"),
+      false,
+    ],
   ])("cloud: %s", (_label, latestRun, sess, expected) => {
     expect(
       isCanvasGenerationRunning({
@@ -159,6 +168,14 @@ describe("isCanvasGenerating", () => {
       "cloud cloudStatus completed clears it",
       run("cloud", "in_progress"),
       genSession("connected", { cloudStatus: "completed" }),
+      false,
+    ],
+    // Regression: a terminal cloud run clears "Generating" even while a
+    // workflow canvas's chat session stays connected with a lagging cloudStatus.
+    [
+      "cloud terminal run wins over lingering session",
+      run("cloud", "completed"),
+      genSession("connected", { cloudStatus: "in_progress" }),
       false,
     ],
     // Local: keys off the pending prompt, NOT the connection — a session that

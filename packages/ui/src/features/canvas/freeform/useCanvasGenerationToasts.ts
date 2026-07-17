@@ -1,10 +1,18 @@
+import {
+  isNotification,
+  POSTHOG_NOTIFICATIONS,
+  parseWorkflowBuiltParams,
+  type WorkflowBuiltPayload,
+} from "@posthog/core/sessions/acpNotifications";
 import { useServiceOptional } from "@posthog/di/react";
+import { type AcpMessage, isJsonRpcNotification } from "@posthog/shared";
 import {
   type CanvasTerminalStatus,
   hasCanvasGenerationStarted,
   isCanvasGenerating,
   resolveCanvasGenerationStatus,
 } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
+import { useDashboardMutations } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useCanvasGenerationTrackerStore } from "@posthog/ui/features/canvas/stores/canvasGenerationTrackerStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
 import { useSessionStore } from "@posthog/ui/features/sessions/sessionStore";
@@ -52,6 +60,27 @@ function emitCanvasGenerationNotification(
   // "cancelled" is user-initiated — stay silent.
 }
 
+// The workflow link, if this run emitted one. A workflow build fires a
+// `_posthog/workflow_built` notification (workflow ↔ canvas) once it has both
+// created a workflow and published the canvas; we read it off the session's
+// event stream - the same source SessionResourcesBar folds for resource chips -
+// and persist it onto the dashboard row. Absent for regular canvas generations.
+function findWorkflowBuilt(
+  events: readonly AcpMessage[] | undefined,
+): WorkflowBuiltPayload | null {
+  if (!events) return null;
+  for (const event of events) {
+    const msg = event.message;
+    if (!isJsonRpcNotification(msg)) continue;
+    if (!isNotification(msg.method, POSTHOG_NOTIFICATIONS.WORKFLOW_BUILT)) {
+      continue;
+    }
+    const parsed = parseWorkflowBuiltParams(msg.params);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
 // Watches every canvas generation started in this client (registered in the
 // tracker store) and fires a toast — with a link to the canvas — the moment each
 // one stops generating. Mounted on the persistent channel layout so it keeps
@@ -64,6 +93,17 @@ function emitCanvasGenerationNotification(
 export function useCanvasGenerationToasts(): void {
   const tracked = useCanvasGenerationTrackerStore((s) => s.tracked);
   const untrack = useCanvasGenerationTrackerStore((s) => s.untrack);
+  // The host side of the workflow link primitive: on a build that emitted one we
+  // write the workflow link onto the dashboard row (the agent can't persist it
+  // itself). Captured in a ref so the status-keyed effect isn't re-created by it.
+  const { setWorkflow, renameDashboard } = useDashboardMutations();
+  const setWorkflowRef = useRef(setWorkflow);
+  setWorkflowRef.current = setWorkflow;
+  // Rename the canvas to match the workflow the build created, so the breadcrumb
+  // reflects the real workflow name instead of the placeholder. Kept in a ref
+  // for the same reason as setWorkflow above.
+  const renameDashboardRef = useRef(renameDashboard);
+  renameDashboardRef.current = renameDashboard;
   // The bus is a container singleton (stable identity); capture in a ref so the
   // status-keyed effect reads it without listing it as a dependency. Optional so
   // hosts that don't bind it (web) simply no-op instead of throwing.
@@ -99,11 +139,13 @@ export function useCanvasGenerationToasts(): void {
     return { id, generating, latestRun, session };
   });
 
-  // A stable signature so the transition effect only runs on real changes.
+  // A stable signature so the transition effect only runs on real changes. The
+  // event count is included so the effect also re-runs as notifications stream
+  // in — that's what lets the workflow link land mid-run (below).
   const sig = states
     .map(
       (s) =>
-        `${s.id}:${s.generating ? 1 : 0}:${s.latestRun?.status ?? ""}:${s.session?.status ?? ""}:${s.session?.cloudStatus ?? ""}:${s.session?.isPromptPending ? 1 : 0}`,
+        `${s.id}:${s.generating ? 1 : 0}:${s.latestRun?.status ?? ""}:${s.session?.status ?? ""}:${s.session?.cloudStatus ?? ""}:${s.session?.isPromptPending ? 1 : 0}:${s.session?.events.length ?? 0}`,
     )
     .join("|");
 
@@ -114,10 +156,38 @@ export function useCanvasGenerationToasts(): void {
   const armedRef = useRef<Set<string>>(new Set());
   // Tasks already toasted, so a re-run can never double-fire.
   const toastedRef = useRef<Set<string>>(new Set());
+  // Tasks whose workflow link we've already written, so the mid-run write
+  // below fires exactly once per task.
+  const linkedRef = useRef<Set<string>>(new Set());
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: sig is the trigger; states/store are read fresh (states via ref) when it changes.
   useEffect(() => {
     for (const st of statesRef.current) {
+      // Persist the workflow link + name the moment the build emits it — do
+      // NOT wait for the run to finish. A workflow-build agent keeps running
+      // after it publishes the canvas (it summarises, and the run can linger),
+      // so gating this on completion would leave the canvas untagged and
+      // placeholder-named until the whole run ends.
+      if (!linkedRef.current.has(st.id)) {
+        const link = findWorkflowBuilt(st.session?.events);
+        if (link) {
+          linkedRef.current.add(st.id);
+          void setWorkflowRef
+            .current(link.dashboardId, {
+              workflowId: link.workflowId,
+              workflowStatus: link.workflowStatus,
+              workflowType: link.workflowType,
+            })
+            .catch(() => {});
+          // Name the canvas after the workflow so the breadcrumb reflects it.
+          if (link.workflowName?.trim()) {
+            void renameDashboardRef
+              .current(link.dashboardId, link.workflowName.trim())
+              .catch(() => {});
+          }
+        }
+      }
+
       if (
         hasCanvasGenerationStarted({
           latestRun: st.latestRun,

@@ -285,3 +285,53 @@ describe("DashboardsService.resetHomeCanvas", () => {
     ).toBe("new-1");
   });
 });
+
+describe("DashboardsService.setWorkflow", () => {
+  it("merges the workflow link into meta and stamps the workflow templateId", async () => {
+    const { fs, entries } = statefulFs({
+      wf1: {
+        id: "wf1",
+        path: "marketing/My workflow canvas",
+        type: "dashboard",
+        meta: {
+          channelId: "chan-1",
+          templateId: "freeform",
+          code: "export default () => null;",
+          versions: [{ id: "v1", code: "x", createdAt: 1 }],
+          currentVersionId: "v1",
+          generationTaskId: "task-9",
+        },
+      },
+    });
+    const service = new DashboardsService(fs, {} as never);
+
+    const record = await service.setWorkflow({
+      id: "wf1",
+      workflow: {
+        workflowId: "hf-123",
+        workflowType: "alert",
+        workflowStatus: "draft",
+      },
+    });
+
+    // The link is written onto the record + meta.
+    expect(record.workflow).toEqual({
+      workflowId: "hf-123",
+      workflowType: "alert",
+      workflowStatus: "draft",
+    });
+    const meta = entries.wf1?.meta as Record<string, unknown>;
+    expect(meta.workflow).toEqual({
+      workflowId: "hf-123",
+      workflowType: "alert",
+      workflowStatus: "draft",
+    });
+    // The row is retagged as a workflow canvas (drives the lightning icon and
+    // edit-time prompt resolution) ...
+    expect(meta.templateId).toBe("workflow");
+    // ... while existing canvas state is preserved (merge, not clobber).
+    expect(meta.code).toBe("export default () => null;");
+    expect(meta.currentVersionId).toBe("v1");
+    expect(meta.generationTaskId).toBe("task-9");
+  });
+});

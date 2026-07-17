@@ -1,3 +1,4 @@
+import { WORKFLOW_TEMPLATE_ID } from "@posthog/core/canvas/freeformSchemas";
 import { FreeformCanvasView } from "@posthog/ui/features/canvas/freeform/FreeformCanvasView";
 import { useDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useIsDashboardEditing } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
@@ -27,5 +28,13 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
     });
   }, [dashboard, threadId, syncFromRecord]);
 
-  return <FreeformCanvasView threadId={threadId} interactive={editing} />;
+  // Workflow canvases always open with the agent chat on the right so users
+  // can ask about the workflow or request changes — and so a build whose
+  // metrics canvas hasn't published yet lands on the composer, not a dead-end
+  // "this canvas is empty" view. Regular canvases keep the view-first default.
+  const isWorkflowCanvas =
+    !!dashboard?.workflow || dashboard?.templateId === WORKFLOW_TEMPLATE_ID;
+  const interactive = editing || isWorkflowCanvas;
+
+  return <FreeformCanvasView threadId={threadId} interactive={interactive} />;
 }

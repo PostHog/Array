@@ -5,13 +5,18 @@ import type {
   DashboardFileMeta,
   DashboardRecord,
   DashboardSummary,
+  WorkflowLink,
 } from "./dashboardSchemas";
 import {
   DESKTOP_FS_CLIENT,
   type DesktopFsClient,
   type FsEntryBase,
 } from "./desktopFsClient";
-import { FREEFORM_TEMPLATE_ID, type FreeformVersion } from "./freeformSchemas";
+import {
+  FREEFORM_TEMPLATE_ID,
+  type FreeformVersion,
+  WORKFLOW_TEMPLATE_ID,
+} from "./freeformSchemas";
 import { fetchCurrentUser } from "./posthogApi";
 
 // Desktop file-system "type" tag for a dashboard entry. Channels are `folder`
@@ -92,6 +97,7 @@ export class DashboardsService {
           code,
           generationTaskId,
           pinnedAt,
+          workflow,
         }) => ({
           id,
           channelId: cid,
@@ -102,6 +108,7 @@ export class DashboardsService {
           code,
           generationTaskId,
           pinnedAt,
+          workflow,
         }),
       );
   }
@@ -199,6 +206,33 @@ export class DashboardsService {
     if (!res.ok) {
       throw new Error(`Failed to set generation task (${res.status})`);
     }
+    return toRecord((await res.json()) as FsEntry);
+  }
+
+  // Attach a workflow to a canvas, making it a workflow canvas. Merges the link
+  // into the row's meta like the other writers so it never clobbers
+  // code/versions, and stamps `templateId` so the artifact list / icon / edit
+  // prompts recognize the canvas without inspecting the link. This is the host
+  // side of the workflow link primitive: the agent builds the workflow +
+  // publishes the canvas, and the host writes the link here (the agent has no
+  // MCP tool to persist it itself - PRD §6.3).
+  async setWorkflow(input: {
+    id: string;
+    workflow: WorkflowLink;
+  }): Promise<DashboardRecord> {
+    const entry = await this.getEntry(input.id);
+    const prevMeta = entry?.meta ?? {};
+    const meta: DashboardFileMeta = {
+      ...prevMeta,
+      templateId: WORKFLOW_TEMPLATE_ID,
+      workflow: input.workflow,
+    };
+    const res = await this.fs.fetch(`${encodeURIComponent(input.id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meta }),
+    });
+    if (!res.ok) throw new Error(`Failed to set workflow (${res.status})`);
     return toRecord((await res.json()) as FsEntry);
   }
 
@@ -796,6 +830,7 @@ function toRecord(entry: FsEntry): DashboardRecord {
     createdAt,
     updatedAt: meta.updatedAt ?? createdAt,
     pinnedAt: meta.pinnedAt,
+    workflow: meta.workflow,
   };
 }
 

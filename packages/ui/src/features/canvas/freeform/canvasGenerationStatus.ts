@@ -43,6 +43,11 @@ export function isCanvasGenerationRunning({
   if (genTaskLoading) return true;
 
   if (latestRun?.environment === "cloud") {
+    // A terminal run record means the build finished — even if a live session is
+    // still connected (e.g. a workflow canvas's chat panel keeps one open),
+    // whose non-terminal cloudStatus would otherwise pin the canvas on
+    // "Generating".
+    if (isTerminalStatus(latestRun?.status)) return false;
     const cloudStatus = session?.cloudStatus ?? latestRun.status;
     return !isTerminalStatus(cloudStatus);
   }
@@ -69,6 +74,10 @@ export function isCanvasGenerating({
   if (genTaskLoading) return true;
 
   if (latestRun?.environment === "cloud") {
+    // A terminal run record wins over a lingering live session (see
+    // isCanvasGenerationRunning) so a connected chat panel can't keep the
+    // "Generating" indicator spinning after the build has finished.
+    if (isTerminalStatus(latestRun?.status)) return false;
     const cloudStatus = session?.cloudStatus ?? latestRun.status ?? null;
     return !isTerminalStatus(cloudStatus);
   }

@@ -36,6 +36,7 @@ import {
 } from "./permission-options";
 import {
   extractPostHogSubTool,
+  isPostHogAlwaysGatedSubTool,
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
 } from "./posthog-exec-gate";
@@ -585,39 +586,63 @@ async function handleMcpApprovalFlow(
 async function handlePostHogExecApprovalFlow(
   context: ToolHandlerContext,
   subTool: string,
+  // Go-live tools (enabling a workflow, dispatching a batch, scheduling) send to
+  // real people, so the card omits "always allow" - going live is an explicit,
+  // per-run human decision that must never be persisted away.
+  opts?: { goLive?: boolean },
 ): Promise<ToolPermissionResult> {
   const { toolName, toolInput, toolUseID, sessionId, session } = context;
+  const goLive = opts?.goLive ?? false;
 
   const response = await requestPermissionFromClient(context, {
-    options: [
-      { kind: "allow_once", name: "Yes", optionId: "allow" },
-      {
-        kind: "allow_always",
-        name: "Yes, always allow",
-        optionId: "allow_always",
-      },
-      {
-        kind: "reject_once",
-        name: "Type here to tell the agent what to do differently",
-        optionId: "reject",
-        _meta: { customInput: true },
-      },
-    ],
+    options: goLive
+      ? [
+          { kind: "allow_once", name: "Approve & publish", optionId: "allow" },
+          {
+            kind: "reject_once",
+            name: "Type here to tell the agent what to do differently",
+            optionId: "reject",
+            _meta: { customInput: true },
+          },
+        ]
+      : [
+          { kind: "allow_once", name: "Yes", optionId: "allow" },
+          {
+            kind: "allow_always",
+            name: "Yes, always allow",
+            optionId: "allow_always",
+          },
+          {
+            kind: "reject_once",
+            name: "Type here to tell the agent what to do differently",
+            optionId: "reject",
+            _meta: { customInput: true },
+          },
+        ],
     sessionId,
     toolCall: {
       toolCallId: toolUseID,
-      title: `The agent wants to run \`${subTool}\` on PostHog`,
+      title: goLive
+        ? `The agent wants to take this workflow live (\`${subTool}\`)`
+        : `The agent wants to run \`${subTool}\` on PostHog`,
       kind: "other",
       content: [
         {
           type: "content" as const,
           content: text(
-            "This will modify live PostHog data. Approve to run this sub-tool.",
+            goLive
+              ? "This will make the workflow live and can send to real people. Approve only if you're ready to publish."
+              : "This will modify live PostHog data. Approve to run this sub-tool.",
           ),
         },
       ],
       rawInput: { ...(toolInput as Record<string, unknown>), toolName },
-      _meta: { claudeCode: { toolName } },
+      // `posthog.alwaysGated` marks the request as a go-live approval so the
+      // cloud relay can park it (never auto-approve) when no client is
+      // reachable - see the agent-server cloud client's requestPermission.
+      _meta: goLive
+        ? { claudeCode: { toolName }, posthog: { alwaysGated: true } }
+        : { claudeCode: { toolName } },
     },
   });
 
@@ -630,7 +655,7 @@ async function handlePostHogExecApprovalFlow(
     (response.outcome.optionId === "allow" ||
       response.outcome.optionId === "allow_always")
   ) {
-    if (response.outcome.optionId === "allow_always") {
+    if (response.outcome.optionId === "allow_always" && !goLive) {
       try {
         await session.settingsManager.addPostHogExecApproval(subTool);
       } catch (error) {
@@ -777,6 +802,16 @@ export async function canUseTool(
 
     if (isPostHogExecTool(toolName)) {
       const subTool = extractPostHogSubTool(toolInput);
+      // Go-live tools (enable / run-batch / schedule) always raise the
+      // approve-&-publish card - BEFORE the auto-mode short-circuit and the
+      // persisted-approval check below, so neither auto mode nor a previously
+      // saved "always allow" can ever take a workflow live without an explicit
+      // human OK.
+      if (subTool && isPostHogAlwaysGatedSubTool(subTool)) {
+        return handlePostHogExecApprovalFlow(context, subTool, {
+          goLive: true,
+        });
+      }
       if (subTool && isPostHogDestructiveSubTool(subTool)) {
         if (
           session.permissionMode === "auto" ||

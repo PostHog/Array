@@ -1478,6 +1478,74 @@ describe("AgentServer HTTP Mode", () => {
       expect(relaySpy).not.toHaveBeenCalled();
       expect(result.outcome).toEqual({ outcome: "cancelled" });
     });
+
+    // Workflow go-live approvals (`_meta.posthog.alwaysGated`, raised for
+    // workflows-enable / run-batch / schedule) must reach a human: relay when a
+    // client can answer, park (cancel) otherwise - never fall through to the
+    // auto-approve path, which would silently take the workflow live.
+    function goLivePermissionRequest() {
+      return {
+        options: [
+          { optionId: "allow", kind: "allow_once", name: "Approve & publish" },
+          { optionId: "reject", kind: "reject_once", name: "No" },
+        ],
+        toolCall: {
+          kind: "other",
+          _meta: {
+            claudeCode: { toolName: "mcp__posthog__exec" },
+            posthog: { alwaysGated: true },
+          },
+          rawInput: { command: "call workflows-enable {}" },
+        },
+      };
+    }
+
+    it("relays a go-live approval when a client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(goLivePermissionRequest());
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+      expect(result).toEqual({
+        outcome: { outcome: "selected", optionId: "allow" },
+      });
+    });
+
+    it("parks a go-live approval instead of auto-approving when no client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(goLivePermissionRequest());
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+      expect(result._meta?.message).toContain("explicit human approval");
+    });
+
+    it("parks a go-live approval in background mode even when a client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient({
+        ...basePayload,
+        mode: "background",
+      });
+      const result = await requestPermission(goLivePermissionRequest());
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
   });
 
   describe("refresh_session relay re-append", () => {

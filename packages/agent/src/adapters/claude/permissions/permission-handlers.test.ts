@@ -455,3 +455,113 @@ describe("AskUserQuestion cancelled outcomes", () => {
     await expect(canUseTool(context)).rejects.toThrow("Tool use aborted");
   });
 });
+
+describe("canUseTool workflow go-live gate", () => {
+  function createGoLiveContext(
+    command: string,
+    options: {
+      permissionMode?: string;
+      hasPersistedApproval?: boolean;
+      responseOptionId?: string;
+    } = {},
+  ) {
+    const addPostHogExecApproval = vi.fn().mockResolvedValue(undefined);
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: { command },
+      client: createClient({
+        outcome: {
+          outcome: "selected",
+          optionId: options.responseOptionId ?? "allow",
+        },
+      }),
+      session: {
+        permissionMode: options.permissionMode ?? "auto",
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi
+            .fn()
+            .mockReturnValue(options.hasPersistedApproval ?? false),
+          addPostHogExecApproval,
+        },
+      },
+    });
+    return { context, addPostHogExecApproval };
+  }
+
+  it.each([
+    "workflows-enable",
+    "workflows-run-batch",
+    "workflows-schedule-create",
+    "workflows-update-schedule",
+  ])(
+    "raises the approve-&-publish card for %s even in auto mode",
+    async (subTool) => {
+      const { context } = createGoLiveContext(`call --json ${subTool} {}`);
+
+      const result = await canUseTool(context);
+
+      expect(result.behavior).toBe("allow");
+      expect(context.client.requestPermission).toHaveBeenCalledTimes(1);
+      const request = (
+        context.client.requestPermission as ReturnType<typeof vi.fn>
+      ).mock.calls[0][0];
+      expect(request.toolCall.title).toContain("take this workflow live");
+      expect(request.toolCall._meta.posthog.alwaysGated).toBe(true);
+      expect(request.options.map((o: { kind: string }) => o.kind)).toEqual([
+        "allow_once",
+        "reject_once",
+      ]);
+      expect(
+        request.options.find((o: { kind: string }) => o.kind === "allow_once")
+          ?.name,
+      ).toBe("Approve & publish");
+    },
+  );
+
+  it("prompts even when a persisted always-allow covers the sub-tool", async () => {
+    // workflows-update-schedule matches the destructive regex too; a previously
+    // persisted "always allow" for it must not bypass the go-live gate.
+    const { context } = createGoLiveContext(
+      "call --json workflows-update-schedule {}",
+      { hasPersistedApproval: true },
+    );
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).toHaveBeenCalledTimes(1);
+  });
+
+  it("never persists a go-live approval", async () => {
+    // Even if a client answered with allow_always (the go-live card doesn't
+    // offer it, but a stale/hostile client could), nothing may be persisted.
+    const { context, addPostHogExecApproval } = createGoLiveContext(
+      "call --json workflows-enable {}",
+      { responseOptionId: "allow_always" },
+    );
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(addPostHogExecApproval).not.toHaveBeenCalled();
+  });
+
+  it("still auto-allows plain destructive sub-tools in auto mode (contrast)", async () => {
+    const { context } = createGoLiveContext("call --json experiment-update {}");
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it("denies when the user rejects going live", async () => {
+    const { context } = createGoLiveContext("call --json workflows-enable {}", {
+      responseOptionId: "reject",
+    });
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("deny");
+  });
+});

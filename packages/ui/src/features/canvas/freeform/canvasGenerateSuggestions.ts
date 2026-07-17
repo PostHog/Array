@@ -1,16 +1,20 @@
 import {
   ArrowsClockwise,
-  ChartBar,
+  BellRinging,
   ChartLine,
   CurrencyDollar,
+  EnvelopeSimple,
   FunnelSimple,
+  Lightning,
   UsersThree,
 } from "@phosphor-icons/react";
 import type { SuggestedPrompt } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 
 // Starter prompts shown below the centered composer on an empty freeform
 // canvas. Clicking a card drops its `prompt` into the composer, ready to
-// edit/send. No `mode` — canvas generation always runs the canvas-build flow.
+// edit/send. No `mode` — the unified generation prompt decides whether a
+// request is a plain canvas or a workflow build, so workflow ideas are just
+// prompts like the rest.
 export const CANVAS_GENERATE_SUGGESTIONS: SuggestedPrompt[] = [
   {
     label: "Weekly active users",
@@ -37,12 +41,28 @@ export const CANVAS_GENERATE_SUGGESTIONS: SuggestedPrompt[] = [
       "Build a canvas showing revenue trends over time broken down by plan, calling out the fastest-growing and shrinking segments.",
   },
   {
-    label: "Top events",
-    description: "The most common events over the last 30 days",
-    icon: ChartBar,
+    label: "Slack alert on an event",
+    description: "Post to Slack whenever a chosen event fires",
+    icon: BellRinging,
     color: "amber",
     prompt:
-      "Build a breakdown of the most common events over the last 30 days, ranked by volume, with a short note on what stands out.",
+      "Build a workflow that posts a Slack message whenever a specific event fires, including the key event properties in the message.\n\nEvent to watch: \nSlack channel: ",
+  },
+  {
+    label: "Welcome email after signup",
+    description: "Send new signups a welcome email sequence",
+    icon: EnvelopeSimple,
+    color: "blue",
+    prompt:
+      "Build a workflow that sends a welcome email to new signups, with a follow-up a few days later if they haven't come back.",
+  },
+  {
+    label: "Track an existing workflow",
+    description: "A metrics board for a workflow you already have",
+    icon: Lightning,
+    color: "violet",
+    prompt:
+      "Build a metrics dashboard tracking my existing workflow. Find it and link this canvas to it - don't create a new one.\n\nWorkflow name: ",
   },
   {
     label: "Retention cohorts",

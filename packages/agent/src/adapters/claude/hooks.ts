@@ -11,6 +11,7 @@ import { gitSubcommand } from "./git-command";
 import { neutralizeUnprocessableImages } from "./image-sanitization";
 import {
   extractPostHogSubTool,
+  isPostHogAlwaysGatedSubTool,
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
 } from "./permissions/posthog-exec-gate";
@@ -51,6 +52,66 @@ function extractTextFromToolResponse(response: unknown): string | null {
     }
     if (typeof maybe.text === "string") return maybe.text;
     if (maybe.content) return extractTextFromToolResponse(maybe.content);
+  }
+  return null;
+}
+
+// Parse the first JSON object embedded in a string (e.g. the `{...}` arg of a
+// PostHog `call --json <tool> {...}` command, or a JSON tool result). Returns
+// null when there's no parseable object.
+function parseEmbeddedJsonObject(text: string): Record<string, unknown> | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  try {
+    const parsed = JSON.parse(text.slice(start));
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// The `id` (dashboard id) a workflow build's canvas publish targets, read from
+// the `desktop-file-system-canvas-partial-update` command's JSON arg.
+function parseCanvasPublishDashboardId(toolInput: unknown): string | null {
+  const command = (toolInput as { command?: unknown })?.command;
+  if (typeof command !== "string") return null;
+  const arg = parseEmbeddedJsonObject(command);
+  return arg && typeof arg.id === "string" ? arg.id : null;
+}
+
+// The workflow id + status from a `workflows-create` result. The result JSON may
+// be the workflow itself or wrapped, so look under common envelopes too. Best
+// effort - returns null if no workflow id is present.
+function parseWorkflowFromResponse(response: unknown): {
+  workflowId: string;
+  workflowStatus?: string;
+  workflowName?: string;
+} | null {
+  const text = extractTextFromToolResponse(response);
+  if (!text) return null;
+  const root = parseEmbeddedJsonObject(text);
+  if (!root) return null;
+  for (const candidate of [
+    root,
+    root.workflow,
+    root.result,
+    root.data,
+  ] as Record<string, unknown>[]) {
+    if (candidate && typeof candidate === "object") {
+      const id = (candidate as { id?: unknown }).id;
+      if (typeof id === "string" && id) {
+        const status = (candidate as { status?: unknown }).status;
+        const name = (candidate as { name?: unknown }).name;
+        return {
+          workflowId: id,
+          workflowStatus: typeof status === "string" ? status : undefined,
+          workflowName:
+            typeof name === "string" && name.trim() ? name : undefined,
+        };
+      }
+    }
   }
   return null;
 }
@@ -198,19 +259,39 @@ export const createTaskHook =
 
 export type OnModeChange = (mode: CodeExecutionMode) => Promise<void>;
 
+// The link a workflow build forms: the workflow (from a workflows-create
+// result) tracked by the canvas it publishes (dashboardId from the publish call).
+export interface WorkflowBuiltSignal {
+  dashboardId: string;
+  workflowId: string;
+  workflowStatus?: string;
+  workflowName?: string;
+}
+
 interface CreatePostToolUseHookParams {
   onModeChange?: OnModeChange;
   /** Called after a PostHog MCP `call` exec executes, with the sub-tool name
    *  and the raw command (the command embeds the SQL for execute-sql). */
   onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
+  /** Called once a workflow build has both created a workflow and published
+   *  its canvas - the host then writes the link onto the dashboard row. */
+  onWorkflowBuilt?: (signal: WorkflowBuiltSignal) => void;
 }
 
-export const createPostToolUseHook =
-  ({
-    onModeChange,
-    onPostHogResourceUsed,
-  }: CreatePostToolUseHookParams): HookCallback =>
-  async (
+export const createPostToolUseHook = ({
+  onModeChange,
+  onPostHogResourceUsed,
+  onWorkflowBuilt,
+}: CreatePostToolUseHookParams): HookCallback => {
+  // Session-scoped accumulation: the workflow is created before the canvas is
+  // published, so remember the last workflow this run created and fire the
+  // link the moment the canvas publish (which carries the dashboardId) lands.
+  let pendingWorkflow: {
+    workflowId: string;
+    workflowStatus?: string;
+    workflowName?: string;
+  } | null = null;
+  return async (
     input: HookInput,
     toolUseID: string | undefined,
   ): Promise<{ continue: boolean }> => {
@@ -235,6 +316,28 @@ export const createPostToolUseHook =
         }
       }
 
+      // Observe a workflow build (deterministic, no model cooperation): the
+      // workflow this run last created OR fetched is the one the canvas tracks;
+      // the subsequent `desktop-file-system-canvas-partial-update` carries the
+      // dashboard it publishes to. Pair them into the link the host persists.
+      // Capturing `workflows-get` (not just `workflows-create`) is what lets a
+      // build attach a canvas to an EXISTING workflow, not only a new one.
+      if (onWorkflowBuilt && isPostHogExecTool(toolName)) {
+        const subTool = extractPostHogSubTool(input.tool_input);
+        if (subTool === "workflows-create" || subTool === "workflows-get") {
+          const workflow = parseWorkflowFromResponse(input.tool_response);
+          if (workflow) pendingWorkflow = workflow;
+        } else if (
+          subTool === "desktop-file-system-canvas-partial-update" &&
+          pendingWorkflow
+        ) {
+          const dashboardId = parseCanvasPublishDashboardId(input.tool_input);
+          if (dashboardId) {
+            onWorkflowBuilt({ dashboardId, ...pendingWorkflow });
+          }
+        }
+      }
+
       if (toolUseID) {
         const onPostToolUseHook =
           toolUseCallbacks[toolUseID]?.onPostToolUseHook;
@@ -250,6 +353,7 @@ export const createPostToolUseHook =
     }
     return { continue: true };
   };
+};
 
 /**
  * Rewrites Agent tool calls targeting built-in subagent types to use our custom
@@ -407,13 +511,19 @@ export const createPreToolUseHook =
     // so the SDK invokes canUseTool.
     if (permissionCheck.decision === "allow" && isPostHogExecTool(toolName)) {
       const subTool = extractPostHogSubTool(toolInput);
-      if (subTool && isPostHogDestructiveSubTool(subTool)) {
+      // Force "ask" (→ canUseTool) for destructive sub-tools AND for go-live
+      // workflow tools, so a settings allow-rule can't skip either gate.
+      if (
+        subTool &&
+        (isPostHogDestructiveSubTool(subTool) ||
+          isPostHogAlwaysGatedSubTool(subTool))
+      ) {
         return {
           continue: true,
           hookSpecificOutput: {
             hookEventName: "PreToolUse" as const,
             permissionDecision: "ask" as const,
-            permissionDecisionReason: `Destructive PostHog sub-tool '${subTool}' requires explicit approval`,
+            permissionDecisionReason: `PostHog sub-tool '${subTool}' requires explicit approval`,
           },
         };
       }

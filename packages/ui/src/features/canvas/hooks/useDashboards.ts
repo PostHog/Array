@@ -1,6 +1,7 @@
 import type {
   DashboardRecord,
   DashboardSummary,
+  WorkflowLink,
 } from "@posthog/core/canvas/dashboardSchemas";
 import type { FreeformVersion } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
@@ -103,6 +104,9 @@ export function useDashboardMutations() {
   const setPinned = useMutation(
     trpc.dashboards.setPinned.mutationOptions({ onSuccess: invalidate }),
   );
+  const setWorkflow = useMutation(
+    trpc.dashboards.setWorkflow.mutationOptions({ onSuccess: invalidate }),
+  );
   const ensureHome = useMutation(
     trpc.dashboards.ensureHomeCanvas.mutationOptions({
       onSuccess: () => {
@@ -130,6 +134,10 @@ export function useDashboardMutations() {
     // pin shows in the channel's Pinned menu for every member.
     setPinned: (id: string, pinned: boolean) =>
       setPinned.mutateAsync({ id, pinned }),
+    // Attach a workflow to a canvas (the workflow link primitive). Written when
+    // a build links one so the lightning icon + status badge light up.
+    setWorkflow: (id: string, workflow: WorkflowLink) =>
+      setWorkflow.mutateAsync({ id, workflow }),
     // Ensure a channel has its home canvas (creating + seeding it if absent).
     // Idempotent server-side; returns the home canvas record.
     ensureHomeCanvas: (channelId: string) =>

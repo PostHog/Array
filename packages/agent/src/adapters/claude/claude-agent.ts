@@ -96,7 +96,7 @@ import {
   type TaskState,
   taskStateToPlanEntries,
 } from "./conversion/task-state";
-import type { EnrichedReadCache } from "./hooks";
+import type { EnrichedReadCache, WorkflowBuiltSignal } from "./hooks";
 import { createLocalToolsMcpServer } from "./mcp/local-tools";
 import {
   clearMcpToolMetadataCache,
@@ -1975,6 +1975,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       settingsManager,
       onModeChange: this.createOnModeChange(),
       onPostHogResourceUsed: this.createOnPostHogResourceUsed(),
+      onWorkflowBuilt: this.createOnWorkflowBuilt(),
       onProcessSpawned: this.options?.onProcessSpawned,
       onProcessExited: this.options?.onProcessExited,
       effort,
@@ -2274,6 +2275,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.recordSessionResources(
         classifyPostHogExecCall(subTool, commandText),
       );
+    };
+  }
+
+  /** Emits the workflow link (workflow ↔ canvas) the moment a build forms it,
+   *  so the host can persist it onto the dashboard row (the agent has no MCP
+   *  tool to write it itself). Deterministic - derived from the build's tool
+   *  calls, no model cooperation required. */
+  private createOnWorkflowBuilt() {
+    return (signal: WorkflowBuiltSignal) => {
+      void this.client.extNotification(POSTHOG_NOTIFICATIONS.WORKFLOW_BUILT, {
+        sessionId: this.sessionId,
+        ...signal,
+      });
     };
   }
 

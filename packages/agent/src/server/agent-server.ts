@@ -3694,6 +3694,34 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           }
         }
 
+        // Always-gated approvals (workflow go-live: enable / run-batch /
+        // schedule) make an agent-built workflow live and can send to real
+        // people. The permission handler marks them with
+        // `_meta.posthog.alwaysGated`; they must reach a human - relay when a
+        // client can answer, otherwise PARK (cancel with guidance) rather than
+        // fall through to the auto-approve below, which would silently take
+        // the workflow live with nobody watching.
+        {
+          const alwaysGated =
+            (params.toolCall?._meta as { posthog?: { alwaysGated?: unknown } })
+              ?.posthog?.alwaysGated === true;
+          if (alwaysGated) {
+            if (mode !== "background" && this.hasReachableClient()) {
+              return this.relayPermissionToClient(params);
+            }
+            return {
+              outcome: { outcome: "cancelled" as const },
+              _meta: {
+                message:
+                  "Taking a workflow live requires explicit human approval, " +
+                  "but no user is available to approve it. Do NOT retry and do " +
+                  "NOT enable or dispatch the workflow; summarise what is ready " +
+                  "and end your turn so the user can approve when they are back.",
+              },
+            };
+          }
+        }
+
         // Relay permission requests to the connected client when:
         // - Plan approvals: always relay because they gate autonomy changes
         //   that require human confirmation (buffered until desktop connects)

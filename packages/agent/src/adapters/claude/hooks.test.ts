@@ -10,12 +10,14 @@ vi.mock("../../enrichment/file-enricher", () => ({
 import { Logger } from "../../utils/logger";
 import type { TaskState } from "./conversion/task-state";
 import {
+  createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
   createReadImageGuardHook,
   createSignedCommitGuardHook,
   createTaskHook,
   type EnrichedReadCache,
+  type WorkflowBuiltSignal,
 } from "./hooks";
 import type {
   PermissionCheckResult,
@@ -692,5 +694,107 @@ describe("createTaskHook", () => {
       { signal: new AbortController().signal },
     );
     expect(state.get("t1")?.subject).toBe("Fix bug");
+  });
+});
+
+describe("createPostToolUseHook workflow link", () => {
+  function execInput(command: string, tool_response?: unknown): HookInput {
+    return {
+      hook_event_name: "PostToolUse",
+      tool_name: "mcp__posthog__exec",
+      tool_input: { command },
+      tool_response,
+    } as unknown as HookInput;
+  }
+
+  test("pairs a workflows-create result with the canvas publish it precedes", async () => {
+    const signals: WorkflowBuiltSignal[] = [];
+    const hook = createPostToolUseHook({
+      onWorkflowBuilt: (s) => signals.push(s),
+    });
+
+    await hook(
+      execInput(
+        "call --json workflows-create {}",
+        JSON.stringify({
+          id: "wf-42",
+          status: "draft",
+          name: "Welcome sequence",
+        }),
+      ),
+      "tu1",
+      { signal: new AbortController().signal },
+    );
+    await hook(
+      execInput(
+        'call --json desktop-file-system-canvas-partial-update {"id":"dash-7","code":"export default () => null;"}',
+      ),
+      "tu2",
+      { signal: new AbortController().signal },
+    );
+
+    expect(signals).toEqual([
+      {
+        dashboardId: "dash-7",
+        workflowId: "wf-42",
+        workflowStatus: "draft",
+        workflowName: "Welcome sequence",
+      },
+    ]);
+  });
+
+  test("links an existing workflow fetched with workflows-get", async () => {
+    const signals: WorkflowBuiltSignal[] = [];
+    const hook = createPostToolUseHook({
+      onWorkflowBuilt: (s) => signals.push(s),
+    });
+
+    // Attach-existing flow: no workflows-create, just a workflows-get on the
+    // target, then the canvas publish.
+    await hook(
+      execInput(
+        "call --json workflows-get {}",
+        JSON.stringify({
+          id: "wf-existing",
+          status: "active",
+          name: "Welcome sequence",
+        }),
+      ),
+      "tu1",
+      { signal: new AbortController().signal },
+    );
+    await hook(
+      execInput(
+        'call --json desktop-file-system-canvas-partial-update {"id":"dash-9","code":"x"}',
+      ),
+      "tu2",
+      { signal: new AbortController().signal },
+    );
+
+    expect(signals).toEqual([
+      {
+        dashboardId: "dash-9",
+        workflowId: "wf-existing",
+        workflowStatus: "active",
+        workflowName: "Welcome sequence",
+      },
+    ]);
+  });
+
+  test("does not fire on a canvas publish with no workflow created first", async () => {
+    const signals: WorkflowBuiltSignal[] = [];
+    const hook = createPostToolUseHook({
+      onWorkflowBuilt: (s) => signals.push(s),
+    });
+
+    await hook(
+      execInput(
+        'call --json desktop-file-system-canvas-partial-update {"id":"dash-7","code":"x"}',
+      ),
+      "tu1",
+      { signal: new AbortController().signal },
+    );
+
+    expect(signals).toEqual([]);
   });
 });

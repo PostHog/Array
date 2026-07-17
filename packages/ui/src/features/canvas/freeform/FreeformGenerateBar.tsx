@@ -31,6 +31,12 @@ export const FreeformGenerateBar = forwardRef<
     // Keys the editor's draft/command state; distinct per canvas.
     sessionId: string;
     onStarted?: (taskId: string) => void;
+    // Fired the instant the user submits, before the task is created (model
+    // resolution + createTask take a few seconds). Lets the view flip to the
+    // generating screen immediately instead of sitting on the composer.
+    onSubmitStart?: () => void;
+    // Fired if that submit failed to create a task, so the view can revert.
+    onSubmitError?: () => void;
   }
 >(function FreeformGenerateBar(
   {
@@ -42,6 +48,8 @@ export const FreeformGenerateBar = forwardRef<
     currentCode,
     sessionId,
     onStarted,
+    onSubmitStart,
+    onSubmitError,
   },
   ref,
 ) {
@@ -64,6 +72,7 @@ export const FreeformGenerateBar = forwardRef<
   const run = async (text: string) => {
     const instruction = text.trim();
     if (!instruction) return;
+    onSubmitStart?.();
     const taskId = await generate({
       dashboardId,
       name,
@@ -74,6 +83,7 @@ export const FreeformGenerateBar = forwardRef<
       workspaceMode,
     });
     if (taskId) onStarted?.(taskId);
+    else onSubmitError?.();
   };
 
   return (

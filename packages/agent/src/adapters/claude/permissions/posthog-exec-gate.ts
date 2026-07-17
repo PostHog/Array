@@ -28,3 +28,20 @@ export function extractPostHogSubTool(toolInput: unknown): string | null {
 export function isPostHogDestructiveSubTool(subTool: string): boolean {
   return POSTHOG_DESTRUCTIVE_SUBTOOL_RE.test(subTool);
 }
+
+// Workflow "go live" tools: enabling a workflow or dispatching to a real
+// audience. These must ALWAYS raise an approval card - even in auto mode, and
+// even when a prior "always allow" was persisted - because sending to real
+// people is the human's explicit call (the approve-&-publish gate). Kept as an
+// explicit set (not folded into the destructive regex) because these names
+// carry no update/delete token and the gate must not be persistable.
+const POSTHOG_ALWAYS_GATED_SUBTOOLS = new Set([
+  "workflows-enable",
+  "workflows-run-batch",
+  "workflows-schedule-create",
+  "workflows-update-schedule",
+]);
+
+export function isPostHogAlwaysGatedSubTool(subTool: string): boolean {
+  return POSTHOG_ALWAYS_GATED_SUBTOOLS.has(subTool.toLowerCase());
+}

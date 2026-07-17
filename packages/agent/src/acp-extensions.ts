@@ -75,6 +75,11 @@ export const POSTHOG_NOTIFICATIONS = {
   /** PostHog products used during a turn (derived from MCP exec calls) */
   RESOURCES_USED: "_posthog/resources_used",
 
+  /** A workflow build linked a PostHog workflow to its canvas (derived from the
+   *  workflows-create result + the canvas publish call). The host writes the
+   *  link onto the dashboard row (the agent can't persist it itself). */
+  WORKFLOW_BUILT: "_posthog/workflow_built",
+
   /** Response to a relayed permission request (plan approval, question) */
   PERMISSION_RESPONSE: "_posthog/permission_response",
 
@@ -92,6 +97,19 @@ export const POSTHOG_NOTIFICATIONS = {
   /** Desktop → sandbox reply to an MCP relay request (docs/cloud-mcp-relay.md). */
   MCP_RESPONSE: "_posthog/mcp_response",
 } as const;
+
+/**
+ * Payload of a `_posthog/workflow_built` notification: the PostHog workflow a
+ * build attached to its canvas. `dashboardId` is the canvas the workflow
+ * tracks; the host writes the rest onto that row's meta.
+ */
+export interface WorkflowBuiltPayload {
+  dashboardId: string;
+  workflowId: string;
+  workflowStatus?: string;
+  workflowName?: string;
+  workflowType?: string;
+}
 
 export type NativeGoalState = {
   objective: string;

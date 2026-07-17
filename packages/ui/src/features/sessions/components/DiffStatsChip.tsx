@@ -16,6 +16,9 @@ export function DiffStatsChip({ task }: DiffStatsChipProps) {
   const { filesChanged, linesAdded, linesRemoved, isOpen, toggle } =
     useDiffStatsToggle(task, "expanded");
 
+  // Repo-less runs (e.g. canvas / workflow builds that work over MCP) have no
+  // repository to review, so any sandbox file churn isn't a diff worth opening.
+  if (!task.repository) return null;
   if (filesChanged === 0) return null;
 
   return (

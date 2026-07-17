@@ -1,4 +1,4 @@
-import { FREEFORM_TEMPLATE_ID } from "./freeformSchemas";
+import { FREEFORM_TEMPLATE_ID, WORKFLOW_TEMPLATE_ID } from "./freeformSchemas";
 import { FREEFORM_WHITELIST } from "./freeformWhitelist";
 import type { CanvasSuggestion } from "./templateSchemas";
 
@@ -149,6 +149,32 @@ const FREEFORM_WEB_ANALYTICS_RULES = [
   ...FREEFORM_DATE_CONTROL_RULES,
 ];
 
+// The metrics-canvas contract for a WORKFLOW canvas. The build agent (see the
+// workflow branch of buildFreeformGenerationPrompt) builds + tests a PostHog
+// workflow, then publishes this canvas to track it. The canvas ADAPTS to what
+// the workflow does: an alert shows deliverability & health; a marketing flow
+// shows email engagement. Same freeform React contract underneath - these are
+// the extra layout/metric rules layered on top.
+const FREEFORM_WORKFLOW_RULES = [
+  "This canvas TRACKS a PostHog workflow that the agent has just built. It is a LIVE, DATA-DRIVEN board of that workflow's real delivery + outcome metrics - not a static mockup.",
+  "ADAPT THE BOARD TO WHAT THE WORKFLOW DOES - pick the layout from the workflow's type:",
+  "- ALERT / NOTIFICATION / SYNC / DATA-HYGIENE (Slack/Discord/webhook/CRM/enrichment) → DELIVERABILITY & HEALTH: successful vs failed deliveries over time, overall success rate, an error-reason breakdown, delivery latency, and last-fired / total volume. Frame FAILURES prominently - a broken alert is the thing the user most needs to see.",
+  "- MARKETING / LIFECYCLE EMAIL (welcome, onboarding, re-engagement, drip) → ENGAGEMENT: sends / deliveries / opens / clicks / bounces / unsubscribes over time, a send→open→click funnel, and open-rate / click-rate / bounce-rate KPIs.",
+  "- BATCH / SCHEDULED (either of the above, run on a schedule or over an audience) → ALSO show audience reach per run (how many people each run matched / dispatched to).",
+  "DISCOVER THE REAL DATA - do NOT hardcode event or table names for workflow deliveries or email outcomes. Use the PostHog MCP to find the actual events/tables this project emits for workflow invocations and email engagement (e.g. via read-data-schema and the workflows MCP tools), then back each metric with a SAVED insight loaded by `short_id`.",
+  "NOT-YET-FIRED - a just-published workflow has NO data yet. Detect the empty case and say so explicitly (an inviting 'This workflow hasn't run yet - metrics will appear here once it goes live' state). NEVER render zeros as if they were failures.",
+  ...FREEFORM_QUILL_RULES,
+  ...FREEFORM_DATE_CONTROL_RULES,
+];
+
+// The workflow metrics-canvas rules as one block, for embedding into the
+// unified generation prompt's workflow branch (which already carries the
+// generic freeform contract - embedding the full workflow system prompt there
+// would duplicate the OUTPUT/IMPORTS/DATA sections).
+export const WORKFLOW_CANVAS_RULES_TEXT = FREEFORM_WORKFLOW_RULES.map(
+  (rule) => `- ${rule}`,
+).join("\n");
+
 const FREEFORM_SYSTEM_PROMPT = buildFreeformPrompt();
 
 // System prompts keyed by templateId for the canvas gen path; the generic
@@ -157,6 +183,9 @@ const FREEFORM_SYSTEM_PROMPT = buildFreeformPrompt();
 // templateIds still resolve their richer layout prompts here.
 const FREEFORM_SYSTEM_PROMPTS: Record<string, string> = {
   [FREEFORM_TEMPLATE_ID]: FREEFORM_SYSTEM_PROMPT,
+  // Workflow canvases are stamped with this templateId when their build links a
+  // workflow, so EDIT generations resolve the workflow board contract.
+  [WORKFLOW_TEMPLATE_ID]: buildFreeformPrompt(FREEFORM_WORKFLOW_RULES),
   dashboard: buildFreeformPrompt(FREEFORM_DASHBOARD_RULES),
   "web-analytics": buildFreeformPrompt(FREEFORM_WEB_ANALYTICS_RULES),
 };

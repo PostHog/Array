@@ -18,6 +18,8 @@ export function CanvasGenerateHero({
   name,
   templateId,
   onStarted,
+  onSubmitStart,
+  onSubmitError,
 }: {
   dashboardId: string;
   channelId: string;
@@ -25,6 +27,10 @@ export function CanvasGenerateHero({
   name: string;
   templateId?: string;
   onStarted?: (taskId: string) => void;
+  // Passed through to the generate bar: fired the instant a submit begins /
+  // when it fails to create a task, so the view can flip optimistically.
+  onSubmitStart?: () => void;
+  onSubmitError?: () => void;
 }) {
   // Lets a suggestion card drop its prompt straight into the editor.
   const editorRef = useRef<EditorHandle>(null);
@@ -63,6 +69,8 @@ export function CanvasGenerateHero({
           name={name}
           templateId={templateId}
           onStarted={onStarted}
+          onSubmitStart={onSubmitStart}
+          onSubmitError={onSubmitError}
         />
 
         <Flex direction="column" gap="2">

@@ -21,6 +21,7 @@ export const POSTHOG_NOTIFICATIONS = {
   PERMISSION_RESPONSE: "_posthog/permission_response",
   PERMISSION_REQUEST: "_posthog/permission_request",
   PERMISSION_RESOLVED: "_posthog/permission_resolved",
+  WORKFLOW_BUILT: "_posthog/workflow_built",
 } as const;
 
 // Qualified id of the agent's `speak` narration tool, as it appears on the
@@ -41,4 +42,38 @@ export function isNotification(
   expected: PosthogNotification,
 ): boolean {
   return matchesExt(method, expected);
+}
+
+// The PostHog workflow a build attached to its canvas (payload of a
+// `_posthog/workflow_built` notification). Mirrors WorkflowBuiltPayload in
+// @posthog/agent; duplicated here so core/ui parse it without importing agent.
+export interface WorkflowBuiltPayload {
+  dashboardId: string;
+  workflowId: string;
+  workflowStatus?: string;
+  workflowName?: string;
+  workflowType?: string;
+}
+
+// Parse a `_posthog/workflow_built` notification's params, returning the link
+// payload only when the required ids are present. Tolerates the loosely-typed
+// JSON-RPC params object that arrives off the session stream.
+export function parseWorkflowBuiltParams(
+  params: unknown,
+): WorkflowBuiltPayload | null {
+  if (!params || typeof params !== "object") return null;
+  const p = params as Record<string, unknown>;
+  if (typeof p.dashboardId !== "string" || typeof p.workflowId !== "string") {
+    return null;
+  }
+  return {
+    dashboardId: p.dashboardId,
+    workflowId: p.workflowId,
+    workflowStatus:
+      typeof p.workflowStatus === "string" ? p.workflowStatus : undefined,
+    workflowName:
+      typeof p.workflowName === "string" ? p.workflowName : undefined,
+    workflowType:
+      typeof p.workflowType === "string" ? p.workflowType : undefined,
+  };
 }

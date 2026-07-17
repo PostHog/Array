@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractPostHogSubTool,
+  isPostHogAlwaysGatedSubTool,
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
 } from "./posthog-exec-gate";
@@ -80,5 +81,41 @@ describe("isPostHogDestructiveSubTool", () => {
     // "updated" should not count — must be a whole segment
     expect(isPostHogDestructiveSubTool("get-updated-events")).toBe(false);
     expect(isPostHogDestructiveSubTool("deleter-test")).toBe(false);
+  });
+});
+
+describe("isPostHogAlwaysGatedSubTool", () => {
+  it.each([
+    "workflows-enable",
+    "workflows-run-batch",
+    "workflows-schedule-create",
+    "workflows-update-schedule",
+    "WORKFLOWS-ENABLE",
+  ])("gates the go-live tool %s", (subTool) => {
+    expect(isPostHogAlwaysGatedSubTool(subTool)).toBe(true);
+  });
+
+  it("does not gate other workflow or unrelated tools", () => {
+    expect(isPostHogAlwaysGatedSubTool("workflows-create")).toBe(false);
+    expect(isPostHogAlwaysGatedSubTool("workflows-test-run")).toBe(false);
+    expect(isPostHogAlwaysGatedSubTool("workflows-patch-graph")).toBe(false);
+    expect(isPostHogAlwaysGatedSubTool("workflows-blast-radius")).toBe(false);
+    expect(isPostHogAlwaysGatedSubTool("experiment-update")).toBe(false);
+  });
+
+  // The whole reason this list exists: go-live tools carry no update/delete
+  // token, so the destructive regex would let them through ungated.
+  it("covers go-live tools the destructive regex misses", () => {
+    for (const subTool of [
+      "workflows-enable",
+      "workflows-run-batch",
+      "workflows-schedule-create",
+    ]) {
+      expect(isPostHogDestructiveSubTool(subTool)).toBe(false);
+      expect(isPostHogAlwaysGatedSubTool(subTool)).toBe(true);
+    }
+    // workflows-update-schedule DOES contain "update", so it's caught by both -
+    // that's fine, the go-live gate takes precedence in canUseTool.
+    expect(isPostHogDestructiveSubTool("workflows-update-schedule")).toBe(true);
   });
 });

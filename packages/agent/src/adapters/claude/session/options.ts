@@ -25,6 +25,7 @@ import {
   createTaskHook,
   type EnrichedReadCache,
   type OnModeChange,
+  type WorkflowBuiltSignal,
 } from "../hooks";
 import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
@@ -86,6 +87,9 @@ export interface BuildOptionsParams {
   enrichedReadCache?: EnrichedReadCache;
   /** Records PostHog product usage from MCP exec calls (deduped, session-wide). */
   onPostHogResourceUsed?: (subTool: string, commandText?: string) => void;
+  /** Fires when a workflow build links a PostHog workflow to its canvas, so
+   *  the host can persist the link onto the dashboard row. */
+  onWorkflowBuilt?: (signal: WorkflowBuiltSignal) => void;
   /** Cloud task session — enables the signed-commit guard. */
   cloudMode?: boolean;
   /** Reactive self-heal invoked when the guard blocks a raw git commit/push.
@@ -217,6 +221,7 @@ function buildHooks(
   onPostHogResourceUsed:
     | ((subTool: string, commandText?: string) => void)
     | undefined,
+  onWorkflowBuilt: ((signal: WorkflowBuiltSignal) => void) | undefined,
   settingsManager: SettingsManager,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
@@ -233,6 +238,7 @@ function buildHooks(
     createPostToolUseHook({
       onModeChange,
       onPostHogResourceUsed,
+      onWorkflowBuilt,
     }),
   ];
   if (enrichmentDeps && enrichedReadCache) {
@@ -470,6 +476,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.userProvidedOptions?.hooks,
       params.onModeChange,
       params.onPostHogResourceUsed,
+      params.onWorkflowBuilt,
       params.settingsManager,
       params.logger,
       params.enrichmentDeps,

@@ -2,12 +2,14 @@ import {
   ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  LightningIcon,
   ShapesIcon,
   SidebarSimpleIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
+import { createLatestPlanTracker } from "@posthog/core/sessions/sessionService";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   Button,
@@ -29,9 +31,11 @@ import {
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
+import type { Plan } from "@posthog/ui/features/sessions/types";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
+import { StepList, type StepStatus } from "@posthog/ui/primitives/StepList";
 import {
   Box,
   Flex,
@@ -79,6 +83,11 @@ export function FreeformCanvasView({
   // local bridge so the composer floats to the side immediately on submit,
   // before the canvas record's polled generationTaskId catches up.
   const [startedTaskId, setStartedTaskId] = useState<string | null>(null);
+  // Optimistic bridge for the submit → task-created gap: creating a cloud task
+  // (model resolution + createTask) takes a few seconds, so flip to the
+  // generating screen the instant the user submits instead of leaving them on
+  // the hero. Cleared once the real task attaches, or if the submit failed.
+  const [pendingStart, setPendingStart] = useState(false);
   const collapsed = useCanvasChatPanelStore((s) => s.collapsed);
   const setCollapsed = useCanvasChatPanelStore((s) => s.setCollapsed);
   const panelWidth = useCanvasChatPanelStore((s) => s.width);
@@ -140,6 +149,21 @@ export function FreeformCanvasView({
     refetchInterval: effectiveTaskId ? 5000 : false,
   });
   const genSession = useSessionForTask(effectiveTaskId ?? undefined);
+  // The agent's live to-do list, folded from the run's session events the same
+  // way the chat's PlanStatusBar does. Surfaced in the generating screen so the
+  // wait shows real, high-level progress (discover → build → test → publish).
+  const planTrackerRef = useRef<ReturnType<
+    typeof createLatestPlanTracker
+  > | null>(null);
+  if (!planTrackerRef.current) {
+    planTrackerRef.current = createLatestPlanTracker();
+  }
+  const genEvents = genSession?.events;
+  const genPlan = useMemo(
+    () =>
+      (planTrackerRef.current?.update(genEvents ?? []) ?? null) as Plan | null,
+    [genEvents],
+  );
   // Whether the run's session is still alive. Drives record polling so a freshly
   // published canvas gets picked up. A local ACP session stays "connected" after
   // its generation prompt finishes, so this keeps syncing until it disconnects.
@@ -240,16 +264,21 @@ export function FreeformCanvasView({
   // `isGenerating` keys off the effective task (the optimistic bridge right after
   // submit, then the polled record) and short-circuits on a terminal run — so a
   // failed/cancelled run can't strand the canvas body on the spinner.
-  const showGeneratingState = !renderCode && isGenerating;
+  const showGeneratingState = !renderCode && (isGenerating || pendingStart);
   // While the record is still being fetched we don't yet know whether the canvas
   // has content, so show a spinner instead of the empty state / hero. Bounded by
   // the query, so it resolves once the fetch settles.
-  const showLoadingState = !renderCode && !isGenerating && dashboardLoading;
+  const showLoadingState =
+    !renderCode && !isGenerating && !pendingStart && dashboardLoading;
   // The empty-canvas landing: a centered composer with suggestions. Held back
   // until the record settles (so it doesn't flash over a canvas that has content)
   // and only when no run is in flight. After submit it floats into the panel.
   const showHero =
-    interactive && !renderCode && !effectiveTaskId && !dashboardLoading;
+    interactive &&
+    !renderCode &&
+    !effectiveTaskId &&
+    !pendingStart &&
+    !dashboardLoading;
   // The side panel only exists once there's a canvas or an active run.
   const showPanel = interactive && (showCanvas || !!effectiveTaskId);
 
@@ -342,6 +371,24 @@ export function FreeformCanvasView({
                   </>
                 )
               )}
+              {!isGenerating && dashboard?.workflow && (
+                // Workflow link badge: proof the workflow is attached + its
+                // status. No deep-link to the workflow yet - the PostHog
+                // workflows URL path isn't confirmed; add the link-out once it
+                // is, rather than shipping a broken link.
+                <Tooltip content="This canvas tracks a PostHog workflow">
+                  <Flex
+                    align="center"
+                    gap="1"
+                    className="rounded bg-accent-3 px-2 py-0.5 text-accent-11"
+                  >
+                    <LightningIcon size={13} weight="fill" />
+                    <Text size="1" className="capitalize">
+                      {dashboard.workflow.workflowStatus ?? "Workflow"}
+                    </Text>
+                  </Flex>
+                </Tooltip>
+              )}
               {showPanel && collapsed && (
                 <Tooltip
                   content={effectiveTaskId ? "Show chat" : "Edit canvas"}
@@ -391,6 +438,7 @@ export function FreeformCanvasView({
                 <GeneratingState
                   channelId={channelId}
                   taskId={effectiveTaskId ?? ""}
+                  plan={genPlan}
                 />
               ) : showLoadingState ? (
                 <LoadingState />
@@ -458,9 +506,23 @@ export function FreeformCanvasView({
               name={dashboard?.name ?? "Canvas"}
               templateId={dashboard?.templateId}
               onStarted={(id) => {
-                // Hold the panel shut until the hero finishes sliding down.
-                setWaitingForHeroExit(true);
                 setStartedTaskId(id);
+                // The real task is attached now; drop the optimistic bridge.
+                setPendingStart(false);
+              }}
+              onSubmitStart={() => {
+                // Flip to the generating screen immediately (pendingStart) AND
+                // hold the panel shut until the hero finishes sliding down. Both
+                // must happen now, on submit: the hero exits the moment
+                // pendingStart hides it, so setting waitingForHeroExit later (in
+                // onStarted, seconds after the task is created) would land after
+                // onExitComplete has already fired — stranding the panel closed.
+                setPendingStart(true);
+                setWaitingForHeroExit(true);
+              }}
+              onSubmitError={() => {
+                setPendingStart(false);
+                setWaitingForHeroExit(false);
               }}
             />
           </motion.div>
@@ -485,15 +547,25 @@ function LoadingState() {
   );
 }
 
-// Centered status shown while a generation task runs on an empty canvas, with a
-// button to jump to the task doing the work.
+// Centered status shown while a generation task runs on an empty canvas. Mirrors
+// the agent's live to-do list (the same plan the chat's PlanStatusBar shows) so
+// the wait reflects real high-level progress, with a button to jump to the task.
 function GeneratingState({
   channelId,
   taskId,
+  plan,
 }: {
   channelId: string;
   taskId: string;
+  plan: Plan | null;
 }) {
+  const steps = plan?.entries ?? [];
+  const inProgress = steps.find((e) => e.status === "in_progress");
+  // Prefer the agent's current step; fall back to a generic line before the
+  // plan exists (e.g. during the submit → task-created gap).
+  const description =
+    inProgress?.content ?? "An agent is building this canvas.";
+
   return (
     <Empty className="h-full border-0">
       <EmptyHeader>
@@ -501,10 +573,22 @@ function GeneratingState({
           <SpinnerGapIcon size={18} className="animate-spin text-accent-9" />
         </EmptyMedia>
         <EmptyTitle>Generating</EmptyTitle>
-        <EmptyDescription>An agent is building this canvas.</EmptyDescription>
+        <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
-      {taskId && (
-        <EmptyContent>
+      <EmptyContent>
+        {steps.length > 0 && (
+          <Box className="w-full max-w-sm text-left">
+            <StepList
+              steps={steps.map((e) => ({
+                key: e.content,
+                label: e.content,
+                status: e.status as StepStatus,
+              }))}
+              size="1"
+            />
+          </Box>
+        )}
+        {taskId && (
           <Button
             variant="primary"
             size="default"
@@ -517,8 +601,8 @@ function GeneratingState({
           >
             View task
           </Button>
-        </EmptyContent>
-      )}
+        )}
+      </EmptyContent>
     </Empty>
   );
 }

@@ -1,5 +1,9 @@
 import type { ChannelTaskRecord } from "./channelTaskSchemas";
-import type { DashboardRecord, DashboardSummary } from "./dashboardSchemas";
+import type {
+  DashboardRecord,
+  DashboardSummary,
+  WorkflowLink,
+} from "./dashboardSchemas";
 import type {
   CanvasCaptureConfig,
   CanvasCaptureInput,
@@ -45,6 +49,11 @@ export interface IDashboardsService {
     taskId: string | null;
   }): Promise<DashboardRecord>;
   setPinned(input: { id: string; pinned: boolean }): Promise<DashboardRecord>;
+  // Attach a workflow to a canvas (the workflow link primitive).
+  setWorkflow(input: {
+    id: string;
+    workflow: WorkflowLink;
+  }): Promise<DashboardRecord>;
   rename(input: { id: string; name: string }): Promise<DashboardRecord>;
   // Idempotently create + seed a channel's home canvas, returning it.
   ensureHomeCanvas(channelId: string): Promise<DashboardRecord>;

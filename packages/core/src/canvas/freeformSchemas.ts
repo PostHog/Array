@@ -4,6 +4,13 @@ import { z } from "zod";
 // generation path can resolve the right system prompt.
 export const FREEFORM_TEMPLATE_ID = "freeform";
 
+// A workflow canvas is a canvas artifact with a PostHog workflow (HogFlow)
+// attached - same dashboard-typed FS row, tagged with this templateId in meta.
+// It is NOT a new object type; the tag is stamped host-side when the workflow
+// link is written, and distinguishes the artifact (lightning icon, edit-time
+// generation prompt). See docs/plans/automations-prd.md.
+export const WORKFLOW_TEMPLATE_ID = "workflow";
+
 // A single point in a freeform canvas's edit history. Every agent turn appends
 // one full-file snapshot (Q7: full-file rewrite); the user can revert to any of
 // them and the `currentVersionId` pointer is what publishes. We keep whole-file
