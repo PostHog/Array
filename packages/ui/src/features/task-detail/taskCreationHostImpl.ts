@@ -162,6 +162,8 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     runtimeAdapter?: string | null;
     model?: string | null;
     reasoningEffort?: string | null;
+    sandboxEnvironmentId?: string | null;
+    customImageId?: string | null;
   }): { taskId: string; runId: string } | null {
     return takeWarmTaskLease(args);
   }

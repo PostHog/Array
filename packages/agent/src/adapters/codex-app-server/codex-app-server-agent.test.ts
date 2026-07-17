@@ -4,6 +4,7 @@ import type {
   NewSessionRequest,
   PromptRequest,
 } from "@agentclientprotocol/sdk";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
 import type {
   AppServerClientHandlers,
@@ -1596,6 +1597,45 @@ describe("CodexAppServerAgent", () => {
     expect((await done).stopReason).toBe("refusal");
   });
 
+  it("rejects the prompt when the fatal error is a gateway billing denial", async () => {
+    // A silent refusal would hide the free-tier gate: the host only shows the
+    // upgrade modal when the prompt rejects with the gateway's message.
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "go" }],
+    } as unknown as PromptRequest);
+    stub.emit("error", {
+      willRetry: false,
+      error: {
+        message:
+          "unexpected status 403 Forbidden: Model 'gpt-5.5' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. (rate_limit)",
+      },
+    });
+
+    const err = await done.then(
+      () => {
+        throw new Error("prompt resolved instead of rejecting");
+      },
+      (e: unknown) => e,
+    );
+    // Must be a RequestError with the gateway text in its message — a plain
+    // Error crosses the ACP boundary as a bare "Internal error", which the
+    // host classifies as fatal and answers with a kill/respawn loop.
+    expect(err).toBeInstanceOf(RequestError);
+    expect((err as RequestError).message).toContain("Internal error: ");
+    expect((err as RequestError).message).toContain(
+      "needs a paid PostHog plan",
+    );
+  });
+
   it("ends the turn without turn/start when no prompt block is usable", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();
@@ -1921,9 +1961,23 @@ describe("CodexAppServerAgent", () => {
     } as unknown as PromptRequest);
 
     // The single turn/completed resolves both the original and the folded prompt.
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 45,
+          inputTokens: 30,
+          cachedInputTokens: 5,
+          outputTokens: 10,
+        },
+      },
+    });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    expect((await first).stopReason).toBe("end_turn");
-    expect((await second).stopReason).toBe("end_turn");
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toMatchObject({
+      stopReason: "end_turn",
+      usage: { totalTokens: 45 },
+    });
+    expect(secondResult).toEqual({ stopReason: "end_turn" });
 
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect(steer?.params).toMatchObject({
@@ -2086,7 +2140,19 @@ describe("CodexAppServerAgent", () => {
       },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    await done;
+    const result = await done;
+
+    expect(result).toEqual({
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 60,
+        outputTokens: 30,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 0,
+        thoughtTokens: 5,
+        totalTokens: 100,
+      },
+    });
 
     const turnComplete = extNotifications.find(
       (n) => n.method === "_posthog/turn_complete",
@@ -2778,6 +2844,16 @@ describe("CodexAppServerAgent", () => {
         text: "The implementation plan is ready.",
       },
     });
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 30,
+          inputTokens: 20,
+          outputTokens: 10,
+          reasoningOutputTokens: 2,
+        },
+      },
+    });
     stub.emit("turn/completed", {
       turn: { id: "turn_1", status: "completed" },
     });
@@ -2786,10 +2862,31 @@ describe("CodexAppServerAgent", () => {
     await waitUntil(
       () => stub.requests.filter((r) => r.method === "turn/start").length >= 2,
     );
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: {
+          totalTokens: 50,
+          inputTokens: 35,
+          cachedInputTokens: 5,
+          outputTokens: 10,
+          reasoningOutputTokens: 3,
+        },
+      },
+    });
     stub.emit("turn/completed", {
       turn: { id: "turn_2", status: "completed" },
     });
-    expect((await done).stopReason).toBe("end_turn");
+    expect(await done).toEqual({
+      stopReason: "end_turn",
+      usage: {
+        inputTokens: 55,
+        outputTokens: 20,
+        cachedReadTokens: 5,
+        cachedWriteTokens: 0,
+        thoughtTokens: 5,
+        totalTokens: 80,
+      },
+    });
 
     // The approval renders as the plan-approval UI (switch_mode + the plan text).
     expect(permissionRequests).toHaveLength(1);

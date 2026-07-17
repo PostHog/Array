@@ -1,3 +1,4 @@
+import { partitionLocalMcpServersForRun } from "@posthog/core/local-mcp/localMcpImport";
 import {
   getErrorTitle,
   prepareTaskInput,
@@ -34,6 +35,7 @@ import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
 import { useUsageLimitStore } from "../../billing/usageLimitStore";
+import { useLocalMcpCloudServers } from "../../local-mcp/useLocalMcpCloudServers";
 import {
   contentToPlainText,
   contentToXml,
@@ -192,6 +194,10 @@ export function useTaskCreation({
     useState<string[] | null>(null);
   const additionalDirectories =
     additionalDirectoriesOverride ?? defaultAdditionalDirectories;
+  // Importable local MCP servers for cloud runs, self-fetched like the
+  // additional-directory defaults above rather than threaded in by callers.
+  const { servers: localMcpServers, isLoading: localMcpServersLoading } =
+    useLocalMcpCloudServers(workspaceMode === "cloud");
   const taskService = useService<TaskService>(TASK_SERVICE);
   const clearTaskInputReportAssociation = useTaskInputPrefillStore(
     (s) => s.clearReportAssociation,
@@ -233,6 +239,16 @@ export function useTaskCreation({
 
       // Block over-limit cloud creation before the pending view so it doesn't flash.
       if (workspaceMode === "cloud" && !(await assertCloudUsageAvailable())) {
+        return false;
+      }
+
+      // The local MCP server classification is fetched lazily on entering cloud
+      // mode; submitting before it resolves would silently drop importedMcpServers/
+      // relayedMcpServers below instead of including the user's local servers.
+      if (workspaceMode === "cloud" && localMcpServersLoading) {
+        toast.error("Still checking your local MCP servers", {
+          description: "Try again in a moment.",
+        });
         return false;
       }
 
@@ -326,6 +342,10 @@ export function useTaskCreation({
             ? personalChannel?.id
             : undefined;
 
+        const localMcpServersForRun = partitionLocalMcpServersForRun(
+          localMcpServers,
+          adapter,
+        );
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -353,6 +373,8 @@ export function useTaskCreation({
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
+          importedMcpServers: localMcpServersForRun.imported,
+          relayedMcpServers: localMcpServersForRun.relayed,
         });
 
         if (executionMode) {
@@ -523,6 +545,8 @@ export function useTaskCreation({
       allowNoRepo,
       bluebirdEnabled,
       personalChannel?.id,
+      localMcpServers,
+      localMcpServersLoading,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,

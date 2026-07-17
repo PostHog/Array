@@ -15,6 +15,7 @@ import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getTask, runTaskInCloud } from "@/features/tasks/api";
+import { CustomImageBadge } from "@/features/tasks/components/CustomImageBadge";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
@@ -667,14 +668,17 @@ export default function TaskDetailScreen() {
         title={showLoading ? "Loading..." : task?.title || "Task"}
         subtitle={task?.repository ?? undefined}
         rightSlot={
-          canStopRun ? (
-            <StopRunButton onPress={handleStopRun} />
-          ) : prUrl ? (
-            <>
-              <PrDiffStatsBadge prUrl={prUrl} />
-              <PrStatusBadge prUrl={prUrl} />
-            </>
-          ) : null
+          <>
+            {task ? <CustomImageBadge task={task} /> : null}
+            {canStopRun ? (
+              <StopRunButton onPress={handleStopRun} />
+            ) : prUrl ? (
+              <>
+                <PrDiffStatsBadge prUrl={prUrl} />
+                <PrStatusBadge prUrl={prUrl} />
+              </>
+            ) : null}
+          </>
         }
       />
       <Animated.View className="flex-1" style={contentPosition}>

@@ -1,71 +1,48 @@
 import { WarningCircle } from "@phosphor-icons/react";
-import {
-  formatResetTime,
-  PRO_USAGE_MULTIPLIER,
-} from "@posthog/core/billing/usageDisplay";
+import { formatResetTime } from "@posthog/core/billing/usageDisplay";
+import { usageLimitContent } from "@posthog/core/billing/usageLimitContent";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
 import { track } from "../../shell/analytics";
 import { openExternalUrl } from "../../shell/openExternal";
-import { openSettings } from "../settings/hooks/useOpenSettings";
+import { getBillingUrl } from "../../utils/urls";
+import { useAuthStateValue } from "../auth/store";
 import { useUsageLimitStore } from "./usageLimitStore";
-import { useSeat } from "./useSeat";
-
-const SUPPORT_MAILTO =
-  "mailto:charles@posthog.com?subject=PostHog%20Code%20%E2%80%94%20Pro%20usage%20limit";
+import { useUsage } from "./useUsage";
 
 export function UsageLimitModal() {
   const isOpen = useUsageLimitStore((s) => s.isOpen);
-  const bucket = useUsageLimitStore((s) => s.bucket);
   const resetAt = useUsageLimitStore((s) => s.resetAt);
-  const eventIsPro = useUsageLimitStore((s) => s.isPro);
+  const cause = useUsageLimitStore((s) => s.cause);
   const hide = useUsageLimitStore((s) => s.hide);
-  const { isPro: seatIsPro } = useSeat();
-  const isPro = eventIsPro ?? seatIsPro;
+  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
+  const { usage } = useUsage({ enabled: isOpen });
 
   useEffect(() => {
     if (isOpen) {
       track(ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN, {
         surface: "usage_limit_modal",
+        ...(cause ? { cause } : {}),
       });
     }
-  }, [isOpen]);
+  }, [isOpen, cause]);
 
-  const handleUpgrade = () => {
+  const content = usageLimitContent({
+    cause,
+    resetLabel: resetAt ? formatResetTime(resetAt) : null,
+    subscribed: usage?.code_usage_subscribed,
+  });
+
+  const handleAction = () => {
     track(ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED, {
       surface: "usage_limit_modal",
+      ...(cause ? { cause } : {}),
     });
     hide();
-    openSettings("plan-usage");
+    const billingUrl = getBillingUrl(cloudRegion);
+    if (billingUrl) openExternalUrl(billingUrl);
   };
-
-  const handleSupport = () => {
-    openExternalUrl(SUPPORT_MAILTO);
-  };
-
-  const isDaily = bucket === "burst";
-  const isMonthly = bucket === "sustained";
-  const resetLabel = resetAt ? formatResetTime(resetAt) : null;
-
-  const title = isDaily
-    ? "Daily limit reached"
-    : isMonthly && !isPro
-      ? "You're out of usage for this month"
-      : isMonthly
-        ? "Monthly limit reached"
-        : "Usage limit reached";
-
-  const proCapLabel = isDaily
-    ? "a daily usage cap"
-    : isMonthly
-      ? "a monthly usage cap"
-      : "usage caps";
-  const description = isPro
-    ? `Your Pro plan has ${proCapLabel}.${resetLabel ? ` ${resetLabel}.` : ""}`
-    : `You've hit your Free ${
-        isDaily ? "daily" : isMonthly ? "monthly" : "usage"
-      } limit. Upgrade to Pro for ${PRO_USAGE_MULTIPLIER}× more usage.`;
 
   return (
     <Dialog.Root open={isOpen}>
@@ -77,43 +54,27 @@ export function UsageLimitModal() {
         <Flex direction="column" gap="3">
           <Flex align="center" gap="2">
             <WarningCircle size={20} weight="bold" color="var(--red-9)" />
-            <Dialog.Title className="mb-0">{title}</Dialog.Title>
+            <Dialog.Title className="mb-0">{content.title}</Dialog.Title>
           </Flex>
           <Dialog.Description>
             <Text color="gray" className="text-sm">
-              {description}
+              {content.description}
             </Text>
           </Dialog.Description>
           <Flex justify="end" gap="3" mt="2">
-            {isPro ? (
-              <>
-                <Button
-                  type="button"
-                  variant="soft"
-                  color="gray"
-                  onClick={handleSupport}
-                  mr="auto"
-                >
-                  Get support
-                </Button>
-                <Button type="button" onClick={hide}>
-                  Got it
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="soft"
-                  color="gray"
-                  onClick={hide}
-                >
-                  Not now
-                </Button>
-                <Button type="button" onClick={handleUpgrade}>
-                  See Pro
-                </Button>
-              </>
+            <Button
+              type="button"
+              {...(content.actionLabel
+                ? { variant: "soft" as const, color: "gray" as const }
+                : {})}
+              onClick={hide}
+            >
+              {content.dismissLabel}
+            </Button>
+            {content.actionLabel && (
+              <Button type="button" onClick={handleAction}>
+                {content.actionLabel}
+              </Button>
             )}
           </Flex>
         </Flex>

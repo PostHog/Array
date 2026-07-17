@@ -972,8 +972,9 @@ export interface ChannelsSpaceViewedProperties {
 
 export type UpgradePromptShownSurface =
   | "usage_limit_modal"
-  | "upgrade_dialog"
-  | "titlebar_card";
+  | "titlebar_card"
+  | "billing_announcement"
+  | "model_picker";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
@@ -981,14 +982,19 @@ export type UpgradePromptClickedSurface =
   | "titlebar"
   | "titlebar_card"
   | "plan_page_card"
-  | "upgrade_dialog";
+  | "billing_announcement"
+  | "model_picker";
+
+export type UpgradePromptCause = "model_gate" | "org_limit";
 
 export interface UpgradePromptShownProperties {
   surface: UpgradePromptShownSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface UpgradePromptClickedProperties {
   surface: UpgradePromptClickedSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface CloudTaskUsageBlockedProperties {
@@ -996,13 +1002,9 @@ export interface CloudTaskUsageBlockedProperties {
   is_pro: boolean;
 }
 
-export interface SubscriptionStartedProperties {
-  plan_key: string;
-  previous_plan_key?: string;
-}
-
-export interface SubscriptionCancelledProperties {
-  plan_key: string;
+export interface UsageBillingAnnouncementAcknowledgedProperties {
+  /** Stamps the acknowledgment on the person for support auditability. */
+  $set: { code_usage_billing_acknowledged_at: string };
 }
 
 // Claude Code session import events
@@ -1207,8 +1209,8 @@ export const ANALYTICS_EVENTS = {
   UPGRADE_PROMPT_SHOWN: "Upgrade prompt shown",
   UPGRADE_PROMPT_CLICKED: "Upgrade prompt clicked",
   CLOUD_TASK_USAGE_BLOCKED: "Cloud task usage blocked",
-  SUBSCRIPTION_STARTED: "Subscription started",
-  SUBSCRIPTION_CANCELLED: "Subscription cancelled",
+  USAGE_BILLING_ANNOUNCEMENT_ACKNOWLEDGED:
+    "Usage billing announcement acknowledged",
 
   // Project Bluebird (Channels) events
   CHANNELS_SPACE_VIEWED: "Channels space viewed",
@@ -1364,9 +1366,8 @@ export type EventPropertyMap = {
   // Subscription events
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN]: UpgradePromptShownProperties;
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED]: UpgradePromptClickedProperties;
+  [ANALYTICS_EVENTS.USAGE_BILLING_ANNOUNCEMENT_ACKNOWLEDGED]: UsageBillingAnnouncementAcknowledgedProperties;
   [ANALYTICS_EVENTS.CLOUD_TASK_USAGE_BLOCKED]: CloudTaskUsageBlockedProperties;
-  [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
-  [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 
   // Project Bluebird (Channels) events
   [ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED]: ChannelsSpaceViewedProperties;

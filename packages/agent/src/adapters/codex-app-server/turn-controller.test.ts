@@ -18,8 +18,8 @@ describe("TurnController", () => {
     expect(turns.activeTurnId).toBeUndefined();
     expect(turns.claim()).toBeUndefined();
 
-    pending?.resolve("end_turn");
-    await expect(completion).resolves.toBe("end_turn");
+    pending?.resolve({ stopReason: "end_turn" });
+    await expect(completion).resolves.toEqual({ stopReason: "end_turn" });
   });
 
   it("finishPrompt for an older turn does not wipe a newer turn's pending state", async () => {
@@ -36,15 +36,15 @@ describe("TurnController", () => {
     turns.onStarted("turn-b");
 
     // Turn A's prompt() resolves and its finally runs; it must not clear turn B.
-    claimedA?.resolve("end_turn");
-    await expect(a.completion).resolves.toBe("end_turn");
+    claimedA?.resolve({ stopReason: "end_turn" });
+    await expect(a.completion).resolves.toEqual({ stopReason: "end_turn" });
     turns.finishPrompt(a.turn);
 
     expect(turns.isRunning).toBe(true);
     const claimedB = turns.claim();
     expect(claimedB).toBeDefined();
-    claimedB?.resolve("end_turn");
-    await expect(b.completion).resolves.toBe("end_turn");
+    claimedB?.resolve({ stopReason: "end_turn" });
+    await expect(b.completion).resolves.toEqual({ stopReason: "end_turn" });
   });
 
   it("finishPrompt with the current turn token clears the pending slot", () => {
@@ -84,7 +84,7 @@ describe("TurnController", () => {
     turns.markInterrupted();
 
     turns.close("cancelled");
-    await expect(completion).resolves.toBe("cancelled");
+    await expect(completion).resolves.toEqual({ stopReason: "cancelled" });
     expect(turns.isPending).toBe(false);
     expect(turns.activeTurnId).toBeUndefined();
     expect(turns.shouldDropCompletion("turn-1")).toBe(false);

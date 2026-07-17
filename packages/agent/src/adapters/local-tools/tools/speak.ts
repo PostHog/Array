@@ -48,10 +48,11 @@ export const SPEAK_TOOL_DESCRIPTION =
  * speakers, so it just acknowledges. The desktop renderer observes the
  * surfaced `tool_call` (carrying `text`/`needsUser` in its rawInput) and routes
  * it to the speech queue, exactly like completion/permission notifications are
- * pure side effects off the event stream. Gated on `spokenNarration`: local
- * sessions pass the user's setting at session start, while cloud sessions
- * resolve it to true at the adapter (the sandbox can't know which clients are
- * listening, so cloud emits always and consumers gate playback).
+ * pure side effects off the event stream. Gated on `spokenNarration`, which is
+ * strictly opt-in (see `resolveSpokenNarration`): the desktop passes it true
+ * only when the feature flag and the user's setting are both enabled. Headless
+ * cloud runs (Slack threads, Signals scouts) never enable it, so the tool and
+ * its instructions never load and never cost tokens there.
  */
 export const speakTool = defineLocalTool({
   name: SPEAK_TOOL_NAME,

@@ -33,6 +33,12 @@ export interface AgentServerConfig {
   autoPublish?: boolean;
   version?: string;
   mcpServers?: RemoteMcpServer[];
+  /**
+   * Names of desktop-only local MCP servers to expose through loopback relay
+   * endpoints (docs/cloud-mcp-relay.md). Names only; the desktop resolves
+   * each name against local config at execution time.
+   */
+  relayMcpServers?: string[];
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];

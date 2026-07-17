@@ -2,7 +2,6 @@ import "reflect-metadata";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
 import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
-  getGatewayInvalidatePlanCacheUrl,
   getGatewayUsageUrl,
   getLlmGatewayUrl,
 } from "@posthog/agent/posthog-api";
@@ -27,6 +26,7 @@ import {
   type IAuthTokenCipher,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
+import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
 import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
@@ -459,6 +459,7 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
 // API), so the web host binds them by loading the same core module desktop does;
 // the web host router forwards its canvas routers to these.
 container.load(canvasCoreModule);
+container.load(taskThreadCoreModule);
 
 // SessionService is built from host-agnostic deps (host tRPC client + UI
 // stores) — same construction the desktop renderer uses.
@@ -719,8 +720,6 @@ container.bind(LLM_GATEWAY_HOST).toDynamicValue((ctx) => {
     messagesUrl: (apiHost: string) =>
       `${getLlmGatewayUrl(apiHost)}/v1/messages`,
     usageUrl: (apiHost: string) => getGatewayUsageUrl(apiHost),
-    invalidatePlanCacheUrl: (apiHost: string) =>
-      getGatewayInvalidatePlanCacheUrl(apiHost),
     defaultModel: DEFAULT_GATEWAY_MODEL,
   };
 });

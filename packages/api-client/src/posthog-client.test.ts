@@ -544,6 +544,39 @@ describe("PostHogAPIClient", () => {
       );
     });
 
+    it("forwards the selected sandbox environment and custom image", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () =>
+          JSON.stringify({ task_id: "task-1", run_id: "run-1" }),
+      });
+      const client = makeClient(fetch);
+
+      await client.warmTask({
+        repository: "PostHog/posthog",
+        github_integration: 42,
+        sandbox_environment_id: "environment-123",
+        custom_image_id: "image-123",
+      });
+
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overrides: {
+            body: JSON.stringify({
+              repository: "PostHog/posthog",
+              github_integration: 42,
+              branch: null,
+              runtime_adapter: null,
+              model: null,
+              reasoning_effort: null,
+              sandbox_environment_id: "environment-123",
+              custom_image_id: "image-123",
+            }),
+          },
+        }),
+      );
+    });
+
     it("sends a null branch when none is provided", async () => {
       const fetch = vi.fn().mockResolvedValue({
         ok: true,

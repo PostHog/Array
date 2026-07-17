@@ -43,6 +43,7 @@ function createHarness() {
     clearOptimisticItems: vi.fn(),
   };
   const promptMutate = vi.fn();
+  const usageLimitShow = vi.fn();
   const deps = {
     store,
     h: { extractSkillButtonId: () => undefined },
@@ -51,7 +52,7 @@ function createHarness() {
     track: vi.fn(),
     getIsOnline: () => true,
     addDirectoryDialog: { open: false },
-    usageLimit: { show: vi.fn() },
+    usageLimit: { show: usageLimitShow },
     trpc: {
       agent: {
         prompt: { mutate: promptMutate },
@@ -74,7 +75,7 @@ function createHarness() {
     },
     "tryAutoRecoverLocalSession",
   );
-  return { service, sessions, store, promptMutate, recoverSpy };
+  return { service, sessions, store, promptMutate, recoverSpy, usageLimitShow };
 }
 
 type RecoverSpy = ReturnType<typeof createHarness>["recoverSpy"];
@@ -128,6 +129,54 @@ describe("SessionService prompt recovery on fatal session errors", () => {
       expect(store.setSession).toHaveBeenCalledWith(
         expect.objectContaining({ taskRunId: TASK_RUN_ID, status: "error" }),
       );
+    },
+  );
+});
+
+describe("SessionService gateway billing denials", () => {
+  it.each([
+    {
+      case: "a model-gate 403",
+      message:
+        'Internal error: API Error: 403 {"error":{"message":"Model \'claude-fable-5\' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. Add a payment method to your organization to unlock all models. (rate_limit)","type":"permission_error","code":"model_gate"}}',
+      expectedShow: { cause: "model_gate" },
+    },
+    {
+      case: "an org-limit 429",
+      message:
+        "Rate limit exceeded: Your team has reached its PostHog Code usage limit for this billing period.",
+      expectedShow: { cause: "org_limit" },
+    },
+    // The classified cause alone must open the modal — the org-limit prose
+    // is not guaranteed to carry generic rate-limit wording.
+    {
+      case: "an org-limit message without rate-limit wording",
+      message:
+        "Your team has reached its PostHog Code usage limit for this billing period.",
+      expectedShow: { cause: "org_limit" },
+    },
+    {
+      case: "a free-tier valve 429",
+      message: "Rate limit exceeded: User burst rate limit exceeded",
+      expectedShow: { cause: "org_limit" },
+    },
+    {
+      case: "an unclassified rate limit",
+      message: "[429] Too many requests",
+      expectedShow: undefined,
+    },
+  ])(
+    "shows the usage-limit modal and stops the prompt for $case",
+    async ({ message, expectedShow }) => {
+      const { service, promptMutate, usageLimitShow, recoverSpy } =
+        createHarness();
+      promptMutate.mockRejectedValue(new Error(message));
+
+      const result = await service.sendPrompt(TASK_ID, "hello");
+
+      expect(result).toEqual({ stopReason: "rate_limited" });
+      expect(usageLimitShow).toHaveBeenCalledWith(expectedShow);
+      expect(recoverSpy).not.toHaveBeenCalled();
     },
   );
 });

@@ -46,6 +46,8 @@ describe("UsageTracker", () => {
       outputTokens: 80,
       cachedReadTokens: 50,
       cachedWriteTokens: 0,
+      thoughtTokens: 20,
+      totalTokens: 500,
     });
   });
 
@@ -54,7 +56,7 @@ describe("UsageTracker", () => {
     const update = tracker.ingest(payload({ last: undefined }));
 
     expect(update?.used).toBe(1200);
-    expect(tracker.perTurnUsage().inputTokens).toBe(900);
+    expect(tracker.perTurnUsage()?.inputTokens).toBe(900);
   });
 
   it("derives `used` from inputTokens when totalTokens is absent (same order as the gauge)", () => {
@@ -78,17 +80,12 @@ describe("UsageTracker", () => {
     expect(tracker.contextTokens()).toBe(500);
   });
 
-  it("resetForTurn zeroes the per-turn view so a token-less turn reports 0, not stale data", () => {
+  it("resetForTurn clears stale per-turn usage", () => {
     const tracker = new UsageTracker();
     tracker.ingest(payload());
 
     tracker.resetForTurn();
     expect(tracker.contextTokens()).toBeUndefined();
-    expect(tracker.perTurnUsage()).toEqual({
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedReadTokens: 0,
-      cachedWriteTokens: 0,
-    });
+    expect(tracker.perTurnUsage()).toBeUndefined();
   });
 });

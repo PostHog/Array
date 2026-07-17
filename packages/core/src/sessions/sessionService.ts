@@ -14,6 +14,7 @@ import {
   type Adapter,
   type AgentSession,
   type CloudRegion,
+  classifyGatewayLimitError,
   type ExecutionMode,
   flattenSelectOptions,
   getBackoffDelay,
@@ -174,6 +175,7 @@ export interface SessionTrpc {
     retry: TrpcMutation;
     sendCommand: TrpcMutation;
     stop: TrpcMutation;
+    designateRelayedMcpServers: TrpcMutation;
     onUpdate: TrpcSubscription;
   };
   handoff: {
@@ -334,6 +336,7 @@ export interface SessionServiceDeps {
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
     spokenNotifications?: boolean;
+    spokenNarrationEnabled?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1085,14 +1088,14 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions, rtkEnabledLocal, spokenNotifications } =
+      const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
         this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
-        spokenNarration: spokenNotifications === true,
+        spokenNarration: spokenNarrationEnabled === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1415,7 +1418,7 @@ export class SessionService {
     const {
       customInstructions: startCustomInstructions,
       rtkEnabledLocal,
-      spokenNotifications,
+      spokenNarrationEnabled,
     } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
@@ -1428,7 +1431,7 @@ export class SessionService {
       adapter,
       customInstructions: startCustomInstructions || undefined,
       rtkEnabled: rtkEnabledLocal,
-      spokenNarration: spokenNotifications === true,
+      spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
@@ -2712,15 +2715,18 @@ export class SessionService {
 
       this.d.store.clearOptimisticItems(session.taskRunId);
 
-      if (isRateLimitError(errorMessage, errorDetails)) {
-        this.d.log.warn("Rate limit exceeded, showing usage limit modal", {
+      const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
+
+      if (limitCause !== null || isRateLimitError(errorMessage, errorDetails)) {
+        this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
+          cause: limitCause,
         });
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show();
+        this.d.usageLimit.show(limitCause ? { cause: limitCause } : undefined);
         return { stopReason: "rate_limited" };
       }
 
@@ -4470,6 +4476,22 @@ export class SessionService {
    * status triggers full teardown from within handleCloudTaskUpdate via
    * stopCloudTaskWatch().
    */
+  /**
+   * Register this client as the relay executor for a run's desktop-only MCP
+   * servers (docs/cloud-mcp-relay.md). Called by the creation saga — only the
+   * creating client may execute relay requests.
+   */
+  async designateRelayedMcpServers(
+    runId: string,
+    servers: string[],
+  ): Promise<void> {
+    if (servers.length === 0) return;
+    await this.d.trpc.cloudTask.designateRelayedMcpServers.mutate({
+      runId,
+      servers,
+    });
+  }
+
   watchCloudTask(
     taskId: string,
     runId: string,
