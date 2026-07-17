@@ -65,7 +65,8 @@ function emitCanvasGenerationNotification(
 // created a workflow and published the canvas; we read it off the session's
 // event stream - the same source SessionResourcesBar folds for resource chips -
 // and persist it onto the dashboard row. Absent for regular canvas generations.
-function findWorkflowBuilt(
+// Exported for tests.
+export function findWorkflowBuilt(
   events: readonly AcpMessage[] | undefined,
 ): WorkflowBuiltPayload | null {
   if (!events) return null;
