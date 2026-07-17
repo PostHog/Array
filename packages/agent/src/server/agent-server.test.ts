@@ -1532,6 +1532,29 @@ describe("AgentServer HTTP Mode", () => {
       expect(result._meta?.message).toContain("explicit human approval");
     });
 
+    it("parks a Codex-shaped go-live approval that carries no alwaysGated marker", async () => {
+      // Codex forwards PostHog exec approvals without Claude's
+      // `_meta.posthog.alwaysGated` marker — the relay must classify the call
+      // itself (posthog exec + go-live sub-tool) and still park it.
+      const testServer = exposeCloudClient(createServer());
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission({
+        options: [{ optionId: "allow", kind: "allow_once", name: "Yes" }],
+        toolCall: {
+          kind: "other",
+          _meta: { posthog: { mcp: { server: "posthog", tool: "exec" } } },
+          rawInput: { command: "call workflows-enable {}" },
+        },
+      });
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
     it("parks a go-live approval in background mode even when a client is reachable", async () => {
       const testServer = exposeCloudClient(createServer());
       testServer.session = { hasDesktopConnected: true };

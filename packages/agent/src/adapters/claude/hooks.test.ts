@@ -895,3 +895,99 @@ describe("createPostToolUseHook workflow link - YAML MCP results", () => {
     expect(signals).toEqual([]);
   });
 });
+
+describe("createPostToolUseHook workflow link - slot consumption", () => {
+  function execInput(command: string, tool_response?: unknown): HookInput {
+    return {
+      hook_event_name: "PostToolUse",
+      tool_name: "mcp__posthog__exec",
+      tool_input: { command },
+      tool_response,
+    } as unknown as HookInput;
+  }
+  const opts = { signal: new AbortController().signal };
+
+  test("a second publish without a fresh lookup does not re-emit the link", async () => {
+    const signals: WorkflowBuiltSignal[] = [];
+    const hook = createPostToolUseHook({
+      onWorkflowBuilt: (s) => signals.push(s),
+    });
+
+    await hook(
+      execInput(
+        "call --json workflows-create {}",
+        JSON.stringify({ id: "wf-1", status: "draft", name: "Alert" }),
+      ),
+      "tu1",
+      opts,
+    );
+    await hook(
+      execInput(
+        'call --json desktop-file-system-canvas-partial-update {"id":"dash-1","code":"a"}',
+      ),
+      "tu2",
+      opts,
+    );
+    // An edit-turn republish of the same (or another) canvas: no new
+    // workflows-create/get happened, so no link may be emitted.
+    await hook(
+      execInput(
+        'call --json desktop-file-system-canvas-partial-update {"id":"dash-2","code":"b"}',
+      ),
+      "tu3",
+      opts,
+    );
+
+    expect(signals).toEqual([
+      {
+        dashboardId: "dash-1",
+        workflowId: "wf-1",
+        workflowStatus: "draft",
+        workflowName: "Alert",
+      },
+    ]);
+  });
+
+  test("a fresh workflows-get re-arms the pairing after a publish", async () => {
+    const signals: WorkflowBuiltSignal[] = [];
+    const hook = createPostToolUseHook({
+      onWorkflowBuilt: (s) => signals.push(s),
+    });
+
+    await hook(
+      execInput(
+        "call --json workflows-create {}",
+        JSON.stringify({ id: "wf-1", status: "draft", name: "First" }),
+      ),
+      "tu1",
+      opts,
+    );
+    await hook(
+      execInput(
+        'call --json desktop-file-system-canvas-partial-update {"id":"dash-1","code":"a"}',
+      ),
+      "tu2",
+      opts,
+    );
+    await hook(
+      execInput(
+        "call --json workflows-get {}",
+        JSON.stringify({ id: "wf-2", status: "active", name: "Second" }),
+      ),
+      "tu3",
+      opts,
+    );
+    await hook(
+      execInput(
+        'call --json desktop-file-system-canvas-partial-update {"id":"dash-2","code":"b"}',
+      ),
+      "tu4",
+      opts,
+    );
+
+    expect(signals.map((s) => [s.dashboardId, s.workflowId])).toEqual([
+      ["dash-1", "wf-1"],
+      ["dash-2", "wf-2"],
+    ]);
+  });
+});

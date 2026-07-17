@@ -4,6 +4,7 @@ import {
   isPostHogAlwaysGatedSubTool,
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
+  isPostHogGoLiveToolCall,
 } from "./posthog-exec-gate";
 
 describe("isPostHogExecTool", () => {
@@ -117,5 +118,84 @@ describe("isPostHogAlwaysGatedSubTool", () => {
     // workflows-update-schedule DOES contain "update", so it's caught by both -
     // that's fine, the go-live gate takes precedence in canUseTool.
     expect(isPostHogDestructiveSubTool("workflows-update-schedule")).toBe(true);
+  });
+});
+
+describe("plugin-prefixed PostHog exec variants", () => {
+  it("matches the plugin-installed server name", () => {
+    // The renderer's POSTHOG_SERVER_RE recognizes plugin_posthog_* servers;
+    // the gate must gate the same names or a plugin install skips it.
+    expect(isPostHogExecTool("mcp__plugin_posthog_posthog__exec")).toBe(true);
+    expect(isPostHogExecTool("mcp__plugin_posthog__exec")).toBe(true);
+  });
+
+  it("still rejects non-PostHog plugin servers", () => {
+    expect(isPostHogExecTool("mcp__plugin_linear_linear__exec")).toBe(false);
+    expect(isPostHogExecTool("mcp__pluginposthog__exec")).toBe(false);
+  });
+});
+
+describe("isPostHogGoLiveToolCall", () => {
+  it("classifies a Claude-shaped go-live call (legacy toolName meta)", () => {
+    expect(
+      isPostHogGoLiveToolCall({
+        _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
+        rawInput: { command: "call workflows-enable {}" },
+      }),
+    ).toBe(true);
+  });
+
+  it("classifies a Codex-shaped go-live call (structured mcp descriptor)", () => {
+    expect(
+      isPostHogGoLiveToolCall({
+        _meta: { posthog: { mcp: { server: "posthog", tool: "exec" } } },
+        rawInput: { command: "call --json workflows-run-batch {}" },
+      }),
+    ).toBe(true);
+  });
+
+  it("classifies a plugin-installed server's go-live call", () => {
+    expect(
+      isPostHogGoLiveToolCall({
+        _meta: {
+          posthog: { mcp: { server: "plugin_posthog_posthog", tool: "exec" } },
+        },
+        rawInput: { command: "call workflows-schedule-create {}" },
+      }),
+    ).toBe(true);
+  });
+
+  it("falls back to rawInput.toolName when meta carries no descriptor", () => {
+    expect(
+      isPostHogGoLiveToolCall({
+        rawInput: {
+          toolName: "mcp__posthog__exec",
+          command: "call workflows-enable {}",
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects non-go-live sub-tools, other servers, and non-exec tools", () => {
+    expect(
+      isPostHogGoLiveToolCall({
+        _meta: { posthog: { mcp: { server: "posthog", tool: "exec" } } },
+        rawInput: { command: "call workflows-create {}" },
+      }),
+    ).toBe(false);
+    expect(
+      isPostHogGoLiveToolCall({
+        _meta: { posthog: { mcp: { server: "linear", tool: "exec" } } },
+        rawInput: { command: "call workflows-enable {}" },
+      }),
+    ).toBe(false);
+    expect(
+      isPostHogGoLiveToolCall({
+        _meta: { posthog: { mcp: { server: "posthog", tool: "query" } } },
+        rawInput: { command: "call workflows-enable {}" },
+      }),
+    ).toBe(false);
+    expect(isPostHogGoLiveToolCall(undefined)).toBe(false);
+    expect(isPostHogGoLiveToolCall({})).toBe(false);
   });
 });

@@ -34,6 +34,7 @@ import {
   type InProcessAcpConnection,
 } from "../adapters/acp-connection";
 import { setAlwaysAskMcpServers } from "../adapters/claude/mcp/tool-metadata";
+import { isPostHogGoLiveToolCall } from "../adapters/claude/permissions/posthog-exec-gate";
 import {
   getSessionJsonlPath,
   hydrateSessionJsonl,
@@ -3696,15 +3697,18 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 
         // Always-gated approvals (workflow go-live: enable / run-batch /
         // schedule) make an agent-built workflow live and can send to real
-        // people. The permission handler marks them with
-        // `_meta.posthog.alwaysGated`; they must reach a human - relay when a
-        // client can answer, otherwise PARK (cancel with guidance) rather than
-        // fall through to the auto-approve below, which would silently take
-        // the workflow live with nobody watching.
+        // people. Claude's permission handler marks them with
+        // `_meta.posthog.alwaysGated`; Codex forwards PostHog exec approvals
+        // without the marker, so ALSO classify the call itself at this
+        // adapter-neutral boundary. Either way they must reach a human -
+        // relay when a client can answer, otherwise PARK (cancel with
+        // guidance) rather than fall through to the auto-approve below,
+        // which would silently take the workflow live with nobody watching.
         {
           const alwaysGated =
             (params.toolCall?._meta as { posthog?: { alwaysGated?: unknown } })
-              ?.posthog?.alwaysGated === true;
+              ?.posthog?.alwaysGated === true ||
+            isPostHogGoLiveToolCall(params.toolCall);
           if (alwaysGated) {
             if (mode !== "background" && this.hasReachableClient()) {
               return this.relayPermissionToClient(params);

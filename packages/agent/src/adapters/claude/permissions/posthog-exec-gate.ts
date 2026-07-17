@@ -1,3 +1,5 @@
+import { readMcpToolDescriptor } from "@posthog/shared";
+
 /**
  * The PostHog MCP exposes a single `exec` dispatcher tool that runs
  * subcommands like `call [--json] <tool-name> [json]`. Once the user approves
@@ -6,7 +8,13 @@
  * destructive subset (update/delete family) at sub-tool granularity.
  */
 
-const POSTHOG_EXEC_TOOL_RE = /^mcp__posthog(?:_[^_]+)*__exec$/;
+// Optional `plugin_` prefix + `posthog` + optional installation suffixes,
+// mirroring the renderer's POSTHOG_SERVER_RE (posthog-exec-display.ts) so a
+// plugin-installed server (`mcp__plugin_posthog_posthog__exec`) is gated the
+// same as the built-in one.
+const POSTHOG_SERVER_NAME_RE = /^(?:plugin_)?posthog(?:_[^_]+)*$/;
+
+const POSTHOG_EXEC_TOOL_RE = /^mcp__(?:plugin_)?posthog(?:_[^_]+)*__exec$/;
 
 const POSTHOG_CALL_COMMAND_RE = /^\s*call\s+(?:--json\s+)?([a-zA-Z0-9_-]+)/;
 
@@ -44,4 +52,28 @@ const POSTHOG_ALWAYS_GATED_SUBTOOLS = new Set([
 
 export function isPostHogAlwaysGatedSubTool(subTool: string): boolean {
   return POSTHOG_ALWAYS_GATED_SUBTOOLS.has(subTool.toLowerCase());
+}
+
+/**
+ * Adapter-neutral: whether a permission request's tool call is a PostHog
+ * go-live exec call. Claude marks these with `_meta.posthog.alwaysGated`, but
+ * Codex forwards PostHog exec approvals without it — so the cloud relay also
+ * classifies the call itself: the MCP descriptor (or legacy tool name) must be
+ * a PostHog server's `exec`, and the command's sub-tool must be always-gated.
+ */
+export function isPostHogGoLiveToolCall(
+  toolCall: { _meta?: unknown; rawInput?: unknown } | null | undefined,
+): boolean {
+  if (!toolCall) return false;
+  const descriptor = readMcpToolDescriptor(toolCall._meta);
+  const rawInput = toolCall.rawInput as { toolName?: unknown } | undefined;
+  const rawName =
+    typeof rawInput?.toolName === "string" ? rawInput.toolName : undefined;
+  const isExec = descriptor
+    ? descriptor.tool === "exec" &&
+      POSTHOG_SERVER_NAME_RE.test(descriptor.server)
+    : !!rawName && isPostHogExecTool(rawName);
+  if (!isExec) return false;
+  const subTool = extractPostHogSubTool(toolCall.rawInput);
+  return !!subTool && isPostHogAlwaysGatedSubTool(subTool);
 }

@@ -357,6 +357,10 @@ export const createPostToolUseHook = ({
           const dashboardId = parseCanvasPublishDashboardId(input.tool_input);
           if (dashboardId) {
             onWorkflowBuilt({ dashboardId, ...pendingWorkflow });
+            // Consume the slot: a later canvas publish in the same session
+            // (an edit turn, a second board) must not re-emit a stale link -
+            // only a fresh workflows-create/get re-arms the pairing.
+            pendingWorkflow = null;
           }
         }
       }
