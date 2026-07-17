@@ -9,10 +9,12 @@ import { Flex, Text } from "@radix-ui/themes";
 
 interface ContextBreakdownPopoverProps {
   usage: ContextUsage;
+  showCost?: boolean;
 }
 
 export function ContextBreakdownPopover({
   usage,
+  showCost = false,
 }: ContextBreakdownPopoverProps) {
   const { used, size, percentage, cost, breakdown } = usage;
   const fillColor = getOverallUsageColor(percentage);
@@ -73,7 +75,7 @@ export function ContextBreakdownPopover({
         </Text>
       )}
 
-      {cost && (
+      {showCost && cost && (
         <Flex
           align="center"
           justify="between"

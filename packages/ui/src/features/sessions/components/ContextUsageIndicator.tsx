@@ -1,3 +1,5 @@
+import { TASK_COST_FLAG } from "@posthog/shared";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import {
   formatCostUsd,
   formatTokensCompact,
@@ -17,6 +19,8 @@ interface ContextUsageIndicatorProps {
 }
 
 export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
+  const costEnabled = useFeatureFlag(TASK_COST_FLAG) || import.meta.env.DEV;
+
   if (!usage) return null;
 
   const { used, size, percentage, cost } = usage;
@@ -25,10 +29,11 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
   const hasSize = size > 0;
   const strokeDashoffset = CIRCUMFERENCE - (percentage / 100) * CIRCUMFERENCE;
   const color = getOverallUsageColor(percentage);
+  const showCost = costEnabled && cost !== null;
   const tokenLabel = hasSize
     ? `${formatTokensCompact(used)}/${formatTokensCompact(size)} · ${percentage}%`
     : formatTokensCompact(used);
-  const label = cost
+  const label = showCost
     ? `${tokenLabel} · ${formatCostUsd(cost.amount)}`
     : tokenLabel;
 
@@ -79,7 +84,7 @@ export function ContextUsageIndicator({ usage }: ContextUsageIndicatorProps) {
         </button>
       </Popover.Trigger>
       <Popover.Content size="2" side="top" align="end" sideOffset={6}>
-        <ContextBreakdownPopover usage={usage} />
+        <ContextBreakdownPopover usage={usage} showCost={showCost} />
       </Popover.Content>
     </Popover.Root>
   );
