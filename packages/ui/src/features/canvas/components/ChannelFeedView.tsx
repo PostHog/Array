@@ -414,21 +414,12 @@ function ReplyFooter({
   );
 }
 
-// The human who kicked a task off in the channel, or null when the row should
-// stay agent-attributed. Only channel-started tasks (user_created) are a
-// person's doing; other origins (Slack, automations) carry a created_by who
-// didn't start it here, so they keep the agent identity — which also leaves
-// that identity free for genuine agent-authored messages in the future.
 function channelTaskStarter(task: Task): UserBasic | null {
   return task.origin_product === "user_created"
     ? (task.created_by ?? null)
     : null;
 }
 
-// The presentational feed row: avatar + attribution header + body. The task
-// card and reply footer are supplied as `children` (they fetch their own data,
-// so keeping them out of here leaves the row pure and storyable); `actions` is
-// the hover toolbar.
 export function TaskFeedRow({
   task,
   actions,
