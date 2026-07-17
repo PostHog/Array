@@ -252,8 +252,6 @@ export function FileHeaderRow({
   viewedKey?: string;
 }) {
   return (
-    // The toggle target is a button; the open-file / read controls sit
-    // alongside it (not nested inside it, which would be invalid HTML).
     <div className="flex w-full items-center gap-[6px] border-b border-b-(--gray-5) px-[12px] py-[6px] font-[var(--code-font-family)] text-xs">
       <button
         type="button"
@@ -316,19 +314,19 @@ function ViewedCheckbox({ viewedKey }: { viewedKey: string }) {
   const stored = ctx.viewedRecord[viewedKey];
   const viewed = isFileViewed(stored, current);
   const changed = stored !== undefined && !viewed;
+  let title = "Mark as viewed";
+  if (changed) {
+    title = "Changed since you viewed it: click to mark as viewed again";
+  } else if (viewed) {
+    title = "Mark as not viewed";
+  }
 
   return (
     <button
       type="button"
       aria-pressed={viewed}
       aria-label="Viewed"
-      title={
-        changed
-          ? "Changed since you viewed it — click to mark as viewed again"
-          : viewed
-            ? "Mark as not viewed"
-            : "Mark as viewed"
-      }
+      title={title}
       onClick={(e) => {
         e.stopPropagation();
         ctx.toggleViewed(viewedKey, viewed ? null : current);
