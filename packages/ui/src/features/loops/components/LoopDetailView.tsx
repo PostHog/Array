@@ -17,34 +17,14 @@ import {
   useRunLoop,
   useUpdateLoop,
 } from "../hooks/useLoopMutations";
-import { useLoopRuns } from "../hooks/useLoopRuns";
+import { RECENT_RUNS_LIMIT, useLoopRuns } from "../hooks/useLoopRuns";
+import {
+  describeTrigger,
+  loopStatusColor,
+  loopStatusLabel,
+} from "../loopDisplay";
+import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
-
-function statusColor(loop: LoopSchemas.Loop): "gray" | "green" | "red" {
-  if (!loop.enabled) return "gray";
-  if (loop.last_run_status === "failed") return "red";
-  return "green";
-}
-
-function statusLabel(loop: LoopSchemas.Loop): string {
-  if (!loop.enabled) return "Paused";
-  if (loop.last_run_status === "failed") return "Failing";
-  return "Active";
-}
-
-function describeTrigger(trigger: LoopSchemas.LoopTrigger): string {
-  if (trigger.type === "schedule") {
-    const config = trigger.config as LoopSchemas.LoopScheduleTriggerConfig;
-    if (config.run_at)
-      return `One-time · ${new Date(config.run_at).toLocaleString()}`;
-    return `Schedule · ${config.cron_expression ?? "?"} (${config.timezone ?? "UTC"})`;
-  }
-  if (trigger.type === "github") {
-    const config = trigger.config as LoopSchemas.LoopGithubTriggerConfig;
-    return `GitHub · ${config.repository || "?"} · ${config.events.join(", ") || "no events"}`;
-  }
-  return "API · authenticated POST";
-}
 
 export function LoopDetailView({ loopId }: { loopId: string }) {
   const { data: loop, isLoading, isError } = useLoop(loopId);
@@ -114,21 +94,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   }
 
   if (isError || !loop) {
-    return (
-      <Flex
-        direction="column"
-        align="center"
-        gap="1"
-        className="mx-auto mt-16 max-w-md rounded-(--radius-2) border border-(--gray-5) border-dashed px-6 py-10 text-center"
-      >
-        <Text className="font-medium text-[13px] text-gray-12">
-          Couldn't load this loop
-        </Text>
-        <Text className="max-w-md text-[12px] text-gray-11 leading-snug">
-          It may have been deleted, or the loops API returned an error.
-        </Text>
-      </Flex>
-    );
+    return <LoopLoadError />;
   }
 
   return (
@@ -149,7 +115,9 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
                 {loop.name}
               </Text>
-              <Badge color={statusColor(loop)}>{statusLabel(loop)}</Badge>
+              <Badge color={loopStatusColor(loop)}>
+                {loopStatusLabel(loop)}
+              </Badge>
               <Badge color="gray">{loop.visibility}</Badge>
             </Flex>
             <Flex align="center" gap="2">
@@ -202,7 +170,9 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
             <Text className="font-medium text-[13px] text-gray-12">
               Run history
             </Text>
-            <Text className="text-[11px] text-gray-10">10 most recent</Text>
+            <Text className="text-[11px] text-gray-10">
+              {RECENT_RUNS_LIMIT} most recent
+            </Text>
           </Flex>
           {runsQuery.isLoading ? (
             <div className="h-16 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />

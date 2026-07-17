@@ -17,6 +17,7 @@ import { Box, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { useCreateLoop, useUpdateLoop } from "../hooks/useLoopMutations";
+import { summarizeTrigger } from "../loopDisplay";
 import { useLoopDraftStore } from "../loopDraftStore";
 import {
   emptyLoopFormValues,
@@ -142,7 +143,12 @@ export function LoopForm({ loop }: LoopFormProps) {
         return;
       }
       toast.error(isEdit ? "Failed to save loop" : "Failed to create loop", {
-        description: error instanceof Error ? error.message : undefined,
+        description:
+          error instanceof LoopsApiError
+            ? (error.detail ?? error.message)
+            : error instanceof Error
+              ? error.message
+              : undefined,
       });
     }
   };
@@ -536,7 +542,7 @@ function ReviewList({ values }: { values: LoopFormValues }) {
         value={
           values.triggers.length === 0
             ? "Manual only"
-            : values.triggers.map(describeTrigger).join(", ")
+            : values.triggers.map(summarizeTrigger).join(", ")
         }
       />
       <ReviewRow
@@ -583,18 +589,4 @@ function describeContext(target: LoopContextTargetDraft | null): string {
   return outputs.length > 0
     ? `#${target.name} (${outputs.join(", ")})`
     : `#${target.name}`;
-}
-
-function describeTrigger(trigger: LoopFormValues["triggers"][number]): string {
-  if (trigger.type === "schedule") {
-    const config = trigger.config as LoopSchemas.LoopScheduleTriggerConfig;
-    if (config.run_at) return "Once";
-    return `Schedule (${config.cron_expression ?? "cron"})`;
-  }
-  if (trigger.type === "github") {
-    const config = trigger.config as LoopSchemas.LoopGithubTriggerConfig;
-    const repo = config.repository || "a repo";
-    return `GitHub (${repo})`;
-  }
-  return "API";
 }

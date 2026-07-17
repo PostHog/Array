@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { loopsKeys } from "./loopsKeys";
 import { useLoopsClient } from "./useLoopsClient";
 
-const RECENT_RUNS_LIMIT = 10;
+export const RECENT_RUNS_LIMIT = 10;
 
-/** The 10 most recent runs for a loop, polled so the detail view stays live. */
+/** The most recent runs for a loop, polled so the detail view stays live. */
 export function useLoopRuns(loopId: string | undefined) {
   const loopsClient = useLoopsClient();
 

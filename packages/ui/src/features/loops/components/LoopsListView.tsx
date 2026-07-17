@@ -8,6 +8,7 @@ import { useLoops } from "../hooks/useLoops";
 import { useLoopDraftStore } from "../loopDraftStore";
 import type { LoopTemplate } from "../loopTemplates";
 import { LoopBuilderComposer } from "./LoopBuilderComposer";
+import { LoopsEmptyNotice, LoopsSkeleton } from "./LoopFallbacks";
 import { LoopRow } from "./LoopRow";
 import { LoopsEmptyState } from "./LoopsEmptyState";
 import { LoopTemplatesSection } from "./LoopTemplatesSection";
@@ -84,7 +85,7 @@ export function LoopsListView() {
           {isLoading ? (
             <LoopsSkeleton />
           ) : isError ? (
-            <EmptyNotice
+            <LoopsEmptyNotice
               title="Couldn't load loops."
               hint={
                 error instanceof Error
@@ -120,37 +121,6 @@ export function LoopsListView() {
           <LoopBuilderComposer />
         </Flex>
       </div>
-    </Flex>
-  );
-}
-
-function EmptyNotice({ title, hint }: { title: string; hint: string }) {
-  return (
-    <Flex
-      align="center"
-      justify="center"
-      direction="column"
-      gap="1"
-      py="6"
-      className="rounded border border-gray-6 border-dashed"
-    >
-      <Text className="font-medium text-sm">{title}</Text>
-      <Text color="gray" className="text-[13px]">
-        {hint}
-      </Text>
-    </Flex>
-  );
-}
-
-function LoopsSkeleton() {
-  return (
-    <Flex direction="column" gap="2">
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="h-[58px] animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)"
-        />
-      ))}
     </Flex>
   );
 }

@@ -3,18 +3,7 @@ import type { LoopSchemas } from "@posthog/api-client/loops";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
-
-function statusColor(loop: LoopSchemas.Loop): "gray" | "green" | "red" {
-  if (!loop.enabled) return "gray";
-  if (loop.last_run_status === "failed") return "red";
-  return "green";
-}
-
-function statusLabel(loop: LoopSchemas.Loop): string {
-  if (!loop.enabled) return "Paused";
-  if (loop.last_run_status === "failed") return "Failing";
-  return "Active";
-}
+import { loopStatusColor, loopStatusLabel } from "../loopDisplay";
 
 export function LoopRow({ loop }: { loop: LoopSchemas.Loop }) {
   return (
@@ -30,7 +19,7 @@ export function LoopRow({ loop }: { loop: LoopSchemas.Loop }) {
             <Text className="truncate font-medium text-[13px] text-gray-12">
               {loop.name}
             </Text>
-            <Badge color={statusColor(loop)}>{statusLabel(loop)}</Badge>
+            <Badge color={loopStatusColor(loop)}>{loopStatusLabel(loop)}</Badge>
           </Flex>
           <Text className="truncate text-[12px] text-gray-11 leading-snug">
             {loop.description.trim()

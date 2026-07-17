@@ -6,6 +6,10 @@ import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
 import { LoopBuilderComposer } from "../../loops/components/LoopBuilderComposer";
+import {
+  LoopsEmptyNotice,
+  LoopsSkeleton,
+} from "../../loops/components/LoopFallbacks";
 import { LoopRow } from "../../loops/components/LoopRow";
 import { LoopsEmptyState } from "../../loops/components/LoopsEmptyState";
 import { useLoops } from "../../loops/hooks/useLoops";
@@ -108,7 +112,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
           {isLoading ? (
             <LoopsSkeleton />
           ) : isError ? (
-            <EmptyNotice
+            <LoopsEmptyNotice
               title="Couldn't load loops"
               hint="The loops API returned an error. Try again in a moment."
             />
@@ -142,37 +146,6 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
           />
         </Flex>
       </div>
-    </Flex>
-  );
-}
-
-function EmptyNotice({ title, hint }: { title: string; hint: string }) {
-  return (
-    <Flex
-      align="center"
-      justify="center"
-      direction="column"
-      gap="1"
-      py="7"
-      className="rounded border border-gray-6 border-dashed"
-    >
-      <Text className="font-medium text-sm">{title}</Text>
-      <Text color="gray" className="max-w-[420px] text-center text-[13px]">
-        {hint}
-      </Text>
-    </Flex>
-  );
-}
-
-function LoopsSkeleton() {
-  return (
-    <Flex direction="column" gap="2">
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="h-[68px] animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)"
-        />
-      ))}
     </Flex>
   );
 }
