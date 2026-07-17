@@ -211,7 +211,11 @@ export function ReviewShell({
     const targetIndex = itemIndexByFilePath.get(scrollRequest);
     if (targetIndex === undefined) return;
 
-    onUncollapseFile?.(scrollRequest);
+    const currentSignature = currentSignatures.get(scrollRequest);
+    const viewed =
+      currentSignature !== undefined &&
+      isFileViewed(viewedRecord[scrollRequest], currentSignature);
+    if (!viewed) onUncollapseFile?.(scrollRequest);
     requestAnimationFrame(() => {
       listRef.current?.scrollToIndex(targetIndex, { align: "start" });
       setActiveFilePath(taskId, scrollRequest);
@@ -219,11 +223,13 @@ export function ReviewShell({
     });
   }, [
     clearScrollRequest,
+    currentSignatures,
     itemIndexByFilePath,
     onUncollapseFile,
     scrollRequest,
     setActiveFilePath,
     taskId,
+    viewedRecord,
   ]);
 
   const lastActiveRef = useRef<string | null>(null);
