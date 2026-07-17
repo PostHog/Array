@@ -35,7 +35,7 @@ describe("formatGatewayModelName", () => {
     ).toBe("Claude Opus 4.8");
   });
 
-  it("formats OpenAI models as raw lowercase model ids", () => {
+  it("uppercases the GPT acronym in OpenAI model ids", () => {
     expect(
       formatGatewayModelName({
         id: "GPT-5.5",
@@ -45,23 +45,23 @@ describe("formatGatewayModelName", () => {
         supports_vision: true,
         allowed: true,
       }),
-    ).toBe("gpt-5.5");
+    ).toBe("GPT-5.5");
   });
 
-  it("strips the openai/ prefix from OpenAI model ids", () => {
+  it("strips the openai/ prefix and uppercases GPT", () => {
     expect(
       formatGatewayModelName({
-        id: "openai/gpt-5.5",
+        id: "openai/gpt-5.6-sol",
         owned_by: "openai",
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
         allowed: true,
       }),
-    ).toBe("gpt-5.5");
+    ).toBe("GPT-5.6-sol");
   });
 
-  it("formats Cloudflare models as the lowercase final path segment", () => {
+  it("formats Cloudflare models as the final path segment with GLM uppercased", () => {
     expect(
       formatGatewayModelName({
         id: "@cf/zai-org/glm-5.2",
@@ -71,7 +71,7 @@ describe("formatGatewayModelName", () => {
         supports_vision: false,
         allowed: true,
       }),
-    ).toBe("glm-5.2");
+    ).toBe("GLM-5.2");
   });
 
   it("blocks deprecated Claude gateway models", () => {
@@ -132,17 +132,17 @@ describe("compareModelsForPicker", () => {
       "claude-opus-4-7",
     ];
     const displayed = [...gatewayOrder].sort(compareModelsForPicker);
-    // Each family stays contiguous (both Sonnets together, both Opuses
-    // together) instead of interleaving by raw version number. The menu opens
-    // upward, so the newest flagship family sits closest to the trigger, and
-    // unknown/non-Anthropic models trail the known families.
+    // Families are ordered most-capable first and each stays contiguous (both
+    // Sonnets together, both Opuses together) instead of interleaving by raw
+    // version number. Within a family, versions run oldest-to-newest.
+    // Unknown/non-Anthropic models trail the known families.
     expect(displayed).toEqual([
-      "claude-haiku-4-5",
-      "claude-sonnet-4-6",
-      "claude-sonnet-5",
+      "claude-fable-5",
       "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-fable-5",
+      "claude-sonnet-4-6",
+      "claude-sonnet-5",
+      "claude-haiku-4-5",
       "claude-mystery",
     ]);
   });
