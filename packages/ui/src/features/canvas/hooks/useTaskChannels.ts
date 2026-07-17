@@ -103,14 +103,40 @@ export function useBackendChannel(channelName: string | undefined): {
     },
   });
   const { mutate: resolve, isPending: isResolving } = resolveMutation;
+  // A failed resolve must not re-fire: the effect's own deps flip when the
+  // mutation settles, so retrying on error would spin the POST forever. Scoped
+  // to the name that failed (via the mutation's variables) so a different
+  // channel still gets its own attempt.
+  const resolveFailed =
+    resolveMutation.isError && resolveMutation.variables === normalized;
   useEffect(() => {
-    if (normalized && !isPersonal && !isLoading && !existing && !isResolving) {
+    if (
+      normalized &&
+      !isPersonal &&
+      !isLoading &&
+      !existing &&
+      !isResolving &&
+      !resolveFailed
+    ) {
       resolve(normalized);
     }
-  }, [normalized, isPersonal, isLoading, existing, isResolving, resolve]);
+  }, [
+    normalized,
+    isPersonal,
+    isLoading,
+    existing,
+    isResolving,
+    resolveFailed,
+    resolve,
+  ]);
 
   return {
     channel: existing,
-    isLoading: isLoading || (!existing && isResolving),
+    // Loading spans the whole identity resolution — the list fetch, the gap
+    // before the resolve effect fires, and the resolve itself — so callers
+    // never see a "not loading, no channel" flash for a name that is still
+    // resolving. A failed resolve settles it.
+    isLoading:
+      isLoading || (!!normalized && !isPersonal && !existing && !resolveFailed),
   };
 }

@@ -16,5 +16,8 @@ export function getPostHogUrl(
 export function getBillingUrl(
   regionOverride?: CloudRegion | null,
 ): string | null {
-  return getPostHogUrl("/organization/billing/overview", regionOverride);
+  return getPostHogUrl(
+    "/organization/billing/overview?products=posthog_code_usage",
+    regionOverride,
+  );
 }

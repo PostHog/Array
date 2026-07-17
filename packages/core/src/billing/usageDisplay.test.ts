@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { UsageOutput } from "../usage/schemas";
 import {
+  codeOrgSpendLimitUsd,
   codeUsageMeter,
   formatResetTime,
+  formatUsageBreakdown,
   formatUsdAmount,
   isCodeUsageFreeTier,
   isUsageExceeded,
@@ -92,7 +94,30 @@ describe("codeUsageMeter", () => {
       percent: 25,
       exceeded: false,
       resetAt: "2026-06-01T00:00:00.000Z",
+      breakdown: { includedUsd: 20, spendLimitUsd: 30 },
     });
+  });
+
+  it("splits a default-settings subscribed limit into $20 included + $50 spend limit", () => {
+    const meter = codeUsageMeter({
+      ...makeUsage(),
+      code_usage_subscribed: true,
+      ai_credits: { exhausted: false, used_usd: 5, limit_usd: 70 },
+    });
+    expect(meter).toMatchObject({
+      kind: "dollars",
+      limitUsd: 70,
+      breakdown: { includedUsd: 20, spendLimitUsd: 50 },
+    });
+  });
+
+  it("keeps a free org's dollars meter breakdown-free — its limit is just the allowance", () => {
+    const meter = codeUsageMeter({
+      ...makeUsage(),
+      code_usage_subscribed: false,
+      ai_credits: { exhausted: false, used_usd: 5, limit_usd: 20 },
+    });
+    expect(meter).toMatchObject({ kind: "dollars", breakdown: null });
   });
 
   it("marks the dollars meter exceeded from the org bucket and falls back to the sustained reset", () => {
@@ -131,6 +156,59 @@ describe("codeUsageMeter", () => {
     ).toEqual({ kind: "hidden" });
     expect(codeUsageMeter(makeUsage())).toEqual({ kind: "hidden" });
     expect(codeUsageMeter(null)).toEqual({ kind: "hidden" });
+  });
+});
+
+describe("codeOrgSpendLimitUsd", () => {
+  const subscribedWithLimit = (limitUsd: number | null) => ({
+    code_usage_subscribed: true,
+    ai_credits: { exhausted: false, used_usd: 0, limit_usd: limitUsd },
+  });
+
+  it.each([
+    ["default settings", 70, 50],
+    ["custom limit", 120.5, 100.5],
+    ["a $0 spend limit is a real answer", 20, 0],
+  ])("recovers the configured limit with %s", (_name, limitUsd, expected) => {
+    expect(codeOrgSpendLimitUsd(subscribedWithLimit(limitUsd))).toBe(expected);
+  });
+
+  it("returns null when the merged limit is below the allowance", () => {
+    expect(codeOrgSpendLimitUsd(subscribedWithLimit(15))).toBeNull();
+  });
+
+  it("returns null without a limit number", () => {
+    expect(codeOrgSpendLimitUsd(subscribedWithLimit(null))).toBeNull();
+    expect(
+      codeOrgSpendLimitUsd({
+        code_usage_subscribed: true,
+        ai_credits: undefined,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for free, unknown, or missing orgs", () => {
+    expect(
+      codeOrgSpendLimitUsd({
+        code_usage_subscribed: false,
+        ai_credits: { exhausted: false, used_usd: 0, limit_usd: 20 },
+      }),
+    ).toBeNull();
+    expect(
+      codeOrgSpendLimitUsd({
+        code_usage_subscribed: undefined,
+        ai_credits: { exhausted: false, used_usd: 0, limit_usd: 70 },
+      }),
+    ).toBeNull();
+    expect(codeOrgSpendLimitUsd(null)).toBeNull();
+  });
+});
+
+describe("formatUsageBreakdown", () => {
+  it("phrases the merged limit as included + spend limit", () => {
+    expect(formatUsageBreakdown({ includedUsd: 20, spendLimitUsd: 50 })).toBe(
+      "$20 included + $50 org spend limit",
+    );
   });
 });
 
@@ -186,11 +264,27 @@ describe("formatResetTime", () => {
       expected: "Resets shortly",
     },
   ])("$name", ({ resetAt, expected }) => {
-    const result = formatResetTime(resetAt, NOW);
+    const result = formatResetTime(resetAt, { now: NOW });
     if (expected instanceof RegExp) {
       expect(result).toMatch(expected);
     } else {
       expect(result).toBe(expected);
     }
+  });
+
+  it("swaps the leading phrase when a custom label is given", () => {
+    const opts = { now: NOW, label: "Billing period ends" };
+    expect(formatResetTime(isoAt(30 * 60 * 1000), opts)).toBe(
+      "Billing period ends in 30m",
+    );
+    expect(formatResetTime(isoAt(4 * 3600 * 1000), opts)).toBe(
+      "Billing period ends in 4h",
+    );
+    expect(formatResetTime(isoAt(-60_000), opts)).toBe(
+      "Billing period ends shortly",
+    );
+    expect(formatResetTime(isoAt(30 * 86400 * 1000), opts)).toMatch(
+      /^Billing period ends [A-Za-z]+ \d+ at /,
+    );
   });
 });

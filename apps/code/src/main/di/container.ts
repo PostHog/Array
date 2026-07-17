@@ -4,7 +4,6 @@ import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
 import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
-  getGatewayInvalidatePlanCacheUrl,
   getGatewayUsageUrl,
   getLlmGatewayUrl,
 } from "@posthog/agent/posthog-api";
@@ -491,8 +490,6 @@ container.bind(LLM_GATEWAY_HOST).toDynamicValue((ctx) => {
     messagesUrl: (apiHost: string) =>
       `${getLlmGatewayUrl(apiHost)}/v1/messages`,
     usageUrl: (apiHost: string) => getGatewayUsageUrl(apiHost),
-    invalidatePlanCacheUrl: (apiHost: string) =>
-      getGatewayInvalidatePlanCacheUrl(apiHost),
     defaultModel: DEFAULT_GATEWAY_MODEL,
   };
 });
