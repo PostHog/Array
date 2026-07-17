@@ -107,6 +107,12 @@ export interface ChannelFeedMessage {
 export interface TaskThreadMessage {
   id: string;
   task: string;
+  /** Who authored the row; agent rows are server-emitted announcements. Absent on older backends. */
+  author_kind?: "human" | "system" | "agent";
+  /** Stable event key for non-human rows (e.g. "canvas_created", "turn_complete"). */
+  event?: string;
+  /** Structured event payload; turn_complete carries `{ run_id }` so a client rendering a run's live agent turns can dedupe the durable row. */
+  payload?: Record<string, unknown>;
   content: string;
   created_at: string;
   author?: UserBasic | null;
