@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findPrUrl, wasCreatedRecently } from "./pr-url-detector";
+import {
+  findPrUrl,
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "./pr-url-detector";
 
 const PR_URL = "https://github.com/PostHog/posthog.com/pull/17764";
 
@@ -30,6 +35,38 @@ describe("findPrUrl", () => {
     expect(
       findPrUrl("see https://github.com/PostHog/posthog/issues/42"),
     ).toBeNull();
+  });
+});
+
+describe("findPrUrls", () => {
+  const OTHER = "https://github.com/PostHog/posthog/pull/99";
+
+  it("finds every PR URL in one chunk, in order", () => {
+    expect(findPrUrls(`Opened ${PR_URL} and ${OTHER} today`)).toEqual([
+      PR_URL,
+      OTHER,
+    ]);
+  });
+
+  it("dedupes repeated mentions of the same PR", () => {
+    expect(findPrUrls(`${PR_URL} again: ${PR_URL}`)).toEqual([PR_URL]);
+  });
+
+  it("returns an empty array when there is no PR URL", () => {
+    expect(findPrUrls("nothing here")).toEqual([]);
+  });
+});
+
+describe("wasCreatedByLogin", () => {
+  it.each([
+    ["run-owner", "run-owner", true],
+    ["Run-Owner", "run-owner", true],
+    ["someone-else", "run-owner", false],
+    [null, "run-owner", false],
+    ["run-owner", null, false],
+    ["", "", false],
+  ] as const)("author=%s login=%s -> %s", (author, login, expected) => {
+    expect(wasCreatedByLogin(author, login)).toBe(expected);
   });
 });
 

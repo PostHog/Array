@@ -2,7 +2,7 @@
 # Run the live golden-path e2e for both adapters (claude + codex).
 #
 # Needs a local llm-gateway (run `./bin/start` in the posthog repo) and a token.
-# The suite targets the gateway's `llm_gateway` product, which accepts a personal
+# The suite targets the gateway's `ci` product, which accepts a personal
 # API key (no OAuth), so if POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY is unset this reads the repo's
 # hardcoded local dev key from ee/settings.py (override the repo with POSTHOG_REPO).
 # That key must be registered in the local DB — run `python manage.py
@@ -25,7 +25,7 @@ if [[ -z "${POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY:-}" ]]; then
     echo "Set POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY, or POSTHOG_REPO to the posthog checkout." >&2
     exit 1
   fi
-  # The `llm_gateway` product accepts personal API keys, so no OAuth mint needed.
+  # The `ci` product accepts personal API keys, so no OAuth mint needed.
   POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY="$(grep -E '^DEV_API_KEY[[:space:]]*=' "$SETTINGS" | head -1 | sed -E 's/^DEV_API_KEY[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')"
 fi
 
@@ -36,6 +36,6 @@ if [[ -z "${POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY:-}" ]]; then
 fi
 
 export POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY
-echo "token: ${POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY:0:8}…  gateway: ${POSTHOG_CODE_E2E_GATEWAY_URL:-http://localhost:3308/llm_gateway}"
+echo "token: ${POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY:0:8}…  gateway: ${POSTHOG_CODE_E2E_GATEWAY_URL:-http://localhost:3308/ci}"
 cd "$AGENT_DIR"
 pnpm test:e2e "$@"

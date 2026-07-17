@@ -1,5 +1,7 @@
 import { Text } from "@components/text";
 import {
+  CaretDown,
+  CaretUp,
   Lightning,
   PaperclipIcon,
   PencilSimple,
@@ -11,6 +13,7 @@ import { Pressable, View } from "react-native";
 import { SheetContainer } from "@/components/SheetContainer";
 import { useThemeColors } from "@/lib/theme";
 import {
+  type MoveDirection,
   type QueuedMessage,
   useMessageQueueStore,
 } from "../stores/messageQueueStore";
@@ -19,8 +22,9 @@ interface QueuedMessagesDockProps {
   taskId: string;
   canSteer: boolean;
   onSteer: (message: QueuedMessage) => void;
-  onReturnToComposer: (message: QueuedMessage) => void;
+  onEdit: (message: QueuedMessage) => void;
   onDiscard: (message: QueuedMessage) => void;
+  onMove: (message: QueuedMessage, direction: MoveDirection) => void;
 }
 
 function previewText(message: QueuedMessage): string {
@@ -33,11 +37,13 @@ export function QueuedMessagesDock({
   taskId,
   canSteer,
   onSteer,
-  onReturnToComposer,
+  onEdit,
   onDiscard,
+  onMove,
 }: QueuedMessagesDockProps) {
   const themeColors = useThemeColors();
   const queued = useMessageQueueStore((s) => s.queuesByTaskId[taskId]);
+  const editingId = useMessageQueueStore((s) => s.editingByTaskId[taskId]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   if (!queued || queued.length === 0) return null;
@@ -46,24 +52,58 @@ export function QueuedMessagesDock({
   return (
     <>
       <View className="gap-1 px-3 pb-2">
-        {queued.map((message) => (
-          <Pressable
-            key={message.id}
-            onPress={() => setActiveId(message.id)}
-            accessibilityRole="button"
-            accessibilityLabel="Queued message actions"
-            className="flex-row items-center gap-2 rounded-xl border border-gray-6 bg-card px-3 py-2 active:opacity-70"
-          >
-            <Stack size={14} color={themeColors.gray[10]} />
-            <Text numberOfLines={1} className="flex-1 text-[13px] text-gray-11">
-              {previewText(message)}
-            </Text>
-            {message.attachments.length > 0 ? (
-              <PaperclipIcon size={13} color={themeColors.gray[9]} />
-            ) : null}
-            <Text className="text-[11px] text-gray-9">Queued</Text>
-          </Pressable>
-        ))}
+        {queued.map((message, index) => {
+          const isEditing = message.id === editingId;
+          return (
+            <View
+              key={message.id}
+              className={`flex-row items-center gap-2 rounded-xl border px-3 py-2 ${
+                isEditing
+                  ? "border-accent-7 bg-accent-2"
+                  : "border-gray-6 bg-card"
+              }`}
+            >
+              <Pressable
+                onPress={() => setActiveId(message.id)}
+                accessibilityRole="button"
+                accessibilityLabel="Queued message actions"
+                className="min-w-0 flex-1 flex-row items-center gap-2 active:opacity-70"
+              >
+                <Stack size={14} color={themeColors.gray[10]} />
+                <Text
+                  numberOfLines={1}
+                  className="flex-1 text-[13px] text-gray-11"
+                >
+                  {previewText(message)}
+                </Text>
+                {message.attachments.length > 0 ? (
+                  <PaperclipIcon size={13} color={themeColors.gray[9]} />
+                ) : null}
+                <Text
+                  className={`text-[11px] ${
+                    isEditing ? "text-accent-11" : "text-gray-9"
+                  }`}
+                >
+                  {isEditing ? "Editing" : "Queued"}
+                </Text>
+              </Pressable>
+              <View className="flex-row items-center">
+                <ReorderButton
+                  icon={<CaretUp size={16} color={themeColors.gray[11]} />}
+                  label="Move up"
+                  disabled={index === 0}
+                  onPress={() => onMove(message, "up")}
+                />
+                <ReorderButton
+                  icon={<CaretDown size={16} color={themeColors.gray[11]} />}
+                  label="Move down"
+                  disabled={index === queued.length - 1}
+                  onPress={() => onMove(message, "down")}
+                />
+              </View>
+            </View>
+          );
+        })}
       </View>
 
       <SheetContainer open={active !== null} onClose={() => setActiveId(null)}>
@@ -93,10 +133,10 @@ export function QueuedMessagesDock({
             ) : null}
             <ActionRow
               icon={<PencilSimple size={18} color={themeColors.gray[11]} />}
-              label="Edit in composer"
-              description="Pull it back into the composer to revise"
+              label="Edit in place"
+              description="Revise it in the composer; it keeps its place in the queue"
               onPress={() => {
-                onReturnToComposer(active);
+                onEdit(active);
                 setActiveId(null);
               }}
             />
@@ -113,6 +153,34 @@ export function QueuedMessagesDock({
         ) : null}
       </SheetContainer>
     </>
+  );
+}
+
+function ReorderButton({
+  icon,
+  label,
+  disabled,
+  onPress,
+}: {
+  icon: ReactNode;
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      className={`h-8 w-8 items-center justify-center rounded-lg active:bg-gray-3 ${
+        disabled ? "opacity-30" : ""
+      }`}
+    >
+      {icon}
+    </Pressable>
   );
 }
 

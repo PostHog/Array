@@ -4,12 +4,12 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import { inject, injectable } from "inversify";
-import { toast } from "../../primitives/toast";
 import { logger } from "../../shell/logger";
 import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
+import { toastError } from "../notifications/errorDetails";
 import { WORKSPACE_QUERY_KEY } from "../workspace/identifiers";
 import { useFocusStore } from "./focusStore";
 
@@ -47,9 +47,7 @@ export class FocusEventsContribution implements Contribution {
         );
         const result = await useFocusStore.getState().disableFocus();
         if (!result.success && result.error) {
-          toast.error("Could not unfocus workspace", {
-            description: result.error,
-          });
+          toastError("Could not unfocus workspace", result.error);
         }
       },
     });

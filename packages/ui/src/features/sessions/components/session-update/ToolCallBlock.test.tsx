@@ -115,4 +115,17 @@ describe("ToolCallBlock codex routing", () => {
     expect(screen.getByText("Run tests")).toBeInTheDocument();
     expect(screen.getByText("pnpm test")).toBeInTheDocument();
   });
+
+  it("renders Codex orchestration calls as operations rather than subagents", () => {
+    renderBlock({
+      toolCallId: "tc-wait-agent",
+      title: "Wait for subagents",
+      kind: "other",
+      status: "completed",
+      _meta: posthogToolMeta({ toolName: "wait_agent" }),
+    });
+
+    expect(screen.getByText("Wait for subagents")).toBeInTheDocument();
+    expect(screen.queryByText(/^Subagent/)).not.toBeInTheDocument();
+  });
 });

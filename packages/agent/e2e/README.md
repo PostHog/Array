@@ -91,8 +91,8 @@ arm self-skips if it is missing).
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY` | — | Required. A token the gateway accepts — the `llm_gateway` product takes a personal API key (no OAuth). Without it every arm skips. `run-e2e.sh` reads the local dev key. |
-| `POSTHOG_CODE_E2E_GATEWAY_URL` | `http://localhost:3308/llm_gateway` | Gateway base (codex appends `/v1`). `llm_gateway` accepts a personal API key; `posthog_code` is OAuth-only. |
+| `POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY` | — | Required. A token the gateway accepts — the `ci` product takes a personal API key (no OAuth). Without it every arm skips. `run-e2e.sh` reads the local dev key. |
+| `POSTHOG_CODE_E2E_GATEWAY_URL` | `http://localhost:3308/ci` | Gateway base (codex appends `/v1`). `ci` accepts a personal API key; `posthog_code` is OAuth-only. |
 | `POSTHOG_CODE_E2E_CLAUDE_MODEL` | `claude-haiku-4-5` | Override if the gateway serves a different cheap Claude id. |
 | `POSTHOG_CODE_E2E_CODEX_MODEL` | `gpt-5-mini` | Cheapest codex id the local gateway serves; override if needed. |
 | `POSTHOG_CODE_E2E_CLAUDE_STRONG_MODEL` | `claude-sonnet-4-5` | Stronger Claude id for tests the cheap model can't handle (structured output). |

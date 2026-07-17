@@ -1,0 +1,246 @@
+name: Storybook visual regression
+
+# Captures a screenshot of every story (dark + light) and submits them to the
+# PostHog Visual Review product, which diffs against the signed baseline
+# manifest committed at apps/code/snapshots.yml. Visual changes are reviewed
+# and approved at https://us.posthog.com/project/2/visual_review; on approval
+# the VR backend commits the updated manifest back to the PR branch. PNGs are
+# never committed to this repo.
+#
+# Until the one-time setup is done (VR repo registration + VR_API_TOKEN secret
+# + committed snapshots.yml), the vr step silently no-ops: the job still runs
+# the capture, which catches stories that crash or never settle.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: code-storybook-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      baseline_only_push: ${{ steps.baseline_push.outputs.result }}
+    steps:
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          predicate-quantifier: every
+          filters: |
+            # Anything that can change a rendered story. The baseline manifest
+            # is excluded, but note paths-filter diffs the whole PR against
+            # its base, so once a PR has code changes this filter stays true
+            # for every later push — the baseline_push step below is what
+            # skips the VR backend's own approval commits.
+            code:
+              - "{apps/code/**,packages/**,pnpm-lock.yaml,.github/workflows/code-storybook.yml}"
+              - "!apps/code/snapshots.yml"
+              - "!**/*.md"
+
+      # Visual Review commits the approved baseline back to the PR branch as
+      # a bot; re-running the suite for that push is pure waste (only the
+      # manifest changed). Compare the push delta (before...after), not the
+      # PR diff, so it only matches the bot's own baseline commit.
+      - name: Detect Visual Review baseline-only push
+        id: baseline_push
+        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          result=false
+          case "$ACTOR" in
+            *'[bot]' | posthog-bot) is_bot=true ;;
+            *) is_bot=false ;;
+          esac
+          zero=0000000000000000000000000000000000000000
+          if [ "$is_bot" = true ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "$zero" ] && [ -n "$AFTER" ]; then
+            # compare uses merge-base(before, after), which for an appended
+            # commit is exactly the push delta; a force-push/rebase widens it
+            # and won't match.
+            files=$(gh api "repos/${REPO}/compare/${BEFORE}...${AFTER}" --jq '.files[].filename' || true)
+            if [ -n "$files" ] && ! grep -qv '^apps/code/snapshots\.yml$' <<<"$files"; then
+              result=true
+            fi
+          fi
+          echo "result=$result" >>"$GITHUB_OUTPUT"
+          echo "Visual Review baseline-only push: $result"
+
+  visual-regression:
+    needs: changes
+    # Fail closed: if change detection failed (or this is a main push, where
+    # `changes` is skipped), run instead of skipping — unless the push was
+    # just the VR bot committing an approved baseline.
+    if: >-
+      ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') &&
+      needs.changes.outputs.baseline_only_push != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-chromium-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: apps/code
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        # The cache restores browser binaries but not the OS packages they need.
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: apps/code
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Build workspace packages
+        # Bare `wait` returns the exit status of only the last job passed to
+        # it, silently swallowing failures from the others. `wait_all` waits
+        # on each PID individually and checks its own status so any failed
+        # build fails the step.
+        run: |
+          wait_all() {
+            status=0
+            for pid in "$@"; do
+              wait "$pid" || status=$?
+            done
+            [ "$status" -eq 0 ]
+          }
+
+          pnpm --filter @posthog/electron-trpc build &
+          pid1=$!
+          (pnpm --filter @posthog/shared build && pnpm --filter @posthog/platform build) &
+          pid2=$!
+          wait_all "$pid1" "$pid2"
+
+          # @posthog/agent imports @posthog/git's dist, so git must finish
+          # before the last group starts.
+          pnpm --filter @posthog/git build
+
+          pnpm --filter @posthog/enricher build &
+          pid3=$!
+          pnpm --filter @posthog/agent build &
+          pid4=$!
+          wait_all "$pid3" "$pid4"
+
+      - name: Build Storybook
+        working-directory: apps/code
+        run: pnpm build-storybook
+
+      - name: Serve Storybook
+        working-directory: apps/code
+        run: |
+          pnpm exec http-server storybook-static --port 6006 --silent &
+          pnpm exec wait-on http://127.0.0.1:6006/iframe.html --timeout 30000
+
+      - name: Capture story screenshots
+        working-directory: apps/code
+        run: |
+          rm -rf .storybook/__snapshots__
+          pnpm test:visual:ci:update
+
+      # The vr CLI isn't published anywhere; build it from posthog/posthog's
+      # master, the same way that repo's own CI does.
+      - name: Checkout Visual Review CLI
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: PostHog/posthog
+          path: vr-cli
+          persist-credentials: false
+          sparse-checkout: |
+            products/visual_review/cli
+            products/visual_review/frontend/generated/api.schemas.ts
+          sparse-checkout-cone-mode: false
+
+      - name: Install Visual Review CLI
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        run: cd vr-cli/products/visual_review/cli && npm ci && npm run build && npm link
+
+      - name: Submit snapshots to Visual Review
+        # Fork PRs can't read the token; their captures still ran above, so a
+        # broken story fails the job either way.
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+        # On main pushes the run is tracking-only ("observe"), but vr submit
+        # still exits 1 when it detects changes; keep main green regardless.
+        continue-on-error: ${{ github.event_name == 'push' }}
+        env:
+          VR_TOKEN: ${{ secrets.VR_API_TOKEN }}
+          VR_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          VR_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          VR_PR: ${{ github.event.pull_request.number }}
+          VR_PURPOSE: ${{ github.event_name == 'push' && 'observe' || 'review' }}
+          # Lets the VR web UI re-trigger this job via the Actions API.
+          JOB_CHECK_RUN_ID: ${{ job.check_run_id }}
+        run: |
+          if [ -z "$VR_TOKEN" ]; then
+            echo "::notice::VR_API_TOKEN secret not set - skipping Visual Review submission"
+            exit 0
+          fi
+          vr submit \
+            --type storybook \
+            --dir apps/code/.storybook/__snapshots__/ \
+            --baseline apps/code/snapshots.yml \
+            --branch "$VR_BRANCH" \
+            --commit "$VR_COMMIT" \
+            ${VR_PR:+--pr "$VR_PR"} \
+            --purpose "$VR_PURPOSE" \
+            --token "$VR_TOKEN"
+
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v6.0.0
+        with:
+          name: storybook-visual-failures
+          path: |
+            apps/code/.storybook/__snapshots__/__diff_output__/
+            apps/code/.storybook/__snapshots__/__failures__/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test results to Trunk
+        # Run even when tests fail so flaky/failed results are still reported,
+        # but never let an upload problem fail the job.
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: trunk-io/analytics-uploader@385f1ccdf345b4532dc4b6c665dd432b702b8e28 # v2.1.2
+        with:
+          junit-paths: "apps/code/junit.xml"
+          org-slug: posthog-inc
+          token: ${{ secrets.TRUNK_API_TOKEN }}

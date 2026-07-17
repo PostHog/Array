@@ -1,19 +1,30 @@
-import type { CloudRunSource, PrAuthorshipMode } from "@posthog/shared";
+import type {
+  Adapter,
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
+  CloudRunSource,
+  PrAuthorshipMode,
+} from "@posthog/shared";
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 
 export interface CreateTaskRunClientOptions {
   environment?: "local" | "cloud";
   mode?: "interactive" | "background";
   branch?: string | null;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
+  autoPublish?: boolean;
+  rtkEnabled?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;
   homeQuickAction?: string;
+  importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 export interface StartTaskRunClientOptions {

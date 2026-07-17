@@ -103,6 +103,22 @@ describe("ContextMenuService.showTaskContextMenu", () => {
     expect(labels(menu.lastItems)).not.toContain("Suspend");
   });
 
+  it("offers Stop task only for a stoppable run", async () => {
+    const running = new FakeContextMenu();
+    const result = makeService(running).showTaskContextMenu({
+      ...baseTask,
+      canStop: true,
+    });
+    await running.shown;
+    findItem(running.lastItems, "Stop task").click();
+    expect(await result).toEqual({ action: { type: "stop" } });
+
+    const idle = new FakeContextMenu();
+    makeService(idle).showTaskContextMenu(baseTask);
+    await idle.shown;
+    expect(labels(idle.lastItems)).not.toContain("Stop task");
+  });
+
   it("hides Add to Command Center when already in it", async () => {
     const inCc = new FakeContextMenu();
     makeService(inCc).showTaskContextMenu({

@@ -29,14 +29,8 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
         size="sm"
         className={cn("min-w-0", isHome ? "bg-fill-selected" : "")}
       >
-        <HashIcon
-          size={12}
-          className="mt-px shrink-0 text-muted-foreground/80"
-        />
-        <Text
-          className="min-w-0 truncate font-medium text-[13px]"
-          title={channelName}
-        >
+        <HashIcon size={20} className="shrink-0 text-muted-foreground/80" />
+        <Text className="min-w-0 truncate font-medium" title={channelName}>
           {channelName ?? "Channel"}
         </Text>
       </Button>

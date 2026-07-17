@@ -15,7 +15,8 @@ import { gitSubcommand } from "../git-command";
 
 // Commands RTK compresses faithfully and that have no side effects, so wrapping
 // them changes only how much output reaches the model, never what runs.
-const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
+// Exported so the instruction-level Codex guidance advertises the same set.
+export const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
 
 // Git subcommands whose output is worth compressing and that RTK handles
 // faithfully. The criterion is compressible output, NOT read-only: RTK never
@@ -23,7 +24,8 @@ const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
 // `git reflog expire`) still executes its write — its output is just shorter.
 // Excludes commit/push: negligible output to compress, and the cloud
 // signed-commit guard keys on a leading `git` token that `rtk git …` would hide.
-const GIT_COMPRESSIBLE_SUBCOMMANDS = new Set([
+// Exported so the instruction-level Codex guidance advertises the same set.
+export const GIT_COMPRESSIBLE_SUBCOMMANDS = new Set([
   "status",
   "diff",
   "log",
@@ -44,7 +46,8 @@ const GIT_COMPRESSIBLE_SUBCOMMANDS = new Set([
 // wrapping only its head would change the meaning of the rest.
 const SHELL_OPERATORS = /[|&;<>`\n]|\$\(/;
 
-function shQuote(value: string): string {
+// Exported so the instruction-level Codex guidance quotes the prefix the same way.
+export function shQuote(value: string): string {
   if (/^[\w./-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -126,6 +129,29 @@ export function resolveRtkPrefix(env: NodeJS.ProcessEnv): string | undefined {
   }
 
   // Default (unset) or explicit enable: use rtk if it is on PATH.
+  return findOnPath("rtk", env);
+}
+
+/**
+ * Detects the rtk binary a session on this host could use. The on/off flag
+ * values of POSTHOG_RTK ("0"/"false"/"1"/"true"/unset) all mean auto-detect
+ * here, so the answer reflects installation, not the per-session toggle a
+ * previous session may have left in the environment. An explicit binary-path
+ * override mirrors the resolver: honored when it exists, otherwise no binary.
+ */
+export function detectRtkBinary(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env.POSTHOG_RTK?.trim();
+  const lowered = raw?.toLowerCase();
+  const isFlagValue =
+    !raw || ["0", "false", "1", "true"].includes(lowered ?? "");
+  if (!isFlagValue && raw) {
+    try {
+      if (fs.statSync(raw).isFile()) return raw;
+    } catch {
+      // Explicit path doesn't exist — sessions would get no rtk either.
+    }
+    return undefined;
+  }
   return findOnPath("rtk", env);
 }
 

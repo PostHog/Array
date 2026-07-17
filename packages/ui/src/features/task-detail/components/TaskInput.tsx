@@ -1,4 +1,4 @@
-import { ChartLineUp, FileText, X } from "@phosphor-icons/react";
+import { FileText, X } from "@phosphor-icons/react";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import { buildKickoffPreamble } from "@posthog/core/autoresearch/prompts";
@@ -9,13 +9,15 @@ import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
-import { Box, Button, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { track } from "@posthog/ui/shell/analytics";
+import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,6 +25,7 @@ import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
 import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
 import { AutoresearchComposerControls } from "../../autoresearch/AutoresearchComposerControls";
@@ -35,6 +38,7 @@ import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnable
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
+import { useFeatureFlagsLoaded } from "../../feature-flags/useFeatureFlagsLoaded";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
 import { GitHubRepoPicker } from "../../folder-picker/GitHubRepoPicker";
@@ -70,9 +74,11 @@ import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSele
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
+  DEFAULT_WORKSPACE_MODE,
   useSettingsStore,
 } from "../../settings/settingsStore";
 import { useSkills } from "../../skills/useSkills";
+import { useCloudModeEnabled } from "../hooks/useCloudModeEnabled";
 import {
   areReposReady,
   useInitialRepoSelectionFromFolderId,
@@ -80,6 +86,7 @@ import {
 import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
+import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
@@ -182,6 +189,8 @@ export function TaskInput({
     setLastUsedAdapter,
     lastUsedCloudRepository,
     setLastUsedCloudRepository,
+    cachedCloudDefaultBranchMap,
+    setCachedCloudDefaultBranch,
     allowBypassPermissions,
     setLastUsedEnvironment,
     getLastUsedEnvironment,
@@ -227,6 +236,9 @@ export function TaskInput({
   const [selectedCloudEnvId, setSelectedCloudEnvId] = useState<string | null>(
     null,
   );
+  const [selectedCustomImageId, setSelectedCustomImageId] = useState<
+    string | null
+  >(null);
   const [activeReportAssociation, setActiveReportAssociation] = useState(
     reportAssociation ?? null,
   );
@@ -308,19 +320,64 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
+  // Force cloud mode on cloud-only hosts (web).
+  const { localWorkspaces } = useHostCapabilities();
+  const cloudModeEnabled = useCloudModeEnabled();
+  const flagsLoaded = useFeatureFlagsLoaded();
+  const reposReady = areReposReady({
+    isLoadingRepos,
+    repositoriesCount: repositories.length,
+    hasGithubIntegration,
+  });
+
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
-    return lastUsedWorkspaceMode || "local";
+    if (!localWorkspaces) return "cloud";
+    return resolveWorkspaceModePreference({
+      preferredMode: lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE,
+      cloudModeEnabled,
+      hasGithubIntegration,
+      lastUsedLocalWorkspaceMode,
+    });
   });
+
+  // A positive flag or integration signal is final, but a negative one may
+  // just mean the async flag fetch or integrations query hasn't landed yet, so
+  // a cloud preference only resolves once each negative signal is settled.
+  const cloudSignalsSettled =
+    (cloudModeEnabled || flagsLoaded) &&
+    (hasGithubIntegration || !isLoadingRepos);
 
   const didResolveWorkspaceModeRef = useRef(false);
   useEffect(() => {
     if (didResolveWorkspaceModeRef.current) return;
     if (!settingsHydrated) return;
+    if (initialCloudRepository) {
+      didResolveWorkspaceModeRef.current = true;
+      return;
+    }
+    const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
+    if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
-    if (initialCloudRepository) return;
-    setWorkspaceModeState(lastUsedWorkspaceMode || "local");
-  }, [settingsHydrated, lastUsedWorkspaceMode, initialCloudRepository]);
+    if (!localWorkspaces) return;
+    setWorkspaceModeState(
+      resolveWorkspaceModePreference({
+        preferredMode,
+        cloudModeEnabled,
+        hasGithubIntegration,
+        lastUsedLocalWorkspaceMode,
+      }),
+    );
+  }, [
+    settingsHydrated,
+    lastUsedWorkspaceMode,
+    initialCloudRepository,
+    localWorkspaces,
+    cloudSignalsSettled,
+    cloudModeEnabled,
+    hasGithubIntegration,
+    lastUsedLocalWorkspaceMode,
+  ]);
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     didResolveWorkspaceModeRef.current = true;
@@ -375,7 +432,33 @@ export function TaskInput({
     cloudBranchSearchQuery,
   );
   const cloudBranches = cloudBranchData?.branches;
-  const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  const liveCloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  // Serve the persisted default branch until the live list resolves, so the
+  // majority "start on trunk" case pre-selects trunk with zero wait on a cold
+  // start. The cached value is best-effort: if it's stale (a default branch
+  // renamed since it was cached), `cloudDefaultBranch` switches to the live
+  // value on arrival and BranchSelector re-selects it — as long as the user
+  // hasn't picked a branch of their own in the meantime.
+  const cloudDefaultBranch =
+    liveCloudDefaultBranch ??
+    (selectedCloudRepository
+      ? (cachedCloudDefaultBranchMap[selectedCloudRepository] ?? null)
+      : null);
+
+  // Persist the freshly loaded default branch so the next cold start can
+  // pre-select trunk immediately.
+  useEffect(() => {
+    if (selectedCloudRepository && liveCloudDefaultBranch) {
+      setCachedCloudDefaultBranch(
+        selectedCloudRepository,
+        liveCloudDefaultBranch,
+      );
+    }
+  }, [
+    selectedCloudRepository,
+    liveCloudDefaultBranch,
+    setCachedCloudDefaultBranch,
+  ]);
 
   const {
     branchOpen,
@@ -562,13 +645,10 @@ export function TaskInput({
 
   useInitialRepoSelectionFromFolderId({
     folderId: view.folderId,
+    requestId: view.taskInputRequestId,
     folders,
     repositories,
-    reposLoaded: areReposReady({
-      isLoadingRepos,
-      repositoriesCount: repositories.length,
-      hasGithubIntegration,
-    }),
+    reposLoaded: reposReady,
     currentMode: workspaceMode,
     lastUsedLocalMode: lastUsedLocalWorkspaceMode,
     mostRecentEnvironment: view.folderRunEnvironment,
@@ -650,6 +730,8 @@ export function TaskInput({
     runtimeAdapter: adapter ?? null,
     model: effectiveModel,
     reasoningEffort: effectiveReasoningLevel,
+    sandboxEnvironmentId: workspaceMode === "cloud" ? selectedCloudEnvId : null,
+    customImageId: workspaceMode === "cloud" ? selectedCustomImageId : null,
   });
 
   const branchForTaskCreation =
@@ -686,7 +768,24 @@ export function TaskInput({
       implementEffort: currentReasoningLevel ?? null,
       measureEffort: currentReasoningLevel ?? null,
     });
-  }, [sessionId, currentModel, currentReasoningLevel]);
+    // Autoresearch needs to apply edits without stopping for each change, but
+    // it should not silently inherit the broader bypass-permissions mode.
+    const autonomousMode = "acceptEdits";
+    if (modeOption && isValidConfigValue(modeOption, autonomousMode)) {
+      setConfigOption(modeOption.id, autonomousMode);
+    }
+    track(ANALYTICS_EVENTS.AUTORESEARCH_ARMED, {
+      default_mode: autonomousMode,
+      workspace_mode: workspaceMode,
+    });
+  }, [
+    sessionId,
+    currentModel,
+    currentReasoningLevel,
+    modeOption,
+    setConfigOption,
+    workspaceMode,
+  ]);
 
   // The preview config can still be loading when the user arms the mode;
   // backfill the stage fields once the composer's model/effort resolve so
@@ -759,6 +858,10 @@ export function TaskInput({
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId
         ? selectedCloudEnvId
         : undefined,
+    customImageId:
+      effectiveWorkspaceMode === "cloud" && selectedCustomImageId
+        ? selectedCustomImageId
+        : undefined,
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
@@ -784,16 +887,32 @@ export function TaskInput({
     // Stages ride through as configured; identical stages mean a single-turn
     // loop, any difference makes the run split. Unresolved fields fall back
     // to the composer's values so the recorded config is concrete.
-    autoresearchPendingRun.set({
+    const resolvedRun = {
       ...draft,
       implementModel: draft.implementModel ?? currentModel ?? null,
       measureModel: draft.measureModel ?? currentModel ?? null,
       implementEffort: draft.implementEffort ?? currentReasoningLevel ?? null,
       measureEffort: draft.measureEffort ?? currentReasoningLevel ?? null,
+    };
+    autoresearchPendingRun.set({
+      ...resolvedRun,
       instructions: contentToXml(content).trim(),
     });
     const submitted = await handleSubmit(override);
     if (submitted) {
+      track(ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED, {
+        direction: resolvedRun.direction,
+        has_target: resolvedRun.targetValue !== null,
+        max_iterations: resolvedRun.maxIterations,
+        stages_split:
+          resolvedRun.implementModel !== resolvedRun.measureModel ||
+          resolvedRun.implementEffort !== resolvedRun.measureEffort,
+        implement_model: resolvedRun.implementModel ?? undefined,
+        measure_model: resolvedRun.measureModel ?? undefined,
+        implement_effort: resolvedRun.implementEffort ?? undefined,
+        measure_effort: resolvedRun.measureEffort ?? undefined,
+        workspace_mode: effectiveWorkspaceMode,
+      });
       useAutoresearchDraftStore.getState().clearDraft(sessionId);
       useDraftStore.getState().actions.setDraft(sessionId, null);
       try {
@@ -805,7 +924,14 @@ export function TaskInput({
       autoresearchPendingRun.clear();
     }
     return submitted;
-  }, [canSubmit, currentModel, currentReasoningLevel, handleSubmit, sessionId]);
+  }, [
+    canSubmit,
+    currentModel,
+    currentReasoningLevel,
+    effectiveWorkspaceMode,
+    handleSubmit,
+    sessionId,
+  ]);
 
   const submitTask = autoresearchDraft
     ? handleAutoresearchSubmit
@@ -971,6 +1097,8 @@ export function TaskInput({
                   onChange={setWorkspaceMode}
                   selectedCloudEnvironmentId={selectedCloudEnvId}
                   onCloudEnvironmentChange={setSelectedCloudEnvId}
+                  selectedCustomImageId={selectedCustomImageId}
+                  onCustomImageChange={setSelectedCustomImageId}
                   size="1"
                 />
                 {!allowNoRepo && workspaceMode === "worktree" && (
@@ -1083,26 +1211,6 @@ export function TaskInput({
                     disabled={isCreatingTask}
                   />
                 )}
-                {autoresearchService && autoresearchEnabled && (
-                  <Tooltip
-                    content={
-                      autoresearchDraft
-                        ? "Exit autoresearch mode"
-                        : "Create this task in autoresearch mode: the prompt becomes the optimization brief"
-                    }
-                  >
-                    <Button
-                      size="1"
-                      variant={autoresearchDraft ? "soft" : "ghost"}
-                      color={autoresearchDraft ? undefined : "gray"}
-                      onClick={handleAutoresearchToggle}
-                      disabled={isCreatingTask}
-                    >
-                      <ChartLineUp size={14} />
-                      Autoresearch
-                    </Button>
-                  </Tooltip>
-                )}
                 {cloudRegion === "dev" && (
                   <Flex align="center" gap="1" className="shrink-0">
                     <span
@@ -1117,33 +1225,33 @@ export function TaskInput({
               </Flex>
 
               <Flex direction="column" gap="0">
+                {autoresearchDraft && (
+                  <div className="mb-3 rounded-md border border-gray-6 bg-gray-2 px-3.5 py-3">
+                    <AutoresearchComposerControls
+                      draft={autoresearchDraft}
+                      modelOptions={autoresearchModelOptions}
+                      effortOptions={autoresearchEffortOptions}
+                      disabled={isCreatingTask}
+                      onChange={(patch) =>
+                        useAutoresearchDraftStore
+                          .getState()
+                          .updateDraft(sessionId, patch)
+                      }
+                      onExit={() =>
+                        useAutoresearchDraftStore
+                          .getState()
+                          .clearDraft(sessionId)
+                      }
+                    />
+                  </div>
+                )}
                 <PromptInput
                   ref={editorRef}
                   sessionId={promptSessionId}
                   placeholder={
                     autoresearchDraft
-                      ? "What should the agent optimize? Describe the goal, how to measure it, and any constraints — it measures a baseline, then iterates."
+                      ? "Example: Reduce memory usage measured by `pnpm bench:memory` without changing behavior."
                       : `What do you want to ship? ${hints}`
-                  }
-                  headerAddon={
-                    autoresearchDraft ? (
-                      <AutoresearchComposerControls
-                        draft={autoresearchDraft}
-                        modelOptions={autoresearchModelOptions}
-                        effortOptions={autoresearchEffortOptions}
-                        disabled={isCreatingTask}
-                        onChange={(patch) =>
-                          useAutoresearchDraftStore
-                            .getState()
-                            .updateDraft(sessionId, patch)
-                        }
-                        onExit={() =>
-                          useAutoresearchDraftStore
-                            .getState()
-                            .clearDraft(sessionId)
-                        }
-                      />
-                    ) : undefined
                   }
                   editorHeight="large"
                   disabled={isCreatingTask}
@@ -1161,6 +1269,14 @@ export function TaskInput({
                   modeOption={modeOption}
                   onModeChange={handleModeChange}
                   allowBypassPermissions={allowBypassPermissions}
+                  autoresearch={
+                    autoresearchService && autoresearchEnabled
+                      ? {
+                          active: !!autoresearchDraft,
+                          onToggle: handleAutoresearchToggle,
+                        }
+                      : undefined
+                  }
                   enableCommands
                   enableBashMode={false}
                   modelSelector={
@@ -1231,7 +1347,7 @@ export function TaskInput({
                     <span className="shrink-0 text-gray-10">Using:</span>
                     <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
                       {onContextChipClick ? (
-                        <Tooltip content="View this context">
+                        <Tooltip content="View this CONTEXT.md">
                           <button
                             type="button"
                             onClick={onContextChipClick}
@@ -1251,11 +1367,11 @@ export function TaskInput({
                           </span>
                         </>
                       )}
-                      <Tooltip content="Don't include this context">
+                      <Tooltip content="Don't include this CONTEXT.md">
                         <button
                           type="button"
                           onClick={() => setChannelContextDismissed(true)}
-                          aria-label="Remove channel context from prompt"
+                          aria-label="Remove CONTEXT.md from prompt"
                           className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
                         >
                           <X size={12} />

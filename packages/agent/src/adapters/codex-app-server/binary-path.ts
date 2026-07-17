@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 /**
  * Node `platform-arch` → codex target triple + `@openai/codex` platform sub-package
@@ -67,15 +67,20 @@ function vendoredCodexBinary(): string | undefined {
 
 /**
  * Path to the native codex CLI (the one that exposes `app-server`), or undefined
- * when unavailable. Two sources in order: bundled next to codex-acp, then vendored
- * by the `@openai/codex` npm dependency.
+ * when unavailable. Sources in order: the hint itself when it already points at
+ * the codex binary, a `codex` sibling of the hint (older hosts pass another
+ * bundled binary's path in the same directory), then the binary vendored by the
+ * `@openai/codex` npm dependency.
  */
 export function nativeCodexBinaryPath(
-  codexAcpPath?: string,
+  bundledHintPath?: string,
 ): string | undefined {
   const binaryName = process.platform === "win32" ? "codex.exe" : "codex";
-  if (codexAcpPath) {
-    const candidate = join(dirname(codexAcpPath), binaryName);
+  if (bundledHintPath) {
+    const candidate =
+      basename(bundledHintPath) === binaryName
+        ? bundledHintPath
+        : join(dirname(bundledHintPath), binaryName);
     if (existsSync(candidate)) return candidate;
   }
   return vendoredCodexBinary();

@@ -67,6 +67,10 @@ jobs:
                   ANTHROPIC_API_KEY: ${{ secrets.STAMPHOG_ANTHROPIC_API_KEY }}
                   POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_TOKEN }}
                   GH_TOKEN: ${{ steps.app-token.outputs.token }}
+                  # Set both to route through the ai-gateway (gateway.py overrides
+                  # ANTHROPIC_* at runtime). Unset means direct Anthropic.
+                  AI_GATEWAY_URL: ${{ secrets.STAMPHOG_AI_GATEWAY_URL }}
+                  AI_GATEWAY_API_KEY: ${{ secrets.STAMPHOG_AI_GATEWAY_API_KEY }}
               run: |
                   uv run tools/pr-approval-agent/review_pr.py \
                     ${{ github.event.pull_request.number }} \

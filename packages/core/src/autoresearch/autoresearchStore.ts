@@ -4,6 +4,7 @@ import {
   type AutoresearchInterruptionReason,
   type AutoresearchIteration,
   type AutoresearchPhase,
+  type AutoresearchResearchFinding,
   type AutoresearchRun,
   type AutoresearchRunStatus,
   isTerminalRunStatus,
@@ -47,6 +48,16 @@ export const autoresearchStoreActions = {
     updateRun(runId, (run) => ({
       ...run,
       iterations: [...run.iterations, iteration],
+    }));
+  },
+
+  appendResearchFinding(
+    runId: string,
+    finding: AutoresearchResearchFinding,
+  ): void {
+    updateRun(runId, (run) => ({
+      ...run,
+      researchFindings: [...run.researchFindings, finding],
     }));
   },
 

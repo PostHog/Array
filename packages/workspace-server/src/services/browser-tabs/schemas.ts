@@ -10,9 +10,17 @@ export const openOrFocusTabInput = z.object({
   taskId: z.string().nullable().default(null),
   channelId: z.string().nullable().default(null),
   channelSection: z.string().nullable().default(null),
+  appView: z.string().nullable().default(null),
+  // Renderer-minted id for a tab this call may create, so the optimistic local
+  // apply and the persisted state agree on the id (local-first tab sync).
+  tabId: z.string().optional(),
 });
 
-export const newBlankTabInput = z.object({ windowId: z.string() });
+export const newBlankTabInput = z.object({
+  windowId: z.string(),
+  // Renderer-minted id (see openOrFocusTabInput.tabId).
+  tabId: z.string().optional(),
+});
 
 export const setTabTargetInput = z.object({
   tabId: z.string(),
@@ -20,6 +28,7 @@ export const setTabTargetInput = z.object({
   taskId: z.string().nullable().default(null),
   channelId: z.string().nullable().default(null),
   channelSection: z.string().nullable().default(null),
+  appView: z.string().nullable().default(null),
 });
 
 export const closeTabInput = z.object({ tabId: z.string() });

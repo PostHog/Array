@@ -19,6 +19,9 @@ function iteration(
     bestValue: value,
     delta: null,
     summary: null,
+    hypothesis: null,
+    plan: null,
+    approach: null,
     at: 1000 + index,
     ...overrides,
   };
@@ -49,6 +52,7 @@ function makeRun(overrides: {
     phase: null,
     originalModel: null,
     originalEffort: null,
+    researchFindings: [],
     iterations: overrides.iterations ?? [],
     startedAt: 0,
     endedAt: null,

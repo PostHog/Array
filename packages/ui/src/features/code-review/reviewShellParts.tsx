@@ -2,6 +2,7 @@ import {
   ArrowCounterClockwise,
   ArrowSquareOut,
   CaretDown,
+  ChatCircle,
   Minus,
   Plus,
 } from "@phosphor-icons/react";
@@ -13,6 +14,7 @@ import {
   splitFilePath,
   sumHunkStats,
 } from "@posthog/core/code-review/reviewShellGeometry";
+import { Badge } from "@posthog/quill";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { FileIcon } from "../../primitives/FileIcon";
@@ -29,7 +31,7 @@ export {
 
 const STICKY_HEADER_CSS = `[data-diffs-header] { position: sticky; top: 0; z-index: 1; background: var(--gray-2); }`;
 
-function useDiffOptions() {
+export function useDiffOptions() {
   const viewMode = useDiffViewerStore((s) => s.viewMode);
   const wordWrap = useDiffViewerStore((s) => s.wordWrap);
   const loadFullFiles = useDiffViewerStore((s) => s.loadFullFiles);
@@ -119,6 +121,7 @@ export interface ReviewShellProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onRefresh?: () => void;
+  onDiscardAll?: () => void;
   effectiveSource?: ResolvedDiffSource;
   branchSourceAvailable?: boolean;
   prSourceAvailable?: boolean;
@@ -138,6 +141,7 @@ export function FileHeaderRow({
   deletions,
   collapsed,
   onToggle,
+  commentCount,
   trailing,
 }: {
   dirPath: string;
@@ -146,6 +150,7 @@ export function FileHeaderRow({
   deletions: number;
   collapsed: boolean;
   onToggle: () => void;
+  commentCount?: number;
   trailing?: ReactNode;
 }) {
   return (
@@ -175,6 +180,9 @@ export function FileHeaderRow({
           {dirPath}
         </span>
       </span>
+      {commentCount != null && commentCount > 0 && (
+        <PrCommentCountBadge count={commentCount} />
+      )}
       <span className="font-mono text-[10px]">
         {additions > 0 && (
           <span className="mr-[2px] text-(--green-9)">+{additions}</span>
@@ -209,6 +217,8 @@ export function DiffFileHeader({
   onDiscard,
   onStage,
   staged,
+  commentCount,
+  trailing,
 }: {
   fileDiff: FileDiffMetadata;
   collapsed: boolean;
@@ -217,6 +227,9 @@ export function DiffFileHeader({
   onDiscard?: () => void;
   onStage?: () => void;
   staged?: boolean;
+  commentCount?: number;
+  /** Extra controls rendered after the action buttons (e.g. a "Viewed" toggle). */
+  trailing?: ReactNode;
 }) {
   const fullPath =
     fileDiff.prevName && fileDiff.prevName !== fileDiff.name
@@ -233,8 +246,9 @@ export function DiffFileHeader({
       deletions={deletions}
       collapsed={collapsed}
       onToggle={onToggle}
+      commentCount={commentCount}
       trailing={
-        (onStage || onDiscard || onOpenFile) && (
+        (onStage || onDiscard || onOpenFile || trailing) && (
           <span className="ml-auto inline-flex items-center gap-[2px]">
             {onStage && (
               <Tooltip content={staged ? "Unstage" : "Stage"}>
@@ -278,6 +292,7 @@ export function DiffFileHeader({
                 </button>
               </Tooltip>
             )}
+            {trailing}
           </span>
         )
       }
@@ -294,6 +309,8 @@ export function DeferredDiffPlaceholder({
   onToggle,
   onShow,
   externalUrl,
+  commentCount,
+  headerTrailing,
 }: {
   filePath: string;
   linesAdded: number;
@@ -303,6 +320,9 @@ export function DeferredDiffPlaceholder({
   onToggle: () => void;
   onShow?: () => void;
   externalUrl?: string;
+  commentCount?: number;
+  /** Extra controls in the header row (e.g. a "Viewed" toggle). */
+  headerTrailing?: ReactNode;
 }) {
   const { dirPath, fileName } = splitFilePath(filePath);
 
@@ -315,6 +335,14 @@ export function DeferredDiffPlaceholder({
         deletions={linesRemoved}
         collapsed={collapsed}
         onToggle={onToggle}
+        commentCount={commentCount}
+        trailing={
+          headerTrailing && (
+            <span className="ml-auto inline-flex items-center">
+              {headerTrailing}
+            </span>
+          )
+        }
       />
       {!collapsed && (
         <div className="w-full border-b border-b-(--gray-5) bg-(--gray-2) p-[16px] text-center text-(--gray-9) text-xs">
@@ -352,5 +380,20 @@ export function DeferredDiffPlaceholder({
         </div>
       )}
     </div>
+  );
+}
+
+function PrCommentCountBadge({ count }: { count: number }) {
+  const label = `${count} comment${count === 1 ? "" : "s"}`;
+  return (
+    <Badge
+      variant="default"
+      title={label}
+      className="shrink-0 gap-[3px] border-(--gray-7) bg-(--gray-3) text-[11px] text-gray-12 tabular-nums"
+    >
+      <ChatCircle size={12} weight="fill" />
+      {count}
+      <span className="sr-only"> comment{count === 1 ? "" : "s"}</span>
+    </Badge>
   );
 }

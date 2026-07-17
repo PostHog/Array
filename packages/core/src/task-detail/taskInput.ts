@@ -1,5 +1,11 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
-import type { TaskCreationInput, WorkspaceMode } from "@posthog/shared";
+import type {
+  Adapter,
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
+  TaskCreationInput,
+  WorkspaceMode,
+} from "@posthog/shared";
 import type { ExecutionMode } from "@posthog/shared/domain-types";
 
 export interface PrepareTaskInputOptions {
@@ -12,18 +18,23 @@ export interface PrepareTaskInputOptions {
   allowRemoteBranchCheckout?: boolean;
   reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   additionalDirectories?: string[];
   channelContext?: string;
   channelName?: string;
   channelId?: string;
   customInstructions?: string;
+  autoPublishCloudRuns?: boolean;
+  rtkEnabledCloud?: boolean;
   allowNoRepo?: boolean;
+  importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 export function prepareTaskInput(
@@ -52,10 +63,13 @@ export function prepareTaskInput(
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
+    customImageId: options.customImageId,
     cloudPrAuthorshipMode:
       options.signalReportId && isCloud ? "user" : undefined,
     cloudRunSource:
       options.signalReportId && isCloud ? "signal_report" : undefined,
+    cloudAutoPublish: isCloud ? options.autoPublishCloudRuns : undefined,
+    cloudRtkEnabled: isCloud ? options.rtkEnabledCloud : undefined,
     signalReportId: options.signalReportId,
     additionalDirectories: isCloud ? undefined : options.additionalDirectories,
     channelContext: options.channelContext,
@@ -63,6 +77,8 @@ export function prepareTaskInput(
     channelId: options.channelId,
     customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
+    importedMcpServers: isCloud ? options.importedMcpServers : undefined,
+    relayedMcpServers: isCloud ? options.relayedMcpServers : undefined,
   };
 }
 

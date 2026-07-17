@@ -80,3 +80,11 @@ CLAUDE.local.md
 apps/mobile/ROADMAP.md
 # Local quill tarball for ChatX thread testing (not committed)
 .local-quill/
+
+# pi project-local config (per-developer MCP servers, prompts, etc.)
+.pi/
+
+# Storybook visual regression: PNGs are never committed. CI uploads captures
+# to the PostHog Visual Review product; the committed baseline is the signed
+# hash manifest apps/code/snapshots.yml.
+apps/code/.storybook/__snapshots__/

@@ -14,19 +14,18 @@ import { useAuthSession } from "@posthog/ui/features/auth/useAuthSession";
 import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
 import { CanvasGenerationToaster } from "@posthog/ui/features/canvas/freeform/useCanvasGenerationToasts";
 import { AddDirectoryDialog } from "@posthog/ui/features/folder-picker/AddDirectoryDialog";
+import { ErrorDetailsDialog } from "@posthog/ui/features/notifications/ErrorDetailsDialog";
 import { OnboardingFlow } from "@posthog/ui/features/onboarding/components/OnboardingFlow";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
-import { LoginTransition } from "@posthog/ui/primitives/LoginTransition";
 import { router } from "@posthog/ui/router/router";
+import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { track } from "@posthog/ui/shell/analytics";
-import { BootstrapFallback } from "@posthog/ui/shell/BootstrapFallback";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { useThemeStore } from "@posthog/ui/shell/themeStore";
-import { Flex, Spinner, Text } from "@radix-ui/themes";
+import { useAppVisibilityWatchdog } from "@posthog/ui/shell/useAppVisibilityWatchdog";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -44,10 +43,6 @@ function App({ devToolbar }: AppProps) {
   );
   const isAuthenticated = authState.status === "authenticated";
   const hasCodeAccess = authState.hasCodeAccess;
-  const isDarkMode = useThemeStore((state) => state.isDarkMode);
-  const [showTransition, setShowTransition] = useState(false);
-  const wasInMainApp = useRef(isAuthenticated && hasCompletedOnboarding);
-
   // Analytics init + dev inbox console moved to host CONTRIBUTIONs
   // (AnalyticsBootContribution / InboxDemoDevContribution), started by
   // boot at boot.
@@ -78,18 +73,6 @@ function App({ devToolbar }: AppProps) {
   const { isAdmin: isOrgAdmin } = useIsOrgAdmin();
   const isAdmin = isOrgAdmin === true;
 
-  // Handle transition into main app — only show the dark overlay if dark mode is active
-  useEffect(() => {
-    const isInMainApp = isAuthenticated && hasCompletedOnboarding;
-    if (!wasInMainApp.current && isInMainApp && isDarkMode) {
-      setShowTransition(true);
-    }
-    if (!isAuthenticated) {
-      setShowTransition(false);
-    }
-    wasInMainApp.current = isInMainApp;
-  }, [isAuthenticated, hasCompletedOnboarding, isDarkMode]);
-
   const wasShowingAiGateRef = useRef(false);
   useEffect(() => {
     if (wasShowingAiGateRef.current && !needsAiApproval && currentOrg != null) {
@@ -98,12 +81,50 @@ function App({ devToolbar }: AppProps) {
     wasShowingAiGateRef.current = needsAiApproval;
   }, [needsAiApproval, currentOrg]);
 
-  const handleTransitionComplete = () => {
-    setShowTransition(false);
-  };
+  const readyForMainApp =
+    isBootstrapped &&
+    isAuthenticated &&
+    hasCompletedOnboarding &&
+    !isCheckingAccess &&
+    !needsInviteCode &&
+    !needsAiApproval;
 
-  if (!isBootstrapped) {
-    return <BootstrapFallback />;
+  // Run the initial route's loaders before the router ever mounts, so the boot
+  // loading screen holds until the route is ready. The router turns loader
+  // errors into route error UI itself; the catch is only unhandled-rejection
+  // hygiene. Resets when the user leaves the main app (logout, gates) so
+  // re-entry loads fresh.
+  const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
+  useEffect(() => {
+    if (!readyForMainApp) {
+      setInitialRouteLoaded(false);
+      return;
+    }
+    if (initialRouteLoaded) return;
+    let cancelled = false;
+    void router
+      .load()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setInitialRouteLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readyForMainApp, initialRouteLoaded]);
+
+  const mainRef = useRef<HTMLDivElement>(null);
+  // Mirrors the "main" branch of renderContent() below; keep the two in sync.
+  const showingMainApp = readyForMainApp && initialRouteLoaded;
+  useAppVisibilityWatchdog(mainRef, showingMainApp);
+
+  // Single gate for every state where the whole app is still loading.
+  if (
+    !isBootstrapped ||
+    isCheckingAccess ||
+    (readyForMainApp && !initialRouteLoaded)
+  ) {
+    return <AppLoadingScreen />;
   }
 
   // Rendering: onboarding (includes auth + invite code gate) → main app
@@ -124,23 +145,6 @@ function App({ devToolbar }: AppProps) {
       return (
         <motion.div key="auth" initial={{ opacity: 1 }} className="h-full">
           <AuthScreen />
-        </motion.div>
-      );
-    }
-
-    if (isCheckingAccess) {
-      return (
-        <motion.div
-          key="access-check"
-          initial={{ opacity: 1 }}
-          className="h-full"
-        >
-          <Flex align="center" justify="center" height="100%">
-            <Flex align="center" gap="3">
-              <Spinner size="3" />
-              <Text color="gray">Checking access...</Text>
-            </Flex>
-          </Flex>
         </motion.div>
       );
     }
@@ -176,13 +180,7 @@ function App({ devToolbar }: AppProps) {
     }
 
     return (
-      <motion.div
-        key="main"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: showTransition ? 0.5 : 0 }}
-        className="h-full"
-      >
+      <motion.div key="main" ref={mainRef} className="app-fade-in h-full">
         <RouterProvider router={router} />
         {/* Surfaces a toast when a backgrounded canvas generation finishes,
             from anywhere in the app. Sibling of the router so it stays mounted
@@ -209,13 +207,9 @@ function App({ devToolbar }: AppProps) {
             ) : (
               content
             )}
-            <LoginTransition
-              isAnimating={showTransition}
-              isDarkMode={isDarkMode}
-              onComplete={handleTransitionComplete}
-            />
             <ScopeReauthPrompt />
             <AddDirectoryDialog />
+            <ErrorDetailsDialog />
           </div>
           {devToolbar}
         </div>

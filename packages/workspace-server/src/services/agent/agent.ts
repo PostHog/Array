@@ -1,4 +1,4 @@
-import fs, { mkdirSync, symlinkSync } from "node:fs";
+import fs from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import {
+  detectRtkBinary,
   isMcpToolReadOnly,
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -36,9 +37,14 @@ import {
   isAnthropicModel,
   isCloudflareModel,
   isOpenAIModel,
+  pickAllowedModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
-import { findPrUrl, wasCreatedRecently } from "@posthog/agent/pr-url-detector";
+import {
+  findPrUrls,
+  wasCreatedByLogin,
+  wasCreatedRecently,
+} from "@posthog/agent/pr-url-detector";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -61,7 +67,11 @@ import {
 } from "@posthog/platform/workspace-settings";
 import {
   type AcpMessage,
+  type Adapter,
+  type ExecutionMode,
   isAuthError,
+  resolveCloudInitialPermissionMode,
+  restrictedModelMeta,
   serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
@@ -102,6 +112,7 @@ import {
   type InterruptReason,
   type PromptOutput,
   type ReconnectSessionInput,
+  type RtkStatus,
   type SessionResponse,
   type StartSessionInput,
 } from "./schemas";
@@ -110,13 +121,6 @@ export type { InterruptReason };
 
 function isDevBuild(): boolean {
   return process.env.POSTHOG_CODE_IS_DEV === "true";
-}
-
-const MOCK_NODE_DIR_PREFIX = "agent-node";
-
-function getMockNodeDir(): string {
-  const suffix = isDevBuild() ? "dev" : "prod";
-  return join(tmpdir(), `${MOCK_NODE_DIR_PREFIX}-${suffix}`);
 }
 
 /** Mark all content blocks as hidden so the renderer doesn't show a duplicate user message on retry */
@@ -261,13 +265,7 @@ interface SessionConfig {
   logUrl?: string;
   /** The agent's session ID (for resume - SDK session ID for Claude, Codex's session ID for Codex) */
   sessionId?: string;
-  adapter?: "claude" | "codex";
-  /**
-   * Resolved `codex-app-server` flag for the current user. When true and the
-   * adapter is codex, the agent uses the native app-server sub-adapter; when
-   * false/undefined it uses codex-acp. Ignored by the Claude adapter.
-   */
-  useCodexAppServer?: boolean;
+  adapter?: Adapter;
   /** Permission mode to use for the session */
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
@@ -288,6 +286,10 @@ interface SessionConfig {
    * replayed to the client. Claude adapter only.
    */
   importedSessionId?: string;
+  /** rtk command-output compression for this session; false opts out. */
+  rtkEnabled?: boolean;
+  /** The user's spoken-narration setting at session start. */
+  spokenNarration?: boolean;
 }
 
 /** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
@@ -322,9 +324,11 @@ interface ManagedSession {
   mcpToolApprovals: McpToolApprovals;
   /** Maps tool keys to their installation for backend approval updates */
   toolInstallations: McpToolInstallations;
-  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL.
-  prAttributed: boolean;
+  // Reset per session. `evaluatedPrUrls` dedupes the GitHub lookup per URL;
+  // `prAttachChain` serializes attach writes so concurrent fetch-merge-patch
+  // cycles can't drop each other's URLs from the accumulated list.
   evaluatedPrUrls: Set<string>;
+  prAttachChain: Promise<void>;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -349,6 +353,22 @@ export function buildAutoApproveOutcome(
   return { outcome: "selected", optionId };
 }
 
+export function shouldAutoApprovePermissionRequest(
+  adapter: string | undefined,
+  permissionMode: string | undefined,
+  codeToolKind?: string,
+): boolean {
+  if (adapter !== "codex" || !permissionMode || codeToolKind === "question") {
+    return false;
+  }
+  return (
+    resolveCloudInitialPermissionMode(
+      "codex",
+      permissionMode as ExecutionMode,
+    ) === "full-access"
+  );
+}
+
 interface PendingPermission {
   resolve: (response: RequestPermissionResponse) => void;
   reject: (error: Error) => void;
@@ -367,7 +387,6 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
 
   private sessions = new Map<string, ManagedSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
-  private mockNodeReady = false;
   private idleTimeouts = new Map<
     string,
     { handle: ReturnType<typeof setTimeout>; deadline: number }
@@ -431,8 +450,17 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     return this.bundledResources.resolve(`.vite/build/claude-cli/${binary}`);
   }
 
+  /** Whether an rtk binary is installed on this host, independent of the toggle. */
+  getRtkStatus(): RtkStatus {
+    const binaryPath = detectRtkBinary(process.env);
+    return {
+      available: binaryPath !== undefined,
+      binaryPath: binaryPath ?? null,
+    };
+  }
+
   private getCodexBinaryPath(): string {
-    const binary = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+    const binary = process.platform === "win32" ? "codex.exe" : "codex";
     return this.bundledResources.resolve(`.vite/build/codex-acp/${binary}`);
   }
 
@@ -609,7 +637,16 @@ When creating pull requests, add the following footer at the end of the PR descr
 \`\`\`
 ---
 *Created with [PostHog Code](https://posthog.com/code?ref=pr)*
-\`\`\``;
+\`\`\`
+
+When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.
+
+## Shell efficiency
+Optimize for the fewest shell round trips.
+- Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
+- Emit all independent tool calls in the same response.
+- Read multiple files at once.
+- Never rerun a command solely to reproduce output you already have.`;
 
     if (channelMode) {
       const localFolders = (knownLocalFolders ?? []).filter(
@@ -698,7 +735,6 @@ If a repository IS genuinely required, attach one in this priority order:
       credentials,
       logUrl,
       adapter,
-      useCodexAppServer,
       permissionMode,
       customInstructions,
       systemPromptOverride,
@@ -751,15 +787,14 @@ If a repository IS genuinely required, attach one in this priority order:
     }
 
     const channel = `agent-event:${taskRunId}`;
-    const mockNodeDir = this.setupMockNodeEnvironment();
     const proxyUrl = await this.agentAuthAdapter.ensureGatewayProxy(
       credentials.apiHost,
     );
     await this.agentAuthAdapter.configureProcessEnv({
       credentials,
-      mockNodeDir,
       proxyUrl,
       claudeCliPath: this.getClaudeCliPath(),
+      rtkEnabled: config.rtkEnabled,
     });
 
     const isPreview = taskId === "__preview__";
@@ -811,7 +846,6 @@ If a repository IS genuinely required, attach one in this priority order:
 
       const acpConnection = await agent.run(taskId, taskRunId, {
         adapter,
-        useCodexAppServer,
         gatewayUrl: proxyUrl,
         codexBinaryPath:
           adapter === "codex" ? this.getCodexBinaryPath() : undefined,
@@ -959,6 +993,9 @@ If a repository IS genuinely required, attach one in this priority order:
               sessionId: importedSessionId,
               systemPrompt,
               ...(channelMode && { channelMode }),
+              ...(config.spokenNarration !== undefined && {
+                spokenNarration: config.spokenNarration,
+              }),
               mcpToolApprovals: toolApprovals,
               ...(permissionMode && { permissionMode }),
               ...(model != null && { model }),
@@ -1031,6 +1068,9 @@ If a repository IS genuinely required, attach one in this priority order:
             sessionId: existingSessionId,
             systemPrompt,
             ...(channelMode && { channelMode }),
+            ...(config.spokenNarration !== undefined && {
+              spokenNarration: config.spokenNarration,
+            }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -1057,6 +1097,9 @@ If a repository IS genuinely required, attach one in this priority order:
             environment: "local",
             systemPrompt,
             ...(channelMode && { channelMode }),
+            ...(config.spokenNarration !== undefined && {
+              spokenNarration: config.spokenNarration,
+            }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -1088,8 +1131,8 @@ If a repository IS genuinely required, attach one in this priority order:
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
-        prAttributed: false,
         evaluatedPrUrls: new Set(),
+        prAttachChain: Promise.resolve(),
       };
 
       this.sessions.set(taskRunId, session);
@@ -1587,31 +1630,6 @@ For git operations while detached:
     this.log.info("All agent sessions cleaned up");
   }
 
-  private setupMockNodeEnvironment(): string {
-    const mockNodeDir = getMockNodeDir();
-    if (!this.mockNodeReady) {
-      try {
-        mkdirSync(mockNodeDir, { recursive: true });
-        const nodeSymlinkPath = join(mockNodeDir, "node");
-        try {
-          symlinkSync(process.execPath, nodeSymlinkPath);
-        } catch (err) {
-          if (
-            !(err instanceof Error) ||
-            !("code" in err) ||
-            err.code !== "EEXIST"
-          ) {
-            throw err;
-          }
-        }
-        this.mockNodeReady = true;
-      } catch (err) {
-        this.log.warn("Failed to setup mock node environment", err);
-      }
-    }
-    return mockNodeDir;
-  }
-
   private cancelInFlightMcpToolCalls(session: ManagedSession): void {
     for (const [toolCallId, toolKey] of session.inFlightMcpToolCalls) {
       this.mcpAppsService.notifyToolCancelled(toolKey, toolCallId);
@@ -1708,6 +1726,9 @@ For git operations while detached:
           (params.toolCall?.rawInput as { toolName?: string } | undefined)
             ?.toolName || "";
         const toolCallId = params.toolCall?.toolCallId || "";
+        const codeToolKind = (
+          params.toolCall?._meta as { codeToolKind?: string } | undefined
+        )?.codeToolKind;
 
         service.log.info("requestPermission called", {
           taskRunId,
@@ -1717,8 +1738,22 @@ For git operations while detached:
           optionCount: params.options.length,
         });
 
+        const session = service.sessions.get(taskRunId);
+        if (
+          shouldAutoApprovePermissionRequest(
+            session?.config.adapter,
+            session?.config.permissionMode,
+            codeToolKind,
+          )
+        ) {
+          service.log.info("Auto-approving Codex full-access permission", {
+            taskRunId,
+            toolCallId,
+          });
+          return { outcome: buildAutoApproveOutcome(params.options) };
+        }
+
         if (toolName && isMcpToolReadOnly(toolName)) {
-          const session = service.sessions.get(taskRunId);
           const approvalState = session?.mcpToolApprovals?.[toolName];
           if (approvalState === "approved") {
             service.log.info("Auto-approving read-only MCP tool", {
@@ -1890,7 +1925,7 @@ For git operations while detached:
           } = params as {
             taskRunId: string;
             sessionId: string;
-            adapter: "claude" | "codex";
+            adapter: Adapter;
           };
           const session = this.sessions.get(notifTaskRunId);
           if (session) {
@@ -1975,8 +2010,6 @@ For git operations while detached:
       logUrl: "logUrl" in params ? params.logUrl : undefined,
       sessionId: "sessionId" in params ? params.sessionId : undefined,
       adapter: "adapter" in params ? params.adapter : undefined,
-      useCodexAppServer:
-        "useCodexAppServer" in params ? params.useCodexAppServer : undefined,
       permissionMode:
         "permissionMode" in params ? params.permissionMode : undefined,
       customInstructions:
@@ -1992,6 +2025,9 @@ For git operations while detached:
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
       importedSessionId:
         "importedSessionId" in params ? params.importedSessionId : undefined,
+      rtkEnabled: "rtkEnabled" in params ? params.rtkEnabled : undefined,
+      spokenNarration:
+        "spokenNarration" in params ? params.spokenNarration : undefined,
     };
   }
 
@@ -2052,11 +2088,14 @@ For git operations while detached:
     session: ManagedSession | undefined,
     update: unknown,
   ): void {
-    if (!session || session.prAttributed) return;
-    const prUrl = findPrUrl(JSON.stringify(update));
-    if (!prUrl || session.evaluatedPrUrls.has(prUrl)) return;
-    session.evaluatedPrUrls.add(prUrl);
-    void this.attachPrIfCreatedThisRun(taskRunId, session, prUrl);
+    if (!session) return;
+    for (const prUrl of findPrUrls(JSON.stringify(update))) {
+      if (session.evaluatedPrUrls.has(prUrl)) continue;
+      session.evaluatedPrUrls.add(prUrl);
+      session.prAttachChain = session.prAttachChain
+        .catch(() => {})
+        .then(() => this.attachPrIfCreatedThisRun(taskRunId, session, prUrl));
+    }
   }
 
   private async attachPrIfCreatedThisRun(
@@ -2064,33 +2103,30 @@ For git operations while detached:
     session: ManagedSession,
     prUrl: string,
   ): Promise<void> {
-    if (session.prAttributed) return;
+    const [attribution, ghLogin] = await Promise.all([
+      this.fetchPrAttribution(session.repoPath, prUrl),
+      this.fetchGhLogin(session.repoPath),
+    ]);
+    if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
-    const createdAt = await this.fetchPrCreatedAt(session.repoPath, prUrl);
-    if (!wasCreatedRecently(createdAt, Date.now())) return;
-    // Re-check after the await: another URL may have attributed while we waited.
-    if (session.prAttributed) return;
-
-    session.prAttributed = true;
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
-    session.agent
-      .attachPullRequestToTask(session.taskId, prUrl)
-      .then(() => {
-        this.log.info("PR URL attached to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-        });
-      })
-      .catch((err) => {
-        this.log.error("Failed to attach PR URL to task", {
-          taskRunId,
-          taskId: session.taskId,
-          prUrl,
-          error: err,
-        });
+    try {
+      await session.agent.attachPullRequestToTask(session.taskId, prUrl);
+      this.log.info("PR URL attached to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
       });
+    } catch (err) {
+      this.log.error("Failed to attach PR URL to task", {
+        taskRunId,
+        taskId: session.taskId,
+        prUrl,
+        error: err,
+      });
+    }
 
     // The user-initiated PR-creation flow links the current branch to the
     // workspace atomically (see GitService.createPr). PRs created via bash —
@@ -2105,24 +2141,51 @@ For git operations while detached:
     });
   }
 
-  /** PR `createdAt` (ISO) via the GitHub CLI, or null if it can't be resolved. */
-  private async fetchPrCreatedAt(
+  /** PR `createdAt` (ISO) and author login via the GitHub CLI; nulls if unresolvable. */
+  private async fetchPrAttribution(
     cwd: string,
     prUrl: string,
-  ): Promise<string | null> {
+  ): Promise<{ createdAt: string | null; author: string | null }> {
     try {
-      const res = await execGh(["pr", "view", prUrl, "--json", "createdAt"], {
-        cwd,
-        timeoutMs: 10_000,
-      });
-      if (res.exitCode !== 0) return null;
-      return (
-        (JSON.parse(res.stdout) as { createdAt?: string }).createdAt ?? null
+      const res = await execGh(
+        ["pr", "view", prUrl, "--json", "createdAt,author"],
+        {
+          cwd,
+          timeoutMs: 10_000,
+        },
       );
+      if (res.exitCode !== 0) return { createdAt: null, author: null };
+      const data = JSON.parse(res.stdout) as {
+        createdAt?: string;
+        author?: { login?: string };
+      };
+      return {
+        createdAt: data.createdAt ?? null,
+        author: data.author?.login ?? null,
+      };
     } catch (err) {
-      this.log.debug("Failed to resolve PR createdAt", { prUrl, error: err });
-      return null;
+      this.log.debug("Failed to resolve PR attribution", { prUrl, error: err });
+      return { createdAt: null, author: null };
     }
+  }
+
+  private ghLoginPromise: Promise<string | null> | null = null;
+
+  private fetchGhLogin(cwd: string): Promise<string | null> {
+    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+      cwd,
+      timeoutMs: 10_000,
+    })
+      .then((res) => {
+        const login = res.exitCode === 0 ? res.stdout.trim() : "";
+        if (!login) this.ghLoginPromise = null;
+        return login || null;
+      })
+      .catch(() => {
+        this.ghLoginPromise = null;
+        return null;
+      });
+    return this.ghLoginPromise;
   }
 
   /**
@@ -2180,7 +2243,10 @@ For git operations while detached:
 
   async getGatewayModels(apiHost: string) {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    const models = await fetchGatewayModels({ gatewayUrl });
+    const models = await fetchGatewayModels({
+      gatewayUrl,
+      authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
+    });
 
     const mapped = models.map((model) => ({
       modelId: model.id,
@@ -2206,10 +2272,15 @@ For git operations while detached:
 
   async getPreviewConfigOptions(
     apiHost: string,
-    adapter: "claude" | "codex" = "claude",
+    adapter: Adapter = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    const gatewayModels = await fetchGatewayModels({ gatewayUrl });
+    // Authenticated so the gateway can mark plan-restricted models; falls
+    // back to an anonymous fetch (everything allowed) without auth.
+    const gatewayModels = await fetchGatewayModels({
+      gatewayUrl,
+      authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
+    });
 
     // The Claude adapter can also drive Cloudflare `@cf/` models the gateway serves over its
     // Anthropic-Messages surface, so the preview/default-model path must offer them too — otherwise an
@@ -2220,13 +2291,15 @@ For git operations while detached:
         : (model: GatewayModel) =>
             isAnthropicModel(model) || isCloudflareModel(model);
 
-    const modelOptions = gatewayModels
-      .filter((model) => modelFilter(model))
-      .map((model) => ({
-        value: model.id,
-        name: formatGatewayModelName(model),
-        description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      }));
+    const adapterModels = gatewayModels.filter((model) => modelFilter(model));
+    const modelOptions = adapterModels.map((model) => ({
+      value: model.id,
+      name: formatGatewayModelName(model),
+      description: `Context: ${model.context_window.toLocaleString()} tokens`,
+      // Locked models stay listed so the picker can gate them instead of
+      // silently dropping them.
+      ...(model.allowed ? {} : { _meta: restrictedModelMeta() }),
+    }));
 
     // The gateway returns models in an arbitrary order. Sort Claude models
     // oldest-to-newest so the picker is deterministic and the newest model
@@ -2245,9 +2318,12 @@ For git operations while detached:
           "")
         : DEFAULT_GATEWAY_MODEL;
 
-    const resolvedModelId = modelOptions.some((o) => o.value === defaultModel)
+    const preferredModelId = modelOptions.some((o) => o.value === defaultModel)
       ? defaultModel
       : (modelOptions[0]?.value ?? defaultModel);
+    // Never preselect a model the org's plan can't use — it would 403 on the
+    // first message.
+    const resolvedModelId = pickAllowedModel(adapterModels, preferredModelId);
 
     if (!modelOptions.some((o) => o.value === resolvedModelId)) {
       modelOptions.unshift({

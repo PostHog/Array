@@ -135,6 +135,10 @@ function attachKeyHandlers(term: XTerm) {
 
     if (event.key === "k" && cmdOrCtrl && event.type === "keydown") {
       event.preventDefault();
+      // Stop the keydown from bubbling to the document-level mod+k hotkey,
+      // which would otherwise open the command menu on every terminal clear.
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       term.clear();
       return false;
     }

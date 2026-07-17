@@ -71,6 +71,34 @@ describe("inboxSignalsFilterStore", () => {
     ]);
   });
 
+  it("setPriorityFilter resets priorities back to Any (empty)", () => {
+    useInboxSignalsFilterStore.getState().setPriorityFilter(["P0", "P1"]);
+
+    useInboxSignalsFilterStore.getState().setPriorityFilter([]);
+
+    expect(useInboxSignalsFilterStore.getState().priorityFilter).toEqual([]);
+  });
+
+  it("clearSourceProductFilter resets sources back to Any (empty)", () => {
+    useInboxSignalsFilterStore.getState().toggleSourceProduct("github");
+    useInboxSignalsFilterStore.getState().toggleSourceProduct("linear");
+
+    useInboxSignalsFilterStore.getState().clearSourceProductFilter();
+
+    expect(useInboxSignalsFilterStore.getState().sourceProductFilter).toEqual(
+      [],
+    );
+  });
+
+  it("toggling off the last source is equivalent to Any (empty)", () => {
+    useInboxSignalsFilterStore.getState().toggleSourceProduct("github");
+    useInboxSignalsFilterStore.getState().toggleSourceProduct("github");
+
+    expect(useInboxSignalsFilterStore.getState().sourceProductFilter).toEqual(
+      [],
+    );
+  });
+
   it("setPriorityFilter de-duplicates priorities", () => {
     useInboxSignalsFilterStore.getState().setPriorityFilter(["P0", "P1", "P0"]);
 

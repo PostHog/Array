@@ -1,11 +1,13 @@
 import {
   deriveTaskData,
   type FullTask,
+  filterByWorkspaceMode,
   filterVisibleTasks,
+  limitTasksPerGroup,
   narrowFullTask,
   partitionAndSortTasks,
   type SidebarTask,
-  sliceChronological,
+  sliceVisibleTasks,
 } from "@posthog/core/sidebar/buildSidebarData";
 import { groupByRepository } from "@posthog/core/sidebar/groupTasks";
 import type {
@@ -51,6 +53,7 @@ export function useSidebarData({
   const organizeMode = useSidebarStore((state) => state.organizeMode);
   const sortMode = useSidebarStore((state) => state.sortMode);
   const folderOrder = useSidebarStore((state) => state.folderOrder);
+  const taskTypeFilter = useSidebarStore((state) => state.taskTypeFilter);
 
   const summaryIds = useMemo(
     () =>
@@ -166,32 +169,45 @@ export function useSidebarData({
     ],
   );
 
-  const { pinnedTasks, sortedUnpinnedTasks, totalCount } = useMemo(
-    () => partitionAndSortTasks(taskData, sortMode),
-    [taskData, sortMode],
+  const filteredTaskData = useMemo(
+    () => filterByWorkspaceMode(taskData, taskTypeFilter),
+    [taskData, taskTypeFilter],
   );
 
-  const { flatTasks, hasMore } = useMemo(
-    () =>
-      sliceChronological(
-        sortedUnpinnedTasks,
-        organizeMode,
-        historyVisibleCount,
-      ),
-    [sortedUnpinnedTasks, organizeMode, historyVisibleCount],
+  const { pinnedTasks, sortedUnpinnedTasks, totalCount } = useMemo(
+    () => partitionAndSortTasks(filteredTaskData, sortMode),
+    [filteredTaskData, sortMode],
+  );
+
+  const { flatTasks, hasMore: flatHasMore } = useMemo(
+    () => sliceVisibleTasks(sortedUnpinnedTasks, historyVisibleCount),
+    [sortedUnpinnedTasks, historyVisibleCount],
   );
 
   const { folders } = useFolders();
 
-  const groupedTasks = useMemo(
+  // Group the full task set (grouping is cheap, pure JS), then cap each group
+  // so "by-project" mode never mounts thousands of rows for a busy project.
+  const { groups: groupedTasks, hasMore: groupedHasMore } = useMemo(
     () =>
-      groupByRepository(
-        sortedUnpinnedTasks,
-        folderOrder,
-        organizeMode === "by-project" ? folders : [],
+      limitTasksPerGroup(
+        groupByRepository(
+          sortedUnpinnedTasks,
+          folderOrder,
+          organizeMode === "by-project" ? folders : [],
+        ),
+        historyVisibleCount,
       ),
-    [sortedUnpinnedTasks, folderOrder, folders, organizeMode],
+    [
+      sortedUnpinnedTasks,
+      folderOrder,
+      folders,
+      organizeMode,
+      historyVisibleCount,
+    ],
   );
+
+  const hasMore = organizeMode === "by-project" ? groupedHasMore : flatHasMore;
 
   const groupIdsRef = useRef<string[]>([]);
   useEffect(() => {

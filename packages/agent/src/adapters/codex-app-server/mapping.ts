@@ -41,6 +41,18 @@ export function mapAppServerNotification(
         },
       };
     }
+    // Plan-mode proposal streaming as agent prose (codex strips it from agentMessage deltas).
+    case APP_SERVER_NOTIFICATIONS.PLAN_DELTA: {
+      const delta = readStringField(params, "delta");
+      if (!delta) return null;
+      return {
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: delta },
+        },
+      };
+    }
     case APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED: {
       // Context indicator: renderer reads `used`/`size`; detailed breakdown comes via `_posthog/usage_update`.
       const usage = readTokenUsage(params);
@@ -194,6 +206,15 @@ export type AppServerItem = {
   // Present on message/reasoning items replayed from thread history.
   text?: string;
   content?: unknown;
+  senderThreadId?: string;
+  receiverThreadIds?: string[];
+  prompt?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  agentsStates?: Record<
+    string,
+    { status?: string; message?: string | null } | undefined
+  >;
 };
 
 function mcpResultText(
@@ -232,7 +253,7 @@ function dynamicToolText(items: unknown): string | null {
 /**
  * Re-renders a persisted `ThreadItem` as the ACP updates a live stream would have produced,
  * so a reattaching host shows the full transcript. Tool items collapse to one completed
- * `tool_call`; ephemeral items (reasoning, plan) are not replayed.
+ * `tool_call`; reasoning is not replayed.
  */
 export function mapHistoryItem(
   sessionId: string,
@@ -254,8 +275,20 @@ export function mapHistoryItem(
           ]
         : [];
     case "reasoning":
-    case "plan":
       return [];
+    // Replay the proposed plan as agent prose so a reattached host still shows it.
+    case "plan":
+      return item.text
+        ? [
+            {
+              sessionId,
+              update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: item.text },
+              },
+            },
+          ]
+        : [];
     default: {
       const tool = describeTool(item);
       if (!tool || !item.id) return [];
@@ -271,14 +304,20 @@ export function mapHistoryItem(
             status: mapStatus(item.status),
             ...(tool.rawInput !== undefined ? { rawInput: tool.rawInput } : {}),
             ...(tool.locations?.length ? { locations: tool.locations } : {}),
-            ...(tool.mcp
+            ...(item.type === "collabAgentToolCall"
               ? {
                   _meta: posthogToolMeta({
-                    toolName: mcpToolKey(tool.mcp),
-                    mcp: tool.mcp,
+                    toolName: collabAgentToolName(item.tool),
                   }),
                 }
-              : {}),
+              : tool.mcp
+                ? {
+                    _meta: posthogToolMeta({
+                      toolName: mcpToolKey(tool.mcp),
+                      mcp: tool.mcp,
+                    }),
+                  }
+                : {}),
             ...(content ? { content } : {}),
           },
         },
@@ -370,10 +409,64 @@ function describeTool(item: AppServerItem): ToolDescriptor | null {
         rawInput: item.arguments,
         output: dynamicToolText(item.contentItems),
       };
+    case "collabAgentToolCall":
+      if (item.tool === "wait" || item.tool === "closeAgent") {
+        return null;
+      }
+      return {
+        title: collabAgentTitle(item),
+        kind: "other",
+        rawInput: {
+          ...(item.prompt ? { prompt: item.prompt } : {}),
+          ...(item.receiverThreadIds?.length
+            ? { receiverThreadIds: item.receiverThreadIds }
+            : {}),
+          ...(item.model ? { model: item.model } : {}),
+          ...(item.reasoningEffort
+            ? { reasoningEffort: item.reasoningEffort }
+            : {}),
+        },
+      };
     case "webSearch":
       return { title: item.query ?? "Web search", kind: "fetch" };
     default:
       return null;
+  }
+}
+
+function collabAgentTitle(item: AppServerItem): string {
+  switch (item.tool) {
+    case "spawnAgent":
+      return item.prompt
+        ? item.prompt.split("\n", 1)[0].slice(0, 120)
+        : "Spawn subagent";
+    case "sendInput":
+      return "Message subagent";
+    case "resumeAgent":
+      return "Resume subagent";
+    case "wait":
+      return "Wait for subagents";
+    case "closeAgent":
+      return "Close subagent";
+    default:
+      return "Subagent";
+  }
+}
+
+function collabAgentToolName(tool: string | undefined): string {
+  switch (tool) {
+    case "spawnAgent":
+      return "spawn_agent";
+    case "sendInput":
+      return "send_input";
+    case "resumeAgent":
+      return "resume_agent";
+    case "wait":
+      return "wait_agent";
+    case "closeAgent":
+      return "close_agent";
+    default:
+      return "subagent";
   }
 }
 
@@ -435,14 +528,20 @@ function mapItem(
         status: "in_progress",
         ...(tool.rawInput !== undefined ? { rawInput: tool.rawInput } : {}),
         ...(tool.locations?.length ? { locations: tool.locations } : {}),
-        ...(tool.mcp
+        ...(item.type === "collabAgentToolCall"
           ? {
               _meta: posthogToolMeta({
-                toolName: mcpToolKey(tool.mcp),
-                mcp: tool.mcp,
+                toolName: collabAgentToolName(item.tool),
               }),
             }
-          : {}),
+          : tool.mcp
+            ? {
+                _meta: posthogToolMeta({
+                  toolName: mcpToolKey(tool.mcp),
+                  mcp: tool.mcp,
+                }),
+              }
+            : {}),
       },
     };
   }

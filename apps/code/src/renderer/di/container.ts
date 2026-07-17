@@ -30,6 +30,8 @@ import {
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import type { LlmMessage } from "@posthog/core/llm-gateway/schemas";
+import { LOCAL_MCP_WORKSPACE_CLIENT } from "@posthog/core/local-mcp/identifiers";
+import type { LocalMcpWorkspaceClient } from "@posthog/core/local-mcp/localMcpImport";
 import {
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
@@ -387,6 +389,12 @@ container.bind(CODE_REVIEW_WORKSPACE_CLIENT).toConstantValue({
   },
 } satisfies CodeReviewWorkspaceClient);
 container.bind(REVERT_HUNK_SERVICE).to(RevertHunkService).inSingletonScope();
+
+// local MCP servers (~/.claude.json), read for cloud-import classification
+container.bind(LOCAL_MCP_WORKSPACE_CLIENT).toConstantValue({
+  listLocalMcpServers: (cwd?: string) =>
+    trpcClient.localMcp.list.query({ cwd }),
+} satisfies LocalMcpWorkspaceClient);
 
 // skills (team publish/install reach workspace-server through this slice)
 container.bind(SKILLS_WORKSPACE_CLIENT).toConstantValue({

@@ -229,9 +229,10 @@ describe("AgentAuthAdapter", () => {
   });
 
   it("configures environment using the gateway proxy and current token", async () => {
+    const pathBefore = process.env.PATH;
+
     await adapter.configureProcessEnv({
       credentials: baseCredentials,
-      mockNodeDir: "/mock/node",
       proxyUrl: "http://127.0.0.1:9999",
       claudeCliPath: "/mock/claude-cli.js",
     });
@@ -241,5 +242,29 @@ describe("AgentAuthAdapter", () => {
     expect(process.env.LLM_GATEWAY_URL).toBe("http://127.0.0.1:9999");
     expect(process.env.CLAUDE_CODE_EXECUTABLE).toBe("/mock/claude-cli.js");
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
+    // The node-shim era prepended a shim dir here; PATH must stay untouched.
+    expect(process.env.PATH).toBe(pathBefore);
   });
+
+  it.each([
+    { rtkEnabled: false, expected: "0" },
+    { rtkEnabled: true, expected: undefined },
+    { rtkEnabled: undefined, expected: undefined },
+  ])(
+    "pins POSTHOG_RTK for rtkEnabled=$rtkEnabled",
+    async ({ rtkEnabled, expected }) => {
+      // A stale value from a previous session must not leak into an
+      // enabled/default session — the enabled path deletes, not skips.
+      process.env.POSTHOG_RTK = "0";
+
+      await adapter.configureProcessEnv({
+        credentials: baseCredentials,
+        proxyUrl: "http://127.0.0.1:9999",
+        claudeCliPath: "/mock/claude-cli.js",
+        rtkEnabled,
+      });
+
+      expect(process.env.POSTHOG_RTK).toBe(expected);
+    },
+  );
 });

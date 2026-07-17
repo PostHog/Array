@@ -37,16 +37,36 @@ export function decideTitleGeneration(input: {
   lastGeneratedAtCount: number;
   initialDescriptionHandled: boolean;
   task: Pick<Task, "title" | "description">;
+  isTitleLocked?: () => boolean;
+  hasSummary?: boolean;
 }): TitleGenerationDecision {
-  const { promptCount, lastGeneratedAtCount, initialDescriptionHandled, task } =
-    input;
+  const {
+    promptCount,
+    lastGeneratedAtCount,
+    initialDescriptionHandled,
+    task,
+    isTitleLocked,
+    hasSummary = false,
+  } = input;
+
+  // A first fire on an already-long conversation whose title the user renamed
+  // and whose summary is already stored would produce nothing usable. Organic
+  // triggers (first prompt, every REGENERATE_INTERVAL prompts) still run while
+  // renamed so the summary stays current.
+  const skipStaleFire =
+    promptCount > 1 &&
+    lastGeneratedAtCount === 0 &&
+    !initialDescriptionHandled &&
+    hasSummary &&
+    (isTitleLocked?.() ?? false);
 
   const shouldGenerateFromPrompts =
-    (promptCount === 1 &&
+    !skipStaleFire &&
+    ((promptCount === 1 &&
       lastGeneratedAtCount === 0 &&
       !initialDescriptionHandled) ||
-    (promptCount > 1 &&
-      promptCount - lastGeneratedAtCount >= REGENERATE_INTERVAL);
+      (promptCount > 1 &&
+        promptCount - lastGeneratedAtCount >= REGENERATE_INTERVAL));
 
   const shouldGenerateFromTaskDescription =
     promptCount === 0 &&
@@ -55,6 +75,18 @@ export function decideTitleGeneration(input: {
     isPlaceholderTaskTitle(task);
 
   return { shouldGenerateFromPrompts, shouldGenerateFromTaskDescription };
+}
+
+// Prompt-window fires past the first prompt describe the recent conversation,
+// not the task, so the title must stay pinned to the original prompt context.
+// Later fires may only fill in a title that is still the raw-description
+// placeholder (e.g. an earlier generation failed); the summary always
+// refreshes regardless.
+export function canApplyTitleFromPrompts(
+  promptCount: number,
+  task: Pick<Task, "title" | "description">,
+): boolean {
+  return promptCount <= 1 || isPlaceholderTaskTitle(task);
 }
 
 export function selectPromptsForTitle(

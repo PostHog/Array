@@ -1,4 +1,11 @@
-import { ArrowLeft, PencilSimple, Plus, Trash } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  Lock,
+  PencilSimple,
+  Plus,
+  Trash,
+  X,
+} from "@phosphor-icons/react";
 import {
   buildSandboxEnvironmentInput,
   emptyForm,
@@ -7,23 +14,45 @@ import {
   validateDomains,
   validateEnvVars,
 } from "@posthog/core/settings/sandboxEnvironmentForm";
-import type {
-  NetworkAccessLevel,
-  SandboxEnvironment,
+import {
+  isImageBuildFailed,
+  isImageBuildInProgress,
+  type NetworkAccessLevel,
+  type SandboxCustomImage,
+  type SandboxCustomImageStatus,
+  type SandboxEnvironment,
 } from "@posthog/shared/domain-types";
+import { useHandleOpenTask } from "@posthog/ui/features/deep-links/useHandleOpenTask";
+import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
+import { useCloudRepoPicker } from "@posthog/ui/features/integrations/useCloudRepoPicker";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import {
+  AlertDialog,
   Badge,
   Button,
   Checkbox,
   Flex,
+  IconButton,
   Text,
   TextArea,
   TextField,
 } from "@radix-ui/themes";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ComponentProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "../../../../primitives/toast";
+import { imageFailureDetail } from "./imageBuildWatcher";
+import { SettingsSelect, type SettingsSelectOption } from "./SettingsSelect";
+import {
+  useSandboxCustomImageDetail,
+  useSandboxCustomImages,
+} from "./useSandboxCustomImages";
 import { useSandboxEnvironments } from "./useSandboxEnvironments";
 
 const NETWORK_ACCESS_OPTIONS: {
@@ -110,6 +139,147 @@ function NetworkAccessSelect({
   );
 }
 
+interface ImageFormState {
+  name: string;
+  description: string;
+  repository: string | null;
+  private: boolean;
+}
+
+const IMAGE_STATUS_COLORS: Record<
+  SandboxCustomImageStatus,
+  ComponentProps<typeof Badge>["color"]
+> = {
+  draft: "gray",
+  scanning: "blue",
+  building: "blue",
+  scan_failed: "red",
+  build_failed: "red",
+  ready: "green",
+  archived: "gray",
+};
+
+function imageLabel(image: SandboxCustomImage): string {
+  return `${image.name}${image.status !== "ready" ? ` (${image.status})` : ""}`;
+}
+
+function BuildLogPane({
+  image,
+  onClose,
+}: {
+  image: SandboxCustomImage;
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useSandboxCustomImageDetail(image.id);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const buildLog = data?.build_log ?? "";
+  const status = data?.status ?? image.status;
+  const isScanning = status === "scanning";
+  const isBuilding = status === "building";
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run as the log grows to keep the scroll pinned
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [buildLog]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }, []);
+
+  if (isLoading) {
+    return (
+      <Text color="gray" className="text-[13px]">
+        Loading build log...
+      </Text>
+    );
+  }
+
+  if (!buildLog) {
+    return (
+      <Text color="gray" className="text-[13px]">
+        {isScanning
+          ? "Security scan in progress — build output will stream once the build starts."
+          : isBuilding
+            ? "Waiting for build output…"
+            : "No build log yet."}
+      </Text>
+    );
+  }
+
+  return (
+    <Flex direction="column" gap="1">
+      <Flex align="center" justify="between">
+        <Flex align="center" gap="2">
+          <Text color="gray" className="text-[12px]">
+            Build log
+          </Text>
+          {isBuilding && (
+            <Flex align="center" gap="1">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-(--blue-9)" />
+              <Text color="blue" className="text-[12px]">
+                building — streaming
+              </Text>
+            </Flex>
+          )}
+        </Flex>
+        <IconButton
+          variant="ghost"
+          size="1"
+          color="gray"
+          onClick={onClose}
+          aria-label="Close build log"
+        >
+          <X size={12} />
+        </IconButton>
+      </Flex>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="max-h-[320px] overflow-auto rounded-2 border border-gray-6 bg-gray-2 p-2"
+      >
+        <pre className="m-0 whitespace-pre-wrap break-words font-[var(--code-font-family)] text-gray-12 text-xs">
+          {buildLog}
+        </pre>
+      </div>
+    </Flex>
+  );
+}
+
+function BaseImageSelect({
+  value,
+  images,
+  onChange,
+}: {
+  value: string | null;
+  images: SandboxCustomImage[];
+  onChange: (v: string | null) => void;
+}) {
+  const options: SettingsSelectOption[] = [
+    { value: null, label: "Default" },
+    ...images.map((img) => ({
+      value: img.id,
+      label: imageLabel(img),
+      disabled: img.status !== "ready",
+    })),
+  ];
+
+  return (
+    <SettingsSelect
+      value={value}
+      options={options}
+      onChange={onChange}
+      ariaLabel="Base image"
+    />
+  );
+}
+
 export function CloudEnvironmentsSettings() {
   const {
     environments,
@@ -118,6 +288,17 @@ export function CloudEnvironmentsSettings() {
     updateMutation,
     deleteMutation,
   } = useSandboxEnvironments();
+  const {
+    images,
+    customImagesEnabled,
+    customImagesDisabled,
+    createMutation: createImageMutation,
+    buildMutation,
+    builderTaskMutation,
+    deleteMutation: deleteImageMutation,
+  } = useSandboxCustomImages();
+  const handleOpenTask = useHandleOpenTask();
+  const repoPickerProps = useCloudRepoPicker();
   const consumeInitialAction = useSettingsPageStore(
     (s) => s.consumeInitialAction,
   );
@@ -125,6 +306,16 @@ export function CloudEnvironmentsSettings() {
   const [editingEnv, setEditingEnv] = useState<SandboxEnvironment | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm());
+  const [imageForm, setImageForm] = useState<ImageFormState | null>(null);
+  const [editingSpecImageId, setEditingSpecImageId] = useState<string | null>(
+    null,
+  );
+  const [specDraft, setSpecDraft] = useState("");
+  const [deleteConfirmImage, setDeleteConfirmImage] =
+    useState<SandboxCustomImage | null>(null);
+  const [viewingLogImageId, setViewingLogImageId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     const action = consumeInitialAction();
@@ -184,6 +375,9 @@ export function CloudEnvironmentsSettings() {
       domainValidation.domains,
       envVarValidation.vars,
     );
+    if (customImagesDisabled) {
+      delete payload.custom_image_id;
+    }
 
     if (editingEnv) {
       await updateMutation.mutateAsync({ id: editingEnv.id, ...payload });
@@ -197,6 +391,7 @@ export function CloudEnvironmentsSettings() {
     hasValidationErrors,
     domainValidation,
     envVarValidation,
+    customImagesDisabled,
     createMutation,
     updateMutation,
     closeForm,
@@ -207,6 +402,59 @@ export function CloudEnvironmentsSettings() {
     await deleteMutation.mutateAsync(editingEnv.id);
     closeForm();
   }, [editingEnv, deleteMutation, closeForm]);
+
+  const openCreateImage = useCallback(() => {
+    setImageForm({
+      name: "",
+      description: "",
+      repository: null,
+      private: false,
+    });
+  }, []);
+
+  const patchImageForm = useCallback((patch: Partial<ImageFormState>) => {
+    setImageForm((current) => (current ? { ...current, ...patch } : current));
+  }, []);
+
+  const handleCreateImage = useCallback(async () => {
+    if (!imageForm) return;
+    const image = await createImageMutation.mutateAsync({
+      name: imageForm.name.trim(),
+      ...(imageForm.description.trim()
+        ? { description: imageForm.description.trim() }
+        : {}),
+      ...(imageForm.repository ? { repository: imageForm.repository } : {}),
+      ...(imageForm.private ? { private: true } : {}),
+    });
+    setImageForm(null);
+    if (image.builder_task_id) {
+      void handleOpenTask(image.builder_task_id);
+    }
+  }, [imageForm, createImageMutation, handleOpenTask]);
+
+  const handleOpenBuilder = useCallback(
+    async (image: SandboxCustomImage) => {
+      const updated = await builderTaskMutation.mutateAsync(image.id);
+      if (updated.builder_task_id) {
+        void handleOpenTask(updated.builder_task_id);
+      }
+    },
+    [builderTaskMutation, handleOpenTask],
+  );
+
+  const handleSaveSpec = useCallback(
+    async (image: SandboxCustomImage) => {
+      await buildMutation.mutateAsync({ id: image.id, specYaml: specDraft });
+      setEditingSpecImageId(null);
+    },
+    [buildMutation, specDraft],
+  );
+
+  const confirmDeleteImage = useCallback(() => {
+    if (!deleteConfirmImage) return;
+    deleteImageMutation.mutate(deleteConfirmImage.id);
+    setDeleteConfirmImage(null);
+  }, [deleteConfirmImage, deleteImageMutation]);
 
   if (isFormOpen) {
     return (
@@ -245,6 +493,25 @@ export function CloudEnvironmentsSettings() {
             placeholder="e.g. Dev 1"
           />
         </Flex>
+
+        {customImagesEnabled && (
+          <Flex direction="column" gap="1">
+            <Text className="font-medium text-sm">Base image</Text>
+            <Text color="gray" className="text-[13px]">
+              The sandbox image sessions in this environment start from.{" "}
+              <Text color="gray" className="font-medium text-[13px]">
+                Default
+              </Text>{" "}
+              is the standard image; custom images must finish building before
+              they can be selected.
+            </Text>
+            <BaseImageSelect
+              value={form.custom_image_id}
+              images={images}
+              onChange={(v) => setForm((f) => ({ ...f, custom_image_id: v }))}
+            />
+          </Flex>
+        )}
 
         <Flex direction="column" gap="1">
           <Text className="font-medium text-sm">Network access</Text>
@@ -486,6 +753,13 @@ export function CloudEnvironmentsSettings() {
                         {env.allowed_domains.length !== 1 ? "s" : ""}
                       </Text>
                     )}
+                  {customImagesEnabled &&
+                    env.custom_image_id &&
+                    env.custom_image_name && (
+                      <Badge size="1" color="gray" variant="soft">
+                        image: {env.custom_image_name}
+                      </Badge>
+                    )}
                 </Flex>
               </Flex>
               <Button
@@ -500,6 +774,323 @@ export function CloudEnvironmentsSettings() {
             </Flex>
           ))}
         </Flex>
+      )}
+
+      {customImagesEnabled && (
+        <>
+          <Flex justify="between" align="center" pt="2">
+            <Text className="font-medium text-[13px]">Custom images</Text>
+            <Button size="1" variant="outline" onClick={openCreateImage}>
+              <Plus size={12} />
+              New custom image
+            </Button>
+          </Flex>
+
+          <Text color="gray" className="text-[13px]">
+            A custom image is a sandbox base image with your own tools and
+            dependencies pre-installed. Creating one starts a builder session
+            where you describe what the image should include; once built, pick
+            it as the base image of an environment.
+          </Text>
+
+          {imageForm && (
+            <Flex
+              direction="column"
+              gap="3"
+              p="3"
+              className="rounded-2 border border-gray-6"
+            >
+              <Flex direction="column" gap="1">
+                <Text className="font-medium text-sm">Name</Text>
+                <TextField.Root
+                  size="2"
+                  value={imageForm?.name ?? ""}
+                  onChange={(e) => patchImageForm({ name: e.target.value })}
+                  placeholder="e.g. Playwright + Node 22"
+                />
+              </Flex>
+              <Flex direction="column" gap="1">
+                <Text className="font-medium text-sm">Description</Text>
+                <TextArea
+                  size="2"
+                  rows={3}
+                  value={imageForm?.description ?? ""}
+                  onChange={(e) =>
+                    patchImageForm({ description: e.target.value })
+                  }
+                  placeholder="What should this image include?"
+                />
+              </Flex>
+              <Flex direction="column" gap="1">
+                <Text className="font-medium text-sm">
+                  Verify a repository (optional)
+                </Text>
+                <Text color="gray" className="text-[13px]">
+                  The builder will make sure this repo's dependencies can be
+                  brought up on the image.
+                </Text>
+                <div className="w-fit">
+                  <GitHubRepoPicker
+                    value={imageForm?.repository ?? null}
+                    onChange={(repository) => patchImageForm({ repository })}
+                    {...repoPickerProps}
+                  />
+                </div>
+              </Flex>
+              <Flex align="center" gap="2">
+                <Checkbox
+                  size="1"
+                  checked={imageForm?.private ?? false}
+                  onCheckedChange={(checked) =>
+                    patchImageForm({ private: checked === true })
+                  }
+                />
+                <Text color="gray" className="text-[13px]">
+                  Only visible to me
+                </Text>
+              </Flex>
+              <Flex gap="2" justify="end">
+                <Button
+                  color="gray"
+                  variant="outline"
+                  size="1"
+                  onClick={() => setImageForm(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="1"
+                  onClick={handleCreateImage}
+                  loading={createImageMutation.isPending}
+                  disabled={
+                    !imageForm?.name.trim() || createImageMutation.isPending
+                  }
+                >
+                  Create image
+                </Button>
+              </Flex>
+            </Flex>
+          )}
+
+          {images.length === 0 ? (
+            !imageForm && (
+              <Text color="gray" className="text-[13px]">
+                No custom images yet. Create one to pre-install tools your cloud
+                sessions need.
+              </Text>
+            )
+          ) : (
+            <Flex direction="column">
+              {images.map((image, i) => {
+                const inProgress = isImageBuildInProgress(image.status);
+                const isFailed = isImageBuildFailed(image.status);
+                const isBuildingThis =
+                  buildMutation.isPending &&
+                  buildMutation.variables?.id === image.id;
+                const isEditingSpec = editingSpecImageId === image.id;
+                const isViewingLog = viewingLogImageId === image.id;
+                const hasBuildLog =
+                  image.version > 0 ||
+                  image.status === "ready" ||
+                  image.status === "build_failed" ||
+                  inProgress;
+                return (
+                  <Flex
+                    key={image.id}
+                    direction="column"
+                    py="3"
+                    px="1"
+                    gap="2"
+                    style={{
+                      borderBottom:
+                        i < images.length - 1
+                          ? "1px solid var(--gray-5)"
+                          : undefined,
+                    }}
+                  >
+                    <Flex align="center" justify="between" gap="3">
+                      <Flex
+                        direction="column"
+                        gap="1"
+                        className="min-w-0 flex-1"
+                      >
+                        <Flex align="center" gap="1">
+                          <Text className="font-medium text-sm">
+                            {image.name}
+                          </Text>
+                          {image.private && (
+                            <Lock size={12} className="shrink-0 text-gray-10" />
+                          )}
+                        </Flex>
+                        <Flex align="center" gap="2">
+                          <Badge
+                            size="1"
+                            color={IMAGE_STATUS_COLORS[image.status]}
+                            variant="soft"
+                          >
+                            {image.status}
+                          </Badge>
+                          {image.version > 0 && (
+                            <Text color="gray" className="text-[13px]">
+                              v{image.version}
+                            </Text>
+                          )}
+                          {image.repository && (
+                            <Text color="gray" className="truncate text-[13px]">
+                              {image.repository}
+                            </Text>
+                          )}
+                        </Flex>
+                        {isFailed && (
+                          <Text color="red" className="text-[13px]">
+                            {imageFailureDetail(image)}
+                          </Text>
+                        )}
+                      </Flex>
+                      <Flex align="center" gap="2" className="shrink-0">
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          color="gray"
+                          onClick={() => void handleOpenBuilder(image)}
+                          loading={
+                            builderTaskMutation.isPending &&
+                            builderTaskMutation.variables === image.id
+                          }
+                          disabled={builderTaskMutation.isPending}
+                        >
+                          {image.status === "ready" ? "Update" : "Open builder"}
+                        </Button>
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          color="gray"
+                          onClick={() => {
+                            setEditingSpecImageId(image.id);
+                            setSpecDraft(image.spec_yaml);
+                          }}
+                          disabled={inProgress || isEditingSpec}
+                        >
+                          Edit spec
+                        </Button>
+                        {hasBuildLog && (
+                          <Button
+                            size="1"
+                            variant="ghost"
+                            color="gray"
+                            onClick={() =>
+                              setViewingLogImageId(
+                                isViewingLog ? null : image.id,
+                              )
+                            }
+                          >
+                            Build log
+                          </Button>
+                        )}
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          onClick={() => buildMutation.mutate({ id: image.id })}
+                          loading={isBuildingThis}
+                          disabled={
+                            inProgress ||
+                            buildMutation.isPending ||
+                            isEditingSpec
+                          }
+                        >
+                          Save & build
+                        </Button>
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          color="red"
+                          onClick={() => setDeleteConfirmImage(image)}
+                          disabled={deleteImageMutation.isPending}
+                        >
+                          <Trash size={14} />
+                        </Button>
+                      </Flex>
+                    </Flex>
+                    {isEditingSpec && (
+                      <Flex direction="column" gap="2">
+                        <TextArea
+                          size="2"
+                          rows={10}
+                          value={specDraft}
+                          onChange={(e) => setSpecDraft(e.target.value)}
+                          placeholder="Image spec (YAML)"
+                          className="font-[var(--code-font-family)] [&_textarea]:text-xs"
+                        />
+                        <Flex gap="2" justify="end">
+                          <Button
+                            color="gray"
+                            variant="outline"
+                            size="1"
+                            onClick={() => setEditingSpecImageId(null)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="1"
+                            onClick={() => void handleSaveSpec(image)}
+                            loading={isBuildingThis}
+                            disabled={
+                              inProgress ||
+                              buildMutation.isPending ||
+                              !specDraft.trim()
+                            }
+                          >
+                            Save & build
+                          </Button>
+                        </Flex>
+                      </Flex>
+                    )}
+                    {isViewingLog && (
+                      <BuildLogPane
+                        image={image}
+                        onClose={() => setViewingLogImageId(null)}
+                      />
+                    )}
+                  </Flex>
+                );
+              })}
+            </Flex>
+          )}
+
+          <AlertDialog.Root
+            open={deleteConfirmImage !== null}
+            onOpenChange={(open) => {
+              if (!open) setDeleteConfirmImage(null);
+            }}
+          >
+            <AlertDialog.Content maxWidth="420px" size="1">
+              <AlertDialog.Title className="text-sm">
+                Delete custom image?
+              </AlertDialog.Title>
+              <AlertDialog.Description>
+                <Text color="gray" className="text-[13px]">
+                  Environments using "{deleteConfirmImage?.name}" fall back to
+                  the default image.
+                </Text>
+              </AlertDialog.Description>
+              <Flex justify="end" gap="3" mt="3">
+                <AlertDialog.Cancel>
+                  <Button variant="soft" color="gray" size="1">
+                    Cancel
+                  </Button>
+                </AlertDialog.Cancel>
+                <Button
+                  variant="solid"
+                  color="red"
+                  size="1"
+                  onClick={confirmDeleteImage}
+                >
+                  Delete
+                </Button>
+              </Flex>
+            </AlertDialog.Content>
+          </AlertDialog.Root>
+        </>
       )}
     </Flex>
   );

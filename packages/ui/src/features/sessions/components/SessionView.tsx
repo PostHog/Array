@@ -5,11 +5,7 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
-import {
-  type AcpMessage,
-  ANALYTICS_EVENTS,
-  type StaleConversationGateChoiceProperties,
-} from "@posthog/shared";
+import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import {
@@ -21,6 +17,7 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
+import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
@@ -33,16 +30,17 @@ import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/Que
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
-import { StaleConversationCostNotice } from "@posthog/ui/features/sessions/components/StaleConversationCostNotice";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/useEditQueuedMessage";
 import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
+  useSessionSelector,
   useThoughtLevelConfigOptionForTask,
 } from "@posthog/ui/features/sessions/sessionStore";
 import {
@@ -51,12 +49,10 @@ import {
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { Plan } from "@posthog/ui/features/sessions/types";
 import { useSessionHandoffInProgress } from "@posthog/ui/features/sessions/useSession";
-import { useStaleConversationGate } from "@posthog/ui/features/sessions/useStaleConversationGate";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
-import { track } from "@posthog/ui/shell/analytics";
 import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
@@ -328,45 +324,19 @@ export function SessionView({
     [isOnline, onBeforeSubmit],
   );
 
-  // Warn PostHog staff before continuing a large, idle conversation whose
-  // prompt cache has likely expired (see useStaleConversationGate).
-  const staleGate = useStaleConversationGate(sessionId, events);
-
-  // Plain functions, not useCallbacks: the notice isn't memoized, and the
-  // values they close over (usage, cost) change with every streamed event.
-  const trackStaleGateChoice = (
-    choice: StaleConversationGateChoiceProperties["choice"],
-  ) =>
-    track(ANALYTICS_EVENTS.STALE_CONVERSATION_GATE_CHOICE, {
-      choice,
-      used_tokens: staleGate.usedTokens,
-      cost_usd: staleGate.costUsd,
-    });
-
-  const handleStaleCompact = () => {
-    if (!isOnline) {
-      showOfflineToast();
-      return;
-    }
-    trackStaleGateChoice("compact");
-    staleGate.onContinue();
-    onSendPrompt("/compact");
-  };
-
-  const handleStaleContinue = () => {
-    trackStaleGateChoice("continue");
-    staleGate.onContinue();
-  };
-
-  const handleStaleNewSession = onNewSession
-    ? () => {
-        trackStaleGateChoice("new_session");
-        onNewSession();
-      }
-    : undefined;
+  const isEditingQueued = useSessionSelector(
+    taskId,
+    (s) => !!s?.editingQueuedId,
+  );
+  const cancelQueuedEdit = useCancelQueuedMessageEdit(taskId);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
+  const promptRecallRef = useRef<PromptRecallHandler | null>(null);
+  const handlePromptRecall = useCallback<PromptRecallHandler>(
+    (direction) => promptRecallRef.current?.(direction) ?? null,
+    [],
+  );
   const dragCounterRef = useRef(0);
   // URL of the GitHub chip the context menu was opened on, captured on
   // right-click so the "Copy" item can copy the link (selections can't reach it).
@@ -617,6 +587,7 @@ export function SessionView({
                   slackThreadUrl={slackThreadUrl}
                   compact={compact}
                   scrollX={false}
+                  promptRecallRef={promptRecallRef}
                 />
 
                 {!useNewChatThread && <SessionResourcesBar events={events} />}
@@ -666,38 +637,7 @@ export function SessionView({
                       )}
                     </Flex>
                   </Flex>
-                ) : hideInput ? null : staleGate.active ? (
-                  // Replaces the composer (and any pending permission — answering
-                  // one also resumes the costly turn) until the user chooses.
-                  isRunning ? (
-                    <ComposerSlot compact={compact}>
-                      <StaleConversationCostNotice
-                        usedTokens={staleGate.usedTokens}
-                        lastActivityAt={staleGate.lastActivityAt}
-                        costUsd={staleGate.costUsd}
-                        onContinue={handleStaleContinue}
-                        onCompact={
-                          firstPendingPermission
-                            ? undefined
-                            : handleStaleCompact
-                        }
-                        onNewSession={handleStaleNewSession}
-                      />
-                    </ComposerSlot>
-                  ) : (
-                    // While reconnecting the gate still covers the composer
-                    // slot: handoff can leave pendingPermissions set, and the
-                    // choices must not fire into a half-connected session.
-                    <Flex
-                      align="center"
-                      justify="center"
-                      gap="2"
-                      className="min-h-[66px]"
-                    >
-                      <ConnectingToAgent />
-                    </Flex>
-                  )
-                ) : firstPendingPermission ? (
+                ) : hideInput ? null : firstPendingPermission ? (
                   <ComposerSlot compact={compact}>
                     <PermissionSelector
                       toolCall={firstPendingPermission.toolCall}
@@ -707,7 +647,7 @@ export function SessionView({
                     />
                   </ComposerSlot>
                 ) : (
-                  <Box className="relative">
+                  <Box className="relative shrink-0">
                     <Box
                       className={`absolute inset-0 flex min-h-[66px] items-center justify-center gap-2 transition-opacity duration-200 ${
                         isRunning
@@ -771,10 +711,13 @@ export function SessionView({
                           onToggleMessagingMode={
                             isCloudRun ? undefined : toggleMessagingMode
                           }
+                          onPromptRecall={handlePromptRecall}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
                           onBashCommand={onBashCommand}
                           onCancel={onCancelPrompt}
+                          isEditingQueued={isEditingQueued}
+                          onCancelEdit={cancelQueuedEdit}
                         />
                       </ComposerWidth>
                     </Box>

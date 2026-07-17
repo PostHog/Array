@@ -27,9 +27,11 @@ import { githubReleasesRouter } from "./routers/github-releases.router";
 import { handoffRouter } from "./routers/handoff.router";
 import { linearIntegrationRouter } from "./routers/linear-integration.router";
 import { llmGatewayRouter } from "./routers/llm-gateway.router";
+import { localMcpRouter } from "./routers/local-mcp.router";
 import { logsRouter } from "./routers/logs.router";
 import { mcpAppsRouter } from "./routers/mcp-apps.router";
 import { mcpCallbackRouter } from "./routers/mcp-callback.router";
+import { mcpRelayRouter } from "./routers/mcp-relay.router";
 import { notificationRouter } from "./routers/notification.router";
 import { oauthRouter } from "./routers/oauth.router";
 import { onboardingImportRouter } from "./routers/onboarding-import.router";
@@ -41,6 +43,7 @@ import { shellRouter } from "./routers/shell.router";
 import { skillsRouter } from "./routers/skills.router";
 import { slackIntegrationRouter } from "./routers/slack-integration.router";
 import { sleepRouter } from "./routers/sleep.router";
+import { speechRouter } from "./routers/speech.router";
 import { suspensionRouter } from "./routers/suspension.router";
 import { uiRouter } from "./routers/ui.router";
 import { updatesRouter } from "./routers/updates.router";
@@ -76,9 +79,11 @@ export const hostRouter = router({
   githubReleases: githubReleasesRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
+  localMcp: localMcpRouter,
   logs: logsRouter,
   mcpApps: mcpAppsRouter,
   mcpCallback: mcpCallbackRouter,
+  mcpRelay: mcpRelayRouter,
   notification: notificationRouter,
   oauth: oauthRouter,
   onboardingImport: onboardingImportRouter,
@@ -87,6 +92,7 @@ export const hostRouter = router({
   provisioning: provisioningRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,
+  speech: speechRouter,
   skills: skillsRouter,
   slackIntegration: slackIntegrationRouter,
   sleep: sleepRouter,

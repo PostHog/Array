@@ -2,10 +2,16 @@ import type {
   AutoresearchDirection,
   AutoresearchIteration,
 } from "@posthog/core/autoresearch/schemas";
-import { computeBest, isImprovement } from "@posthog/core/autoresearch/stats";
+import { computeBest } from "@posthog/core/autoresearch/stats";
 import { Badge, Table, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
-import { withMetricUnit } from "./metricFormat";
+import {
+  type DeltaTone,
+  deltaTone,
+  formatMetricDelta,
+  metricNumberFormat,
+  withMetricUnit,
+} from "./metricFormat";
 
 interface IterationsTableProps {
   iterations: AutoresearchIteration[];
@@ -13,22 +19,16 @@ interface IterationsTableProps {
   unit: string | null;
 }
 
-const numberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 4,
-});
-
 const timeFormat = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
   minute: "2-digit",
 });
 
-function deltaColor(
-  delta: number | null,
-  direction: AutoresearchDirection,
-): "green" | "red" | "gray" {
-  if (delta === null || delta === 0) return "gray";
-  return isImprovement(delta, 0, direction) ? "green" : "red";
-}
+const TONE_COLOR: Record<DeltaTone, "green" | "red" | "gray"> = {
+  improved: "green",
+  worsened: "red",
+  neutral: "gray",
+};
 
 export function IterationsTable({
   iterations,
@@ -66,7 +66,10 @@ export function IterationsTable({
             <Table.Cell>{iteration.index}</Table.Cell>
             <Table.Cell>
               <span className="flex items-center gap-1 tabular-nums">
-                {withMetricUnit(numberFormat.format(iteration.value), unit)}
+                {withMetricUnit(
+                  metricNumberFormat.format(iteration.value),
+                  unit,
+                )}
                 {best?.index === iteration.index && (
                   <Badge color="amber" size="1">
                     best
@@ -77,25 +80,27 @@ export function IterationsTable({
             <Table.Cell>
               <Text
                 size="1"
-                color={deltaColor(iteration.delta, direction)}
+                color={TONE_COLOR[deltaTone(iteration.delta, direction)]}
                 className="tabular-nums"
               >
-                {iteration.delta === null
-                  ? "—"
-                  : withMetricUnit(
-                      `${iteration.delta > 0 ? "+" : ""}${numberFormat.format(iteration.delta)}`,
-                      unit,
-                    )}
+                {formatMetricDelta(iteration.delta, unit)}
               </Text>
             </Table.Cell>
             <Table.Cell className="max-w-[320px]">
-              <Text
-                size="1"
-                className="block truncate"
-                title={iteration.summary ?? undefined}
-              >
-                {iteration.summary ?? "—"}
-              </Text>
+              <div className="flex min-w-0 items-center gap-2">
+                {iteration.approach && (
+                  <Badge color="gray" size="1" variant="soft">
+                    {iteration.approach}
+                  </Badge>
+                )}
+                <Text
+                  size="1"
+                  className="block truncate"
+                  title={iteration.summary ?? undefined}
+                >
+                  {iteration.summary ?? "None"}
+                </Text>
+              </div>
             </Table.Cell>
             <Table.Cell>
               <Text size="1" color="gray">

@@ -24,6 +24,7 @@ export function usePrActions(prUrl: string | null) {
           (prev) => ({
             ...getOptimisticPrState(variables.action),
             headRefName: prev?.headRefName ?? null,
+            title: prev?.title ?? null,
           }),
         );
         // The inbox Pulls list reads PR status from the batched

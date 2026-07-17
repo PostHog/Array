@@ -3,6 +3,7 @@ import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+import { devtools as tanstackDevtools } from "@tanstack/devtools-vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
@@ -198,6 +199,14 @@ export default defineConfig(({ mode }) => {
     renderer: {
       root: __dirname,
       plugins: [
+        // Dev-only "Go to Source" helper: AST transform that stamps every JSX
+        // element with data-tsd-source="<file>:<line>:<col>". Hold the inspector
+        // hotkey (Shift+Alt+Ctrl/Meta) to reveal an element's source location.
+        // Must be first so it sees JSX before other transforms.
+        isDev &&
+          tanstackDevtools({
+            injectSource: { enabled: true },
+          }),
         TanStackRouterVite({
           target: "react",
           autoCodeSplitting: true,

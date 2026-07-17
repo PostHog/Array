@@ -6,12 +6,13 @@ import type {
   SessionConfigSelectOption,
   SessionConfigSelectOptions,
 } from "@agentclientprotocol/sdk";
+import type { Adapter } from "./adapter";
 import type { SkillButtonId } from "./analytics-events";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
 import type { TaskRunStatus } from "./task";
 
-export type Adapter = "claude" | "codex";
+export type { Adapter };
 
 export type PermissionRequest = Omit<RequestPermissionRequest, "sessionId"> & {
   taskRunId: string;
@@ -71,13 +72,21 @@ export interface AgentSession {
   /**
    * Adapter's negotiated steering capability (`_meta.posthog.steering` from
    * initialize). "native" means a mid-turn message folds into the running turn
-   * (claude, codex app-server); "interrupt-resend" (codex-acp) or undefined
+   * (claude, codex); "interrupt-resend" (legacy) or undefined
    * means the host must cancel + resend. Drives the steer-vs-resend decision.
    */
   steering?: string;
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
   messageQueue: QueuedMessage[];
+  /**
+   * Id of the queued message the user currently has open in the composer for an
+   * in-place edit, if any. While set it acts as a drain boundary: when the turn
+   * ends, everything queued *before* this message auto-sends, but this message
+   * and everything after it stay queued until the edit is saved or cancelled.
+   * See {@link sendableQueuePrefixLength}.
+   */
+  editingQueuedId?: string;
   isCloud?: boolean;
   cloudStatus?: TaskRunStatus;
   cloudStage?: string | null;
@@ -86,6 +95,7 @@ export interface AgentSession {
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;
   handoffInProgress?: boolean;
+  stopRequested?: boolean;
   optimisticItems: OptimisticItem[];
   contextUsed?: number;
   contextSize?: number;
@@ -93,6 +103,23 @@ export interface AgentSession {
   idleKilled?: boolean;
   agentVersion?: string;
   agentIdleForRunId?: string;
+}
+
+/**
+ * How many messages at the head of the queue are eligible to auto-send when the
+ * turn ends. A message being edited in place ({@link AgentSession.editingQueuedId})
+ * is a hard boundary: the messages queued before it may send, but it and
+ * everything after it stay put until the edit is saved or cancelled. Returns the
+ * full queue length when nothing is being edited, or when the edited message has
+ * already left the queue (e.g. it was discarded).
+ */
+export function sendableQueuePrefixLength(
+  session: Pick<AgentSession, "messageQueue" | "editingQueuedId">,
+): number {
+  const { messageQueue, editingQueuedId } = session;
+  if (!editingQueuedId) return messageQueue.length;
+  const editIndex = messageQueue.findIndex((m) => m.id === editingQueuedId);
+  return editIndex === -1 ? messageQueue.length : editIndex;
 }
 
 export function isSelectGroup(
@@ -195,7 +222,7 @@ export function resolveBypassRevertMode(
  * Whether a mid-turn message can be folded into the running turn (steered)
  * rather than interrupt-and-resent. Decided by the adapter's negotiated
  * `steering` capability: "native" folds (claude, codex app-server);
- * "interrupt-resend" (codex-acp) does not. Cloud runs never steer locally.
+ * "interrupt-resend" (legacy) does not. Cloud runs never steer locally.
  *
  * Fallback: if `steering` is unset (a start path that predates capability
  * plumbing), Claude is still treated as native — it has always steered — so the

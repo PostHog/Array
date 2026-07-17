@@ -8,18 +8,20 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
-import { GLM_MODEL_FLAG } from "@posthog/shared";
+import { type Adapter, GLM_MODEL_FLAG } from "@posthog/shared";
+import { gateRestrictedModelPick } from "@posthog/ui/features/billing/modelGate";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { ModelRadioItem } from "@posthog/ui/features/sessions/components/ModelRadioItem";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import {
   flattenSelectOptions,
   useModelConfigOptionForTask,
-  useSessionForTask,
+  useSessionIsCloud,
+  useSessionSelector,
 } from "@posthog/ui/features/sessions/sessionStore";
 import { Fragment, useMemo } from "react";
 
@@ -27,7 +29,7 @@ interface ModelSelectorProps {
   taskId?: string;
   disabled?: boolean;
   onModelChange?: (modelId: string) => void;
-  adapter?: "claude" | "codex";
+  adapter?: Adapter;
 }
 
 export function ModelSelector({
@@ -36,7 +38,10 @@ export function ModelSelector({
   onModelChange,
 }: ModelSelectorProps) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
-  const session = useSessionForTask(taskId);
+  // Narrow reads instead of the whole session, so the model dropdown doesn't
+  // re-render on every streamed token during a turn.
+  const sessionStatus = useSessionSelector(taskId, (s) => s?.status);
+  const sessionIsCloud = useSessionIsCloud(taskId);
   const rawModelOption = useModelConfigOptionForTask(taskId);
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const modelOption =
@@ -59,10 +64,13 @@ export function ModelSelector({
   if (!selectOption || options.length === 0) return null;
 
   const handleChange = (value: string) => {
+    // A plan-restricted model opens the upgrade gate instead of becoming
+    // the selection.
+    if (gateRestrictedModelPick(options, value)) return;
     onModelChange?.(value);
 
-    if (!taskId || !session) return;
-    if (session.status !== "connected" && !session.isCloud) return;
+    if (!taskId) return;
+    if (sessionStatus !== "connected" && !sessionIsCloud) return;
     sessionService.setSessionConfigOption(taskId, selectOption.id, value);
   };
 
@@ -106,9 +114,7 @@ export function ModelSelector({
                 {index > 0 && <DropdownMenuSeparator />}
                 <MenuLabel>{group.name}</MenuLabel>
                 {group.options.map((model) => (
-                  <DropdownMenuRadioItem key={model.value} value={model.value}>
-                    <span className="whitespace-nowrap">{model.name}</span>
-                  </DropdownMenuRadioItem>
+                  <ModelRadioItem key={model.value} model={model} />
                 ))}
               </Fragment>
             ))}
@@ -119,9 +125,7 @@ export function ModelSelector({
             onValueChange={handleChange}
           >
             {options.map((model) => (
-              <DropdownMenuRadioItem key={model.value} value={model.value}>
-                <span className="whitespace-nowrap">{model.name}</span>
-              </DropdownMenuRadioItem>
+              <ModelRadioItem key={model.value} model={model} />
             ))}
           </DropdownMenuRadioGroup>
         )}

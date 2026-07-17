@@ -91,7 +91,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
             task_id: task.id,
             success: false,
           });
-          toast.error("Couldn't file task to channel", {
+          toast.error("Couldn't file task to context", {
             description: error instanceof Error ? error.message : String(error),
           });
         });

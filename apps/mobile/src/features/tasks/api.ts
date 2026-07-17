@@ -1,3 +1,8 @@
+import type { Adapter } from "@posthog/shared";
+import type {
+  SandboxCustomImage,
+  SandboxEnvironment,
+} from "@posthog/shared/domain-types";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
@@ -421,7 +426,7 @@ export interface RunTaskInCloudOptions {
   pendingUserMessage?: string;
   mode?: "interactive" | "background";
   /** Adapter to use on the cloud runner. Currently only "claude" on mobile. */
-  runtimeAdapter?: "claude" | "codex";
+  runtimeAdapter?: Adapter;
   /** Gateway model ID, e.g. "claude-opus-4-8". */
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
@@ -432,6 +437,11 @@ export interface RunTaskInCloudOptions {
   runSource?: "manual" | "signal_report";
   /** Signal report ID when run_source is "signal_report". */
   signalReportId?: string;
+  /** When true, the cloud run pushes its changes and opens a draft PR on
+   *  completion without waiting for an explicit ask. */
+  autoPublish?: boolean;
+  /** Only false is sent: opts the run out of rtk command-output compression. */
+  rtkEnabled?: boolean;
 }
 
 export async function runTaskInCloud(
@@ -455,7 +465,9 @@ export async function runTaskInCloud(
       options.reasoningEffort !== undefined ||
       options.initialPermissionMode !== undefined ||
       options.runSource !== undefined ||
-      options.signalReportId !== undefined);
+      options.signalReportId !== undefined ||
+      options.autoPublish !== undefined ||
+      options.rtkEnabled === false);
 
   let body: string | undefined;
   if (hasOptions) {
@@ -482,6 +494,12 @@ export async function runTaskInCloud(
     if (options?.runSource) payload.run_source = options.runSource;
     if (options?.signalReportId)
       payload.signal_report_id = options.signalReportId;
+    if (options?.autoPublish !== undefined) {
+      payload.auto_publish = options.autoPublish;
+    }
+    if (options?.rtkEnabled === false) {
+      payload.rtk_enabled = false;
+    }
     body = JSON.stringify(payload);
   }
 
@@ -524,6 +542,36 @@ export async function getTaskRun(
   }
 
   return await response.json();
+}
+
+export async function cancelRun(
+  taskId: string,
+  runId: string,
+  reason?: string,
+): Promise<{ status?: string }> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/cancel/`,
+    {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: unknown;
+    } | null;
+    const message =
+      typeof payload?.error === "string" && payload.error
+        ? payload.error
+        : "Failed to stop run";
+    throw new HttpError(response.status, response.statusText, message);
+  }
+
+  return (await response.json().catch(() => ({}))) as { status?: string };
 }
 
 export async function appendTaskRunLog(
@@ -733,6 +781,50 @@ export async function streamCloudTask(
     headers,
     signal: options.signal,
   });
+}
+
+export async function getSandboxCustomImages(): Promise<SandboxCustomImage[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/sandbox_custom_images/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch sandbox custom images",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: SandboxCustomImage[] }>(
+    response,
+  );
+  return data.results ?? [];
+}
+
+export async function getSandboxEnvironments(): Promise<SandboxEnvironment[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/sandbox_environments/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch sandbox environments",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: SandboxEnvironment[] }>(
+    response,
+  );
+  return data.results ?? [];
 }
 
 export async function getIntegrations(): Promise<Integration[]> {

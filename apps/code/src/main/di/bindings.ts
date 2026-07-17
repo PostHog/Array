@@ -11,6 +11,8 @@ import type {
 import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
+  MCP_RELAY_EXECUTOR,
+  McpRelayExecutor,
 } from "@posthog/core/cloud-task/identifiers";
 import type {
   CONTEXT_MENU_EXTERNAL_APPS_SERVICE,
@@ -46,9 +48,11 @@ import type {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import type { ChannelLinkService } from "@posthog/core/links/channel-link";
 import type {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
@@ -178,12 +182,20 @@ import type {
 } from "@posthog/workspace-server/services/local-logs/identifiers";
 import type { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-proxy/identifiers";
 import type { McpProxyAuth } from "@posthog/workspace-server/services/mcp-proxy/ports";
+import type {
+  MCP_RELAY_SERVICE,
+  McpRelayService,
+} from "@posthog/workspace-server/services/mcp-relay/identifiers";
 import type { PosthogPluginService } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin";
 import type { ProcessTrackingService } from "@posthog/workspace-server/services/process-tracking/process-tracking";
 import type {
   ISecureStoreService,
   SECURE_STORE_SERVICE,
 } from "@posthog/workspace-server/services/secure-store/identifiers";
+import type {
+  ISpeechSynthesizer,
+  SPEECH_SYNTHESIZER_SERVICE,
+} from "@posthog/workspace-server/services/speech/identifiers";
 import type {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -256,6 +268,7 @@ import type {
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
   CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE as MAIN_CHANNEL_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
@@ -351,9 +364,11 @@ export interface MainBindings {
   [MAIN_AUTH_SERVICE]: AuthService;
   [AUTH_SERVICE]: AuthService;
 
-  // Auth proxy / mcp proxy
+  // Auth proxy / mcp proxy / mcp relay
   [AUTH_PROXY_AUTH]: AuthProxyAuth;
   [MCP_PROXY_AUTH]: McpProxyAuth;
+  [MCP_RELAY_SERVICE]: McpRelayService;
+  [MCP_RELAY_EXECUTOR]: McpRelayExecutor;
 
   // Archive / suspension host ports
   [ARCHIVE_SESSION_CANCELLER]: SessionCanceller;
@@ -431,6 +446,7 @@ export interface MainBindings {
   [MAIN_APPROVAL_LINK_SERVICE]: ApprovalLinkService;
   [MAIN_OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
   [MAIN_CANVAS_LINK_SERVICE]: CanvasLinkService;
+  [MAIN_CHANNEL_LINK_SERVICE]: ChannelLinkService;
   [TASK_LINK_SERVICE]: TaskLinkService;
   [INBOX_LINK_SERVICE]: InboxLinkService;
   [SCOUT_LINK_SERVICE]: ScoutLinkService;
@@ -438,6 +454,7 @@ export interface MainBindings {
   [APPROVAL_LINK_SERVICE]: ApprovalLinkService;
   [OPEN_TARGET_LINK_SERVICE]: OpenTargetLinkService;
   [CANVAS_LINK_SERVICE]: CanvasLinkService;
+  [CHANNEL_LINK_SERVICE]: ChannelLinkService;
 
   // Watcher registry
   [MAIN_WATCHER_REGISTRY_SERVICE]: WatcherRegistryService;
@@ -455,6 +472,7 @@ export interface MainBindings {
   [MAIN_SECURE_STORE_BACKEND]: typeof rendererStore;
   [MAIN_SECURE_STORE_SERVICE]: SecureStoreService;
   [SECURE_STORE_SERVICE]: ISecureStoreService;
+  [SPEECH_SYNTHESIZER_SERVICE]: ISpeechSynthesizer;
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;

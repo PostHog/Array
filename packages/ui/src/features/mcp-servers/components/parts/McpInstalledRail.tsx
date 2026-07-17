@@ -3,12 +3,14 @@ import type {
   McpRecommendedServer,
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
+import type { LocalMcpCloudClassification } from "@posthog/core/local-mcp/localMcpImport";
 import { filterInstallationsByQuery } from "@posthog/core/mcp-servers/filters";
 import {
   resolveServerName,
   sortInstallationsByName,
 } from "@posthog/core/mcp-servers/resolveServerName";
 import { getInstallationStatus } from "@posthog/core/mcp-servers/status";
+import { LocalMcpRailSection } from "@posthog/ui/features/local-mcp/LocalMcpRailSection";
 import { PULSE_COLOR } from "@posthog/ui/features/mcp-servers/components/parts/statusBadge";
 import {
   Flex,
@@ -23,6 +25,7 @@ import { ServerIcon } from "./icons";
 interface McpInstalledRailProps {
   installations: McpServerInstallation[];
   templates: McpRecommendedServer[];
+  localServers: LocalMcpCloudClassification[];
   selectedInstallationId: string | null;
   onAddCustom: () => void;
   onSelectInstallation: (installationId: string) => void;
@@ -31,6 +34,7 @@ interface McpInstalledRailProps {
 export function McpInstalledRail({
   installations,
   templates,
+  localServers,
   selectedInstallationId,
   onAddCustom,
   onSelectInstallation,
@@ -178,6 +182,7 @@ export function McpInstalledRail({
               );
             })
           )}
+          <LocalMcpRailSection servers={localServers} search={search} />
         </Flex>
       </ScrollArea>
     </aside>

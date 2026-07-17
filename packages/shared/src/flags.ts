@@ -1,4 +1,10 @@
 export const BILLING_FLAG = "posthog-code-billing";
+export const SPEND_ANALYSIS_FLAG = "posthog-code-spend-analysis";
+/**
+ * Launch switch for the one-time usage-based billing announcement: flip at
+ * cutover, delete once the fleet has acknowledged.
+ */
+export const USAGE_BILLING_FLAG = "posthog-code-usage-billing";
 export const EXPERIMENT_SUGGESTIONS_FLAG =
   "posthog-code-experiment-suggestions";
 export const SYNC_CLOUD_TASKS_FLAG = "posthog-code-sync-cloud-tasks";
@@ -13,3 +19,7 @@ export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
 // Gates the in-app browser tab (the Globe "+" affordance in panel tab bars).
 export const BROWSER_TAB_FLAG = "posthog-code-browser-tab";
+/** Spoken narration (agent speaks via the `speak` tool). Gated for a staged rollout. */
+export const SPOKEN_NARRATION_FLAG = "posthog-code-spoken-narration";
+// Gates importing and relaying local MCP servers into cloud task runs.
+export const LOCAL_MCP_IMPORT_FLAG = "posthog-code-local-mcp-import";

@@ -6,6 +6,7 @@ import { useBlurOnEscape } from "../../../hooks/useBlurOnEscape";
 import { useSetHeaderContent } from "../../../hooks/useSetHeaderContent";
 import { logger } from "../../../shell/logger";
 import { ChannelBreadcrumb } from "../../canvas/components/ChannelBreadcrumb";
+import { CopyThreadLinkButton } from "../../canvas/components/CopyThreadLinkButton";
 import {
   LazyCloudReviewPage as CloudReviewPage,
   LazyReviewPage as ReviewPage,
@@ -24,6 +25,7 @@ import { useWorkspace } from "../../workspace/useWorkspace";
 import { useWorkspaceEvents } from "../../workspace/useWorkspaceEvents";
 import { HeaderTitleEditor } from "../HeaderTitleEditor";
 import { useTaskData } from "../hooks/useTaskData";
+import { CustomImageBadge } from "./CustomImageBadge";
 import { ExternalAppsOpener } from "./ExternalAppsOpener";
 import { WorkspaceModeBadge } from "./WorkspaceModeBadge";
 
@@ -120,9 +122,20 @@ export function TaskDetail({
   const handleTitleEditCancel = useCallback(() => {
     setIsEditingTitle(false);
   }, []);
-  const trailing = openTargetPath ? (
-    <ExternalAppsOpener targetPath={openTargetPath} />
-  ) : null;
+  // Inside a channel the thread also gets a "copy link" share affordance.
+  // Memoized so the headerContent memo below isn't busted by unrelated renders.
+  const trailing = useMemo(
+    () =>
+      channelId || openTargetPath ? (
+        <Flex align="center" gap="2">
+          {channelId && (
+            <CopyThreadLinkButton channelId={channelId} taskId={taskId} />
+          )}
+          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
+        </Flex>
+      ) : null,
+    [channelId, taskId, openTargetPath],
+  );
   const workspace = useWorkspace(taskId);
   const workspaceMode = workspace?.mode;
   const headerContent = useMemo(
@@ -135,9 +148,13 @@ export function TaskDetail({
           channelName={channelName}
           channelId={channelId}
           leafIcon={
-            workspaceMode ? (
-              <WorkspaceModeBadge mode={workspaceMode} />
-            ) : undefined
+            <span className="flex items-center gap-1.5">
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
+              <CustomImageBadge task={task} />
+            </span>
           }
           leafLabel={task.title}
           onRename={handleTitleEditSubmit}
@@ -153,7 +170,11 @@ export function TaskDetail({
             />
           ) : (
             <Flex align="center" gap="2" minWidth="0">
-              <WorkspaceModeBadge mode={workspaceMode} />
+              <WorkspaceModeBadge
+                mode={workspaceMode}
+                checkoutPath={effectiveRepoPath}
+              />
+              <CustomImageBadge task={task} />
               <Tooltip content={task.title} side="bottom" delayDuration={300}>
                 <Text
                   truncate
@@ -171,10 +192,11 @@ export function TaskDetail({
     [
       channelName,
       channelId,
-      task.title,
+      task,
       trailing,
       isEditingTitle,
       workspaceMode,
+      effectiveRepoPath,
       handleTitleEditSubmit,
       handleTitleEditCancel,
     ],

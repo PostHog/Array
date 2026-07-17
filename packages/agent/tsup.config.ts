@@ -119,11 +119,11 @@ export default defineConfig([
       "src/adapters/claude/tools.ts",
       "src/adapters/claude/conversion/tool-use-to-acp.ts",
       "src/adapters/claude/session/jsonl-hydration.ts",
+      "src/adapters/claude/session/mcp-config.ts",
       "src/adapters/claude/session/models.ts",
-      "src/adapters/codex/models.ts",
+      "src/adapters/codex-app-server/models.ts",
+      "src/adapters/codex-app-server/local-tools-mcp-server.ts",
       "src/adapters/claude/mcp/tool-metadata.ts",
-      "src/adapters/codex/structured-output-mcp-server.ts",
-      "src/adapters/codex/local-tools-mcp-server.ts",
       "src/adapters/reasoning-effort.ts",
       "src/execution-mode.ts",
       "src/server/schemas.ts",
@@ -132,6 +132,13 @@ export default defineConfig([
     format: ["esm"],
     dts: true,
     clean: false,
+    // noExternal inlines CJS deps (e.g. simple-git via @posthog/git) whose
+    // dynamic `require(...)` calls throw in ESM output unless a real require
+    // exists. Entries spawned directly by node (local-tools-mcp-server.js)
+    // crash at import time without this shim.
+    banner: {
+      js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+    },
     ...sharedOptions,
     onSuccess: async () => {
       copyAssets();

@@ -1,3 +1,4 @@
+export * from "./adapter";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -29,6 +30,7 @@ export {
   primaryWindowHasNoTabs,
   setTabOrder,
   setTabTarget,
+  setWindowActiveTab,
   type TabNavDecision,
   type TabTarget,
 } from "./browser-tabs";
@@ -70,11 +72,14 @@ export {
 export type { SignalReportPriority, Task } from "./domain-types";
 export * from "./enrichment";
 export {
+  classifyGatewayLimitError,
+  type GatewayLimitCause,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   type SerializedError,
   serializeError,
@@ -83,6 +88,7 @@ export type { ExecutionMode } from "./exec-types";
 export {
   CODEX_MODE_PRESETS,
   type CodexModePreset,
+  resolveCloudInitialPermissionMode,
 } from "./execution-modes";
 export * from "./flags";
 export * from "./git-domain";
@@ -104,6 +110,7 @@ export {
   buildImageDataUrl,
   CLAUDE_IMAGE_EXTENSIONS,
   type ClaudeImageMimeType,
+  estimateBase64Bytes,
   getImageMimeType,
   IMAGE_MIME_TYPES,
   isAllowedImageMimeType,
@@ -112,6 +119,7 @@ export {
   isGifFile,
   isImageFile,
   isRasterImageFile,
+  MAX_CLAUDE_IMAGE_BYTES,
   MAX_IMAGE_BASE64_LENGTH,
   type ParsedImageDataUrl,
   parseImageDataUrl,
@@ -119,6 +127,25 @@ export {
 export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
+export type {
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
+  LocalMcpServerDescriptor,
+  LocalMcpServerScope,
+  LocalMcpTransport,
+} from "./local-mcp-domain";
+export {
+  formatMention,
+  type MentionSegment,
+  mentionsToPlainText,
+  splitMentionSegments,
+} from "./mentions";
+export {
+  defaultEligibleModel,
+  isRestrictedModelOption,
+  RESTRICTED_MODEL_META_KEY,
+  restrictedModelMeta,
+} from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
@@ -139,6 +166,17 @@ export {
   toRelativePath,
 } from "./path";
 export {
+  buildPrOutput,
+  mergePrUrls,
+  promotePrUrl,
+  readPrSummaries,
+  readPrUrls,
+} from "./pr-urls";
+export {
+  isPrivateIpv4Octets,
+  isPrivateIpv6Literal,
+} from "./private-network";
+export {
   type CloudRegion,
   formatRegionBadge,
   REGION_LABELS,
@@ -154,16 +192,6 @@ export {
 } from "./saga";
 export { scoutSkillNameFromSlug, scoutSkillSlug } from "./scout-naming";
 export {
-  isProPlan,
-  PLAN_FREE,
-  PLAN_PRO,
-  PLAN_PRO_ALPHA,
-  SEAT_PRODUCT_KEY,
-  type SeatData,
-  type SeatStatus,
-  seatHasAccess,
-} from "./seat";
-export {
   type AcpMessage,
   IMPORTED_USER_PROMPT_META_KEY,
   isJsonRpcNotification,
@@ -178,7 +206,6 @@ export {
   type UserShellExecuteResult,
 } from "./session-events";
 export {
-  type Adapter,
   type AgentSession,
   cycleModeOption,
   flattenSelectOptions,
@@ -191,6 +218,7 @@ export {
   type QueuedMessage,
   resolveBypassRevertMode,
   type SessionStatus,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
@@ -205,7 +233,11 @@ export type {
   SkillSource,
   UploadableSkillSource,
 } from "./skills";
-export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
+export {
+  SKILL_EXISTS_MARKER,
+  serializeSkillMarkdown,
+  stripFrontmatter,
+} from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,
@@ -222,6 +254,7 @@ export type {
 export {
   formatRelativeTimeLong,
   formatRelativeTimeShort,
+  getLocalDayDiff,
   getRelativeDateGroup,
 } from "./time";
 export {

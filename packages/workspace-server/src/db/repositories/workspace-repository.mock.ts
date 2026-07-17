@@ -1,7 +1,8 @@
+import { mergePrUrls, promotePrUrl } from "@posthog/shared";
 import {
   type CreateWorkspaceData,
   type IWorkspaceRepository,
-  parseDirectories,
+  parseStringArray,
   type Workspace,
 } from "./workspace-repository";
 
@@ -27,7 +28,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
   ) => {
     const w = findLiveByTaskId(taskId);
     if (!w) return;
-    const next = update(parseDirectories(w.additionalDirectories));
+    const next = update(parseStringArray(w.additionalDirectories));
     if (next === null) return;
     workspaces.set(w.id, {
       ...w,
@@ -66,6 +67,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         additionalDirectories: "[]",
         prUrl: null,
         prState: null,
+        prUrls: "[]",
         createdAt: now,
         updatedAt: now,
       };
@@ -88,6 +90,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
           additionalDirectories: "[]",
           prUrl: null,
           prState: null,
+          prUrls: "[]",
           createdAt: now,
           updatedAt: now,
         };
@@ -109,7 +112,15 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         workspaces.delete(id);
       }
     },
-    updateLinkedBranch: () => {},
+    updateLinkedBranch: (taskId, linkedBranch) => {
+      const w = findLiveByTaskId(taskId);
+      if (!w) return;
+      workspaces.set(w.id, {
+        ...w,
+        linkedBranch,
+        updatedAt: new Date().toISOString(),
+      });
+    },
     updatePinnedAt: () => {},
     updateLastViewedAt: () => {},
     updateLastActivityAt: () => {},
@@ -126,7 +137,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
       });
     },
     getAdditionalDirectories: (taskId) =>
-      parseDirectories(findLiveByTaskId(taskId)?.additionalDirectories),
+      parseStringArray(findLiveByTaskId(taskId)?.additionalDirectories),
     addAdditionalDirectory: (taskId, path) => {
       updateDirectoriesForTask(taskId, (current) =>
         current.includes(path) ? null : [...current, path],
@@ -140,12 +151,28 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
     updatePrCache: (taskId, update) => {
       const w = findLiveByTaskId(taskId);
       if (!w) return;
+      const existing = parseStringArray(w.prUrls);
+      const prUrls =
+        update.prUrl && update.accumulate
+          ? mergePrUrls(existing, [update.prUrl])
+          : existing;
       const now = new Date().toISOString();
       workspaces.set(w.id, {
         ...w,
         prUrl: update.prUrl,
         prState: update.prState,
+        prUrls: JSON.stringify(prUrls),
         updatedAt: now,
+      });
+    },
+    getPrUrls: (taskId) => parseStringArray(findLiveByTaskId(taskId)?.prUrls),
+    promotePrUrl: (taskId, prUrl) => {
+      const w = findLiveByTaskId(taskId);
+      if (!w) return;
+      workspaces.set(w.id, {
+        ...w,
+        prUrls: JSON.stringify(promotePrUrl(parseStringArray(w.prUrls), prUrl)),
+        updatedAt: new Date().toISOString(),
       });
     },
     deleteAll: () => {

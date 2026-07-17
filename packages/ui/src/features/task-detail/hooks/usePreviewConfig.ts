@@ -6,7 +6,12 @@ import {
   deriveInitialConfig,
 } from "@posthog/core/task-detail/previewConfig";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { GLM_MODEL_FLAG, getCloudUrlFromRegion } from "@posthog/shared";
+import {
+  type Adapter,
+  defaultEligibleModel,
+  GLM_MODEL_FLAG,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logger } from "../../../shell/logger";
@@ -40,9 +45,7 @@ function getOptionByCategory(
  *
  * Returns config options as local state with a setter for local updates.
  */
-export function usePreviewConfig(
-  adapter: "claude" | "codex",
-): PreviewConfigResult {
+export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
@@ -104,22 +107,23 @@ export function usePreviewConfig(
         );
 
         // The server always returns its default model as the current value, so
-        // without this the user's last pick (e.g. fable) is lost on every
-        // refetch/remount. Restore it through applyConfigChange so the dependent
-        // effort options are recomputed for the restored model.
+        // without this the user's last (default-eligible) pick is lost on every
+        // refetch/remount. Restore it through applyConfigChange so the
+        // dependent effort options are recomputed for the restored model.
         const modelOpt = getOptionByCategory(initial, "model");
+        const restorableModel = defaultEligibleModel(lastUsedModel);
         if (
-          lastUsedModel &&
+          restorableModel &&
           modelOpt?.type === "select" &&
-          modelOpt.currentValue !== lastUsedModel &&
-          flattenConfigValues(modelOpt).includes(lastUsedModel)
+          modelOpt.currentValue !== restorableModel &&
+          flattenConfigValues(modelOpt).includes(restorableModel)
         ) {
           initial = applyConfigChange(initial, {
             adapter,
             configId: modelOpt.id,
-            value: lastUsedModel,
+            value: restorableModel,
             effortOptions:
-              getReasoningEffortOptions(adapter, lastUsedModel) ?? undefined,
+              getReasoningEffortOptions(adapter, restorableModel) ?? undefined,
             settings: {
               defaultInitialTaskMode: "",
               lastUsedInitialTaskMode: undefined,

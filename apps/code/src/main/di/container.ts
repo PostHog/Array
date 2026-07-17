@@ -4,7 +4,6 @@ import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
 import { DEFAULT_GATEWAY_MODEL } from "@posthog/agent/gateway-models";
 import {
-  getGatewayInvalidatePlanCacheUrl,
   getGatewayUsageUrl,
   getLlmGatewayUrl,
 } from "@posthog/agent/posthog-api";
@@ -23,6 +22,7 @@ import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
   CLOUD_TASK_AUTH,
   CLOUD_TASK_SERVICE,
+  MCP_RELAY_EXECUTOR,
 } from "@posthog/core/cloud-task/identifiers";
 import { contextMenuCoreModule } from "@posthog/core/context-menu/context-menu.module";
 import {
@@ -48,9 +48,11 @@ import { HANDOFF_HOST } from "@posthog/core/handoff/identifiers";
 import { integrationsModule } from "@posthog/core/integrations/integrations.module";
 import { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import { ChannelLinkService } from "@posthog/core/links/channel-link";
 import {
   APPROVAL_LINK_SERVICE,
   CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   INBOX_LINK_SERVICE,
   NEW_TASK_LINK_SERVICE,
   OPEN_TARGET_LINK_SERVICE,
@@ -175,9 +177,12 @@ import {
 import type { HandoffGitGateway } from "@posthog/workspace-server/services/handoff/ports";
 import { HandoffHostService } from "@posthog/workspace-server/services/handoff/service";
 import { LOGS_SERVICE } from "@posthog/workspace-server/services/local-logs/identifiers";
+import { localMcpModule } from "@posthog/workspace-server/services/local-mcp/local-mcp.module";
 import { mcpCallbackModule } from "@posthog/workspace-server/services/mcp-callback/mcp-callback.module";
 import { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-proxy/identifiers";
 import { mcpProxyModule } from "@posthog/workspace-server/services/mcp-proxy/mcp-proxy.module";
+import { MCP_RELAY_SERVICE } from "@posthog/workspace-server/services/mcp-relay/identifiers";
+import { mcpRelayModule } from "@posthog/workspace-server/services/mcp-relay/mcp-relay.module";
 import { OAUTH_CALLBACK_SERVER } from "@posthog/workspace-server/services/oauth-callback/identifiers";
 import { oauthCallbackModule } from "@posthog/workspace-server/services/oauth-callback/oauth-callback.module";
 import { onboardingImportModule } from "@posthog/workspace-server/services/onboarding-import/onboarding-import.module";
@@ -190,6 +195,7 @@ import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
 import { skillsModule } from "@posthog/workspace-server/services/skills/skills.module";
 import { skillsMarketplaceModule } from "@posthog/workspace-server/services/skills-marketplace/skills-marketplace.module";
+import { SPEECH_SYNTHESIZER_SERVICE } from "@posthog/workspace-server/services/speech/identifiers";
 import {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -256,6 +262,7 @@ import { DiscordPresenceService } from "../services/discord-presence/service";
 import { EncryptionService } from "../services/encryption/service";
 import { SecureStoreService } from "../services/secure-store/service";
 import { settingsStore } from "../services/settingsStore";
+import { ElevenLabsSpeechService } from "../services/speech/service";
 import { WorkspaceServerService } from "../services/workspace-server/service";
 import { getUserDataDir, isDevBuild } from "../utils/env";
 import { logger } from "../utils/logger";
@@ -269,6 +276,7 @@ import {
   AUTH_SERVICE as MAIN_AUTH_SERVICE,
   AUTH_SESSION_REPOSITORY as MAIN_AUTH_SESSION_REPOSITORY,
   CANVAS_LINK_SERVICE as MAIN_CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE as MAIN_CHANNEL_LINK_SERVICE,
   CLOUD_TASK_SERVICE as MAIN_CLOUD_TASK_SERVICE,
   CONTEXT_MENU_SERVICE as MAIN_CONTEXT_MENU_SERVICE,
   DATABASE_SERVICE as MAIN_DATABASE_SERVICE,
@@ -416,6 +424,12 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
     ctx
       .get<AuthService>(MAIN_AUTH_SERVICE)
       .authenticatedFetch(fetch, url, init),
+  getCloudContext: async () => {
+    const auth = ctx.get<AuthService>(MAIN_AUTH_SERVICE);
+    const { apiHost } = await auth.getValidAccessToken();
+    const teamId = auth.getState().currentProjectId;
+    return teamId === null ? null : { apiHost, teamId };
+  },
 }));
 container.bind(MAIN_CLOUD_TASK_SERVICE).toService(CLOUD_TASK_SERVICE);
 container.load(contextMenuCoreModule);
@@ -476,8 +490,6 @@ container.bind(LLM_GATEWAY_HOST).toDynamicValue((ctx) => {
     messagesUrl: (apiHost: string) =>
       `${getLlmGatewayUrl(apiHost)}/v1/messages`,
     usageUrl: (apiHost: string) => getGatewayUsageUrl(apiHost),
-    invalidatePlanCacheUrl: (apiHost: string) =>
-      getGatewayInvalidatePlanCacheUrl(apiHost),
     defaultModel: DEFAULT_GATEWAY_MODEL,
   };
 });
@@ -609,6 +621,15 @@ container.load(skillsModule);
 container.load(skillsMarketplaceModule);
 container.load(githubReleasesModule);
 container.load(onboardingImportModule);
+container.load(localMcpModule);
+container.load(mcpRelayModule);
+// Core's cloud-task service executes MCP relay requests through this seam;
+// the workspace relay service satisfies the core executor interface
+// structurally (docs/cloud-mcp-relay.md).
+container
+  .bind(MCP_RELAY_EXECUTOR)
+  .toDynamicValue((ctx) => ctx.get(MCP_RELAY_SERVICE))
+  .inSingletonScope();
 container.load(claudeCliSessionsModule);
 container.load(additionalDirectoriesModule);
 container.bind(MAIN_SLEEP_SERVICE).to(SleepService);
@@ -654,6 +675,8 @@ container
   .toService(MAIN_OPEN_TARGET_LINK_SERVICE);
 container.bind(MAIN_CANVAS_LINK_SERVICE).to(CanvasLinkService);
 container.bind(CANVAS_LINK_SERVICE).toService(MAIN_CANVAS_LINK_SERVICE);
+container.bind(MAIN_CHANNEL_LINK_SERVICE).to(ChannelLinkService);
+container.bind(CHANNEL_LINK_SERVICE).toService(MAIN_CHANNEL_LINK_SERVICE);
 container.load(watcherRegistryModule);
 container
   .bind(MAIN_WATCHER_REGISTRY_SERVICE)
@@ -712,6 +735,10 @@ container
   .to(SecureStoreService)
   .inSingletonScope();
 container.bind(SECURE_STORE_SERVICE).toService(MAIN_SECURE_STORE_SERVICE);
+container
+  .bind(SPEECH_SYNTHESIZER_SERVICE)
+  .to(ElevenLabsSpeechService)
+  .inSingletonScope();
 container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
   const ws = ctx.get<WorkspaceClient>(MAIN_WORKSPACE_CLIENT);
   return {

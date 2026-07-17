@@ -1,18 +1,20 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { Adapter } from "@posthog/shared";
 
-export type Adapter = "claude" | "codex";
+export type { Adapter };
 
 /**
  * Live e2e configuration, resolved entirely from the environment so no secret is
  * committed. Needs a local llm-gateway and a token in `POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY`; targets
- * the `llm_gateway` product, which accepts a personal API key (no OAuth mint,
- * unlike prod's `posthog_code`). Without the token every arm self-skips.
+ * the `ci` product, which accepts a personal API key (no OAuth mint,
+ * unlike prod's `posthog_code`) and keeps e2e traffic attributed to its own
+ * `ai_product` rather than the catch-all `llm_gateway` bucket. Without the token
+ * every arm self-skips.
  */
 // `||` not `??`: CI sets unset vars to "" which should fall back to the default.
 const GATEWAY_URL =
-  process.env.POSTHOG_CODE_E2E_GATEWAY_URL ||
-  "http://localhost:3308/llm_gateway";
+  process.env.POSTHOG_CODE_E2E_GATEWAY_URL || "http://localhost:3308/ci";
 const TOKEN = process.env.POSTHOG_CODE_E2E_GATEWAY_PERSONAL_API_KEY ?? "";
 
 // This checkout's bundled codex binaries, relative to packages/agent/e2e.
@@ -90,7 +92,6 @@ export const E2E = {
     }
     process.env.OPENAI_BASE_URL = openAiBase();
     process.env.OPENAI_API_KEY = TOKEN;
-    process.env.POSTHOG_CODEX_USE_APP_SERVER = "1";
   },
 
   /** The codexOptions the codex arm passes through `createAcpConnection`. */

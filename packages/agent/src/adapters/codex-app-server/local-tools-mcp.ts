@@ -1,6 +1,6 @@
 /**
  * Builds the stdio local-tools MCP server config to inject into a Codex
- * app-server thread's `config.mcp_servers`, ported from the codex-acp adapter.
+ * app-server thread's `config.mcp_servers`.
  * Returns the ACP `McpServerStdio` shape so the existing translation layer stays
  * the single owner of the ACP→Codex map.
  */
@@ -24,6 +24,7 @@ import { resolveTaskId } from "../session-meta";
  */
 export interface LocalToolsMeta extends LocalToolGateMeta {
   taskId?: string;
+  taskRunId?: string;
   persistence?: { taskId?: string };
   baseBranch?: string;
 }
@@ -33,12 +34,16 @@ function toMcpServerStdio(
   enabledNames: string[],
 ): McpServerStdio {
   const scriptPath = resolveBundledMcpScript(
-    "adapters/codex/local-tools-mcp-server.js",
+    "adapters/codex-app-server/local-tools-mcp-server.js",
   );
   const ctxBase64 = Buffer.from(JSON.stringify(ctx)).toString("base64");
   const env = [
     { name: "POSTHOG_LOCAL_TOOLS_CTX", value: ctxBase64 },
     { name: "POSTHOG_LOCAL_TOOLS_ENABLED", value: enabledNames.join(",") },
+    // Codex spawns this command with ELECTRON_RUN_AS_NODE removed from its own
+    // env (spawn.ts). In packaged desktop installs process.execPath is the app
+    // binary, which boots the full app without this var. Inert on real node.
+    { name: "ELECTRON_RUN_AS_NODE", value: "1" },
   ];
   if (ctx.token) {
     // Token also on the child env so its own git remote ops authenticate.
@@ -74,6 +79,7 @@ export function buildLocalToolsServer(
     cwd,
     token: resolveGithubToken(),
     taskId: resolveTaskId(meta),
+    taskRunId: meta?.taskRunId,
     baseBranch: meta?.baseBranch,
   };
   const tools = enabledLocalTools(toolCtx, meta);

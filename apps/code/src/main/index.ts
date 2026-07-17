@@ -2,7 +2,7 @@ import "reflect-metadata";
 import os from "node:os";
 import { TypedEventEmitter } from "@posthog/shared";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
-import { createWorkspaceClient } from "@posthog/workspace-client/client";
+import { createReconnectingWorkspaceClient } from "@posthog/workspace-client/client";
 import type { FileWatcherEvent } from "@posthog/workspace-client/types";
 import { app, BrowserWindow, dialog, session } from "electron";
 import log from "electron-log/main";
@@ -24,6 +24,7 @@ import {
 import type { SlackIntegrationService } from "@posthog/core/integrations/slack";
 import type { ApprovalLinkService } from "@posthog/core/links/approval-link";
 import type { CanvasLinkService } from "@posthog/core/links/canvas-link";
+import type { ChannelLinkService } from "@posthog/core/links/channel-link";
 import type { InboxLinkService } from "@posthog/core/links/inbox-link";
 import type { NewTaskLinkService } from "@posthog/core/links/new-task-link";
 import type { ScoutLinkService } from "@posthog/core/links/scout-link";
@@ -54,6 +55,7 @@ import {
   APPROVAL_LINK_SERVICE,
   AUTH_SERVICE,
   CANVAS_LINK_SERVICE,
+  CHANNEL_LINK_SERVICE,
   DATABASE_SERVICE,
   DEV_NETWORK_SERVICE,
   DISCORD_PRESENCE_SERVICE,
@@ -70,6 +72,7 @@ import {
   WORKSPACE_SERVER_SERVICE,
   WORKSPACE_SERVICE,
 } from "./di/tokens";
+import { setupExternalLinkPermissionHandlers } from "./external-links";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
@@ -80,7 +83,11 @@ import {
   focusSessionStore,
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
-import type { WorkspaceServerService } from "./services/workspace-server/service";
+import {
+  WorkspaceServerEvent,
+  type WorkspaceServerService,
+  WorkspaceServerStatus,
+} from "./services/workspace-server/service";
 import {
   collectMemorySnapshot,
   flattenMemorySnapshot,
@@ -127,6 +134,19 @@ export class FileWatcherBridge extends TypedEventEmitter<FileWatcherEventsByKind
     if (!sub) return;
     sub.unsubscribe();
     this.subs.delete(repoPath);
+  }
+
+  /**
+   * Tear down and re-create every active watch. The workspace-server child
+   * respawns on a new port after a crash; the old SSE subscriptions keep
+   * retrying the dead port forever, so the boot wiring calls this when the
+   * server reports ready again.
+   */
+  resubscribeAll(): void {
+    for (const repoPath of [...this.subs.keys()]) {
+      this.stopWatching(repoPath);
+      this.startWatching(repoPath);
+    }
   }
 }
 
@@ -257,9 +277,10 @@ async function initializeServices(): Promise<void> {
   container.get<ScoutLinkService>(SCOUT_LINK_SERVICE);
   container.get<NewTaskLinkService>(NEW_TASK_LINK_SERVICE);
   container.get<ApprovalLinkService>(APPROVAL_LINK_SERVICE);
-  // Eagerly resolved so its constructor registers the `canvas` deep-link
-  // handler at boot, before any link arrives.
+  // Eagerly resolved so their constructors register the `canvas` / `channel`
+  // deep-link handlers at boot, before any link arrives.
   container.get<CanvasLinkService>(CANVAS_LINK_SERVICE);
+  container.get<ChannelLinkService>(CHANNEL_LINK_SERVICE);
   container.get<GitHubIntegrationService>(GITHUB_INTEGRATION_SERVICE);
   container.get<SlackIntegrationService>(SLACK_INTEGRATION_SERVICE);
   container.get<ExternalAppsService>(EXTERNAL_APPS_SERVICE);
@@ -340,6 +361,7 @@ app.whenReady().then(async () => {
     `Logs: main=${getLogFilePath()} chromium=${getChromiumLogFilePath() ?? "(disabled)"} network=${getNetworkLogFilePath()}`,
   );
   ensureClaudeConfigDir();
+  setupExternalLinkPermissionHandlers(session.fromPartition("persist:main"));
   registerMcpSandboxProtocol();
   installRendererNetworkLogging(
     session.fromPartition("persist:main").webRequest,
@@ -350,13 +372,25 @@ app.whenReady().then(async () => {
   const wsServer = container.get<WorkspaceServerService>(
     WORKSPACE_SERVER_SERVICE,
   );
-  const connection = await wsServer.start();
-  const workspaceClient = createWorkspaceClient(connection);
+  await wsServer.start();
+  // The workspace-server child respawns on a new port/secret after a crash;
+  // a reconnecting client follows the current connection so main-process
+  // callers don't keep hitting the dead port for the rest of the session.
+  const workspaceClient = createReconnectingWorkspaceClient(() =>
+    wsServer.getConnection(),
+  );
   container.bind(WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(GIT_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(CONNECTIVITY_CLIENT).toConstantValue(workspaceClient);
   container.bind(ENVIRONMENT_CLIENT).toConstantValue(workspaceClient);
   const fileWatcherBridge = new FileWatcherBridge(workspaceClient);
+  // Re-establish live watches after a workspace-server respawn — the old SSE
+  // subscriptions keep retrying the dead port and never recover on their own.
+  wsServer.on(WorkspaceServerEvent.StatusChanged, ({ status }) => {
+    if (status === WorkspaceServerStatus.Ready) {
+      fileWatcherBridge.resubscribeAll();
+    }
+  });
   container.bind(FILE_WATCHER_SERVICE).toConstantValue(fileWatcherBridge);
   container.bind(FILE_WATCHER_CONTROL).toConstantValue(fileWatcherBridge);
   container.bind(FOCUS_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
@@ -483,9 +517,21 @@ if (process.platform !== "win32") {
   process.on("SIGHUP", () => handleShutdownSignal("SIGHUP"));
 }
 
+// A deliberate Ctrl+C during an interactive prompt makes Node's readline
+// SIGINT trap reject the pending prompt with an AbortError (code ABORT_ERR).
+// It is user-initiated, not a crash, so don't report it as an uncaught error.
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.name === "AbortError" ||
+    (error as NodeJS.ErrnoException).code === "ABORT_ERR");
+
 process.on("uncaughtException", (error) => {
   if (error.message === "write EIO") {
     log.transports.console.level = false;
+    return;
+  }
+  if (isAbortError(error)) {
+    log.debug("Ignoring user-initiated abort", error);
     return;
   }
   log.error("Uncaught exception", error);
@@ -496,6 +542,10 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
+  if (isAbortError(reason)) {
+    log.debug("Ignoring user-initiated abort", reason);
+    return;
+  }
   log.error("Unhandled rejection", reason);
   const error = reason instanceof Error ? reason : new Error(String(reason));
   posthogNodeAnalytics.captureException(error, {

@@ -15,29 +15,36 @@ import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
+import { SPOKEN_NARRATION_FLAG } from "@posthog/shared";
 import {
   createAuthenticatedClient,
   getAuthenticatedClient,
 } from "@posthog/ui/features/auth/authClientImperative";
 import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
+import {
+  FEATURE_FLAGS,
+  type FeatureFlags,
+} from "@posthog/ui/features/feature-flags/identifiers";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
+import { SpeechNotifier } from "@posthog/ui/features/notifications/speechNotifier";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
   removePersistedConfigOptions,
   setPersistedConfigOptions,
-  updatePersistedConfigOptionValue,
 } from "@posthog/ui/features/sessions/sessionConfigStore";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  getEffectiveCustomInstructions,
+  useSettingsStore,
+} from "@posthog/ui/features/settings/settingsStore";
 import { taskViewedApi } from "@posthog/ui/features/sidebar/taskMetaApi";
 import { WORKSPACE_QUERY_KEY } from "@posthog/ui/features/workspace/identifiers";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   buildPermissionToolMetadata,
-  posthogFeatureFlags,
   track,
 } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { logger } from "../../shell/logger";
@@ -50,6 +57,14 @@ import { resolveLocalSkillPrompt } from "../message-editor/commands";
 export { SessionService };
 
 const log = logger.scope("session-service");
+
+export function shouldEnableSpokenNarration(
+  userOptedIn: boolean,
+  flagEnabled: boolean,
+  isDevelopment: boolean,
+): boolean {
+  return userOptedIn && (flagEnabled || isDevelopment);
+}
 
 function hostClient(): HostTrpcClient {
   return resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
@@ -81,7 +96,6 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       );
     },
     buildPermissionToolMetadata,
-    featureFlags: posthogFeatureFlags,
     notifyPermissionRequest: (taskTitle, taskId) =>
       resolveService(NotificationBus).notifyPermissionRequest(
         taskTitle,
@@ -94,6 +108,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         taskId,
         durationMs,
       ),
+    enqueueSpeech: (request) => resolveService(SpeechNotifier).speak(request),
     getIsOnline,
     fetchAuthState,
     getAuthenticatedClient,
@@ -102,23 +117,27 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       getPersistedConfigOptions(taskRunId) ?? undefined,
     setPersistedConfigOptions,
     removePersistedConfigOptions,
-    updatePersistedConfigOptionValue,
     adapterStore: {
       getAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().getAdapter(taskRunId),
       setAdapter: (taskRunId, adapter) =>
         useSessionAdapterStore.getState().setAdapter(taskRunId, adapter),
-      setUseCodexAppServer: (taskRunId, useAppServer) =>
-        useSessionAdapterStore
-          .getState()
-          .setUseCodexAppServer(taskRunId, useAppServer),
-      getUseCodexAppServer: (taskRunId) =>
-        useSessionAdapterStore.getState().getUseCodexAppServer(taskRunId),
       removeAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().removeAdapter(taskRunId),
     },
     get settings() {
-      return useSettingsStore.getState();
+      const state = useSettingsStore.getState();
+      return {
+        ...state,
+        customInstructions: getEffectiveCustomInstructions(state),
+        spokenNarrationEnabled: shouldEnableSpokenNarration(
+          state.spokenNotifications,
+          resolveService<FeatureFlags>(FEATURE_FLAGS).isEnabled(
+            SPOKEN_NARRATION_FLAG,
+          ),
+          import.meta.env.DEV,
+        ),
+      };
     },
     usageLimit: {
       show: (...args) => useUsageLimitStore.getState().show(...args),

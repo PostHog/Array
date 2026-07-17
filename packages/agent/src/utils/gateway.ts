@@ -3,7 +3,8 @@ export type GatewayProduct =
   | "background_agents"
   | "signals"
   | "slack_app"
-  | "posthog_ai";
+  | "posthog_ai"
+  | "conversations";
 
 export function resolveGatewayProduct({
   isInternal,
@@ -21,13 +22,19 @@ export function resolveGatewayProduct({
   if (originProduct === "signal_report" || originProduct === "signals_scout") {
     return "signals";
   }
+  if (originProduct === "support_reply") {
+    return "conversations";
+  }
   if (isInternal) {
     return "background_agents";
   }
   return "posthog_code";
 }
 
-export { buildPosthogPropertyHeaderLines as buildGatewayPropertyHeaders } from "@posthog/shared/posthog-property-headers";
+export {
+  buildPosthogPropertyHeaderLines as buildGatewayPropertyHeaders,
+  buildPosthogPropertyHeaderRecord as buildGatewayPropertyHeaderRecord,
+} from "@posthog/shared/posthog-property-headers";
 
 function getGatewayBaseUrl(posthogHost: string): string {
   const url = new URL(posthogHost);
@@ -84,11 +91,4 @@ export function getGatewayUsageUrl(
   product: GatewayProduct = "posthog_code",
 ): string {
   return `${getGatewayBaseUrl(posthogHost)}/v1/usage/${product}`;
-}
-
-export function getGatewayInvalidatePlanCacheUrl(
-  posthogHost: string,
-  product: GatewayProduct = "posthog_code",
-): string {
-  return `${getGatewayBaseUrl(posthogHost)}/v1/usage/${product}/invalidate-plan-cache`;
 }

@@ -21,6 +21,9 @@ const mockHost = vi.hoisted(() => ({
   detectRepo: vi.fn(),
   getCloudPromptTransport: vi.fn(),
   resolveLocalSkillCommandPrompt: vi.fn(async (prompt: string) => prompt),
+  takeWarmTaskLease: vi.fn(
+    (): { taskId: string; runId: string } | null => null,
+  ),
   uploadRunAttachments: vi.fn(),
   setProvisioningActive: vi.fn(),
   clearProvisioning: vi.fn(),
@@ -149,6 +152,8 @@ describe("TaskCreationSaga", () => {
       adapter: "codex",
       model: "gpt-5.4",
       reasoningLevel: "high",
+      cloudAutoPublish: true,
+      cloudRtkEnabled: false,
     });
 
     expect(result.success).toBe(true);
@@ -165,6 +170,8 @@ describe("TaskCreationSaga", () => {
       reasoningLevel: "high",
       sandboxEnvironmentId: undefined,
       prAuthorshipMode: "user",
+      autoPublish: true,
+      rtkEnabled: false,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
@@ -516,6 +523,249 @@ describe("TaskCreationSaga", () => {
     },
   );
 
+  it("uploads skill bundles to the warm run and passes pending fields through createTask", async () => {
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.takeWarmTaskLease.mockReturnValue({
+      taskId: "warm-task",
+      runId: "warm-run",
+    });
+    mockHost.uploadRunAttachments.mockResolvedValue(["skill-artifact-1"]);
+
+    const warmActivatedTask = createTask({
+      id: "warm-task",
+      latest_run: createRun({ id: "warm-run", task: "warm-task" }),
+    });
+    const createTaskMock = vi.fn().mockResolvedValue(warmActivatedTask);
+    const createTaskRunMock = vi.fn();
+    const startTaskRunMock = vi.fn();
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      cloudAutoPublish: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.takeWarmTaskLease).toHaveBeenCalledWith({
+      repository: "posthog/posthog",
+      branch: "main",
+      runtimeAdapter: null,
+      model: null,
+      reasoningEffort: null,
+      sandboxEnvironmentId: null,
+      customImageId: null,
+    });
+    // The bundle must land on the warm run before createTask triggers activation.
+    expect(mockHost.uploadRunAttachments).toHaveBeenCalledWith(
+      expect.anything(),
+      "warm-task",
+      "warm-run",
+      [],
+      [{ name: "my-skill", source: "user", path: "/skills/my-skill" }],
+    );
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "main",
+        pending_user_message: "/my-skill do it",
+        pending_user_artifact_ids: ["skill-artifact-1"],
+        // Warm activation skips run creation, so the choice must ride along here.
+        auto_publish: true,
+      }),
+    );
+    // Warm-activated at create time: no fresh run is created or started.
+    expect(createTaskRunMock).not.toHaveBeenCalled();
+    expect(startTaskRunMock).not.toHaveBeenCalled();
+  });
+
+  it("suppresses warm reuse when attachments exist but no warm lease is known", async () => {
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.takeWarmTaskLease.mockReturnValue(null);
+    mockHost.uploadRunAttachments.mockResolvedValue(["skill-artifact-1"]);
+
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    expect(result.success).toBe(true);
+    // No lease to upload to: omit the warm-reuse branch hint so the backend
+    // cannot activate a warm run this client can't attach the bundle to.
+    expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+    // Cold path proceeds and delivers the bundle through the run start.
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "/my-skill do it",
+      pendingUserArtifactIds: ["skill-artifact-1"],
+    });
+  });
+
+  it("falls back to cold creation when the warm-run upload fails", async () => {
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: [],
+      skillBundles: [
+        { name: "my-skill", source: "user", path: "/skills/my-skill" },
+      ],
+      messageText: "/my-skill do it",
+      promptText: "/my-skill do it",
+    });
+    mockHost.takeWarmTaskLease.mockReturnValue({
+      taskId: "warm-task",
+      runId: "warm-run",
+    });
+    mockHost.uploadRunAttachments
+      .mockRejectedValueOnce(new Error("warm upload failed"))
+      .mockResolvedValueOnce(["skill-artifact-1"]);
+
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "/my-skill do it",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+    });
+
+    // The failed pre-upload must not fail creation or activate warm without
+    // the bundle: warm reuse is suppressed and the cold path re-uploads.
+    expect(result.success).toBe(true);
+    expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+    expect(
+      createTaskMock.mock.calls[0][0].pending_user_artifact_ids,
+    ).toBeUndefined();
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "/my-skill do it",
+      pendingUserArtifactIds: ["skill-artifact-1"],
+    });
+  });
+
+  it.each([
+    {
+      selection: "sandbox environment",
+      input: { sandboxEnvironmentId: "environment-123" },
+      expectedRunOptions: { sandboxEnvironmentId: "environment-123" },
+    },
+    {
+      selection: "custom image",
+      input: { customImageId: "image-123" },
+      expectedRunOptions: { customImageId: "image-123" },
+    },
+  ])(
+    "falls back to a cold run without a matching warm $selection lease",
+    async ({ input, expectedRunOptions }) => {
+      mockHost.takeWarmTaskLease.mockReturnValue(null);
+      const createdTask = createTask();
+      const startedTask = createTask({ latest_run: createRun() });
+      const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+      const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+      const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+      const saga = makeSaga({
+        createTask: createTaskMock,
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+      });
+
+      const result = await saga.run({
+        content: "Ship the fix",
+        repository: "posthog/posthog",
+        workspaceMode: "cloud",
+        branch: "main",
+        ...input,
+      });
+
+      expect(result.success).toBe(true);
+      expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+      expect(createTaskRunMock).toHaveBeenCalledWith(
+        "task-123",
+        expect.objectContaining(expectedRunOptions),
+      );
+    },
+  );
+
+  it("reuses a warm run built from the selected custom image", async () => {
+    mockHost.takeWarmTaskLease.mockReturnValue({
+      taskId: "warm-task",
+      runId: "warm-run",
+    });
+    const warmActivatedTask = createTask({
+      id: "warm-task",
+      latest_run: createRun({ id: "warm-run", task: "warm-task" }),
+    });
+    const createTaskMock = vi.fn().mockResolvedValue(warmActivatedTask);
+    const createTaskRunMock = vi.fn();
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      customImageId: "image-123",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "main",
+        custom_image_id: "image-123",
+      }),
+    );
+    expect(createTaskRunMock).not.toHaveBeenCalled();
+  });
+
   it("uses the selected user GitHub integration for cloud task creation", async () => {
     const createdTask = createTask({
       github_user_integration: "user-integration-123",
@@ -773,6 +1023,25 @@ describe("TaskCreationSaga", () => {
         .invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(sessionService.connectToTask).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("creates the task without a repository when repo detection fails", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockRejectedValue(new TypeError("fetch failed"));
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ repository: undefined }),
     );
   });
 

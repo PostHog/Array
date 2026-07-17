@@ -16,6 +16,7 @@ function tab(id: string, position: number): BrowserTab {
     taskId: null,
     channelId: null,
     channelSection: null,
+    appView: null,
     position,
     scrollState: null,
     createdAt: 0,

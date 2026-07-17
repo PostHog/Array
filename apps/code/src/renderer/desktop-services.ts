@@ -42,18 +42,34 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { SETUP_STORE } from "@posthog/core/setup/identifiers";
+import {
+  SPEECH_SETTINGS_PROVIDER,
+  SPEECH_USER_NAME_PROVIDER,
+  type SpeechSettingsProvider,
+  type UserNameProvider,
+} from "@posthog/core/speech/identifiers";
 import { resolveService } from "@posthog/di/container";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
+import {
+  HOST_CAPABILITIES,
+  type HostCapabilities,
+} from "@posthog/platform/host-capabilities";
 import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
   type NotificationTarget,
 } from "@posthog/platform/notifications";
-import { AUTORESEARCH_FLAG, type CloudRegion } from "@posthog/shared";
+import { type ISpeech, SPEECH_SERVICE } from "@posthog/platform/speech";
+import {
+  type Adapter,
+  AUTORESEARCH_FLAG,
+  type CloudRegion,
+} from "@posthog/shared";
 import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
+import { authKeys } from "@posthog/ui/features/auth/useCurrentUser";
 import {
   FEATURE_FLAGS,
   type FeatureFlags,
@@ -73,7 +89,9 @@ import {
   ACTIVE_VIEW_PROVIDER,
   type IActiveView,
   type INotificationSettings,
+  type ISpeechNotifySettings,
   NOTIFICATION_SETTINGS_PROVIDER,
+  SPEECH_NOTIFY_SETTINGS,
 } from "@posthog/ui/features/notifications/identifiers";
 import { OnboardingGithubConnectClient } from "@posthog/ui/features/onboarding/githubConnectClientImpl";
 import {
@@ -81,14 +99,26 @@ import {
   type AgentPromptSender,
 } from "@posthog/ui/features/sessions/agentPromptSender";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  type ISpeechKeyStore,
+  SPEECH_KEY_STORE,
+} from "@posthog/ui/features/settings/speechKeyStore";
 import { getCurrentMatches } from "@posthog/ui/router/navigationBridge";
 import { HEDGEHOG_MODE_HOST } from "@posthog/ui/shell/hedgehogModeHost";
 import { posthogFeatureFlags } from "@posthog/ui/shell/posthogAnalyticsImpl";
+import type { ImperativeQueryClient } from "@posthog/ui/shell/queryClient";
 import { IMPERATIVE_QUERY_CLIENT } from "@posthog/ui/shell/queryClient";
 import {
   FILE_PATH_RESOLVER,
   type FilePathResolver,
 } from "@posthog/ui/utils/getFilePath";
+import {
+  isSpeechSupported,
+  playAudioBase64,
+  speakSystemVoice,
+  stopSpeech,
+} from "@posthog/ui/utils/speech";
+import { ELEVENLABS_API_KEY_STORE_KEY } from "@posthog/workspace-server/services/speech/identifiers";
 import { container } from "@renderer/di/container";
 import { RendererAuthSideEffects } from "@renderer/platform-adapters/auth-side-effects";
 import { gitCacheKeyProvider } from "@renderer/platform-adapters/git-cache-keys";
@@ -116,7 +146,7 @@ const reportModelResolverLog = logger.scope("report-model-resolver");
 container.bind<ReportModelResolver>(REPORT_MODEL_RESOLVER).toConstantValue({
   async resolveDefaultModel(
     apiHost: string,
-    adapter: "claude" | "codex",
+    adapter: Adapter,
     preferredModel?: string | null,
   ): Promise<string | undefined> {
     try {
@@ -325,6 +355,86 @@ container.bind<FileWatcherClient>(FILE_WATCHER_CLIENT).toConstantValue({
   stop: (repoPath: string) => trpcClient.fileWatcher.stop.mutate({ repoPath }),
 });
 
+// Spoken notifications: synthesize in the host (ElevenLabs, key stays there),
+// play in the renderer from a blob URL (host-neutral). Fall back to the system
+// voice when no key is set or synthesis fails. speak() resolves when playback
+// ends, so the core queue serializes utterances.
+const speechLog = logger.scope("speech-adapter");
+container.bind<ISpeech>(SPEECH_SERVICE).toConstantValue({
+  isSupported: () => isSpeechSupported(),
+  speak: async (text, opts) => {
+    try {
+      const result = await hostTrpcClient.speech.synthesize.query({
+        text,
+        voiceId: opts?.voiceId || undefined,
+      });
+      if (result?.audioBase64) {
+        await playAudioBase64(result.audioBase64, result.mimeType);
+        return;
+      }
+    } catch (err) {
+      speechLog.warn("Synthesis failed; using system voice", err);
+    }
+    await speakSystemVoice(text);
+  },
+  stop: () => stopSpeech(),
+});
+
+container
+  .bind<SpeechSettingsProvider>(SPEECH_SETTINGS_PROVIDER)
+  .toConstantValue({
+    get: () => {
+      const s = useSettingsStore.getState();
+      return {
+        enabled: s.spokenNotifications,
+        voiceId: s.elevenLabsVoiceId || undefined,
+      };
+    },
+  });
+
+container.bind<UserNameProvider>(SPEECH_USER_NAME_PROVIDER).toConstantValue({
+  getFirstName: () => {
+    try {
+      const qc = container.get<ImperativeQueryClient>(IMPERATIVE_QUERY_CLIENT);
+      for (const [, data] of qc.getQueriesData({
+        queryKey: authKeys.currentUsers(),
+      })) {
+        const first = (
+          data as { first_name?: string | null } | undefined
+        )?.first_name?.trim();
+        if (first) return first;
+      }
+    } catch {
+      // best-effort — no name means we just skip the "Hey <name>" prefix
+    }
+    return undefined;
+  },
+});
+
+container.bind<ISpeechKeyStore>(SPEECH_KEY_STORE).toConstantValue({
+  save: (apiKey) =>
+    hostTrpcClient.secureStore.setItem
+      .query({ key: ELEVENLABS_API_KEY_STORE_KEY, value: apiKey })
+      .then(() => {}),
+  clear: () =>
+    hostTrpcClient.secureStore.removeItem
+      .query({ key: ELEVENLABS_API_KEY_STORE_KEY })
+      .then(() => {}),
+});
+
+container.bind<ISpeechNotifySettings>(SPEECH_NOTIFY_SETTINGS).toConstantValue({
+  get: () => {
+    const s = useSettingsStore.getState();
+    return {
+      enabled: s.spokenNotifications,
+      needsInput: s.spokenNotifyNeedsInput,
+      completion: s.spokenNotifyCompletion,
+      progress: s.spokenNotifyProgress,
+      focusMode: s.spokenFocusMode,
+    };
+  },
+});
+
 container
   .bind<FeatureFlags>(FEATURE_FLAGS)
   .toConstantValue(posthogFeatureFlags);
@@ -335,3 +445,7 @@ container
   .inSingletonScope();
 
 container.bind(SETUP_STORE).toConstantValue(setupStore);
+
+container
+  .bind(HOST_CAPABILITIES)
+  .toConstantValue({ localWorkspaces: true } satisfies HostCapabilities);

@@ -28,8 +28,23 @@ export class RendererHedgehogModeHost implements HedgehogModeHost {
 
     await game.render(container);
 
+    const canvas = game.app.canvas;
+    const notifyContextLost = () => options.onContextLost?.();
+    canvas.addEventListener("webglcontextlost", notifyContextLost, {
+      once: true,
+    });
+
     return {
-      destroy: () => game.destroy(),
+      destroy: () => {
+        canvas.removeEventListener("webglcontextlost", notifyContextLost);
+        game.destroy();
+      },
+      isContextLost: () => {
+        const renderer = game.app.renderer as unknown as {
+          context?: { isLost?: boolean };
+        };
+        return renderer.context?.isLost === true;
+      },
     };
   }
 }

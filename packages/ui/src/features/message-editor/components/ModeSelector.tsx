@@ -1,11 +1,13 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { CaretDown } from "@phosphor-icons/react";
+import { CaretDown, ChartLineUp, Shapes } from "@phosphor-icons/react";
 import {
   Button,
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
@@ -19,6 +21,26 @@ interface ModeSelectorProps {
   onChange: (value: string) => void;
   allowBypassPermissions: boolean;
   disabled?: boolean;
+  /**
+   * When provided, an "Autoresearch" toggle renders as the last item of the
+   * menu (new-task composer only). It arms/disarms the autonomous iteration
+   * loop; `active` drives its checkmark. Applied after the menu closes, like a
+   * mode change, so the composer doesn't relayout under the closing menu.
+   */
+  autoresearch?: {
+    active: boolean;
+    onToggle: () => void;
+  };
+  /**
+   * When provided, a "Canvas" toggle renders in the same trailing section
+   * (channels composer only). Arming it makes the next submit generate a
+   * canvas from the prompt instead of creating a plain task; while armed the
+   * trigger reads "Canvas" so the composer's state is visible at a glance.
+   */
+  canvas?: {
+    active: boolean;
+    onToggle: () => void;
+  };
 }
 
 export function ModeSelector({
@@ -26,9 +48,14 @@ export function ModeSelector({
   onChange,
   allowBypassPermissions,
   disabled,
+  autoresearch,
+  canvas,
 }: ModeSelectorProps) {
   const [open, setOpen] = useState(false);
   const pendingValueRef = useRef<string | null>(null);
+  // A toggle picked from the menu, applied after the menu closes (like a mode
+  // change) so the composer doesn't relayout under the closing menu.
+  const pendingToggleRef = useRef<(() => void) | null>(null);
   const displayOption = useRetainedConfigOption(modeOption);
 
   if (!displayOption || displayOption.type !== "select") return null;
@@ -49,19 +76,54 @@ export function ModeSelector({
   if (options.length === 0) return null;
 
   const currentValue = displayOption.currentValue;
-  const currentStyle = getModeStyle(currentValue);
-  const currentLabel =
-    allOptions.find((opt) => opt.value === currentValue)?.name ?? currentValue;
+  const canvasActive = !!canvas?.active;
+  const currentStyle = canvasActive
+    ? { icon: <Shapes size={12} weight="fill" />, className: "text-teal-11" }
+    : getModeStyle(currentValue);
+  const currentLabel = canvasActive
+    ? "Canvas"
+    : (allOptions.find((opt) => opt.value === currentValue)?.name ??
+      currentValue);
+
+  const toggles: Array<{
+    label: string;
+    active: boolean;
+    onToggle: () => void;
+    icon: React.ReactNode;
+    className: string;
+  }> = [];
+  if (canvas) {
+    toggles.push({
+      label: "Canvas",
+      ...canvas,
+      icon: <Shapes size={12} weight="fill" />,
+      className: "text-teal-11",
+    });
+  }
+  if (autoresearch) {
+    toggles.push({
+      label: "Autoresearch",
+      ...autoresearch,
+      icon: <ChartLineUp size={12} />,
+      className: "text-muted-foreground",
+    });
+  }
 
   return (
     <DropdownMenu
       open={open}
       onOpenChange={setOpen}
       onOpenChangeComplete={(isOpen) => {
-        if (!isOpen && pendingValueRef.current !== null) {
+        if (isOpen) return;
+        if (pendingValueRef.current !== null) {
           onChange(pendingValueRef.current);
           pendingValueRef.current = null;
+          // Picking a plain mode leaves canvas mode; the two are exclusive.
+          if (canvasActive) canvas?.onToggle();
         }
+        const pendingToggle = pendingToggleRef.current;
+        pendingToggleRef.current = null;
+        pendingToggle?.();
       }}
     >
       <DropdownMenuTrigger
@@ -91,7 +153,9 @@ export function ModeSelector({
       >
         <MenuLabel>Mode</MenuLabel>
         <DropdownMenuRadioGroup
-          value={currentValue}
+          // While canvas mode is armed it reads as the selected mode, so no
+          // plain-mode radio shows checked.
+          value={canvasActive ? "" : currentValue}
           onValueChange={(value) => {
             pendingValueRef.current = value;
             setOpen(false);
@@ -107,6 +171,20 @@ export function ModeSelector({
             );
           })}
         </DropdownMenuRadioGroup>
+        {toggles.length > 0 && <DropdownMenuSeparator />}
+        {toggles.map((toggle) => (
+          <DropdownMenuCheckboxItem
+            key={toggle.label}
+            checked={toggle.active}
+            onCheckedChange={() => {
+              pendingToggleRef.current = toggle.onToggle;
+              setOpen(false);
+            }}
+          >
+            <span className={toggle.className}>{toggle.icon}</span>
+            <span className="whitespace-nowrap">{toggle.label}</span>
+          </DropdownMenuCheckboxItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

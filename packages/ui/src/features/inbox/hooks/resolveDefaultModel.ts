@@ -1,4 +1,5 @@
 import type { ReportModelResolver } from "@posthog/core/inbox/identifiers";
+import type { Adapter } from "@posthog/shared";
 import { logger } from "@posthog/ui/shell/logger";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -19,7 +20,7 @@ const log = logger.scope("resolve-default-model");
 export async function resolveDefaultModel(
   queryClient: QueryClient,
   apiHost: string,
-  adapter: "claude" | "codex",
+  adapter: Adapter,
   modelResolver: ReportModelResolver,
   preferredModel?: string | null,
 ): Promise<string | undefined> {

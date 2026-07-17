@@ -15,6 +15,9 @@ export const APP_SERVER_METHODS = {
   TURN_INTERRUPT: "turn/interrupt",
   MODEL_LIST: "model/list",
   SKILLS_LIST: "skills/list",
+  THREAD_GOAL_SET: "thread/goal/set",
+  THREAD_GOAL_GET: "thread/goal/get",
+  THREAD_GOAL_CLEAR: "thread/goal/clear",
   THREAD_LIST: "thread/list",
 } as const;
 
@@ -29,6 +32,9 @@ export const APP_SERVER_NOTIFICATIONS = {
   REASONING_TEXT_DELTA: "item/reasoning/textDelta",
   // Default reasoning stream for gpt-5 models; raw textDelta is off by default, so without this the host sees no reasoning.
   REASONING_SUMMARY_TEXT_DELTA: "item/reasoning/summaryTextDelta",
+  // Plan-mode <proposed_plan> stream. codex strips the plan from agentMessage deltas,
+  // so without this the host sees nothing while the plan is written.
+  PLAN_DELTA: "item/plan/delta",
   TURN_PLAN_UPDATED: "turn/plan/updated",
   TURN_COMPLETED: "turn/completed",
   // Fatal turn error; `willRetry:false` means it won't recover on its own.
@@ -37,6 +43,9 @@ export const APP_SERVER_NOTIFICATIONS = {
   // codex auto-compacted the thread; mirrors Claude's compact_boundary so the host's context indicator + queue drain fire.
   CONTEXT_COMPACTED: "thread/compacted",
   COMMAND_OUTPUT_DELTA: "item/commandExecution/outputDelta",
+  // Per-server MCP startup progress. `status: "failed"` is the only signal codex
+  // emits when a configured server dies at launch — its tools silently never appear.
+  MCP_STARTUP_STATUS: "mcpServer/startupStatus/updated",
   // PTY-level stdin echoed back for an interactive terminal command.
   TERMINAL_INTERACTION: "item/commandExecution/terminalInteraction",
   FILE_CHANGE_PATCH_UPDATED: "item/fileChange/patchUpdated",

@@ -4,8 +4,44 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
-import { stripElectronNodeShimFromPath } from "../../utils/spawn-env";
-import { CodexSettingsManager } from "../codex/settings";
+import { CodexSettingsManager } from "./settings";
+
+/**
+ * Host-facing codex options passed through `createAcpConnection`'s
+ * `codexOptions`. The connection layer maps these onto
+ * `CodexAppServerProcessOptions` plus the agent-level model settings.
+ */
+export interface CodexOptions {
+  cwd?: string;
+  apiBaseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  reasoningEffort?: string;
+  /**
+   * Static HTTP headers forwarded on every request to the PostHog gateway
+   * (the codex equivalent of Claude's `ANTHROPIC_CUSTOM_HEADERS`). Carries the
+   * `x-posthog-property-*` attribution headers the gateway lifts onto the
+   * `$ai_generation` event (team_id, ai_stage, task metadata).
+   */
+  httpHeaders?: Record<string, string>;
+  /** Guidance appended on top of Codex's base prompt via `developer_instructions`. */
+  developerInstructions?: string;
+  /**
+   * Bundled-binary hint: the native codex binary itself, or any file in the
+   * directory that contains it (see `nativeCodexBinaryPath`).
+   */
+  binaryPath?: string;
+  codexHome?: string;
+  /** Extra codex `-c key=value` config overrides. */
+  configOverrides?: Record<string, string | number>;
+  /**
+   * Additional writable roots. Currently only honored per-thread via prompt
+   * params; accepted here so hosts can pass it uniformly.
+   */
+  additionalDirectories?: string[];
+  logger?: Logger;
+  processCallbacks?: ProcessSpawnedCallback;
+}
 
 export interface CodexAppServerProcessOptions {
   /** Path to the native `codex` CLI binary (the one that exposes `app-server`). */
@@ -21,6 +57,12 @@ export interface CodexAppServerProcessOptions {
   codexHome?: string;
   /** Guidance appended to Codex's base prompt via `developer_instructions`. */
   developerInstructions?: string;
+  /**
+   * Static HTTP headers forwarded on every request to the PostHog gateway, set
+   * as `model_providers.posthog.http_headers`. Codex equivalent of Claude's
+   * `ANTHROPIC_CUSTOM_HEADERS` (see {@link CodexOptions.httpHeaders}).
+   */
+  httpHeaders?: Record<string, string>;
   /** Extra codex `-c key=value` config overrides (e.g. auto_compact_token_limit). */
   configOverrides?: Record<string, string | number>;
   logger?: Logger;
@@ -32,6 +74,19 @@ export interface CodexAppServerProcess {
   stdin: Writable;
   stdout: Readable;
   kill: () => void;
+}
+
+/** Serialize a string map as a TOML basic string (escapes `\` and `"`). */
+function tomlBasicString(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/** Render a `Record<string, string>` as a TOML inline table. */
+function tomlInlineTable(entries: Record<string, string>): string {
+  const pairs = Object.entries(entries).map(
+    ([key, value]) => `${tomlBasicString(key)} = ${tomlBasicString(value)}`,
+  );
+  return `{ ${pairs.join(", ")} }`;
 }
 
 export function buildAppServerArgs(
@@ -47,6 +102,16 @@ export function buildAppServerArgs(
   // servers PostHog injects, so disable the plugin system outright.
   args.push("-c", "features.plugins=false");
 
+  // Codex defaults to the OS keychain for CLI auth, MCP OAuth tokens, and its
+  // secrets encryption key — on macOS that means permission prompts for our
+  // bundled binary (keychain ACLs are signature-bound, so grants to a user's
+  // standalone codex don't cover ours and don't stick across releases). Model
+  // auth is injected via POSTHOG_GATEWAY_API_KEY, so codex's own credential
+  // stores are unused: keep them on plain files inside the private CODEX_HOME
+  // and never touch the keychain.
+  args.push("-c", `cli_auth_credentials_store="file"`);
+  args.push("-c", `mcp_oauth_credentials_store="file"`);
+
   // OS sandbox gated on platform (= availability): macOS Seatbelt → workspace-write
   // (keeps the sandbox engaged so a per-turn readOnly can tighten it and block
   // edits); linux/windows have no sandbox launcher and would panic, so
@@ -57,6 +122,13 @@ export function buildAppServerArgs(
       ? `sandbox_mode="workspace-write"`
       : `sandbox_mode="danger-full-access"`,
   );
+
+  // The host owns approvals (surfaced via approvals.ts → requestPermission). Codex's
+  // guardian reviewer is on by default and routes approvals to its dedicated
+  // `codex-auto-review` model, which our gateway's posthog_code allowlist doesn't
+  // serve — so every review 403s. Default codex's own `user` reviewer; a caller can
+  // still override it via configOverrides, which the trailing loop appends last.
+  args.push("-c", `approvals_reviewer="user"`);
 
   // Disable the user's ambient ~/.codex MCP servers so the adapter only exposes
   // MCP servers PostHog injects per-thread; otherwise codex fails connecting to them.
@@ -77,6 +149,17 @@ export function buildAppServerArgs(
       "-c",
       `model_providers.posthog.env_key="POSTHOG_GATEWAY_API_KEY"`,
     );
+
+    // Attribution + task-metadata headers the gateway lifts onto the captured
+    // $ai_generation event. Passed as a single TOML inline table so hyphenated
+    // header names (`x-posthog-property-*`) stay quoted rather than becoming
+    // bare-key segments of a dotted `-c` path.
+    if (options.httpHeaders && Object.keys(options.httpHeaders).length > 0) {
+      args.push(
+        "-c",
+        `model_providers.posthog.http_headers=${tomlInlineTable(options.httpHeaders)}`,
+      );
+    }
   }
 
   // developer_instructions are set per-thread in thread/start (with the host's
@@ -114,7 +197,7 @@ export function spawnCodexAppServerProcess(
   if (options.codexHome) {
     env.CODEX_HOME = options.codexHome;
   }
-  env.PATH = `${dirname(options.binaryPath)}${delimiter}${stripElectronNodeShimFromPath(env.PATH) ?? ""}`;
+  env.PATH = `${dirname(options.binaryPath)}${delimiter}${env.PATH ?? ""}`;
 
   const args = buildAppServerArgs(options);
 

@@ -14,17 +14,23 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
+import { MetricCard } from "@posthog/quill-charts";
+import type { AcpMessage } from "@posthog/shared";
 import { Badge, Button, Callout, Flex, Select, Text } from "@radix-ui/themes";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useContextUsage } from "../sessions/hooks/useContextUsage";
 import {
   getConfigOptionByCategory,
   useSessionStore,
 } from "../sessions/sessionStore";
 import { usePendingPermissionsForTask } from "../sessions/useSession";
 import { AutoresearchConfigDialog } from "./AutoresearchConfigDialog";
+import { AutoresearchObservability } from "./AutoresearchObservability";
+import { AutoresearchRuntimeStats } from "./AutoresearchRuntimeStats";
 import { IterationsTable } from "./IterationsTable";
 import { MetricChart } from "./MetricChart";
-import { withMetricUnit } from "./metricFormat";
+import { metricNumberFormat, withMetricUnit } from "./metricFormat";
+import { PreBaselineState } from "./PreBaselineState";
 import {
   type AutoresearchModelOption,
   stageValueLabel,
@@ -32,6 +38,8 @@ import {
 } from "./stageModels";
 import { useAutoresearchEnabled } from "./useAutoresearchEnabled";
 import { useAutoresearchRuns } from "./useAutoresearchStore";
+
+const EMPTY_SESSION_EVENTS: AcpMessage[] = [];
 
 const STATUS_BADGE: Record<
   AutoresearchRunStatus,
@@ -62,10 +70,6 @@ const INTERRUPTION_LABEL: Record<string, string> = {
   "app-restart": "App restarted mid-run",
 };
 
-const numberFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 4,
-});
-
 interface AutoresearchPanelProps {
   taskId: string;
 }
@@ -95,6 +99,24 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
     const session = taskRunId ? state.sessions[taskRunId] : undefined;
     return getConfigOptionByCategory(session?.configOptions, "thought_level");
   });
+  const sessionActivity = useSessionStore((state) => {
+    const taskRunId = state.taskIdIndex[taskId];
+    const session = taskRunId ? state.sessions[taskRunId] : undefined;
+    return session
+      ? {
+          status: session.status,
+          isPromptPending: session.isPromptPending,
+          isCompacting: session.isCompacting,
+        }
+      : null;
+  });
+  const sessionEvents = useSessionStore((state) => {
+    const taskRunId = state.taskIdIndex[taskId];
+    return taskRunId
+      ? (state.sessions[taskRunId]?.events ?? EMPTY_SESSION_EVENTS)
+      : EMPTY_SESSION_EVENTS;
+  });
+  const contextUsage = useContextUsage(sessionEvents);
   const modelOptions = useMemo(
     () => toStageSelectOptions(modelOption),
     [modelOption],
@@ -103,7 +125,7 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
     () => toStageSelectOptions(thoughtOption),
     [thoughtOption],
   );
-  // What the session is actually on right now — the loop switches these
+  // What the session is actually on right now. The loop switches these
   // between stages, and this reflects the switches live.
   const liveModel =
     modelOption?.type === "select" ? (modelOption.currentValue ?? null) : null;
@@ -116,6 +138,13 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
   const selectedRun =
     (selectedRunId && runs.find((run) => run.id === selectedRunId)) ||
     latestRun;
+  const selectedRunUsage =
+    selectedRun?.id === latestRun?.id &&
+    (selectedRun?.status === "running" ||
+      selectedRun?.status === "paused" ||
+      selectedRun?.status === "interrupted")
+      ? contextUsage
+      : null;
 
   // A persisted panel tab can outlive access to the feature (web, or the
   // flag turned off). With runs already in the store, keep the dashboard
@@ -146,7 +175,7 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
           <EmptyTitle>No autoresearch run</EmptyTitle>
           <EmptyDescription>
             This task wasn't created in autoresearch mode. Start one from the
-            new-task composer: arm the Autoresearch toggle, describe what to
+            new task composer: arm the Autoresearch toggle, describe what to
             optimize and how to measure it, and submit.
           </EmptyDescription>
         </EmptyHeader>
@@ -169,19 +198,31 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
           onNewRun={() => setDialogOpen(true)}
         />
         <PendingPermissionNotice taskId={taskId} run={selectedRun} />
-        <RunStats run={selectedRun} />
-        <MetricChart
-          iterations={selectedRun.iterations}
-          direction={selectedRun.config.direction}
-          targetValue={selectedRun.config.targetValue}
-          metricName={selectedRun.metricName ?? "the metric"}
-          unit={selectedRun.metricUnit}
-        />
-        <IterationsTable
-          iterations={selectedRun.iterations}
-          direction={selectedRun.config.direction}
-          unit={selectedRun.metricUnit}
-        />
+        {selectedRun.iterations.length === 0 ? (
+          <PreBaselineState
+            run={selectedRun}
+            sessionActivity={sessionActivity}
+          />
+        ) : (
+          <>
+            <RunStats run={selectedRun} />
+            <MetricChart
+              iterations={selectedRun.iterations}
+              direction={selectedRun.config.direction}
+              targetValue={selectedRun.config.targetValue}
+              metricName={selectedRun.metricName ?? "the metric"}
+              unit={selectedRun.metricUnit}
+            />
+            <IterationsTable
+              iterations={selectedRun.iterations}
+              direction={selectedRun.config.direction}
+              unit={selectedRun.metricUnit}
+            />
+            {selectedRun.endedAt !== null && <RunSummary run={selectedRun} />}
+          </>
+        )}
+        <AutoresearchRuntimeStats run={selectedRun} usage={selectedRunUsage} />
+        <AutoresearchObservability run={selectedRun} events={sessionEvents} />
       </Flex>
       <AutoresearchConfigDialog
         open={dialogOpen}
@@ -264,7 +305,7 @@ function RunHeader({
               <Select.Content>
                 {runs.map((candidate, index) => (
                   <Select.Item key={candidate.id} value={candidate.id}>
-                    Run {index + 1} — {STATUS_BADGE[candidate.status].label}
+                    Run {index + 1}: {STATUS_BADGE[candidate.status].label}
                   </Select.Item>
                 ))}
               </Select.Content>
@@ -330,21 +371,21 @@ function RunHeader({
           {liveEffort
             ? ` · ${stageValueLabel(liveEffort, effortOptions) ?? liveEffort} effort`
             : ""}
-          {isSplit && run.phase ? ` — ${run.phase} phase` : ""}
+          {isSplit && run.phase ? ` (${run.phase} phase)` : ""}
         </Text>
       )}
       {run.status === "interrupted" && (
         <Text size="1" color="orange">
           {INTERRUPTION_LABEL[run.interruptedReason ?? ""] ??
             "Loop interrupted"}
-          {run.lastError ? ` — ${run.lastError}` : ""}. Resumes automatically;
+          {run.lastError ? `. ${run.lastError}` : ""}. Resumes automatically;
           Resume retries now.
         </Text>
       )}
       {run.endReason && (
         <Text size="1" color="gray">
           {END_REASON_LABEL[run.endReason] ?? run.endReason}
-          {run.lastError ? ` — ${run.lastError}` : ""}
+          {run.lastError ? `. ${run.lastError}` : ""}
         </Text>
       )}
     </Flex>
@@ -378,62 +419,94 @@ function PendingPermissionNotice({
   );
 }
 
-function RunStats({ run }: { run: AutoresearchRun }) {
+export function RunStats({ run }: { run: AutoresearchRun }) {
   const summary = useMemo(() => summarizeRun(run), [run]);
   const unit = run.metricUnit;
+  const formatMetricValue = (value: number) =>
+    Number.isNaN(value)
+      ? "Not available"
+      : withMetricUnit(metricNumberFormat.format(value), unit);
+  const cardClassName = "rounded-md border border-(--gray-5) p-3";
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <StatCard
-        label="Best"
-        value={
-          summary.best ? (
-            <>
-              {withMetricUnit(numberFormat.format(summary.best.value), unit)}
-              <Text size="1" color="gray">
-                {" "}
-                (iter {summary.best.index})
-              </Text>
-            </>
-          ) : (
-            "—"
-          )
-        }
+      <MetricCard
+        title="Best"
+        value={summary.best?.value ?? Number.NaN}
+        formatValue={formatMetricValue}
+        change={null}
+        subtitle={summary.best ? `iter ${summary.best.index}` : undefined}
+        className={cardClassName}
+        dataAttr="autoresearch-stat-best"
       />
-      <StatCard
-        label="Last"
-        value={
-          summary.last
-            ? withMetricUnit(numberFormat.format(summary.last.value), unit)
-            : "—"
-        }
+      <MetricCard
+        title="Last"
+        value={summary.last?.value ?? Number.NaN}
+        formatValue={formatMetricValue}
+        change={null}
+        className={cardClassName}
+        dataAttr="autoresearch-stat-last"
       />
-      <StatCard
-        label="Iterations"
-        value={`${summary.iterationCount} / ${run.config.maxIterations}`}
+      <MetricCard
+        title="Iterations"
+        value={summary.iterationCount}
+        formatValue={(value) => `${value} / ${run.config.maxIterations}`}
+        change={null}
+        className={cardClassName}
+        dataAttr="autoresearch-stat-iterations"
       />
-      <StatCard
-        label="Target"
-        value={
-          run.config.targetValue === null
-            ? "—"
-            : withMetricUnit(numberFormat.format(run.config.targetValue), unit)
-        }
+      <MetricCard
+        title="Target"
+        value={run.config.targetValue ?? Number.NaN}
+        formatValue={formatMetricValue}
+        change={null}
+        className={cardClassName}
+        dataAttr="autoresearch-stat-target"
       />
     </div>
   );
 }
 
-function StatCard({ label, value }: { label: string; value: ReactNode }) {
+export function RunSummary({ run }: { run: AutoresearchRun }) {
+  const summary = summarizeRun(run);
+  const bestIteration = run.iterations.find(
+    (iteration) => iteration.index === summary.best?.index,
+  );
+  const approaches = Array.from(
+    new Set(
+      run.iterations.flatMap((iteration) =>
+        iteration.approach ? [iteration.approach] : [],
+      ),
+    ),
+  );
   return (
-    <div className="rounded-md border border-(--gray-5) bg-(--gray-2) px-3 py-2">
-      <Text as="div" size="1" color="gray">
-        {label}
+    <section className="rounded-md border border-gray-5 bg-gray-2 p-3">
+      <Text as="div" size="2" weight="medium">
+        Run summary
       </Text>
-      <Text as="div" size="2" weight="medium" className="tabular-nums">
-        {value}
+      <Text as="p" size="2" className="mt-2 leading-5">
+        {summary.best
+          ? `Best result was iteration ${summary.best.index} at ${withMetricUnit(metricNumberFormat.format(summary.best.value), run.metricUnit)}.`
+          : "The run ended without a metric result."}
+        {summary.improvementFromBaseline !== null
+          ? ` Change from baseline: ${withMetricUnit(metricNumberFormat.format(summary.improvementFromBaseline), run.metricUnit)}.`
+          : ""}
       </Text>
-    </div>
+      {bestIteration?.hypothesis && (
+        <Text as="p" size="1" color="gray" className="mt-2 leading-4">
+          Best hypothesis: {bestIteration.hypothesis}
+        </Text>
+      )}
+      {approaches.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {approaches.map((approach) => (
+            <Badge key={approach} color="gray" variant="soft">
+              {approach}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

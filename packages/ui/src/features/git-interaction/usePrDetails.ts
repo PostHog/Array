@@ -1,6 +1,6 @@
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { PrReviewThread } from "@posthog/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { PrCommentThread } from "../code-review/prCommentAnnotations";
 
@@ -8,18 +8,43 @@ interface UsePrDetailsOptions {
   includeComments?: boolean;
 }
 
-function threadsToMap(threads: PrReviewThread[]): Map<number, PrCommentThread> {
-  const map = new Map<number, PrCommentThread>();
-  for (const thread of threads) {
-    map.set(thread.rootId, {
-      rootId: thread.rootId,
-      nodeId: thread.nodeId,
-      isResolved: thread.isResolved,
-      comments: thread.comments,
-      filePath: thread.filePath,
-    });
-  }
-  return map;
+function mapPrCommentThreads(
+  threads: PrReviewThread[],
+): Map<number, PrCommentThread> {
+  return new Map(threads.map((thread) => [thread.rootId, thread]));
+}
+
+export interface PrStateDetails {
+  state: string;
+  merged: boolean;
+  draft: boolean;
+}
+
+/**
+ * Fetch lifecycle state for a set of PRs at once (the "Other PRs" submenu).
+ * Also serves as a prefetch: it warms the same `getPrDetailsByUrl` cache
+ * `usePrDetails` reads, so promoting one of these PRs renders its badge with
+ * the correct state instantly.
+ */
+export function usePrDetailsMap(
+  prUrls: string[],
+): Record<string, PrStateDetails> {
+  const trpc = useHostTRPC();
+  return useQueries({
+    queries: prUrls.map((prUrl) => ({
+      ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl }),
+      staleTime: 60_000,
+      retry: 1,
+    })),
+    combine: (results) =>
+      Object.fromEntries(
+        results.flatMap((result, i) =>
+          result.data && result.data.state !== "unknown"
+            ? [[prUrls[i], result.data]]
+            : [],
+        ),
+      ),
+  });
 }
 
 export function usePrDetails(
@@ -47,7 +72,7 @@ export function usePrDetails(
   });
 
   const commentThreads = useMemo(
-    () => threadsToMap(commentsQuery.data ?? []),
+    () => mapPrCommentThreads(commentsQuery.data ?? []),
     [commentsQuery.data],
   );
 
