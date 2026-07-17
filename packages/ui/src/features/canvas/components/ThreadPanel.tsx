@@ -105,10 +105,11 @@ export function ThreadMessageRow({
   onDelete: () => void;
 }) {
   const forwarded = !!message.forwarded_to_agent_at;
-  const isAgent =
-    message.author_kind === "agent" ||
-    (!message.author_kind && !message.author);
-  const showMenu = !isAgent && ((isTaskAuthor && !forwarded) || isOwnMessage);
+  const authorKind = message.author_kind ?? "human";
+  const isAgent = authorKind === "agent";
+  const isSystem = authorKind === "system";
+  const showMenu =
+    authorKind === "human" && ((isTaskAuthor && !forwarded) || isOwnMessage);
 
   return (
     <ThreadItem>
@@ -117,6 +118,8 @@ export function ThreadMessageRow({
           <AvatarFallback>
             {isAgent ? (
               <RobotIcon size={14} />
+            ) : isSystem ? (
+              "S"
             ) : (
               getUserInitials(message.author)
             )}
@@ -126,7 +129,11 @@ export function ThreadMessageRow({
       <ThreadItemContent>
         <ThreadItemHeader>
           <ThreadItemAuthor>
-            {isAgent ? "Agent" : userDisplayName(message.author)}
+            {isAgent
+              ? "Agent"
+              : isSystem
+                ? "System"
+                : userDisplayName(message.author)}
           </ThreadItemAuthor>
           <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>

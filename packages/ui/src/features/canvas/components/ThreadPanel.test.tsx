@@ -74,6 +74,57 @@ describe("ThreadMessageRow", () => {
     expect(screen.getByText("Agent")).toBeInTheDocument();
     expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
   });
+
+  it("renders system announcements as System without human actions", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "system-announcement",
+          task: "task",
+          author_kind: "system",
+          event: "status_changed",
+          payload: {},
+          content: "Status changed",
+          created_at: "2026-07-17T00:00:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("System")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Message actions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps legacy authorless rows as human messages", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "legacy-message",
+          task: "task",
+          content: "Author removed",
+          created_at: "2026-07-17T00:00:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Message actions" }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("UserPromptRow", () => {
