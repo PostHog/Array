@@ -15,14 +15,20 @@ import {
   getCloudUrlFromRegion,
   type WorkspaceMode,
 } from "@posthog/shared";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { buildFreeformGenerationPrompt } from "@posthog/ui/features/canvas/freeformPrompt";
+import { channelFeedQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   isPlaceholderCanvasName,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import {
+  normalizeChannelName,
+  PERSONAL_CHANNEL_NAME,
+} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useCanvasGenerationTrackerStore } from "@posthog/ui/features/canvas/stores/canvasGenerationTrackerStore";
 import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
@@ -58,6 +64,7 @@ export function useGenerateFreeformCanvas(args: {
   );
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
+  const apiClient = useOptionalAuthenticatedClient();
   const { invalidateTasks } = useCreateTask();
   const { fileTask } = useChannelTaskMutations();
   const { setGenerationTask, renameDashboard } = useDashboardMutations();
@@ -103,7 +110,6 @@ export function useGenerateFreeformCanvas(args: {
         templateId,
         instruction,
         currentCode,
-        backendChannelId,
         adapter = "claude",
         reasoningLevel,
         useStarter,
@@ -115,6 +121,26 @@ export function useGenerateFreeformCanvas(args: {
       } = opts;
       setIsStarting(true);
       try {
+        // Resolve the backend channel that owns the task so the run shows as a
+        // card in the channel feed — the same mapping the channel composer
+        // resolves. Callers that already know it (the composer) pass it; the
+        // canvas hero doesn't, so fall back to resolving by channel name here.
+        // Best-effort: an unresolved feed channel shouldn't block generation.
+        let backendChannelId = opts.backendChannelId;
+        const normalizedName = channelName
+          ? normalizeChannelName(channelName)
+          : "";
+        if (
+          !backendChannelId &&
+          apiClient &&
+          normalizedName &&
+          normalizedName !== PERSONAL_CHANNEL_NAME
+        ) {
+          backendChannelId = await apiClient
+            .resolveTaskChannel(normalizedName)
+            .then((c) => c.id)
+            .catch(() => undefined);
+        }
         // A cloud run requires an explicit adapter + model (the API rejects a
         // cloud runtime without a model). Resolve the caller's pick — or the
         // adapter's server default when none — the same way the inbox one-click
@@ -186,6 +212,13 @@ export function useGenerateFreeformCanvas(args: {
         void queryClient.invalidateQueries({
           queryKey: trpc.workspace.getAll.queryKey(),
         });
+        // Surface the run's card in the channel feed without waiting for the
+        // feed's next poll.
+        if (backendChannelId) {
+          void queryClient.invalidateQueries({
+            queryKey: channelFeedQueryKey(backendChannelId),
+          });
+        }
         // Auto-name a still-unnamed canvas from its generation prompt, using the
         // same helper model that names tasks. Best-effort: a failure (or a user
         // who already named the canvas) leaves the existing title untouched.
@@ -217,6 +250,7 @@ export function useGenerateFreeformCanvas(args: {
       titleGenerator,
       trpc,
       queryClient,
+      apiClient,
       invalidateTasks,
       fileTask,
       setGenerationTask,

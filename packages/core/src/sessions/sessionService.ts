@@ -5549,6 +5549,12 @@ export class SessionService {
     modeOption: SessionConfigOption | undefined,
   ): string | undefined {
     if (modeOption?.type !== "select") return undefined;
+    // Never DEMOTE a session that already runs unattended: an "always allow"
+    // answer in an auto/bypass session must not drop it to acceptEdits, which
+    // would make every subsequent gated tool prompt (the opposite of what the
+    // user just asked for).
+    const current = modeOption.currentValue;
+    if (current === "auto" || current === "bypassPermissions") return undefined;
     const availableIds = new Set(
       flattenSelectOptions(modeOption.options).map((opt) => opt.value),
     );

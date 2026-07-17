@@ -798,3 +798,100 @@ describe("createPostToolUseHook workflow link", () => {
     expect(signals).toEqual([]);
   });
 });
+
+describe("createPostToolUseHook workflow link - YAML MCP results", () => {
+  // The PostHog MCP renders tool results as YAML documents, not JSON — this is
+  // the real shape a workflows-create returns (captured from a live session).
+  const YAML_WORKFLOW_RESULT = [
+    "id: 019f6f90-0d70-0000-5171-4622c6016e1e",
+    "name: Welcome email after signup",
+    'description: "Sends a welcome email to every new user immediately after they sign up."',
+    "version: 1",
+    "status: draft",
+    'created_at: "2026-07-17T10:12:19.441125Z"',
+    "created_by:",
+    "  id: 546751",
+    "  first_name: Harley",
+    "trigger:",
+    "  type: event",
+    "  filters:",
+    "    source: events",
+    "    events[1]{id,name,type,order}:",
+    "      user signed up,user signed up,events,0",
+  ].join("\n");
+
+  test("pairs a YAML workflows-create result with the canvas publish", async () => {
+    const signals: WorkflowBuiltSignal[] = [];
+    const hook = createPostToolUseHook({
+      onWorkflowBuilt: (s) => signals.push(s),
+    });
+
+    await hook(
+      {
+        hook_event_name: "PostToolUse",
+        tool_name: "mcp__posthog__exec",
+        tool_input: { command: "call --json workflows-create {}" },
+        tool_response: {
+          content: [{ type: "text", text: YAML_WORKFLOW_RESULT }],
+        },
+      } as unknown as HookInput,
+      "tu1",
+      { signal: new AbortController().signal },
+    );
+    await hook(
+      {
+        hook_event_name: "PostToolUse",
+        tool_name: "mcp__posthog__exec",
+        tool_input: {
+          command:
+            'call --json desktop-file-system-canvas-partial-update {"id":"dash-1","code":"x"}',
+        },
+      } as unknown as HookInput,
+      "tu2",
+      { signal: new AbortController().signal },
+    );
+
+    expect(signals).toEqual([
+      {
+        dashboardId: "dash-1",
+        workflowId: "019f6f90-0d70-0000-5171-4622c6016e1e",
+        workflowStatus: "draft",
+        workflowName: "Welcome email after signup",
+      },
+    ]);
+  });
+
+  test("does not read a nested block's id as the workflow id", async () => {
+    const signals: WorkflowBuiltSignal[] = [];
+    const hook = createPostToolUseHook({
+      onWorkflowBuilt: (s) => signals.push(s),
+    });
+
+    // No top-level id line at all — only the nested created_by.id.
+    const nestedOnly = ["name: X", "created_by:", "  id: 546751"].join("\n");
+    await hook(
+      {
+        hook_event_name: "PostToolUse",
+        tool_name: "mcp__posthog__exec",
+        tool_input: { command: "call --json workflows-create {}" },
+        tool_response: { content: [{ type: "text", text: nestedOnly }] },
+      } as unknown as HookInput,
+      "tu1",
+      { signal: new AbortController().signal },
+    );
+    await hook(
+      {
+        hook_event_name: "PostToolUse",
+        tool_name: "mcp__posthog__exec",
+        tool_input: {
+          command:
+            'call --json desktop-file-system-canvas-partial-update {"id":"dash-1","code":"x"}',
+        },
+      } as unknown as HookInput,
+      "tu2",
+      { signal: new AbortController().signal },
+    );
+
+    expect(signals).toEqual([]);
+  });
+});

@@ -81,9 +81,20 @@ function parseCanvasPublishDashboardId(toolInput: unknown): string | null {
   return arg && typeof arg.id === "string" ? arg.id : null;
 }
 
-// The workflow id + status from a `workflows-create` result. The result JSON may
-// be the workflow itself or wrapped, so look under common envelopes too. Best
-// effort - returns null if no workflow id is present.
+// A top-level `key: value` line from a YAML-ish blob (no leading indentation,
+// so nested blocks like `created_by:` don't shadow the workflow's own fields).
+// The PostHog MCP renders results as YAML, not JSON.
+function parseTopLevelYamlValue(text: string, key: string): string | undefined {
+  const match = text.match(new RegExp(`^${key}:[ \\t]*(.+)$`, "m"));
+  if (!match) return undefined;
+  const value = match[1].trim().replace(/^"(.*)"$/, "$1");
+  return value || undefined;
+}
+
+// The workflow id + status from a `workflows-create` / `workflows-get` result.
+// The PostHog MCP returns the workflow as a YAML document (top-level `id:` /
+// `name:` / `status:` lines); older/other shapes may be JSON, possibly wrapped.
+// Best effort - returns null if no workflow id is present.
 function parseWorkflowFromResponse(response: unknown): {
   workflowId: string;
   workflowStatus?: string;
@@ -91,27 +102,39 @@ function parseWorkflowFromResponse(response: unknown): {
 } | null {
   const text = extractTextFromToolResponse(response);
   if (!text) return null;
+
   const root = parseEmbeddedJsonObject(text);
-  if (!root) return null;
-  for (const candidate of [
-    root,
-    root.workflow,
-    root.result,
-    root.data,
-  ] as Record<string, unknown>[]) {
-    if (candidate && typeof candidate === "object") {
-      const id = (candidate as { id?: unknown }).id;
-      if (typeof id === "string" && id) {
-        const status = (candidate as { status?: unknown }).status;
-        const name = (candidate as { name?: unknown }).name;
-        return {
-          workflowId: id,
-          workflowStatus: typeof status === "string" ? status : undefined,
-          workflowName:
-            typeof name === "string" && name.trim() ? name : undefined,
-        };
+  if (root) {
+    for (const candidate of [
+      root,
+      root.workflow,
+      root.result,
+      root.data,
+    ] as Record<string, unknown>[]) {
+      if (candidate && typeof candidate === "object") {
+        const id = (candidate as { id?: unknown }).id;
+        if (typeof id === "string" && id) {
+          const status = (candidate as { status?: unknown }).status;
+          const name = (candidate as { name?: unknown }).name;
+          return {
+            workflowId: id,
+            workflowStatus: typeof status === "string" ? status : undefined,
+            workflowName:
+              typeof name === "string" && name.trim() ? name : undefined,
+          };
+        }
       }
     }
+  }
+
+  // YAML document (what the MCP actually emits): top-level key: value lines.
+  const id = parseTopLevelYamlValue(text, "id");
+  if (id && /^[0-9a-f][0-9a-f-]{10,}$/i.test(id)) {
+    return {
+      workflowId: id,
+      workflowStatus: parseTopLevelYamlValue(text, "status"),
+      workflowName: parseTopLevelYamlValue(text, "name"),
+    };
   }
   return null;
 }
