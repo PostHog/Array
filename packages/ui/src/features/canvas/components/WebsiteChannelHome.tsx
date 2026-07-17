@@ -123,8 +123,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const closeThread = useThreadPanelStore((s) => s.closeThread);
 
   const handleSuggestionSelect = useCallback(
-    (prompt: string, mode?: string) => {
-      composerRef.current?.applySuggestion(prompt, mode);
+    (prompt: string, mode?: string, opts?: { canvas?: boolean }) => {
+      composerRef.current?.applySuggestion(prompt, mode, opts);
     },
     [],
   );
@@ -256,7 +256,9 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
               key={suggestion.label}
               suggestion={suggestion}
               onSelect={() =>
-                handleSuggestionSelect(suggestion.prompt, suggestion.mode)
+                handleSuggestionSelect(suggestion.prompt, suggestion.mode, {
+                  canvas: suggestion.canvas,
+                })
               }
             />
           ))}

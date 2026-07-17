@@ -127,6 +127,13 @@ interface TaskInputProps {
    */
   onSuggestionSelect?: (label: string) => void;
   /**
+   * Called INSTEAD of the default fill behaviour when a `canvas` suggestion
+   * (canvas + workflow builds) is clicked — this composer only creates plain
+   * tasks, so the surface routes those into its canvas flow. Without it,
+   * canvas suggestions fill the composer like any other.
+   */
+  onCanvasSuggestionSelect?: (suggestion: SuggestedPrompt) => void;
+  /**
    * Called when the channel CONTEXT.md chip is clicked (not its dismiss × ).
    * When provided, the chip's icon+label becomes a button — the channels
    * new-task screen uses it to open the CONTEXT.md in a side panel. Without it
@@ -149,6 +156,7 @@ export function TaskInput({
   allowNoRepo,
   suggestions,
   onSuggestionSelect,
+  onCanvasSuggestionSelect,
   onContextChipClick,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
@@ -1414,6 +1422,17 @@ export function TaskInput({
                               suggestion={suggestion}
                               onSelect={() => {
                                 onSuggestionSelect?.(suggestion.label);
+                                // Canvas suggestions (canvas + workflow builds)
+                                // don't belong in this composer — it creates
+                                // plain tasks — so hand them to the surface's
+                                // canvas flow instead of filling the input.
+                                if (
+                                  suggestion.canvas &&
+                                  onCanvasSuggestionSelect
+                                ) {
+                                  onCanvasSuggestionSelect(suggestion);
+                                  return;
+                                }
                                 // Use pending content (not setContent) so the
                                 // multi-line template — intro + "User input:" fill-in
                                 // lines — keeps its line breaks; focuses at the end.

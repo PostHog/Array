@@ -10,6 +10,9 @@ export interface SuggestedPrompt {
   color: string;
   /** Task mode to apply when this suggestion is selected, if it implies one. */
   mode?: ExecutionMode;
+  /** Routes into canvas generation (canvas + workflow builds) instead of a
+   *  plain task — the surface arms its canvas path when selecting this. */
+  canvas?: boolean;
 }
 
 export interface SuggestedPromptCardProps {

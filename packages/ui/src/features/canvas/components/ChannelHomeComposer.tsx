@@ -48,8 +48,14 @@ import {
 import type { PendingKickoff } from "./ChannelFeedView";
 
 export interface ChannelHomeComposerHandle {
-  /** Drop a starter prompt into the editor and apply its mode, if any. */
-  applySuggestion: (prompt: string, mode?: string) => void;
+  /** Drop a starter prompt into the editor and apply its mode, if any. A
+   *  `canvas` suggestion also arms canvas mode, so the submit runs canvas
+   *  generation (canvas + workflow builds) instead of creating a plain task. */
+  applySuggestion: (
+    prompt: string,
+    mode?: string,
+    opts?: { canvas?: boolean },
+  ) => void;
 }
 
 interface ChannelHomeComposerProps {
@@ -351,7 +357,11 @@ export const ChannelHomeComposer = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      applySuggestion: (prompt: string, mode?: string) => {
+      applySuggestion: (
+        prompt: string,
+        mode?: string,
+        opts?: { canvas?: boolean },
+      ) => {
         // Pending content (not setContent) preserves the multi-line template's
         // line breaks and focuses at the end; mirrors the new-task screen.
         useDraftStore.getState().actions.setPendingContent(sessionId, {
@@ -360,6 +370,9 @@ export const ChannelHomeComposer = forwardRef<
         if (mode && isValidConfigValue(modeOption, mode)) {
           setConfigOption(modeOption.id, mode);
         }
+        // Canvas suggestions (canvas + workflow builds) flip the composer into
+        // canvas mode so the submit runs canvas generation for this prompt.
+        setCanvasArmed(opts?.canvas ?? false);
       },
     }),
     [sessionId, modeOption, setConfigOption],

@@ -39,6 +39,10 @@ vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
 vi.mock("@posthog/ui/features/canvas/hooks/useChannelTasks", () => ({
   useChannelTaskMutations: () => ({ fileTask: vi.fn() }),
 }));
+// Needs a TRPCProvider at render; the canvas-suggestion path isn't under test.
+vi.mock("@posthog/ui/features/canvas/hooks/useDashboards", () => ({
+  useCreateAndOpenDashboard: () => vi.fn(),
+}));
 vi.mock("@posthog/ui/features/canvas/hooks/useFolderInstructions", () => ({
   useFolderInstructions,
 }));

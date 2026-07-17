@@ -5,6 +5,7 @@ import type {
 } from "@posthog/core/canvas/dashboardSchemas";
 import type { FreeformVersion } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { setPendingCanvasPrefill } from "@posthog/ui/features/canvas/canvasPrefill";
 import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
@@ -221,6 +222,9 @@ export function useCreateAndOpenDashboard(
   templateId?: string;
   name?: string;
   channelId?: string;
+  /** Starter instruction dropped into the new canvas's hero composer, ready to
+   *  edit/send (stashed before navigating so the hero finds it on mount). */
+  prefillInstruction?: string;
 }) => Promise<void> {
   const navigate = useNavigate();
   const { createDashboard } = useDashboardMutations();
@@ -235,6 +239,9 @@ export function useCreateAndOpenDashboard(
       try {
         const record = await createDashboard(targetChannelId, name, templateId);
         setEditing(record.id, true);
+        if (opts?.prefillInstruction) {
+          setPendingCanvasPrefill(record.id, opts.prefillInstruction);
+        }
         await navigate({
           to: "/website/$channelId/dashboards/$dashboardId",
           params: { channelId: targetChannelId, dashboardId: record.id },

@@ -5,6 +5,7 @@ import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/Channe
 import { ChannelContextPanel } from "@posthog/ui/features/canvas/components/ChannelContextPanel";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
+import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
@@ -68,6 +69,23 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
     }
   }, [channelId, contextPanelOpen]);
 
+  // Canvas suggestions (e.g. "Set up a workflow") don't fill this composer —
+  // it creates plain tasks — they open a fresh canvas in the channel with the
+  // starter prompt dropped into its hero composer, ready to edit/send.
+  const createAndOpenCanvas = useCreateAndOpenDashboard(channelId);
+  const onCanvasSuggestionSelect = useCallback(
+    (suggestion: { label: string; prompt: string }) => {
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "new_task_canvas_suggestion",
+        surface: "new_task",
+        channel_id: channelId,
+        suggestion_label: suggestion.label,
+      });
+      void createAndOpenCanvas({ prefillInstruction: suggestion.prompt });
+    },
+    [channelId, createAndOpenCanvas],
+  );
+
   const onTaskCreated = useCallback(
     (task: Task) => {
       // Seed the detail cache so the destination route resolves instantly
@@ -120,6 +138,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
               suggestion_label: label,
             })
           }
+          onCanvasSuggestionSelect={onCanvasSuggestionSelect}
           onContextChipClick={
             channelContext ? handleContextChipClick : undefined
           }

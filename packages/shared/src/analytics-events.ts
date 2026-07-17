@@ -866,6 +866,7 @@ export type ChannelActionType =
   | "edit_context_open"
   | "new_task_open"
   | "new_task_suggestion"
+  | "new_task_canvas_suggestion"
   | "view_context"
   | "view_history"
   | "view_artifacts"

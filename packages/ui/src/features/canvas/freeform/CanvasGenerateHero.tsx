@@ -1,11 +1,12 @@
 import { ShapesIcon } from "@phosphor-icons/react";
+import { takePendingCanvasPrefill } from "@posthog/ui/features/canvas/canvasPrefill";
 import { CANVAS_GENERATE_SUGGESTIONS } from "@posthog/ui/features/canvas/freeform/canvasGenerateSuggestions";
 import { FreeformGenerateBar } from "@posthog/ui/features/canvas/freeform/FreeformGenerateBar";
 import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { DotPatternBackground } from "@posthog/ui/primitives/DotPatternBackground";
 import { Flex, Text } from "@radix-ui/themes";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 // The empty-canvas landing state: a centered composer with starter-prompt
 // suggestions below it. Once the user submits, the canvas record records a
@@ -34,6 +35,17 @@ export function CanvasGenerateHero({
 }) {
   // Lets a suggestion card drop its prompt straight into the editor.
   const editorRef = useRef<EditorHandle>(null);
+
+  // A surface that created this canvas on behalf of a suggestion (e.g. the
+  // new-task screen's "Set up a workflow" card) stashes the starter prompt
+  // before navigating here; drop it into the composer ready to edit/send.
+  useEffect(() => {
+    const prefill = takePendingCanvasPrefill(dashboardId);
+    if (prefill) {
+      editorRef.current?.setContent(prefill);
+      editorRef.current?.focus();
+    }
+  }, [dashboardId]);
 
   return (
     <Flex

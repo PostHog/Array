@@ -6,6 +6,7 @@ import {
   Cube,
   CurrencyDollar,
   Flask,
+  Lightning,
   Wrench,
 } from "@phosphor-icons/react";
 import type { SuggestedPrompt } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
@@ -18,6 +19,18 @@ import type { SuggestedPrompt } from "@posthog/ui/features/task-detail/component
 // (icon badge + title + description); the icon/color follow the same
 // `var(--<color>-N)` token scheme.
 export const CHANNEL_TASK_SUGGESTIONS: SuggestedPrompt[] = [
+  {
+    label: "Set up a workflow",
+    description: "Automate an action, with a live board tracking it",
+    icon: Lightning,
+    color: "amber",
+    // Workflows build through canvas generation (the canvas is the workflow's
+    // observability board), so this suggestion arms the canvas path rather
+    // than creating a plain task.
+    canvas: true,
+    prompt:
+      "Set up a workflow that runs automatically — send an email, post to Slack, or fire a webhook when something happens — and build a live dashboard tracking it.\n\n\nUser input:\n- What should happen, and when (e.g. send a welcome email after signup):",
+  },
   {
     label: "Debug a user issue",
     description: "Trace a specific user's events, replays, and errors",
