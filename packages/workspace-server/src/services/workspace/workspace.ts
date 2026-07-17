@@ -65,6 +65,7 @@ import type {
   WorkspaceProvisioning,
 } from "./ports";
 import type {
+  AdoptableWorktree,
   BranchChangedPayload,
   CheckWorktreeBranchInput,
   CheckWorktreeBranchOutput,
@@ -1470,6 +1471,47 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
   ): Promise<Array<{ path: string; branch: string | null }>> {
     const others = await listLinkedWorktrees(repoPath);
     return others.map((wt) => ({ path: wt.worktreePath, branch: wt.branch }));
+  }
+
+  /**
+   * Linked worktrees (any location) that no task uses and a new task could
+   * adopt: checked out on a real branch, not themselves a registered folder,
+   * and not the hidden stash worktree that backgrounds the local checkout.
+   * The sidebar offers these as one-click "start a task in this worktree"
+   * entries; adoption goes through createWorkspace with reuseExistingWorktree.
+   */
+  async listAdoptableWorktrees(
+    mainRepoPath: string,
+  ): Promise<AdoptableWorktree[]> {
+    const [linkedWorktrees, localStashPath] = await Promise.all([
+      listLinkedWorktrees(mainRepoPath),
+      this.getLocalWorktreePathIfExists(mainRepoPath),
+    ]);
+
+    // One pass over associations and registered folders up front; per-candidate
+    // lookups would re-query the workspace tables once per worktree.
+    const occupiedPaths = new Set(
+      this.getAllTaskAssociations().flatMap((assoc) =>
+        assoc.mode === "worktree" ? [assoc.path] : [],
+      ),
+    );
+    const registeredFolderPaths = new Set(
+      this.repositoryRepo.findAll().map((repo) => repo.path),
+    );
+
+    return linkedWorktrees
+      .filter(
+        (wt) =>
+          wt.branch !== null &&
+          wt.worktreePath !== localStashPath &&
+          !registeredFolderPaths.has(wt.worktreePath) &&
+          !occupiedPaths.has(wt.worktreePath),
+      )
+      .map((wt) => ({
+        worktreePath: wt.worktreePath,
+        // Narrowed by the branch !== null filter above.
+        branch: wt.branch as string,
+      }));
   }
 
   async deleteWorktree(

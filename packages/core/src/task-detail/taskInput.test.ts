@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prepareTaskInput } from "./taskInput";
+import { buildWorktreeAdoptionInput, prepareTaskInput } from "./taskInput";
 
 describe("prepareTaskInput", () => {
   // The isCloud guard on customInstructions is the only thing preventing
@@ -26,5 +26,25 @@ describe("prepareTaskInput", () => {
       workspaceMode: "cloud",
     });
     expect(input.customInstructions).toBeUndefined();
+  });
+});
+
+describe("buildWorktreeAdoptionInput", () => {
+  it("builds a promptless worktree input that adopts the branch's worktree", () => {
+    const input = buildWorktreeAdoptionInput({
+      repoPath: "/repo",
+      branch: "feature/orphan",
+    });
+
+    expect(input).toEqual({
+      taskDescription: "feature/orphan",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+      branch: "feature/orphan",
+      reuseExistingWorktree: true,
+    });
+    // No content: the saga must not build an initial prompt, so the agent
+    // session starts idle in the adopted worktree.
+    expect(input.content).toBeUndefined();
   });
 });
