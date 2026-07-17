@@ -28,3 +28,14 @@ export function formatTokensCompact(tokens: number): string {
   if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`;
   return tokens.toString();
 }
+
+/**
+ * Formats a USD cost estimate for display. Sub-cent amounts collapse to
+ * `<$0.01` so a non-zero spend never reads as free; everything else shows two
+ * decimals ($0.42, $12.34).
+ */
+export function formatCostUsd(amount: number): string {
+  if (amount <= 0) return "$0.00";
+  if (amount < 0.01) return "<$0.01";
+  return `$${amount.toFixed(2)}`;
+}
