@@ -26,7 +26,7 @@ export function LoopBuilderComposer({
 
   const chips =
     quickStarts ??
-    DEFAULT_EXAMPLES.map((prompt) => ({ label: prompt, prompt }));
+    DEFAULT_EXAMPLES.map((example) => ({ label: example, prompt: example }));
 
   const start = () => {
     const text = prompt.trim();
@@ -62,7 +62,11 @@ export function LoopBuilderComposer({
           className="w-full resize-none bg-transparent text-[13px] text-gray-12 leading-relaxed outline-none placeholder:text-gray-9 disabled:opacity-60"
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
               e.preventDefault();
               start();
             }
