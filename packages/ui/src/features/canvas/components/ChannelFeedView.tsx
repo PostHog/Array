@@ -40,7 +40,6 @@ import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
-import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
@@ -424,20 +423,28 @@ const FeedItem = memo(function FeedItem({
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
+  // Only attribute channel-started tasks to a human: other origins (Slack,
+  // automations) carry a created_by who didn't start it here, so those stay
+  // agent-attributed to leave room for genuine agent-authored messages.
+  const starter =
+    task.origin_product === "user_created" ? task.created_by : null;
+
   return (
     <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
-            <RobotIcon size={16} />
+            {starter ? getUserInitials(starter) : <RobotIcon size={16} />}
           </AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
 
       <ThreadItemContent className="min-w-0">
         <ThreadItemHeader>
-          <ThreadItemAuthor>PostHog</ThreadItemAuthor>
-          <Badge variant="info">Agent</Badge>
+          <ThreadItemAuthor>
+            {starter ? userDisplayName(starter) : "PostHog"}
+          </ThreadItemAuthor>
+          {!starter && <Badge variant="info">Agent</Badge>}
           <ThreadItemTimestamp
             dateTime={new Date(task.created_at).toISOString()}
           >
@@ -446,20 +453,7 @@ const FeedItem = memo(function FeedItem({
         </ThreadItemHeader>
 
         <ThreadItemBody className="wrap-break-word">
-          {/* Only attribute channel-started tasks: other origins (Slack,
-              automations) carry a created_by who didn't start it here. */}
-          {task.origin_product === "user_created" && task.created_by ? (
-            <>
-              {/* Mention-styled but rendered inert: the starter shouldn't be
-                  notified about their own task. */}
-              <span className={mentionChipClass}>
-                @{userDisplayName(task.created_by)}
-              </span>{" "}
-              started a new task
-            </>
-          ) : (
-            "A new task was started"
-          )}
+          {starter ? "started a new task" : "A new task was started"}
         </ThreadItemBody>
 
         <TaskCard
