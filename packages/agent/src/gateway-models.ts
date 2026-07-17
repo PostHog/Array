@@ -276,6 +276,30 @@ export function getClaudeModelRecency(modelId: string): number {
   return major * 1000 + minor;
 }
 
+// Anthropic model families ordered by tier, fastest/smallest first. The picker
+// menu opens upward (side="top"), so families later in this list sit closer to
+// the trigger.
+const MODEL_FAMILY_ORDER = ["haiku", "sonnet", "opus", "fable"];
+
+function getModelFamilyRank(modelId: string): number {
+  const id = modelId.toLowerCase();
+  const index = MODEL_FAMILY_ORDER.findIndex((family) => id.includes(family));
+  // Non-Anthropic-family models (e.g. Cloudflare `@cf/...`) group after the
+  // known families.
+  return index === -1 ? MODEL_FAMILY_ORDER.length : index;
+}
+
+// Comparator for the model picker. Groups models by family (tier) first, then
+// orders each family's versions oldest-to-newest. Sorting by version alone
+// interleaves families (e.g. a Sonnet 5 lands between Opus versions), which
+// reads as an arbitrary order; grouping keeps every family contiguous and the
+// newest flagship closest to the trigger.
+export function compareModelsForPicker(a: string, b: string): number {
+  const familyDiff = getModelFamilyRank(a) - getModelFamilyRank(b);
+  if (familyDiff !== 0) return familyDiff;
+  return getClaudeModelRecency(a) - getClaudeModelRecency(b);
+}
+
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
 
 export function formatGatewayModelName(model: GatewayModel): string {

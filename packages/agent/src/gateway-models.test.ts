@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  compareModelsForPicker,
   fetchGatewayModels,
   fetchModelsList,
   formatGatewayModelName,
@@ -116,24 +117,29 @@ describe("getClaudeModelRecency", () => {
     );
   });
 
-  it("produces the full picker display order, oldest to newest", () => {
+});
+
+describe("compareModelsForPicker", () => {
+  it("groups models by family, then orders each family oldest to newest", () => {
     // Models as the gateway might return them — arbitrary order.
     const gatewayOrder = [
       "claude-fable-5",
       "claude-opus-4-8",
       "claude-mystery",
+      "claude-sonnet-5",
       "claude-haiku-4-5",
       "claude-sonnet-4-6",
       "claude-opus-4-7",
     ];
-    const displayed = [...gatewayOrder].sort(
-      (a, b) => getClaudeModelRecency(a) - getClaudeModelRecency(b),
-    );
-    // The menu opens upward, so the newest model (last here) sits closest to
-    // the trigger. Unknown/unversioned models rank newest and trail the list.
+    const displayed = [...gatewayOrder].sort(compareModelsForPicker);
+    // Each family stays contiguous (both Sonnets together, both Opuses
+    // together) instead of interleaving by raw version number. The menu opens
+    // upward, so the newest flagship family sits closest to the trigger, and
+    // unknown/non-Anthropic models trail the known families.
     expect(displayed).toEqual([
       "claude-haiku-4-5",
       "claude-sonnet-4-6",
+      "claude-sonnet-5",
       "claude-opus-4-7",
       "claude-opus-4-8",
       "claude-fable-5",
