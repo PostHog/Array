@@ -15,7 +15,11 @@ import { useReviewDraftsStore } from "../reviewDraftsStore";
 import { REVIEW_HOST, type ReviewHost } from "../reviewHost";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewListItem, ReviewShellProps } from "../reviewShellParts";
-import { isFileViewed } from "../reviewShellParts";
+import {
+  findActiveScrollKey,
+  findRenderedScrollAnchor,
+  isFileViewed,
+} from "../reviewShellParts";
 import { ReviewViewedContext } from "../reviewViewedContext";
 import { useReviewViewedStore } from "../reviewViewedStore";
 import { PendingReviewBar } from "./PendingReviewBar";
@@ -127,8 +131,10 @@ export function ReviewShell({
   const reviewHost = useService<ReviewHost>(REVIEW_HOST);
   const taskId = task.id;
   const listRef = useRef<VListHandle | null>(null);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
   const lastActiveRef = useRef<string | null>(null);
-  const navigationLockedRef = useRef(false);
+  const pendingNavigationRef = useRef<string | null>(null);
+  const navigationFrameRef = useRef<number | null>(null);
 
   const workerFactory = useCallback(
     () => reviewHost.diffWorkerFactory(),
@@ -203,6 +209,9 @@ export function ReviewShell({
 
   useEffect(() => {
     return () => {
+      if (navigationFrameRef.current !== null) {
+        cancelAnimationFrame(navigationFrameRef.current);
+      }
       clearTask(taskId);
       useReviewDraftsStore.getState().clearDrafts(taskId);
     };
@@ -217,14 +226,37 @@ export function ReviewShell({
     const viewed =
       currentSignature !== undefined &&
       isFileViewed(viewedRecord[scrollRequest], currentSignature);
-    navigationLockedRef.current = true;
+    if (navigationFrameRef.current !== null) {
+      cancelAnimationFrame(navigationFrameRef.current);
+    }
+    pendingNavigationRef.current = scrollRequest;
     if (!viewed) onUncollapseFile?.(scrollRequest);
-    requestAnimationFrame(() => {
+
+    const scrollToAnchor = (remainingAttempts: number) => {
       listRef.current?.scrollToIndex(targetIndex, { align: "start" });
-      lastActiveRef.current = scrollRequest;
-      setActiveFilePath(taskId, scrollRequest);
-      clearScrollRequest(taskId);
-    });
+      navigationFrameRef.current = requestAnimationFrame(() => {
+        const root = listContainerRef.current;
+        const anchor = root
+          ? findRenderedScrollAnchor(root, scrollRequest)
+          : null;
+
+        if (!anchor && remainingAttempts > 0) {
+          scrollToAnchor(remainingAttempts - 1);
+          return;
+        }
+
+        anchor?.scrollIntoView({ block: "start", inline: "nearest" });
+        lastActiveRef.current = scrollRequest;
+        setActiveFilePath(taskId, scrollRequest);
+        clearScrollRequest(taskId);
+        navigationFrameRef.current = requestAnimationFrame(() => {
+          pendingNavigationRef.current = null;
+          navigationFrameRef.current = null;
+        });
+      });
+    };
+
+    scrollToAnchor(5);
   }, [
     clearScrollRequest,
     currentSignatures,
@@ -236,24 +268,17 @@ export function ReviewShell({
     viewedRecord,
   ]);
 
-  const handleScroll = useCallback(
-    (offset: number) => {
-      if (navigationLockedRef.current) return;
-      const handle = listRef.current;
-      if (!handle) return;
-      const index = handle.findItemIndex(offset);
-      const item = items[index];
-      const scrollKey = item?.scrollKey;
-      if (!scrollKey || scrollKey === lastActiveRef.current) return;
-      lastActiveRef.current = scrollKey;
-      setActiveFilePath(taskId, scrollKey);
-    },
-    [items, setActiveFilePath, taskId],
-  );
-
-  const handleUserScrollIntent = useCallback(() => {
-    navigationLockedRef.current = false;
-  }, []);
+  const handleScroll = useCallback(() => {
+    if (pendingNavigationRef.current !== null) return;
+    const scrollRoot = listContainerRef.current?.querySelector<HTMLElement>(
+      ".pierre-scroll-root",
+    );
+    if (!scrollRoot) return;
+    const scrollKey = findActiveScrollKey(scrollRoot);
+    if (!scrollKey || scrollKey === lastActiveRef.current) return;
+    lastActiveRef.current = scrollKey;
+    setActiveFilePath(taskId, scrollKey);
+  }, [setActiveFilePath, taskId]);
 
   const renderItem = useCallback(
     (item: ReviewListItem) => (
@@ -314,11 +339,9 @@ export function ReviewShell({
           />
           <Flex className="min-h-0 flex-1">
             <Flex
+              ref={listContainerRef}
               direction="column"
               className="min-w-0 flex-1"
-              onPointerDownCapture={handleUserScrollIntent}
-              onWheelCapture={handleUserScrollIntent}
-              onKeyDownCapture={handleUserScrollIntent}
             >
               {isLoading ? (
                 <Flex

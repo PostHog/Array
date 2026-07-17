@@ -34,6 +34,32 @@ export {
 } from "@posthog/core/code-review/reviewShellGeometry";
 
 const STICKY_HEADER_CSS = `[data-diffs-header] { position: sticky; top: 0; z-index: 1; background: var(--gray-2); }`;
+const SCROLL_ANCHOR_SELECTOR = "[data-scroll-key]";
+
+export function findRenderedScrollAnchor(
+  root: HTMLElement,
+  scrollKey: string,
+): HTMLElement | null {
+  for (const anchor of root.querySelectorAll<HTMLElement>(
+    SCROLL_ANCHOR_SELECTOR,
+  )) {
+    if (anchor.dataset.scrollKey === scrollKey) return anchor;
+  }
+  return null;
+}
+
+export function findActiveScrollKey(root: HTMLElement): string | null {
+  const rootTop = root.getBoundingClientRect().top;
+  for (const anchor of root.querySelectorAll<HTMLElement>(
+    SCROLL_ANCHOR_SELECTOR,
+  )) {
+    const scrollKey = anchor.dataset.scrollKey;
+    if (scrollKey && anchor.getBoundingClientRect().bottom > rootTop + 1) {
+      return scrollKey;
+    }
+  }
+  return null;
+}
 
 export function useDiffOptions() {
   const viewMode = useDiffViewerStore((s) => s.viewMode);
