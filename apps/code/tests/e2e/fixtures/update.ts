@@ -30,8 +30,7 @@ export const FORGE_RUN_APP_BIN = path.join(
   FORGE_RUN_APP,
   "Contents/MacOS/PostHog Code",
 );
-// Squirrel replaces the bundle's contents but keeps the on-disk .app name, so
-// after the swap the "PostHog Code.app" dir contains the renamed binary.
+// Squirrel swaps bundle contents in place, so the old-named .app dir gains the renamed binary.
 export const FORGE_RUN_APP_BIN_UPDATED = path.join(
   FORGE_RUN_APP,
   "Contents/MacOS/PostHog",
@@ -143,35 +142,35 @@ export function shipItEvidence(): { exists: boolean; entries: string[] } {
   }
 }
 
-// The forge leg runs the pre-rename build ("PostHog Code") before the swap and
-// the renamed build ("PostHog") after it, so process checks must match both.
-const APP_PROCESS_NAMES = ["PostHog", "PostHog Code"];
+// The forge leg is "PostHog Code" pre-swap and "PostHog" post-swap, so match either name.
+const APP_PROCESS_PATTERN = [FORGE_RUN_APP_BIN, RUN_APP_BIN]
+  .map((bin) => path.basename(bin))
+  .join("|");
 
 export function isAppRunning(): boolean {
-  return APP_PROCESS_NAMES.some((name) => {
-    try {
-      execFileSync("pgrep", ["-x", name], { stdio: "ignore" });
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  try {
+    execFileSync("pgrep", ["-x", APP_PROCESS_PATTERN], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Executable paths of the running main app processes (not helpers). Used to prove
 // Squirrel's auto-relaunched process is running from the swapped bundle.
 export function runningAppExecutables(): string[] {
-  const pids = APP_PROCESS_NAMES.flatMap((name) => {
-    try {
-      return execFileSync("pgrep", ["-x", name], { encoding: "utf8" })
-        .trim()
-        .split("\n")
-        .filter(Boolean);
-    } catch {
-      return [];
-    }
-  });
-  return [...new Set(pids)]
+  let pids: string[];
+  try {
+    pids = execFileSync("pgrep", ["-x", APP_PROCESS_PATTERN], {
+      encoding: "utf8",
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+  return pids
     .map((pid) => {
       try {
         return execFileSync("ps", ["-p", pid, "-o", "comm="], {
@@ -185,12 +184,10 @@ export function runningAppExecutables(): string[] {
 }
 
 export function killApp(): void {
-  for (const name of APP_PROCESS_NAMES) {
-    try {
-      execFileSync("pkill", ["-x", name]);
-    } catch {
-      // nothing running, fine
-    }
+  try {
+    execFileSync("pkill", ["-x", APP_PROCESS_PATTERN]);
+  } catch {
+    // nothing running, fine
   }
 }
 

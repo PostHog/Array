@@ -20,7 +20,7 @@ command -v gh >/dev/null || {
   exit 1
 }
 
-if pgrep -x "PostHog" >/dev/null; then
+if pgrep -x "PostHog Code|PostHog" >/dev/null; then
   echo "PostHog is already running. Quit it first; the test build shares its single-instance lock and data dir." >&2
   exit 1
 fi
