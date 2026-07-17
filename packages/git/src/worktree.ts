@@ -147,7 +147,7 @@ export class WorktreeManager {
     const infoDir = path.join(this.mainRepoPath, ".git", "info");
     await fs.mkdir(infoDir, { recursive: true });
 
-    const newContent = `${content.trimEnd()}\n\n# PostHog Code worktrees\n${ignorePattern}\n`;
+    const newContent = `${content.trimEnd()}\n\n# PostHog worktrees\n${ignorePattern}\n`;
     await fs.writeFile(excludePath, newContent);
   }
 

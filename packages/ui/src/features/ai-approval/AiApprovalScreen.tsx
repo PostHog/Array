@@ -137,7 +137,7 @@ export function AiApprovalScreen({
                     <h4 className="mb-1 font-bold">
                       Legal bits about Protected Health Information
                     </h4>
-                    PostHog Code isn't <i>yet</i> HIPAA-compliant and is not
+                    This app isn't <i>yet</i> HIPAA-compliant and is not
                     intended for processing of Protected Health Information
                     ("PHI").
                     <br />

@@ -126,9 +126,9 @@ export function FolderSettingsView() {
                     Option 2: Remove the repository
                   </Text>
                   <Text color="gray" className="text-[13px]">
-                    This will remove the repository from PostHog Code, including
-                    all associated tasks and their workspaces. This action
-                    cannot be undone.
+                    This will remove the repository from PostHog, including all
+                    associated tasks and their workspaces. This action cannot be
+                    undone.
                   </Text>
                 </Flex>
                 <Button
@@ -199,9 +199,9 @@ export function FolderSettingsView() {
                     Remove repository
                   </Text>
                   <Text color="gray" className="text-[13px]">
-                    This will remove the repository from PostHog Code, including
-                    all associated tasks and their workspaces. This action
-                    cannot be undone.
+                    This will remove the repository from PostHog, including all
+                    associated tasks and their workspaces. This action cannot be
+                    undone.
                   </Text>
                 </Flex>
                 <Button

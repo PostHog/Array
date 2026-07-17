@@ -22,8 +22,8 @@ export const SOURCE_CONFIG: Record<
   user: { icon: User, label: "User", sectionTitle: "Your skills" },
   bundled: {
     icon: Package,
-    label: "PostHog Code",
-    sectionTitle: "PostHog Code",
+    label: "PostHog",
+    sectionTitle: "PostHog",
   },
   repo: { icon: Folder, label: "Repo", sectionTitle: "Repository" },
   marketplace: {

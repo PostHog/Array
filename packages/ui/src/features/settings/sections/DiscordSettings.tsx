@@ -82,7 +82,7 @@ export function DiscordSettings() {
     <Flex direction="column">
       <SettingRow
         label="Rich Presence"
-        description="Show what you're working on in PostHog Code on your profile"
+        description="Show what you're working on in PostHog on your profile"
         noBorder
       >
         <Switch

@@ -10,6 +10,7 @@ import {
   FORGE_PRISTINE_APP,
   FORGE_RUN_APP,
   FORGE_RUN_APP_BIN,
+  FORGE_RUN_APP_BIN_UPDATED,
   FORGE_RUN_DIR,
   isAppRunning,
   killApp,
@@ -168,7 +169,7 @@ test.describe("Forge -> electron-builder auto-update", () => {
 
       proof.failedStep = "fresh-launch";
       updated = await electron.launch({
-        executablePath: FORGE_RUN_APP_BIN,
+        executablePath: FORGE_RUN_APP_BIN_UPDATED,
         args: [],
         env: { ...process.env, ELECTRON_DISABLE_GPU: "1" },
       });

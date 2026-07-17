@@ -11,11 +11,11 @@ import path from "node:path";
 
 const OUT_DIR = path.join(__dirname, "../../../out");
 
-export const PRISTINE_APP = path.join(OUT_DIR, "mac-arm64/PostHog Code.app");
+export const PRISTINE_APP = path.join(OUT_DIR, "mac-arm64/PostHog.app");
 export const FEED_DIR = path.join(OUT_DIR, "dev-update-feed");
 export const RUN_DIR = path.join(OUT_DIR, "e2e-update-run");
-export const RUN_APP = path.join(RUN_DIR, "PostHog Code.app");
-export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog Code");
+export const RUN_APP = path.join(RUN_DIR, "PostHog.app");
+export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog");
 
 // The "old" side of the Forge -> electron-builder test: a real Electron Forge
 // build (v0.55.132) produced by scripts/dev-update/build-old-forge.sh. It runs
@@ -29,6 +29,12 @@ export const FORGE_RUN_APP = path.join(FORGE_RUN_DIR, "PostHog Code.app");
 export const FORGE_RUN_APP_BIN = path.join(
   FORGE_RUN_APP,
   "Contents/MacOS/PostHog Code",
+);
+// Squirrel replaces the bundle's contents but keeps the on-disk .app name, so
+// after the swap the "PostHog Code.app" dir contains the renamed binary.
+export const FORGE_RUN_APP_BIN_UPDATED = path.join(
+  FORGE_RUN_APP,
+  "Contents/MacOS/PostHog",
 );
 
 export const MAIN_LOG = path.join(homedir(), ".posthog-code/logs/main.log");
@@ -137,28 +143,35 @@ export function shipItEvidence(): { exists: boolean; entries: string[] } {
   }
 }
 
+// The forge leg runs the pre-rename build ("PostHog Code") before the swap and
+// the renamed build ("PostHog") after it, so process checks must match both.
+const APP_PROCESS_NAMES = ["PostHog", "PostHog Code"];
+
 export function isAppRunning(): boolean {
-  try {
-    execFileSync("pgrep", ["-x", "PostHog Code"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
+  return APP_PROCESS_NAMES.some((name) => {
+    try {
+      execFileSync("pgrep", ["-x", name], { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 // Executable paths of the running main app processes (not helpers). Used to prove
 // Squirrel's auto-relaunched process is running from the swapped bundle.
 export function runningAppExecutables(): string[] {
-  let pids: string[];
-  try {
-    pids = execFileSync("pgrep", ["-x", "PostHog Code"], { encoding: "utf8" })
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-  return pids
+  const pids = APP_PROCESS_NAMES.flatMap((name) => {
+    try {
+      return execFileSync("pgrep", ["-x", name], { encoding: "utf8" })
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  });
+  return [...new Set(pids)]
     .map((pid) => {
       try {
         return execFileSync("ps", ["-p", pid, "-o", "comm="], {
@@ -172,10 +185,12 @@ export function runningAppExecutables(): string[] {
 }
 
 export function killApp(): void {
-  try {
-    execFileSync("pkill", ["-x", "PostHog Code"]);
-  } catch {
-    // nothing running, fine
+  for (const name of APP_PROCESS_NAMES) {
+    try {
+      execFileSync("pkill", ["-x", name]);
+    } catch {
+      // nothing running, fine
+    }
   }
 }
 

@@ -245,7 +245,7 @@ The `./plugins/withWatchApp` plugin copies native sources from `native/`, recrea
 1. Open `ios/PostHogCode.xcworkspace` in Xcode.
 2. Select the iOS app scheme with a paired iPhone + Apple Watch simulator destination.
 3. Build/run the iOS app; Xcode should install the embedded watch app.
-4. Sign in on iPhone and open or start a PostHog Code task.
+4. Sign in on iPhone and open or start a PostHog task.
 5. Open the watch app and verify the mission overview, checklist, timeline, approvals, and blocker cards.
 
 ### Verification checklist

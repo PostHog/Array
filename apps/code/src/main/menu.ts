@@ -84,18 +84,18 @@ export function buildApplicationMenu(): void {
 
 function buildAppMenu(): MenuItemConstructorOptions {
   return {
-    label: "PostHog Code",
+    label: "PostHog",
     submenu: [
       {
-        label: "About PostHog Code",
+        label: "About PostHog",
         click: () => {
           const info = getSystemInfo();
 
           dialog
             .showMessageBox({
               type: "info",
-              title: "About PostHog Code",
-              message: "PostHog Code",
+              title: "About PostHog",
+              message: "PostHog",
               detail: info,
               buttons: ["Copy", "OK"],
               defaultId: 1,

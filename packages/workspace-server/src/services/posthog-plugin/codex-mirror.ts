@@ -13,7 +13,7 @@ export interface CodexMirrorState {
 
 /**
  * The shared, cross-agent skills directory that Codex (and other tools) read.
- * PostHog Code never writes skills here — it only reads it to surface the
+ * PostHog never writes skills here — it only reads it to surface the
  * user's own Codex skills in the Skills tab. Bundled and Claude skills reach
  * Codex sessions through a private CODEX_HOME instead, so this directory stays
  * the user's own.

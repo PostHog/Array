@@ -114,9 +114,7 @@ export function DiscordPresencePreview({
           </div>
 
           <Flex direction="column" className="min-w-0 gap-0">
-            <Text className="font-bold text-[15px] text-gray-12">
-              PostHog Code
-            </Text>
+            <Text className="font-bold text-[15px] text-gray-12">PostHog</Text>
             <Text truncate className="text-[13px] text-gray-12">
               {details}
             </Text>

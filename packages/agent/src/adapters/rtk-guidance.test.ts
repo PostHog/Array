@@ -43,9 +43,9 @@ describe("rtk guidance for codex", () => {
     // A desktop install can resolve a path with spaces; unquoted it would
     // split into multiple shell tokens and every guided command would fail.
     test("shell-quotes a binary path containing spaces", () => {
-      const guidance = buildRtkGuidance("/Apps/PostHog Code/rtk");
-      expect(guidance).toContain("`'/Apps/PostHog Code/rtk' git status`");
-      expect(guidance).not.toContain("`/Apps/PostHog Code/rtk git status`");
+      const guidance = buildRtkGuidance("/Apps/My Tools/rtk");
+      expect(guidance).toContain("`'/Apps/My Tools/rtk' git status`");
+      expect(guidance).not.toContain("`/Apps/My Tools/rtk git status`");
     });
 
     // Parity with the Claude hook's exclusion: prefixing commit/push would
