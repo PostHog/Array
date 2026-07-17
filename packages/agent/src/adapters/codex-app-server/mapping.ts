@@ -411,6 +411,9 @@ function describeTool(item: AppServerItem): ToolDescriptor | null {
         output: dynamicToolText(item.contentItems),
       };
     case "collabAgentToolCall":
+      if (item.tool === "wait" || item.tool === "closeAgent") {
+        return null;
+      }
       return {
         title: collabAgentTitle(item),
         kind: "other",
