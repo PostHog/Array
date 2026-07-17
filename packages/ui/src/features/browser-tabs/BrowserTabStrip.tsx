@@ -717,18 +717,31 @@ export function BrowserTabStrip() {
   };
 
   // The default landing, keyed off the channels toggle (not the current route,
-  // which lags a toggle flip): #me when channels are on, the Code new-task
-  // screen otherwise. Deliberately never routes through the /website index,
-  // which would redirect to channels[0]. `tabId` (a fresh blank tab) fills that
-  // tab in place; without one (last tab closed) the navigation opens a new tab.
+  // which lags a toggle flip): the channel currently in view when there is one,
+  // otherwise #me, and the Code new-task screen when channels are off.
+  // Deliberately never routes through the /website index, which would redirect
+  // to channels[0]. `tabId` (a fresh blank tab) fills that tab in place;
+  // without one (last tab closed) the navigation opens a new tab.
   const landOnDefault = (tabId?: string) => {
     const state = tabId ? (prev: object) => ({ ...prev, tabId }) : undefined;
     if (!channelsEnabled) {
       navigate({ to: "/code", state });
       return;
     }
-    // #me is provisioned lazily the first time (same bridge the sidebar's #me
-    // row uses); fall back to the new-task screen if it can't be created.
+    // Keep a new tab relative to the channel the user is working in, so opening
+    // a tab from a channel canvas stays in that channel instead of jumping to
+    // the personal folder.
+    if (params.channelId) {
+      navigate({
+        to: "/website/$channelId",
+        params: { channelId: params.channelId },
+        state,
+      });
+      return;
+    }
+    // Not currently in a channel: fall back to #me, provisioned lazily the
+    // first time (same bridge the sidebar's #me row uses); fall back to the
+    // new-task screen if it can't be created.
     void (async () => {
       try {
         const folder = await ensurePersonalChannel(channels, createChannel);
