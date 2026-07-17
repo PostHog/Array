@@ -11,8 +11,9 @@ const CODE_USER_NOTIFICATION_SETTINGS_QUERY_KEY = [
 
 /** The user's PostHog Code notification settings (all-defaults until first saved). */
 export function useCodeUserNotificationSettings() {
-  return useAuthenticatedQuery(CODE_USER_NOTIFICATION_SETTINGS_QUERY_KEY, (client) =>
-    client.getCodeUserNotificationSettings(),
+  return useAuthenticatedQuery(
+    CODE_USER_NOTIFICATION_SETTINGS_QUERY_KEY,
+    (client) => client.getCodeUserNotificationSettings(),
   );
 }
 
@@ -36,7 +37,10 @@ export function useCodeUserNotificationSettingsMutations() {
         const fresh = await client.updateCodeUserNotificationSettings({
           slack_mention_notifications: enabled,
         });
-        queryClient.setQueryData(CODE_USER_NOTIFICATION_SETTINGS_QUERY_KEY, fresh);
+        queryClient.setQueryData(
+          CODE_USER_NOTIFICATION_SETTINGS_QUERY_KEY,
+          fresh,
+        );
       } catch (error: unknown) {
         queryClient.setQueryData(
           CODE_USER_NOTIFICATION_SETTINGS_QUERY_KEY,
