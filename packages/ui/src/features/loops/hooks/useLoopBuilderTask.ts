@@ -3,11 +3,6 @@ import {
   type InboxCloudTaskInputContext,
   useInboxCloudTaskRunner,
 } from "@posthog/ui/features/inbox/hooks/useInboxCloudTaskRunner";
-import { useUserRepositoryIntegration } from "@posthog/ui/features/integrations/useIntegrations";
-import {
-  resolveDefaultCloudRepository,
-  useSettingsStore,
-} from "@posthog/ui/features/settings/settingsStore";
 import { useCallback, useMemo, useRef } from "react";
 import { buildLoopBuilderPrompt } from "../loopBuilderPrompt";
 
@@ -32,15 +27,6 @@ export function useLoopBuilderTask(context?: {
   const instructionsRef = useRef("");
   const contextRef = useRef(context);
   contextRef.current = context;
-  const { repositories } = useUserRepositoryIntegration();
-  const lastUsedCloudRepository = useSettingsStore(
-    (state) => state.lastUsedCloudRepository,
-  );
-
-  const cloudRepository = useMemo(
-    () => resolveDefaultCloudRepository(repositories, lastUsedCloudRepository),
-    [lastUsedCloudRepository, repositories],
-  );
 
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
@@ -51,8 +37,11 @@ export function useLoopBuilderTask(context?: {
       return {
         content: prompt,
         taskDescription: prompt,
-        repository: ctx.cloudRepository,
-        githubUserIntegrationId: ctx.githubUserIntegrationId ?? undefined,
+        // Building a loop is pure PostHog-MCP work (loops-list, integrations-list,
+        // loops-create); it never touches a working tree. Run repo-less so the
+        // sandbox skips the clone and isn't tied to some arbitrary default repo.
+        repository: undefined,
+        githubUserIntegrationId: undefined,
         workspaceMode: "cloud",
         executionMode: "acceptEdits",
         adapter: ctx.adapter,
@@ -77,8 +66,9 @@ export function useLoopBuilderTask(context?: {
   );
 
   const { run, isRunning } = useInboxCloudTaskRunner({
-    cloudRepository,
-    // Loop creation is pure PostHog-MCP work; a missing repo must not block it.
+    // The loop builder never needs a repo: run repo-less so the sandbox does no
+    // clone and no GitHub identity is attached.
+    cloudRepository: null,
     allowMissingRepository: true,
     loggerScope: "loop-builder",
     copy,
