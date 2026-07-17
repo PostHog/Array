@@ -5,6 +5,7 @@ import {
   RobotIcon,
 } from "@phosphor-icons/react";
 import { taskFeedRunStatus } from "@posthog/core/canvas/channelFeed";
+import { xmlToPlainText } from "@posthog/core/message-editor/content";
 import {
   Avatar,
   AvatarFallback,
@@ -430,6 +431,10 @@ export function TaskFeedRow({
   children?: ReactNode;
 }) {
   const starter = channelTaskStarter(task);
+  const prompt = useMemo(
+    () => xmlToPlainText(task.description ?? "").trim(),
+    [task.description],
+  );
 
   return (
     <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
@@ -454,8 +459,9 @@ export function TaskFeedRow({
           </ThreadItemTimestamp>
         </ThreadItemHeader>
 
-        <ThreadItemBody className="wrap-break-word">
-          {starter ? "started a new task" : "A new task was started"}
+        <ThreadItemBody className="wrap-break-word line-clamp-2 whitespace-pre-wrap">
+          {prompt ||
+            (starter ? "started a new task" : "A new task was started")}
         </ThreadItemBody>
 
         {children}

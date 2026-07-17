@@ -29,7 +29,8 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   task_number: 1,
   slug: "task-1",
   title: "Add feedback modal to channels view",
-  description: "",
+  description:
+    "Add a feedback modal to the channels view so people can share thoughts without leaving the feed",
   created_at: "2026-07-17T12:00:00.000Z",
   updated_at: "2026-07-17T12:00:00.000Z",
   origin_product: "user_created",
@@ -63,6 +64,8 @@ export const HumanEmailOnly: Story = {
   args: {
     task: task({
       created_by: user({ first_name: undefined, last_name: undefined }),
+      title: "Make background color configurable",
+      description: "Make the channel background color configurable in settings",
     }),
     children: <MockTaskCard title="Make background color configurable" />,
   },
@@ -73,14 +76,36 @@ export const AgentOrigin: Story = {
     task: task({
       origin_product: "slack",
       title: "Investigate signup drop-off",
+      description: "Investigate the signup drop-off we saw over the weekend",
     }),
     children: <MockTaskCard title="Investigate signup drop-off" />,
   },
 };
 
+export const LongPrompt: Story = {
+  args: {
+    task: task({
+      description:
+        "Rework the channel feed so each row reads as the person who started the task rather than the agent, show a preview of their prompt under the header, keep the task card below, and make sure long prompts truncate cleanly instead of pushing the card down the feed",
+    }),
+    children: <MockTaskCard title="Rework the channel feed attribution" />,
+  },
+};
+
+export const NoPrompt: Story = {
+  args: {
+    task: task({ description: "", title: "Untitled task" }),
+    children: <MockTaskCard title="Untitled task" />,
+  },
+};
+
 export const NoStarter: Story = {
   args: {
-    task: task({ created_by: null, title: "Untitled task" }),
-    children: <MockTaskCard title="Untitled task" />,
+    task: task({
+      created_by: null,
+      title: "Untitled task",
+      description: "Summarize this week's shipped changes",
+    }),
+    children: <MockTaskCard title="Summarize this week's shipped changes" />,
   },
 };
