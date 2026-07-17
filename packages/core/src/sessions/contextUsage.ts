@@ -15,12 +15,7 @@ export interface ContextUsage {
   used: number;
   size: number;
   percentage: number;
-  /**
-   * Cumulative estimated cost of the whole session, summed across turns. `used`
-   * is a point-in-time snapshot of resident context, but each turn's cost is a
-   * spend that accrues, so cost is totalled rather than replaced. `null` when
-   * no turn reported a cost (e.g. codex, which emits tokens without a cost).
-   */
+  /** Cumulative estimated session cost, summed across turns; `null` if none reported (e.g. codex). */
   cost: { amount: number; currency: string } | null;
   breakdown: ContextBreakdown | null;
 }
