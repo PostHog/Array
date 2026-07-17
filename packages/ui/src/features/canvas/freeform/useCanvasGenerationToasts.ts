@@ -1,29 +1,15 @@
-import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import { useServiceOptional } from "@posthog/di/react";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import type { UserBasic } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import {
   type CanvasTerminalStatus,
   hasCanvasGenerationStarted,
   isCanvasGenerating,
   resolveCanvasGenerationStatus,
 } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
-import { buildCanvasGenerationThreadPosts } from "@posthog/ui/features/canvas/freeform/canvasThreadAutoPost";
-import { taskThreadQueryKey } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import {
-  type TrackedCanvasGeneration,
-  useCanvasGenerationTrackerStore,
-} from "@posthog/ui/features/canvas/stores/canvasGenerationTrackerStore";
+import { useCanvasGenerationTrackerStore } from "@posthog/ui/features/canvas/stores/canvasGenerationTrackerStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
 import { useSessionStore } from "@posthog/ui/features/sessions/sessionStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
-import { track } from "@posthog/ui/shell/analytics";
-import {
-  type QueryClient,
-  useQueries,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 
 // Poll cadence for the run status of a tracked generation task. Matches the
@@ -66,38 +52,6 @@ function emitCanvasGenerationNotification(
   // "cancelled" is user-initiated — stay silent.
 }
 
-// Drop the finished generation's updates into the task's thread: the one-time
-// "[name](link) has been created" comment and a turn-complete note tagging the
-// task creator. Posted by the client that started the generation (the thread
-// API has no agent author), best-effort per message.
-async function postThreadUpdates(
-  client: PostHogAPIClient,
-  queryClient: QueryClient,
-  entry: TrackedCanvasGeneration,
-  status: CanvasTerminalStatus,
-  creator: UserBasic | null | undefined,
-): Promise<void> {
-  for (const post of buildCanvasGenerationThreadPosts(entry, status, creator)) {
-    let success = true;
-    try {
-      await client.createTaskThreadMessage(entry.taskId, post.content);
-    } catch {
-      success = false;
-    }
-    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-      action_type: "thread_auto_post",
-      surface: "canvas",
-      channel_id: entry.channelId,
-      task_id: entry.taskId,
-      auto_post_kind: post.kind,
-      success,
-    });
-  }
-  void queryClient.invalidateQueries({
-    queryKey: taskThreadQueryKey(entry.taskId),
-  });
-}
-
 // Watches every canvas generation started in this client (registered in the
 // tracker store) and fires a toast — with a link to the canvas — the moment each
 // one stops generating. Mounted on the persistent channel layout so it keeps
@@ -116,10 +70,6 @@ export function useCanvasGenerationToasts(): void {
   const bus = useServiceOptional<NotificationBus>(NotificationBus);
   const busRef = useRef(bus);
   busRef.current = bus;
-  const client = useOptionalAuthenticatedClient();
-  const clientRef = useRef(client);
-  clientRef.current = client;
-  const queryClient = useQueryClient();
 
   const taskIds = useMemo(() => Object.keys(tracked), [tracked]);
 
@@ -146,7 +96,7 @@ export function useCanvasGenerationToasts(): void {
       latestRun,
       session,
     });
-    return { id, generating, latestRun, session, task: details[i]?.data };
+    return { id, generating, latestRun, session };
   });
 
   // A stable signature so the transition effect only runs on real changes.
@@ -189,23 +139,15 @@ export function useCanvasGenerationToasts(): void {
 
       toastedRef.current.add(st.id);
       const entry = useCanvasGenerationTrackerStore.getState().tracked[st.id];
-      if (entry) {
-        const status = resolveCanvasGenerationStatus({
-          latestRun: st.latestRun,
-          session: st.session,
-        });
-        if (busRef.current) {
-          emitCanvasGenerationNotification(busRef.current, entry, status);
-        }
-        if (clientRef.current) {
-          void postThreadUpdates(
-            clientRef.current,
-            queryClient,
-            entry,
-            status,
-            st.task?.created_by,
-          );
-        }
+      if (entry && busRef.current) {
+        emitCanvasGenerationNotification(
+          busRef.current,
+          entry,
+          resolveCanvasGenerationStatus({
+            latestRun: st.latestRun,
+            session: st.session,
+          }),
+        );
       }
       // Stop tracking (and polling) this task now that it's done.
       untrack(st.id);

@@ -10,8 +10,6 @@ export interface TrackedCanvasGeneration {
   dashboardId: string;
   channelId: string;
   name: string;
-  /** True when this run builds the canvas for the first time (not an edit). */
-  createsCanvas: boolean;
 }
 
 interface CanvasGenerationTrackerState {
