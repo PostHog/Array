@@ -290,16 +290,6 @@ export function LoopForm({ loop }: LoopFormProps) {
 
               <Divider />
 
-              <Field label="Behavior">
-                <LoopBehaviorFields
-                  behaviors={values.behaviors}
-                  disabled={isSubmitting}
-                  onChange={(behaviors) => patch({ behaviors })}
-                />
-              </Field>
-
-              <Divider />
-
               <Field label="Notifications">
                 <LoopNotificationsFields
                   notifications={values.notifications}
@@ -326,23 +316,32 @@ export function LoopForm({ loop }: LoopFormProps) {
                     Advanced
                   </Text>
                   <Text className="text-[11.5px] text-gray-9">
-                    Model and reasoning
+                    Behavior, model and reasoning
                   </Text>
                 </button>
                 {showAdvanced ? (
-                  <LoopModelFields
-                    adapter={values.runtimeAdapter}
-                    model={values.model}
-                    reasoningEffort={values.reasoningEffort}
-                    disabled={isSubmitting}
-                    onAdapterChange={(runtimeAdapter) =>
-                      patch({ runtimeAdapter })
-                    }
-                    onModelChange={(model) => patch({ model })}
-                    onReasoningEffortChange={(reasoningEffort) =>
-                      patch({ reasoningEffort })
-                    }
-                  />
+                  <Flex direction="column" gap="4">
+                    <Field label="Behavior">
+                      <LoopBehaviorFields
+                        behaviors={values.behaviors}
+                        disabled={isSubmitting}
+                        onChange={(behaviors) => patch({ behaviors })}
+                      />
+                    </Field>
+                    <LoopModelFields
+                      adapter={values.runtimeAdapter}
+                      model={values.model}
+                      reasoningEffort={values.reasoningEffort}
+                      disabled={isSubmitting}
+                      onAdapterChange={(runtimeAdapter) =>
+                        patch({ runtimeAdapter })
+                      }
+                      onModelChange={(model) => patch({ model })}
+                      onReasoningEffortChange={(reasoningEffort) =>
+                        patch({ reasoningEffort })
+                      }
+                    />
+                  </Flex>
                 ) : null}
               </Flex>
             </Step>
