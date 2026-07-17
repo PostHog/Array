@@ -4,7 +4,7 @@ import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
-import { useLoops } from "../hooks/useLoops";
+import { useLoopLimits, useLoops } from "../hooks/useLoops";
 import { useLoopDraftStore } from "../loopDraftStore";
 import type { LoopTemplate } from "../loopTemplates";
 import { LoopBuilderComposer } from "./LoopBuilderComposer";
@@ -13,8 +13,17 @@ import { LoopRow } from "./LoopRow";
 import { LoopsEmptyState } from "./LoopsEmptyState";
 import { LoopTemplatesSection } from "./LoopTemplatesSection";
 
+/** Copy shown when the project is at its loop cap. `max` comes from the backend so the number
+ * never drifts from the limit the server actually enforces. */
+function loopLimitReason(max: number): string {
+  return `You've reached the limit of ${max} loops for this project. Delete one to add another.`;
+}
+
 export function LoopsListView() {
   const { data: loops, isLoading, isError, error } = useLoops();
+  const limits = useLoopLimits();
+  const limitReason =
+    limits?.atLimit === true ? loopLimitReason(limits.max) : null;
 
   const headerContent = useMemo(
     () => (
@@ -78,7 +87,14 @@ export function LoopsListView() {
                 the laptop!
               </Text>
             </Flex>
-            <Button variant="soft" color="gray" size="2" onClick={startBlank}>
+            <Button
+              variant="soft"
+              color="gray"
+              size="2"
+              onClick={startBlank}
+              disabled={limitReason != null}
+              disabledReason={limitReason}
+            >
               <PlusIcon size={14} />
               Create manually
             </Button>
@@ -120,7 +136,7 @@ export function LoopsListView() {
           gap="2"
           className="mx-auto w-full max-w-5xl px-8 pb-6"
         >
-          <LoopBuilderComposer />
+          <LoopBuilderComposer disabledReason={limitReason} />
         </Flex>
       </div>
     </Flex>

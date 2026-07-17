@@ -239,6 +239,13 @@ export namespace LoopSchemas {
     next: string | null;
     previous: string | null;
     results: Array<Loop>;
+    /** Hard cap on non-deleted loops per project. Read this rather than hardcoding a
+     * number: the backend is authoritative, so raising it there reflects here on the
+     * next list. Creating beyond the cap returns a 429 `loop_safety_limit`. */
+    max_loops_per_team: number;
+    /** Current non-deleted, user-facing loops in this project, counted against
+     * `max_loops_per_team`. At or above the cap, creation is blocked. */
+    total_loop_count: number;
   };
 
   export type LoopRun = {

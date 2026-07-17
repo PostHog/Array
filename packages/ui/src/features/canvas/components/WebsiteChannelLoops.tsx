@@ -12,7 +12,7 @@ import {
 } from "../../loops/components/LoopFallbacks";
 import { LoopRow } from "../../loops/components/LoopRow";
 import { LoopsEmptyState } from "../../loops/components/LoopsEmptyState";
-import { useLoops } from "../../loops/hooks/useLoops";
+import { useLoopLimits, useLoops } from "../../loops/hooks/useLoops";
 import { useLoopDraftStore } from "../../loops/loopDraftStore";
 import { defaultLoopContextOutputs } from "../../loops/loopFormTypes";
 import { useChannels } from "../hooks/useChannels";
@@ -43,6 +43,11 @@ function contextQuickStarts(name: string): { label: string; prompt: string }[] {
  * this context. `channelId` is the desktop folder id, matching `context_target.folder_id`. */
 export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const { data: loops, isLoading, isError } = useLoops();
+  const limits = useLoopLimits();
+  const limitReason =
+    limits?.atLimit === true
+      ? `You've reached the limit of ${limits.max} loops for this project. Delete one to add another.`
+      : null;
   const { channels } = useChannels();
   const channel = channels.find((c) => c.id === channelId);
   const contextName = channel?.name ?? channelId;
@@ -103,7 +108,14 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
                 keeps its context.md or a canvas up to date.
               </Text>
             </Flex>
-            <Button variant="soft" color="gray" size="2" onClick={startBlank}>
+            <Button
+              variant="soft"
+              color="gray"
+              size="2"
+              onClick={startBlank}
+              disabled={limitReason != null}
+              disabledReason={limitReason}
+            >
               <PlusIcon size={14} />
               Create manually
             </Button>
@@ -143,6 +155,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
             context={{ folderId: channelId, name: contextName }}
             placeholder={`What should #${contextName} keep an eye on?`}
             quickStarts={contextQuickStarts(contextName)}
+            disabledReason={limitReason}
           />
         </Flex>
       </div>
