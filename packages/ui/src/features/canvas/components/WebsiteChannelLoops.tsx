@@ -103,7 +103,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
                 keeps its context.md or a canvas up to date.
               </Text>
             </Flex>
-            <Button variant="solid" size="2" onClick={startBlank}>
+            <Button variant="soft" color="gray" size="2" onClick={startBlank}>
               <PlusIcon size={14} />
               Create manually
             </Button>
