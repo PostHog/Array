@@ -40,7 +40,9 @@ export function LoopsListView() {
   };
 
   const startFromTemplate = (template: LoopTemplate) => {
-    useLoopDraftStore.getState().setPrefill(template.build());
+    useLoopDraftStore
+      .getState()
+      .setPrefill({ description: template.description, ...template.build() });
     navigateToNewLoop();
   };
 
