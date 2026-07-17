@@ -178,9 +178,13 @@ export function useGenerateFreeformCanvas(args: {
         await setGenerationTask(dashboardId, task.id).catch(() => {});
         // Track this run so a toast (with a link back here) fires when it
         // finishes, even after the user navigates to another canvas.
-        useCanvasGenerationTrackerStore
-          .getState()
-          .track({ taskId: task.id, dashboardId, channelId, name });
+        useCanvasGenerationTrackerStore.getState().track({
+          taskId: task.id,
+          dashboardId,
+          channelId,
+          name,
+          createsCanvas: !currentCode?.trim(),
+        });
         // Refresh the workspace cache so the new cloud workspace row appears and
         // the task view resolves the cloud run instead of the repo-picker prompt.
         void queryClient.invalidateQueries({
