@@ -243,4 +243,36 @@ describe("loops client", () => {
     expect(error).toBeInstanceOf(LoopsApiError);
     expect((error as LoopsApiError).safetyLimit).toBeNull();
   });
+
+  it.each([
+    {
+      name: "DRF detail string",
+      body: { detail: "Not found." },
+      expected: "Not found.",
+    },
+    {
+      name: "field validation errors",
+      body: {
+        name: ["This field may not be blank."],
+        triggers: ["Invalid cron expression."],
+      },
+      expected:
+        "name: This field may not be blank.\ntriggers: Invalid cron expression.",
+    },
+    {
+      name: "plain string body",
+      body: "upstream unavailable",
+      expected: "upstream unavailable",
+    },
+    { name: "null body", body: null, expected: null },
+    { name: "array body", body: ["nope"], expected: null },
+    {
+      name: "body with no readable messages",
+      body: { code: 42, nested: { detail: "hidden" } },
+      expected: null,
+    },
+  ])("detail extracts $name", ({ body, expected }) => {
+    const error = new LoopsApiError("post", "/loops/", 400, body);
+    expect(error.detail).toBe(expected);
+  });
 });

@@ -460,6 +460,28 @@ export class LoopsApiError extends Error {
     }
     return null;
   }
+
+  /** A human-readable reason extracted from the response body (DRF `detail` or
+   * per-field validation errors), or null when the body carries none. */
+  get detail(): string | null {
+    const body = this.body;
+    if (typeof body === "string") return body || null;
+    if (body == null || typeof body !== "object" || Array.isArray(body)) {
+      return null;
+    }
+    const record = body as Record<string, unknown>;
+    if (typeof record.detail === "string") return record.detail;
+    const parts: string[] = [];
+    for (const [field, value] of Object.entries(record)) {
+      const messages = (Array.isArray(value) ? value : [value]).filter(
+        (entry): entry is string => typeof entry === "string",
+      );
+      if (messages.length > 0) {
+        parts.push(`${field}: ${messages.join(" ")}`);
+      }
+    }
+    return parts.length > 0 ? parts.join("\n") : null;
+  }
 }
 
 async function readBody(response: Response): Promise<unknown> {
