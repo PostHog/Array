@@ -30,7 +30,6 @@ function createService(
   const endpoints: LlmGatewayEndpoints = {
     messagesUrl: (host) => `${host}/gateway/v1/messages`,
     usageUrl: (host) => `${host}/gateway/usage`,
-    invalidatePlanCacheUrl: (host) => `${host}/gateway/invalidate`,
     defaultModel: "claude-default",
   };
 
@@ -414,31 +413,5 @@ describe("LlmGatewayService.fetchUsage", () => {
 
     const promptBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
     expect(promptBody.model).toBe("@cf/zai-org/glm-5.2");
-  });
-});
-
-describe("LlmGatewayService.invalidatePlanCache", () => {
-  it("POSTs to the invalidate URL and resolves on success", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 204 }));
-    const { service } = createService(fetchMock);
-
-    await expect(service.invalidatePlanCache()).resolves.toBeUndefined();
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`${API_HOST}/gateway/invalidate`);
-    expect(init.method).toBe("POST");
-  });
-
-  it("throws a plan_cache_error LlmGatewayError on non-ok response", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 500 }));
-    const { service } = createService(fetchMock);
-
-    await expect(service.invalidatePlanCache()).rejects.toMatchObject({
-      type: "plan_cache_error",
-      statusCode: 500,
-    });
   });
 });

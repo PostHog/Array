@@ -192,16 +192,6 @@ export {
 } from "./saga";
 export { scoutSkillNameFromSlug, scoutSkillSlug } from "./scout-naming";
 export {
-  isProPlan,
-  PLAN_FREE,
-  PLAN_PRO,
-  PLAN_PRO_ALPHA,
-  SEAT_PRODUCT_KEY,
-  type SeatData,
-  type SeatStatus,
-  seatHasAccess,
-} from "./seat";
-export {
   type AcpMessage,
   IMPORTED_USER_PROMPT_META_KEY,
   isJsonRpcNotification,

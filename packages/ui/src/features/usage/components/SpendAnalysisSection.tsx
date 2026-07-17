@@ -38,7 +38,7 @@ export function SpendAnalysisSection() {
     <Flex direction="column" gap="3">
       <Flex align="center" justify="between">
         <Text className="font-medium text-(--gray-9) text-sm">
-          Spend analysis
+          Personal spend analysis
         </Text>
         <Flex align="center" gap="4">
           <WindowSelector value={spendWindow} onChange={setSpendWindow} />

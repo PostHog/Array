@@ -30,12 +30,6 @@ import { getBillingUrl } from "@posthog/ui/utils/urls";
 import { Badge, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useEffect } from "react";
 
-/**
- * Plan & usage under usage-based billing: no seats or plans to manage in-app —
- * payment methods, spend limits, and org-level usage live on the PostHog
- * billing page. The free-tier meters show the per-user allowance for
- * confirmed free-tier orgs; subscribed orgs have no per-user caps to meter.
- */
 export function PlanUsageSettings() {
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
@@ -163,7 +157,9 @@ export function PlanUsageSettings() {
           </Flex>
 
           <Flex direction="column" gap="3">
-            <Text className="font-medium text-(--gray-9) text-sm">Usage</Text>
+            <Text className="font-medium text-(--gray-9) text-sm">
+              Organization usage
+            </Text>
             {usageLoading ? (
               <Flex
                 align="center"
@@ -178,7 +174,7 @@ export function PlanUsageSettings() {
                 label={freeTier ? "Monthly free usage" : "Usage this period"}
                 percent={meter.percent}
                 valueLabel={`${formatUsdAmount(meter.usedUsd)} of ${formatUsdAmount(meter.limitUsd)}${freeTier ? " included" : ""}`}
-                detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt)}`}
+                detail={`${meter.exceeded ? "Limit exceeded. " : ""}${formatResetTime(meter.resetAt, { label: "Billing period ends" })}`}
                 breakdown={
                   meter.breakdown
                     ? { ...meter.breakdown, usedUsd: meter.usedUsd }

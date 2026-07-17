@@ -264,11 +264,27 @@ describe("formatResetTime", () => {
       expected: "Resets shortly",
     },
   ])("$name", ({ resetAt, expected }) => {
-    const result = formatResetTime(resetAt, NOW);
+    const result = formatResetTime(resetAt, { now: NOW });
     if (expected instanceof RegExp) {
       expect(result).toMatch(expected);
     } else {
       expect(result).toBe(expected);
     }
+  });
+
+  it("swaps the leading phrase when a custom label is given", () => {
+    const opts = { now: NOW, label: "Billing period ends" };
+    expect(formatResetTime(isoAt(30 * 60 * 1000), opts)).toBe(
+      "Billing period ends in 30m",
+    );
+    expect(formatResetTime(isoAt(4 * 3600 * 1000), opts)).toBe(
+      "Billing period ends in 4h",
+    );
+    expect(formatResetTime(isoAt(-60_000), opts)).toBe(
+      "Billing period ends shortly",
+    );
+    expect(formatResetTime(isoAt(30 * 86400 * 1000), opts)).toMatch(
+      /^Billing period ends [A-Za-z]+ \d+ at /,
+    );
   });
 });
