@@ -88,7 +88,10 @@ export const HumanEmailOnly: Story = {
  */
 export const AgentOrigin: Story = {
   args: {
-    task: task({ origin_product: "slack", title: "Investigate signup drop-off" }),
+    task: task({
+      origin_product: "slack",
+      title: "Investigate signup drop-off",
+    }),
     children: <MockTaskCard title="Investigate signup drop-off" />,
   },
 };
