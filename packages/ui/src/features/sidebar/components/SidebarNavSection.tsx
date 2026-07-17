@@ -1,6 +1,6 @@
 import { HashIcon } from "@phosphor-icons/react";
 import { Badge, Switch } from "@posthog/quill";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
@@ -56,6 +56,9 @@ export function SidebarNavSection({
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
+  // Loops stays behind posthog-desktop-loops; default on in dev so local builds
+  // keep the nav item. Also gates the per-channel Loops tab (see ChannelTabs).
+  const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
   // Channels stay behind project-bluebird: the "Enable channels" nav row (and
   // the Canvas row it reveals) only appear where the canvas backend is wired.
   const bluebirdEnabled = useFeatureFlag(
@@ -151,9 +154,11 @@ export function SidebarNavSection({
         <ConfigureItem onClick={() => openSettings("agents")} />
       </Box>
 
-      <Box>
-        <LoopsItem isActive={isLoopsActive} onClick={navigateToLoops} />
-      </Box>
+      {loopsEnabled ? (
+        <Box>
+          <LoopsItem isActive={isLoopsActive} onClick={navigateToLoops} />
+        </Box>
+      ) : null}
 
       <Box mb={bluebirdEnabled ? undefined : "2"}>
         <CommandCenterItem
