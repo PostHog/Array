@@ -7,8 +7,6 @@ export {
   SYNC_CLOUD_TASKS_FLAG,
 } from "./flags";
 
-export const BROWSER_WEBVIEW_PARTITION = "persist:browser";
-
 export const SELF_DRIVING_SETUP_TASK_FLAG =
   "posthog-code-self-driving-setup-task";
 export const BRANCH_PREFIX = "posthog-code/";

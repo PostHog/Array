@@ -50,6 +50,7 @@ import { uiRouter } from "@posthog/host-router/routers/ui.router";
 import { updatesRouter } from "@posthog/host-router/routers/updates.router";
 import { usageMonitorRouter } from "@posthog/host-router/routers/usage-monitor.router";
 import { workspaceRouter } from "@posthog/host-router/routers/workspace.router";
+import { browserViewRouter } from "./routers/browser-view";
 import { devRouter } from "./routers/dev";
 import { discordPresenceRouter } from "./routers/discord-presence";
 import { encryptionRouter } from "./routers/encryption";
@@ -64,6 +65,7 @@ export const trpcRouter = router({
   auth: authRouter,
   autoresearch: autoresearchRouter,
   browserTabs: browserTabsRouter,
+  browserView: browserViewRouter,
   canvasData: canvasDataRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,

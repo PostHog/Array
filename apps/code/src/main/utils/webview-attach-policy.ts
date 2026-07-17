@@ -1,4 +1,4 @@
-import { BROWSER_WEBVIEW_PARTITION } from "@posthog/shared/constants";
+import { BROWSER_WEBVIEW_PARTITION } from "@shared/browser-view";
 import { isAllowedWebviewNavigation } from "./webview-navigation-guard";
 
 interface WebviewSecurityPreferences {

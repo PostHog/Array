@@ -27,6 +27,7 @@ import {
   AnalyticsBootContribution,
   InboxDemoDevContribution,
 } from "@renderer/contributions/app-boot.contributions";
+import { BrowserViewContribution } from "@renderer/contributions/browser-view.contribution";
 import { container } from "@renderer/di/container";
 
 export function registerDesktopContributions(): void {
@@ -60,5 +61,6 @@ export function registerDesktopContributions(): void {
   }
 
   container.bind(CONTRIBUTION).to(AnalyticsBootContribution).inSingletonScope();
+  container.bind(CONTRIBUTION).to(BrowserViewContribution).inSingletonScope();
   container.bind(CONTRIBUTION).to(InboxDemoDevContribution).inSingletonScope();
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isAllowedWebviewNavigation,
+  isAllowedWebviewRequest,
   isBlockedWebviewHost,
 } from "./webview-navigation-guard";
 
@@ -22,6 +23,25 @@ describe("isBlockedWebviewHost", () => {
     ["169.253.1.1", false],
   ])("host %j -> blocked %s", (hostname, blocked) => {
     expect(isBlockedWebviewHost(hostname)).toBe(blocked);
+  });
+});
+
+describe("isAllowedWebviewRequest", () => {
+  it.each([
+    ["https://posthog.com", "mainFrame", true],
+    ["http://posthog.com", "mainFrame", false],
+    ["https://posthog.com/app.js", "script", true],
+    ["http://localhost:3000/app.js", "script", true],
+    ["http://posthog.com/app.js", "script", false],
+    ["data:image/png;base64,AA==", "image", true],
+    ["blob:https://posthog.com/id", "xhr", true],
+    ["about:blank", "subFrame", true],
+    ["about:srcdoc", "subFrame", false],
+    ["file:///etc/passwd", "xhr", false],
+    ["custom-scheme://host/path", "xhr", false],
+    ["http://169.254.169.254/latest/meta-data/", "xhr", false],
+  ])("url %j resource %j -> allowed %s", (url, resourceType, allowed) => {
+    expect(isAllowedWebviewRequest(url, resourceType)).toBe(allowed);
   });
 });
 

@@ -6,6 +6,7 @@ import { DARK_APP_BACKGROUND_COLOR } from "@posthog/shared/constants";
 import {
   app,
   BrowserWindow,
+  session as electronSession,
   Menu,
   type MenuItemConstructorOptions,
   screen,
@@ -17,6 +18,7 @@ import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { POSTHOG_SESSION_ID_ARG } from "./posthog-session-arg";
+import { browserViewService } from "./services/browser-view/service";
 import {
   encodeDevFlagsForArg,
   readDevFlagsSync,
@@ -39,7 +41,7 @@ import {
 } from "./utils/webview-attach-policy";
 import {
   isAllowedWebviewNavigation,
-  safeProtocol,
+  isAllowedWebviewRequest,
 } from "./utils/webview-navigation-guard";
 import { isAllowedWebviewPermission } from "./utils/webview-permission-policy";
 import { setupWindowZoom } from "./zoom";
@@ -142,13 +144,26 @@ function hardenWebviewSession(session: Electron.Session): void {
   session.setPermissionCheckHandler((_wc, permission) =>
     isAllowedWebviewPermission(permission),
   );
+  session.webRequest.onBeforeRequest((details, callback) => {
+    const allowed = isAllowedWebviewRequest(details.url, details.resourceType);
+    if (!allowed) {
+      log.warn("Blocked disallowed webview request", {
+        resourceType: details.resourceType,
+        url: details.url,
+      });
+    }
+    callback({ cancel: !allowed });
+  });
 }
 
 function setupWebviewHandlers(window: BrowserWindow): void {
   window.webContents.on(
     "will-attach-webview",
     (event, webPreferences, params) => {
-      if (!isAllowedWebviewAttachment(params)) {
+      if (
+        !browserViewService.isEnabled() ||
+        !isAllowedWebviewAttachment(params)
+      ) {
         event.preventDefault();
         log.warn("Blocked disallowed webview attachment", {
           src: params.src,
@@ -156,6 +171,7 @@ function setupWebviewHandlers(window: BrowserWindow): void {
         });
         return;
       }
+      hardenWebviewSession(electronSession.fromPartition(params.partition));
       hardenWebviewPreferences(webPreferences);
     },
   );
@@ -164,10 +180,10 @@ function setupWebviewHandlers(window: BrowserWindow): void {
     hardenWebviewSession(guest.session);
 
     guest.setWindowOpenHandler(({ url }) => {
-      if (/^https?:$/i.test(safeProtocol(url))) {
-        shell.openExternal(url);
+      if (isAllowedWebviewNavigation(url)) {
+        void shell.openExternal(url);
       } else {
-        log.warn("Blocked webview popup to non-http(s) target", { url });
+        log.warn("Blocked disallowed webview popup", { url });
       }
       return { action: "deny" };
     });
@@ -318,6 +334,7 @@ export function createWindow(): void {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      webviewTag: true,
       preload: path.join(__dirname, "preload.js"),
       enableBlinkFeatures: "GetDisplayMedia",
       partition: "persist:main",

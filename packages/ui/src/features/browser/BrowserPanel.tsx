@@ -29,19 +29,26 @@ export function useBrowserEnabled(): boolean {
 
 const DEFAULT_URL = "about:blank";
 
-const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1)(?=[:/]|$)/i;
+const LOOPBACK_HOST =
+  /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?=[:/]|$)/i;
 
 // Anything else (file:, chrome:, data:, javascript:, ...) becomes a search.
 // Keep in sync with the authoritative main-process guard (setupWebviewHandlers
 // in window.ts) — this is convenience, that is the security boundary.
-const ALLOWED_SCHEME = /^(https?):\/\//i;
+const HTTPS_SCHEME = /^https:\/\//i;
+const HTTP_SCHEME = /^http:\/\//i;
 
 // Loopback defaults to http since dev servers rarely serve https.
 export function normalizeAddress(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return DEFAULT_URL;
-  if (ALLOWED_SCHEME.test(trimmed) || trimmed === "about:blank") {
+  if (HTTPS_SCHEME.test(trimmed) || trimmed === "about:blank") {
     return trimmed;
+  }
+  if (HTTP_SCHEME.test(trimmed)) {
+    const withoutScheme = trimmed.replace(HTTP_SCHEME, "");
+    if (LOOPBACK_HOST.test(withoutScheme)) return trimmed;
+    return `https://${withoutScheme}`;
   }
   // A schemeless "host:port" (e.g. localhost:3000) is a host, not a scheme.
   const hasDisallowedScheme =
@@ -75,6 +82,7 @@ export function BrowserPanel({
     BROWSER_VIEW_COMPONENT,
   );
   const browserViewRef = useRef<BrowserViewHandle | null>(null);
+  const pendingNavigationRef = useRef<string | null>(null);
   // src is set once so re-renders never reload the page; the value comes off
   // disk and must not be trusted as a raw src.
   const initialUrl = useRef(normalizeAddress(url));
@@ -119,9 +127,26 @@ export function BrowserPanel({
     [],
   );
 
-  const handleReady = useCallback((handle: BrowserViewHandle | null) => {
-    browserViewRef.current = handle;
+  const loadUrl = useCallback((handle: BrowserViewHandle, target: string) => {
+    setLoadError(null);
+    try {
+      void handle.loadURL(target).catch(() => {
+        setLoadError("Failed to load page");
+      });
+    } catch {
+      setLoadError("Failed to load page");
+    }
   }, []);
+  const handleReady = useCallback(
+    (handle: BrowserViewHandle | null) => {
+      browserViewRef.current = handle;
+      if (!handle || pendingNavigationRef.current === null) return;
+      const target = pendingNavigationRef.current;
+      pendingNavigationRef.current = null;
+      loadUrl(handle, target);
+    },
+    [loadUrl],
+  );
   const handleNavigate = useCallback(
     (navigation: BrowserViewNavigation) => {
       setAddress(navigation.url === DEFAULT_URL ? "" : navigation.url);
@@ -156,12 +181,18 @@ export function BrowserPanel({
     handleReload();
   }, [handleReload, isLoading]);
 
-  const navigate = useCallback((raw: string) => {
-    const browserView = browserViewRef.current;
-    if (!browserView) return;
-    setLoadError(null);
-    browserView.loadURL(normalizeAddress(raw)).catch(() => {});
-  }, []);
+  const navigate = useCallback(
+    (raw: string) => {
+      const target = normalizeAddress(raw);
+      const browserView = browserViewRef.current;
+      if (!browserView) {
+        pendingNavigationRef.current = target;
+        return;
+      }
+      loadUrl(browserView, target);
+    },
+    [loadUrl],
+  );
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -170,15 +201,6 @@ export function BrowserPanel({
     },
     [address, navigate],
   );
-  const handleAddressKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-      event.preventDefault();
-      navigate(address);
-    },
-    [address, navigate],
-  );
-
   if (!BrowserView) return null;
 
   return (
@@ -223,7 +245,6 @@ export function BrowserPanel({
             autoFocus={initialUrl.current === DEFAULT_URL}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            onKeyDown={handleAddressKeyDown}
             placeholder="Search or enter address"
             spellCheck={false}
             className="h-[24px] w-full rounded-(--radius-2) border-0 bg-(--gray-3) px-2 text-(--gray-12) text-[12px] outline-none focus:bg-(--gray-4)"

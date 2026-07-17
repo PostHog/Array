@@ -1,9 +1,10 @@
-import { BROWSER_WEBVIEW_PARTITION } from "@posthog/shared/constants";
 import type {
   BrowserViewHandle,
   BrowserViewProps,
 } from "@posthog/ui/features/browser/identifiers";
-import { useEffect, useRef } from "react";
+import { trpcClient } from "@renderer/trpc/client";
+import { BROWSER_WEBVIEW_PARTITION } from "@shared/browser-view";
+import { useEffect, useRef, useState } from "react";
 
 interface ElectronWebviewElement extends HTMLElement, BrowserViewHandle {
   getURL(): string;
@@ -28,11 +29,40 @@ export function ElectronBrowserView({
   onLoadingChange,
 }: BrowserViewProps) {
   const webviewRef = useRef<ElectronWebviewElement | null>(null);
+  const [hostEnabled, setHostEnabled] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    trpcClient.browserView.setEnabled
+      .mutate({ enabled: true })
+      .then(() => {
+        if (active) setHostEnabled(true);
+      })
+      .catch(() => {
+        if (active) onLoadError("Browser view is unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [onLoadError]);
+
+  useEffect(() => {
+    if (!hostEnabled) return;
     const webview = webviewRef.current;
     if (!webview) return;
 
+    let ready = false;
+    const readyTimeout = window.setTimeout(() => {
+      if (ready) return;
+      onReady(null);
+      onLoadError("Browser view failed to attach");
+    }, 10_000);
+    const handleReady = () => {
+      if (ready) return;
+      ready = true;
+      window.clearTimeout(readyTimeout);
+      onReady(webview);
+    };
     const handleNavigate = (event: Event) => {
       const navigation = event as WebviewNavigateEvent;
       if (navigation.isMainFrame === false) return;
@@ -53,7 +83,7 @@ export function ElectronBrowserView({
     const handleStartLoading = () => onLoadingChange(true);
     const handleStopLoading = () => onLoadingChange(false);
 
-    onReady(webview);
+    webview.addEventListener("dom-ready", handleReady);
     webview.addEventListener("did-navigate", handleNavigate);
     webview.addEventListener("did-navigate-in-page", handleNavigate);
     webview.addEventListener("page-title-updated", handleTitle);
@@ -62,7 +92,9 @@ export function ElectronBrowserView({
     webview.addEventListener("did-stop-loading", handleStopLoading);
 
     return () => {
+      window.clearTimeout(readyTimeout);
       onReady(null);
+      webview.removeEventListener("dom-ready", handleReady);
       webview.removeEventListener("did-navigate", handleNavigate);
       webview.removeEventListener("did-navigate-in-page", handleNavigate);
       webview.removeEventListener("page-title-updated", handleTitle);
@@ -70,7 +102,16 @@ export function ElectronBrowserView({
       webview.removeEventListener("did-start-loading", handleStartLoading);
       webview.removeEventListener("did-stop-loading", handleStopLoading);
     };
-  }, [onLoadError, onLoadingChange, onNavigate, onReady, onTitleChange]);
+  }, [
+    hostEnabled,
+    onLoadError,
+    onLoadingChange,
+    onNavigate,
+    onReady,
+    onTitleChange,
+  ]);
+
+  if (!hostEnabled) return null;
 
   return (
     <webview

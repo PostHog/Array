@@ -58,3 +58,25 @@ export function isAllowedWebviewNavigation(url: string): boolean {
   if (parsed.protocol === "https:") return true;
   return parsed.protocol === "http:" && isLoopbackHost(parsed.hostname);
 }
+
+export function isAllowedWebviewRequest(
+  url: string,
+  resourceType: string,
+): boolean {
+  if (resourceType === "mainFrame") {
+    return isAllowedWebviewNavigation(url);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.href === "about:blank") return true;
+  if (isBlockedWebviewHost(parsed.hostname)) return false;
+  if (parsed.protocol === "data:" || parsed.protocol === "blob:") return true;
+  if (parsed.protocol === "https:") return true;
+  return parsed.protocol === "http:" && isLoopbackHost(parsed.hostname);
+}

@@ -1,4 +1,4 @@
-import { BROWSER_WEBVIEW_PARTITION } from "@posthog/shared/constants";
+import { BROWSER_WEBVIEW_PARTITION } from "@shared/browser-view";
 import { describe, expect, it } from "vitest";
 import {
   hardenWebviewPreferences,

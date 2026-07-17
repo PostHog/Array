@@ -1,6 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { AutoresearchPanel } from "../../autoresearch/AutoresearchPanel";
 import { useBrowserEnabled } from "../../browser/BrowserPanel";
+import { BrowserUnavailable } from "../../browser/BrowserUnavailable";
 import { CodeEditorPanel } from "../../code-editor/components/CodeEditorPanel";
 import {
   LazyCloudReviewPage as CloudReviewPage,
@@ -80,7 +81,7 @@ export function TabContentRenderer({
       return <AutoresearchPanel taskId={taskId} />;
 
     case "browser":
-      if (!browserEnabled) return null;
+      if (!browserEnabled) return <BrowserUnavailable />;
       return <TaskBrowserTab url={data.url} tabId={tab.id} taskId={taskId} />;
 
     case "other":

@@ -12,7 +12,7 @@ import type { LeafPanel } from "../panelTypes";
 import {
   type AddableTabKind,
   getAddableTabKinds,
-  isPanelTabAvailable,
+  isPersistedPanelTabVisible,
 } from "../tabAvailability";
 import { TabbedPanel } from "./TabbedPanel";
 
@@ -64,7 +64,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
   const inputTabs = useMemo(
     () =>
       node.content.tabs.filter((tab) =>
-        isPanelTabAvailable(tab.data.type, availability),
+        isPersistedPanelTabVisible(tab.data.type, availability),
       ),
     [node.content.tabs, availability],
   );

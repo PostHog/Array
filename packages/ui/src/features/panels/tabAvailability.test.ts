@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getAddableTabKinds,
   isPanelTabAvailable,
+  isPersistedPanelTabVisible,
   type TabAvailability,
 } from "./tabAvailability";
 
@@ -46,4 +47,15 @@ describe("tab availability", () => {
       expect(isPanelTabAvailable("logs", availability)).toBe(true);
     },
   );
+});
+
+describe("persisted tab visibility", () => {
+  it("keeps unsupported browser tabs visible", () => {
+    expect(
+      isPersistedPanelTabVisible("browser", {
+        browserEnabled: false,
+        terminalEnabled: true,
+      }),
+    ).toBe(true);
+  });
 });

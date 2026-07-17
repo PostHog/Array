@@ -25,3 +25,11 @@ export function isPanelTabAvailable(
   if (type === "browser") return availability.browserEnabled;
   return true;
 }
+
+export function isPersistedPanelTabVisible(
+  type: Tab["data"]["type"],
+  availability: TabAvailability,
+): boolean {
+  if (type === "browser") return true;
+  return isPanelTabAvailable(type, availability);
+}
