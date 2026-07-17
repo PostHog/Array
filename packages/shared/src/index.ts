@@ -72,6 +72,8 @@ export {
 export type { SignalReportPriority, Task } from "./domain-types";
 export * from "./enrichment";
 export {
+  classifyGatewayLimitError,
+  type GatewayLimitCause,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,
@@ -125,13 +127,25 @@ export {
 export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
+export type {
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
+  LocalMcpServerDescriptor,
+  LocalMcpServerScope,
+  LocalMcpTransport,
+} from "./local-mcp-domain";
 export {
   formatMention,
   type MentionSegment,
   mentionsToPlainText,
   splitMentionSegments,
 } from "./mentions";
-export { defaultEligibleModel } from "./models";
+export {
+  defaultEligibleModel,
+  isRestrictedModelOption,
+  RESTRICTED_MODEL_META_KEY,
+  restrictedModelMeta,
+} from "./models";
 export {
   getOauthClientIdFromRegion,
   OAUTH_SCOPE_VERSION,
@@ -159,6 +173,10 @@ export {
   readPrUrls,
 } from "./pr-urls";
 export {
+  isPrivateIpv4Octets,
+  isPrivateIpv6Literal,
+} from "./private-network";
+export {
   type CloudRegion,
   formatRegionBadge,
   REGION_LABELS,
@@ -173,16 +191,6 @@ export {
   type SagaStep,
 } from "./saga";
 export { scoutSkillNameFromSlug, scoutSkillSlug } from "./scout-naming";
-export {
-  isProPlan,
-  PLAN_FREE,
-  PLAN_PRO,
-  PLAN_PRO_ALPHA,
-  SEAT_PRODUCT_KEY,
-  type SeatData,
-  type SeatStatus,
-  seatHasAccess,
-} from "./seat";
 export {
   type AcpMessage,
   IMPORTED_USER_PROMPT_META_KEY,
@@ -210,6 +218,7 @@ export {
   type QueuedMessage,
   resolveBypassRevertMode,
   type SessionStatus,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
 } from "./sessions";
 export type {
@@ -224,7 +233,11 @@ export type {
   SkillSource,
   UploadableSkillSource,
 } from "./skills";
-export { SKILL_EXISTS_MARKER, stripFrontmatter } from "./skills";
+export {
+  SKILL_EXISTS_MARKER,
+  serializeSkillMarkdown,
+  stripFrontmatter,
+} from "./skills";
 export type {
   ArtifactType,
   PostHogAPIConfig,

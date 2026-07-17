@@ -15,7 +15,8 @@ import { gitSubcommand } from "../git-command";
 
 // Commands RTK compresses faithfully and that have no side effects, so wrapping
 // them changes only how much output reaches the model, never what runs.
-const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
+// Exported so the instruction-level Codex guidance advertises the same set.
+export const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
 
 // Git subcommands whose output is worth compressing and that RTK handles
 // faithfully. The criterion is compressible output, NOT read-only: RTK never
@@ -23,7 +24,8 @@ const RTK_PLAIN_COMMANDS = new Set(["grep", "find", "ls"]);
 // `git reflog expire`) still executes its write — its output is just shorter.
 // Excludes commit/push: negligible output to compress, and the cloud
 // signed-commit guard keys on a leading `git` token that `rtk git …` would hide.
-const GIT_COMPRESSIBLE_SUBCOMMANDS = new Set([
+// Exported so the instruction-level Codex guidance advertises the same set.
+export const GIT_COMPRESSIBLE_SUBCOMMANDS = new Set([
   "status",
   "diff",
   "log",
@@ -44,7 +46,8 @@ const GIT_COMPRESSIBLE_SUBCOMMANDS = new Set([
 // wrapping only its head would change the meaning of the rest.
 const SHELL_OPERATORS = /[|&;<>`\n]|\$\(/;
 
-function shQuote(value: string): string {
+// Exported so the instruction-level Codex guidance quotes the prefix the same way.
+export function shQuote(value: string): string {
   if (/^[\w./-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }

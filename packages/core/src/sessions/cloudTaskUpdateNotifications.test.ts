@@ -143,6 +143,11 @@ function createHarness() {
     taskViewedApi: { markActivity },
     getPersistedConfigOptions: () => undefined,
     setPersistedConfigOptions: vi.fn(),
+    adapterStore: {
+      getAdapter: () => undefined,
+      setAdapter: vi.fn(),
+      removeAdapter: vi.fn(),
+    },
     trpc: {
       agent: {
         onSessionIdleKilled: {

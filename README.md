@@ -34,7 +34,7 @@ cp .env.example .env
 
 ### Running in Development
 
-By default, `pnpm dev` uses phrocs (our custom process runner) to run the agent and code app in parallel. phrocs auto-installs on first run and reads the `mprocs.yaml` config file. The binary is downloaded to `bin/phrocs` and is git-ignored.
+By default, `pnpm dev` uses phrocs (our custom process runner) to run the agent and code app in parallel. phrocs auto-installs and keeps itself up to date: on every `pnpm install` the local binary is checked against the latest `phrocs-latest` release checksums and re-downloaded if it differs (skipped when offline or in CI). `pnpm dev` only downloads it if it is missing entirely. It reads the `mprocs.yaml` config file. The binary lives at `bin/phrocs` and is git-ignored.
 
 ```bash
 # Run both agent (watch mode) and code app in parallel
@@ -44,8 +44,6 @@ pnpm dev
 pnpm dev:agent  # Run agent in watch mode
 pnpm dev:code   # Run code app
 
-# Manually update phrocs to the latest version
-pnpm update:phrocs
 
 # Use mprocs instead of phrocs
 pnpm dev:mprocs

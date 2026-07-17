@@ -16,8 +16,13 @@ import type {
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
+import {
+  PROMPT_RECALL_HINT_KEY,
+  type PromptRecallHandler,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
+import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -62,7 +67,15 @@ import {
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 export interface ConversationViewProps {
@@ -86,6 +99,11 @@ export interface ConversationViewProps {
    * scrollbar from off-edge content; nested code blocks keep their own scroll.
    */
   scrollX?: boolean;
+  /**
+   * Filled with the view's prompt recall handler so the composer can forward
+   * plain Up/Down presses (caret at the input boundary) to it.
+   */
+  promptRecallRef?: RefObject<PromptRecallHandler | null>;
 }
 
 export function ConversationView({
@@ -99,6 +117,7 @@ export function ConversationView({
   compact = false,
   collapseMode: collapseModeProp,
   scrollX = true,
+  promptRecallRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -230,15 +249,17 @@ export function ConversationView({
   >(null);
 
   const userMessages = useMemo(() => {
-    const result: Array<{ id: string; index: number }> = [];
+    const result: Array<{ id: string; index: number; content: string }> = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item.type === "user_message") {
-        result.push({ id: item.id, index: i });
+        result.push({ id: item.id, index: i, content: item.content });
       }
     }
     return result;
   }, [items]);
+
+  usePromptRecallSource(userMessages, promptRecallRef);
 
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
@@ -270,6 +291,7 @@ export function ConversationView({
       const nextMessage = userMessages[nextIndex];
       if (!nextMessage) return;
 
+      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       setKeyboardFocusedMessageId(nextMessage.id);
       scrollToUserMessage(nextMessage.id, nextMessage.index);
     },

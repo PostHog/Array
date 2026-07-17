@@ -48,15 +48,18 @@ export const SPEAK_TOOL_DESCRIPTION =
  * speakers, so it just acknowledges. The desktop renderer observes the
  * surfaced `tool_call` (carrying `text`/`needsUser` in its rawInput) and routes
  * it to the speech queue, exactly like completion/permission notifications are
- * pure side effects off the event stream. Always enabled — gating happens on
- * the consumer side via the user's "spoken narration" setting.
+ * pure side effects off the event stream. Gated on `spokenNarration`, which is
+ * strictly opt-in (see `resolveSpokenNarration`): the desktop passes it true
+ * only when the feature flag and the user's setting are both enabled. Headless
+ * cloud runs (Slack threads, Signals scouts) never enable it, so the tool and
+ * its instructions never load and never cost tokens there.
  */
 export const speakTool = defineLocalTool({
   name: SPEAK_TOOL_NAME,
   description: SPEAK_TOOL_DESCRIPTION,
   schema: speakSchema,
   alwaysLoad: true,
-  isEnabled: () => true,
+  isEnabled: (_ctx, meta) => meta?.spokenNarration === true,
   handler: async (): Promise<LocalToolResult> => {
     return { content: [{ type: "text", text: "ok" }] };
   },

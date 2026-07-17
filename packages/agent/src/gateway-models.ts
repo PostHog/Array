@@ -4,15 +4,22 @@ export interface GatewayModel {
   context_window: number;
   supports_streaming: boolean;
   supports_vision: boolean;
+  // Free-tier model gate: authenticated fetches mark models outside the
+  // caller's plan `allowed: false`. Anonymous fetches and older gateways
+  // don't mark, so absence means allowed.
+  allowed: boolean;
+  restriction_reason?: string | null;
 }
 
 interface GatewayModelsResponse {
   object: "list";
-  data: GatewayModel[];
+  data: Array<Omit<GatewayModel, "allowed"> & { allowed?: boolean }>;
 }
 
 export interface FetchGatewayModelsOptions {
   gatewayUrl: string;
+  /** Bearer token; required for accurate free-tier marks. */
+  authToken?: string;
 }
 
 export const DEFAULT_GATEWAY_MODEL = "claude-opus-4-8";
@@ -42,12 +49,19 @@ export function isBlockedModelId(modelId: string): boolean {
   return BLOCKED_MODELS.has(modelId.toLowerCase());
 }
 
+interface ModelsListEntry {
+  id?: string;
+  owned_by?: string;
+  allowed?: boolean;
+  restriction_reason?: string | null;
+}
+
 type ModelsListResponse =
   | {
-      data?: Array<{ id?: string; owned_by?: string }>;
-      models?: Array<{ id?: string; owned_by?: string }>;
+      data?: ModelsListEntry[];
+      models?: ModelsListEntry[];
     }
-  | Array<{ id?: string; owned_by?: string }>;
+  | ModelsListEntry[];
 
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
@@ -57,11 +71,31 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 // the callers fall through to `return []`.
 const GATEWAY_FETCH_TIMEOUT_MS = 10_000;
 
-let gatewayModelsCache: {
-  models: GatewayModel[];
+// Restriction marks are identity-scoped (free-tier marks are authed-only and
+// differ per org), so cache entries are keyed on the exact token — an org
+// switch in the same process must never be served the old org's marks. A
+// token rotation just costs one refetch.
+interface ModelsCache<T> {
+  models: T[];
   expiry: number;
   url: string;
-} | null = null;
+  token: string | null;
+}
+
+function readModelsCache<T>(
+  cache: ModelsCache<T> | null,
+  url: string,
+  token: string | null,
+): T[] | null {
+  if (!cache || cache.url !== url || cache.token !== token) return null;
+  return Date.now() < cache.expiry ? cache.models : null;
+}
+
+function authHeaders(authToken?: string): Record<string, string> | undefined {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+}
+
+let gatewayModelsCache: ModelsCache<GatewayModel> | null = null;
 
 export async function fetchGatewayModels(
   options?: FetchGatewayModelsOptions,
@@ -71,18 +105,15 @@ export async function fetchGatewayModels(
     return [];
   }
 
-  if (
-    gatewayModelsCache &&
-    gatewayModelsCache.url === gatewayUrl &&
-    Date.now() < gatewayModelsCache.expiry
-  ) {
-    return gatewayModelsCache.models;
-  }
+  const token = options?.authToken ?? null;
+  const cached = readModelsCache(gatewayModelsCache, gatewayUrl, token);
+  if (cached) return cached;
 
   const modelsUrl = `${gatewayUrl}/v1/models`;
 
   try {
     const response = await fetch(modelsUrl, {
+      headers: authHeaders(options?.authToken),
       signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
     });
 
@@ -91,11 +122,14 @@ export async function fetchGatewayModels(
     }
 
     const data = (await response.json()) as GatewayModelsResponse;
-    const models = (data.data ?? []).filter((m) => !isBlockedModelId(m.id));
+    const models = (data.data ?? [])
+      .filter((m) => !isBlockedModelId(m.id))
+      .map((m) => ({ ...m, allowed: m.allowed !== false }));
     gatewayModelsCache = {
       models,
       expiry: Date.now() + CACHE_TTL,
       url: gatewayUrl,
+      token,
     };
     return models;
   } catch {
@@ -136,13 +170,11 @@ export function isCloudflareModel(model: GatewayModel): boolean {
 export interface ModelInfo {
   id: string;
   owned_by?: string;
+  allowed: boolean;
+  restriction_reason?: string | null;
 }
 
-let modelsListCache: {
-  models: ModelInfo[];
-  expiry: number;
-  url: string;
-} | null = null;
+let modelsListCache: ModelsCache<ModelInfo> | null = null;
 
 export async function fetchModelsList(
   options?: FetchGatewayModelsOptions,
@@ -152,17 +184,14 @@ export async function fetchModelsList(
     return [];
   }
 
-  if (
-    modelsListCache &&
-    modelsListCache.url === gatewayUrl &&
-    Date.now() < modelsListCache.expiry
-  ) {
-    return modelsListCache.models;
-  }
+  const token = options?.authToken ?? null;
+  const cached = readModelsCache(modelsListCache, gatewayUrl, token);
+  if (cached) return cached;
 
   try {
     const modelsUrl = `${gatewayUrl}/v1/models`;
     const response = await fetch(modelsUrl, {
+      headers: authHeaders(options?.authToken),
       signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -177,17 +206,46 @@ export async function fetchModelsList(
       const id = model?.id ? String(model.id) : "";
       if (!id) continue;
       if (isBlockedModelId(id)) continue;
-      results.push({ id, owned_by: model?.owned_by });
+      results.push({
+        id,
+        owned_by: model?.owned_by,
+        allowed: model?.allowed !== false,
+        restriction_reason: model?.restriction_reason ?? null,
+      });
     }
     modelsListCache = {
       models: results,
       expiry: Date.now() + CACHE_TTL,
       url: gatewayUrl,
+      token,
     };
     return results;
   } catch {
     return [];
   }
+}
+
+/**
+ * The model a session should start on: the preferred id when present and
+ * allowed, else the newest allowed model — a free-tier org must not default
+ * onto a model that 403s its first message. Falls back to the preferred id
+ * when the list is empty (fetch failed) or nothing is allowed (all locked —
+ * the picker gate communicates that state better than a silent swap).
+ */
+export function pickAllowedModel(
+  models: ReadonlyArray<Pick<GatewayModel, "id" | "allowed">>,
+  preferred: string,
+): string {
+  if (models.length === 0) return preferred;
+  const preferredEntry = models.find((m) => m.id === preferred);
+  if (!preferredEntry || preferredEntry.allowed) return preferred;
+  const allowed = models.filter((m) => m.allowed);
+  if (allowed.length === 0) return preferred;
+  return allowed.reduce((best, candidate) =>
+    getClaudeModelRecency(candidate.id) >= getClaudeModelRecency(best.id)
+      ? candidate
+      : best,
+  ).id;
 }
 
 const PROVIDER_NAMES: Record<string, string> = {

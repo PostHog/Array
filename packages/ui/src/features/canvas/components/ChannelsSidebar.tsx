@@ -2,6 +2,7 @@ import { ArchiveIcon } from "@phosphor-icons/react";
 import { Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -110,8 +111,13 @@ export function ChannelsSidebar() {
         {bodyChannelsEnabled ? (
           <>
             <Separator />
-            <Box className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto">
-              <ChannelsList />
+            {/* The fab is a sibling of the scroll region, not a child, so it
+                stays pinned to the bottom-right instead of scrolling away. */}
+            <Box className="relative min-h-0 flex-1">
+              <Box className="scroll-mask-4 h-full overflow-y-auto">
+                <ChannelsList />
+              </Box>
+              <ChannelsFab />
             </Box>
           </>
         ) : (

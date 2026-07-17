@@ -86,6 +86,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private session: InMemorySession | null = null;
   private initializePromise: Promise<void> | null = null;
   private refreshPromise: Promise<InMemorySession> | null = null;
+  // Serializes session-state commits so overlapping selections can't
+  // interleave across async encryption (see commitSessionState).
+  private commitChain: Promise<void> = Promise.resolve();
   constructor(
     @inject(AUTH_PREFERENCE_STORE)
     private readonly authPreference: IAuthPreferenceStore,
@@ -254,7 +257,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
         ? await this.applyOrgChange(session, newOrgId)
         : session.orgProjectsMap;
 
-    this.commitSessionState(session, {
+    await this.commitSessionState(session, {
       orgProjectsMap,
       currentOrgId: newOrgId,
       currentProjectId: projectId,
@@ -277,7 +280,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       orgId,
     );
 
-    this.commitSessionState(session, {
+    await this.commitSessionState(session, {
       orgProjectsMap,
       currentOrgId: orgId,
       currentProjectId,
@@ -333,8 +336,26 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       currentOrgId: string | null;
       currentProjectId: number | null;
     },
-  ): void {
-    this.session = {
+  ): Promise<void> {
+    // Serialize commits onto a chain so overlapping selections can't
+    // interleave across async encryption and clobber a newer one. The chain
+    // swallows rejections so one failure doesn't wedge later commits; the
+    // returned promise still rejects for the caller.
+    const run = this.commitChain.then(() =>
+      this.applyCommittedSession(prevSession, next),
+    );
+    this.commitChain = run.catch(() => {});
+    return run;
+  }
+  private async applyCommittedSession(
+    prevSession: InMemorySession,
+    next: {
+      orgProjectsMap: OrgProjectsMap;
+      currentOrgId: string | null;
+      currentProjectId: number | null;
+    },
+  ): Promise<void> {
+    const nextSession: InMemorySession = {
       ...prevSession,
       orgProjectsMap: next.orgProjectsMap,
       currentOrgId: next.currentOrgId,
@@ -342,13 +363,18 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       orgProjectsIncomplete: false,
     };
 
-    this.persistProjectPreference(this.session);
-    this.persistSession({
-      refreshToken: this.session.refreshToken,
-      cloudRegion: this.session.cloudRegion,
+    // Persist the durable session first — the only step that can fail (async
+    // encryption may reject). Mutate this.session, the preference, and
+    // published state only after it resolves, so a rejection leaves every
+    // layer on the prior session.
+    await this.persistSession({
+      refreshToken: nextSession.refreshToken,
+      cloudRegion: nextSession.cloudRegion,
       selectedProjectId: next.currentProjectId,
     });
 
+    this.session = nextSession;
+    this.persistProjectPreference(nextSession);
     this.updateState({
       orgProjectsMap: next.orgProjectsMap,
       currentOrgId: next.currentOrgId,
@@ -413,7 +439,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return;
     }
 
-    const storedSession = this.resolveStoredSession();
+    const storedSession = await this.resolveStoredSession();
     if (!storedSession) {
       this.logger.warn("Stored auth session could not be decrypted");
       this.authSession.clearCurrent();
@@ -500,9 +526,12 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return this.refreshPromise;
     }
 
-    const sessionInput = this.getSessionInputForRefresh();
-
+    // Assign refreshPromise synchronously — no await before this — so
+    // concurrent callers dedupe onto one refresh. Resolving the stored session
+    // (now async) must happen INSIDE refreshAndSync, else two callers both
+    // refresh and burn the rotating token twice.
     const refreshAndSync = async (): Promise<InMemorySession> => {
+      const sessionInput = await this.getSessionInputForRefresh();
       let session: InMemorySession;
       try {
         session = await this.refreshSession(sessionInput);
@@ -532,7 +561,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     return this.refreshPromise;
   }
 
-  private getSessionInputForRefresh(): StoredSessionInput {
+  private async getSessionInputForRefresh(): Promise<StoredSessionInput> {
     if (this.session) {
       return {
         refreshToken: this.session.refreshToken,
@@ -541,7 +570,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       };
     }
 
-    const storedSession = this.resolveStoredSession();
+    const storedSession = await this.resolveStoredSession();
     if (!storedSession) {
       throw new NotAuthenticatedError();
     }
@@ -794,7 +823,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     session: InMemorySession,
   ): Promise<void> {
     this.persistProjectPreference(session);
-    this.persistSession({
+    await this.persistSession({
       refreshToken: session.refreshToken,
       cloudRegion: session.cloudRegion,
       selectedProjectId: session.currentProjectId,
@@ -816,15 +845,15 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       void this.refreshOrgProjects();
     }
   }
-  private persistSession(input: {
+  private async persistSession(input: {
     refreshToken: string;
     cloudRegion: CloudRegion;
     selectedProjectId: number | null;
-  }): void {
+  }): Promise<void> {
     const priorSelected =
       this.authSession.getCurrent()?.selectedProjectId ?? null;
     this.authSession.saveCurrent({
-      refreshTokenEncrypted: this.cipher.encrypt(input.refreshToken),
+      refreshTokenEncrypted: await this.cipher.encrypt(input.refreshToken),
       cloudRegion: input.cloudRegion,
       selectedProjectId: input.selectedProjectId ?? priorSelected,
       scopeVersion: OAUTH_SCOPE_VERSION,
@@ -1051,11 +1080,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   private handleResume = (): void => {
     this.attemptSessionRecovery();
   };
-  private resolveStoredSession(): StoredSessionInput | null {
+  private async resolveStoredSession(): Promise<StoredSessionInput | null> {
     const stored = this.authSession.getCurrent();
     if (!stored) return null;
 
-    const refreshToken = this.cipher.decrypt(stored.refreshTokenEncrypted);
+    const refreshToken = await this.cipher.decrypt(
+      stored.refreshTokenEncrypted,
+    );
     if (!refreshToken) return null;
 
     return {
@@ -1077,20 +1108,26 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     if (!stored) return;
     if (stored.scopeVersion < OAUTH_SCOPE_VERSION) return;
 
-    if (!this.resolveStoredSession()) return;
-
-    // Route through ensureValidSession so a refresh already in flight (e.g. the
-    // background bootstrap restore past its deadline) is shared instead of
-    // kicking a second concurrent token refresh that would burn the same
-    // rotating refresh token twice.
-    this.recoveryPromise = this.ensureValidSession()
-      .then(() => undefined)
+    // Claim the recovery slot synchronously so concurrent triggers don't both
+    // kick a token refresh; decryptability is now async (Web Crypto), so it's
+    // validated inside recoverSession.
+    this.recoveryPromise = this.recoverSession()
       .catch((error) => {
         this.logger.warn("Session recovery failed", { error });
       })
       .finally(() => {
         this.recoveryPromise = null;
       });
+  }
+  private async recoverSession(): Promise<void> {
+    // Bail before touching the network if the stored token can't be decrypted.
+    if (!(await this.resolveStoredSession())) return;
+
+    // Route through ensureValidSession so a refresh already in flight (e.g. the
+    // background bootstrap restore past its deadline) is shared instead of
+    // kicking a second concurrent token refresh that would burn the same
+    // rotating refresh token twice.
+    await this.ensureValidSession();
   }
 
   private refreshOrgProjects(): Promise<void> {
@@ -1157,7 +1194,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
             null,
           lastSelectedOrgId: lastPrefs?.lastSelectedOrgId ?? null,
         });
-        this.commitSessionState(session, {
+        await this.commitSessionState(session, {
           orgProjectsMap: map,
           currentOrgId: session.currentOrgId,
           currentProjectId,

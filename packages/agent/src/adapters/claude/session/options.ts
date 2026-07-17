@@ -28,7 +28,7 @@ import {
 } from "../hooks";
 import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
-import { APPENDED_INSTRUCTIONS } from "./instructions";
+import { buildAppendedInstructions } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
 import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
@@ -102,11 +102,15 @@ export interface BuildOptionsParams {
 
 export function buildSystemPrompt(
   customPrompt?: unknown,
+  opts?: { spokenNarration?: boolean },
 ): Options["systemPrompt"] {
+  const appendedInstructions = buildAppendedInstructions({
+    spokenNarration: opts?.spokenNarration === true,
+  });
   const defaultPrompt: Options["systemPrompt"] = {
     type: "preset",
     preset: "claude_code",
-    append: APPENDED_INSTRUCTIONS,
+    append: appendedInstructions,
   };
 
   if (!customPrompt) {
@@ -114,7 +118,7 @@ export function buildSystemPrompt(
   }
 
   if (typeof customPrompt === "string") {
-    return customPrompt + APPENDED_INSTRUCTIONS;
+    return customPrompt + appendedInstructions;
   }
 
   if (
@@ -125,7 +129,7 @@ export function buildSystemPrompt(
   ) {
     return {
       ...defaultPrompt,
-      append: customPrompt.append + APPENDED_INSTRUCTIONS,
+      append: customPrompt.append + appendedInstructions,
     };
   }
 

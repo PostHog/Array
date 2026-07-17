@@ -29,6 +29,9 @@ describe("buildAppServerArgs", () => {
     });
 
     expect(args[0]).toBe("app-server");
+    // Pin codex's guardian reviewer to the host default so it never calls the
+    // gateway-blocked `codex-auto-review` model.
+    expect(args).toContain('approvals_reviewer="user"');
     expect(args).toContain('model_provider="posthog"');
     expect(args).toContain(
       'model_providers.posthog.base_url="https://gateway.example/v1"',

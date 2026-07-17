@@ -71,13 +71,14 @@
       // Main-process code must not import from "electron" directly. Every Electron
       // API goes through a port in @posthog/platform, implemented by an adapter in
       // apps/code/src/main/platform-adapters/. The only files allowed to import
-      // electron are the adapters and the 8 Electron host files below.
+      // electron are the adapters and the Electron host files below.
       "includes": [
         "apps/code/src/main/**/*.ts",
         "!apps/code/src/main/platform-adapters/**",
         "!apps/code/src/main/bootstrap.ts",
         "!apps/code/src/main/index.ts",
         "!apps/code/src/main/window.ts",
+        "!apps/code/src/main/external-links.ts",
         "!apps/code/src/main/menu.ts",
         "!apps/code/src/main/preload.ts",
         "!apps/code/src/main/deep-links.ts",

@@ -104,7 +104,7 @@ function ActivityRow({
           <MentionText
             content={item.content}
             currentUserEmail={currentUserEmail}
-            className="mt-1 block whitespace-pre-wrap break-words"
+            className="mt-1 block whitespace-pre-wrap break-words text-xs"
           />
         </span>
       </button>
@@ -176,7 +176,7 @@ export function ActivityView() {
           Activity
         </Text>
         <Text size="2" className="block text-muted-foreground">
-          Mentions of you across contexts.
+          Mentions of you across channels.
         </Text>
         <div className="mt-4">
           {isLoading && items.length === 0 ? (

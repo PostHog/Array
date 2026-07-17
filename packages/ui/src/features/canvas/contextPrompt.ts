@@ -25,14 +25,14 @@ export function buildContextGenerationPrompt(input: {
 }): string {
   const { channelName, channelId, description } = input;
   const seed = description?.trim()
-    ? `\nThe user describes what this context is about:
+    ? `\nThe user describes what this channel is about:
 """
 ${description.trim()}
 """
 Treat this as the primary guide for what CONTEXT.md should cover — start from it,
 then verify and fill it out against the sources below.\n`
     : "";
-  return `Build a CONTEXT.md for the context/folder "${channelName}".
+  return `Build a CONTEXT.md for the channel "${channelName}".
 ${seed}
 CONTEXT.md tells future agents the specific, non-obvious details they need to
 work in "${channelName}": what it is, key files, conventions, gotchas, and the

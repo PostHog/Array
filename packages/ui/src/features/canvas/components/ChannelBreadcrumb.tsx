@@ -1,3 +1,4 @@
+import { HashIcon } from "@phosphor-icons/react";
 import {
   Button,
   Tooltip,
@@ -7,7 +8,6 @@ import {
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { Flex, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
-import { SquircleDashed } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 interface ChannelBreadcrumbProps {
@@ -48,10 +48,7 @@ export function ChannelBreadcrumb({
 
   const channelSegment = (
     <>
-      <SquircleDashed
-        size={12}
-        className="mt-px shrink-0 text-muted-foreground/80"
-      />
+      <HashIcon size={12} className="mt-px shrink-0 text-muted-foreground/80" />
       <Text
         className="min-w-0 truncate whitespace-nowrap font-medium text-[13px]"
         title={channelName}

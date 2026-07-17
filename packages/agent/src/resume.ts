@@ -16,6 +16,7 @@
  */
 
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type { NativeGoalState } from "./acp-extensions";
 import { selectRecentTurns } from "./adapters/claude/session/jsonl-hydration";
 import type { PostHogAPIClient } from "./posthog-api";
 import { ResumeSaga } from "./sagas/resume-saga";
@@ -29,6 +30,7 @@ export interface ResumeState {
   lastDevice?: DeviceInfo;
   logEntryCount: number;
   sessionId: string | null;
+  nativeGoal?: NativeGoalState | null;
 }
 
 export interface ConversationTurn {
@@ -95,6 +97,7 @@ export async function resumeFromLog(
     lastDevice: result.data.lastDevice,
     logEntryCount: result.data.logEntryCount,
     sessionId: result.data.sessionId,
+    nativeGoal: result.data.nativeGoal,
   };
 }
 

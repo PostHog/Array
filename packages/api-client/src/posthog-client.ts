@@ -2,10 +2,11 @@ import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type {
   Adapter,
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   CloudRunSource,
   ExecutionMode,
   PrAuthorshipMode,
-  SeatData,
   StoredLogEntry,
   TaskRunArtifactMetadata,
 } from "@posthog/shared";
@@ -13,7 +14,6 @@ import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
   resolveCloudInitialPermissionMode,
-  SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
   AgentAnalyticsData,
@@ -115,22 +115,6 @@ let clientAppVersion = "unknown";
 
 export function setPosthogApiClientAppVersion(version: string): void {
   clientAppVersion = version;
-}
-
-export class SeatSubscriptionRequiredError extends Error {
-  redirectUrl: string;
-  constructor(redirectUrl: string) {
-    super("Billing subscription required");
-    this.name = "SeatSubscriptionRequiredError";
-    this.redirectUrl = redirectUrl;
-  }
-}
-
-export class SeatPaymentFailedError extends Error {
-  constructor(message?: string) {
-    super(message ?? "Payment failed");
-    this.name = "SeatPaymentFailedError";
-  }
 }
 
 export class SandboxCustomImagesDisabledError extends Error {
@@ -615,6 +599,12 @@ interface CloudRunOptions {
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
   homeQuickAction?: string;
+  /**
+   * Local url-based MCP servers to make available inside the sandbox. The
+   * backend merges these into the agent server's `--mcpServers` at spawn.
+   */
+  importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -708,6 +698,12 @@ function buildCloudRunRequestBody(
   }
   if (options?.homeQuickAction) {
     body.home_quick_action = options.homeQuickAction;
+  }
+  if (options?.importedMcpServers?.length) {
+    body.imported_mcp_servers = options.importedMcpServers;
+  }
+  if (options?.relayedMcpServers?.length) {
+    body.relayed_mcp_servers = options.relayedMcpServers;
   }
 
   return body;
@@ -2803,6 +2799,8 @@ export class PostHogAPIClient {
     runtime_adapter?: string | null;
     model?: string | null;
     reasoning_effort?: string | null;
+    sandbox_environment_id?: string | null;
+    custom_image_id?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/warm/`;
@@ -2819,6 +2817,12 @@ export class PostHogAPIClient {
           runtime_adapter: options.runtime_adapter ?? null,
           model: options.model ?? null,
           reasoning_effort: options.reasoning_effort ?? null,
+          ...(options.sandbox_environment_id
+            ? { sandbox_environment_id: options.sandbox_environment_id }
+            : {}),
+          ...(options.custom_image_id
+            ? { custom_image_id: options.custom_image_id }
+            : {}),
         }),
       },
     });
@@ -4430,113 +4434,6 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
-  async getMySeat(
-    options: { best?: boolean } = { best: true },
-  ): Promise<SeatData | null> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
-      url.searchParams.set("product_key", SEAT_PRODUCT_KEY);
-      if (options.best) {
-        url.searchParams.set("best", "true");
-      }
-      const response = await this.api.fetcher.fetch({
-        method: "get",
-        url,
-        path: "/api/seats/me/",
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      if (this.isFetcherStatusError(error, 404)) {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  async createSeat(planKey: string): Promise<SeatData> {
-    try {
-      const user = await this.getCurrentUser();
-      const distinctId = user.distinct_id;
-      if (!distinctId) {
-        throw new Error("Cannot create seat: user has no distinct_id");
-      }
-      const url = new URL(`${this.api.baseUrl}/api/seats/`);
-      const response = await this.api.fetcher.fetch({
-        method: "post",
-        url,
-        path: "/api/seats/",
-        overrides: {
-          body: JSON.stringify({
-            product_key: SEAT_PRODUCT_KEY,
-            plan_key: planKey,
-            user_distinct_id: distinctId,
-          }),
-        },
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      this.throwSeatError(error);
-    }
-  }
-
-  async upgradeSeat(planKey: string): Promise<SeatData> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
-      const response = await this.api.fetcher.fetch({
-        method: "patch",
-        url,
-        path: "/api/seats/me/",
-        overrides: {
-          body: JSON.stringify({
-            product_key: SEAT_PRODUCT_KEY,
-            plan_key: planKey,
-          }),
-        },
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      this.throwSeatError(error);
-    }
-  }
-
-  async cancelSeat(): Promise<void> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
-      url.searchParams.set("product_key", SEAT_PRODUCT_KEY);
-      await this.api.fetcher.fetch({
-        method: "delete",
-        url,
-        path: "/api/seats/me/",
-      });
-    } catch (error) {
-      if (this.isFetcherStatusError(error, 204)) {
-        return;
-      }
-      this.throwSeatError(error);
-    }
-  }
-
-  async reactivateSeat(): Promise<SeatData> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/reactivate/`);
-      const response = await this.api.fetcher.fetch({
-        method: "post",
-        url,
-        path: "/api/seats/me/reactivate/",
-        overrides: {
-          body: JSON.stringify({ product_key: SEAT_PRODUCT_KEY }),
-        },
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      this.throwSeatError(error);
-    }
-  }
-
-  private isFetcherStatusError(error: unknown, status: number): boolean {
-    return error instanceof Error && error.message.includes(`[${status}]`);
-  }
-
   private parseFetcherError(error: unknown): {
     status: number;
     body: Record<string, unknown>;
@@ -4583,26 +4480,6 @@ export class PostHogAPIClient {
       }
       throw error;
     }
-  }
-
-  private throwSeatError(error: unknown): never {
-    const parsed = this.parseFetcherError(error);
-
-    if (parsed) {
-      if (
-        parsed.status === 400 &&
-        typeof parsed.body.redirect_url === "string"
-      ) {
-        throw new SeatSubscriptionRequiredError(parsed.body.redirect_url);
-      }
-      if (parsed.status === 402) {
-        const message =
-          typeof parsed.body.error === "string" ? parsed.body.error : undefined;
-        throw new SeatPaymentFailedError(message);
-      }
-    }
-
-    throw error;
   }
 
   /**

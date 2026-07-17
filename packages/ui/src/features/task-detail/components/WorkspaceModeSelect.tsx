@@ -23,6 +23,7 @@ import {
 } from "@posthog/quill";
 import type { WorkspaceMode } from "@posthog/shared";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { useCallback, useMemo, useState } from "react";
 import { useSandboxCustomImages } from "../../settings/sections/environments/useSandboxCustomImages";
 import { useSandboxEnvironments } from "../../settings/sections/environments/useSandboxEnvironments";
@@ -74,6 +75,7 @@ export function WorkspaceModeSelect({
   selectedCustomImageId,
   onCustomImageChange,
 }: WorkspaceModeSelectProps) {
+  const { localWorkspaces } = useHostCapabilities();
   const cloudModeEnabled = useCloudModeEnabled();
 
   const { environments } = useSandboxEnvironments();
@@ -96,10 +98,13 @@ export function WorkspaceModeSelect({
 
   const localModes = useMemo(
     () =>
-      LOCAL_MODES.filter(
-        (m) => !overrideModes || overrideModes.includes(m.mode),
-      ),
-    [overrideModes],
+      // Hide worktree/local modes on cloud-only hosts.
+      localWorkspaces
+        ? LOCAL_MODES.filter(
+            (m) => !overrideModes || overrideModes.includes(m.mode),
+          )
+        : [],
+    [overrideModes, localWorkspaces],
   );
 
   const selectedEnvName = useMemo(() => {

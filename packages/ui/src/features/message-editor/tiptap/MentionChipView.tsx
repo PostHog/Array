@@ -11,12 +11,9 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { Chip } from "@posthog/quill";
-import { useSettingsStore as useFeatureSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
-import type { Node as PmNode } from "@tiptap/pm/model";
-import type { Editor } from "@tiptap/react";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
-import { readAbsoluteFile } from "../hostApi";
+import { usePasteUndoStore } from "../pasteUndoStore";
 import type { ChipType, MentionChipAttrs } from "./MentionChipNode";
 
 const chipBase = "group/chip relative top-px active:translate-y-0 pl-1";
@@ -68,15 +65,22 @@ function DefaultChip({
   type,
   id,
   label,
+  chipId,
+  pastedText,
   selected,
   onRemove,
 }: {
   type: string;
   id: string;
   label: string;
+  chipId: string | null;
+  pastedText: boolean;
   selected: boolean;
   onRemove: () => void;
 }) {
+  const undoableChipId = usePasteUndoStore((state) => state.undoableChipId);
+  const canUndoPaste =
+    pastedText && chipId !== null && chipId === undoableChipId;
   const isCommand = type === "command";
   const prefix = isCommand ? "/" : "@";
   const isFile = type === "file";
@@ -101,60 +105,14 @@ function DefaultChip({
   );
 
   if (isFile || isFolder) {
-    return <Tooltip content={id}>{chipContent}</Tooltip>;
+    return (
+      <Tooltip content={canUndoPaste ? "Paste again to expand as text" : id}>
+        {chipContent}
+      </Tooltip>
+    );
   }
 
   return chipContent;
-}
-
-function PastedTextChip({
-  label,
-  filePath,
-  editor,
-  node,
-  getPos,
-  selected,
-  onRemove,
-}: {
-  label: string;
-  filePath: string;
-  editor: Editor;
-  node: PmNode;
-  getPos: () => number | undefined;
-  selected: boolean;
-  onRemove: () => void;
-}) {
-  const handleClick = async () => {
-    useFeatureSettingsStore.getState().markHintLearned("paste-as-file");
-
-    const content = await readAbsoluteFile({
-      filePath,
-    });
-    if (!content) return;
-
-    const pos = getPos();
-    if (pos == null) return;
-
-    editor
-      .chain()
-      .focus()
-      .deleteRange({ from: pos, to: pos + node.nodeSize })
-      .insertContentAt(pos, content)
-      .run();
-  };
-
-  return (
-    <Tooltip content="Click to paste as text instead">
-      <Chip
-        size="xs"
-        contentEditable={false}
-        onClick={handleClick}
-        className={`${chipBase} cli-file-mention cursor-pointer! ${selected ? selectedRing : ""}`}
-      >
-        <IconCloseButton type="file" onRemove={onRemove} />@{label}
-      </Chip>
-    </Tooltip>
-  );
 }
 
 export function MentionChipView({
@@ -163,7 +121,8 @@ export function MentionChipView({
   editor,
   selected,
 }: NodeViewProps) {
-  const { type, id, label, pastedText } = node.attrs as MentionChipAttrs;
+  const { type, id, label, pastedText, chipId } =
+    node.attrs as MentionChipAttrs;
 
   const handleRemove = () => {
     const pos = getPos();
@@ -177,25 +136,15 @@ export function MentionChipView({
 
   return (
     <NodeViewWrapper as="span" className="inline">
-      {pastedText ? (
-        <PastedTextChip
-          label={label}
-          filePath={id}
-          editor={editor}
-          node={node}
-          getPos={getPos}
-          selected={selected}
-          onRemove={handleRemove}
-        />
-      ) : (
-        <DefaultChip
-          type={type}
-          id={id}
-          label={label}
-          selected={selected}
-          onRemove={handleRemove}
-        />
-      )}
+      <DefaultChip
+        type={type}
+        id={id}
+        label={label}
+        chipId={chipId ?? null}
+        pastedText={pastedText}
+        selected={selected}
+        onRemove={handleRemove}
+      />
     </NodeViewWrapper>
   );
 }

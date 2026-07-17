@@ -34,6 +34,46 @@ export interface ExportedSkill {
 }
 
 /**
+ * Serializes a SKILL.md file from frontmatter metadata plus a markdown body.
+ *
+ * The output must round-trip through `parseSkillFrontmatter` and also be valid
+ * YAML for the agents that consume these files, so scalars fall back from plain
+ * → double-quoted → literal block as they get more hostile. Lives here (shared)
+ * so both the workspace-server bundler and the web-host bundler produce the
+ * exact same SKILL.md — this is a serialization contract consumed by the cloud
+ * sandbox, so it must not drift between hosts.
+ */
+export function serializeSkillMarkdown(
+  meta: { name: string; description: string },
+  body: string,
+): string {
+  const frontmatter = [
+    "---",
+    `name: ${serializeSkillScalar(meta.name)}`,
+    `description: ${serializeSkillScalar(meta.description)}`,
+    "---",
+  ].join("\n");
+
+  const trimmedBody = body.replace(/^\n+/, "");
+  return `${frontmatter}\n\n${trimmedBody.trimEnd()}\n`;
+}
+
+const SKILL_PLAIN_SAFE = /^[A-Za-z0-9][A-Za-z0-9 _.,;()/-]*$/;
+
+function serializeSkillScalar(value: string): string {
+  if (value === "") return '""';
+  if (!value.includes("\n")) {
+    if (SKILL_PLAIN_SAFE.test(value) && !value.endsWith(" ")) return value;
+    if (!value.includes('"') && !value.includes("\\")) return `"${value}"`;
+  }
+  // Literal block: survives quotes, backslashes, and newlines.
+  const lines = value
+    .split("\n")
+    .map((line) => (line.trim() ? `  ${line}` : ""));
+  return `|-\n${lines.join("\n")}`;
+}
+
+/**
  * Server "skill already exists" messages must include this marker verbatim;
  * the UI keys its overwrite-confirmation flow on it.
  */

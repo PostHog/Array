@@ -6,14 +6,24 @@ describe("speak tool", () => {
   it.each([
     { name: "desktop", environment: "local" as const },
     { name: "cloud", environment: "cloud" as const },
-  ])("is always exposed ($name)", ({ environment }) => {
-    const tools = enabledLocalTools({ cwd: "/repo" }, { environment });
+  ])("is exposed with narration on ($name)", ({ environment }) => {
+    const tools = enabledLocalTools(
+      { cwd: "/repo" },
+      { environment, spokenNarration: true },
+    );
     expect(tools.some((t) => t.name === SPEAK_TOOL_NAME)).toBe(true);
   });
 
-  it("is exposed even with no gate meta", () => {
-    const tools = enabledLocalTools({ cwd: "/repo" }, undefined);
-    expect(tools.some((t) => t.name === SPEAK_TOOL_NAME)).toBe(true);
+  it.each([
+    {
+      name: "narration off",
+      meta: { environment: "local" as const, spokenNarration: false },
+    },
+    { name: "narration unset", meta: { environment: "local" as const } },
+    { name: "no gate meta", meta: undefined },
+  ])("is hidden with $name", ({ meta }) => {
+    const tools = enabledLocalTools({ cwd: "/repo" }, meta);
+    expect(tools.some((t) => t.name === SPEAK_TOOL_NAME)).toBe(false);
   });
 
   it("stays visible without ToolSearch (alwaysLoad)", () => {
