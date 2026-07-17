@@ -704,13 +704,11 @@ export function SessionView({
                             ) : null
                           }
                           messagingModeToggle={
-                            taskId && !isCloudRun ? (
+                            taskId ? (
                               <SteerQueueToggle taskId={taskId} />
                             ) : undefined
                           }
-                          onToggleMessagingMode={
-                            isCloudRun ? undefined : toggleMessagingMode
-                          }
+                          onToggleMessagingMode={toggleMessagingMode}
                           onPromptRecall={handlePromptRecall}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
