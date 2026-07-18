@@ -3,6 +3,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
+import { AnimatedThreadDock } from "@posthog/ui/features/canvas/components/AnimatedThreadDock";
 import {
   ChannelFeedView,
   type PendingKickoff,
@@ -43,7 +44,6 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
@@ -125,7 +125,6 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   );
   const openThread = useThreadPanelStore((s) => s.openThread);
   const closeThread = useThreadPanelStore((s) => s.closeThread);
-  const reduceMotion = useReducedMotion();
 
   // Esc closes the open thread from anywhere in the channel — no need to have
   // focus inside the panel.
@@ -311,34 +310,18 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         </div>
       </div>
 
-      {/* Slide the thread in/out by animating the wrapper width so the feed
-          reflows in lockstep — same 200ms / cubic-bezier(0,0,0.2,1) as the
-          docked sidebar. Keyed "thread" so opening a different task swaps the
-          inner panel in place instead of a close/reopen. */}
-      <AnimatePresence>
+      <AnimatedThreadDock open={!!threadTaskId}>
         {threadTaskId && (
-          <motion.div
-            key="thread"
-            className="h-full shrink-0 overflow-hidden"
-            initial={reduceMotion ? false : { width: 0, opacity: 0 }}
-            animate={{ width: "auto", opacity: 1 }}
-            exit={reduceMotion ? { opacity: 0 } : { width: 0, opacity: 0 }}
-            transition={{
-              duration: reduceMotion ? 0 : 0.2,
-              ease: [0, 0, 0.2, 1],
-            }}
-          >
-            <ThreadSidebar
-              key={threadTaskId}
-              taskId={threadTaskId}
-              channelId={channelId}
-              task={threadTask}
-              onClose={() => closeThread(channelId)}
-              onOpenFull={() => handleOpenFull(threadTaskId)}
-            />
-          </motion.div>
+          <ThreadSidebar
+            key={threadTaskId}
+            taskId={threadTaskId}
+            channelId={channelId}
+            task={threadTask}
+            onClose={() => closeThread(channelId)}
+            onOpenFull={() => handleOpenFull(threadTaskId)}
+          />
         )}
-      </AnimatePresence>
+      </AnimatedThreadDock>
 
       {channelName && (
         <CreateChannelModal

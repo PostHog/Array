@@ -457,6 +457,12 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
   animation: thread-mention-highlight 1.6s ease-out;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .thread-mention-highlight {
+    animation: none;
+  }
+}
+
 /* Freeze CSS keyframe animations while the app window is unfocused or hidden.
    Perpetual indicators (spinners, pulses, floats) otherwise keep the compositor
    and GPU busy in the background for animations nobody is looking at — and some,

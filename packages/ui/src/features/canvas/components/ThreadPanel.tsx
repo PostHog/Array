@@ -232,7 +232,7 @@ export function AgentTurnRow({
   return (
     <ThreadItem
       data-thread-message-id={message.id}
-      className={highlighted ? "thread-mention-highlight" : undefined}
+      className={cn("rounded-none", highlighted && "thread-mention-highlight")}
     >
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
@@ -280,7 +280,7 @@ export function UserPromptRow({
   return (
     <ThreadItem
       data-thread-message-id={message.id}
-      className={highlighted ? "thread-mention-highlight" : undefined}
+      className={cn("rounded-none", highlighted && "thread-mention-highlight")}
     >
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
@@ -773,7 +773,7 @@ function ThreadConversation({
             const el = scrollRef.current;
             el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
           }}
-          className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 rounded-full bg-background shadow-md transition-[opacity,scale] duration-200 hover:bg-background! ${
+          className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 rounded-full bg-background shadow-md transition-[opacity,scale] duration-200 hover:bg-background! motion-reduce:transition-none ${
             showJump
               ? "scale-100 opacity-100"
               : "pointer-events-none scale-95 opacity-0"

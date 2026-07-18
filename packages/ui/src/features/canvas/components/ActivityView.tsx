@@ -16,6 +16,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
+import { AnimatedThreadDock } from "@posthog/ui/features/canvas/components/AnimatedThreadDock";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -30,7 +31,6 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 
 function ActivityRow({
@@ -167,7 +167,6 @@ export function ActivityView() {
     channelId: string;
     messageId: string;
   } | null>(null);
-  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -249,42 +248,25 @@ export function ActivityView() {
           </div>
         </div>
       </div>
-      {/* Slide the thread in/out by animating the wrapper width, so the list
-          reflows in lockstep — same 200ms / cubic-bezier(0,0,0.2,1) the docked
-          sidebar uses. `width: auto` (not a fixed px) once open so ThreadSidebar
-          keeps owning its resizable width. Keyed "thread" so switching between
-          mentions swaps the inner panel without a close/reopen. */}
-      <AnimatePresence>
+      <AnimatedThreadDock open={!!selected}>
         {selected && (
-          <motion.div
-            key="thread"
-            className="h-full shrink-0 overflow-hidden"
-            initial={reduceMotion ? false : { width: 0, opacity: 0 }}
-            animate={{ width: "auto", opacity: 1 }}
-            exit={reduceMotion ? { opacity: 0 } : { width: 0, opacity: 0 }}
-            transition={{
-              duration: reduceMotion ? 0 : 0.2,
-              ease: [0, 0, 0.2, 1],
-            }}
-          >
-            <ThreadSidebar
-              // Remount per task so the mention-scroll starts fresh; switching
-              // messages within the same task updates focusMessageId in place.
-              key={selected.taskId}
-              taskId={selected.taskId}
-              channelId={selected.channelId}
-              focusMessageId={selected.messageId}
-              showTaskSummary={!!selected.channelId}
-              onClose={() => setSelected(null)}
-              onOpenFull={() =>
-                selected.channelId
-                  ? navigateToChannelTask(selected.channelId, selected.taskId)
-                  : navigateToTaskDetail(selected.taskId)
-              }
-            />
-          </motion.div>
+          <ThreadSidebar
+            // Remount per task so the mention-scroll starts fresh; switching
+            // messages within the same task updates focusMessageId in place.
+            key={selected.taskId}
+            taskId={selected.taskId}
+            channelId={selected.channelId}
+            focusMessageId={selected.messageId}
+            showTaskSummary={!!selected.channelId}
+            onClose={() => setSelected(null)}
+            onOpenFull={() =>
+              selected.channelId
+                ? navigateToChannelTask(selected.channelId, selected.taskId)
+                : navigateToTaskDetail(selected.taskId)
+            }
+          />
         )}
-      </AnimatePresence>
+      </AnimatedThreadDock>
     </div>
   );
 }
