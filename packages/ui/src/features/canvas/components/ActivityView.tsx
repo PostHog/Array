@@ -17,6 +17,7 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
 import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
@@ -35,14 +36,19 @@ function ActivityRow({
   item,
   folderChannelId,
   isNew,
+  isSelected,
   currentUserEmail,
+  onOpen,
 }: {
   item: MentionActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
   folderChannelId: string | null;
   /** Arrived since the viewer last opened this page. */
   isNew: boolean;
+  /** This row's thread is the one currently open in the side panel. */
+  isSelected: boolean;
   currentUserEmail?: string | null;
+  onOpen: () => void;
 }) {
   const openThread = () => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -51,13 +57,9 @@ function ActivityRow({
       channel_id: folderChannelId ?? undefined,
       task_id: item.taskId,
     });
-    // The channel thread route is the deep-link target; tasks whose channel
-    // folder is gone fall back to the plain task view.
-    if (folderChannelId) {
-      navigateToChannelTask(folderChannelId, item.taskId);
-    } else {
-      navigateToTaskDetail(item.taskId);
-    }
+    // Open the thread in the right-hand panel, scrolled to the mention — no
+    // navigation away from Activity.
+    onOpen();
   };
 
   return (
@@ -65,7 +67,9 @@ function ActivityRow({
       <button
         type="button"
         onClick={openThread}
-        className="flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary"
+        className={`flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary ${
+          isSelected ? "bg-fill-secondary" : ""
+        }`}
       >
         <span className="relative mt-0.5 shrink-0">
           <Avatar size="xs">
@@ -155,6 +159,13 @@ export function ActivityView() {
   const [seenAtOpen] = useState(
     () => useActivitySeenStore.getState().lastSeenAt,
   );
+  // The mention whose thread is open in the right-hand panel. `messageId`
+  // deep-links the ThreadPanel to scroll to and pulse that message.
+  const [selected, setSelected] = useState<{
+    taskId: string;
+    channelId: string;
+    messageId: string;
+  } | null>(null);
 
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -170,47 +181,77 @@ export function ActivityView() {
   }, [markSeen, items.length]);
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-1">
-      <div className="mx-auto w-full max-w-[680px] px-4 py-6">
-        <Text size="5" weight="bold" className="block">
-          Activity
-        </Text>
-        <Text size="2" className="block text-muted-foreground">
-          Mentions of you across channels.
-        </Text>
-        <div className="mt-4">
-          {isLoading && items.length === 0 ? (
-            <div className="flex justify-center py-16">
-              <Spinner />
-            </div>
-          ) : items.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <AtIcon size={20} />
-                </EmptyMedia>
-                <EmptyTitle>No mentions yet</EmptyTitle>
-                <EmptyDescription>
-                  When a teammate tags you with @ in a channel thread, it lands
-                  here.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <div className="flex flex-col gap-0.5">
-              {items.map((item) => (
-                <ActivityRow
-                  key={item.messageId}
-                  item={item}
-                  folderChannelId={folderChannelIdFor(item.channelName)}
-                  isNew={!seenAtOpen || item.createdAt > seenAtOpen}
-                  currentUserEmail={currentUser?.email}
-                />
-              ))}
-            </div>
-          )}
+    <div className="flex h-full min-h-0 bg-gray-1">
+      <div className="h-full min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[680px] px-4 py-6">
+          <Text size="5" weight="bold" className="block">
+            Activity
+          </Text>
+          <Text size="2" className="block text-muted-foreground">
+            Mentions of you across channels.
+          </Text>
+          <div className="mt-4">
+            {isLoading && items.length === 0 ? (
+              <div className="flex justify-center py-16">
+                <Spinner />
+              </div>
+            ) : items.length === 0 ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <AtIcon size={20} />
+                  </EmptyMedia>
+                  <EmptyTitle>No mentions yet</EmptyTitle>
+                  <EmptyDescription>
+                    When a teammate tags you with @ in a channel thread, it
+                    lands here.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                {items.map((item) => {
+                  const folderChannelId = folderChannelIdFor(item.channelName);
+                  return (
+                    <ActivityRow
+                      key={item.messageId}
+                      item={item}
+                      folderChannelId={folderChannelId}
+                      isNew={!seenAtOpen || item.createdAt > seenAtOpen}
+                      isSelected={selected?.messageId === item.messageId}
+                      currentUserEmail={currentUser?.email}
+                      onOpen={() =>
+                        setSelected({
+                          taskId: item.taskId,
+                          channelId: folderChannelId ?? "",
+                          messageId: item.messageId,
+                        })
+                      }
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+      {selected && (
+        <ThreadSidebar
+          // Remount per task so the mention-scroll starts fresh; switching
+          // messages within the same task updates focusMessageId in place.
+          key={selected.taskId}
+          taskId={selected.taskId}
+          channelId={selected.channelId}
+          focusMessageId={selected.messageId}
+          showTaskSummary={!!selected.channelId}
+          onClose={() => setSelected(null)}
+          onOpenFull={() =>
+            selected.channelId
+              ? navigateToChannelTask(selected.channelId, selected.taskId)
+              : navigateToTaskDetail(selected.taskId)
+          }
+        />
+      )}
     </div>
   );
 }

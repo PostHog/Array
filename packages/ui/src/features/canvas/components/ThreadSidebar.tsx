@@ -17,6 +17,7 @@ export function ThreadSidebar({
   onClose,
   onOpenFull,
   showTaskSummary,
+  focusMessageId,
 }: {
   taskId: string;
   channelId: string;
@@ -25,6 +26,8 @@ export function ThreadSidebar({
   onClose?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  /** Thread message to scroll to and pulse once (e.g. an Activity mention). */
+  focusMessageId?: string;
 }) {
   const collapsed = useThreadPanelStore((s) => s.collapsed);
   const width = useThreadPanelStore((s) => s.width);
@@ -49,6 +52,7 @@ export function ThreadSidebar({
         task={task}
         collapsed
         onToggleCollapsed={() => toggleCollapsed(false)}
+        focusMessageId={focusMessageId}
       />
     );
   }
@@ -70,6 +74,7 @@ export function ThreadSidebar({
         onToggleCollapsed={() => toggleCollapsed(true)}
         onOpenFull={onOpenFull}
         showTaskSummary={showTaskSummary}
+        focusMessageId={focusMessageId}
       />
     </ResizableSidebar>
   );

@@ -93,6 +93,7 @@ export function ThreadMessageRow({
   isOwnMessage,
   currentUserEmail,
   canForward,
+  highlighted,
   onSendToAgent,
   onDelete,
 }: {
@@ -101,6 +102,7 @@ export function ThreadMessageRow({
   isOwnMessage: boolean;
   currentUserEmail?: string | null;
   canForward: boolean;
+  highlighted?: boolean;
   onSendToAgent: () => void;
   onDelete: () => void;
 }) {
@@ -112,7 +114,10 @@ export function ThreadMessageRow({
     authorKind === "human" && ((isTaskAuthor && !forwarded) || isOwnMessage);
 
   return (
-    <ThreadItem>
+    <ThreadItem
+      data-thread-message-id={message.id}
+      className={highlighted ? "thread-mention-highlight" : undefined}
+    >
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
           <AvatarFallback>
@@ -216,12 +221,17 @@ export function AgentStatusLine({ status }: { status: ThreadAgentStatus }) {
 export function AgentTurnRow({
   message,
   streaming,
+  highlighted,
 }: {
   message: ThreadAgentMessage;
   streaming: boolean;
+  highlighted?: boolean;
 }) {
   return (
-    <ThreadItem>
+    <ThreadItem
+      data-thread-message-id={message.id}
+      className={highlighted ? "thread-mention-highlight" : undefined}
+    >
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
           <AvatarFallback>
@@ -257,14 +267,19 @@ export function AgentTurnRow({
 export function UserPromptRow({
   message,
   author,
+  highlighted,
 }: {
   message: ThreadAgentMessage;
   author: TaskThreadMessage["author"];
+  highlighted?: boolean;
 }) {
   const promptText = normalizeAgentPromptText(message.text);
 
   return (
-    <ThreadItem>
+    <ThreadItem
+      data-thread-message-id={message.id}
+      className={highlighted ? "thread-mention-highlight" : undefined}
+    >
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
           <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
@@ -358,6 +373,7 @@ function ThreadTimeline({
   canForward,
   lastAgentId,
   agentActive,
+  highlightId,
   onSendToAgent,
   onDelete,
 }: {
@@ -370,6 +386,7 @@ function ThreadTimeline({
   canForward: boolean;
   lastAgentId?: string;
   agentActive: boolean;
+  highlightId?: string;
   onSendToAgent: (messageId: string) => void;
   onDelete: (messageId: string) => void;
 }) {
@@ -400,6 +417,7 @@ function ThreadTimeline({
             key={row.message.id}
             message={row.message}
             author={taskAuthor}
+            highlighted={row.message.id === highlightId}
           />
         ) : row.kind === "human" ? (
           <ThreadMessageRow
@@ -412,6 +430,7 @@ function ThreadTimeline({
             }
             currentUserEmail={currentUserEmail}
             canForward={canForward}
+            highlighted={row.message.id === highlightId}
             onSendToAgent={() => onSendToAgent(row.message.id)}
             onDelete={() => onDelete(row.message.id)}
           />
@@ -420,6 +439,7 @@ function ThreadTimeline({
             key={row.message.id}
             message={row.message}
             streaming={row.message.id === lastAgentId && agentActive}
+            highlighted={row.message.id === highlightId}
           />
         ),
       )}
@@ -482,6 +502,7 @@ function ThreadConversation({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary,
+  focusMessageId,
 }: {
   task: Task;
   channelId: string;
@@ -489,6 +510,8 @@ function ThreadConversation({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary: boolean;
+  /** Thread message to scroll to and pulse once (e.g. an Activity mention). */
+  focusMessageId?: string;
 }) {
   const taskId = task.id;
   const client = useOptionalAuthenticatedClient();
@@ -574,6 +597,11 @@ function ThreadConversation({
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [highlightId, setHighlightId] = useState<string | undefined>(undefined);
+  // The mention we've already scrolled to; guards against re-scrolling/pulsing
+  // when the same notification is clicked again (the id doesn't change).
+  const focusedRef = useRef<string | undefined>(undefined);
+  const isReady = !isInitializing && !isLoading;
 
   const handleMentionInsert = useCallback(
     (member: UserBasic) => {
@@ -587,10 +615,46 @@ function ThreadConversation({
     [taskId],
   );
 
+  // Auto-scroll to the newest message. Suppressed entirely for a deep-linked
+  // view: a long thread keeps growing (agent turns, streaming) after the
+  // mention is focused, and any bottom-snap here would yank the view off it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes
   useEffect(() => {
+    if (focusMessageId) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline, agentStatus?.phase]);
+
+  // Scroll to a deep-linked mention and pulse it. Keeps re-centering on later
+  // timeline changes while the pulse is active, so content loading in above the
+  // target (agent turns arrive after the thread's human messages) can't drift
+  // it off-screen. Once the pulse clears we stop touching the scroll, and a
+  // re-click of the same already-settled message is a no-op (focusedRef).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check as the timeline renders/reflows the target
+  useEffect(() => {
+    if (!focusMessageId || !isReady) return;
+    const alreadyFocused = focusedRef.current === focusMessageId;
+    // Settled (pulse finished): leave the user's scroll position alone.
+    if (alreadyFocused && highlightId !== focusMessageId) return;
+    const el = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-thread-message-id="${CSS.escape(focusMessageId)}"]`,
+    );
+    if (!el) return; // not rendered yet; the timeline dep re-runs us when it is
+    focusedRef.current = focusMessageId;
+    // Scroll after paint so the row's real geometry is measured.
+    const raf = requestAnimationFrame(() =>
+      el.scrollIntoView({ block: "center" }),
+    );
+    if (!alreadyFocused) setHighlightId(focusMessageId);
+    return () => cancelAnimationFrame(raf);
+  }, [focusMessageId, isReady, timeline, highlightId]);
+
+  // Clear the pulse after it plays. Keyed on highlightId (not the scroll
+  // effect) so a message arriving mid-pulse can't strand the highlight on.
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(undefined), 1600);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
 
   const isTaskAuthor =
     !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
@@ -649,8 +713,6 @@ function ThreadConversation({
     });
   };
 
-  const isReady = !isInitializing && !isLoading;
-
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
       <ThreadHeader
@@ -675,6 +737,7 @@ function ThreadConversation({
           canForward={canForward}
           lastAgentId={lastAgentId}
           agentActive={agentStatus?.phase === "active"}
+          highlightId={highlightId}
           onSendToAgent={handleSendToAgent}
           onDelete={handleDelete}
         />
@@ -704,6 +767,7 @@ export function ThreadPanel({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary = true,
+  focusMessageId,
 }: {
   taskId: string;
   channelId: string;
@@ -713,6 +777,8 @@ export function ThreadPanel({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  /** Thread message to scroll to and pulse once (e.g. an Activity mention). */
+  focusMessageId?: string;
 }) {
   const { data: fetchedTask } = useQuery({
     ...taskDetailQuery(taskId),
@@ -747,6 +813,7 @@ export function ThreadPanel({
       onToggleCollapsed={onToggleCollapsed}
       onOpenFull={onOpenFull}
       showTaskSummary={showTaskSummary}
+      focusMessageId={focusMessageId}
     />
   );
 }

@@ -435,6 +435,29 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
   animation: ph-pulse 1s ease-in-out infinite;
 }
 
+/* One-shot attention flash for a thread message deep-linked from Activity.
+   Fades a tinted background + ring back to transparent so the mentioned row
+   pulses once when scrolled into view. */
+@keyframes thread-mention-highlight {
+  0% {
+    background-color: var(--accent-a5);
+    box-shadow: 0 0 0 2px var(--accent-a7);
+  }
+  60% {
+    background-color: var(--accent-a4);
+    box-shadow: 0 0 0 2px var(--accent-a6);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+.thread-mention-highlight {
+  animation: thread-mention-highlight 1.6s ease-out;
+  border-radius: var(--radius-3);
+}
+
 /* Freeze CSS keyframe animations while the app window is unfocused or hidden.
    Perpetual indicators (spinners, pulses, floats) otherwise keep the compositor
    and GPU busy in the background for animations nobody is looking at — and some,
