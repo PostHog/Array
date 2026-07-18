@@ -455,7 +455,6 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
 
 .thread-mention-highlight {
   animation: thread-mention-highlight 1.6s ease-out;
-  border-radius: var(--radius-3);
 }
 
 /* Freeze CSS keyframe animations while the app window is unfocused or hidden.

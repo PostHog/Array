@@ -23,6 +23,7 @@ import {
   AvatarFallback,
   Badge,
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -117,7 +118,7 @@ export function ThreadMessageRow({
   return (
     <ThreadItem
       data-thread-message-id={message.id}
-      className={highlighted ? "thread-mention-highlight" : undefined}
+      className={cn("rounded-none", highlighted && "thread-mention-highlight")}
     >
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
