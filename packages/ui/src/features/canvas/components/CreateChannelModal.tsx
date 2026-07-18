@@ -20,7 +20,7 @@ import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerat
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useNavigate } from "@tanstack/react-router";
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 
 // Matches Slack's "Create a channel" naming constraint.
 const MAX_CONTEXT_NAME_LENGTH = 80;
@@ -83,6 +83,21 @@ export function CreateChannelModal({
   // "Create" seeds the plan session, so it needs the description; "Skip" is the
   // way through without one.
   const canDescribe = !busy && !!trimmedDescription;
+
+  // `busy` only disables the buttons a render after the mutation starts, so a
+  // double-click lands two creates before it applies — and folder creation is
+  // not idempotent by path, so that is two channels of the same name. Latch
+  // synchronously; the buttons stay the user-visible half of this.
+  const submittingRef = useRef(false);
+  const submitOnce = async (submit: () => Promise<void>) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await submit();
+    } finally {
+      submittingRef.current = false;
+    }
+  };
 
   // Create the channel and land in its feed — the intro (name, creation line,
   // context.md card) and "joined" row there are derived from the channel row.
@@ -186,10 +201,11 @@ export function CreateChannelModal({
         disabled={busy}
         onChange={(e) => setDescription(e.target.value)}
         onKeyDown={(e) => {
-          // ⌘/Ctrl+Enter submits; a bare Enter stays a newline.
+          // ⌘/Ctrl+Enter submits; a bare Enter stays a newline. Held down it
+          // repeats, so it goes through the same latch as the buttons.
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            void submitDescribeStep();
+            void submitOnce(submitDescribeStep);
           }
         }}
       />
@@ -225,7 +241,7 @@ export function CreateChannelModal({
               variant="primary"
               disabled={!canDescribe}
               loading={busy}
-              onClick={submitDescribeStep}
+              onClick={() => void submitOnce(submitDescribeStep)}
             >
               Create
             </Button>
@@ -335,7 +351,7 @@ export function CreateChannelModal({
               <Button
                 variant="default"
                 disabled={busy}
-                onClick={() => void submitCreate(false)}
+                onClick={() => void submitOnce(() => submitCreate(false))}
               >
                 Skip
               </Button>
@@ -343,7 +359,7 @@ export function CreateChannelModal({
                 variant="primary"
                 disabled={!canDescribe}
                 loading={busy}
-                onClick={submitDescribeStep}
+                onClick={() => void submitOnce(submitDescribeStep)}
               >
                 Create
               </Button>

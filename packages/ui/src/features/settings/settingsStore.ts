@@ -230,6 +230,12 @@ interface SettingsStore {
   conversationCollapseMode: CollapseMode;
   setConversationCollapseMode: (mode: CollapseMode) => void;
 
+  // Sidebar
+  // Shows a per-repo "Worktrees" dropdown of task-less worktrees a click can
+  // start a task in. Opt-in: off by default to keep the sidebar uncluttered.
+  showSidebarWorktrees: boolean;
+  setShowSidebarWorktrees: (enabled: boolean) => void;
+
   // Experimental / misc
   hedgehogMode: boolean;
   slotMachineMode: boolean;
@@ -447,6 +453,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setConversationCollapseMode: (mode) =>
         set({ conversationCollapseMode: mode }),
 
+      // Sidebar
+      showSidebarWorktrees: false,
+      setShowSidebarWorktrees: (enabled) =>
+        set({ showSidebarWorktrees: enabled }),
+
       // Experimental / misc
       hedgehogMode: false,
       slotMachineMode: false,
@@ -563,6 +574,9 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Conversation thread (new-thread)
         conversationCollapseMode: state.conversationCollapseMode,
+
+        // Sidebar
+        showSidebarWorktrees: state.showSidebarWorktrees,
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,

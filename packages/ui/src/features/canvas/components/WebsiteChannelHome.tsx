@@ -75,6 +75,9 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // identity-resolution window (settling if the resolve fails), so fold it in:
   // we can't call a channel empty until we know which channel it is.
   const isLoading = isLoadingChannels || isResolvingChannel || isLoadingFeed;
+  // Marking this channel read lives in ChannelHeader (rendered by every channel
+  // surface), so opening Artifacts or CONTEXT.md counts as reading it too.
+
   // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
   // backend channel — the same id the feed tasks use, not the folder id.
   const { messages: feedMessages } = useChannelFeedMessages(backendChannel?.id);

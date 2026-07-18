@@ -1,4 +1,5 @@
 import type { parsePatchFiles } from "@pierre/diffs";
+import { contentHash } from "@posthog/core/code-review/contentHash";
 import {
   buildGithubFileUrl,
   computeSkipExpansion,
@@ -9,6 +10,24 @@ import { makeFileKey } from "../../git-interaction/utils/fileKey";
 import type { ReviewListItem } from "../reviewShellParts";
 import type { DiffOptions } from "../types";
 import { PatchRow, RemoteRow, UntrackedRow } from "./ReviewRows";
+
+export function changedFileSignature(file: ChangedFile): string | null {
+  if (file.patch) return contentHash(file.patch);
+  if (file.sha) return `${file.status}:${file.sha}`;
+  return null;
+}
+
+export function patchFileSignature(
+  fileDiff: ReturnType<typeof parsePatchFiles>[number]["files"][number],
+): string {
+  // Prefer the git blob object ids from the patch `index` line: they identify
+  // file content directly and are unaffected by the hide-whitespace toggle
+  // (which re-fetches a different diff that would otherwise change a
+  // hunk-derived signature). Fall back to hunk geometry when absent.
+  return fileDiff.newObjectId || fileDiff.prevObjectId
+    ? `${fileDiff.prevObjectId ?? ""}:${fileDiff.newObjectId ?? ""}`
+    : contentHash(JSON.stringify(fileDiff.hunks ?? []));
+}
 
 interface BuildPatchReviewItemsArgs {
   files: ReturnType<typeof parsePatchFiles>[number]["files"];

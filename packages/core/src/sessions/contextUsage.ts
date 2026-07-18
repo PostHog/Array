@@ -15,18 +15,28 @@ export interface ContextUsage {
   used: number;
   size: number;
   percentage: number;
+  /** Cumulative estimated session cost, summed across turns; `null` if none reported (e.g. codex). */
   cost: { amount: number; currency: string } | null;
   breakdown: ContextBreakdown | null;
 }
 
-type ContextUsageAggregate = Omit<ContextUsage, "breakdown">;
+type ContextUsageAggregate = Omit<ContextUsage, "breakdown" | "cost">;
 
 export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
   let aggregate: ContextUsageAggregate | null = null;
   let breakdown: ContextBreakdown | null = null;
+  let costAmount: number | null = null;
+  let costCurrency = "USD";
 
+  // Cost sums over every turn, so this can't early-break once the newest
+  // aggregate/breakdown is found — it walks the full log.
   for (let i = events.length - 1; i >= 0; i--) {
     const msg = events[i].message;
+    const cost = extractCost(msg);
+    if (cost) {
+      costAmount = (costAmount ?? 0) + cost.amount;
+      costCurrency = cost.currency;
+    }
     if (!aggregate) {
       aggregate = extractAggregate(msg);
     } else if (aggregate.size <= 0) {
@@ -37,34 +47,53 @@ export function extractContextUsage(events: AcpMessage[]): ContextUsage | null {
     if (!breakdown) {
       breakdown = extractBreakdown(msg);
     }
-    if (aggregate && aggregate.size > 0 && breakdown) break;
   }
 
   if (!aggregate) return null;
-  return { ...aggregate, breakdown };
+  return { ...aggregate, cost: toCost(costAmount, costCurrency), breakdown };
 }
 
 interface ContextUsageState {
   aggregate: ContextUsageAggregate | null;
+  costAmount: number | null;
+  costCurrency: string;
   breakdown: ContextBreakdown | null;
 }
 
 export function createContextUsageTracker() {
   return createAppendOnlyTracker<ContextUsageState, ContextUsage | null>({
-    init: () => ({ aggregate: null, breakdown: null }),
+    init: () => ({
+      aggregate: null,
+      costAmount: null,
+      costCurrency: "USD",
+      breakdown: null,
+    }),
     processEvent: (state, event) => {
       const msg = event.message;
       const next = extractAggregate(msg);
       if (next) {
         state.aggregate = withCarriedSize(next, state.aggregate);
       }
+      const cost = extractCost(msg);
+      if (cost) {
+        state.costAmount = (state.costAmount ?? 0) + cost.amount;
+        state.costCurrency = cost.currency;
+      }
       state.breakdown = extractBreakdown(msg) ?? state.breakdown;
     },
     getResult: (state) =>
       state.aggregate
-        ? { ...state.aggregate, breakdown: state.breakdown }
+        ? {
+            ...state.aggregate,
+            cost: toCost(state.costAmount, state.costCurrency),
+            breakdown: state.breakdown,
+          }
         : null,
   });
+}
+
+function toCost(amount: number | null, currency: string): ContextUsage["cost"] {
+  return amount != null ? { amount, currency } : null;
 }
 
 /**
@@ -116,11 +145,38 @@ function extractAggregate(
       const size = typeof update.size === "number" ? update.size : 0;
       const percentage =
         size > 0 ? Math.min(100, Math.round((update.used / size) * 100)) : 0;
+      return { used: update.used, size, percentage };
+    }
+  }
+  return null;
+}
+
+function extractCost(
+  msg: AcpMessage["message"],
+): { amount: number; currency: string } | null {
+  if (
+    "method" in msg &&
+    msg.method === "session/update" &&
+    !("id" in msg) &&
+    "params" in msg
+  ) {
+    const params = msg.params as
+      | {
+          update?: {
+            sessionUpdate?: string;
+            cost?: { amount: number; currency: string } | null;
+          };
+        }
+      | undefined;
+    const update = params?.update;
+    if (
+      update?.sessionUpdate === "usage_update" &&
+      update.cost &&
+      typeof update.cost.amount === "number"
+    ) {
       return {
-        used: update.used,
-        size,
-        percentage,
-        cost: update.cost ?? null,
+        amount: update.cost.amount,
+        currency: update.cost.currency ?? "USD",
       };
     }
   }

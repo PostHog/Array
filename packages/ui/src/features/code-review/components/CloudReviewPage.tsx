@@ -15,6 +15,7 @@ import {
   ReviewShell,
   useReviewState,
 } from "./ReviewShell";
+import { changedFileSignature } from "./reviewItemBuilders";
 
 interface CloudReviewPageProps {
   task: Task;
@@ -50,7 +51,19 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     expandAll,
     collapseAll,
     uncollapseFile,
-  } = useReviewState(reviewFiles, allPaths);
+    collapseFiles,
+    viewedRecord,
+    toggleViewed,
+  } = useReviewState(reviewFiles, allPaths, taskId);
+
+  const currentSignatures = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of reviewFiles) {
+      const signature = changedFileSignature(f);
+      if (signature) map.set(f.path, signature);
+    }
+    return map;
+  }, [reviewFiles]);
 
   const toolCallFallbacks = useMemo(
     () =>
@@ -81,6 +94,7 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
             commentThreads={showReviewComments ? commentThreads : undefined}
             fallback={toolCallFallbacks?.get(file.path) ?? null}
             externalUrl={githubFileUrl}
+            viewedKey={file.path}
           />
         ),
       };
@@ -130,8 +144,12 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onExpandAll={expandAll}
       onCollapseAll={collapseAll}
       onUncollapseFile={uncollapseFile}
+      onCollapseFiles={collapseFiles}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
+      currentSignatures={currentSignatures}
+      viewedRecord={viewedRecord}
+      onToggleViewed={toggleViewed}
     />
   );
 }

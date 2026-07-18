@@ -1,8 +1,11 @@
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { useCloudPrUrl } from "@posthog/ui/features/git-interaction/useCloudPrUrl";
+import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VList, type VListHandle } from "virtua";
 import {
   REVIEW_LIST_BUFFER_PX,
@@ -12,6 +15,13 @@ import { useReviewDraftsStore } from "../reviewDraftsStore";
 import { REVIEW_HOST, type ReviewHost } from "../reviewHost";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewListItem, ReviewShellProps } from "../reviewShellParts";
+import {
+  findActiveScrollKey,
+  findRenderedScrollAnchor,
+  isFileViewed,
+} from "../reviewShellParts";
+import { ReviewViewedContext } from "../reviewViewedContext";
+import { useReviewViewedStore } from "../reviewViewedStore";
 import { PendingReviewBar } from "./PendingReviewBar";
 import { ReviewToolbar } from "./ReviewToolbar";
 
@@ -103,7 +113,11 @@ export function ReviewShell({
   isEmpty,
   items,
   itemIndexByFilePath,
+  currentSignatures,
+  viewedRecord,
+  onToggleViewed,
   onUncollapseFile,
+  onCollapseFiles,
   allExpanded,
   onExpandAll,
   onCollapseAll,
@@ -117,6 +131,10 @@ export function ReviewShell({
   const reviewHost = useService<ReviewHost>(REVIEW_HOST);
   const taskId = task.id;
   const listRef = useRef<VListHandle | null>(null);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastActiveRef = useRef<string | null>(null);
+  const pendingNavigationRef = useRef<string | null>(null);
+  const navigationFrameRef = useRef<number | null>(null);
 
   const workerFactory = useCallback(
     () => reviewHost.diffWorkerFactory(),
@@ -127,6 +145,56 @@ export function ReviewShell({
     (s) => s.reviewModes[taskId] ?? "closed",
   );
   const isExpanded = reviewMode === "expanded";
+
+  const viewedCount = useMemo(() => {
+    let count = 0;
+    for (const [key, sig] of currentSignatures) {
+      if (isFileViewed(viewedRecord[key], sig)) count++;
+    }
+    return count;
+  }, [currentSignatures, viewedRecord]);
+
+  // Collapse already-viewed files on first open per task (mirrors GitHub).
+  // Skips on re-opens: seededTaskRef prevents re-collapsing files the user
+  // has manually expanded. Files changed since viewed stay expanded.
+  const seededTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (seededTaskRef.current === taskId) return;
+    if (currentSignatures.size === 0) return;
+    seededTaskRef.current = taskId;
+    const viewedKeys: string[] = [];
+    for (const [key, sig] of currentSignatures) {
+      if (isFileViewed(viewedRecord[key], sig)) viewedKeys.push(key);
+    }
+    if (viewedKeys.length > 0) onCollapseFiles(viewedKeys);
+  }, [taskId, currentSignatures, viewedRecord, onCollapseFiles]);
+
+  const clearTasks = useReviewViewedStore((s) => s.clearTasks);
+
+  const archivedTaskIds = useArchivedTaskIds();
+  useEffect(() => {
+    const prunable = [...archivedTaskIds].filter((id) => id !== taskId);
+    if (prunable.length > 0) clearTasks(prunable);
+  }, [archivedTaskIds, clearTasks, taskId]);
+
+  const cloudPrUrl = useCloudPrUrl(taskId);
+  const { prState } = useTaskPrStatus({
+    id: taskId,
+    cloudPrUrl,
+    taskRunEnvironment: task.latest_run?.environment,
+  });
+  useEffect(() => {
+    if (prState === "merged") clearTasks([taskId]);
+  }, [prState, taskId, clearTasks]);
+
+  const viewedContextValue = useMemo(
+    () => ({
+      viewedRecord,
+      currentSignatures,
+      toggleViewed: onToggleViewed,
+    }),
+    [viewedRecord, currentSignatures, onToggleViewed],
+  );
 
   const scrollRequest = useReviewNavigationStore(
     (s) => s.scrollRequests[taskId] ?? null,
@@ -141,6 +209,9 @@ export function ReviewShell({
 
   useEffect(() => {
     return () => {
+      if (navigationFrameRef.current !== null) {
+        cancelAnimationFrame(navigationFrameRef.current);
+      }
       clearTask(taskId);
       useReviewDraftsStore.getState().clearDrafts(taskId);
     };
@@ -151,35 +222,63 @@ export function ReviewShell({
     const targetIndex = itemIndexByFilePath.get(scrollRequest);
     if (targetIndex === undefined) return;
 
-    onUncollapseFile?.(scrollRequest);
-    requestAnimationFrame(() => {
+    const currentSignature = currentSignatures.get(scrollRequest);
+    const viewed =
+      currentSignature !== undefined &&
+      isFileViewed(viewedRecord[scrollRequest], currentSignature);
+    if (navigationFrameRef.current !== null) {
+      cancelAnimationFrame(navigationFrameRef.current);
+    }
+    pendingNavigationRef.current = scrollRequest;
+    if (!viewed) onUncollapseFile?.(scrollRequest);
+
+    const scrollToAnchor = (remainingAttempts: number) => {
       listRef.current?.scrollToIndex(targetIndex, { align: "start" });
-      setActiveFilePath(taskId, scrollRequest);
-      clearScrollRequest(taskId);
-    });
+      navigationFrameRef.current = requestAnimationFrame(() => {
+        const root = listContainerRef.current;
+        const anchor = root
+          ? findRenderedScrollAnchor(root, scrollRequest)
+          : null;
+
+        if (!anchor && remainingAttempts > 0) {
+          scrollToAnchor(remainingAttempts - 1);
+          return;
+        }
+
+        anchor?.scrollIntoView({ block: "start", inline: "nearest" });
+        lastActiveRef.current = scrollRequest;
+        setActiveFilePath(taskId, scrollRequest);
+        clearScrollRequest(taskId);
+        navigationFrameRef.current = requestAnimationFrame(() => {
+          pendingNavigationRef.current = null;
+          navigationFrameRef.current = null;
+        });
+      });
+    };
+
+    scrollToAnchor(5);
   }, [
     clearScrollRequest,
+    currentSignatures,
     itemIndexByFilePath,
     onUncollapseFile,
     scrollRequest,
     setActiveFilePath,
     taskId,
+    viewedRecord,
   ]);
 
-  const lastActiveRef = useRef<string | null>(null);
-  const handleScroll = useCallback(
-    (offset: number) => {
-      const handle = listRef.current;
-      if (!handle) return;
-      const index = handle.findItemIndex(offset);
-      const item = items[index];
-      const scrollKey = item?.scrollKey;
-      if (!scrollKey || scrollKey === lastActiveRef.current) return;
-      lastActiveRef.current = scrollKey;
-      setActiveFilePath(taskId, scrollKey);
-    },
-    [items, setActiveFilePath, taskId],
-  );
+  const handleScroll = useCallback(() => {
+    if (pendingNavigationRef.current !== null) return;
+    const scrollRoot = listContainerRef.current?.querySelector<HTMLElement>(
+      ".pierre-scroll-root",
+    );
+    if (!scrollRoot) return;
+    const scrollKey = findActiveScrollKey(scrollRoot);
+    if (!scrollKey || scrollKey === lastActiveRef.current) return;
+    lastActiveRef.current = scrollKey;
+    setActiveFilePath(taskId, scrollKey);
+  }, [setActiveFilePath, taskId]);
 
   const renderItem = useCallback(
     (item: ReviewListItem) => (
@@ -220,54 +319,69 @@ export function ReviewShell({
         ],
       }}
     >
-      <Flex direction="column" height="100%" id="review-shell">
-        <ReviewToolbar
-          taskId={taskId}
-          fileCount={fileCount}
-          linesAdded={linesAdded}
-          linesRemoved={linesRemoved}
-          allExpanded={allExpanded}
-          onExpandAll={onExpandAll}
-          onCollapseAll={onCollapseAll}
-          onRefresh={onRefresh}
-          onDiscardAll={onDiscardAll}
-          effectiveSource={effectiveSource}
-          branchSourceAvailable={branchSourceAvailable}
-          prSourceAvailable={prSourceAvailable}
-          defaultBranch={defaultBranch}
-        />
-        <Flex className="min-h-0 flex-1">
-          <Flex direction="column" className="min-w-0 flex-1">
-            {isLoading ? (
-              <Flex align="center" justify="center" className="min-h-0 flex-1">
-                <Spinner size="2" />
-              </Flex>
-            ) : isEmpty ? (
-              <Flex align="center" justify="center" className="min-h-0 flex-1">
-                <Text color="gray" className="text-sm">
-                  No file changes to review
-                </Text>
-              </Flex>
-            ) : (
-              <VList
-                ref={listRef}
-                bufferSize={REVIEW_LIST_BUFFER_PX}
-                itemSize={REVIEW_LIST_ESTIMATED_ITEM_SIZE}
-                className="pierre-scroll-root scrollbar-overlay-y min-h-0 flex-1 overflow-auto bg-(--gray-2)"
-                shift={false}
-                style={{ scrollbarGutter: "stable" }}
-                onScroll={handleScroll}
-                data={items}
-              >
-                {renderItem}
-              </VList>
-            )}
-            <PendingReviewBar taskId={taskId} />
-          </Flex>
+      <ReviewViewedContext.Provider value={viewedContextValue}>
+        <Flex direction="column" height="100%" id="review-shell">
+          <ReviewToolbar
+            taskId={taskId}
+            fileCount={fileCount}
+            viewedCount={viewedCount}
+            linesAdded={linesAdded}
+            linesRemoved={linesRemoved}
+            allExpanded={allExpanded}
+            onExpandAll={onExpandAll}
+            onCollapseAll={onCollapseAll}
+            onRefresh={onRefresh}
+            onDiscardAll={onDiscardAll}
+            effectiveSource={effectiveSource}
+            branchSourceAvailable={branchSourceAvailable}
+            prSourceAvailable={prSourceAvailable}
+            defaultBranch={defaultBranch}
+          />
+          <Flex className="min-h-0 flex-1">
+            <Flex
+              ref={listContainerRef}
+              direction="column"
+              className="min-w-0 flex-1"
+            >
+              {isLoading ? (
+                <Flex
+                  align="center"
+                  justify="center"
+                  className="min-h-0 flex-1"
+                >
+                  <Spinner size="2" />
+                </Flex>
+              ) : isEmpty ? (
+                <Flex
+                  align="center"
+                  justify="center"
+                  className="min-h-0 flex-1"
+                >
+                  <Text color="gray" className="text-sm">
+                    No file changes to review
+                  </Text>
+                </Flex>
+              ) : (
+                <VList
+                  ref={listRef}
+                  bufferSize={REVIEW_LIST_BUFFER_PX}
+                  itemSize={REVIEW_LIST_ESTIMATED_ITEM_SIZE}
+                  className="pierre-scroll-root scrollbar-overlay-y min-h-0 flex-1 overflow-auto bg-(--gray-2)"
+                  shift={false}
+                  style={{ scrollbarGutter: "stable" }}
+                  onScroll={handleScroll}
+                  data={items}
+                >
+                  {renderItem}
+                </VList>
+              )}
+              <PendingReviewBar taskId={taskId} />
+            </Flex>
 
-          {isExpanded && <ExpandedSidebar task={task} />}
+            {isExpanded && <ExpandedSidebar task={task} />}
+          </Flex>
         </Flex>
-      </Flex>
+      </ReviewViewedContext.Provider>
     </WorkerPoolContextProvider>
   );
 }

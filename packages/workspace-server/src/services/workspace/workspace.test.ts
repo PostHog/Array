@@ -20,7 +20,10 @@ import { createMockWorktreeRepository } from "../../db/repositories/worktree-rep
 import type { DatabaseService } from "../../db/service";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import type { SuspensionService } from "../suspension/suspension";
-import { listLinkedWorktrees } from "../worktree-query/worktree-query";
+import {
+  listLinkedWorktrees,
+  resolveLocalWorktreePath,
+} from "../worktree-query/worktree-query";
 import type {
   WorkspaceAgent,
   WorkspaceFileWatcher,
@@ -53,6 +56,7 @@ vi.mock("../worktree-query/worktree-query", async (importOriginal) => {
     deleteWorktree: vi.fn(async () => {}),
     listTwigWorktrees: vi.fn(),
     listLinkedWorktrees: vi.fn(),
+    resolveLocalWorktreePath: vi.fn(async (): Promise<string | null> => null),
   };
 });
 
@@ -552,6 +556,53 @@ describe("WorkspaceService", () => {
         existingWorktreePath: null,
         existingWorktreeTaskId: null,
       });
+    });
+  });
+
+  describe("listAdoptableWorktrees", () => {
+    const mainRepoPath = "/tmp/repo";
+
+    beforeEach(() => {
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([]);
+      vi.mocked(resolveLocalWorktreePath).mockResolvedValue(null);
+    });
+
+    it("returns only task-less branch worktrees that are not registered folders", async () => {
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        { worktreePath: "/wt/orphan", head: "a1", branch: "feature/orphan" },
+        { worktreePath: "/wt/detached", head: "b2", branch: null },
+        {
+          worktreePath: "/wt/registered",
+          head: "c3",
+          branch: "feature/registered",
+        },
+        { worktreePath: "/wt/tasked", head: "d4", branch: "feature/tasked" },
+      ]);
+      // A worktree the user registered as its own sidebar folder.
+      mocks.repositoryRepo.create({ path: "/wt/registered" });
+      // A worktree already owned by a task.
+      seedWorktreeTask(mocks, {
+        taskId: "task-1",
+        repoPath: mainRepoPath,
+        name: "tasked",
+        worktreePath: "/wt/tasked",
+      });
+
+      expect(await service.listAdoptableWorktrees(mainRepoPath)).toEqual([
+        { worktreePath: "/wt/orphan", branch: "feature/orphan" },
+      ]);
+    });
+
+    it("excludes the hidden stash worktree that backgrounds the local checkout", async () => {
+      vi.mocked(listLinkedWorktrees).mockResolvedValue([
+        { worktreePath: "/wt/local-stash", head: "a1", branch: "main" },
+        { worktreePath: "/wt/orphan", head: "b2", branch: "feature/orphan" },
+      ]);
+      vi.mocked(resolveLocalWorktreePath).mockResolvedValue("/wt/local-stash");
+
+      expect(await service.listAdoptableWorktrees(mainRepoPath)).toEqual([
+        { worktreePath: "/wt/orphan", branch: "feature/orphan" },
+      ]);
     });
   });
 

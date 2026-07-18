@@ -14,7 +14,12 @@ vi.mock("../../primitives/FileIcon", () => ({
   FileIcon: () => <span data-testid="file-icon" />,
 }));
 
-import { DeferredDiffPlaceholder, DiffFileHeader } from "./reviewShellParts";
+import {
+  DeferredDiffPlaceholder,
+  DiffFileHeader,
+  findActiveScrollKey,
+  findRenderedScrollAnchor,
+} from "./reviewShellParts";
 
 type FileDiffMetadata = import("@pierre/diffs/react").FileDiffMetadata;
 
@@ -105,5 +110,54 @@ describe.each([
     const additions = which === "diff" ? "+3" : "+10";
 
     expect(text.indexOf("2 comments")).toBeLessThan(text.indexOf(additions));
+  });
+});
+
+function setRect(element: HTMLElement, top: number, bottom: number) {
+  element.getBoundingClientRect = vi.fn(() => ({ top, bottom }) as DOMRect);
+}
+
+describe("review scroll anchors", () => {
+  it("finds a rendered anchor by its exact file key", () => {
+    const root = document.createElement("div");
+    const anchor = document.createElement("div");
+    anchor.dataset.scrollKey = "src/[id]/file.ts";
+    root.append(anchor);
+
+    expect(findRenderedScrollAnchor(root, "src/[id]/file.ts")).toBe(anchor);
+  });
+
+  it("selects the last file starting at or above the scroll root top", () => {
+    const root = document.createElement("div");
+    const above = document.createElement("div");
+    const active = document.createElement("div");
+    const below = document.createElement("div");
+    above.dataset.scrollKey = "above.ts";
+    active.dataset.scrollKey = "active.ts";
+    below.dataset.scrollKey = "below.ts";
+    root.append(above, active, below);
+    setRect(root, 100, 500);
+    setRect(above, 20, 90);
+    setRect(active, 80, 180);
+    setRect(below, 180, 280);
+
+    expect(findActiveScrollKey(root)).toBe("active.ts");
+  });
+
+  it("does not select a tall expanded file above the jump target", () => {
+    const root = document.createElement("div");
+    const expandedAbove = document.createElement("div");
+    const target = document.createElement("div");
+    const below = document.createElement("div");
+    expandedAbove.dataset.scrollKey = "expanded-above.ts";
+    target.dataset.scrollKey = "target.ts";
+    below.dataset.scrollKey = "below.ts";
+    root.append(expandedAbove, target, below);
+    setRect(root, 100, 500);
+    setRect(expandedAbove, -1000, 500);
+    setRect(target, 100, 180);
+    setRect(below, 180, 260);
+
+    expect(findActiveScrollKey(root)).toBe("target.ts");
   });
 });
