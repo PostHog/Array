@@ -43,7 +43,8 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -124,6 +125,20 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   );
   const openThread = useThreadPanelStore((s) => s.openThread);
   const closeThread = useThreadPanelStore((s) => s.closeThread);
+  const reduceMotion = useReducedMotion();
+
+  // Esc closes the open thread from anywhere in the channel — no need to have
+  // focus inside the panel.
+  useEffect(() => {
+    if (!threadTaskId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Let an open menu/popover consume Esc first (it preventDefaults).
+      if (event.key === "Escape" && !event.defaultPrevented)
+        closeThread(channelId);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [threadTaskId, channelId, closeThread]);
 
   const handleSuggestionSelect = useCallback(
     (prompt: string, mode?: string) => {
@@ -296,15 +311,34 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         </div>
       </div>
 
-      {threadTaskId && (
-        <ThreadSidebar
-          taskId={threadTaskId}
-          channelId={channelId}
-          task={threadTask}
-          onClose={() => closeThread(channelId)}
-          onOpenFull={() => handleOpenFull(threadTaskId)}
-        />
-      )}
+      {/* Slide the thread in/out by animating the wrapper width so the feed
+          reflows in lockstep — same 200ms / cubic-bezier(0,0,0.2,1) as the
+          docked sidebar. Keyed "thread" so opening a different task swaps the
+          inner panel in place instead of a close/reopen. */}
+      <AnimatePresence>
+        {threadTaskId && (
+          <motion.div
+            key="thread"
+            className="h-full shrink-0 overflow-hidden"
+            initial={reduceMotion ? false : { width: 0, opacity: 0 }}
+            animate={{ width: "auto", opacity: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { width: 0, opacity: 0 }}
+            transition={{
+              duration: reduceMotion ? 0 : 0.2,
+              ease: [0, 0, 0.2, 1],
+            }}
+          >
+            <ThreadSidebar
+              key={threadTaskId}
+              taskId={threadTaskId}
+              channelId={channelId}
+              task={threadTask}
+              onClose={() => closeThread(channelId)}
+              onOpenFull={() => handleOpenFull(threadTaskId)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {channelName && (
         <CreateChannelModal
