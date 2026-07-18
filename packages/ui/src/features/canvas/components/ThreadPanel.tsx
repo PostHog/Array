@@ -1,4 +1,5 @@
 import {
+  ArrowDownIcon,
   ArrowSquareOutIcon,
   CaretRightIcon,
   DotsThreeIcon,
@@ -603,6 +604,15 @@ function ThreadConversation({
   const focusedRef = useRef<string | undefined>(undefined);
   const isReady = !isInitializing && !isLoading;
 
+  // Show a jump-to-latest pill when the viewport is scrolled up off the bottom
+  // (same geometry the quill scroller uses: gap below the fold > threshold).
+  const [showJump, setShowJump] = useState(false);
+  const syncAtBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight > 100);
+  }, []);
+
   const handleMentionInsert = useCallback(
     (member: UserBasic) => {
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -655,6 +665,13 @@ function ThreadConversation({
     const timer = setTimeout(() => setHighlightId(undefined), 1600);
     return () => clearTimeout(timer);
   }, [highlightId]);
+
+  // Recompute the jump pill after content grows or an effect above moves the
+  // scroll. Declared last so it reads the settled scrollTop.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-sync as rendered content changes
+  useEffect(() => {
+    syncAtBottom();
+  }, [timeline, agentStatus?.phase, isReady, syncAtBottom]);
 
   const isTaskAuthor =
     !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
@@ -726,21 +743,43 @@ function ThreadConversation({
           <TaskCard task={task} channelId={channelId} inThread />
         </div>
       )}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <ThreadTimeline
-          timeline={timeline}
-          isReady={isReady}
-          taskAuthor={task.created_by}
-          currentUserUuid={currentUser?.uuid}
-          currentUserEmail={currentUser?.email}
-          isTaskAuthor={isTaskAuthor}
-          canForward={canForward}
-          lastAgentId={lastAgentId}
-          agentActive={agentStatus?.phase === "active"}
-          highlightId={highlightId}
-          onSendToAgent={handleSendToAgent}
-          onDelete={handleDelete}
-        />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={syncAtBottom}
+          className="h-full overflow-y-auto"
+        >
+          <ThreadTimeline
+            timeline={timeline}
+            isReady={isReady}
+            taskAuthor={task.created_by}
+            currentUserUuid={currentUser?.uuid}
+            currentUserEmail={currentUser?.email}
+            isTaskAuthor={isTaskAuthor}
+            canForward={canForward}
+            lastAgentId={lastAgentId}
+            agentActive={agentStatus?.phase === "active"}
+            highlightId={highlightId}
+            onSendToAgent={handleSendToAgent}
+            onDelete={handleDelete}
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          aria-label="Scroll to latest"
+          onClick={() => {
+            const el = scrollRef.current;
+            el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+          }}
+          className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 rounded-full shadow-md transition-[opacity,scale] duration-200 ${
+            showJump
+              ? "scale-100 opacity-100"
+              : "pointer-events-none scale-95 opacity-0"
+          }`}
+        >
+          <ArrowDownIcon size={14} />
+        </Button>
       </div>
 
       {agentStatus && <AgentStatusLine status={agentStatus} />}
