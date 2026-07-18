@@ -1,7 +1,9 @@
+import * as fs from "node:fs";
 import type { AgentSideConnection } from "@agentclientprotocol/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POSTHOG_METHODS, POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
 import { Pushable } from "../../utils/streams";
+import { getSessionJsonlPath } from "./session/jsonl-hydration";
 
 type InitResult = {
   result: "success";
@@ -163,6 +165,15 @@ function findExtNotification(
   return match?.[1] as Record<string, unknown> | undefined;
 }
 
+function findAllExtNotifications(
+  client: ClientMocks,
+  method: string,
+): Record<string, unknown>[] {
+  return client.extNotification.mock.calls
+    .filter(([calledMethod]) => calledMethod === method)
+    .map(([, params]) => params as Record<string, unknown>);
+}
+
 describe("ClaudeAcpAgent /clear", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -222,6 +233,17 @@ describe("ClaudeAcpAgent /clear", () => {
       findExtNotification(client, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED),
     ).toMatchObject({ sessionId: newSessionId });
 
+    // A "clearing" status opens immediately and closes on success, so the
+    // user sees feedback for the whole swap even if it's slow.
+    const statusNotifications = findAllExtNotifications(
+      client,
+      POSTHOG_NOTIFICATIONS.STATUS,
+    );
+    expect(statusNotifications).toEqual([
+      { sessionId: "s-1", status: "clearing" },
+      { sessionId: "s-1", status: "clearing", isComplete: true },
+    ]);
+
     // The /clear prompt is echoed to the transcript, the plan panel resets,
     // and the context indicator drops to zero.
     expect(findUpdate(client, "user_message_chunk")).toMatchObject({
@@ -233,6 +255,46 @@ describe("ClaudeAcpAgent /clear", () => {
       used: 0,
       size: 200_000,
     });
+  });
+
+  it("deletes the stale local jsonl for the stable ACP id after a successful clear", async () => {
+    // A cold reconnect hydrates by the stable ACP id (clients never learn the
+    // internal SDK id). If the SDK's original file under that id survived a
+    // /clear, a future hydration would find it, skip re-fetching the
+    // authoritative log, and resume the pre-clear conversation.
+    const unlinkSpy = vi
+      .spyOn(fs.promises, "unlink")
+      .mockResolvedValue(undefined);
+    const { agent } = makeAgent();
+    installFakeSession(agent, "s-stale");
+
+    await agent.prompt({
+      sessionId: "s-stale",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+
+    expect(unlinkSpy).toHaveBeenCalledWith(
+      getSessionJsonlPath("s-stale", "/tmp/repo"),
+    );
+    unlinkSpy.mockRestore();
+  });
+
+  it("still completes the clear if removing the stale jsonl fails for a reason other than a missing file", async () => {
+    const unlinkSpy = vi
+      .spyOn(fs.promises, "unlink")
+      .mockRejectedValue(
+        Object.assign(new Error("EACCES"), { code: "EACCES" }),
+      );
+    const { agent } = makeAgent();
+    installFakeSession(agent, "s-unlink-fails");
+
+    const result = await agent.prompt({
+      sessionId: "s-unlink-fails",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+
+    expect(result.stopReason).toBe("end_turn");
+    unlinkSpy.mockRestore();
   });
 
   it("emits the marker after the user message so /clear sits before the boundary", async () => {
@@ -264,10 +326,23 @@ describe("ClaudeAcpAgent /clear", () => {
     expect(clearedAt).toBeGreaterThan(userMessageAt);
   });
 
-  it("refuses to clear while a turn is in flight", async () => {
+  it.each([
+    {
+      name: "an active turn",
+      setup: (session: ReturnType<typeof installFakeSession>["session"]) => {
+        session.activeTurn = { promptUuid: "u-1", settled: false };
+      },
+    },
+    {
+      name: "a queued turn",
+      setup: (session: ReturnType<typeof installFakeSession>["session"]) => {
+        session.turnQueue.push({ promptUuid: "u-2" });
+      },
+    },
+  ])("refuses to clear while $name is in flight", async ({ setup }) => {
     const { agent, client } = makeAgent();
     const { session, oldQuery } = installFakeSession(agent, "s-busy");
-    session.activeTurn = { promptUuid: "u-1", settled: false };
+    setup(session);
 
     const result = await agent.prompt({
       sessionId: "s-busy",
@@ -318,5 +393,69 @@ describe("ClaudeAcpAgent /clear", () => {
 
     expect(lastQueryCall.options?.resume).toBe(newSessionId);
     expect(lastQueryCall.options?.sessionId).toBeUndefined();
+  });
+
+  it("times out, closes the query, and never logs the /clear prompt if the fresh session never finishes initializing", async () => {
+    vi.useFakeTimers();
+    try {
+      const { agent, client } = makeAgent();
+      const { session } = installFakeSession(agent, "s-timeout");
+      nextInitPromise = new Promise<InitResult>(() => {
+        // Never resolves, forcing the initializationResult() race to time out.
+      });
+
+      const promptPromise = agent.prompt({
+        sessionId: "s-timeout",
+        prompt: [{ type: "text", text: "/clear" }],
+      });
+      const rejection = expect(promptPromise).rejects.toThrow(/timed out/);
+
+      // Matches the module-private SESSION_VALIDATION_TIMEOUT_MS in claude-agent.ts.
+      await vi.advanceTimersByTimeAsync(30_000);
+      await rejection;
+
+      expect((session as unknown as { queryClosed: boolean }).queryClosed).toBe(
+        true,
+      );
+      // The /clear prompt is only broadcast (and thus logged) once the new
+      // session is confirmed live, so a timeout must leave no trace of it.
+      expect(findUpdate(client, "user_message_chunk")).toBeUndefined();
+      expect(
+        findExtNotification(client, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED),
+      ).toBeUndefined();
+      // The "clearing" spinner opened, then the failure closes it out.
+      expect(
+        findAllExtNotifications(client, POSTHOG_NOTIFICATIONS.STATUS),
+      ).toEqual([
+        { sessionId: "s-timeout", status: "clearing" },
+        {
+          sessionId: "s-timeout",
+          status: "clearing_failed",
+          error: "Conversation clear timed out after 30000ms",
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resumeSession after /clear echoes the canonical ACP id when matched via the new SDK id", async () => {
+    const { agent } = makeAgent();
+    installFakeSession(agent, "s-reconnect");
+
+    await agent.prompt({
+      sessionId: "s-reconnect",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+    const newSessionId = lastQueryCall.options?.sessionId as string;
+
+    const response = await agent.resumeSession({
+      sessionId: newSessionId,
+      cwd: "/tmp/repo",
+    });
+
+    expect((response as unknown as { sessionId: string }).sessionId).toBe(
+      "s-reconnect",
+    );
   });
 });

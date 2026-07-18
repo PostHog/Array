@@ -109,6 +109,7 @@ import {
 } from "./mcp/tool-metadata";
 import { canUseTool } from "./permissions/permission-handlers";
 import { getAvailableSlashCommands } from "./session/commands";
+import { getSessionJsonlPath } from "./session/jsonl-hydration";
 import { parseMcpServers } from "./session/mcp-config";
 import {
   applyAvailableModelsAllowlist,
@@ -1589,9 +1590,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     this.logger.info("Clearing conversation", { sessionId: params.sessionId });
 
-    // Broadcast before the marker so the `/clear` prompt itself lands on the
-    // pre-clear side of the rehydration boundary.
-    await this.broadcastUserMessage(params);
+    // Signal the in-progress state immediately (mirrors the "compacting"
+    // status row): the swap below is normally sub-second, but on a slow or
+    // timed-out clear the user would otherwise see no feedback at all
+    // between typing `/clear` and either the divider or an error appearing.
+    await this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+      sessionId: params.sessionId,
+      status: "clearing",
+    });
 
     await this.retireQuery(session);
 
@@ -1633,13 +1639,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       SESSION_VALIDATION_TIMEOUT_MS,
     );
     if (result.result === "timeout") {
+      // Nothing has been broadcast or logged yet at this point, so a timeout
+      // here leaves no orphaned "/clear" turn behind: the log is untouched.
       this.terminateQuery(newQuery, newAbortController);
       session.queryClosed = true;
-      throw new RequestError(
-        -32603,
-        `Conversation clear timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
-        { sessionId: params.sessionId },
-      );
+      const timeoutMessage = `Conversation clear timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`;
+      // Clear the "Clearing…" spinner and report the outcome as its own row,
+      // same as a failed compaction.
+      await this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+        sessionId: params.sessionId,
+        status: "clearing_failed",
+        error: timeoutMessage,
+      });
+      throw new RequestError(-32603, timeoutMessage, {
+        sessionId: params.sessionId,
+      });
     }
     session.knownSlashCommands = collectKnownSlashCommands(
       result.value.commands,
@@ -1653,15 +1667,49 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // id) stays stable — clients keep addressing the session with it.
     session.sdkSessionId = newSdkSessionId;
 
+    // Invalidate the local jsonl the SDK wrote under the stable ACP id
+    // (non-empty only before a session's first /clear — later clears never
+    // write there again). Left in place, a cold reconnect that hydrates by
+    // this id would find it, skip re-fetching the authoritative log, and
+    // resume the pre-clear conversation instead of the cleared one.
+    try {
+      await fs.promises.unlink(
+        getSessionJsonlPath(this.sessionId, session.cwd),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.logger.warn("Failed to remove stale session jsonl after /clear", {
+          sessionId: this.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     const hadTasks = session.taskState.size > 0;
     session.taskState.clear();
     this.toolUseStreamCache.clear();
     this.emittedToolCalls.clear();
 
-    // These four notifications are independent of one another (only the
+    // Only broadcast (and thus persist) the "/clear" prompt once the new
+    // session is confirmed live — the log must never show a "/clear" whose
+    // clear never actually happened. Broadcast before the marker so it lands
+    // on the pre-clear side of the rehydration boundary and gets dropped
+    // rather than replayed as a turn after resume.
+    await this.broadcastUserMessage(params);
+
+    // These notifications are independent of one another (only the
     // user-message broadcast above must precede them); issue them
-    // concurrently rather than paying four sequential round trips.
-    const postClearNotifications: Promise<unknown>[] = [];
+    // concurrently rather than paying sequential round trips.
+    const postClearNotifications: Promise<unknown>[] = [
+      // Clear the "Clearing…" spinner. `conversation_cleared` normally
+      // supersedes it visually, but signal completion explicitly (same
+      // rationale as the compacting spinner) rather than relying on that.
+      this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+        sessionId: params.sessionId,
+        status: "clearing",
+        isComplete: true,
+      }),
+    ];
     if (session.taskRunId) {
       postClearNotifications.push(
         this.client.extNotification(POSTHOG_NOTIFICATIONS.SDK_SESSION, {

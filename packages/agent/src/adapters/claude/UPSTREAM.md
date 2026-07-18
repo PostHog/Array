@@ -368,6 +368,8 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
   `session/new` for the same effect. Superseded: PostHog Code now implements `/clear` itself in
   `clearConversation` (prompt() intercepts it and swaps in a fresh SDK session; a
   `_posthog/conversation_cleared` log marker bounds rehydration), still never forwarding it to the SDK.
+  A build that predates this marker skips it as an unrecognized notification and keeps rendering
+  pre-clear history on rehydration, so the history-drop only renders correctly on builds that ship it.
 - **No-op ping events** (#698, 694221a): `streamEventToAcpNotifications` no-ops `ping` keep-alive events
   instead of falling through to `unreachable` and spamming stderr.
 

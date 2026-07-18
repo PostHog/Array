@@ -302,6 +302,64 @@ describe("buildConversationItems", () => {
     expect(result.isCompacting).toBe(false);
   });
 
+  it("clears the clearing spinner on a successful completion status, without duplicating the row", () => {
+    // A successful /clear sends a terminal `status: clearing, isComplete:
+    // true`. It must flip the existing status row, not append a second one.
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "/clear"),
+        statusMsg(2, "clearing"),
+        statusMsg(3, "clearing", true),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    expect(statusItems).toHaveLength(1);
+    expect((statusItems[0].update as { isComplete?: boolean }).isComplete).toBe(
+      true,
+    );
+    // /clear can't start mid-turn, so unlike compacting it never touches the
+    // isCompacting flag that gates the generating indicator.
+    expect(result.isCompacting).toBe(false);
+  });
+
+  it("renders a timed-out clear as a clearing_failed status row and clears the spinner", () => {
+    // A timed-out clear emits no conversation_cleared marker, so the adapter
+    // sends a structured `clearing_failed` status: it clears the spinner (the
+    // original clearing row goes complete) and adds the outcome row.
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "/clear"),
+        statusMsg(2, "clearing"),
+        statusMsg(3, "clearing_failed", undefined, "Timed out after 30000ms."),
+      ],
+      null,
+    );
+
+    const statusItems = result.items.filter(
+      (i): i is Extract<ConversationItem, { type: "session_update" }> =>
+        i.type === "session_update" && i.update.sessionUpdate === "status",
+    );
+    // Spinner row (now complete) + the failure row.
+    expect(statusItems.map((i) => i.update)).toEqual([
+      {
+        sessionUpdate: "status",
+        status: "clearing",
+        isComplete: true,
+        startedAt: 2,
+      },
+      {
+        sessionUpdate: "status",
+        status: "clearing_failed",
+        error: "Timed out after 30000ms.",
+      },
+    ]);
+  });
+
   it("renders a conversation_cleared divider after a /clear", () => {
     const result = buildConversationItems(
       [

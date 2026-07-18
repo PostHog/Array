@@ -768,6 +768,22 @@ function handleRuntimeStatus(
   } else if (status.status === "retrying" && status.isComplete) {
     markRuntimeStatusComplete(b, "retrying");
     return;
+  } else if (status.status === "clearing" && status.isComplete) {
+    // `/clear` can't start mid-turn (the adapter refuses while a turn is
+    // in flight), so unlike compacting there's no isPromptPending race to
+    // gate — just flip the existing "Clearing…" row to complete.
+    markRuntimeStatusComplete(b, "clearing");
+    return;
+  } else if (status.status === "clearing_failed") {
+    // A timed-out clear emits no `conversation_cleared` marker, so clear
+    // the spinner and render the outcome as its own status row.
+    markRuntimeStatusComplete(b, "clearing");
+    pushItem(b, {
+      sessionUpdate: "status",
+      status: "clearing_failed",
+      error: status.error,
+    });
+    return;
   }
 
   pushItem(b, {

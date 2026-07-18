@@ -20,7 +20,7 @@ export function ConversationClearedView() {
   return (
     <Box className="my-1 border-gray-6 border-l-2 py-1 pl-3 dark:border-gray-8">
       <Flex align="center" gap="2">
-        <Eraser size={14} weight="fill" className="text-gray-9" />
+        <Eraser size={14} weight="fill" className="text-gray-9" aria-hidden />
         <Text className="text-[13px] text-gray-11">Conversation cleared</Text>
         <Text className="text-[13px] text-gray-9">
           (earlier messages are no longer in the agent's context)
