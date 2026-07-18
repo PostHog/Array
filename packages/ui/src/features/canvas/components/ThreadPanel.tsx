@@ -766,13 +766,13 @@ function ThreadConversation({
         </div>
         <Button
           variant="outline"
-          size="icon-sm"
+          size="icon"
           aria-label="Scroll to latest"
           onClick={() => {
             const el = scrollRef.current;
             el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
           }}
-          className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 rounded-full shadow-md transition-[opacity,scale] duration-200 ${
+          className={`-translate-x-1/2 absolute bottom-3 left-1/2 z-10 rounded-full bg-background shadow-md transition-[opacity,scale] duration-200 hover:bg-background! ${
             showJump
               ? "scale-100 opacity-100"
               : "pointer-events-none scale-95 opacity-0"

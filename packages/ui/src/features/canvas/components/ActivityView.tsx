@@ -180,6 +180,18 @@ export function ActivityView() {
     markSeen();
   }, [markSeen, items.length]);
 
+  // Esc closes the open thread from anywhere in Activity — no need to have
+  // focus inside the panel.
+  useEffect(() => {
+    if (!selected) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Let an open menu/popover consume Esc first (it preventDefaults).
+      if (event.key === "Escape" && !event.defaultPrevented) setSelected(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
+
   return (
     <div className="flex h-full min-h-0 bg-gray-1">
       <div className="h-full min-w-0 flex-1 overflow-y-auto">

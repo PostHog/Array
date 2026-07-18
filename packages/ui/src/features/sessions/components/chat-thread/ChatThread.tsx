@@ -976,7 +976,7 @@ function ThreadScrollBody({
           )}
         </ChatMessageScrollerContent>
       </ChatMessageScrollerViewport>
-      <ChatMessageScrollerButton />
+      <ChatMessageScrollerButton className="bg-background hover:bg-fill-hover!" />
     </ChatMessageScroller>
   );
 }
