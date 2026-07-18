@@ -1379,12 +1379,14 @@ export async function addToLocalExclude(
     content = await fs.readFile(excludePath, "utf-8");
   } catch {}
 
-  const normalizedPattern = pattern.startsWith("/") ? pattern : `/${pattern}`;
-  const patternWithoutSlash = pattern.replace(/^\//, "");
-  if (
-    content.includes(normalizedPattern) ||
-    content.includes(patternWithoutSlash)
-  ) {
+  const normalizePattern = (value: string): string =>
+    value.startsWith("/") ? value.slice(1) : value;
+  const normalizedPattern = normalizePattern(pattern);
+  const existingPatterns = content
+    .split(/\r?\n/)
+    .filter((line) => line && !line.startsWith("#"))
+    .map(normalizePattern);
+  if (existingPatterns.includes(normalizedPattern)) {
     return;
   }
 
