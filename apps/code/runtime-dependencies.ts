@@ -29,6 +29,12 @@ export const runtimeNativeModules = [
   "is-number",
 ];
 
+export const runtimeJavaScriptModules = [
+  "@playwright/mcp",
+  "playwright",
+  "playwright-core",
+];
+
 // The base native modules that must exist when packaging; a missing one is a
 // broken build, not a warning. before-pack stages these with copyRequiredDep.
 export const requiredNativeModules = [
@@ -65,6 +71,7 @@ const scopeOf = (name: string) =>
 
 export const packagedFileGlobs = [
   ...runtimeNativeModules,
+  ...runtimeJavaScriptModules,
   ...macOnlyNativeModules,
 ].map((name) => `node_modules/${scopeOf(name)}/**/*`);
 

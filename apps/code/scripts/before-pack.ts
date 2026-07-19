@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   macOnlyNativeModules,
   requiredNativeModules,
+  runtimeJavaScriptModules,
   runtimeNativeModules,
   watcherPackageFor,
 } from "../runtime-dependencies";
@@ -70,6 +71,10 @@ export default async function beforePack(context: BeforePackContext) {
     } else {
       copyDep(dep, rootNodeModules, localNodeModules);
     }
+  }
+
+  for (const dep of runtimeJavaScriptModules) {
+    copyRequiredDep(dep, rootNodeModules, localNodeModules);
   }
 
   const watcherPkg = watcherPackageFor(platformName, arch);

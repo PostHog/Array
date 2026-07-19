@@ -5,6 +5,7 @@ import {
   macOnlyNativeModules,
   packagedFileGlobs,
   requiredNativeModules,
+  runtimeJavaScriptModules,
   runtimeNativeModules,
   watcherPackageFor,
 } from "./runtime-dependencies";
@@ -41,6 +42,21 @@ describe("native module globs", () => {
   it("emits a per-package glob for unscoped modules", () => {
     expect(packagedFileGlobs).toContain("node_modules/node-pty/**/*");
     expect(packagedFileGlobs).toContain("node_modules/better-sqlite3/**/*");
+  });
+
+  it("packages browser automation runtime modules", () => {
+    expect(runtimeJavaScriptModules).toEqual([
+      "@playwright/mcp",
+      "playwright",
+      "playwright-core",
+    ]);
+    expect(packagedFileGlobs).toEqual(
+      expect.arrayContaining([
+        "node_modules/@playwright/mcp/**/*",
+        "node_modules/playwright/**/*",
+        "node_modules/playwright-core/**/*",
+      ]),
+    );
   });
 });
 
