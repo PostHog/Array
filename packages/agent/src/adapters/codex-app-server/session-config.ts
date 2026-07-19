@@ -1,11 +1,19 @@
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type {
+  SessionConfigOption,
+  SessionConfigSelectOption,
+} from "@agentclientprotocol/sdk";
 import {
   CODEX_MODE_PRESETS,
   type CodexModePreset,
   type ExecutionMode,
   resolveCloudInitialPermissionMode,
+  restrictedModelMeta,
 } from "@posthog/shared";
-import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
+import {
+  type GatewayModel,
+  isOpenAIModel,
+  type ModelInfo,
+} from "../../gateway-models";
 import { getReasoningEffortOptions } from "./models";
 
 /**
@@ -158,7 +166,11 @@ export interface ConfigSelectors {
   model: string;
   effort?: string;
   /** From model/list; falls back to the single current model when empty. */
-  models: Array<{ id: string; name: string }>;
+  models: Array<{
+    id: string;
+    name: string;
+    _meta?: Record<string, unknown>;
+  }>;
   efforts: string[];
 }
 
@@ -195,7 +207,13 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
       name: "Model",
       category: "model",
       currentValue: s.model,
-      options: models.map((m) => ({ name: m.name, value: m.id })),
+      options: models.map(
+        (m): SessionConfigSelectOption => ({
+          name: m.name,
+          value: m.id,
+          ...(m._meta ? { _meta: m._meta } : {}),
+        }),
+      ),
     } as unknown as SessionConfigOption,
     {
       type: "select",
@@ -226,19 +244,31 @@ export class SessionConfigState {
   private _model: string;
   private _effort?: string;
   private _mode = DEFAULT_MODE;
-  private models: Array<{ id: string; name: string }> = [];
+  private models: Array<{
+    id: string;
+    name: string;
+    _meta?: Record<string, unknown>;
+  }> = [];
   private efforts: string[] = [];
   private _options: SessionConfigOption[] = [];
+  private readonly gatewayModels?: ReadonlyArray<ModelInfo>;
   private readonly allowedModelIds?: ReadonlySet<string>;
 
   constructor(
     model: string,
     effort?: string,
-    allowedModelIds?: ReadonlySet<string>,
+    gatewayModels?: ReadonlyArray<ModelInfo>,
   ) {
     this._model = model;
     this._effort = effort;
-    this.allowedModelIds = allowedModelIds?.size ? allowedModelIds : undefined;
+    this.gatewayModels = gatewayModels?.length ? gatewayModels : undefined;
+    this.allowedModelIds = this.gatewayModels
+      ? new Set(
+          this.gatewayModels
+            .filter((gatewayModel) => gatewayModel.allowed)
+            .map((gatewayModel) => gatewayModel.id),
+        )
+      : undefined;
     this.rebuild();
   }
 
@@ -270,7 +300,7 @@ export class SessionConfigState {
     if (typeof value === "string") {
       if (
         configId === "model" &&
-        (!this.allowedModelIds || this.allowedModelIds.has(value))
+        (!this.gatewayModels || this.allowedModelIds?.has(value))
       ) {
         this._model = value;
       } else if (configId === "effort") this._effort = value;
@@ -296,14 +326,17 @@ export class SessionConfigState {
         id: (m.id ?? m.model) as string,
         name: (m.displayName ?? m.id ?? m.model) as string,
       }));
-    if (this.allowedModelIds) {
+    if (this.gatewayModels) {
       const liveModelsById = new Map(
         liveModels.map((model) => [model.id, model]),
       );
-      this.models = [...this.allowedModelIds].map(
-        (modelId) =>
-          liveModelsById.get(modelId) ?? { id: modelId, name: modelId },
-      );
+      this.models = this.gatewayModels.map((gatewayModel) => ({
+        ...(liveModelsById.get(gatewayModel.id) ?? {
+          id: gatewayModel.id,
+          name: gatewayModel.id,
+        }),
+        ...(gatewayModel.allowed ? {} : { _meta: restrictedModelMeta() }),
+      }));
     } else {
       this.models = liveModels;
     }
@@ -321,7 +354,12 @@ export class SessionConfigState {
 
   /** Reset the model/effort lists (model/list failed); keeps the current model. */
   clearModels(): void {
-    this.models = [];
+    this.models =
+      this.gatewayModels?.map((gatewayModel) => ({
+        id: gatewayModel.id,
+        name: gatewayModel.id,
+        ...(gatewayModel.allowed ? {} : { _meta: restrictedModelMeta() }),
+      })) ?? [];
     this.efforts = [];
     this.rebuild();
   }

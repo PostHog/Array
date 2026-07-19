@@ -29,6 +29,7 @@ import {
   type NativeGoalState,
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
+import type { ModelInfo } from "../../gateway-models";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
 import { ALLOW_BYPASS } from "../../utils/common";
@@ -203,7 +204,7 @@ export interface CodexAppServerAgentOptions {
   processOptions: CodexAppServerProcessOptions;
   model?: string;
   reasoningEffort?: string;
-  allowedModelIds?: ReadonlySet<string>;
+  gatewayModels?: ReadonlyArray<ModelInfo>;
   processCallbacks?: ProcessSpawnedCallback;
   logger?: Logger;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
@@ -266,7 +267,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.config = new SessionConfigState(
       options.model ?? DEFAULT_CODEX_MODEL,
       options.reasoningEffort,
-      options.allowedModelIds,
+      options.gatewayModels,
     );
     this.onStructuredOutput = options.onStructuredOutput;
     this.developerInstructions = options.processOptions.developerInstructions;
