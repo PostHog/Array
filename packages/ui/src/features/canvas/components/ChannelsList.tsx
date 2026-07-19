@@ -60,6 +60,7 @@ import {
   PERSONAL_CHANNEL_NAME,
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -291,7 +292,14 @@ function ChannelMenu({
 
 // One channel in the list: a "# name" row that navigates to the channel home.
 // No expansion — the channel's surfaces live in the in-channel top nav.
-function ChannelSection({ channel }: { channel: Channel }) {
+function ChannelSection({
+  channel,
+  isUnread,
+}: {
+  channel: Channel;
+  /** Bolds the name: activity here the viewer hasn't seen. */
+  isUnread?: boolean;
+}) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const base = `/website/${channel.id}`;
@@ -340,10 +348,26 @@ function ChannelSection({ channel }: { channel: Channel }) {
               }}
               className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
-              <HashIcon size={14} className="shrink-0 text-gray-9" />
+              <HashIcon
+                size={14}
+                weight={isUnread ? "bold" : undefined}
+                className={cn(
+                  "shrink-0",
+                  isUnread || isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground group-hover/button:text-foreground",
+                )}
+              />
               <span
                 className={cn(
-                  "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+                  "truncate text-[13px] group-hover/chan:pr-8",
+                  // Bold is unread's alone; full contrast is shared with the
+                  // channel you're in. Either way there's no hover brighten
+                  // left to do, so those rows skip it.
+                  isUnread ? "font-bold" : "font-medium",
+                  isUnread || isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground group-hover/button:text-foreground",
                   menuOpen && "pr-8",
                 )}
               >
@@ -498,6 +522,7 @@ function PersonalChannelRow() {
   useTaskChannels();
   // The "+" dropdown (New task / New canvas), mirroring a shared channel row.
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const isUnread = useIsChannelUnread()(PERSONAL_CHANNEL_NAME);
 
   const meFolder = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
   const createAndOpenCanvas = useCreateAndOpenDashboard(meFolder?.id);
@@ -560,8 +585,25 @@ function PersonalChannelRow() {
         onClick={() => void open()}
         className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
       >
-        <HashIcon size={14} className="shrink-0 text-gray-9" />
-        <span className="truncate font-medium text-[13px] text-gray-12">
+        <HashIcon
+          size={14}
+          weight={isUnread ? "bold" : undefined}
+          className={cn(
+            "shrink-0",
+            isUnread || isActive
+              ? "text-foreground"
+              : "text-muted-foreground group-hover/button:text-foreground",
+          )}
+        />
+        <span
+          className={cn(
+            "truncate text-[13px]",
+            isUnread ? "font-bold" : "font-medium",
+            isUnread || isActive
+              ? "text-foreground"
+              : "text-muted-foreground group-hover/button:text-foreground",
+          )}
+        >
           {PERSONAL_CHANNEL_NAME}
         </span>
         {/* The lock and the hover "+" share the right edge, so fade the lock
@@ -569,7 +611,7 @@ function PersonalChannelRow() {
         <LockSimpleIcon
           size={12}
           className={cn(
-            "ml-auto shrink-0 text-gray-9 transition-opacity",
+            "ml-auto shrink-0 text-chrome-foreground transition-opacity",
             newMenuOpen
               ? "opacity-0"
               : "opacity-100 group-hover/chan:opacity-0",
@@ -655,7 +697,12 @@ function ChannelGroup({
   return (
     <Collapsible.Root
       open={isOpen}
-      onOpenChange={() => toggleSection(sectionId)}
+      // The store only exposes a toggle, so drive it from the requested value:
+      // an event for the state we're already in is then a no-op rather than an
+      // inversion.
+      onOpenChange={(open) => {
+        if (open !== isOpen) toggleSection(sectionId);
+      }}
       className={className}
     >
       {/* MenuLabel carries the sidebar's label styling; `render` keeps it a
@@ -703,6 +750,8 @@ export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
 
+  const isUnread = useIsChannelUnread();
+
   // The "me" folder renders as the pinned personal row, not a shared channel.
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
@@ -733,7 +782,11 @@ export function ChannelsList() {
         {starred.length > 0 && (
           <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
             {starred.map((channel) => (
-              <ChannelSection key={channel.id} channel={channel} />
+              <ChannelSection
+                key={channel.id}
+                channel={channel}
+                isUnread={isUnread(channel.name)}
+              />
             ))}
           </ChannelGroup>
         )}
@@ -745,7 +798,11 @@ export function ChannelsList() {
             </Empty>
           )}
           {others.map((channel) => (
-            <ChannelSection key={channel.id} channel={channel} />
+            <ChannelSection
+              key={channel.id}
+              channel={channel}
+              isUnread={isUnread(channel.name)}
+            />
           ))}
         </ChannelGroup>
       </Flex>
