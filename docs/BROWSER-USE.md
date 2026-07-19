@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 -->
 
-# Browser use
+# Browser automation
 
 PostHog Code can give local agent sessions browser automation tools through an isolated Playwright MCP server.
 
@@ -8,14 +8,14 @@ PostHog Code can give local agent sessions browser automation tools through an i
 
 1. Install Google Chrome.
 2. Open **Settings → Advanced**.
-3. Enable **Browser use**.
+3. Enable **Browser automation**.
 4. Start a new local session.
 
 The setting applies when a session starts. Existing sessions are unchanged.
 
 ## Behavior
 
-- Browser use is opt-in and disabled by default.
+- Browser automation is opt-in and disabled by default.
 - It is available only to local sessions.
 - Each session launches an isolated Chrome profile, so it does not inherit cookies or logins from the user's normal browser profile.
 - Tool calls and screenshots use the existing MCP tool-call pipeline.

@@ -93,7 +93,7 @@ export function AdvancedSettings() {
         </Flex>
       </SettingRow>
       <SettingRow
-        label="Browser use"
+        label="Browser automation"
         description="Let local agent sessions launch an isolated Google Chrome window and interact with websites. Experimental; requires Chrome to be installed"
       >
         <Switch checked={browserUse} onCheckedChange={setBrowserUse} size="1" />
