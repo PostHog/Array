@@ -25,5 +25,6 @@ describe("buildBrowserUseServer", () => {
       env: [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }],
     });
     expect(server?.args[0]).toMatch(/@playwright[\\/]mcp[\\/]cli\.js$/);
+    expect(server?.args).toContain("omit");
   });
 });

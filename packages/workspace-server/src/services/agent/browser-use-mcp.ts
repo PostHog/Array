@@ -34,7 +34,7 @@ export function buildBrowserUseServer(
       "--codegen",
       "none",
       "--image-responses",
-      "allow",
+      "omit",
       "--output-mode",
       "stdout",
     ],
