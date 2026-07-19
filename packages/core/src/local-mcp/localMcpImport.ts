@@ -4,7 +4,11 @@ import type {
   CloudMcpServerRelayDesignation,
   LocalMcpServerDescriptor,
 } from "@posthog/shared";
-import { isPrivateIpv4Octets, isPrivateIpv6Literal } from "@posthog/shared";
+import {
+  CLOUD_COMPUTER_USE_MCP_NAME,
+  isPrivateIpv4Octets,
+  isPrivateIpv6Literal,
+} from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { LOCAL_MCP_WORKSPACE_CLIENT } from "./identifiers";
 
@@ -151,6 +155,17 @@ export interface LocalMcpServersForRun {
   relayed: CloudMcpServerRelayDesignation[];
 }
 
+export function addCloudComputerUseRelay(
+  servers: CloudMcpServerRelayDesignation[],
+  enabled: boolean,
+): CloudMcpServerRelayDesignation[] {
+  if (!enabled) return servers;
+  return [
+    { name: CLOUD_COMPUTER_USE_MCP_NAME },
+    ...servers.filter((server) => server.name !== CLOUD_COMPUTER_USE_MCP_NAME),
+  ].slice(0, MAX_RELAYED_MCP_SERVERS);
+}
+
 /**
  * Split classified local servers into the run-creation payload's imported and
  * relayed lists for the run's adapter.
@@ -170,7 +185,7 @@ export function partitionLocalMcpServersForRun(
   const imported = relayImportable
     ? []
     : servers.flatMap((server) => (server.remote ? [server.remote] : []));
-  const relayed = servers
+  const relayedServers = servers
     .filter(
       (server) =>
         server.availability === "requires_desktop" ||
@@ -185,8 +200,8 @@ export function partitionLocalMcpServersForRun(
           ? -1
           : 1,
     )
-    .slice(0, MAX_RELAYED_MCP_SERVERS)
     .map((server) => ({ name: server.name }));
+  const relayed = relayedServers.slice(0, MAX_RELAYED_MCP_SERVERS);
   return { imported, relayed };
 }
 

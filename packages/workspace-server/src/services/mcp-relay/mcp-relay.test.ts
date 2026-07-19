@@ -2,6 +2,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import type { ClaudeJsonMcpServerEntry } from "@posthog/agent/adapters/claude/session/mcp-config";
 import type { RootLogger } from "@posthog/di/logger";
+import { CLOUD_COMPUTER_USE_MCP_NAME } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import { McpRelayServiceImpl } from "./mcp-relay";
 
@@ -68,6 +69,14 @@ class TestMcpRelayService extends McpRelayServiceImpl {
   }
 }
 
+class BuiltInMcpRelayService extends TestMcpRelayService {
+  protected override createBuiltInTransport(server: string): Transport | null {
+    return server === CLOUD_COMPUTER_USE_MCP_NAME
+      ? this.createTransport()
+      : null;
+  }
+}
+
 function stdioEntry(name: string): ClaudeJsonMcpServerEntry {
   return {
     name,
@@ -87,6 +96,22 @@ async function flush(): Promise<void> {
 }
 
 describe("McpRelayServiceImpl", () => {
+  it("connects the built-in computer-use server without local config", async () => {
+    const service = new BuiltInMcpRelayService();
+    const execution = service.execute("run-1", CLOUD_COMPUTER_USE_MCP_NAME, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    });
+    await flush();
+
+    service.transports[0].respond({ jsonrpc: "2.0", id: 1, result: {} });
+
+    await expect(execution).resolves.toEqual({
+      payload: { jsonrpc: "2.0", id: 1, result: {} },
+    });
+  });
+
   it("rejects an unknown server name without connecting", async () => {
     const service = makeService("known");
 

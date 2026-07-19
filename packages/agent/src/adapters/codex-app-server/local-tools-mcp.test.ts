@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
+import { buildComputerUseStdioServer } from "../local-tools/stdio-server";
 import { buildLocalToolsServer } from "./local-tools-mcp";
 
 // The dist asset isn't on the walk-up path in unit tests, so make existsSync
@@ -10,6 +11,21 @@ vi.mock("node:fs", async (importActual) => {
 });
 
 describe("buildLocalToolsServer", () => {
+  it("builds the computer-only server for a macOS desktop relay", () => {
+    const server = buildComputerUseStdioServer("/repo", "darwin");
+
+    expect(server?.env.POSTHOG_LOCAL_TOOLS_ENABLED).toBe(
+      [
+        "computer_screenshot",
+        "computer_list_applications",
+        "computer_open_application",
+        "computer_click",
+        "computer_type",
+        "computer_key",
+      ].join(","),
+    );
+  });
+
   const saved = {
     sandbox: process.env.IS_SANDBOX,
     ghToken: process.env.GH_TOKEN,

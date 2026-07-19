@@ -76,6 +76,7 @@ export interface RecordClaudeCliImportArgs {
 export interface ITaskCreationHost {
   getAuthenticatedClient(): Promise<TaskCreationApiClient | null>;
   assertCloudUsageAvailable(): Promise<void>;
+  isComputerUseEnabled(): boolean;
   getTaskDirectory(taskId: string, repoKey?: string): Promise<string | null>;
   /**
    * Ensure a per-task scratch working directory exists for a repo-less channel

@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import {
   getDefaultEnvironment,
@@ -11,11 +12,13 @@ import {
   loadUserClaudeJsonMcpServerEntries,
   parseClaudeJsonTransport,
 } from "@posthog/agent/adapters/claude/session/mcp-config";
+import { buildComputerUseStdioServer } from "@posthog/agent/adapters/local-tools/stdio-server";
 import {
   ROOT_LOGGER,
   type RootLogger,
   type ScopedLogger,
 } from "@posthog/di/logger";
+import { CLOUD_COMPUTER_USE_MCP_NAME } from "@posthog/shared";
 import { inject, injectable, preDestroy } from "inversify";
 import type { McpRelayExecution, McpRelayService } from "./identifiers";
 
@@ -75,8 +78,13 @@ export class McpRelayServiceImpl implements McpRelayService {
     let connectionPromise = byServer?.get(server);
 
     if (!connectionPromise) {
-      const entry = this.loadServerEntries().find((e) => e.name === server);
-      if (!entry) {
+      const transport = this.createBuiltInTransport(server);
+      const entry = transport
+        ? undefined
+        : this.loadServerEntries().find(
+            (candidate) => candidate.name === server,
+          );
+      if (!transport && !entry) {
         this.log.warn("Relay request for unknown local MCP server", {
           runId,
           server,
@@ -88,7 +96,12 @@ export class McpRelayServiceImpl implements McpRelayService {
           },
         };
       }
-      connectionPromise = this.openConnection(runId, server, entry);
+      let resolvedTransport = transport;
+      if (!resolvedTransport) {
+        if (!entry) throw new Error(`Missing MCP server entry for ${server}`);
+        resolvedTransport = this.createTransport(entry);
+      }
+      connectionPromise = this.openConnection(runId, server, resolvedTransport);
       if (!byServer) {
         byServer = new Map();
         this.connections.set(runId, byServer);
@@ -178,12 +191,22 @@ export class McpRelayServiceImpl implements McpRelayService {
     );
   }
 
+  protected createBuiltInTransport(server: string): Transport | null {
+    if (server !== CLOUD_COMPUTER_USE_MCP_NAME) return null;
+    const config = buildComputerUseStdioServer(homedir());
+    if (!config) return null;
+    return new StdioClientTransport({
+      command: config.command,
+      args: config.args,
+      env: { ...getDefaultEnvironment(), ...config.env },
+    });
+  }
+
   private async openConnection(
     runId: string,
     server: string,
-    entry: ClaudeJsonMcpServerEntry,
+    transport: Transport,
   ): Promise<RelayConnection> {
-    const transport = this.createTransport(entry);
     const connection: RelayConnection = {
       transport,
       nextLocalId: 1,

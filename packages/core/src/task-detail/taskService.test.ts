@@ -1,8 +1,10 @@
 import type { SessionService } from "@posthog/core/sessions/sessionService";
 import type { RootLogger } from "@posthog/di/logger";
+import { CLOUD_COMPUTER_USE_MCP_NAME } from "@posthog/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
+import { TaskCreationSaga } from "./taskCreationSaga";
 import { buildWorktreeAdoptionInput } from "./taskInput";
 import { TaskService } from "./taskService";
 
@@ -17,7 +19,7 @@ const rootLogger = {
   scope: () => scopedLog,
 } as unknown as RootLogger;
 
-function makeService(): TaskService {
+function makeService(options?: { computerUse?: boolean }): TaskService {
   const host = {
     // The API client's createTask rejects so tests can observe that an input
     // made it past validation (failedStep lands on task_creation, not
@@ -31,6 +33,7 @@ function makeService(): TaskService {
       sendRunCommand: vi.fn(),
       updateTask: vi.fn(),
     })),
+    isComputerUseEnabled: vi.fn(() => options?.computerUse ?? false),
     detectRepo: vi.fn(async () => null),
     getFolders: vi.fn(async () => []),
     addFolder: vi.fn(async () => ({ id: "folder-1", path: "/repo" })),
@@ -73,5 +76,30 @@ describe("TaskService.createTask validation", () => {
     expect(result.success).toBe(false);
     if (result.success) throw new Error("expected task_creation failure");
     expect(result.failedStep).toBe("task_creation");
+  });
+
+  it("adds the computer-use relay to every cloud task", async () => {
+    const run = vi.spyOn(TaskCreationSaga.prototype, "run").mockResolvedValue({
+      success: false,
+      error: "stop after input capture",
+      failedStep: "task_creation",
+    });
+
+    await makeService({ computerUse: true }).createTask(
+      {
+        content: "Use my desktop",
+        repository: "posthog/code",
+        workspaceMode: "cloud",
+      },
+      undefined,
+      { skipCloudUsagePreflight: true },
+    );
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relayedMcpServers: [{ name: CLOUD_COMPUTER_USE_MCP_NAME }],
+      }),
+    );
+    run.mockRestore();
   });
 });

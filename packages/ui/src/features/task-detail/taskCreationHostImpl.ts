@@ -33,6 +33,7 @@ import { resolveLocalSkillPrompt } from "../message-editor/commands";
 import { DEFAULT_PANEL_IDS } from "../panels/panelConstants";
 import { usePanelLayoutStore } from "../panels/panelLayoutStore";
 import { useProvisioningStore } from "../provisioning/store";
+import { useSettingsStore } from "../settings/settingsStore";
 import { takeWarmTaskLease } from "./hooks/warmTaskLease";
 
 interface EnvironmentHostClient {
@@ -60,6 +61,10 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     if (!(await assertCloudUsageAvailable())) {
       throw new Error(CLOUD_USAGE_LIMIT_ERROR_MESSAGE);
     }
+  }
+
+  isComputerUseEnabled(): boolean {
+    return useSettingsStore.getState().computerUse;
   }
 
   async getTaskDirectory(

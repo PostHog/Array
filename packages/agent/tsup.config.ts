@@ -124,6 +124,7 @@ export default defineConfig([
       "src/adapters/codex-app-server/models.ts",
       "src/adapters/codex-app-server/local-tools-mcp-server.ts",
       "src/adapters/claude/mcp/tool-metadata.ts",
+      "src/adapters/local-tools/stdio-server.ts",
       "src/adapters/reasoning-effort.ts",
       "src/execution-mode.ts",
       "src/server/schemas.ts",

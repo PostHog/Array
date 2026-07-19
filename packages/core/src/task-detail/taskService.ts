@@ -11,6 +11,7 @@ import type {
 } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
+import { addCloudComputerUseRelay } from "../local-mcp/localMcpImport";
 import { TASK_CREATION_EFFECTS, TASK_CREATION_HOST } from "./identifiers";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
@@ -74,6 +75,17 @@ export class TaskService {
       };
     }
 
+    const effectiveInput: TaskCreationInput =
+      input.workspaceMode === "cloud"
+        ? {
+            ...input,
+            relayedMcpServers: addCloudComputerUseRelay(
+              input.relayedMcpServers ?? [],
+              this.host.isComputerUseEnabled(),
+            ),
+          }
+        : input;
+
     const posthogClient = await this.host.getAuthenticatedClient();
     if (!posthogClient) {
       return {
@@ -85,7 +97,10 @@ export class TaskService {
 
     // Backstop for callers that bypass useTaskCreation (e.g. inbox); the helper shows the modal.
     // Callers that already pre-flighted pass skipCloudUsagePreflight to avoid a second fetch.
-    if (!options?.skipCloudUsagePreflight && input.workspaceMode === "cloud") {
+    if (
+      !options?.skipCloudUsagePreflight &&
+      effectiveInput.workspaceMode === "cloud"
+    ) {
       try {
         await this.host.assertCloudUsageAvailable();
       } catch (error) {
@@ -112,7 +127,7 @@ export class TaskService {
         onTaskReady: onTaskReady
           ? (output) => {
               this.effects.onWorkspaceCreated(output);
-              this.effects.onCreateSuccess(output, input);
+              this.effects.onCreateSuccess(output, effectiveInput);
               onTaskReady(output);
             }
           : undefined,
@@ -120,12 +135,12 @@ export class TaskService {
       this.log,
     );
 
-    const result = await saga.run(input);
+    const result = await saga.run(effectiveInput);
 
     if (result.success) {
       this.effects.onWorkspaceCreated(result.data);
       if (!onTaskReady) {
-        this.effects.onCreateSuccess(result.data, input);
+        this.effects.onCreateSuccess(result.data, effectiveInput);
       }
     }
 

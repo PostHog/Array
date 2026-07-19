@@ -72,6 +72,10 @@
       "types": "./dist/adapters/claude/mcp/tool-metadata.d.ts",
       "import": "./dist/adapters/claude/mcp/tool-metadata.js"
     },
+    "./adapters/local-tools/stdio-server": {
+      "types": "./dist/adapters/local-tools/stdio-server.d.ts",
+      "import": "./dist/adapters/local-tools/stdio-server.js"
+    },
     "./execution-mode": {
       "types": "./dist/execution-mode.d.ts",
       "import": "./dist/execution-mode.js"
