@@ -17,6 +17,7 @@ interface PatchedFileDiffProps {
   externalUrl?: string;
   prUrl?: string | null;
   commentThreads?: Map<number, PrCommentThread>;
+  viewedKey?: string;
   /** Extra controls in the file header row (e.g. a "Viewed" toggle). */
   headerTrailing?: ReactNode;
 }
@@ -31,6 +32,7 @@ export function PatchedFileDiff({
   externalUrl,
   prUrl,
   commentThreads,
+  viewedKey,
   headerTrailing,
 }: PatchedFileDiffProps) {
   const fileDiff = useMemo((): FileDiffMetadata | undefined => {
@@ -64,6 +66,7 @@ export function PatchedFileDiff({
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}
+        viewedKey={viewedKey}
         commentCount={commentCount}
         headerTrailing={headerTrailing}
       />
@@ -80,6 +83,7 @@ export function PatchedFileDiff({
         collapsed={collapsed}
         onToggle={onToggle}
         externalUrl={externalUrl}
+        viewedKey={viewedKey}
         commentCount={commentCount}
         headerTrailing={headerTrailing}
       />
@@ -98,6 +102,7 @@ export function PatchedFileDiff({
           fileDiff={fd}
           collapsed={collapsed}
           onToggle={onToggle}
+          viewedKey={viewedKey}
           commentCount={commentCount}
           trailing={headerTrailing}
         />

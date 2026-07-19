@@ -128,7 +128,7 @@ export class HandoffCheckpointTracker {
         !!capture.headPack && !uploads.pack?.storagePath;
       const indexUploadMissing = !uploads.index?.storagePath;
       if (packUploadMissing || indexUploadMissing) {
-        this.logger.warn(
+        this.logger.debug(
           "Discarding handoff checkpoint: required artifact uploads did not complete",
           {
             checkpointId: capture.checkpoint.checkpointId,
@@ -245,7 +245,7 @@ export class HandoffCheckpointTracker {
 
     const content = await readFile(filePath);
     if (content.byteLength > MAX_ARTIFACT_UPLOAD_BYTES) {
-      this.logger.warn(
+      this.logger.debug(
         "Skipping handoff artifact upload: file exceeds the artifact size limit",
         {
           name,
