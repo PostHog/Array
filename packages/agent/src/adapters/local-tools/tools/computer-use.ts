@@ -12,6 +12,12 @@ import {
 } from "../registry";
 
 const modifierSchema = z.enum(["command", "control", "option", "shift"]);
+const MAX_SCREENSHOT_BYTES = 1_000_000;
+const screenshotCompressionAttempts = [
+  { maxDimension: 1600, quality: "75" },
+  { maxDimension: 1200, quality: "60" },
+  { maxDimension: 900, quality: "45" },
+] as const;
 const namedKeySchema = z.enum([
   "enter",
   "tab",
@@ -101,22 +107,45 @@ export const computerScreenshotTool = defineLocalTool({
   isEnabled: computerUseEnabled,
   handler: async () =>
     resultFrom(async () => {
-      const path = join(tmpdir(), `posthog-computer-${randomUUID()}.png`);
+      const id = randomUUID();
+      const sourcePath = join(tmpdir(), `posthog-computer-${id}.png`);
+      const outputPath = join(tmpdir(), `posthog-computer-${id}.jpg`);
       try {
-        await run("/usr/sbin/screencapture", ["-x", "-t", "png", path]);
-        const data = await readFile(path);
-        return {
-          content: [
-            { type: "text", text: "Captured the current display." },
-            {
-              type: "image",
-              data: data.toString("base64"),
-              mimeType: "image/png",
-            },
-          ],
-        };
+        await run("/usr/sbin/screencapture", ["-x", "-t", "png", sourcePath]);
+        for (const attempt of screenshotCompressionAttempts) {
+          await run("/usr/bin/sips", [
+            "--resampleHeightWidthMax",
+            String(attempt.maxDimension),
+            "--setProperty",
+            "format",
+            "jpeg",
+            "--setProperty",
+            "formatOptions",
+            attempt.quality,
+            sourcePath,
+            "--out",
+            outputPath,
+          ]);
+          const data = await readFile(outputPath);
+          if (data.byteLength <= MAX_SCREENSHOT_BYTES) {
+            return {
+              content: [
+                { type: "text", text: "Captured the current display." },
+                {
+                  type: "image",
+                  data: data.toString("base64"),
+                  mimeType: "image/jpeg",
+                },
+              ],
+            };
+          }
+        }
+        throw new Error("Captured screenshot exceeds the 1 MB image limit");
       } finally {
-        await unlink(path).catch(() => undefined);
+        await Promise.all([
+          unlink(sourcePath).catch(() => undefined),
+          unlink(outputPath).catch(() => undefined),
+        ]);
       }
     }),
 });

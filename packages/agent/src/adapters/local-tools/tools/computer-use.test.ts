@@ -76,10 +76,39 @@ describe("computer use tools", () => {
 
     expect(result.content).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "image", mimeType: "image/png" }),
+        expect.objectContaining({ type: "image", mimeType: "image/jpeg" }),
       ]),
     );
-    expect(mockedUnlink).toHaveBeenCalledOnce();
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      "/usr/bin/sips",
+      expect.arrayContaining(["--resampleHeightWidthMax", "1600"]),
+      { encoding: "utf8" },
+      expect.any(Function),
+    );
+    expect(mockedUnlink).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries screenshot compression until the image fits the request budget", async () => {
+    mockedReadFile
+      .mockResolvedValueOnce(Buffer.alloc(1_000_001))
+      .mockResolvedValueOnce(Buffer.from("jpeg"));
+
+    const result = await computerScreenshotTool.handler(context, {});
+
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "image",
+          data: Buffer.from("jpeg").toString("base64"),
+        }),
+      ]),
+    );
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      "/usr/bin/sips",
+      expect.arrayContaining(["--resampleHeightWidthMax", "1200"]),
+      { encoding: "utf8" },
+      expect.any(Function),
+    );
   });
 
   it("opens applications without invoking a shell", async () => {
