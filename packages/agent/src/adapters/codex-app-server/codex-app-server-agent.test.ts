@@ -1636,6 +1636,32 @@ describe("CodexAppServerAgent", () => {
     );
   });
 
+  it("rejects the prompt with guidance when the gateway request is too large", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "continue" }],
+    } as unknown as PromptRequest);
+    stub.emit("error", {
+      willRetry: false,
+      error: {
+        message:
+          "unexpected status 413 Payload Too Large: Request body too large",
+      },
+    });
+
+    await expect(done).rejects.toThrow(
+      "This conversation is too large to continue",
+    );
+  });
+
   it("ends the turn without turn/start when no prompt block is usable", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();

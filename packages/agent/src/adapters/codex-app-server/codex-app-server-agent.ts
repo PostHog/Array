@@ -1302,6 +1302,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           this.turns.fail(RequestError.internalError(undefined, message));
           return;
         }
+        if (
+          message.includes("413") ||
+          message.toLowerCase().includes("request body too large")
+        ) {
+          this.turns.fail(
+            RequestError.internalError(
+              undefined,
+              "This conversation is too large to continue. Start a new task and carry over a text summary instead of image or tool output.",
+            ),
+          );
+          return;
+        }
         void this.finalizeTurn("refusal");
       }
     }
