@@ -93,6 +93,7 @@ type AppServerSessionMeta = {
   environment?: "local" | "cloud";
   channelMode?: boolean;
   spokenNarration?: boolean;
+  computerUse?: boolean;
   baseBranch?: string;
   nativeGoal?: NativeGoalState;
 };
@@ -540,6 +541,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       environment: meta.environment,
       channelMode: meta.channelMode,
       spokenNarration: resolveSpokenNarration(meta),
+      computerUse: meta.computerUse,
       taskId: meta.taskId,
       taskRunId: meta.taskRunId,
       persistence: meta.persistence,

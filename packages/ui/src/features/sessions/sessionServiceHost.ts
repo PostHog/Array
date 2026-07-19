@@ -138,6 +138,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
           import.meta.env.DEV,
         ),
         browserUse: state.browserUse,
+        computerUse: state.computerUse,
       };
     },
     usageLimit: {

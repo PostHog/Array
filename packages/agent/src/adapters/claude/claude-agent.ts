@@ -1892,6 +1892,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const baseBranch = meta?.baseBranch;
     const environment = meta?.environment;
     const spokenNarration = resolveSpokenNarration(meta);
+    const computerUse = meta?.computerUse === true;
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
@@ -1903,8 +1904,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           taskId,
           taskRunId: meta?.taskRunId,
           baseBranch,
+          platform: process.platform,
         },
-        { environment, spokenNarration },
+        { environment, spokenNarration, computerUse },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
     };

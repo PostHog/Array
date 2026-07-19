@@ -200,6 +200,7 @@ export type NewSessionMeta = {
    * emits always (consumers gate playback), local stays silent.
    */
   spokenNarration?: boolean;
+  computerUse?: boolean;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
   claudeCode?: {

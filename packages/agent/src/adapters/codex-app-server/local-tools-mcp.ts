@@ -68,7 +68,7 @@ function toMcpServerStdio(
  * registry; the server is only injected when at least one passes.
  */
 export function buildLocalToolsServer(
-  ctx: { cwd?: string },
+  ctx: { cwd?: string; platform?: NodeJS.Platform },
   meta: LocalToolsMeta | undefined,
 ): McpServerStdio | null {
   const cwd = ctx.cwd;
@@ -81,6 +81,7 @@ export function buildLocalToolsServer(
     taskId: resolveTaskId(meta),
     taskRunId: meta?.taskRunId,
     baseBranch: meta?.baseBranch,
+    platform: ctx.platform ?? process.platform,
   };
   const tools = enabledLocalTools(toolCtx, meta);
   if (tools.length === 0) {

@@ -100,6 +100,8 @@ export const startSessionInput = z.object({
   spokenNarration: z.boolean().optional(),
   /** Enables the isolated Playwright browser tools for local sessions. */
   browserUse: z.boolean().optional(),
+  /** Enables local macOS screen, application, mouse, and keyboard tools. */
+  computerUse: z.boolean().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
@@ -237,6 +239,8 @@ export const reconnectSessionInput = z.object({
   spokenNarration: z.boolean().optional(),
   /** See startSessionInput.browserUse. */
   browserUse: z.boolean().optional(),
+  /** See startSessionInput.computerUse. */
+  computerUse: z.boolean().optional(),
 });
 
 export type ReconnectSessionInput = z.infer<typeof reconnectSessionInput>;

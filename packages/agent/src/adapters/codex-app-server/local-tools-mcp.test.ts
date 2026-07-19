@@ -82,6 +82,7 @@ describe("buildLocalToolsServer", () => {
     expect(ctx.taskId).toBe("task-1");
     expect(ctx.taskRunId).toBe("run-1");
     expect(ctx.baseBranch).toBe("master");
+    expect(ctx.platform).toBe(process.platform);
   });
 
   it("returns a server but omits token env vars when no token is present", () => {
@@ -129,5 +130,53 @@ describe("buildLocalToolsServer", () => {
     expect(
       buildLocalToolsServer({ cwd: "/repo" }, { environment: "local" }),
     ).toBeNull();
+  });
+
+  it("exposes computer tools for opted-in local macOS sessions", () => {
+    const server = buildLocalToolsServer(
+      { cwd: "/repo", platform: "darwin" },
+      { environment: "local", computerUse: true },
+    );
+
+    const enabled =
+      server?.env.find((entry) => entry.name === "POSTHOG_LOCAL_TOOLS_ENABLED")
+        ?.value ?? "";
+    expect(enabled.split(",")).toEqual(
+      expect.arrayContaining([
+        "computer_screenshot",
+        "computer_open_application",
+        "computer_click",
+        "computer_type",
+        "computer_key",
+      ]),
+    );
+  });
+
+  it.each([
+    {
+      platform: "linux" as const,
+      environment: "local" as const,
+      enabled: true,
+    },
+    {
+      platform: "darwin" as const,
+      environment: "cloud" as const,
+      enabled: true,
+    },
+    {
+      platform: "darwin" as const,
+      environment: "local" as const,
+      enabled: false,
+    },
+  ])("does not expose computer tools for unsupported context %#", (input) => {
+    const server = buildLocalToolsServer(
+      { cwd: "/repo", platform: input.platform },
+      { environment: input.environment, computerUse: input.enabled },
+    );
+
+    const enabled =
+      server?.env.find((entry) => entry.name === "POSTHOG_LOCAL_TOOLS_ENABLED")
+        ?.value ?? "";
+    expect(enabled.split(",")).not.toContain("computer_screenshot");
   });
 });

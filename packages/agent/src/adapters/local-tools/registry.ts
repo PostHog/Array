@@ -12,6 +12,7 @@ export const LOCAL_TOOLS_MCP_NAME = "posthog-code-tools";
 /** Runtime context handed to every local tool's handler and gate. */
 export interface LocalToolCtx {
   cwd: string;
+  platform?: NodeJS.Platform;
   /** GitHub token available to the sandbox, if any. */
   token?: string;
   taskId?: string;
@@ -30,6 +31,8 @@ export interface LocalToolGateMeta {
   channelMode?: boolean;
   /** Spoken narration is on for this session: enables the speak tool. */
   spokenNarration?: boolean;
+  /** Desktop computer control is enabled for this local session. */
+  computerUse?: boolean;
 }
 
 /**
@@ -38,7 +41,20 @@ export interface LocalToolGateMeta {
  * both attach an open `_meta`).
  */
 export interface LocalToolResult {
-  content: { type: "text"; text: string }[];
+  content: Array<
+    | {
+        type: "text";
+        text: string;
+        data?: never;
+        mimeType?: never;
+      }
+    | {
+        type: "image";
+        text?: never;
+        data: string;
+        mimeType: string;
+      }
+  >;
   isError?: true;
   [key: string]: unknown;
 }

@@ -48,6 +48,7 @@ describe("feature settingsStore defaults", () => {
       "local",
     );
     expect(useSettingsStore.getState().browserUse).toBe(false);
+    expect(useSettingsStore.getState().computerUse).toBe(false);
   });
 });
 
@@ -222,6 +223,7 @@ describe("feature settingsStore cloud selections", () => {
     ["dismissibleUpdateBanners", false, true],
     ["showSidebarWorktrees", false, true],
     ["browserUse", false, true],
+    ["computerUse", false, true],
   ] as const)("rehydrates %s", async (field, initial, persisted) => {
     getItem.mockResolvedValue(
       JSON.stringify({ state: { [field]: persisted }, version: 0 }),

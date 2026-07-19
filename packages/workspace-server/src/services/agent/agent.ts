@@ -293,6 +293,8 @@ interface SessionConfig {
   spokenNarration?: boolean;
   /** Whether local sessions may launch the isolated browser-use tools. */
   browserUse?: boolean;
+  /** Whether local sessions may control the macOS desktop. */
+  computerUse?: boolean;
 }
 
 /** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
@@ -1011,6 +1013,9 @@ If a repository IS genuinely required, attach one in this priority order:
               ...(config.spokenNarration !== undefined && {
                 spokenNarration: config.spokenNarration,
               }),
+              ...(config.computerUse !== undefined && {
+                computerUse: config.computerUse,
+              }),
               mcpToolApprovals: toolApprovals,
               ...(permissionMode && { permissionMode }),
               ...(model != null && { model }),
@@ -1086,6 +1091,9 @@ If a repository IS genuinely required, attach one in this priority order:
             ...(config.spokenNarration !== undefined && {
               spokenNarration: config.spokenNarration,
             }),
+            ...(config.computerUse !== undefined && {
+              computerUse: config.computerUse,
+            }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
@@ -1114,6 +1122,9 @@ If a repository IS genuinely required, attach one in this priority order:
             ...(channelMode && { channelMode }),
             ...(config.spokenNarration !== undefined && {
               spokenNarration: config.spokenNarration,
+            }),
+            ...(config.computerUse !== undefined && {
+              computerUse: config.computerUse,
             }),
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
@@ -2044,6 +2055,7 @@ For git operations while detached:
       spokenNarration:
         "spokenNarration" in params ? params.spokenNarration : undefined,
       browserUse: "browserUse" in params ? params.browserUse : undefined,
+      computerUse: "computerUse" in params ? params.computerUse : undefined,
     };
   }
 

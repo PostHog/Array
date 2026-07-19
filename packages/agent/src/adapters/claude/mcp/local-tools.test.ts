@@ -52,6 +52,71 @@ describe("createLocalToolsMcpServer", () => {
     expect(server).toBeUndefined();
   });
 
+  it("exposes computer tools for opted-in local macOS sessions", async () => {
+    const server = createLocalToolsMcpServer(
+      { cwd: "/repo", platform: "darwin" },
+      { environment: "local", computerUse: true },
+    );
+    if (!server) {
+      throw new Error("expected the local-tools server to be registered");
+    }
+
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await server.instance.connect(serverTransport);
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(clientTransport);
+
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("computer_screenshot");
+
+    await client.close();
+  });
+
+  it.each([
+    {
+      platform: "linux" as const,
+      environment: "local" as const,
+      enabled: true,
+    },
+    {
+      platform: "darwin" as const,
+      environment: "cloud" as const,
+      enabled: true,
+    },
+    {
+      platform: "darwin" as const,
+      environment: "local" as const,
+      enabled: false,
+    },
+  ])(
+    "does not expose computer tools for unsupported context %#",
+    async (input) => {
+      const server = createLocalToolsMcpServer(
+        { cwd: "/repo", platform: input.platform },
+        { environment: input.environment, computerUse: input.enabled },
+      );
+
+      if (!server) {
+        expect(server).toBeUndefined();
+        return;
+      }
+
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await server.instance.connect(serverTransport);
+      const client = new Client({ name: "test", version: "1.0.0" });
+      await client.connect(clientTransport);
+
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name)).not.toContain(
+        "computer_screenshot",
+      );
+
+      await client.close();
+    },
+  );
+
   it("exposes git_signed_commit over MCP in a cloud run with a token", async () => {
     const server = createLocalToolsMcpServer(
       { cwd: "/repo", token: "ghs_x" },

@@ -470,6 +470,34 @@ describe("AgentService", () => {
       );
     });
 
+    it.each([{ computerUse: true }, { computerUse: false }])(
+      "threads computerUse $computerUse into newSession meta",
+      async ({ computerUse }) => {
+        await service.startSession({
+          ...baseSessionParams,
+          adapter: "codex",
+          computerUse,
+        });
+
+        expect(mockNewSession).toHaveBeenCalledTimes(1);
+        expect(mockNewSession.mock.calls[0][0]._meta).toMatchObject({
+          computerUse,
+        });
+      },
+    );
+
+    it("omits computerUse from newSession meta when unset", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "claude",
+      });
+
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+      expect(mockNewSession.mock.calls[0][0]._meta).not.toHaveProperty(
+        "computerUse",
+      );
+    });
+
     it("keeps browser configuration out of adapter-specific session meta", async () => {
       await service.startSession({
         ...baseSessionParams,
