@@ -25,6 +25,7 @@
     "@hono/trpc-server": "catalog:",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@parcel/watcher": "catalog:",
+    "@playwright/mcp": "0.0.78",
     "@posthog/agent": "workspace:*",
     "@posthog/di": "workspace:*",
     "@posthog/enricher": "workspace:*",

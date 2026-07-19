@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # PostHog Code Development Guide
 
 `AGENTS.md` is the source of truth for architecture and development rules. `CLAUDE.md` is a symlink to this file. Edit this file only.
@@ -229,6 +231,7 @@ See [docs/conventions.md](./docs/conventions.md).
 - Use SDK types from `@anthropic-ai/claude-agent-sdk` and `@agentclientprotocol/sdk`.
 - Do not use Claude Code SDK `rawInput`. Use Zod-validated metadata.
 - User approvals are tool calls with permissions. Do not model approvals as custom methods plus notifications.
+- Keep browser and computer-use capabilities adapter-neutral unless an adapter has a documented technical constraint.
 
 ## Key Libraries
 

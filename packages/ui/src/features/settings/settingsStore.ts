@@ -211,12 +211,14 @@ interface SettingsStore {
   // sessions, cloud covers cloud runs.
   rtkEnabledLocal: boolean;
   rtkEnabledCloud: boolean;
+  browserUse: boolean;
   setAllowBypassPermissions: (enabled: boolean) => void;
   setPreventSleepWhileRunning: (enabled: boolean) => void;
   setDebugLogsCloudRuns: (enabled: boolean) => void;
   setAutoPublishCloudRuns: (enabled: boolean) => void;
   setRtkEnabledLocal: (enabled: boolean) => void;
   setRtkEnabledCloud: (enabled: boolean) => void;
+  setBrowserUse: (enabled: boolean) => void;
 
   // Terminal
   terminalFont: TerminalFont;
@@ -428,6 +430,7 @@ export const useSettingsStore = create<SettingsStore>()(
       autoPublishCloudRuns: true,
       rtkEnabledLocal: true,
       rtkEnabledCloud: true,
+      browserUse: false,
       setAllowBypassPermissions: (enabled) =>
         set({ allowBypassPermissions: enabled }),
       setPreventSleepWhileRunning: (enabled) =>
@@ -437,6 +440,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ autoPublishCloudRuns: enabled }),
       setRtkEnabledLocal: (enabled) => set({ rtkEnabledLocal: enabled }),
       setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
+      setBrowserUse: (enabled) => set({ browserUse: enabled }),
 
       // Terminal
       terminalFont: "berkeley-mono",
@@ -566,6 +570,7 @@ export const useSettingsStore = create<SettingsStore>()(
         autoPublishCloudRuns: state.autoPublishCloudRuns,
         rtkEnabledLocal: state.rtkEnabledLocal,
         rtkEnabledCloud: state.rtkEnabledCloud,
+        browserUse: state.browserUse,
 
         // Terminal
         terminalFont: state.terminalFont,

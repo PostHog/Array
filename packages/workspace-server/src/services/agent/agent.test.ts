@@ -116,6 +116,19 @@ vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
   hydrateSessionJsonl: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("./browser-use-mcp", () => ({
+  buildBrowserUseServer: vi.fn((enabled: boolean | undefined) =>
+    enabled
+      ? {
+          name: "playwright",
+          command: process.execPath,
+          args: ["/mock/playwright-mcp/cli.js", "--isolated"],
+          env: [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }],
+        }
+      : null,
+  ),
+}));
+
 vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
   return {
@@ -345,6 +358,48 @@ describe("AgentService", () => {
       expect(codexMcp).toEqual(claudeMcp);
     });
 
+    it("passes the same browser MCP server to Claude and Codex", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        taskRunId: "run-claude",
+        adapter: "claude",
+        browserUse: true,
+      });
+      await service.startSession({
+        ...baseSessionParams,
+        taskRunId: "run-codex",
+        adapter: "codex",
+        browserUse: true,
+      });
+
+      const claudeBrowserServer =
+        mockNewSession.mock.calls[0][0].mcpServers.at(-1);
+      const codexBrowserServer =
+        mockNewSession.mock.calls[1][0].mcpServers.at(-1);
+      expect(claudeBrowserServer).toMatchObject({
+        name: "playwright",
+        args: expect.arrayContaining(["--isolated"]),
+      });
+      expect(codexBrowserServer).toEqual(claudeBrowserServer);
+    });
+
+    it.each([undefined, false])(
+      "does not pass browser MCP when browserUse is %s",
+      async (browserUse) => {
+        await service.startSession({
+          ...baseSessionParams,
+          adapter: "claude",
+          browserUse,
+        });
+
+        expect(mockNewSession.mock.calls[0][0].mcpServers).not.toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "playwright" }),
+          ]),
+        );
+      },
+    );
+
     it("drops unreachable MCP servers for codex but keeps them for claude", async () => {
       vi.stubGlobal(
         "fetch",
@@ -412,6 +467,19 @@ describe("AgentService", () => {
       expect(mockNewSession).toHaveBeenCalledTimes(1);
       expect(mockNewSession.mock.calls[0][0]._meta).not.toHaveProperty(
         "spokenNarration",
+      );
+    });
+
+    it("keeps browser configuration out of adapter-specific session meta", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "claude",
+        browserUse: true,
+      });
+
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+      expect(mockNewSession.mock.calls[0][0]._meta).not.toHaveProperty(
+        "browserUse",
       );
     });
   });

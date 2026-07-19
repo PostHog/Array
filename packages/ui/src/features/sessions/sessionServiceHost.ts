@@ -137,6 +137,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
           ),
           import.meta.env.DEV,
         ),
+        browserUse: state.browserUse,
       };
     },
     usageLimit: {

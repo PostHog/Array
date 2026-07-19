@@ -33,6 +33,8 @@ export function AdvancedSettings() {
   const setRtkEnabledLocal = useSettingsStore((s) => s.setRtkEnabledLocal);
   const rtkEnabledCloud = useSettingsStore((s) => s.rtkEnabledCloud);
   const setRtkEnabledCloud = useSettingsStore((s) => s.setRtkEnabledCloud);
+  const browserUse = useSettingsStore((s) => s.browserUse);
+  const setBrowserUse = useSettingsStore((s) => s.setBrowserUse);
   const hostTRPC = useHostTRPC();
   const { data: rtkStatus } = useQuery(hostTRPC.agent.rtkStatus.queryOptions());
   const devModeClient = useServiceOptional<DevModeClient>(DEV_MODE_CLIENT);
@@ -87,6 +89,12 @@ export function AdvancedSettings() {
             </Text>
           )}
         </Flex>
+      </SettingRow>
+      <SettingRow
+        label="Browser use"
+        description="Let local agent sessions launch an isolated Google Chrome window and interact with websites. Experimental; requires Chrome to be installed"
+      >
+        <Switch checked={browserUse} onCheckedChange={setBrowserUse} size="1" />
       </SettingRow>
       <SettingRow
         label="Reset onboarding and tours"

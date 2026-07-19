@@ -98,6 +98,8 @@ export const startSessionInput = z.object({
    * narration off, so headless runs never load the tool.
    */
   spokenNarration: z.boolean().optional(),
+  /** Enables the isolated Playwright browser tools for local sessions. */
+  browserUse: z.boolean().optional(),
 });
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
@@ -233,6 +235,8 @@ export const reconnectSessionInput = z.object({
   rtkEnabled: z.boolean().optional(),
   /** See startSessionInput.spokenNarration. */
   spokenNarration: z.boolean().optional(),
+  /** See startSessionInput.browserUse. */
+  browserUse: z.boolean().optional(),
 });
 
 export type ReconnectSessionInput = z.infer<typeof reconnectSessionInput>;

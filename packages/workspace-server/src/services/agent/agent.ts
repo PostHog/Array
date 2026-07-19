@@ -88,6 +88,7 @@ import type { ProcessTrackingService } from "../process-tracking/process-trackin
 import { loadSessionEnvOverrides } from "../session-env/loader";
 import { isScratchPath } from "../workspace/scratch";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
+import { buildBrowserUseServer } from "./browser-use-mcp";
 import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
 import {
@@ -290,6 +291,8 @@ interface SessionConfig {
   rtkEnabled?: boolean;
   /** The user's spoken-narration setting at session start. */
   spokenNarration?: boolean;
+  /** Whether local sessions may launch the isolated browser-use tools. */
+  browserUse?: boolean;
 }
 
 /** Pull the adapter's `agentCapabilities._meta.posthog.steering` from initialize. */
@@ -935,10 +938,22 @@ If a repository IS genuinely required, attach one in this priority order:
       // ("ACP connection closed") and makes the host silently fall back to a
       // Claude/Opus session. Claude connects lazily and is unaffected, so only
       // the Codex server list is pruned to the reachable ones.
-      const sessionMcpServers =
+      const reachableMcpServers =
         adapter === "codex"
           ? await this.filterReachableMcpServers(mcpServers, taskRunId)
           : mcpServers;
+      let browserUseServer: ReturnType<typeof buildBrowserUseServer> = null;
+      try {
+        browserUseServer = buildBrowserUseServer(config.browserUse, "local");
+      } catch (err) {
+        this.log.warn("Browser-use server unavailable; continuing without it", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      const sessionMcpServers = [
+        ...reachableMcpServers,
+        ...(browserUseServer ? [browserUseServer] : []),
+      ];
 
       let externalPlugins: Awaited<ReturnType<typeof discoverExternalPlugins>> =
         [];
@@ -2028,6 +2043,7 @@ For git operations while detached:
       rtkEnabled: "rtkEnabled" in params ? params.rtkEnabled : undefined,
       spokenNarration:
         "spokenNarration" in params ? params.spokenNarration : undefined,
+      browserUse: "browserUse" in params ? params.browserUse : undefined,
     };
   }
 
