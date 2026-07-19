@@ -3,11 +3,17 @@ import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
 import { buildComputerUseStdioServer } from "../local-tools/stdio-server";
 import { buildLocalToolsServer } from "./local-tools-mcp";
 
-// The dist asset isn't on the walk-up path in unit tests, so make existsSync
-// succeed; nothing spawns the script — we only inspect the path.
+// Isolate bundled-script resolution and the sandbox env file; the test only
+// inspects the generated stdio config.
 vi.mock("node:fs", async (importActual) => {
   const actual = await importActual<typeof import("node:fs")>();
-  return { ...actual, existsSync: vi.fn().mockReturnValue(true) };
+  return {
+    ...actual,
+    existsSync: vi.fn().mockReturnValue(true),
+    readFileSync: vi.fn(() => {
+      throw new Error("sandbox env file unavailable");
+    }),
+  };
 });
 
 describe("buildLocalToolsServer", () => {

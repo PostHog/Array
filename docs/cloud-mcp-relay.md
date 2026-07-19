@@ -22,7 +22,9 @@ The built-in `posthog-code-computer-use` designation resolves to the packaged
 PostHog local-tools MCP server instead of `~/.claude.json`. It is added to new
 cloud runs when the desktop **Computer use** setting is enabled and exposes
 only the macOS computer tools. The same relay approval policy applies, so tool
-calls execute only while the creating desktop remains connected.
+calls execute only while the creating desktop remains connected. Runs with
+imported or relayed MCP servers skip pre-warmed sandbox reuse because the
+server list is not known when the warm run starts.
 
 ## Problem
 

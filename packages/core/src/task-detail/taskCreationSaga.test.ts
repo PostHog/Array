@@ -1,4 +1,5 @@
 import type { SessionService } from "@posthog/core/sessions/sessionService";
+import { CLOUD_COMPUTER_USE_MCP_NAME } from "@posthog/shared";
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -45,6 +46,7 @@ const sessionService = {
   disconnectFromTask: vi.fn(),
   rememberInitialCloudPrompt: vi.fn(),
   markTaskCreationInFlight: vi.fn(),
+  designateRelayedMcpServers: vi.fn().mockResolvedValue(undefined),
 } as unknown as SessionService;
 
 const createTask = (overrides: Partial<Task> = {}): Task => ({
@@ -732,6 +734,35 @@ describe("TaskCreationSaga", () => {
       );
     },
   );
+
+  it("uses a cold run when desktop-relayed MCP servers are requested", async () => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: vi.fn().mockResolvedValue(startedTask),
+    });
+    const relayedMcpServers = [{ name: CLOUD_COMPUTER_USE_MCP_NAME }];
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      relayedMcpServers,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.takeWarmTaskLease).not.toHaveBeenCalled();
+    expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+    expect(createTaskRunMock).toHaveBeenCalledWith(
+      "task-123",
+      expect.objectContaining({ relayedMcpServers }),
+    );
+  });
 
   it("reuses a warm run built from the selected custom image", async () => {
     mockHost.takeWarmTaskLease.mockReturnValue({
