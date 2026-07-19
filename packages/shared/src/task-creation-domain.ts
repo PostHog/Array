@@ -52,6 +52,7 @@ export interface TaskCreationInput {
    * meaningful: it opts the run out of the server-side default (enabled).
    */
   cloudRtkEnabled?: boolean;
+  cloudComputerUse?: boolean;
   signalReportId?: string;
   additionalDirectories?: string[];
   /**

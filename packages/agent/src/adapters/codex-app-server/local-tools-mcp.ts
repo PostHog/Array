@@ -6,13 +6,15 @@
  */
 
 import type { McpServerStdio } from "@agentclientprotocol/sdk";
+import { ghTokenEnv } from "@posthog/git/signed-commit";
 import { resolveGithubToken } from "../../utils/github-token";
+import { resolveBundledMcpScript } from "../../utils/resolve-bundled-script";
 import {
   enabledLocalTools,
+  LOCAL_TOOLS_MCP_NAME,
   type LocalToolCtx,
   type LocalToolGateMeta,
 } from "../local-tools";
-import { buildLocalToolsStdioServer } from "../local-tools/stdio-server";
 import { resolveTaskId } from "../session-meta";
 
 /**
@@ -25,6 +27,42 @@ export interface LocalToolsMeta extends LocalToolGateMeta {
   taskRunId?: string;
   persistence?: { taskId?: string };
   baseBranch?: string;
+}
+
+function toMcpServerStdio(
+  ctx: LocalToolCtx,
+  enabledNames: string[],
+): McpServerStdio {
+  const scriptPath = resolveBundledMcpScript(
+    "adapters/codex-app-server/local-tools-mcp-server.js",
+  );
+  const ctxBase64 = Buffer.from(JSON.stringify(ctx)).toString("base64");
+  const env = [
+    { name: "POSTHOG_LOCAL_TOOLS_CTX", value: ctxBase64 },
+    { name: "POSTHOG_LOCAL_TOOLS_ENABLED", value: enabledNames.join(",") },
+    // Codex spawns this command with ELECTRON_RUN_AS_NODE removed from its own
+    // env (spawn.ts). In packaged desktop installs process.execPath is the app
+    // binary, which boots the full app without this var. Inert on real node.
+    { name: "ELECTRON_RUN_AS_NODE", value: "1" },
+  ];
+  if (process.env.DISPLAY) {
+    env.push({ name: "DISPLAY", value: process.env.DISPLAY });
+  }
+  if (ctx.token) {
+    // Token also on the child env so its own git remote ops authenticate.
+    env.push(
+      ...Object.entries(ghTokenEnv(ctx.token)).map(([name, value]) => ({
+        name,
+        value,
+      })),
+    );
+  }
+  return {
+    name: LOCAL_TOOLS_MCP_NAME,
+    command: process.execPath,
+    args: [scriptPath],
+    env,
+  };
 }
 
 /**
@@ -52,12 +90,8 @@ export function buildLocalToolsServer(
   if (tools.length === 0) {
     return null;
   }
-  const server = buildLocalToolsStdioServer(
+  return toMcpServerStdio(
     toolCtx,
     tools.map((t) => t.name),
   );
-  return {
-    ...server,
-    env: Object.entries(server.env).map(([name, value]) => ({ name, value })),
-  };
 }

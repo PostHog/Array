@@ -1,5 +1,4 @@
 import type { SessionService } from "@posthog/core/sessions/sessionService";
-import { CLOUD_COMPUTER_USE_MCP_NAME } from "@posthog/shared";
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -157,6 +156,7 @@ describe("TaskCreationSaga", () => {
       reasoningLevel: "high",
       cloudAutoPublish: true,
       cloudRtkEnabled: false,
+      cloudComputerUse: true,
     });
 
     expect(result.success).toBe(true);
@@ -175,6 +175,7 @@ describe("TaskCreationSaga", () => {
       prAuthorshipMode: "user",
       autoPublish: true,
       rtkEnabled: false,
+      computerUse: true,
       runSource: "manual",
       signalReportId: undefined,
       initialPermissionMode: "auto",
@@ -745,7 +746,7 @@ describe("TaskCreationSaga", () => {
       createTaskRun: createTaskRunMock,
       startTaskRun: vi.fn().mockResolvedValue(startedTask),
     });
-    const relayedMcpServers = [{ name: CLOUD_COMPUTER_USE_MCP_NAME }];
+    const relayedMcpServers = [{ name: "local-database" }];
 
     const result = await saga.run({
       content: "Ship the fix",

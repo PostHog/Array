@@ -114,6 +114,7 @@ program
     "--relayMcpServers <json>",
     "Desktop-relayed MCP server names as JSON array (docs/cloud-mcp-relay.md)",
   )
+  .option("--computerUse <boolean>", "Enable native cloud computer control")
   .option("--createPr <boolean>", "Whether this run may publish changes")
   .option(
     "--autoPublish <boolean>",
@@ -142,6 +143,10 @@ program
     const env = envResult.data;
 
     const mode = options.mode === "background" ? "background" : "interactive";
+    const computerUse = parseBooleanOption(
+      options.computerUse,
+      "--computerUse",
+    );
     const createPr = parseBooleanOption(options.createPr, "--createPr");
     const autoPublish = parseBooleanOption(
       options.autoPublish,
@@ -208,6 +213,7 @@ program
       autoPublish,
       mcpServers,
       relayMcpServers,
+      computerUse,
       baseBranch: options.baseBranch,
       claudeCode,
       allowedDomains,

@@ -1,10 +1,6 @@
-import {
-  CLOUD_COMPUTER_USE_MCP_NAME,
-  type LocalMcpServerDescriptor,
-} from "@posthog/shared";
+import type { LocalMcpServerDescriptor } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
-  addCloudComputerUseRelay,
   classifyLocalMcpServer,
   isPrivateHostname,
   type LocalMcpCloudClassification,
@@ -203,21 +199,6 @@ describe("LocalMcpImportService", () => {
 });
 
 describe("partitionLocalMcpServersForRun", () => {
-  it("puts built-in computer use first in the relay designation", () => {
-    const result = addCloudComputerUseRelay([], true);
-
-    expect(result).toEqual([{ name: CLOUD_COMPUTER_USE_MCP_NAME }]);
-  });
-
-  it("does not duplicate the built-in computer use relay name", () => {
-    const result = addCloudComputerUseRelay(
-      [{ name: CLOUD_COMPUTER_USE_MCP_NAME }],
-      true,
-    );
-
-    expect(result).toEqual([{ name: CLOUD_COMPUTER_USE_MCP_NAME }]);
-  });
-
   const importable = (name: string): LocalMcpCloudClassification => ({
     name,
     availability: "importable",

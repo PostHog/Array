@@ -3,8 +3,6 @@
 // reads the config from disk; @posthog/core classifies each server by whether
 // it can be imported into a cloud sandbox.
 
-export const CLOUD_COMPUTER_USE_MCP_NAME = "posthog-code-computer-use";
-
 /** Where a local MCP server definition came from in ~/.claude.json. */
 export type LocalMcpServerScope = "user" | "project";
 

@@ -100,7 +100,7 @@ export function AdvancedSettings() {
       </SettingRow>
       <SettingRow
         label="Computer use"
-        description="Let local sessions and cloud tasks see your screen, open applications, and control the mouse and keyboard. Cloud tasks connect through this app while it remains open. Experimental; macOS requires Screen Recording and Accessibility permissions"
+        description="Let local sessions control your Mac and give cloud tasks their own isolated Linux desktop. Experimental; local use requires macOS Screen Recording and Accessibility permissions"
       >
         <Switch
           checked={computerUse}

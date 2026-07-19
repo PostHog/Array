@@ -31,7 +31,7 @@ export interface LocalToolGateMeta {
   channelMode?: boolean;
   /** Spoken narration is on for this session: enables the speak tool. */
   spokenNarration?: boolean;
-  /** Desktop computer control is enabled for this local session. */
+  /** Computer control is enabled for this session. */
   computerUse?: boolean;
 }
 

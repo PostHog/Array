@@ -39,6 +39,7 @@ export interface AgentServerConfig {
    * each name against local config at execution time.
    */
   relayMcpServers?: string[];
+  computerUse?: boolean;
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];

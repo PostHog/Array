@@ -11,7 +11,6 @@ import type {
 } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
-import { addCloudComputerUseRelay } from "../local-mcp/localMcpImport";
 import { TASK_CREATION_EFFECTS, TASK_CREATION_HOST } from "./identifiers";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
@@ -79,10 +78,7 @@ export class TaskService {
       input.workspaceMode === "cloud"
         ? {
             ...input,
-            relayedMcpServers: addCloudComputerUseRelay(
-              input.relayedMcpServers ?? [],
-              this.host.isComputerUseEnabled(),
-            ),
+            cloudComputerUse: this.host.isComputerUseEnabled(),
           }
         : input;
 

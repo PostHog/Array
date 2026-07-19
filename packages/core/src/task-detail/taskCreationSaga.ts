@@ -404,6 +404,7 @@ export class TaskCreationSaga extends Saga<
             prAuthorshipMode,
             autoPublish: input.cloudAutoPublish,
             rtkEnabled: input.cloudRtkEnabled,
+            computerUse: input.cloudComputerUse,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
             homeQuickAction: input.homeQuickActionLabel,
@@ -685,7 +686,11 @@ export class TaskCreationSaga extends Saga<
       augmented,
     };
 
-    if (input.importedMcpServers?.length || input.relayedMcpServers?.length) {
+    if (
+      input.cloudComputerUse ||
+      input.importedMcpServers?.length ||
+      input.relayedMcpServers?.length
+    ) {
       return { ...base, suppressWarmReuse: true };
     }
 

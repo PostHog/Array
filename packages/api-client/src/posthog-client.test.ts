@@ -223,6 +223,7 @@ describe("PostHogAPIClient", () => {
         model: "gpt-5.4",
         reasoningLevel: "high",
         initialPermissionMode: "auto",
+        computerUse: true,
       }),
     ).resolves.toEqual({ id: "run-123", environment: "cloud" });
 
@@ -238,6 +239,7 @@ describe("PostHogAPIClient", () => {
             model: "gpt-5.4",
             reasoning_effort: "high",
             initial_permission_mode: "auto",
+            computer_use: true,
             environment: "cloud",
           }),
         },

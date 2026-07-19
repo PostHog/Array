@@ -134,7 +134,6 @@ export type {
   LocalMcpServerScope,
   LocalMcpTransport,
 } from "./local-mcp-domain";
-export { CLOUD_COMPUTER_USE_MCP_NAME } from "./local-mcp-domain";
 export {
   formatMention,
   type MentionSegment,

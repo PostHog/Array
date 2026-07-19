@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readFile, unlink } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -10,18 +10,21 @@ import {
   computerUseTools,
 } from "./computer-use";
 
-vi.mock("node:child_process", () => ({ execFile: vi.fn() }));
+vi.mock("node:child_process", () => ({ execFile: vi.fn(), spawn: vi.fn() }));
 vi.mock("node:fs/promises", () => ({
   readFile: vi.fn(),
   unlink: vi.fn().mockResolvedValue(undefined),
 }));
 
 const mockedExecFile = vi.mocked(execFile);
+const mockedSpawn = vi.mocked(spawn);
 const mockedReadFile = vi.mocked(readFile);
 const mockedUnlink = vi.mocked(unlink);
 
 const context = { cwd: "/repo", platform: "darwin" as const };
 const enabledMeta = { environment: "local" as const, computerUse: true };
+const cloudContext = { cwd: "/repo", platform: "linux" as const };
+const cloudMeta = { environment: "cloud" as const, computerUse: true };
 
 describe("computer use tools", () => {
   beforeEach(() => {
@@ -33,6 +36,7 @@ describe("computer use tools", () => {
       }
       return undefined;
     }) as unknown as typeof execFile);
+    mockedSpawn.mockReturnValue({ unref: vi.fn() } as never);
     mockedReadFile.mockResolvedValue(Buffer.from("png"));
     mockedUnlink.mockResolvedValue(undefined);
   });
@@ -69,6 +73,12 @@ describe("computer use tools", () => {
 
   it("is enabled for opted-in local macOS sessions", () => {
     expect(computerScreenshotTool.isEnabled(context, enabledMeta)).toBe(true);
+  });
+
+  it("is enabled for opted-in cloud Linux sessions", () => {
+    expect(computerScreenshotTool.isEnabled(cloudContext, cloudMeta)).toBe(
+      true,
+    );
   });
 
   it("returns a screenshot image and removes the temporary file", async () => {
@@ -125,6 +135,33 @@ describe("computer use tools", () => {
     expect(mockedExecFile).toHaveBeenCalledWith(
       "/usr/bin/osascript",
       expect.any(Array),
+      { encoding: "utf8" },
+      expect.any(Function),
+    );
+  });
+
+  it("opens the cloud browser without invoking a shell", async () => {
+    const unref = vi.fn();
+    mockedSpawn.mockReturnValueOnce({ unref } as never);
+
+    await computerOpenApplicationTool.handler(cloudContext, {
+      application: "Browser",
+    });
+
+    expect(mockedSpawn).toHaveBeenCalledWith(
+      "/usr/bin/epiphany",
+      ["--new-window"],
+      { detached: true, stdio: "ignore" },
+    );
+    expect(unref).toHaveBeenCalledOnce();
+  });
+
+  it("uses Linux desktop utilities in cloud sessions", async () => {
+    await computerClickTool.handler(cloudContext, { x: 100, y: 200 });
+
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      "/usr/bin/xdotool",
+      ["mousemove", "100", "200", "click", "1"],
       { encoding: "utf8" },
       expect.any(Function),
     );

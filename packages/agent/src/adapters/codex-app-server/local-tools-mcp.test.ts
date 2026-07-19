@@ -1,41 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
-import { buildComputerUseStdioServer } from "../local-tools/stdio-server";
 import { buildLocalToolsServer } from "./local-tools-mcp";
 
-// Isolate bundled-script resolution and the sandbox env file; the test only
-// inspects the generated stdio config.
+// The dist asset isn't on the walk-up path in unit tests, so make existsSync
+// succeed; nothing spawns the script — we only inspect the path.
 vi.mock("node:fs", async (importActual) => {
   const actual = await importActual<typeof import("node:fs")>();
-  return {
-    ...actual,
-    existsSync: vi.fn().mockReturnValue(true),
-    readFileSync: vi.fn(() => {
-      throw new Error("sandbox env file unavailable");
-    }),
-  };
+  return { ...actual, existsSync: vi.fn().mockReturnValue(true) };
 });
 
 describe("buildLocalToolsServer", () => {
-  it("builds the computer-only server for a macOS desktop relay", () => {
-    const server = buildComputerUseStdioServer("/repo", "darwin");
-
-    expect(server?.env.POSTHOG_LOCAL_TOOLS_ENABLED).toBe(
-      [
-        "computer_screenshot",
-        "computer_list_applications",
-        "computer_open_application",
-        "computer_click",
-        "computer_type",
-        "computer_key",
-      ].join(","),
-    );
-  });
-
   const saved = {
     sandbox: process.env.IS_SANDBOX,
     ghToken: process.env.GH_TOKEN,
     githubToken: process.env.GITHUB_TOKEN,
+    display: process.env.DISPLAY,
   };
 
   beforeEach(() => {
@@ -44,12 +23,14 @@ describe("buildLocalToolsServer", () => {
     delete process.env.IS_SANDBOX;
     delete process.env.GH_TOKEN;
     delete process.env.GITHUB_TOKEN;
+    delete process.env.DISPLAY;
   });
 
   afterEach(() => {
     restore("IS_SANDBOX", saved.sandbox);
     restore("GH_TOKEN", saved.ghToken);
     restore("GITHUB_TOKEN", saved.githubToken);
+    restore("DISPLAY", saved.display);
   });
 
   function restore(key: string, value: string | undefined): void {
@@ -172,6 +153,20 @@ describe("buildLocalToolsServer", () => {
         "computer_key",
       ]),
     );
+  });
+
+  it("exposes computer tools for opted-in cloud Linux sessions", () => {
+    process.env.DISPLAY = ":99";
+    const server = buildLocalToolsServer(
+      { cwd: "/repo", platform: "linux" },
+      { environment: "cloud", computerUse: true },
+    );
+
+    const enabled =
+      server?.env.find((entry) => entry.name === "POSTHOG_LOCAL_TOOLS_ENABLED")
+        ?.value ?? "";
+    expect(enabled.split(",")).toContain("computer_screenshot");
+    expect(server?.env).toContainEqual({ name: "DISPLAY", value: ":99" });
   });
 
   it.each([

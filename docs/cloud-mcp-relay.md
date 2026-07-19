@@ -1,5 +1,3 @@
-<!-- markdownlint-disable MD013 -->
-
 # Design: relaying local MCP servers into cloud task runs
 
 Status: **implemented** (same PR as the import work), behind the same
@@ -17,14 +15,6 @@ held in memory by the creating client's main process — an app restart drops
 them, and relayed servers stop working for in-flight runs (they 503 after the
 liveness window) rather than surviving a handoff. Tool allowlisting for
 relayed servers persists for the session lifetime, not to the backend.
-
-The built-in `posthog-code-computer-use` designation resolves to the packaged
-PostHog local-tools MCP server instead of `~/.claude.json`. It is added to new
-cloud runs when the desktop **Computer use** setting is enabled and exposes
-only the macOS computer tools. The same relay approval policy applies, so tool
-calls execute only while the creating desktop remains connected. Runs with
-imported or relayed MCP servers skip pre-warmed sandbox reuse because the
-server list is not known when the warm run starts.
 
 ## Problem
 
@@ -63,7 +53,7 @@ The MCP relay mirrors this with a new event/command pair.
 
 ## Architecture
 
-```text
+```
 sandbox                                          desktop
 ┌──────────────────────────────┐                 ┌──────────────────────────────┐
 │ Claude/Codex adapter          │                 │ McpRelayService              │

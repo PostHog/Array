@@ -1,6 +1,5 @@
 import type { SessionService } from "@posthog/core/sessions/sessionService";
 import type { RootLogger } from "@posthog/di/logger";
-import { CLOUD_COMPUTER_USE_MCP_NAME } from "@posthog/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
@@ -78,7 +77,7 @@ describe("TaskService.createTask validation", () => {
     expect(result.failedStep).toBe("task_creation");
   });
 
-  it("adds the computer-use relay to every cloud task", async () => {
+  it("enables computer use on every opted-in cloud task", async () => {
     const run = vi.spyOn(TaskCreationSaga.prototype, "run").mockResolvedValue({
       success: false,
       error: "stop after input capture",
@@ -97,7 +96,7 @@ describe("TaskService.createTask validation", () => {
 
     expect(run).toHaveBeenCalledWith(
       expect.objectContaining({
-        relayedMcpServers: [{ name: CLOUD_COMPUTER_USE_MCP_NAME }],
+        cloudComputerUse: true,
       }),
     );
     run.mockRestore();
