@@ -229,10 +229,16 @@ export class SessionConfigState {
   private models: Array<{ id: string; name: string }> = [];
   private efforts: string[] = [];
   private _options: SessionConfigOption[] = [];
+  private readonly allowedModelIds?: ReadonlySet<string>;
 
-  constructor(model: string, effort?: string) {
+  constructor(
+    model: string,
+    effort?: string,
+    allowedModelIds?: ReadonlySet<string>,
+  ) {
     this._model = model;
     this._effort = effort;
+    this.allowedModelIds = allowedModelIds?.size ? allowedModelIds : undefined;
     this.rebuild();
   }
 
@@ -262,8 +268,12 @@ export class SessionConfigState {
   ): { modeChanged: boolean } {
     let modeChanged = false;
     if (typeof value === "string") {
-      if (configId === "model") this._model = value;
-      else if (configId === "effort") this._effort = value;
+      if (
+        configId === "model" &&
+        (!this.allowedModelIds || this.allowedModelIds.has(value))
+      ) {
+        this._model = value;
+      } else if (configId === "effort") this._effort = value;
       else if (configId === "mode") {
         this._mode = resolveCodexMode(value);
         modeChanged = true;
@@ -279,13 +289,24 @@ export class SessionConfigState {
    * populate efforts, so fall back to the shared codex model→effort map.
    */
   loadModels(rawModels: RawModel[]): void {
-    this.models = rawModels
+    const liveModels = rawModels
       .filter((m) => !m?.hidden)
       .filter((m) => isOpenAIModel(m as unknown as GatewayModel))
       .map((m) => ({
         id: (m.id ?? m.model) as string,
         name: (m.displayName ?? m.id ?? m.model) as string,
       }));
+    if (this.allowedModelIds) {
+      const liveModelsById = new Map(
+        liveModels.map((model) => [model.id, model]),
+      );
+      this.models = [...this.allowedModelIds].map(
+        (modelId) =>
+          liveModelsById.get(modelId) ?? { id: modelId, name: modelId },
+      );
+    } else {
+      this.models = liveModels;
+    }
     const current = rawModels.find(
       (m) => m.id === this._model || m.model === this._model,
     );

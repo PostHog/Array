@@ -134,6 +134,26 @@ describe("SessionConfigState", () => {
       config.options.find((option) => option.category === "mode")?.currentValue,
     ).toBe("full-access");
   });
+
+  it("uses gateway models when the app-server model list is stale", () => {
+    const config = new SessionConfigState(
+      "gpt-5.5",
+      undefined,
+      new Set(["gpt-5.5", "gpt-5.6-sol"]),
+    );
+
+    config.loadModels([
+      { id: "gpt-5.5", model: "gpt-5.5", displayName: "GPT-5.5" },
+    ]);
+
+    const modelOption = config.options.find(
+      (option) => option.category === "model",
+    );
+    expect(modelOption?.type === "select" ? modelOption.options : []).toEqual([
+      { name: "GPT-5.5", value: "gpt-5.5" },
+      { name: "gpt-5.6-sol", value: "gpt-5.6-sol" },
+    ]);
+  });
 });
 
 describe("buildConfigOptions", () => {

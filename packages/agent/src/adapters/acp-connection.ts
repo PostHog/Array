@@ -230,6 +230,7 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
       },
       model: codexOptions.model,
       reasoningEffort: codexOptions.reasoningEffort,
+      allowedModelIds: config.allowedModelIds,
       processCallbacks: config.processCallbacks,
       onStructuredOutput: config.onStructuredOutput,
       logger: config.logger?.child("CodexAppServerAgent"),

@@ -203,6 +203,7 @@ export interface CodexAppServerAgentOptions {
   processOptions: CodexAppServerProcessOptions;
   model?: string;
   reasoningEffort?: string;
+  allowedModelIds?: ReadonlySet<string>;
   processCallbacks?: ProcessSpawnedCallback;
   logger?: Logger;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
@@ -265,6 +266,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.config = new SessionConfigState(
       options.model ?? DEFAULT_CODEX_MODEL,
       options.reasoningEffort,
+      options.allowedModelIds,
     );
     this.onStructuredOutput = options.onStructuredOutput;
     this.developerInstructions = options.processOptions.developerInstructions;
