@@ -78,4 +78,6 @@ for (const t of tools) {
 }
 
 const transport = new StdioServerTransport();
-await server.connect(transport);
+server.connect(transport).catch((error) => {
+  die(`Failed to connect stdio transport: ${error}`);
+});

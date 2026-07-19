@@ -134,6 +134,10 @@ export default defineConfig(({ mode }) => {
         },
         rollupOptions: {
           input: {
+            "adapters/codex-app-server/local-tools-mcp-server": path.resolve(
+              __dirname,
+              "../../packages/agent/src/adapters/codex-app-server/local-tools-mcp-server.ts",
+            ),
             bootstrap: path.resolve(__dirname, "src/main/bootstrap.ts"),
             "workspace-server": require.resolve(
               "@posthog/workspace-server/serve",

@@ -8,10 +8,12 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const script = resolve(
-  fileURLToPath(new URL(".", import.meta.url)),
-  "../dist/adapters/codex-app-server/local-tools-mcp-server.js",
-);
+const script = process.argv[2]
+  ? resolve(process.argv[2])
+  : resolve(
+      fileURLToPath(new URL(".", import.meta.url)),
+      "../dist/adapters/codex-app-server/local-tools-mcp-server.js",
+    );
 
 const ctx = Buffer.from(
   JSON.stringify({ cwd: "/tmp", taskId: "smoke", token: "smoke-token" }),

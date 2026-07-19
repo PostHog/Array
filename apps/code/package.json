@@ -15,7 +15,7 @@
     "start": "electron-vite dev --watch",
     "start:debug": "electron-vite dev --watch --inspect=5858",
     "compile": "electron-vite build",
-    "package": "electron-vite build && electron-builder build --dir --config electron-builder.ts",
+    "package": "electron-vite build && node ../../packages/agent/build/verify-local-tools-mcp-server.mjs .vite/build/adapters/codex-app-server/local-tools-mcp-server.js && electron-builder build --dir --config electron-builder.ts",
     "package:dev": "FORCE_DEV_MODE=1 SKIP_NOTARIZE=1 electron-vite build && electron-builder build --dir --config electron-builder.ts",
     "make": "electron-vite build && electron-builder build --config electron-builder.ts",
     "make:linux": "bash scripts/build-linux-docker.sh",
