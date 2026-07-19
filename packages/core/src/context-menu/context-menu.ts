@@ -185,6 +185,9 @@ export class ContextMenuService {
           },
         },
       ),
+      // Confirmation is handled downstream by TaskDeletionService via
+      // confirmDeleteTask (worktree-aware wording), so no inline confirm here.
+      this.item("Delete", { type: "delete" }),
     ]);
   }
 

@@ -142,6 +142,18 @@ describe("ContextMenuService.showTaskContextMenu", () => {
     );
   });
 
+  it("offers Delete for active tasks and resolves without an inline confirm", async () => {
+    const menu = new FakeContextMenu();
+    // dialogReturning(0) would cancel any inline confirm; Delete must resolve
+    // anyway because confirmation happens downstream in TaskDeletionService.
+    const result = makeService(menu, dialogReturning(0)).showTaskContextMenu(
+      baseTask,
+    );
+    await menu.shown;
+    findItem(menu.lastItems, "Delete").click();
+    expect(await result).toEqual({ action: { type: "delete" } });
+  });
+
   it("resolves to null when the menu is dismissed", async () => {
     const menu = new FakeContextMenu();
     const result = makeService(menu).showTaskContextMenu(baseTask);
