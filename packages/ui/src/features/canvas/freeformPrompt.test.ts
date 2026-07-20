@@ -50,7 +50,7 @@ describe("buildFreeformGenerationPrompt", () => {
     // the live code tool-side and the agent edits the scratch file in place.
     expect(extracted?.body).not.toContain("export const App = () => null;");
     expect(extracted?.body).toContain("canvas_checkout");
-    expect(extracted?.body).toContain("TARGETED edits");
+    expect(extracted?.body).toContain("editing that file");
     // The stale-publish recovery loop is spelled out.
     expect(extracted?.body).toContain("version-conflict");
   });
