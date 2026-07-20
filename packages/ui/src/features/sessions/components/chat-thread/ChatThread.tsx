@@ -57,9 +57,6 @@ import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
-import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
-import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
-import { extractCustomInstructions } from "@posthog/ui/features/sessions/components/session-update/customInstructions";
 import {
   hasFileMentions,
   MentionChip,
@@ -67,6 +64,7 @@ import {
 } from "@posthog/ui/features/sessions/components/session-update/parseFileMentions";
 import { SessionUpdateView } from "@posthog/ui/features/sessions/components/session-update/SessionUpdateView";
 import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
+import { usePromptDisplayContent } from "@posthog/ui/features/sessions/components/session-update/usePromptDisplayContent";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useAgentConversationItems } from "@posthog/ui/features/sessions/hooks/useAgentConversationItems";
@@ -284,29 +282,13 @@ function UserBubble({
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const channelContext = useMemo(
-    () => extractChannelContext(content),
-    [content],
-  );
-  const afterChannelContext = channelContext
-    ? channelContext.stripped
-    : content;
-  const canvasInstructions = useMemo(
-    () => extractCanvasInstructions(afterChannelContext),
-    [afterChannelContext],
-  );
-  const afterCanvasInstructions = canvasInstructions
-    ? canvasInstructions.stripped
-    : afterChannelContext;
-  const customInstructions = useMemo(
-    () => extractCustomInstructions(afterCanvasInstructions),
-    [afterCanvasInstructions],
-  );
-  const displayContent = customInstructions
-    ? customInstructions.stripped
-    : afterCanvasInstructions;
-  const showChannelContextTag = !!channelContext && bluebirdEnabled;
-  const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
+  const {
+    displayContent,
+    channelContext,
+    canvasInstructions,
+    showChannelContextTag,
+    showCanvasInstructionsTag,
+  } = usePromptDisplayContent(content, bluebirdEnabled);
   const showHeaderChips = showChannelContextTag || showCanvasInstructionsTag;
   const taskId = useSessionTaskId();
   const openChannelContextInSplit = usePanelLayoutStore(

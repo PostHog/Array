@@ -76,7 +76,11 @@ import {
   ChatMarkdown,
   ChatStreamingMarkdown,
 } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
-import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
+import {
+  hasFileMentions,
+  parseFileMentions,
+} from "@posthog/ui/features/sessions/components/session-update/parseFileMentions";
+import { usePromptDisplayContent } from "@posthog/ui/features/sessions/components/session-update/usePromptDisplayContent";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
 import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
@@ -188,9 +192,7 @@ function agentPrompts(items: ConversationItem[]): ThreadAgentMessage[] {
   const prompts: ThreadAgentMessage[] = [];
   for (const item of items) {
     if (item.type !== "user_message") continue;
-    const text = (
-      extractChannelContext(item.content)?.stripped ?? item.content
-    ).trim();
+    const text = item.content.trim();
     if (!text) continue;
     prompts.push({ id: item.id, text, timestamp: item.timestamp });
   }
@@ -261,7 +263,13 @@ export function UserPromptRow({
   message: ThreadAgentMessage;
   author: TaskThreadMessage["author"];
 }) {
-  const promptText = normalizeAgentPromptText(message.text);
+  // Strip the injected context blocks (always-on — the thread panel has no
+  // split-tab tags, so the flag arg is false just to skip them) before dropping
+  // the leading @agent / thread-comment attribution. Mention chips parse to
+  // chips like the conversation view.
+  const { displayContent } = usePromptDisplayContent(message.text, false);
+  const promptText = normalizeAgentPromptText(displayContent);
+  const containsMentions = hasFileMentions(promptText);
 
   return (
     <ThreadItem>
@@ -279,8 +287,13 @@ export function UserPromptRow({
             />
           )}
         </ThreadItemHeader>
-        <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
-          <span className={mentionChipClass}>@agent</span> {promptText}
+        <ThreadItemBody className="wrap-break-word">
+          <span className={mentionChipClass}>@agent</span>{" "}
+          {containsMentions ? (
+            parseFileMentions(promptText)
+          ) : (
+            <ChatMarkdown content={promptText} />
+          )}
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>

@@ -10,10 +10,12 @@ import {
   TableRow,
   Text,
 } from "@posthog/quill";
+import { GithubRefChip } from "@posthog/ui/features/editor/components/GithubRefChip";
 import {
   parseOpenFence,
   splitMarkdownBlocks,
 } from "@posthog/ui/features/editor/components/splitMarkdownBlocks";
+import { parseGithubIssueUrl } from "@posthog/ui/features/message-editor/githubIssueUrl";
 import {
   BareFileLink,
   hasDirectoryPath,
@@ -66,16 +68,30 @@ const components: Components = {
   p: ({ children }) => (
     <Text className="text-sm leading-[1.5]">{children}</Text>
   ),
-  a: ({ children, href }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="text-primary underline underline-offset-2"
-    >
-      {children}
-    </a>
-  ),
+  a: ({ children, href }) => {
+    const githubRef = href ? parseGithubIssueUrl(href) : null;
+    if (githubRef) {
+      const isAutoLink = typeof children === "string" && children === href;
+      const label = isAutoLink
+        ? `${githubRef.owner}/${githubRef.repo}#${githubRef.number}`
+        : children;
+      return (
+        <GithubRefChip href={githubRef.normalizedUrl} kind={githubRef.kind}>
+          {label}
+        </GithubRefChip>
+      );
+    }
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline underline-offset-2"
+      >
+        {children}
+      </a>
+    );
+  },
   img: ({ alt }) => (
     <Text className="text-muted-foreground text-sm">
       Remote image blocked{alt ? `: ${alt}` : ""}

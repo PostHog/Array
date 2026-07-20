@@ -156,4 +156,40 @@ describe("UserPromptRow", () => {
     expect(screen.getByText("which model are you?")).toBeInTheDocument();
     expect(screen.queryByText(/Thread comment from/)).not.toBeInTheDocument();
   });
+
+  it("strips injected custom-instructions and channel-context XML", () => {
+    render(
+      <UserPromptRow
+        message={{
+          id: "prompt",
+          text: 'ship the fix\n<user_custom_instructions>\nAlways be brief.\n</user_custom_instructions>\n<channel_context channel="billing">\n# Billing\n</channel_context>',
+          timestamp: 1,
+        }}
+        author={{ id: 1, uuid: "user", email: "user@example.com" }}
+      />,
+    );
+
+    expect(screen.getByText("ship the fix")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/user_custom_instructions/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/channel_context/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Always be brief.")).not.toBeInTheDocument();
+  });
+
+  it("renders an injected PR chip instead of its raw XML", () => {
+    render(
+      <UserPromptRow
+        message={{
+          id: "prompt",
+          text: 'review <github_pr number="42" title="Fix login" url="https://github.com/org/repo/pull/42" />',
+          timestamp: 1,
+        }}
+        author={{ id: 1, uuid: "user", email: "user@example.com" }}
+      />,
+    );
+
+    expect(screen.queryByText(/github_pr/)).not.toBeInTheDocument();
+    expect(screen.getByText("#42 - Fix login")).toBeInTheDocument();
+  });
 });

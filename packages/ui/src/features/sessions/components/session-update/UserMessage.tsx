@@ -9,21 +9,19 @@ import {
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { Box, Flex, IconButton } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
 import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
-import { extractCanvasInstructions } from "./canvasInstructions";
-import { extractChannelContext } from "./channelContext";
-import { extractCustomInstructions } from "./customInstructions";
 import {
   hasFileMentions,
   MentionChip,
   parseFileMentions,
 } from "./parseFileMentions";
+import { usePromptDisplayContent } from "./usePromptDisplayContent";
 
 interface UserMessageProps {
   content: string;
@@ -61,42 +59,17 @@ export const UserMessage = memo(function UserMessage({
   taskId,
   keyboardFocused = false,
 }: UserMessageProps) {
-  // A channel's CONTEXT.md and the canvas generation instructions, if injected
-  // into this prompt, are each collapsed into a clickable tag instead of
-  // rendered inline; the rest of the prompt renders normally. Clicking a tag
-  // opens the snapshot as a split tab. The clickable tag + split tab is a
-  // project-bluebird feature, but we always strip the blocks so the raw
-  // <channel_context>/<canvas_generation_instructions> XML never leaks for
-  // flag-off viewers. The user's saved personalization
-  // (<user_custom_instructions>) is always-on background, not contextual to this
-  // message, so it's stripped without a tag.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const channelContext = useMemo(
-    () => extractChannelContext(content),
-    [content],
-  );
-  const afterChannelContext = channelContext
-    ? channelContext.stripped
-    : content;
-  const canvasInstructions = useMemo(
-    () => extractCanvasInstructions(afterChannelContext),
-    [afterChannelContext],
-  );
-  const afterCanvasInstructions = canvasInstructions
-    ? canvasInstructions.stripped
-    : afterChannelContext;
-  const customInstructions = useMemo(
-    () => extractCustomInstructions(afterCanvasInstructions),
-    [afterCanvasInstructions],
-  );
-  const displayContent = customInstructions
-    ? customInstructions.stripped
-    : afterCanvasInstructions;
-  const showChannelContextTag = !!channelContext && bluebirdEnabled;
-  const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
+  const {
+    displayContent,
+    channelContext,
+    canvasInstructions,
+    showChannelContextTag,
+    showCanvasInstructionsTag,
+  } = usePromptDisplayContent(content, bluebirdEnabled);
   const openChannelContextInSplit = usePanelLayoutStore(
     (s) => s.openChannelContextInSplit,
   );
