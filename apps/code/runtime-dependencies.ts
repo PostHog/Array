@@ -37,8 +37,8 @@ export const requiredNativeModules = [
   "better-sqlite3",
 ];
 
-// file-icon (and its p-map dependency) is only used on macOS.
-export const macOnlyNativeModules = ["file-icon", "p-map"];
+// file-icon is only used on macOS.
+export const macOnlyNativeModules = ["file-icon"];
 
 // The subset that ships compiled .node binaries and must be unpacked from asar.
 const asarUnpackModules = [
