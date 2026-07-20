@@ -1,13 +1,12 @@
 /**
  * Locates the pi CLI entry point and builds the invocation needed to run it
- * as a child process. This is the single source of truth for that — both
- * `spawn.ts` (spawning the interactive/print pi CLI) and the `subagent`
- * extension (spawning child pi sessions) go through it, so there is exactly
- * one place that knows how to invoke pi as a subprocess.
+ * as a child process. The `subagent` extension goes through this module, so
+ * there is exactly one place that knows how to invoke Pi subprocesses from
+ * the harness.
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withHogBrandEnv } from "./extensions/hog-branding/brand-env";
+import { withHogBrandEnv } from "../../hog-branding/brand-env";
 
 export function resolvePiCliEntry(): string {
   const mainEntry = fileURLToPath(

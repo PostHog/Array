@@ -140,8 +140,9 @@ jobs:
           pnpm --filter @posthog/shared build
           pnpm --filter @posthog/git build
           pnpm --filter @posthog/enricher build
-          pnpm --filter agent build &
           wait
+          pnpm --filter @posthog/harness build
+          pnpm --filter agent build
 
       - name: Package Electron app
         run: pnpm --filter code run package
