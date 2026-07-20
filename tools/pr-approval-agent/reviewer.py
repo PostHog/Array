@@ -174,9 +174,9 @@ REVIEWER_SYSTEM = textwrap.dedent(
       reviews as a concern and ESCALATE unless there's a strong,
       specific justification to APPROVE.
     - Bot comments with valid concerns that were ignored → ESCALATE
-    - ReviewHog's authenticated clean status appears as 👍 @reviewhog[bot]. Treat
-      it as the same mild positive signal as a clean Greptile or Hex reaction:
-      useful corroboration, but never sufficient by itself to approve.
+    - Trusted reviewer reactions are included. A 👍 is mild positive evidence and
+      a 👎 is mild negative evidence; neither is sufficient by itself. An 👀 means
+      a review is still in flight, so do not approve until it finishes.
 
     Tools: You have Read, Grep, and Glob (restricted to the repo directory).
     All PR metadata (comments, ownership) is in the prompt — do NOT fetch

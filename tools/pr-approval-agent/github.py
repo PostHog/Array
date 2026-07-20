@@ -6,7 +6,6 @@ Also handles team membership checks for the ownership gate.
 """
 
 import json
-import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,8 +53,14 @@ class PRData:
 
 
 _TRUSTED_ASSOCIATIONS = {"MEMBER", "OWNER", "COLLABORATOR"}
-_REVIEWHOG_BOT_LOGIN = "posthog[bot]"
-_REVIEWHOG_STATUS_RE = re.compile(r"<!--\s*reviewhog:status:[0-9a-f-]+\s*-->")
+TRUSTED_REACTOR_BOTS = {
+    "chatgpt-codex-connector[bot]",
+    "copilot-pull-request-reviewer[bot]",
+    "greptile-apps[bot]",
+    "hex-security-app[bot]",
+    "posthog[bot]",
+    "veria-ai[bot]",
+}
 
 
 def _normalize_reviews_for_prompt(reviews_raw: list[dict], head_sha: str) -> list[dict]:
@@ -89,24 +94,20 @@ def _normalize_reviews_for_prompt(reviews_raw: list[dict], head_sha: str) -> lis
     return normalized_reviews
 
 
-def _reviewhog_clean_reactions(comments_raw: list[dict]) -> list[dict]:
-    for comment in reversed(comments_raw):
-        user = comment.get("user") or {}
-        if user.get("login", "").lower() != _REVIEWHOG_BOT_LOGIN or user.get("type") != "Bot":
+def _normalize_pr_reactions(reactions_raw: list[dict], author: str) -> list[dict]:
+    normalized = []
+    for reaction in reactions_raw:
+        login = (reaction.get("user") or {}).get("login", "")
+        if login == author or login.lower() not in TRUSTED_REACTOR_BOTS:
             continue
-        body = comment.get("body") or ""
-        if "Found no issues worth raising, so no review was posted." not in body:
-            continue
-        if _REVIEWHOG_STATUS_RE.search(body) is None:
-            continue
-        return [
+        normalized.append(
             {
-                "user": "reviewhog[bot]",
-                "emoji": "👍",
-                "created_at": comment.get("updated_at") or comment.get("created_at"),
+                "user": login,
+                "emoji": {"+1": "👍", "-1": "👎", "eyes": "👀"}.get(reaction.get("content"), reaction.get("content")),
+                "created_at": reaction.get("created_at"),
             }
-        ]
-    return []
+        )
+    return normalized
 
 
 def _gh_api(endpoint: str, *, paginate: bool = False) -> dict | list:
@@ -282,12 +283,12 @@ def fetch_pr(pr_number: int, repo: str, repo_root: Path | None = None) -> PRData
     base_sha = pr["base"]["sha"]
     head_sha = pr["head"]["sha"]
     check_runs_resp = _gh_api(f"repos/{repo}/commits/{head_sha}/check-runs")
-    reviewhog_reactions: list[dict] = []
+    pr_reactions: list[dict] = []
     try:
-        discussion_raw = _gh_api(f"repos/{repo}/issues/{pr_number}/comments", paginate=True)
-        reviewhog_reactions = _reviewhog_clean_reactions(discussion_raw)
+        reactions_raw = _gh_api(f"repos/{repo}/issues/{pr_number}/reactions", paginate=True)
+        pr_reactions = _normalize_pr_reactions(reactions_raw, pr["user"]["login"])
     except Exception as exc:
-        print(f"warning: discussion fetch failed ({exc}); continuing without ReviewHog assurance")
+        print(f"warning: reaction fetch failed ({exc}); continuing without reaction context")
 
     git_root = repo_root or Path.cwd()
     ensure_commits(pr_number, head_sha, git_root)
@@ -310,7 +311,7 @@ def fetch_pr(pr_number: int, repo: str, repo_root: Path | None = None) -> PRData
         reviews=_normalize_reviews_for_prompt(reviews_raw, head_sha),
         review_comments=review_comments,
         check_runs=check_runs_resp.get("check_runs", []),
-        pr_reactions=reviewhog_reactions,
+        pr_reactions=pr_reactions,
     )
 
 
