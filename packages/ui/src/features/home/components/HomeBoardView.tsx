@@ -23,13 +23,11 @@ export function HomeBoardView({ snapshot }: HomeBoardViewProps) {
   );
 
   return (
-    <ScrollArea scrollbars="horizontal">
-      <div className="flex h-full min-h-0 gap-3 p-4">
-        {columns.map((column) => (
-          <BoardColumn key={column.id} column={column} />
-        ))}
-      </div>
-    </ScrollArea>
+    <div className="flex h-full min-h-0 gap-3 overflow-x-auto p-4">
+      {columns.map((column) => (
+        <BoardColumn key={column.id} column={column} />
+      ))}
+    </div>
   );
 }
 
@@ -60,7 +58,7 @@ function BoardColumn({ column }: { column: HomeBoardColumn }) {
         className="min-h-0 flex-1 rounded-xl border border-(--gray-3)"
         style={{ backgroundColor: c.wash }}
       >
-        <ScrollArea scrollbars="vertical">
+        <ScrollArea scrollbars="vertical" className="h-full min-h-0">
           <div className="flex flex-col gap-2 p-2">
             {count === 0 ? (
               <EmptyColumn sid={column.id} />

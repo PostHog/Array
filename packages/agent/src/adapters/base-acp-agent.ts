@@ -18,11 +18,11 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { restrictedModelMeta } from "@posthog/shared";
 import {
+  compareModelsForPicker,
   DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
   formatGatewayModelName,
   type GatewayModel,
-  getClaudeModelRecency,
   isAnthropicModel,
   isCloudflareModel,
   isCloudflareModelId,
@@ -163,12 +163,7 @@ export abstract class BaseAcpAgent implements Agent {
         // silently dropping them.
         ...(model.allowed ? {} : { _meta: restrictedModelMeta() }),
       }))
-      // Sort oldest-to-newest so the picker is deterministic and the newest
-      // model lands at the end of the list, closest to the trigger.
-      .sort(
-        (a, b) =>
-          getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
-      );
+      .sort((a, b) => compareModelsForPicker(a.value, b.value));
 
     // Models the Claude adapter can drive: Anthropic ids, plus Cloudflare `@cf/` ids the gateway
     // serves over its Anthropic-Messages surface. Anything else (e.g. a Codex/GPT id) is a genuine

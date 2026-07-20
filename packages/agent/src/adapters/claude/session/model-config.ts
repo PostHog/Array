@@ -1,4 +1,5 @@
 import type { SessionConfigSelectOption } from "@agentclientprotocol/sdk";
+import { compareModelsForPicker } from "../../../gateway-models";
 
 export interface ModelConfigOptions {
   currentModelId: string;
@@ -29,6 +30,9 @@ export function applyAvailableModelsAllowlist(
   }
 
   if (filtered.length === 0) return modelOptions;
+
+  // The allowlist is a filter, not a display order: keep the picker's ordering.
+  filtered.sort((a, b) => compareModelsForPicker(a.value, b.value));
 
   const currentModelId = filtered.some(
     (o) => o.value === modelOptions.currentModelId,

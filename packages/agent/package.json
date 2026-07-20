@@ -84,6 +84,10 @@
       "types": "./dist/handoff-checkpoint.d.ts",
       "import": "./dist/handoff-checkpoint.js"
     },
+    "./pi": {
+      "types": "./dist/pi/rpc-client.d.ts",
+      "import": "./dist/pi/rpc-client.js"
+    },
     "./server": {
       "types": "./dist/server/agent-server.d.ts",
       "import": "./dist/server/agent-server.js"
@@ -136,6 +140,7 @@
     "@agentclientprotocol/sdk": "1.1.0",
     "@anthropic-ai/claude-agent-sdk": "0.3.197",
     "@anthropic-ai/sdk": "0.109.0",
+    "@earendil-works/pi-coding-agent": "catalog:",
     "@hono/node-server": "^1.19.9",
     "@openai/codex": "0.140.0",
     "@opentelemetry/api-logs": "^0.208.0",
@@ -143,6 +148,7 @@
     "@opentelemetry/resources": "^2.0.0",
     "@opentelemetry/sdk-logs": "^0.208.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
+    "@posthog/harness": "workspace:*",
     "@types/jsonwebtoken": "^9.0.10",
     "commander": "^14.0.2",
     "fflate": "^0.8.2",
