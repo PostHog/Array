@@ -80,10 +80,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // query is disabled — which reports isLoading:false, indistinguishable from
   // "this channel is empty". useBackendChannel reports loading for the whole
   // identity-resolution window (settling if the resolve fails), so fold it in:
-  // we can't call a channel empty until we know which channel it is. Messages
-  // loading is included so the scroller mounts once with the complete feed and
-  // its one-shot initial end-scroll lands at the latest message (it never
-  // re-fires for late-arriving rows).
+  // we can't call a channel empty until we know which channel it is.
   const isLoading =
     isLoadingChannels ||
     isResolvingChannel ||
