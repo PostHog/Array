@@ -28,6 +28,8 @@ import {
   getWorktreeTasksInput,
   getWorktreeTasksOutput,
   linkBranchInput,
+  listAdoptableWorktreesInput,
+  listAdoptableWorktreesOutput,
   listGitWorktreesInput,
   listGitWorktreesOutput,
   listRepoCheckoutsInput,
@@ -162,6 +164,13 @@ export const workspaceRouter = router({
     .output(listRepoCheckoutsOutput)
     .query(({ ctx, input }) =>
       getService(ctx.container).listRepoCheckouts(input.repoPath),
+    ),
+
+  listAdoptableWorktrees: publicProcedure
+    .input(listAdoptableWorktreesInput)
+    .output(listAdoptableWorktreesOutput)
+    .query(({ ctx, input }) =>
+      getService(ctx.container).listAdoptableWorktrees(input.mainRepoPath),
     ),
 
   getWorktreeSize: publicProcedure

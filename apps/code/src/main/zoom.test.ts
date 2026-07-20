@@ -22,10 +22,6 @@ import { adjustWindowZoom, restoreWindowZoom, setupWindowZoom } from "./zoom";
 class FakeWebContents extends EventEmitter {
   public zoomLevel = 0;
 
-  public getZoomLevel(): number {
-    return this.zoomLevel;
-  }
-
   public setZoomLevel(level: number): void {
     this.zoomLevel = level;
   }
@@ -89,41 +85,53 @@ describe("window zoom", () => {
     expect(window.webContents.zoomLevel).toBe(0.5);
   });
 
-  it("persists wheel zoom after Chromium updates its level", () => {
+  it.each([
+    ["in", 1],
+    ["out", 0],
+  ] as const)(
+    "applies wheel zoom %s from the persisted level",
+    (direction, expected) => {
+      const window = createWindow();
+      setupWindowZoom(window);
+      const event = { preventDefault: vi.fn() };
+
+      window.webContents.emit("zoom-changed", event, direction);
+      vi.runAllTimers();
+
+      expect({
+        prevented: event.preventDefault.mock.calls.length,
+        zoomLevel: window.webContents.zoomLevel,
+        saved: store.save.mock.calls,
+      }).toEqual({
+        prevented: 1,
+        zoomLevel: expected,
+        saved: [[expected]],
+      });
+    },
+  );
+
+  it("keeps wheel zoom after resizing", () => {
     const window = createWindow();
     setupWindowZoom(window);
 
-    window.webContents.emit("zoom-changed");
-    window.webContents.zoomLevel = 1.5;
-    vi.runAllTimers();
-
-    expect(store.save).toHaveBeenCalledWith(1.5);
-  });
-
-  it("waits for native zoom before applying a menu adjustment", () => {
-    const window = createWindow();
-    setupWindowZoom(window);
-
-    window.webContents.emit("zoom-changed");
-    window.webContents.zoomLevel = 1.5;
-    adjustWindowZoom(window, 0.5);
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    window.emit("resized");
     vi.runAllTimers();
 
     expect({
       zoomLevel: window.webContents.zoomLevel,
       saved: store.save.mock.calls,
     }).toEqual({
-      zoomLevel: 2,
-      saved: [[1.5], [2]],
+      zoomLevel: 1,
+      saved: [[1]],
     });
   });
 
-  it("waits for native zoom before restoring after a reload", () => {
+  it("keeps wheel zoom after a renderer reload", () => {
     const window = createWindow();
     setupWindowZoom(window);
 
-    window.webContents.emit("zoom-changed");
-    window.webContents.zoomLevel = 1.5;
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
     window.webContents.emit("did-finish-load");
     vi.runAllTimers();
 
@@ -131,8 +139,46 @@ describe("window zoom", () => {
       zoomLevel: window.webContents.zoomLevel,
       saved: store.save.mock.calls,
     }).toEqual({
+      zoomLevel: 1,
+      saved: [[1]],
+    });
+  });
+
+  it("serializes wheel and menu zoom changes", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    adjustWindowZoom(window, 0.5);
+    vi.runAllTimers();
+
+    expect({
+      zoomLevel: window.webContents.zoomLevel,
+      saved: store.save.mock.calls,
+    }).toEqual({
       zoomLevel: 1.5,
-      saved: [[1.5]],
+      saved: [[1], [1.5]],
+    });
+  });
+
+  it("uses the in-memory zoom level when persistence fails", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+    store.save.mockImplementation(() => {});
+
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    vi.runAllTimers();
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    vi.runAllTimers();
+
+    expect({
+      persistedZoomLevel: store.state.zoomLevel,
+      zoomLevel: window.webContents.zoomLevel,
+      saved: store.save.mock.calls,
+    }).toEqual({
+      persistedZoomLevel: 0.5,
+      zoomLevel: 1.5,
+      saved: [[1], [1.5]],
     });
   });
 

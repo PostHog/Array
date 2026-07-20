@@ -42,6 +42,7 @@ export const changedFileSchema = z.object({
   linesRemoved: z.number().optional(),
   staged: z.boolean().optional(),
   patch: z.string().optional(),
+  sha: z.string().optional(),
 });
 
 export type ChangedFile = z.infer<typeof changedFileSchema>;

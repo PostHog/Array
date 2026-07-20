@@ -87,7 +87,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-function ThreadMessageRow({
+export function ThreadMessageRow({
   message,
   isTaskAuthor,
   isOwnMessage,
@@ -105,18 +105,36 @@ function ThreadMessageRow({
   onDelete: () => void;
 }) {
   const forwarded = !!message.forwarded_to_agent_at;
-  const showMenu = (isTaskAuthor && !forwarded) || isOwnMessage;
+  const authorKind = message.author_kind ?? "human";
+  const isAgent = authorKind === "agent";
+  const isSystem = authorKind === "system";
+  const showMenu =
+    authorKind === "human" && ((isTaskAuthor && !forwarded) || isOwnMessage);
 
   return (
     <ThreadItem>
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>{getUserInitials(message.author)}</AvatarFallback>
+          <AvatarFallback>
+            {isAgent ? (
+              <RobotIcon size={14} />
+            ) : isSystem ? (
+              "S"
+            ) : (
+              getUserInitials(message.author)
+            )}
+          </AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
+          <ThreadItemAuthor>
+            {isAgent
+              ? "Agent"
+              : isSystem
+                ? "System"
+                : userDisplayName(message.author)}
+          </ThreadItemAuthor>
           <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
         <ThreadItemBody>

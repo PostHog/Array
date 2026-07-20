@@ -31,6 +31,17 @@ describe("MentionText", () => {
     expect(screen.queryByText("@agent")).not.toBeInTheDocument();
   });
 
+  it("keeps agent text inside a markdown link label", () => {
+    render(
+      <MentionText content="[My @agent report](https://posthog.com/report) has been created" />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "My @agent report" }),
+    ).toHaveAttribute("href", "https://posthog.com/report");
+    expect(screen.queryByText("@agent")).not.toBeInTheDocument();
+  });
+
   it("inherits the surrounding message text size", () => {
     render(<MentionText content="A thread reply" />);
 
