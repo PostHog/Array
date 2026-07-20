@@ -67,6 +67,14 @@ export interface TaskCreationInput {
   /** Backend channel UUID the created task is owned by (its feed home). */
   channelId?: string;
   /**
+   * Desktop file-system folder id that owns this channel's CONTEXT.md (the
+   * `/website/$channelId` id — distinct from the backend feed `channelId`
+   * above). When set, the injected context tells the agent to publish upkeep
+   * corrections to this exact id via the PostHog MCP, rather than resolving the
+   * channel by display name.
+   */
+  channelContextId?: string;
+  /**
    * The user's saved personalization (Settings → Personalization custom
    * instructions). Cloud-only: local tasks already receive these through the
    * workspace-server system prompt, so the saga folds this into the cloud run's

@@ -111,6 +111,12 @@ interface TaskInputProps {
   /** Display name of the channel the CONTEXT.md came from (for the chip). */
   channelName?: string;
   /**
+   * Desktop file-system folder id that owns the channel's CONTEXT.md. When set,
+   * the injected context lets the agent publish upkeep corrections addressed to
+   * this id rather than resolving the channel by name.
+   */
+  channelContextId?: string;
+  /**
    * Channels "generic chat box" mode: hide the repo/branch pickers and let the
    * task be submitted without a repo. The agent decides at runtime whether it
    * needs a repo and attaches one lazily.
@@ -148,6 +154,7 @@ export function TaskInput({
   reportAssociation,
   channelContext,
   channelName,
+  channelContextId,
   allowNoRepo,
   suggestions,
   onSuggestionSelect,
@@ -871,6 +878,7 @@ export function TaskInput({
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
+    channelContextId,
     allowNoRepo,
   });
 
