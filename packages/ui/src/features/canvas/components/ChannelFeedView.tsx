@@ -695,7 +695,12 @@ export function ChannelFeedView({
     return merged;
   }, [tasks, systemMessages]);
 
-  if (isLoading && entries.length === 0 && pending.length === 0) {
+  // Hold the loading state even when some entries already exist (the "joined"
+  // opener renders as soon as the channel resolves, before the task cards):
+  // mounting the scroller around partial content spends its one-shot initial
+  // end-scroll on a near-empty list, and it never re-scrolls when the real
+  // cards arrive. Pending kickoffs bail out so an optimistic post shows now.
+  if (isLoading && pending.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Spinner />
