@@ -1070,6 +1070,37 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("uses the default PostHog exec prompt policy when session metadata omits the regex", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({
+      cwd: "/r",
+      mcpServers: [
+        {
+          name: "posthog",
+          command: "node",
+          args: ["server.js"],
+        },
+      ],
+    } as unknown as NewSessionRequest);
+
+    const threadStart = stub.requests.find((r) => r.method === "thread/start");
+    expect(threadStart?.params).toMatchObject({
+      config: {
+        mcp_servers: {
+          posthog: {
+            tools: { exec: { approval_mode: "prompt" } },
+          },
+        },
+      },
+    });
+  });
+
   it("flattens the host's {append} systemPrompt and dedupes it against developerInstructions", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();

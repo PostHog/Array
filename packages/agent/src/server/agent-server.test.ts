@@ -1575,26 +1575,43 @@ describe("AgentServer HTTP Mode", () => {
       });
     });
 
-    it("keeps background PostHog exec matches auto-approved", async () => {
-      const testServer = exposeCloudClient(
-        createServer({ posthogExecPermissionRegex: "delete|destroy" }),
-      );
-      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+    it.each([
+      {
+        modeSource: "JWT payload",
+        configMode: "interactive",
+        payloadMode: "background",
+      },
+      {
+        modeSource: "server config",
+        configMode: "background",
+        payloadMode: undefined,
+      },
+    ] as const)(
+      "keeps PostHog exec matches auto-approved in background mode from $modeSource",
+      async ({ configMode, payloadMode }) => {
+        const testServer = exposeCloudClient(
+          createServer({
+            mode: configMode,
+            posthogExecPermissionRegex: "delete|destroy",
+          }),
+        );
+        const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
 
-      const { requestPermission } = testServer.createCloudClient({
-        ...basePayload,
-        mode: "background",
-      });
-      const result = await requestPermission(
-        codexPosthogExecPermissionRequest("call experiment-delete {}"),
-      );
+        const { requestPermission } = testServer.createCloudClient({
+          ...basePayload,
+          ...(payloadMode ? { mode: payloadMode } : {}),
+        });
+        const result = await requestPermission(
+          codexPosthogExecPermissionRequest("call experiment-delete {}"),
+        );
 
-      expect(relaySpy).not.toHaveBeenCalled();
-      expect(result.outcome).toEqual({
-        outcome: "selected",
-        optionId: "allow_once",
-      });
-    });
+        expect(relaySpy).not.toHaveBeenCalled();
+        expect(result.outcome).toEqual({
+          outcome: "selected",
+          optionId: "allow_once",
+        });
+      },
+    );
 
     it("rejects permission responses for options that were not offered", async () => {
       const testServer = exposeCloudClient(createServer());

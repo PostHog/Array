@@ -776,6 +776,20 @@ export async function canUseTool(
             updatedInput: toolInput as Record<string, unknown>,
           };
         }
+        // Local hands-off modes retain their normal no-prompt behavior. Cloud
+        // sessions must send the request to AgentServer, which uses the run's
+        // effective mode to relay interactive approvals and auto-approve
+        // background runs.
+        if (
+          !session.cloudMode &&
+          (session.permissionMode === "auto" ||
+            session.permissionMode === "bypassPermissions")
+        ) {
+          return {
+            behavior: "allow",
+            updatedInput: toolInput as Record<string, unknown>,
+          };
+        }
         return handlePostHogExecApprovalFlow(context, subTool);
       }
     }

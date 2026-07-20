@@ -67,6 +67,8 @@ export type Session = BaseSession & {
   input: Pushable<SDKUserMessage>;
   settingsManager: SettingsManager;
   permissionMode: CodeExecutionMode;
+  /** Whether permission decisions are delegated to the cloud AgentServer. */
+  cloudMode: boolean;
   posthogExecPermissionRegex?: RegExp;
   modeBeforePlan?: CodeExecutionMode;
   modelId?: string;

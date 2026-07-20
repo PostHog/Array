@@ -30,6 +30,7 @@ import {
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
+import { DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE } from "../../posthog-exec-permission";
 import type { ProcessSpawnedCallback } from "../../types";
 import { ALLOW_BYPASS } from "../../utils/common";
 import { Logger } from "../../utils/logger";
@@ -495,7 +496,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     const mcpServers = toCodexMcpServers(
       [...(params.mcpServers ?? []), ...(localTools ? [localTools] : [])],
-      params.meta?.posthogExecPermissionRegex,
+      params.meta?.posthogExecPermissionRegex ??
+        DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
     );
     const config = buildThreadConfig(mcpServers, params.additionalDirectories);
 

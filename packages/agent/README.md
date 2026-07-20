@@ -76,11 +76,12 @@ In cloud background mode, permissions are always auto-approved. In interactive m
 
 Cloud provisioning can pass `--posthogExecPermissionRegex <regex>` to require
 one-time client approval for matching PostHog MCP `exec` sub-tools in every
-interactive Claude and Codex permission mode. Matching is case-insensitive
-against the delegated name in `call [--json] <sub-tool> ...`. These prompts do
-offer Claude users an always-allow choice remembered in local repository
-settings; Codex approvals remain one-time. Background runs keep their existing
-auto-approval behavior. The default is
+interactive cloud Claude and Codex permission mode. Local Claude `auto` and
+`bypassPermissions` modes remain hands-off. Matching is case-insensitive against
+the delegated name in `call [--json] <sub-tool> ...`. These prompts offer Claude
+users an always-allow choice remembered in local repository settings; Codex
+approvals remain one-time. Background runs keep their existing auto-approval
+behavior. The default is
 `(^|-)(partial-update|update|patch|delete|destroy)(-|$)`.
 
 ## ACP connection layer

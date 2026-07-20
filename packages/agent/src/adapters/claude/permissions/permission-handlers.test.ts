@@ -27,6 +27,7 @@ function createContext(
   return {
     session: {
       permissionMode: "default" as const,
+      cloudMode: false,
       settingsManager: {
         getRepoRoot: vi.fn().mockReturnValue("/repo"),
       },
@@ -215,7 +216,7 @@ describe("canUseTool MCP approval enforcement", () => {
     "auto",
     "bypassPermissions",
   ] as const)(
-    "prompts for a configured PostHog exec match in %s mode with a remembered choice",
+    "prompts for a configured PostHog exec match in cloud %s mode with a remembered choice",
     async (permissionMode) => {
       setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
 
@@ -223,6 +224,7 @@ describe("canUseTool MCP approval enforcement", () => {
         toolInput: { command: "call notebooks-destroy {}" },
         session: {
           permissionMode,
+          cloudMode: true,
           posthogExecPermissionRegex,
           settingsManager: {
             getRepoRoot: vi.fn().mockReturnValue("/repo"),
@@ -247,6 +249,32 @@ describe("canUseTool MCP approval enforcement", () => {
           }),
         }),
       );
+    },
+  );
+
+  it.each(["auto", "bypassPermissions"] as const)(
+    "keeps local %s mode hands-off for a configured PostHog exec match",
+    async (permissionMode) => {
+      setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+      const context = createContext("mcp__posthog__exec", {
+        toolInput: { command: "call notebooks-destroy {}" },
+        session: {
+          permissionMode,
+          cloudMode: false,
+          posthogExecPermissionRegex,
+          settingsManager: {
+            getRepoRoot: vi.fn().mockReturnValue("/repo"),
+            hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+            addPostHogExecApproval: vi.fn(),
+          },
+        },
+      });
+
+      const result = await canUseTool(context);
+
+      expect(result.behavior).toBe("allow");
+      expect(context.client.requestPermission).not.toHaveBeenCalled();
     },
   );
 
