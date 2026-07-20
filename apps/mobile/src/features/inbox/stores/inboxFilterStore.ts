@@ -47,6 +47,7 @@ interface InboxFilterActions {
   setStatusFilter: (statuses: SignalReportStatus[]) => void;
   toggleStatus: (status: SignalReportStatus) => void;
   toggleSourceProduct: (source: SourceProduct) => void;
+  clearSourceProductFilter: () => void;
   toggleSuggestedReviewer: (reviewerUuid: string) => void;
   setSuggestedReviewerFilter: (reviewerUuids: string[]) => void;
   togglePriority: (priority: SignalReportPriority) => void;
@@ -85,6 +86,7 @@ export const useInboxFilterStore = create<InboxFilterStore>()(
             : [...current, source];
           return { sourceProductFilter: next };
         }),
+      clearSourceProductFilter: () => set({ sourceProductFilter: [] }),
       toggleSuggestedReviewer: (reviewerUuid) =>
         set((state) => {
           const current = state.suggestedReviewerFilter;
