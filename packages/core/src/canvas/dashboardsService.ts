@@ -1,5 +1,6 @@
 import type { AuthService } from "@posthog/core/auth/auth";
 import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
+import { FREEFORM_TEMPLATE_ID } from "@posthog/shared/canvas-freeform-prompt";
 import { inject, injectable } from "inversify";
 import type {
   DashboardFileMeta,
@@ -11,7 +12,7 @@ import {
   type DesktopFsClient,
   type FsEntryBase,
 } from "./desktopFsClient";
-import { FREEFORM_TEMPLATE_ID, type FreeformVersion } from "./freeformSchemas";
+import type { FreeformVersion } from "./freeformSchemas";
 import { fetchCurrentUser } from "./posthogApi";
 
 // Desktop file-system "type" tag for a dashboard entry. Channels are `folder`

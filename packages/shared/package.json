@@ -8,6 +8,18 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./canvas-freeform-prompt": {
+      "types": "./dist/canvas-freeform-prompt.d.ts",
+      "import": "./dist/canvas-freeform-prompt.js"
+    },
+    "./canvas-freeform-whitelist": {
+      "types": "./dist/canvas-freeform-whitelist.d.ts",
+      "import": "./dist/canvas-freeform-whitelist.js"
+    },
+    "./canvas-freeform-starter": {
+      "types": "./dist/canvas-freeform-starter.d.ts",
+      "import": "./dist/canvas-freeform-starter.js"
+    },
     "./analytics-events": {
       "types": "./dist/analytics-events.d.ts",
       "import": "./dist/analytics-events.js"

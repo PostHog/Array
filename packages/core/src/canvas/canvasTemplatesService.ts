@@ -1,9 +1,6 @@
+import { freeformSystemPromptFor } from "@posthog/shared/canvas-freeform-prompt";
 import { injectable } from "inversify";
-import {
-  BUILT_IN_TEMPLATES,
-  type CanvasTemplate,
-  freeformSystemPromptFor,
-} from "./canvasTemplates";
+import { BUILT_IN_TEMPLATES, type CanvasTemplate } from "./canvasTemplates";
 import type { ICanvasTemplatesService } from "./services";
 import type { CanvasTemplateSummary } from "./templateSchemas";
 

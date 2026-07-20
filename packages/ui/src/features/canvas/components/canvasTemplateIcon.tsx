@@ -4,7 +4,7 @@ import {
   FileIcon,
   ShapesIcon,
 } from "@phosphor-icons/react";
-import { FREEFORM_TEMPLATE_ID } from "@posthog/core/canvas/freeformSchemas";
+import { FREEFORM_TEMPLATE_ID } from "@posthog/shared/canvas-freeform-prompt";
 import type { ReactNode } from "react";
 
 // A canvas's leading icon, chosen from its template so the tree and header read

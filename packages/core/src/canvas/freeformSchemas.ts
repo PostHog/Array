@@ -2,7 +2,6 @@ import { z } from "zod";
 
 // The template id for freeform-React canvases. Stored on a canvas's meta so the
 // generation path can resolve the right system prompt.
-export const FREEFORM_TEMPLATE_ID = "freeform";
 
 // A single point in a freeform canvas's edit history. Every agent turn appends
 // one full-file snapshot (Q7: full-file rewrite); the user can revert to any of

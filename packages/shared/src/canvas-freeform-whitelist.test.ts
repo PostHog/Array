@@ -3,7 +3,7 @@ import {
   buildImportMap,
   checkFreeformImports,
   FREEFORM_WHITELIST,
-} from "./freeformWhitelist";
+} from "./canvas-freeform-whitelist";
 
 describe("checkFreeformImports", () => {
   it("accepts whitelisted imports", () => {

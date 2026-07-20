@@ -4,7 +4,7 @@ import {
   FREEFORM_ESM_HOST,
   FREEFORM_POSTHOG_JS_URL,
   FREEFORM_QUILL_CSS_URLS,
-} from "@posthog/core/canvas/freeformWhitelist";
+} from "@posthog/shared/canvas-freeform-whitelist";
 
 // Builds the HTML document loaded into the freeform-canvas sandbox iframe.
 //

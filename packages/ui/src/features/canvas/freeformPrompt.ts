@@ -1,5 +1,5 @@
-import { freeformSystemPromptFor } from "@posthog/core/canvas/canvasTemplates";
-import { FREEFORM_STARTER_CODE } from "@posthog/core/canvas/freeformStarter";
+import { freeformSystemPromptFor } from "@posthog/shared/canvas-freeform-prompt";
+import { FREEFORM_STARTER_CODE } from "@posthog/shared/canvas-freeform-starter";
 
 // Builds the prompt for the task that generates a freeform (React) canvas. Like
 // CONTEXT.md generation, this runs as a normal repo-less agent task (no repo
