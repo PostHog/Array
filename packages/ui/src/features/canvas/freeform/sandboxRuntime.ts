@@ -285,6 +285,162 @@ export function buildSandboxDocument(
       ),
     );
 
+    // --- annotation overlay ("comment mode"): host-toggled element/text
+    // targeting for structured canvas feedback. Host-authored and static (never
+    // touched by canvas code paths); lives OUTSIDE #root so app re-renders
+    // never disturb it, and it only observes/captures while the mode is on.
+    const ANNOTATE_ATTRS = ["data-attr", "data-testid", "data-test-id", "id", "aria-label", "name", "role", "placeholder"];
+    let annotationMode = false;
+    let annotationPins = [];
+    const overlayRoot = document.createElement("div");
+    overlayRoot.setAttribute("data-ph-annotate", "");
+    overlayRoot.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483646;";
+    document.documentElement.appendChild(overlayRoot);
+    const highlightBox = document.createElement("div");
+    highlightBox.style.cssText = "position:fixed;display:none;pointer-events:none;border:1.5px solid var(--primary,#1d4aff);border-radius:4px;background:color-mix(in srgb, var(--primary, #1d4aff) 8%, transparent);";
+    overlayRoot.appendChild(highlightBox);
+    const pinLayer = document.createElement("div");
+    pinLayer.style.cssText = "position:fixed;inset:0;pointer-events:none;";
+    overlayRoot.appendChild(pinLayer);
+
+    const boundText = (t) => (t || "").replace(/\\s+/g, " ").trim().slice(0, 160);
+    // Prefer a stable attribute; fall back to tag + position. Precision is
+    // secondary — the host also captures the text snippet, and the consumer is
+    // the generation agent locating the spot in source it wrote itself.
+    const ownSelector = (el) => {
+      for (const attr of ANNOTATE_ATTRS) {
+        const v = el.getAttribute && el.getAttribute(attr);
+        if (v) return el.tagName.toLowerCase() + "[" + attr + '="' + CSS.escape(v) + '"]';
+      }
+      return null;
+    };
+    const nthSelector = (el) => {
+      let i = 1;
+      let sib = el;
+      while ((sib = sib.previousElementSibling)) {
+        if (sib.tagName === el.tagName) i++;
+      }
+      return el.tagName.toLowerCase() + ":nth-of-type(" + i + ")";
+    };
+    const selectorFor = (el) => {
+      const parts = [];
+      let node = el;
+      while (node && node !== document.body && parts.length < 6) {
+        const own = ownSelector(node);
+        if (own) {
+          parts.unshift(own);
+          const sel = parts.join(" > ");
+          try {
+            if (document.querySelectorAll(sel).length === 1) return sel;
+          } catch {}
+        } else {
+          parts.unshift(nthSelector(node));
+        }
+        node = node.parentElement;
+      }
+      return parts.join(" > ");
+    };
+    const elementTargetFor = (el) => {
+      const attributes = {};
+      for (const attr of ANNOTATE_ATTRS) {
+        const v = el.getAttribute && el.getAttribute(attr);
+        if (v) attributes[attr] = String(v).slice(0, 80);
+      }
+      return {
+        type: "element",
+        selector: selectorFor(el),
+        tag: el.tagName.toLowerCase(),
+        text: boundText(el.innerText),
+        ariaLabel: el.getAttribute("aria-label"),
+        attributes,
+      };
+    };
+    const setAnnotationHighlight = (el) => {
+      if (!el || el === document.body || el === document.documentElement) {
+        highlightBox.style.display = "none";
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      highlightBox.style.display = "block";
+      highlightBox.style.top = r.top - 2 + "px";
+      highlightBox.style.left = r.left - 2 + "px";
+      highlightBox.style.width = r.width + 4 + "px";
+      highlightBox.style.height = r.height + 4 + "px";
+    };
+    const renderAnnotationPins = () => {
+      pinLayer.textContent = "";
+      for (const pin of annotationPins) {
+        let el = null;
+        try {
+          el = document.querySelector(pin.selector);
+        } catch {}
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        const dot = document.createElement("div");
+        dot.textContent = String(pin.n);
+        dot.style.cssText = "position:fixed;width:18px;height:18px;border-radius:9999px;background:var(--primary,#1d4aff);color:var(--primary-foreground,#fff);font:600 11px ui-sans-serif,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.3);pointer-events:none;";
+        dot.style.top = r.top - 8 + "px";
+        dot.style.left = r.right - 8 + "px";
+        pinLayer.appendChild(dot);
+      }
+    };
+    let pinsRaf = 0;
+    const schedulePins = () => {
+      if (pinsRaf) return;
+      pinsRaf = requestAnimationFrame(() => {
+        pinsRaf = 0;
+        renderAnnotationPins();
+      });
+    };
+    window.addEventListener("scroll", schedulePins, true);
+    window.addEventListener("resize", schedulePins);
+    // Re-anchor pins when the app's own DOM shifts (accordion, tab switch, …).
+    new MutationObserver(schedulePins).observe(document.getElementById("root"), {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    });
+    document.addEventListener(
+      "mousemove",
+      (e) => {
+        if (!annotationMode) return;
+        setAnnotationHighlight(e.target instanceof Element ? e.target : null);
+      },
+      true,
+    );
+    // Capture-phase, so comment-mode clicks never reach the app's handlers. A
+    // non-collapsed selection wins over the clicked element (drag-select, then
+    // the click that ends it lands here).
+    document.addEventListener(
+      "click",
+      (e) => {
+        if (!annotationMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const sel = window.getSelection();
+        const selText = sel && !sel.isCollapsed ? boundText(sel.toString()) : "";
+        if (selText) {
+          const anchor = sel.anchorNode && sel.anchorNode.parentElement;
+          post({
+            type: "annotation-target",
+            target: {
+              type: "text-range",
+              text: selText,
+              ancestorSelector: anchor ? selectorFor(anchor) : "body",
+              ancestorTag: anchor ? anchor.tagName.toLowerCase() : "body",
+            },
+          });
+          sel.removeAllRanges();
+          return;
+        }
+        if (e.target instanceof Element) {
+          post({ type: "annotation-target", target: elementTargetFor(e.target) });
+        }
+      },
+      true,
+    );
+
     // JSX text and attribute strings never process \\uXXXX escapes (they render
     // verbatim, e.g. "\\u00b7" instead of "·"), but generated canvases still
     // contain them despite the prompt rules — decode at transpile time so both
@@ -365,10 +521,12 @@ export function buildSandboxDocument(
         root.render(
           React.createElement(Boundary, null, React.createElement(Comp)),
         );
-        // Let layout settle, then report success.
+        // Let layout settle, then report success (and re-anchor any pins —
+        // a remount replaces the DOM the pins were positioned against).
         requestAnimationFrame(() => {
           if (seq !== mountSeq) return;
           post({ type: "rendered" });
+          schedulePins();
         });
       } catch (err) {
         // Only the latest snapshot reports — a superseded partial's parse error
@@ -387,6 +545,13 @@ export function buildSandboxDocument(
       } else if (d.type === "set-theme") {
         // Re-theme in place — no mount(), so the app keeps all its state.
         applyTheme(d.theme);
+      } else if (d.type === "set-annotation-mode") {
+        annotationMode = !!d.enabled;
+        document.documentElement.style.cursor = annotationMode ? "crosshair" : "";
+        if (!annotationMode) setAnnotationHighlight(null);
+      } else if (d.type === "annotation-pins") {
+        annotationPins = Array.isArray(d.pins) ? d.pins : [];
+        schedulePins();
       } else if (d.type === "data-response") {
         const p = pending.get(d.id);
         if (!p) return;

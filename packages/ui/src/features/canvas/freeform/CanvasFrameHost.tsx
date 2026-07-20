@@ -56,6 +56,9 @@ export function CanvasFrameHost() {
                 onError={slot.inputs.onError}
                 onRendered={slot.inputs.onRendered}
                 onNavigate={slot.inputs.onNavigate}
+                annotationMode={slot.inputs.annotationMode}
+                annotationPins={slot.inputs.annotationPins}
+                onAnnotationTarget={slot.inputs.onAnnotationTarget}
               />
             </ErrorBoundary>
           </div>

@@ -1,5 +1,30 @@
 import { freeformSystemPromptFor } from "@posthog/core/canvas/canvasTemplates";
+import type { CanvasAnnotationTarget } from "@posthog/core/canvas/freeformSchemas";
 import { FREEFORM_STARTER_CODE } from "@posthog/core/canvas/freeformStarter";
+
+// A queued comment-mode annotation, ready for the prompt: the pin number the
+// user saw, their comment, and the captured target.
+export interface CanvasAnnotationPromptInput {
+  n: number;
+  comment: string;
+  target: CanvasAnnotationTarget;
+}
+
+// One prompt line per annotation. The selector describes the RENDERED DOM, so
+// the quoted text + stable attributes are the primary locators against source.
+function annotationLine(a: CanvasAnnotationPromptInput): string {
+  const t = a.target;
+  const comment = a.comment || "see the user's request above";
+  if (t.type === "text-range") {
+    return `${a.n}. On the text "${t.text}" (inside <${t.ancestorTag}>, selector: ${t.ancestorSelector}): ${comment}`;
+  }
+  const attrs = Object.entries(t.attributes)
+    .map(([k, v]) => `${k}="${v}"`)
+    .join(" ");
+  const label = t.text ? ` "${t.text}"` : "";
+  const hints = [`selector: ${t.selector}`, attrs].filter(Boolean).join("; ");
+  return `${a.n}. On <${t.tag}>${label} (${hints}): ${comment}`;
+}
 
 // Builds the prompt for the task that generates a freeform (React) canvas. Like
 // CONTEXT.md generation, this runs as a normal repo-less agent task (no repo
@@ -30,6 +55,10 @@ export function buildFreeformGenerationPrompt(input: {
   // scaffold as the agent's baseline on a FIRST build, so it edits a compiling
   // app instead of authoring boilerplate from scratch. Ignored when editing.
   useStarter?: boolean;
+  // Queued comment-mode annotations: parts of the rendered canvas the user
+  // marked, each with a comment. Rendered as a numbered block matching the
+  // pins the user saw.
+  annotations?: CanvasAnnotationPromptInput[];
 }): string {
   const {
     dashboardId,
@@ -39,6 +68,7 @@ export function buildFreeformGenerationPrompt(input: {
     instruction,
     currentCode,
     useStarter,
+    annotations,
   } = input;
 
   const contract = freeformSystemPromptFor(templateId);
@@ -62,6 +92,19 @@ Then apply the user's request by editing that file with your file-editing
 tools. Do not paste the source into chat.
 `
     : "";
+
+  // Structured feedback from the comment-mode overlay: numbered to match the
+  // pins the user saw on the rendered canvas.
+  const annotationsBlock =
+    annotations && annotations.length > 0
+      ? `
+[Annotations] — the user marked specific parts of the RENDERED canvas. Locate
+each in the checked-out source (match primarily by the quoted text and the
+stable attributes — the CSS selector describes the rendered DOM, not the code)
+and apply the comment as a targeted edit:
+${annotations.map(annotationLine).join("\n")}
+`
+      : "";
 
   // First-build only: hand the agent a working scaffold to build ON instead of
   // authoring from zero. It already wires the easy-to-get-wrong bits (date
@@ -97,7 +140,7 @@ iterate on it there with your file-editing tools.
   // inline (see extractCanvasInstructions). Kept after the user's instruction so
   // the request leads, mirroring how channel CONTEXT.md is appended.
   const instructions = `${header}
-${checkoutStep}${editStep}${starterBlock}${freshBuildStep}
+${checkoutStep}${editStep}${annotationsBlock}${starterBlock}${freshBuildStep}
 Follow this authoring contract for the canvas (imports, the \`ph\` data shim, and
 style rules):
 

@@ -164,6 +164,51 @@ export type CanvasAnalyticsConfig = z.infer<typeof canvasAnalyticsConfigSchema>;
 export const canvasThemeSchema = z.enum(["light", "dark"]);
 export type CanvasTheme = z.infer<typeof canvasThemeSchema>;
 
+// ---------------------------------------------------------------------------
+// Annotation targets captured by the comment-mode overlay (structured canvas
+// feedback). Deliberately LLM-locatable rather than machine-precise: the
+// consumer is the generation agent locating the spot in source IT wrote, so
+// the bounded text + stable attributes matter more than selector exactness.
+// ---------------------------------------------------------------------------
+export const canvasElementTargetSchema = z.object({
+  type: z.literal("element"),
+  // Best-effort CSS selector for the rendered element (stable attributes
+  // preferred, nth-of-type fallback).
+  selector: z.string(),
+  tag: z.string(),
+  // Bounded innerText snippet — usually the strongest locator.
+  text: z.string(),
+  ariaLabel: z.string().nullable().optional(),
+  // The stable attributes present on the element (data-attr, id, role, …).
+  attributes: z.record(z.string(), z.string()),
+});
+export type CanvasElementTarget = z.infer<typeof canvasElementTargetSchema>;
+
+export const canvasTextRangeTargetSchema = z.object({
+  type: z.literal("text-range"),
+  // The selected text, bounded.
+  text: z.string(),
+  ancestorSelector: z.string(),
+  ancestorTag: z.string(),
+});
+export type CanvasTextRangeTarget = z.infer<typeof canvasTextRangeTargetSchema>;
+
+export const canvasAnnotationTargetSchema = z.discriminatedUnion("type", [
+  canvasElementTargetSchema,
+  canvasTextRangeTargetSchema,
+]);
+export type CanvasAnnotationTarget = z.infer<
+  typeof canvasAnnotationTargetSchema
+>;
+
+// A queued annotation the host asks the overlay to render as a numbered pin.
+export const canvasAnnotationPinSchema = z.object({
+  id: z.string(),
+  n: z.number(),
+  selector: z.string(),
+});
+export type CanvasAnnotationPin = z.infer<typeof canvasAnnotationPinSchema>;
+
 // host -> iframe
 export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
   // First frame: hand the iframe its source + the run mode. The iframe does not
@@ -198,6 +243,19 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
     ok: z.boolean(),
     result: z.unknown().optional(),
     error: z.string().optional(),
+  }),
+  // Toggle the annotation ("comment mode") overlay: crosshair cursor, hover
+  // highlight, and click-to-capture targets.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("set-annotation-mode"),
+    enabled: z.boolean(),
+  }),
+  // The queued annotations to render as numbered pins over their targets.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("annotation-pins"),
+    pins: z.array(canvasAnnotationPinSchema),
   }),
 ]);
 export type HostToCanvasMessage = z.infer<typeof hostToCanvasMessageSchema>;
@@ -253,6 +311,13 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     channel: z.literal(CANVAS_CHANNEL),
     type: z.literal("navigate"),
     nav: canvasNavIntentSchema,
+  }),
+  // A comment-mode click captured an annotation target. The comment itself is
+  // typed host-side; only the target crosses the boundary.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("annotation-target"),
+    target: canvasAnnotationTargetSchema,
   }),
 ]);
 export type CanvasToHostMessage = z.infer<typeof canvasToHostMessageSchema>;

@@ -2,12 +2,16 @@ import {
   ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  CursorClickIcon,
   ShapesIcon,
   SidebarSimpleIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
+import type {
+  CanvasAnalyticsConfig,
+  CanvasAnnotationTarget,
+} from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   Button,
@@ -23,6 +27,10 @@ import {
   isCanvasGenerationRunning,
 } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import {
+  useCanvasAnnotations,
+  useCanvasAnnotationsStore,
+} from "@posthog/ui/features/canvas/stores/canvasAnnotationsStore";
 import { useCanvasChatPanelStore } from "@posthog/ui/features/canvas/stores/canvasChatPanelStore";
 import {
   useFreeformChatStore,
@@ -216,6 +224,32 @@ export function FreeformCanvasView({
   // Routes the canvas's allowlisted nav intents within this channel.
   const onNavigate = useCanvasNavigation(channelId);
 
+  // Comment mode: the overlay captures element/text targets; each becomes a
+  // queued annotation (chip + pin) that rides the next edit instruction.
+  const [annotationMode, setAnnotationMode] = useState(false);
+  const annotations = useCanvasAnnotations(dashboardId);
+  const addAnnotation = useCanvasAnnotationsStore((s) => s.add);
+  const onAnnotationTarget = useCallback(
+    (target: CanvasAnnotationTarget) => {
+      addAnnotation(dashboardId, target);
+      // Reveal the composer so the comment can be typed right away.
+      setCollapsed(false);
+    },
+    [addAnnotation, dashboardId, setCollapsed],
+  );
+  const annotationPins = useMemo(
+    () =>
+      annotations.map((a, i) => ({
+        id: a.id,
+        n: i + 1,
+        selector:
+          a.target.type === "element"
+            ? a.target.selector
+            : a.target.ancestorSelector,
+      })),
+    [annotations],
+  );
+
   // The edit composer's editor handle, so self-repair can prefill it.
   const editorRef = useRef<EditorHandle>(null);
   const askAgentToFix = () => {
@@ -309,6 +343,26 @@ export function FreeformCanvasView({
                   {isResetting ? "Resetting…" : "Reset to default"}
                 </Button>
               )}
+              {showCanvas && (
+                <Tooltip
+                  content={
+                    annotationMode
+                      ? "Exit comment mode"
+                      : "Comment on elements — click anything in the canvas"
+                  }
+                >
+                  <Button
+                    size="icon"
+                    variant={annotationMode ? "primary" : "default"}
+                    aria-label="Comment mode"
+                    className="ml-1"
+                    disabled={isGenerating}
+                    onClick={() => setAnnotationMode((v) => !v)}
+                  >
+                    <CursorClickIcon size={16} />
+                  </Button>
+                </Tooltip>
+              )}
             </Flex>
             <Flex align="center" gap="2">
               {isGenerating && effectiveTaskId ? (
@@ -383,6 +437,9 @@ export function FreeformCanvasView({
                 onError={onError}
                 onRendered={onRendered}
                 onNavigate={onNavigate}
+                annotationMode={annotationMode}
+                annotationPins={annotationPins}
+                onAnnotationTarget={onAnnotationTarget}
               />
             </Box>
           ) : (

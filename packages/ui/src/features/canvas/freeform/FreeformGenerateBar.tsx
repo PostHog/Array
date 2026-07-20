@@ -1,5 +1,11 @@
+import { XIcon } from "@phosphor-icons/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@posthog/quill";
 import { useGenerateFreeformCanvas } from "@posthog/ui/features/canvas/hooks/useGenerateFreeformCanvas";
+import {
+  type QueuedCanvasAnnotation,
+  useCanvasAnnotations,
+  useCanvasAnnotationsStore,
+} from "@posthog/ui/features/canvas/stores/canvasAnnotationsStore";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
 import {
@@ -50,6 +56,13 @@ export const FreeformGenerateBar = forwardRef<
     channelName,
   });
 
+  // Queued comment-mode annotations for this canvas: shown as chips with an
+  // inline comment field, drained into the next instruction on submit.
+  const annotations = useCanvasAnnotations(dashboardId);
+  const setAnnotationComment = useCanvasAnnotationsStore((s) => s.setComment);
+  const removeAnnotation = useCanvasAnnotationsStore((s) => s.remove);
+  const clearAnnotations = useCanvasAnnotationsStore((s) => s.clear);
+
   // On a FIRST build we seed the agent with a known-good starter scaffold by
   // default (faster, more consistent than authoring from scratch). Uncheck to
   // opt out and have the agent build from a blank canvas. Only meaningful on an
@@ -72,12 +85,36 @@ export const FreeformGenerateBar = forwardRef<
       currentCode,
       useStarter: !isEdit && useStarter,
       workspaceMode,
+      annotations: annotations.map((a, i) => ({
+        n: i + 1,
+        comment: a.comment.trim(),
+        target: a.target,
+      })),
     });
-    if (taskId) onStarted?.(taskId);
+    if (taskId) {
+      clearAnnotations(dashboardId);
+      onStarted?.(taskId);
+    }
   };
 
   return (
     <div className="flex flex-col gap-1.5">
+      {annotations.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {annotations.map((a, i) => (
+            <AnnotationChip
+              key={a.id}
+              n={i + 1}
+              annotation={a}
+              disabled={isStarting}
+              onComment={(comment) =>
+                setAnnotationComment(dashboardId, a.id, comment)
+              }
+              onRemove={() => removeAnnotation(dashboardId, a.id)}
+            />
+          ))}
+        </div>
+      )}
       <PromptInput
         ref={ref}
         sessionId={sessionId}
@@ -104,21 +141,92 @@ export const FreeformGenerateBar = forwardRef<
       )}
       {/* Dev-only: pick local vs cloud so a local build can be tested pre-merge. */}
       {import.meta.env.DEV && (
-        <Tooltip>
-          <TooltipTrigger render={<div className="self-start px-1" />}>
-            <WorkspaceModeSelect
-              value={workspaceMode}
-              onChange={setWorkspaceMode}
-              overrideModes={["local", "cloud"]}
-              disabled={isStarting}
-              size="1"
-            />
-          </TooltipTrigger>
-          <TooltipContent>
-            Dev mode only — generation always runs in the cloud in production.
-          </TooltipContent>
-        </Tooltip>
+        <DevWorkspaceModePicker
+          workspaceMode={workspaceMode}
+          setWorkspaceMode={setWorkspaceMode}
+          isStarting={isStarting}
+        />
       )}
     </div>
   );
 });
+
+// A queued comment-mode annotation: numbered pin badge (matching the in-canvas
+// pin), a bounded label of what was targeted, an inline comment field, remove.
+function AnnotationChip({
+  n,
+  annotation,
+  disabled,
+  onComment,
+  onRemove,
+}: {
+  n: number;
+  annotation: QueuedCanvasAnnotation;
+  disabled: boolean;
+  onComment: (comment: string) => void;
+  onRemove: () => void;
+}) {
+  const t = annotation.target;
+  const label =
+    t.type === "element"
+      ? `<${t.tag}> ${t.text || t.ariaLabel || t.selector}`
+      : `“${t.text}”`;
+  return (
+    <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-1.5 py-1">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary font-semibold text-[10px] text-primary-foreground">
+        {n}
+      </span>
+      <span
+        className="max-w-36 shrink-0 truncate text-muted-foreground text-xs"
+        title={label}
+      >
+        {label}
+      </span>
+      <input
+        className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+        placeholder="Add a comment…"
+        value={annotation.comment}
+        disabled={disabled}
+        onChange={(e) => onComment(e.target.value)}
+      />
+      <button
+        type="button"
+        aria-label="Remove annotation"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        <XIcon size={12} />
+      </button>
+    </div>
+  );
+}
+
+// Dev-only local/cloud picker, unchanged behavior — extracted so the main
+// component stays readable with the annotation chips above the composer.
+function DevWorkspaceModePicker({
+  workspaceMode,
+  setWorkspaceMode,
+  isStarting,
+}: {
+  workspaceMode: WorkspaceMode;
+  setWorkspaceMode: (mode: WorkspaceMode) => void;
+  isStarting: boolean;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<div className="self-start px-1" />}>
+        <WorkspaceModeSelect
+          value={workspaceMode}
+          onChange={setWorkspaceMode}
+          overrideModes={["local", "cloud"]}
+          disabled={isStarting}
+          size="1"
+        />
+      </TooltipTrigger>
+      <TooltipContent>
+        Dev mode only — generation always runs in the cloud in production.
+      </TooltipContent>
+    </Tooltip>
+  );
+}

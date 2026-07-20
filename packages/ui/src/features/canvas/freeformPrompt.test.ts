@@ -55,6 +55,52 @@ describe("buildFreeformGenerationPrompt", () => {
     expect(extracted?.body).toContain("version-conflict");
   });
 
+  it("folds queued annotations into a numbered block, and omits it when empty", () => {
+    const withAnnotations = buildFreeformGenerationPrompt({
+      ...base,
+      currentCode: "export default () => null;",
+      annotations: [
+        {
+          n: 1,
+          comment: "make this smaller",
+          target: {
+            type: "element",
+            selector: '[data-attr="refresh"]',
+            tag: "button",
+            text: "Refresh",
+            ariaLabel: null,
+            attributes: { "data-attr": "refresh" },
+          },
+        },
+        {
+          n: 2,
+          comment: "reword this",
+          target: {
+            type: "text-range",
+            text: "weekly active users",
+            ancestorSelector: "main > p:nth-of-type(2)",
+            ancestorTag: "p",
+          },
+        },
+      ],
+    });
+    const body = extractCanvasInstructions(withAnnotations)?.body ?? "";
+    expect(body).toContain("[Annotations]");
+    expect(body).toContain('1. On <button> "Refresh"');
+    expect(body).toContain('selector: [data-attr="refresh"]');
+    expect(body).toContain("make this smaller");
+    expect(body).toContain('2. On the text "weekly active users"');
+    expect(body).toContain("reword this");
+
+    const without = buildFreeformGenerationPrompt({
+      ...base,
+      currentCode: "export default () => null;",
+    });
+    expect(extractCanvasInstructions(without)?.body).not.toContain(
+      "[Annotations]",
+    );
+  });
+
   it("seeds the starter scaffold into the checked-out file on a first build", () => {
     const prompt = buildFreeformGenerationPrompt({
       ...base,

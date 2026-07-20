@@ -1,5 +1,7 @@
 import {
   type CanvasAnalyticsConfig,
+  type CanvasAnnotationPin,
+  type CanvasAnnotationTarget,
   type CanvasNavIntent,
   type CanvasToHostMessage,
   canvasToHostMessageSchema,
@@ -51,6 +53,12 @@ export interface FreeformCanvasProps {
    * reloads the frame via the existing reload path.
    */
   refreshKey?: number;
+  /** Comment mode: the overlay captures element/text targets on click. */
+  annotationMode?: boolean;
+  /** Queued annotations rendered as numbered pins over their targets. */
+  annotationPins?: CanvasAnnotationPin[];
+  /** Called when the overlay captures a target (the comment is typed host-side). */
+  onAnnotationTarget?: (target: CanvasAnnotationTarget) => void;
 }
 
 // Renders a freeform-React canvas inside a null-origin sandboxed iframe and
@@ -65,6 +73,9 @@ export function FreeformCanvas({
   onNavigate,
   analytics,
   refreshKey = 0,
+  annotationMode = false,
+  annotationPins,
+  onAnnotationTarget,
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // The canvas mirrors the host's light/dark theme. Passed via `init` (not the
@@ -92,25 +103,32 @@ export function FreeformCanvas({
     onError,
     onRendered,
     onNavigate,
+    onAnnotationTarget,
     code,
     mode,
     analytics,
     theme,
+    annotationMode,
+    annotationPins,
   });
   latest.current = {
     onDataRequest,
     onError,
     onRendered,
     onNavigate,
+    onAnnotationTarget,
     code,
     mode,
     analytics,
     theme,
+    annotationMode,
+    annotationPins,
   };
 
   const postInit = useCallback(() => {
     const p = latest.current;
-    iframeRef.current?.contentWindow?.postMessage(
+    const target = iframeRef.current?.contentWindow;
+    target?.postMessage(
       {
         channel: "posthog-canvas",
         type: "init",
@@ -118,6 +136,24 @@ export function FreeformCanvas({
         mode: p.mode,
         analytics: p.analytics,
         theme: p.theme,
+      },
+      "*",
+    );
+    // A reload resets the overlay's state; re-sync comment mode + pins so they
+    // survive srcDoc changes exactly like the theme survives via init.
+    target?.postMessage(
+      {
+        channel: "posthog-canvas",
+        type: "set-annotation-mode",
+        enabled: p.annotationMode,
+      },
+      "*",
+    );
+    target?.postMessage(
+      {
+        channel: "posthog-canvas",
+        type: "annotation-pins",
+        pins: p.annotationPins ?? [],
       },
       "*",
     );
@@ -182,6 +218,9 @@ export function FreeformCanvas({
           // msg.nav is already allowlist-validated by safeParse below.
           latest.current.onNavigate?.(msg.nav);
           break;
+        case "annotation-target":
+          latest.current.onAnnotationTarget?.(msg.target);
+          break;
       }
     };
 
@@ -231,6 +270,30 @@ export function FreeformCanvas({
       "*",
     );
   }, [theme]);
+
+  // Live comment-mode + pin updates (no remount; postInit re-syncs on reload).
+  useEffect(() => {
+    if (!readyRef.current) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        channel: "posthog-canvas",
+        type: "set-annotation-mode",
+        enabled: annotationMode,
+      },
+      "*",
+    );
+  }, [annotationMode]);
+  useEffect(() => {
+    if (!readyRef.current) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        channel: "posthog-canvas",
+        type: "annotation-pins",
+        pins: annotationPins ?? [],
+      },
+      "*",
+    );
+  }, [annotationPins]);
 
   return (
     <iframe

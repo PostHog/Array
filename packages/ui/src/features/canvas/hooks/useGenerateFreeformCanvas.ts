@@ -16,7 +16,10 @@ import {
   type WorkspaceMode,
 } from "@posthog/shared";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import { buildFreeformGenerationPrompt } from "@posthog/ui/features/canvas/freeformPrompt";
+import {
+  buildFreeformGenerationPrompt,
+  type CanvasAnnotationPromptInput,
+} from "@posthog/ui/features/canvas/freeformPrompt";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   isPlaceholderCanvasName,
@@ -92,6 +95,8 @@ export function useGenerateFreeformCanvas(args: {
       reasoningLevel?: string;
       // Default on (opt out in the bar): seed the starter scaffold on first build.
       useStarter?: boolean;
+      // Queued comment-mode annotations, folded into the instruction body.
+      annotations?: CanvasAnnotationPromptInput[];
       // Dev-only override (the bar exposes a local/cloud picker in dev so a
       // local build of these features can be tested before merging). Production
       // always runs in the cloud — see the default below.
@@ -107,6 +112,7 @@ export function useGenerateFreeformCanvas(args: {
         adapter = "claude",
         reasoningLevel,
         useStarter,
+        annotations,
         // Defaults to a cloud run — canvas generation should never tie up (or
         // depend on) the local machine, and it's never the sticky last-used
         // workspace mode. The dev-only picker can override to "local" to test a
@@ -147,6 +153,7 @@ export function useGenerateFreeformCanvas(args: {
               instruction,
               currentCode,
               useStarter,
+              annotations,
             }),
             taskDescription: `Generate canvas "${name}"`,
             // Unattended generation: run in auto mode so it doesn't stall on edit-approval prompts.

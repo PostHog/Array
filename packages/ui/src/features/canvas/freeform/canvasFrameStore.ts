@@ -1,5 +1,7 @@
 import type {
   CanvasAnalyticsConfig,
+  CanvasAnnotationPin,
+  CanvasAnnotationTarget,
   CanvasNavIntent,
 } from "@posthog/core/canvas/freeformSchemas";
 import { create } from "zustand";
@@ -35,6 +37,9 @@ export interface CanvasFrameInputs {
   onError?: (message: string, stack?: string) => void;
   onRendered?: () => void;
   onNavigate?: (intent: CanvasNavIntent) => void;
+  annotationMode?: boolean;
+  annotationPins?: CanvasAnnotationPin[];
+  onAnnotationTarget?: (target: CanvasAnnotationTarget) => void;
 }
 
 interface CanvasFrameSlot {

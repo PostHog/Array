@@ -1,5 +1,7 @@
 import type {
   CanvasAnalyticsConfig,
+  CanvasAnnotationPin,
+  CanvasAnnotationTarget,
   CanvasNavIntent,
 } from "@posthog/core/canvas/freeformSchemas";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
@@ -19,6 +21,9 @@ export function CanvasFramePlaceholder({
   onError,
   onRendered,
   onNavigate,
+  annotationMode,
+  annotationPins,
+  onAnnotationTarget,
 }: {
   dashboardId: string;
   code: string;
@@ -27,6 +32,9 @@ export function CanvasFramePlaceholder({
   onError?: (message: string, stack?: string) => void;
   onRendered?: () => void;
   onNavigate?: (intent: CanvasNavIntent) => void;
+  annotationMode?: boolean;
+  annotationPins?: CanvasAnnotationPin[];
+  onAnnotationTarget?: (target: CanvasAnnotationTarget) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const refreshKey = useCanvasRefreshNonce(`dashboard:${dashboardId}`);
@@ -45,6 +53,9 @@ export function CanvasFramePlaceholder({
       onError,
       onRendered,
       onNavigate,
+      annotationMode,
+      annotationPins,
+      onAnnotationTarget,
     }),
     [
       code,
@@ -54,6 +65,9 @@ export function CanvasFramePlaceholder({
       onError,
       onRendered,
       onNavigate,
+      annotationMode,
+      annotationPins,
+      onAnnotationTarget,
     ],
   );
 
