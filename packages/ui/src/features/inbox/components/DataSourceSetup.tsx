@@ -1,4 +1,8 @@
 import { Button } from "@posthog/quill";
+import {
+  EXTERNAL_INBOX_SOURCE_BY_PRODUCT,
+  type ToggleableSourceProduct,
+} from "@posthog/shared";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
@@ -15,21 +19,11 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text, TextField } from "@radix-ui/themes";
 import { useCallback, useEffect, useState } from "react";
 
-type DataSourceType = "github" | "linear" | "jira" | "zendesk" | "pganalyze";
-
-const REQUIRED_SCHEMAS: Record<DataSourceType, string[]> = {
-  github: ["issues"],
-  linear: ["issues"],
-  jira: ["issues"],
-  zendesk: ["tickets"],
-  pganalyze: ["issues", "servers"],
-};
-
 /** PostHog DWH: full table replication (non-incremental); API enum value `full_refresh`. */
 const FULL_TABLE_REPLICATION = "full_refresh" as const;
 
-function schemasPayload(source: DataSourceType) {
-  return REQUIRED_SCHEMAS[source].map((name) => ({
+function schemasPayload(tables: string[]) {
+  return tables.map((name) => ({
     name,
     should_sync: true,
     sync_type: FULL_TABLE_REPLICATION,
@@ -37,43 +31,42 @@ function schemasPayload(source: DataSourceType) {
 }
 
 interface DataSourceSetupProps {
-  source: DataSourceType;
+  source: ToggleableSourceProduct;
   onComplete: () => void;
   onCancel: () => void;
 }
 
+/**
+ * Renders the connect flow for a warehouse inbox source. Credential-based sources
+ * (`setup: "dynamic"`) render the generic `DynamicSourceSetup` form driven by the source's
+ * connect-form schema served by PostHog Cloud — no per-source form code. The three legacy
+ * special cases (GitHub repo picker, Zendesk, pganalyze) keep their bespoke forms.
+ */
 export function DataSourceSetup({
   source,
   onComplete,
   onCancel,
 }: DataSourceSetupProps) {
-  switch (source) {
+  const config = EXTERNAL_INBOX_SOURCE_BY_PRODUCT[source];
+  if (!config) return null;
+
+  switch (config.setup) {
     case "github":
       return <GitHubSetup onComplete={onComplete} onCancel={onCancel} />;
-    case "linear":
-      return (
-        <DynamicSourceSetup
-          sourceType="Linear"
-          title="Connect Linear"
-          schemas={schemasPayload("linear")}
-          onComplete={onComplete}
-          onCancel={onCancel}
-        />
-      );
-    case "jira":
-      return (
-        <DynamicSourceSetup
-          sourceType="Jira"
-          title="Connect Jira"
-          schemas={schemasPayload("jira")}
-          onComplete={onComplete}
-          onCancel={onCancel}
-        />
-      );
     case "zendesk":
       return <ZendeskSetup onComplete={onComplete} onCancel={onCancel} />;
     case "pganalyze":
       return <PgAnalyzeSetup onComplete={onComplete} onCancel={onCancel} />;
+    default:
+      return (
+        <DynamicSourceSetup
+          sourceType={config.dwSourceType}
+          title={`Connect ${config.label}`}
+          schemas={schemasPayload(config.requiredTables)}
+          onComplete={onComplete}
+          onCancel={onCancel}
+        />
+      );
   }
 }
 
@@ -144,7 +137,7 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
             selection: "oauth",
             github_integration_id: selectedIntegrationId,
           },
-          schemas: schemasPayload("github"),
+          schemas: schemasPayload(["issues"]),
         },
       });
       toast.success("GitHub data source created");
@@ -301,7 +294,7 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
           subdomain: subdomain.trim(),
           api_key: apiKey.trim(),
           email_address: email.trim(),
-          schemas: schemasPayload("zendesk"),
+          schemas: schemasPayload(["tickets"]),
         },
       });
       toast.success("Zendesk data source created");
@@ -384,7 +377,7 @@ function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
         payload: {
           api_key: apiKey.trim(),
           organization_slug: organizationSlug.trim(),
-          schemas: schemasPayload("pganalyze"),
+          schemas: schemasPayload(["issues", "servers"]),
         },
       });
       toast.success("pganalyze data source created");

@@ -4,28 +4,20 @@ import type {
   PostHogAPIClient,
   SignalSourceConfig,
 } from "@posthog/api-client/posthog-client";
+import {
+  EXTERNAL_INBOX_SOURCES,
+  type SignalRecordKind,
+  sourceNeedsFullRefresh,
+  type ToggleableSourceProduct,
+} from "@posthog/shared";
 import type { SignalUserAutonomyConfig } from "@posthog/shared/domain-types";
 import { injectable } from "inversify";
 
-export interface SignalSourceValues {
-  session_replay: boolean;
-  error_tracking: boolean;
-  github: boolean;
-  linear: boolean;
-  jira: boolean;
-  zendesk: boolean;
-  conversations: boolean;
-  pganalyze: boolean;
-}
-
-export type SignalSourceProduct = keyof SignalSourceValues;
-
-export type WarehouseSourceProduct =
-  | "github"
-  | "linear"
-  | "jira"
-  | "zendesk"
-  | "pganalyze";
+export type SignalSourceProduct = ToggleableSourceProduct;
+export type SignalSourceValues = Record<SignalSourceProduct, boolean>;
+// Any warehouse source can be a setup target; membership in DATA_WAREHOUSE_SOURCES is the
+// runtime narrowing, so this stays a broad alias rather than a hand-kept union.
+export type WarehouseSourceProduct = SignalSourceProduct;
 
 export interface SignalSourceState {
   requiresSetup: boolean;
@@ -37,20 +29,16 @@ export interface ToggleSourceResult {
   isFirstConnection: boolean;
 }
 
-type SourceProduct = SignalSourceConfig["source_product"];
 type SourceType = SignalSourceConfig["source_type"];
 
-const SOURCE_TYPE_MAP: Record<
-  Exclude<SourceProduct, "error_tracking" | "llm_analytics" | "signals_scout">,
-  SourceType
-> = {
+// Non-warehouse toggles are hard-wired; warehouse sources are derived from the shared
+// EXTERNAL_INBOX_SOURCES registry (kept in sync with the UI hook).
+const SOURCE_TYPE_MAP: Partial<Record<SignalSourceProduct, SourceType>> = {
   session_replay: "session_analysis_cluster",
-  github: "issue",
-  linear: "issue",
-  jira: "issue",
-  zendesk: "ticket",
   conversations: "ticket",
-  pganalyze: "issue",
+  ...Object.fromEntries(
+    EXTERNAL_INBOX_SOURCES.map((s) => [s.product, s.recordKind]),
+  ),
 };
 
 const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
@@ -60,30 +48,27 @@ const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
 ];
 
 const DATA_WAREHOUSE_SOURCES: Record<
-  WarehouseSourceProduct,
-  { dwSourceType: string; requiredTable: string }
-> = {
-  github: { dwSourceType: "Github", requiredTable: "issues" },
-  linear: { dwSourceType: "Linear", requiredTable: "issues" },
-  jira: { dwSourceType: "Jira", requiredTable: "issues" },
-  zendesk: { dwSourceType: "Zendesk", requiredTable: "tickets" },
-  pganalyze: { dwSourceType: "PgAnalyze", requiredTable: "issues" },
-};
+  string,
+  { dwSourceType: string; requiredTable: string; recordKind: SourceType }
+> = Object.fromEntries(
+  EXTERNAL_INBOX_SOURCES.map((s) => [
+    s.product,
+    {
+      dwSourceType: s.dwSourceType,
+      requiredTable: s.requiredTables[0],
+      recordKind: s.recordKind,
+    },
+  ]),
+);
 
 const ALL_SOURCE_PRODUCTS: SignalSourceProduct[] = [
   "session_replay",
   "error_tracking",
-  "github",
-  "linear",
-  "jira",
-  "zendesk",
   "conversations",
-  "pganalyze",
+  ...EXTERNAL_INBOX_SOURCES.map((s) => s.product as SignalSourceProduct),
 ];
 
-function isWarehouseSource(
-  product: SignalSourceProduct,
-): product is WarehouseSourceProduct {
+function isWarehouseSource(product: SignalSourceProduct): boolean {
   return product in DATA_WAREHOUSE_SOURCES;
 }
 
@@ -106,16 +91,9 @@ function findExternalSource(
 export function computeSourceValues(
   configs: SignalSourceConfig[] | undefined,
 ): SignalSourceValues {
-  const result: SignalSourceValues = {
-    session_replay: false,
-    error_tracking: false,
-    github: false,
-    linear: false,
-    jira: false,
-    zendesk: false,
-    conversations: false,
-    pganalyze: false,
-  };
+  const result = Object.fromEntries(
+    ALL_SOURCE_PRODUCTS.map((p) => [p, false]),
+  ) as SignalSourceValues;
   if (!configs?.length) {
     return result;
   }
@@ -199,11 +177,9 @@ export class SignalSourceService {
       return;
     }
 
-    const issuesFullReplication =
-      (product === "github" || product === "linear" || product === "jira") &&
-      dwConfig.requiredTable === "issues";
-
-    if (issuesFullReplication) {
+    // Issue-like records (issues, findings, feedback, reviews) mutate after creation, so
+    // they need full-refresh sync; tickets are append-only.
+    if (sourceNeedsFullRefresh(dwConfig.recordKind as SignalRecordKind)) {
       const needsUpdate =
         !requiredSchema.should_sync ||
         requiredSchema.sync_type !== "full_refresh";
@@ -319,20 +295,15 @@ export class SignalSourceService {
     configs: SignalSourceConfig[] | undefined,
   ): Promise<void> {
     const existing = configs?.find((c) => c.source_product === product);
+    const sourceType = SOURCE_TYPE_MAP[product];
     if (existing) {
       await client.updateSignalSourceConfig(projectId, existing.id, {
         enabled,
       });
-    } else if (enabled) {
+    } else if (enabled && sourceType) {
       await client.createSignalSourceConfig(projectId, {
         source_product: product,
-        source_type:
-          SOURCE_TYPE_MAP[
-            product as Exclude<
-              SourceProduct,
-              "error_tracking" | "llm_analytics" | "signals_scout"
-            >
-          ],
+        source_type: sourceType,
         enabled: true,
       });
     }
@@ -345,13 +316,14 @@ export class SignalSourceService {
     configs: SignalSourceConfig[] | undefined,
   ): Promise<ToggleSourceResult> {
     const existing = configs?.find((c) => c.source_product === product);
-    if (!existing) {
+    const sourceType = SOURCE_TYPE_MAP[product];
+    if (!existing && sourceType) {
       await client.createSignalSourceConfig(projectId, {
         source_product: product,
-        source_type: SOURCE_TYPE_MAP[product],
+        source_type: sourceType,
         enabled: true,
       });
-    } else if (!existing.enabled) {
+    } else if (existing && !existing.enabled) {
       await client.updateSignalSourceConfig(projectId, existing.id, {
         enabled: true,
       });

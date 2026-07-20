@@ -4,29 +4,21 @@ import {
   BugIcon,
   ChatsIcon,
   CircleNotchIcon,
-  GithubLogoIcon,
-  KanbanIcon,
-  TicketIcon,
+  PlugIcon,
   VideoIcon,
 } from "@phosphor-icons/react";
 import type { SignalSourceConfig } from "@posthog/api-client/posthog-client";
 import { Button } from "@posthog/quill";
-import { JiraIcon } from "@posthog/ui/features/inbox/components/utils/JiraIcon";
-import { PgAnalyzeIcon } from "@posthog/ui/features/inbox/components/utils/PgAnalyzeIcon";
+import {
+  EXTERNAL_INBOX_SOURCES,
+  type ToggleableSourceProduct,
+} from "@posthog/shared";
+import { getSourceProductMeta } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
 import { memo, useCallback } from "react";
 
-export interface SignalSourceValues {
-  session_replay: boolean;
-  error_tracking: boolean;
-  github: boolean;
-  linear: boolean;
-  jira: boolean;
-  zendesk: boolean;
-  conversations: boolean;
-  pganalyze: boolean;
-}
+export type SignalSourceValues = Record<ToggleableSourceProduct, boolean>;
 
 interface SignalSourceToggleCardProps {
   icon: React.ReactNode;
@@ -163,6 +155,60 @@ const SignalSourceToggleCard = memo(function SignalSourceToggleCard({
   );
 });
 
+interface SourceState {
+  requiresSetup: boolean;
+  loading: boolean;
+  syncStatus?: SignalSourceConfig["status"];
+}
+
+/**
+ * A single warehouse-source card. Its own component so the toggle/setup callbacks can be
+ * memoized per product without breaking the rules of hooks (the grid renders one per source
+ * from EXTERNAL_INBOX_SOURCES).
+ */
+const ExternalSourceCard = memo(function ExternalSourceCard({
+  product,
+  label,
+  description,
+  checked,
+  state,
+  disabled,
+  onToggle,
+  onSetup,
+}: {
+  product: ToggleableSourceProduct;
+  label: string;
+  description: string;
+  checked: boolean;
+  state?: SourceState;
+  disabled?: boolean;
+  onToggle: (source: ToggleableSourceProduct, enabled: boolean) => void;
+  onSetup?: (source: ToggleableSourceProduct) => void;
+}) {
+  const handleToggle = useCallback(
+    (value: boolean) => onToggle(product, value),
+    [onToggle, product],
+  );
+  const handleSetup = useCallback(() => onSetup?.(product), [onSetup, product]);
+  const meta = getSourceProductMeta(product);
+  const Icon = meta?.Icon ?? PlugIcon;
+
+  return (
+    <SignalSourceToggleCard
+      icon={<Icon size={20} style={meta ? { color: meta.color } : undefined} />}
+      label={label}
+      description={description}
+      checked={checked}
+      onCheckedChange={handleToggle}
+      disabled={disabled}
+      requiresSetup={state?.requiresSetup}
+      onSetup={handleSetup}
+      loading={state?.loading}
+      syncStatus={state?.syncStatus}
+    />
+  );
+});
+
 interface EvaluationsSectionProps {
   evaluationsUrl: string;
 }
@@ -252,19 +298,10 @@ function SourceRunningIndicator({
 
 interface SignalSourceTogglesProps {
   value: SignalSourceValues;
-  onToggle: (source: keyof SignalSourceValues, enabled: boolean) => void;
+  onToggle: (source: ToggleableSourceProduct, enabled: boolean) => void;
   disabled?: boolean;
-  sourceStates?: Partial<
-    Record<
-      keyof SignalSourceValues,
-      {
-        requiresSetup: boolean;
-        loading: boolean;
-        syncStatus?: SignalSourceConfig["status"];
-      }
-    >
-  >;
-  onSetup?: (source: keyof SignalSourceValues) => void;
+  sourceStates?: Partial<Record<ToggleableSourceProduct, SourceState>>;
+  onSetup?: (source: ToggleableSourceProduct) => void;
   evaluationsUrl?: string;
 }
 
@@ -284,35 +321,10 @@ export function SignalSourceToggles({
     (checked: boolean) => onToggle("error_tracking", checked),
     [onToggle],
   );
-  const toggleGithub = useCallback(
-    (checked: boolean) => onToggle("github", checked),
-    [onToggle],
-  );
-  const toggleLinear = useCallback(
-    (checked: boolean) => onToggle("linear", checked),
-    [onToggle],
-  );
-  const toggleJira = useCallback(
-    (checked: boolean) => onToggle("jira", checked),
-    [onToggle],
-  );
-  const toggleZendesk = useCallback(
-    (checked: boolean) => onToggle("zendesk", checked),
-    [onToggle],
-  );
   const toggleConversations = useCallback(
     (checked: boolean) => onToggle("conversations", checked),
     [onToggle],
   );
-  const togglePgAnalyze = useCallback(
-    (checked: boolean) => onToggle("pganalyze", checked),
-    [onToggle],
-  );
-  const setupGithub = useCallback(() => onSetup?.("github"), [onSetup]);
-  const setupLinear = useCallback(() => onSetup?.("linear"), [onSetup]);
-  const setupJira = useCallback(() => onSetup?.("jira"), [onSetup]);
-  const setupZendesk = useCallback(() => onSetup?.("zendesk"), [onSetup]);
-  const setupPgAnalyze = useCallback(() => onSetup?.("pganalyze"), [onSetup]);
 
   return (
     <Flex gap="4">
@@ -368,72 +380,28 @@ export function SignalSourceToggles({
         </Flex>
       </Flex>
 
-      {/* External connections */}
+      {/* External connections — data-driven from the shared source registry */}
       <Flex direction="column" gap="2" className="min-w-0 flex-1">
         <Text className="font-medium text-(--gray-9) text-[13px]">
           External connections
         </Text>
         <Flex direction="column" gap="3">
-          <SignalSourceToggleCard
-            icon={<GithubLogoIcon size={20} />}
-            label="GitHub Issues"
-            description="Monitor new issues and updates"
-            checked={value.github}
-            onCheckedChange={toggleGithub}
-            disabled={disabled}
-            requiresSetup={sourceStates?.github?.requiresSetup}
-            onSetup={setupGithub}
-            loading={sourceStates?.github?.loading}
-            syncStatus={sourceStates?.github?.syncStatus}
-          />
-          <SignalSourceToggleCard
-            icon={<KanbanIcon size={20} />}
-            label="Linear"
-            description="Monitor new issues and updates"
-            checked={value.linear}
-            onCheckedChange={toggleLinear}
-            disabled={disabled}
-            requiresSetup={sourceStates?.linear?.requiresSetup}
-            onSetup={setupLinear}
-            loading={sourceStates?.linear?.loading}
-            syncStatus={sourceStates?.linear?.syncStatus}
-          />
-          <SignalSourceToggleCard
-            icon={<JiraIcon size={20} />}
-            label="Jira"
-            description="Monitor new issues and updates"
-            checked={value.jira}
-            onCheckedChange={toggleJira}
-            disabled={disabled}
-            requiresSetup={sourceStates?.jira?.requiresSetup}
-            onSetup={setupJira}
-            loading={sourceStates?.jira?.loading}
-            syncStatus={sourceStates?.jira?.syncStatus}
-          />
-          <SignalSourceToggleCard
-            icon={<TicketIcon size={20} />}
-            label="Zendesk"
-            description="Monitor incoming support tickets"
-            checked={value.zendesk}
-            onCheckedChange={toggleZendesk}
-            disabled={disabled}
-            requiresSetup={sourceStates?.zendesk?.requiresSetup}
-            onSetup={setupZendesk}
-            loading={sourceStates?.zendesk?.loading}
-            syncStatus={sourceStates?.zendesk?.syncStatus}
-          />
-          <SignalSourceToggleCard
-            icon={<PgAnalyzeIcon size={20} />}
-            label="pganalyze"
-            description="Postgres performance findings, slow queries, and index recommendations"
-            checked={value.pganalyze}
-            onCheckedChange={togglePgAnalyze}
-            disabled={disabled}
-            requiresSetup={sourceStates?.pganalyze?.requiresSetup}
-            onSetup={setupPgAnalyze}
-            loading={sourceStates?.pganalyze?.loading}
-            syncStatus={sourceStates?.pganalyze?.syncStatus}
-          />
+          {EXTERNAL_INBOX_SOURCES.map((source) => {
+            const product = source.product as ToggleableSourceProduct;
+            return (
+              <ExternalSourceCard
+                key={source.product}
+                product={product}
+                label={source.label}
+                description={source.description}
+                checked={value[product]}
+                state={sourceStates?.[product]}
+                disabled={disabled}
+                onToggle={onToggle}
+                onSetup={onSetup}
+              />
+            );
+          })}
         </Flex>
       </Flex>
     </Flex>

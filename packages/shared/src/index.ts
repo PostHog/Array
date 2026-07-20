@@ -145,7 +145,18 @@ export {
   parseImageDataUrl,
 } from "./image";
 export { buildDiscussReportPrompt } from "./inbox-prompts";
-export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
+export type {
+  AvailableSuggestedReviewer,
+  ExternalInboxSource,
+  SignalRecordKind,
+  SourceProduct,
+  ToggleableSourceProduct,
+} from "./inbox-types";
+export {
+  EXTERNAL_INBOX_SOURCE_BY_PRODUCT,
+  EXTERNAL_INBOX_SOURCES,
+  sourceNeedsFullRefresh,
+} from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export type {
   CloudMcpServerImport,
