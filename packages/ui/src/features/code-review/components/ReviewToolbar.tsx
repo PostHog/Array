@@ -1,24 +1,12 @@
 import {
   ArrowCounterClockwise,
   ArrowsClockwise,
-  CaretDown,
-  ChatCircle,
   Columns,
   Rows,
   X,
 } from "@phosphor-icons/react";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  MenuLabel,
-} from "@posthog/quill";
+import { Button } from "@posthog/quill";
 import { useDiffViewerStore } from "@posthog/ui/features/code-editor/diffViewerStore";
 import {
   type ReviewMode,
@@ -28,7 +16,7 @@ import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Flex, Separator, Text } from "@radix-ui/themes";
 import { FoldVertical, Maximize, Minimize, UnfoldVertical } from "lucide-react";
 import { memo } from "react";
-import { DiffSettingsMenu } from "./DiffSettingsMenu";
+import { type CommentFileFilter, DiffSettingsMenu } from "./DiffSettingsMenu";
 import { DiffSourceSelector } from "./DiffSourceSelector";
 
 interface ReviewToolbarProps {
@@ -51,8 +39,6 @@ interface ReviewToolbarProps {
   prSourceAvailable?: boolean;
   defaultBranch?: string | null;
 }
-
-export type CommentFileFilter = "none" | "commented" | "unresolved";
 
 function formatFileCount(count: number, suffix: string): string {
   const noun = count === 1 ? "file" : "files";
@@ -139,58 +125,6 @@ export const ReviewToolbar = memo(function ReviewToolbar({
       </Flex>
 
       <Flex align="center" gap="1" ml="auto">
-        {onCommentFilterChange && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  size="sm"
-                  variant={commentFilter === "none" ? "default" : "primary"}
-                  aria-label="Filter files by review comments"
-                  className="rounded-xs"
-                >
-                  <ChatCircle
-                    size={14}
-                    weight={commentFilter === "none" ? "regular" : "fill"}
-                  />
-                  <CaretDown size={10} weight="bold" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent
-              align="end"
-              side="bottom"
-              sideOffset={6}
-              className="min-w-[220px]"
-            >
-              <MenuLabel>Comment filter</MenuLabel>
-              <DropdownMenuRadioGroup
-                value={commentFilter === "none" ? "" : commentFilter}
-                onValueChange={(value) =>
-                  onCommentFilterChange(value as CommentFileFilter)
-                }
-              >
-                <DropdownMenuRadioItem value="commented">
-                  All comments ({commentedFileCount})
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="unresolved">
-                  Unresolved comments ({unresolvedCommentedFileCount})
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              {commentFilter !== "none" && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => onCommentFilterChange("none")}
-                  >
-                    Clear comment filter
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-
         {onRefresh && (
           <Tooltip content="Refresh diff">
             <Button size="icon-sm" onClick={onRefresh} className="rounded-xs">
@@ -256,7 +190,12 @@ export const ReviewToolbar = memo(function ReviewToolbar({
 
         <Separator orientation="vertical" size="1" />
 
-        <DiffSettingsMenu />
+        <DiffSettingsMenu
+          commentedFileCount={commentedFileCount}
+          unresolvedCommentedFileCount={unresolvedCommentedFileCount}
+          commentFilter={commentFilter}
+          onCommentFilterChange={onCommentFilterChange}
+        />
 
         <Tooltip content="Close review">
           <Button size="icon-sm" onClick={handleClose} className="rounded-xs">

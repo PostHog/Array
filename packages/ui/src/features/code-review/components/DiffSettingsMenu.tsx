@@ -4,12 +4,31 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import { useDiffViewerStore } from "@posthog/ui/features/code-editor/diffViewerStore";
 
-export function DiffSettingsMenu() {
+export type CommentFileFilter = "none" | "commented" | "unresolved";
+
+interface DiffSettingsMenuProps {
+  commentedFileCount: number;
+  unresolvedCommentedFileCount: number;
+  commentFilter: CommentFileFilter;
+  onCommentFilterChange?: (filter: CommentFileFilter) => void;
+}
+
+export function DiffSettingsMenu({
+  commentedFileCount,
+  unresolvedCommentedFileCount,
+  commentFilter,
+  onCommentFilterChange,
+}: DiffSettingsMenuProps) {
   const wordWrap = useDiffViewerStore((s) => s.wordWrap);
   const toggleWordWrap = useDiffViewerStore((s) => s.toggleWordWrap);
   const wordDiffs = useDiffViewerStore((s) => s.wordDiffs);
@@ -31,7 +50,12 @@ export function DiffSettingsMenu() {
         render={
           <Button
             size="icon-sm"
-            aria-label="Diff settings"
+            variant={commentFilter === "none" ? "default" : "primary"}
+            aria-label={
+              commentFilter === "none"
+                ? "Diff settings"
+                : `Diff settings, ${commentFilter} comment filter active`
+            }
             className="rounded-xs"
           >
             <DotsThree size={16} weight="bold" />
@@ -57,6 +81,43 @@ export function DiffSettingsMenu() {
         <DropdownMenuItem onClick={toggleShowReviewComments}>
           {showReviewComments ? "Hide review comments" : "Show review comments"}
         </DropdownMenuItem>
+        {onCommentFilterChange && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              Comment filter
+              {commentFilter === "commented"
+                ? " · All"
+                : commentFilter === "unresolved"
+                  ? " · Unresolved"
+                  : ""}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent side="right" sideOffset={4}>
+              <DropdownMenuRadioGroup
+                value={commentFilter === "none" ? "" : commentFilter}
+                onValueChange={(value) =>
+                  onCommentFilterChange(value as CommentFileFilter)
+                }
+              >
+                <DropdownMenuRadioItem value="commented">
+                  All comments ({commentedFileCount})
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="unresolved">
+                  Unresolved comments ({unresolvedCommentedFileCount})
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              {commentFilter !== "none" && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => onCommentFilterChange("none")}
+                  >
+                    Clear comment filter
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

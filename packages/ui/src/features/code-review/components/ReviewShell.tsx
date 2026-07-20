@@ -31,8 +31,9 @@ import {
 } from "../reviewShellParts";
 import { ReviewViewedContext } from "../reviewViewedContext";
 import { useReviewViewedStore } from "../reviewViewedStore";
+import type { CommentFileFilter } from "./DiffSettingsMenu";
 import { PendingReviewBar } from "./PendingReviewBar";
-import { type CommentFileFilter, ReviewToolbar } from "./ReviewToolbar";
+import { ReviewToolbar } from "./ReviewToolbar";
 
 // Pure helpers, hooks, types, and presentational sub-components live in
 // ../reviewShellParts. Re-exported here so consumers can import everything
