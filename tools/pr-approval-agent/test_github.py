@@ -2,7 +2,7 @@
 
 import pytest
 
-from github import _normalize_reviews_for_prompt
+from github import _normalize_reviews_for_prompt, _reviewhog_clean_reactions
 
 
 def test_normalize_reviews_marks_current_head_and_preserves_stale_reviews() -> None:
@@ -75,3 +75,65 @@ def test_normalize_reviews_filters_by_trust_source(
     )
 
     assert len(normalized) == expected_count
+
+
+def test_reviewhog_clean_status_is_normalized_as_a_trusted_positive() -> None:
+    reactions = _reviewhog_clean_reactions(
+        [
+            {
+                "user": {"login": "posthog[bot]", "type": "Bot"},
+                "body": (
+                    "Found no issues worth raising, so no review was posted.\n\n"
+                    "<!-- reviewhog:status:019f807c-68a6-7d18-b010-85409c5ed4ad -->"
+                ),
+                "created_at": "2026-07-20T17:04:26Z",
+                "updated_at": "2026-07-20T17:05:26Z",
+            }
+        ]
+    )
+
+    assert reactions == [
+        {
+            "user": "reviewhog[bot]",
+            "emoji": "👍",
+            "created_at": "2026-07-20T17:05:26Z",
+        }
+    ]
+
+
+def _clean_reviewhog_body() -> str:
+    return (
+        "Found no issues worth raising, so no review was posted.\n\n"
+        "<!-- reviewhog:status:019f807c-68a6-7d18-b010-85409c5ed4ad -->"
+    )
+
+
+@pytest.mark.parametrize(
+    "login,user_type,body",
+    [
+        pytest.param("posthog[bot]", "User", _clean_reviewhog_body(), id="not-app-bot"),
+        pytest.param("someone[bot]", "Bot", _clean_reviewhog_body(), id="wrong-bot"),
+        pytest.param(
+            "posthog[bot]", "Bot", "Found no issues worth raising, so no review was posted.", id="missing-marker"
+        ),
+        pytest.param(
+            "posthog[bot]",
+            "Bot",
+            "Found 1 should fix.\n<!-- reviewhog:status:019f807c-68a6-7d18-b010-85409c5ed4ad -->",
+            id="not-clean",
+        ),
+    ],
+)
+def test_reviewhog_clean_status_rejects_untrusted_or_non_clean_comments(
+    login: str, user_type: str, body: str
+) -> None:
+    reactions = _reviewhog_clean_reactions(
+        [
+            {
+                "user": {"login": login, "type": user_type},
+                "body": body,
+            }
+        ]
+    )
+
+    assert reactions == []

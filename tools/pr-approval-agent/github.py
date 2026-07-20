@@ -6,8 +6,9 @@ Also handles team membership checks for the ownership gate.
 """
 
 import json
+import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -29,6 +30,7 @@ class PRData:
     reviews: list[dict]
     review_comments: list[dict]
     check_runs: list[dict]
+    pr_reactions: list[dict] = field(default_factory=list)
 
     @property
     def file_paths(self) -> list[str]:
@@ -52,6 +54,8 @@ class PRData:
 
 
 _TRUSTED_ASSOCIATIONS = {"MEMBER", "OWNER", "COLLABORATOR"}
+_REVIEWHOG_BOT_LOGIN = "posthog[bot]"
+_REVIEWHOG_STATUS_RE = re.compile(r"<!--\s*reviewhog:status:[0-9a-f-]+\s*-->")
 
 
 def _normalize_reviews_for_prompt(reviews_raw: list[dict], head_sha: str) -> list[dict]:
@@ -83,6 +87,26 @@ def _normalize_reviews_for_prompt(reviews_raw: list[dict], head_sha: str) -> lis
         )
 
     return normalized_reviews
+
+
+def _reviewhog_clean_reactions(comments_raw: list[dict]) -> list[dict]:
+    for comment in reversed(comments_raw):
+        user = comment.get("user") or {}
+        if user.get("login", "").lower() != _REVIEWHOG_BOT_LOGIN or user.get("type") != "Bot":
+            continue
+        body = comment.get("body") or ""
+        if "Found no issues worth raising, so no review was posted." not in body:
+            continue
+        if _REVIEWHOG_STATUS_RE.search(body) is None:
+            continue
+        return [
+            {
+                "user": "reviewhog[bot]",
+                "emoji": "👍",
+                "created_at": comment.get("updated_at") or comment.get("created_at"),
+            }
+        ]
+    return []
 
 
 def _gh_api(endpoint: str, *, paginate: bool = False) -> dict | list:
@@ -258,6 +282,12 @@ def fetch_pr(pr_number: int, repo: str, repo_root: Path | None = None) -> PRData
     base_sha = pr["base"]["sha"]
     head_sha = pr["head"]["sha"]
     check_runs_resp = _gh_api(f"repos/{repo}/commits/{head_sha}/check-runs")
+    reviewhog_reactions: list[dict] = []
+    try:
+        discussion_raw = _gh_api(f"repos/{repo}/issues/{pr_number}/comments", paginate=True)
+        reviewhog_reactions = _reviewhog_clean_reactions(discussion_raw)
+    except Exception as exc:
+        print(f"warning: discussion fetch failed ({exc}); continuing without ReviewHog assurance")
 
     git_root = repo_root or Path.cwd()
     ensure_commits(pr_number, head_sha, git_root)
@@ -280,6 +310,7 @@ def fetch_pr(pr_number: int, repo: str, repo_root: Path | None = None) -> PRData
         reviews=_normalize_reviews_for_prompt(reviews_raw, head_sha),
         review_comments=review_comments,
         check_runs=check_runs_resp.get("check_runs", []),
+        pr_reactions=reviewhog_reactions,
     )
 
 

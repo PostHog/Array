@@ -174,6 +174,9 @@ REVIEWER_SYSTEM = textwrap.dedent(
       reviews as a concern and ESCALATE unless there's a strong,
       specific justification to APPROVE.
     - Bot comments with valid concerns that were ignored → ESCALATE
+    - ReviewHog's authenticated clean status appears as 👍 @reviewhog[bot]. Treat
+      it as the same mild positive signal as a clean Greptile or Hex reaction:
+      useful corroboration, but never sufficient by itself to approve.
 
     Tools: You have Read, Grep, and Glob (restricted to the repo directory).
     All PR metadata (comments, ownership) is in the prompt — do NOT fetch
@@ -392,6 +395,10 @@ class Reviewer:
                 lines.append(f"  - @{safe_user}{reply}{status} on {safe_path}: {safe_body}")
             review_comments = "\n".join(lines)
 
+        pr_reactions = "\n".join(
+            f"  - {r['emoji']} @{_sanitize_untrusted(r['user'], max_len=50)}" for r in pr.pr_reactions
+        )
+
         ownership = self._format_ownership(cl)
 
         gate_lines = []
@@ -419,7 +426,7 @@ class Reviewer:
             Size: {pr.lines_total} lines ({pr.lines_added}+/{pr.lines_deleted}-), {len(pr.files)} files
             Scope: {cl["breadth"]}
             Commit type: {cl.get("commit_type") or "unknown"}
-            Reviews: {len(pr.reviews)} top-level, {len(pr.review_comments)} inline
+            Reviews: {len(pr.reviews)} top-level, {len(pr.review_comments)} inline, {len(pr.pr_reactions)} trusted signals
 
             {ownership}
 
@@ -443,6 +450,9 @@ class Reviewer:
 
             Inline comments:
             {review_comments}
+
+            Reactions on the PR:
+            {pr_reactions}
             --- END UNTRUSTED CONTENT ---
         """)
 
