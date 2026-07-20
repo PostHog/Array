@@ -19,6 +19,18 @@ describe("applyAvailableModelsAllowlist", () => {
     ).toEqual(rawModelOptions);
   });
 
+  it("reorders the allowlist to the picker order instead of the listed order", () => {
+    expect(
+      applyAvailableModelsAllowlist(rawModelOptions, [
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+      ]).options,
+    ).toEqual([
+      { value: "claude-opus-4-8", name: "Claude Opus 4.8" },
+      { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+    ]);
+  });
+
   it("switches the current model when the previous one is filtered out", () => {
     expect(
       applyAvailableModelsAllowlist(rawModelOptions, ["claude-sonnet-4-6"]),

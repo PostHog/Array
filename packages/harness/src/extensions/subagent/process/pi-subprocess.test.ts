@@ -4,7 +4,7 @@ import {
   nodeCompatibleSpawnEnv,
   piCliInvocation,
   resolvePiCliEntry,
-} from "./pi-cli";
+} from "./pi-subprocess";
 
 describe("resolvePiCliEntry", () => {
   it("resolves to cli.js next to the installed @earendil-works/pi-coding-agent package", () => {
