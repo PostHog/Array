@@ -26,6 +26,7 @@ futures = { workspace = true }
 hex = "0.4.3"
 jsonwebtoken = { workspace = true }
 posthog-acp = { path = "../acp" }
+posthog-agent-tools = { path = "../agent-tools" }
 regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

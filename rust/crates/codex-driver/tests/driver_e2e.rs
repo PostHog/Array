@@ -349,6 +349,60 @@ async fn allow_always_echoes_the_remember_decision() {
 }
 
 #[tokio::test]
+async fn session_resume_reopens_the_prior_thread() {
+    let (peer, recorded) = spawn_driver("allow");
+    let init = request(
+        &peer,
+        "initialize",
+        json!({ "protocolVersion": 1, "clientCapabilities": {} }),
+    )
+    .await;
+    assert_eq!(init["protocolVersion"], 1);
+
+    let response = request(
+        &peer,
+        "_posthog/session/resume",
+        json!({
+            "sessionId": "mock-thread-42",
+            "cwd": "/tmp",
+            "mcpServers": [],
+            "_meta": {
+                "environment": "cloud",
+                "taskRunId": "run-9",
+                "systemPrompt": { "append": "cloud test prompt" },
+            },
+        }),
+    )
+    .await;
+    // thread/resume echoes the prior thread id back as the session id.
+    assert_eq!(response["sessionId"], "mock-thread-42");
+
+    wait_for(
+        &recorded,
+        |r| {
+            r.iter().any(|(m, p)| {
+                m == "_posthog/sdk_session"
+                    && p.get("sessionId").and_then(Value::as_str) == Some("mock-thread-42")
+            })
+        },
+        "resumed sdk session notification",
+    )
+    .await;
+
+    // A turn still runs on the resumed thread.
+    let response = request(
+        &peer,
+        "session/prompt",
+        json!({
+            "sessionId": "mock-thread-42",
+            "prompt": [{ "type": "text", "text": "Say hello" }],
+        }),
+    )
+    .await;
+    assert_eq!(response["stopReason"], "end_turn");
+}
+
+#[tokio::test]
 async fn structured_output_parses_the_final_message() {
     let (peer, recorded) = spawn_driver("allow");
     let session_id = new_session(&peer, json!({ "jsonSchema": { "type": "object" } })).await;

@@ -174,6 +174,15 @@ fn handle_user(
 }
 
 fn main() {
+    // A resumed session announces itself under the resumed id, so tests can
+    // assert `--resume` made it through argv.
+    let args: Vec<String> = std::env::args().collect();
+    let resumed_session_id = args
+        .iter()
+        .position(|a| a == "--resume")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+
     let stdin = std::io::stdin();
     let mut lines = stdin.lock().lines();
     let mut request_counter: u64 = 0;
@@ -196,7 +205,7 @@ fn main() {
                     emit(json!({
                         "type": "system",
                         "subtype": "init",
-                        "session_id": "mock-sdk-session",
+                        "session_id": resumed_session_id.as_deref().unwrap_or("mock-sdk-session"),
                         "cwd": "/tmp",
                         "tools": [],
                         "model": "mock",

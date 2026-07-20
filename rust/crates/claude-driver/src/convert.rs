@@ -514,6 +514,74 @@ impl Converter {
         Some(self.plan_update())
     }
 
+    /// `rehydrateTaskState` (task-state.ts): rebuild the plan panel from a
+    /// session-JSONL transcript by replaying TaskCreate/TaskUpdate tool
+    /// inputs/outputs. Used on `session/resume` to recover the plan when the
+    /// agent restarts mid-conversation. Returns the plan update to broadcast
+    /// when any state was recovered.
+    pub fn rehydrate_task_state(&mut self, messages: &[Value]) -> Option<Value> {
+        let mut pending: HashMap<String, CachedToolUse> = HashMap::new();
+        for msg in messages {
+            let Some(content) = msg.pointer("/message/content").and_then(Value::as_array) else {
+                continue;
+            };
+            match msg.get("type").and_then(Value::as_str) {
+                Some("assistant") => {
+                    for block in content {
+                        if block.get("type").and_then(Value::as_str) != Some("tool_use") {
+                            continue;
+                        }
+                        let (Some(id), Some(name)) = (
+                            block.get("id").and_then(Value::as_str),
+                            block.get("name").and_then(Value::as_str),
+                        ) else {
+                            continue;
+                        };
+                        if name == "TaskCreate" || name == "TaskUpdate" {
+                            pending.insert(
+                                id.to_string(),
+                                CachedToolUse {
+                                    name: name.to_string(),
+                                    input: block.get("input").cloned().unwrap_or_else(|| json!({})),
+                                },
+                            );
+                        }
+                    }
+                }
+                Some("user") => {
+                    for block in content {
+                        if block.get("type").and_then(Value::as_str) != Some("tool_result") {
+                            continue;
+                        }
+                        if block
+                            .get("is_error")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false)
+                        {
+                            continue;
+                        }
+                        let Some(id) = block.get("tool_use_id").and_then(Value::as_str) else {
+                            continue;
+                        };
+                        let Some(tool_use) = pending.remove(id) else {
+                            continue;
+                        };
+                        let result_content = block.get("content").cloned().unwrap_or(Value::Null);
+                        let _ = self.apply_task_tool(&tool_use, &result_content);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if self.task_state.is_empty() {
+            return None;
+        }
+        match self.plan_update() {
+            Outgoing::Update(update) => Some(update),
+            Outgoing::Ext(..) => None,
+        }
+    }
+
     /// The SDK can invoke canUseTool before the tool_use block streams; make
     /// sure the tool_call exists before the client is asked to approve it
     /// (`ensureToolCallEmitted`). Returns the pending tool_call when new.
@@ -1232,5 +1300,44 @@ mod tests {
         let (message, data) = api_error.error.unwrap();
         assert!(message.contains("529"));
         assert_eq!(data["classification"], "upstream_provider_failure");
+    }
+
+    #[test]
+    fn rehydrates_task_state_from_jsonl_messages() {
+        let mut converter = Converter::new("/tmp");
+        let messages = vec![
+            json!({ "type": "assistant", "message": { "content": [
+                { "type": "tool_use", "id": "t1", "name": "TaskCreate",
+                  "input": { "subject": "Port the driver" } },
+            ]}}),
+            json!({ "type": "user", "message": { "content": [
+                { "type": "tool_result", "tool_use_id": "t1", "content": "Task #7 created" },
+            ]}}),
+            json!({ "type": "assistant", "message": { "content": [
+                { "type": "tool_use", "id": "t2", "name": "TaskUpdate",
+                  "input": { "taskId": "7", "status": "in_progress" } },
+            ]}}),
+            json!({ "type": "user", "message": { "content": [
+                { "type": "tool_result", "tool_use_id": "t2", "content": "updated" },
+            ]}}),
+            // Errored calls are ignored — this completion must not apply.
+            json!({ "type": "assistant", "message": { "content": [
+                { "type": "tool_use", "id": "t3", "name": "TaskUpdate",
+                  "input": { "taskId": "7", "status": "completed" } },
+            ]}}),
+            json!({ "type": "user", "message": { "content": [
+                { "type": "tool_result", "tool_use_id": "t3", "is_error": true, "content": "boom" },
+            ]}}),
+        ];
+
+        let update = converter
+            .rehydrate_task_state(&messages)
+            .expect("plan update");
+        assert_eq!(update["sessionUpdate"], "plan");
+        assert_eq!(update["entries"][0]["content"], "Port the driver");
+        assert_eq!(update["entries"][0]["status"], "in_progress");
+
+        // No transcript, no update.
+        assert!(Converter::new("/tmp").rehydrate_task_state(&[]).is_none());
     }
 }

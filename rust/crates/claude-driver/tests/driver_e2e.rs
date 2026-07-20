@@ -344,3 +344,59 @@ async fn mcp_control_channel_serves_signed_git_tools() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn session_resume_reuses_the_prior_session_id() {
+    let (peer, recorded) = spawn_driver("allow");
+    let init = request(
+        &peer,
+        "initialize",
+        json!({ "protocolVersion": 1, "clientCapabilities": {} }),
+    )
+    .await;
+    assert_eq!(init["protocolVersion"], 1);
+
+    let response = request(
+        &peer,
+        "_posthog/session/resume",
+        json!({
+            "sessionId": "prior-sess-1",
+            "cwd": "/tmp",
+            "mcpServers": [],
+            "_meta": {
+                "environment": "cloud",
+                "permissionMode": "bypassPermissions",
+                "sessionId": "prior-sess-1",
+                "systemPrompt": { "append": "cloud test prompt" },
+            },
+        }),
+    )
+    .await;
+    assert_eq!(response["sessionId"], "prior-sess-1");
+
+    // The mock CLI announces itself under the id it got via --resume, so
+    // this proves the flag made it through argv.
+    wait_for(
+        &recorded,
+        |r| {
+            r.iter().any(|(m, p)| {
+                m == "_posthog/sdk_session"
+                    && p.get("sdkSessionId").and_then(Value::as_str) == Some("prior-sess-1")
+            })
+        },
+        "resumed sdk session notification",
+    )
+    .await;
+
+    // A turn still runs on the resumed session.
+    let response = request(
+        &peer,
+        "session/prompt",
+        json!({
+            "sessionId": "prior-sess-1",
+            "prompt": [{ "type": "text", "text": "Say hello" }],
+        }),
+    )
+    .await;
+    assert_eq!(response["stopReason"], "end_turn");
+}

@@ -6,9 +6,10 @@
 //! deferral, per-turn assistant text tracking (for the Slack relay), and
 //! debounced batch flushes.
 //!
-//! Not yet ported (Phase 1.5): the local JSONL cache and the per-toolCallId
-//! merged-update coalescing of the local cache path — the Rust server has no
-//! local cache consumer yet.
+//! The TS class also maintains a local JSONL cache (with its own
+//! per-toolCallId merged-update coalescing), but the cloud server constructs
+//! it without a `localCachePath` — that path is desktop-only and is
+//! intentionally not ported here.
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -8,8 +8,12 @@
 //!   `initialize`/`tools/list`/`tools/call`. The Claude driver serves it over
 //!   the CLI's `mcp_message` control channel; the codex driver serves it as a
 //!   stdio MCP subprocess.
+//! - `session_jsonl` — the Claude CLI's session-JSONL location/encoding and
+//!   transcript healing, shared by the agent-server (native-resume hydration)
+//!   and the Claude driver (task-state rehydration).
 
 pub mod artefacts;
 pub mod gh;
 pub mod mcp;
+pub mod session_jsonl;
 pub mod signed_git;

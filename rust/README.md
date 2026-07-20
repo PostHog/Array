@@ -112,12 +112,21 @@ POSTHOG_PROJECT_ID="2" \
 - the notification mapping (`mapping.ts`): message/reasoning deltas, item→tool_call with read/search/execute classification, command output streaming, unified-diff parsing, plan updates, token-usage gauge + `_posthog/usage_update` breakdown, compaction status/boundary, `_posthog/turn_complete`, structured-output parsing from the final message
 - the signed-git local tools as codex's stdio MCP server (the driver binary re-invoked with `--local-tools-mcp`), backed by the same `crates/agent-tools` implementation the Claude driver serves in-process
 
-## Remaining gaps
+## Native resume
 
-- native resume (Claude session JSONL hydration / `session/load`, codex `thread/resume` replay) — summary resume is the fallback the TS server also uses when hydration is unavailable
-- file-read enrichment (tree-sitter) — disabled in the sidecar, not ported to the drivers
-- OTEL log export (`/i/v1/agent-logs`) — only the `append_log` API path is ported
-- tool-update coalescing for the local log cache (API-path coalescing is ported)
+Full port of `prepareNativeResume`: when a run resumes and the prior run's ACP session can be continued natively, the server sends `_posthog/session/resume` instead of `session/new` + summary prompt, and the first turn is just "Continue from where you left off".
+
+- Claude: the session JSONL is reused when it survived a snapshot restore (warm — the git checkpoint is skipped too), or hydrated from the prior run's log into the Claude transcript format (`jsonl-hydration.ts` port in `resume.rs` + the shared path/sanitize helpers in `agent-tools/src/session_jsonl.rs`); the driver respawns the CLI with `--resume <sessionId>` and rebuilds the plan panel from the transcript (`rehydrateTaskState`)
+- codex: warm-only — `thread/resume` when a `rollout-*-<threadId>.jsonl` exists under `CODEX_HOME/sessions` (there is no cold hydration equivalent)
+- summary resume remains the fallback whenever no prior session id is known, hydration finds nothing, or the native resume request fails
+
+## Non-goals (verified against the TS cloud server)
+
+These were listed as gaps but turn out not to apply to the cloud server this workspace replaces:
+
+- OTEL log export (`/i/v1/agent-logs`): `OtelLogWriter` in `packages/agent` has no callers — only the desktop app exports OTLP, via its own `apps/code` transport. The cloud log path is the `append_log` API, which is ported.
+- local log cache + its tool-update coalescing: the cloud server constructs `SessionLogWriter` without a `localCachePath`; the cache (and the per-toolCallId merged-update coalescing that feeds it) is a desktop-only load cache. The API-path coalescing the cloud actually uses is ported.
+- file-read enrichment (tree-sitter, `packages/enricher`): explicitly disabled in the cloud sidecar (`enricherEnabled: false` in `acp-stdio-bin.ts`), so the drivers are at parity with cloud production. A native port is feasible if ever wanted (tree-sitter is Rust-first) but is its own project.
 
 ## Release and rollout
 

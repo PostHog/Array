@@ -1037,6 +1037,7 @@ dependencies = [
  "hex",
  "jsonwebtoken",
  "posthog-acp",
+ "posthog-agent-tools",
  "regex",
  "reqwest",
  "serde",

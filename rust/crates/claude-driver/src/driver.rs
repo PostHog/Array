@@ -634,6 +634,47 @@ impl Driver {
     // -- session/new ---------------------------------------------------------
 
     async fn new_session(self: &Arc<Self>, params: Value) -> Result<Value, RpcError> {
+        self.create_session(params, None).await
+    }
+
+    /// `resumeSession` (`_posthog/session/resume`): continue the prior ACP
+    /// session under its own id — the CLI reloads the conversation from the
+    /// session JSONL via `--resume`, and the plan panel is rebuilt from the
+    /// same transcript.
+    async fn resume_session(self: &Arc<Self>, params: Value) -> Result<Value, RpcError> {
+        let resume_id = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| RpcError::new(-32602, "session/resume requires sessionId"))?
+            .to_string();
+        let response = self.create_session(params, Some(resume_id.clone())).await?;
+
+        // rehydrateTaskStateFromJsonl: best-effort — a missing or unreadable
+        // transcript must not block the resume.
+        if let Some(session) = self.session.lock().expect("session lock").clone() {
+            let jsonl_path = posthog_agent_tools::session_jsonl::get_session_jsonl_path(
+                &resume_id,
+                &session.cwd,
+            );
+            let messages = posthog_agent_tools::session_jsonl::read_session_messages(&jsonl_path);
+            let plan_update = session
+                .converter
+                .lock()
+                .expect("converter lock")
+                .rehydrate_task_state(&messages);
+            if let Some(update) = plan_update {
+                self.session_update(&session, update);
+            }
+        }
+        Ok(response)
+    }
+
+    async fn create_session(
+        self: &Arc<Self>,
+        params: Value,
+        resume: Option<String>,
+    ) -> Result<Value, RpcError> {
         let cwd = params
             .get("cwd")
             .and_then(Value::as_str)
@@ -644,7 +685,11 @@ impl Driver {
         }
         let meta = params.get("_meta").cloned().unwrap_or_else(|| json!({}));
 
-        let session_id = uuid::Uuid::new_v4().to_string();
+        // A resumed session keeps the prior session id (the CLI reloads its
+        // JSONL under that id); a fresh one mints a new id.
+        let session_id = resume
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let permission_mode = meta
             .get("permissionMode")
             .and_then(Value::as_str)
@@ -698,7 +743,7 @@ impl Driver {
         let cli_options = CliSessionOptions {
             cwd: cwd.clone(),
             session_id: session_id.clone(),
-            resume: None,
+            resume,
             permission_mode: permission_mode.clone(),
             model,
             json_schema: json_schema.clone(),
@@ -1786,6 +1831,7 @@ impl IncomingHandler for AgentHandler {
                 "authMethods": [],
             })),
             methods::SESSION_NEW => self.driver.new_session(params).await,
+            ext::SESSION_RESUME => self.driver.resume_session(params).await,
             methods::SESSION_PROMPT => self.driver.prompt(params).await,
             methods::SESSION_SET_MODE => self.driver.set_mode(params).await,
             methods::SESSION_SET_CONFIG_OPTION => self.driver.set_config_option(params).await,

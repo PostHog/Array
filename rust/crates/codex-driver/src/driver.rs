@@ -599,6 +599,27 @@ impl Driver {
     }
 
     async fn new_session(self: &Arc<Self>, params: Value) -> Result<Value, RpcError> {
+        self.setup_session(params, None).await
+    }
+
+    /// `resumeSession` (`_posthog/session/resume`): re-open the prior codex
+    /// thread via `thread/resume` — codex reloads the conversation from its
+    /// persisted rollout in CODEX_HOME.
+    async fn resume_session(self: &Arc<Self>, params: Value) -> Result<Value, RpcError> {
+        let thread_id = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| RpcError::new(-32602, "session/resume requires sessionId"))?
+            .to_string();
+        self.setup_session(params, Some(thread_id)).await
+    }
+
+    async fn setup_session(
+        self: &Arc<Self>,
+        params: Value,
+        resume_thread_id: Option<String>,
+    ) -> Result<Value, RpcError> {
         let sidecar_options = self.sidecar.codex_options.clone().unwrap_or_default();
         let cwd = params
             .get("cwd")
@@ -658,6 +679,9 @@ impl Driver {
         }
 
         let mut request = json!({ "model": config.model(), "cwd": cwd });
+        if let Some(thread_id) = &resume_thread_id {
+            request["threadId"] = json!(thread_id);
+        }
         if !developer_instructions.is_empty() {
             request["developerInstructions"] = json!(developer_instructions);
         }
@@ -665,18 +689,24 @@ impl Driver {
             request["config"] = Value::Object(thread_config);
         }
 
+        let method = if resume_thread_id.is_some() {
+            "thread/resume"
+        } else {
+            "thread/start"
+        };
         let result = self
             .rpc()
-            .request("thread/start", request)
+            .request(method, request)
             .await
-            .map_err(|err| RpcError::internal(format!("thread/start failed: {err}")))?;
+            .map_err(|err| RpcError::internal(format!("{method} failed: {err}")))?;
         let thread_id = result
             .pointer("/thread/id")
             .and_then(Value::as_str)
+            .map(str::to_string)
+            .or(resume_thread_id)
             .ok_or_else(|| {
-                RpcError::internal("codex app-server thread/start returned no thread id")
-            })?
-            .to_string();
+                RpcError::internal(format!("codex app-server {method} returned no thread id"))
+            })?;
 
         let session = Arc::new(CodexSession {
             session_id: thread_id.clone(),
@@ -1437,6 +1467,7 @@ impl IncomingHandler for AgentHandler {
         match method {
             methods::INITIALIZE => self.driver.initialize().await,
             methods::SESSION_NEW => self.driver.new_session(params).await,
+            ext::SESSION_RESUME => self.driver.resume_session(params).await,
             methods::SESSION_PROMPT => self.driver.prompt(params).await,
             methods::SESSION_SET_CONFIG_OPTION => self.driver.set_config_option(params),
             methods::SESSION_SET_MODE => {

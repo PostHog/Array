@@ -2,13 +2,10 @@
 //!
 //! Port of the `AgentServer` class in `agent-server.ts`. One active session
 //! at a time; the agent runs as an ACP subprocess (see `adapter.rs`).
-//!
-//! Phase 1 gaps, tracked in `rust/README.md` (the Node sidecar keeps cloud
-//! runs on the TS implementation for these until ported):
-//! - session resume (`POSTHOG_RESUME_RUN_ID` / `resume_from_run_id` state)
-//! - git handoff checkpoints (capture + apply)
-//! - skill bundle installation and artifact attachment loading
-//! - prewarmed-run auto-publish upgrade
+//! Covers session resume (native `_posthog/session/resume` with the summary
+//! fallback), git handoff checkpoints, skill bundle installation, artifact
+//! attachment loading, and the prewarmed-run auto-publish upgrade — see
+//! `rust/README.md` for the full ported-surface inventory.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,10 +49,18 @@ pub struct ActiveSession {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TurnPhase {
     Initial,
-    /// Used once session resume lands (phase 1.5).
-    #[allow(dead_code)]
     Resume,
     Followup,
+}
+
+/// A prepared native resume: the prior run's ACP session continues under its
+/// own id instead of being replayed as a summary prompt. `warm` means the
+/// session state survived on disk (snapshot restore), so the workspace is
+/// already current and no git checkpoint needs to be applied.
+#[derive(Debug, Clone)]
+struct NativeResume {
+    session_id: String,
+    warm: bool,
 }
 
 impl TurnPhase {
@@ -96,6 +101,7 @@ pub struct AgentServer {
     warm_auto_publish_resolved: AtomicBool,
     auto_publish_override: Mutex<Option<bool>>,
     resume_state: Mutex<Option<ResumeState>>,
+    native_resume: Mutex<Option<NativeResume>>,
 }
 
 impl AgentServer {
@@ -142,6 +148,7 @@ impl AgentServer {
             warm_auto_publish_resolved: AtomicBool::new(false),
             auto_publish_override: Mutex::new(None),
             resume_state: Mutex::new(None),
+            native_resume: Mutex::new(None),
         })
     }
 
@@ -338,6 +345,7 @@ impl AgentServer {
             .store(false, Ordering::SeqCst);
         *self.auto_publish_override.lock().expect("override lock") = None;
         *self.resume_state.lock().expect("resume lock") = None;
+        *self.native_resume.lock().expect("native resume lock") = None;
 
         // Install pending skill bundles before session/new so `/skill` prompts
         // can resolve immediately.
@@ -393,7 +401,7 @@ impl AgentServer {
             "environment": "cloud",
             "systemPrompt": build_session_system_prompt(&prompt_ctx),
             "jsonSchema": pre_task.as_ref().and_then(|t| t.json_schema.clone()).unwrap_or(Value::Null),
-            "permissionMode": initial_permission_mode,
+            "permissionMode": initial_permission_mode.clone(),
         });
         if let Some(model) = &self.config.model {
             session_meta["model"] = json!(model);
@@ -408,23 +416,74 @@ impl AgentServer {
             session_meta["claudeCode"] = claude_code_meta;
         }
 
-        let session_response = peer
-            .request(
-                methods::SESSION_NEW,
-                json!({
-                    "cwd": session_cwd,
-                    "mcpServers": self.config.mcp_servers,
-                    "_meta": session_meta,
-                }),
+        let native_resume = self
+            .prepare_native_resume(
+                &payload,
+                pre_task_run.as_ref(),
+                &session_cwd,
+                &initial_permission_mode,
             )
-            .await
-            .map_err(|err| anyhow::anyhow!("ACP session/new failed: {err}"))?;
-        let acp_session_id = session_response
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow::anyhow!("session/new returned no sessionId"))?
-            .to_string();
-        tracing::debug!(acp_session_id, run_id = %payload.run_id, "ACP session created");
+            .await;
+        let mut acp_session_id: Option<String> = None;
+        if let Some(native) = &native_resume {
+            let mut resume_meta = session_meta.clone();
+            resume_meta["sessionId"] = json!(native.session_id);
+            match peer
+                .request(
+                    ext::SESSION_RESUME,
+                    json!({
+                        "sessionId": native.session_id,
+                        "cwd": session_cwd,
+                        "mcpServers": self.config.mcp_servers,
+                        "_meta": resume_meta,
+                    }),
+                )
+                .await
+            {
+                Ok(_) => {
+                    acp_session_id = Some(native.session_id.clone());
+                    *self.native_resume.lock().expect("native resume lock") = Some(native.clone());
+                    tracing::debug!(
+                        acp_session_id = %native.session_id,
+                        run_id = %payload.run_id,
+                        warm = native.warm,
+                        "ACP session resumed"
+                    );
+                }
+                Err(err) => {
+                    // resume_state is still loaded, so the summary resume path
+                    // takes over on the fresh session below.
+                    tracing::warn!(
+                        session_id = %native.session_id,
+                        error = %err,
+                        "Native resume failed; starting a fresh session"
+                    );
+                }
+            }
+        }
+        let acp_session_id = match acp_session_id {
+            Some(id) => id,
+            None => {
+                let session_response = peer
+                    .request(
+                        methods::SESSION_NEW,
+                        json!({
+                            "cwd": session_cwd,
+                            "mcpServers": self.config.mcp_servers,
+                            "_meta": session_meta,
+                        }),
+                    )
+                    .await
+                    .map_err(|err| anyhow::anyhow!("ACP session/new failed: {err}"))?;
+                let id = session_response
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| anyhow::anyhow!("session/new returned no sessionId"))?
+                    .to_string();
+                tracing::debug!(acp_session_id = %id, run_id = %payload.run_id, "ACP session created");
+                id
+            }
+        };
 
         let session = Arc::new(ActiveSession {
             payload: payload.clone(),
@@ -666,9 +725,29 @@ impl AgentServer {
                 .ok(),
         };
 
-        // Summary resume: rebuild the prior run's conversation from its log.
-        // (Native resume via session JSONL hydration is a phase-2 concern.)
-        if let Some(resume_run_id) = self.resume_run_id(task_run.as_ref()) {
+        // Native resume prepared during session init: the agent holds the
+        // prior conversation, so just continue the turn.
+        if self
+            .native_resume
+            .lock()
+            .expect("native resume lock")
+            .is_some()
+        {
+            self.send_resume_continuation(session, task_run.as_ref())
+                .await;
+            return;
+        }
+
+        // Summary resume: rebuild the prior run's conversation from its log
+        // (already loaded when a native resume was attempted but fell back).
+        let preloaded_state = self.resume_state.lock().expect("resume lock").clone();
+        if let Some(state) = preloaded_state {
+            if !state.conversation.is_empty() {
+                self.send_resume_message(session, task_run.as_ref()).await;
+                return;
+            }
+            tracing::debug!("Preloaded resume log empty; starting fresh");
+        } else if let Some(resume_run_id) = self.resume_run_id(task_run.as_ref()) {
             match resume::resume_from_log(&self.api, &payload.task_id, &resume_run_id).await {
                 Ok(state) if !state.conversation.is_empty() => {
                     tracing::debug!(
@@ -758,6 +837,179 @@ impl AgentServer {
                 self.handle_turn_failure(
                     session,
                     TurnPhase::Initial,
+                    &err.message,
+                    err.data.as_ref(),
+                )
+                .await;
+            }
+        }
+    }
+
+    /// `prepareNativeResume`: when the prior run's ACP session can be
+    /// continued natively — the Claude session JSONL exists or can be
+    /// hydrated from the prior run's log, or codex thread state survived a
+    /// snapshot restore — return the session to resume. None falls back to
+    /// the summary resume path (which reuses the resume state loaded here).
+    async fn prepare_native_resume(
+        &self,
+        payload: &JwtPayload,
+        task_run: Option<&TaskRun>,
+        cwd: &str,
+        permission_mode: &str,
+    ) -> Option<NativeResume> {
+        let resume_run_id = self.resume_run_id(task_run)?;
+
+        if self.resume_state.lock().expect("resume lock").is_none() {
+            match resume::resume_from_log(&self.api, &payload.task_id, &resume_run_id).await {
+                Ok(state) => {
+                    *self.resume_state.lock().expect("resume lock") = Some(state);
+                }
+                Err(err) => {
+                    tracing::debug!(error = %err, resume_run_id, "Failed to load resume state");
+                    return None;
+                }
+            }
+        }
+
+        let (prior_session_id, conversation) = {
+            let state = self.resume_state.lock().expect("resume lock");
+            let state = state.as_ref()?;
+            (state.session_id.clone(), state.conversation.clone())
+        };
+        let Some(prior_session_id) = prior_session_id else {
+            tracing::debug!(
+                resume_run_id,
+                "No prior session id; using summary resume fallback"
+            );
+            return None;
+        };
+
+        match self.config.runtime_adapter {
+            RuntimeAdapter::Codex => {
+                // Codex owns thread persistence in CODEX_HOME (the ACP
+                // sessionId is the codex thread id). The rollout only
+                // survives a snapshot restart — there is no cold hydration
+                // equivalent, so a fresh sandbox keeps the summary fallback
+                // while a warm one resumes the thread natively.
+                if !resume::has_codex_thread_state(&prior_session_id) {
+                    tracing::debug!(
+                        resume_run_id,
+                        prior_session_id,
+                        "No codex thread state on disk; using summary resume fallback"
+                    );
+                    return None;
+                }
+                tracing::debug!(prior_session_id, "Native codex resume prepared");
+                Some(NativeResume {
+                    session_id: prior_session_id,
+                    warm: true,
+                })
+            }
+            RuntimeAdapter::Claude => {
+                let warm = posthog_agent_tools::session_jsonl::get_session_jsonl_path(
+                    &prior_session_id,
+                    cwd,
+                )
+                .exists();
+                let has_session = resume::hydrate_session_jsonl(
+                    &conversation,
+                    &resume::HydrationConfig {
+                        session_id: &prior_session_id,
+                        cwd,
+                        model: self.config.model.as_deref(),
+                        permission_mode,
+                    },
+                );
+                if !has_session {
+                    tracing::debug!(
+                        resume_run_id,
+                        prior_session_id,
+                        "No session JSONL to resume; using summary fallback"
+                    );
+                    return None;
+                }
+                tracing::debug!(prior_session_id, warm, "Native resume prepared");
+                Some(NativeResume {
+                    session_id: prior_session_id,
+                    warm,
+                })
+            }
+        }
+    }
+
+    /// `sendResumeContinuation`: the native-resume first turn — the agent
+    /// already holds the conversation, so no summary is replayed; a warm
+    /// session skips the git checkpoint too (the workspace survived).
+    async fn send_resume_continuation(
+        self: &Arc<Self>,
+        session: &Arc<ActiveSession>,
+        task_run: Option<&TaskRun>,
+    ) {
+        let payload = &session.payload;
+        let native = self
+            .native_resume
+            .lock()
+            .expect("native resume lock")
+            .take();
+        let Some(native) = native else { return };
+        let state = self.resume_state.lock().expect("resume lock").take();
+
+        let checkpoint_applied = if native.warm {
+            false
+        } else {
+            self.apply_resume_git_checkpoint(
+                payload,
+                state
+                    .as_ref()
+                    .and_then(|s| s.latest_git_checkpoint.as_ref()),
+            )
+            .await
+        };
+
+        let pending_prompt = self.pending_user_prompt(task_run).await;
+        let (prompt, meta): (Vec<Value>, Option<Value>) = match pending_prompt {
+            Some(pending) if !pending.prompt.is_empty() => (pending.prompt, pending.meta),
+            _ => (
+                vec![json!({
+                    "type": "text",
+                    "text": "Continue from where you left off. The user is waiting for your response.",
+                })],
+                None,
+            ),
+        };
+
+        tracing::debug!(
+            session_id = %native.session_id,
+            warm = native.warm,
+            checkpoint_applied,
+            "Sending resume continuation"
+        );
+
+        session.shared.log_writer.reset_turn_messages().await;
+        let mut request = json!({ "sessionId": session.acp_session_id, "prompt": prompt });
+        if let Some(meta) = meta {
+            request["_meta"] = meta;
+        }
+        let result = session.peer.request(methods::SESSION_PROMPT, request).await;
+
+        match result {
+            Ok(response) => {
+                let stop_reason = response
+                    .get("stopReason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("end_turn")
+                    .to_string();
+                tracing::debug!(stop_reason, "Resume continuation completed");
+                self.clear_pending_initial_prompt_state(payload, task_run)
+                    .await;
+                self.finish_turn(session, &stop_reason, true).await;
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "Failed to send resume continuation");
+                session.shared.log_writer.flush().await;
+                self.handle_turn_failure(
+                    session,
+                    TurnPhase::Resume,
                     &err.message,
                     err.data.as_ref(),
                 )

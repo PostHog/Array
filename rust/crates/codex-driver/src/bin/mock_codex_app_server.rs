@@ -167,6 +167,13 @@ fn main() {
         match method {
             "initialize" => respond(id, json!({})),
             "thread/start" => respond(id, json!({ "thread": { "id": "mock-thread-1" } })),
+            "thread/resume" => {
+                let thread_id = params
+                    .get("threadId")
+                    .cloned()
+                    .unwrap_or_else(|| json!("mock-thread-1"));
+                respond(id, json!({ "thread": { "id": thread_id } }));
+            }
             "model/list" => respond(
                 id,
                 json!({ "data": [{
