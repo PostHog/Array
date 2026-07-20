@@ -21,7 +21,9 @@ use tokio::process::Child;
 
 use crate::adapter::{spawn_adapter, SidecarContext};
 use crate::agent_version;
+use crate::artifacts::{artifacts_by_id, missing_attachment_notice, ArtifactManager, BuiltPrompt};
 use crate::bus::{notification_envelope, EventBus, SseSink};
+use crate::checkpoint::{GitCheckpoint, HandoffTracker, LocalGitState};
 use crate::client::{ClientHandler, SessionShared};
 use crate::config::{AgentMode, RuntimeAdapter, ServerConfig};
 use crate::error_class::{
@@ -35,6 +37,7 @@ use crate::ingest::{EventStreamSender, IngestConfig};
 use crate::jwt::JwtPayload;
 use crate::log_writer::SessionLogWriter;
 use crate::posthog_api::{PostHogApiClient, Task, TaskRun};
+use crate::resume::{self, ResumeState};
 use crate::system_prompt::{build_session_system_prompt, detected_pr_context, PromptContext};
 
 pub struct ActiveSession {
@@ -85,6 +88,14 @@ pub struct AgentServer {
     barrier_released_at: Mutex<Option<Instant>>,
     delivered_message_ids: Mutex<(VecDeque<String>, HashSet<String>)>,
     last_reported_branch: Mutex<Option<String>>,
+    artifact_manager: Arc<ArtifactManager>,
+    /// Prewarmed runs boot before the user's first message exists, so the
+    /// boot-time --autoPublish flag can't carry the user's choice; it is
+    /// resolved from run state when the first message arrives.
+    prewarmed_run: AtomicBool,
+    warm_auto_publish_resolved: AtomicBool,
+    auto_publish_override: Mutex<Option<bool>>,
+    resume_state: Mutex<Option<ResumeState>>,
 }
 
 impl AgentServer {
@@ -126,6 +137,11 @@ impl AgentServer {
             barrier_released_at: Mutex::new(None),
             delivered_message_ids: Mutex::new((VecDeque::new(), HashSet::new())),
             last_reported_branch: Mutex::new(None),
+            artifact_manager: Arc::new(ArtifactManager::default()),
+            prewarmed_run: AtomicBool::new(false),
+            warm_auto_publish_resolved: AtomicBool::new(false),
+            auto_publish_override: Mutex::new(None),
+            resume_state: Mutex::new(None),
         })
     }
 
@@ -150,14 +166,6 @@ impl AgentServer {
     /// `autoInitializeSession`: synthesize a payload from config and
     /// initialize without a client attached.
     pub async fn auto_initialize_session(self: &Arc<Self>) -> anyhow::Result<()> {
-        if self.config.resume_run_id.is_some() {
-            // TODO(phase-1.5): port resumeFromLog + jsonl hydration. Runs
-            // requesting resume must stay on the TS server until then.
-            tracing::warn!(
-                "POSTHOG_RESUME_RUN_ID set but session resume is not yet ported; starting fresh"
-            );
-        }
-
         let payload = JwtPayload {
             task_id: self.config.task_id.clone(),
             run_id: self.config.run_id.clone(),
@@ -240,6 +248,7 @@ impl AgentServer {
                 RuntimeAdapter::Claude => "bypassPermissions".to_string(),
             });
 
+        let (checkpoint_tx, checkpoint_rx) = tokio::sync::mpsc::unbounded_channel();
         let shared = Arc::new(SessionShared {
             config: self.config.clone(),
             api: Arc::clone(&self.api),
@@ -252,6 +261,8 @@ impl AgentServer {
             pending_permissions: Mutex::new(HashMap::new()),
             detected_pr_url: Mutex::new(pr_url.clone()),
             evaluated_pr_urls: Mutex::new(HashSet::new()),
+            pending_handoff_git_state: Mutex::new(None),
+            checkpoint_requests: checkpoint_tx,
         });
 
         // Spawn the agent subprocess and wire the ACP peer. The tap mirrors
@@ -316,7 +327,53 @@ impl AgentServer {
 
         self.wait_for_repo_ready().await;
 
-        // TODO(phase-1.5): install skill bundle artifacts before session/new.
+        self.prewarmed_run.store(
+            pre_task_run
+                .as_ref()
+                .and_then(|run| run.state_bool("prewarmed"))
+                .unwrap_or(false),
+            Ordering::SeqCst,
+        );
+        self.warm_auto_publish_resolved
+            .store(false, Ordering::SeqCst);
+        *self.auto_publish_override.lock().expect("override lock") = None;
+        *self.resume_state.lock().expect("resume lock") = None;
+
+        // Install pending skill bundles before session/new so `/skill` prompts
+        // can resolve immediately.
+        {
+            let pending_ids: Vec<String> = pre_task_run
+                .as_ref()
+                .and_then(|run| run.state.as_ref())
+                .and_then(|state| state.get("pending_user_artifact_ids"))
+                .and_then(Value::as_array)
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(Value::as_str)
+                        .filter(|id| !id.trim().is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let manifest: Vec<Value> = pre_task_run
+                .as_ref()
+                .and_then(|run| run.artifacts.as_ref())
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let pending = artifacts_by_id(&manifest, &pending_ids, false);
+            if !pending.is_empty() {
+                self.artifact_manager
+                    .install_skill_bundles(
+                        &self.api,
+                        &self.workspace_root(),
+                        &payload.task_id,
+                        &payload.run_id,
+                        &pending,
+                    )
+                    .await;
+            }
+        }
 
         let prompt_ctx = PromptContext {
             config: &self.config,
@@ -379,6 +436,7 @@ impl AgentServer {
         });
         *self.session.lock().await = Some(Arc::clone(&session));
         self.session_active.store(true, Ordering::SeqCst);
+        self.spawn_checkpoint_worker(Arc::clone(&session), checkpoint_rx);
         if let Some(sse) = sse {
             self.bus.attach_sse(sse);
         }
@@ -589,7 +647,8 @@ impl AgentServer {
             .await;
     }
 
-    /// `sendInitialTaskMessage` (fresh-session path; resume is a phase-1.5 port).
+    /// `sendInitialTaskMessage`: resume takes precedence, then the pending
+    /// user prompt, the run-state prompt override, and the task description.
     async fn send_initial_task_message(
         self: &Arc<Self>,
         session: &Arc<ActiveSession>,
@@ -597,6 +656,39 @@ impl AgentServer {
         pre_task_run: Option<TaskRun>,
     ) {
         let payload = &session.payload;
+
+        let task_run = match pre_task_run {
+            Some(run) => Some(run),
+            None => self
+                .api
+                .get_task_run(&payload.task_id, &payload.run_id)
+                .await
+                .ok(),
+        };
+
+        // Summary resume: rebuild the prior run's conversation from its log.
+        // (Native resume via session JSONL hydration is a phase-2 concern.)
+        if let Some(resume_run_id) = self.resume_run_id(task_run.as_ref()) {
+            match resume::resume_from_log(&self.api, &payload.task_id, &resume_run_id).await {
+                Ok(state) if !state.conversation.is_empty() => {
+                    tracing::debug!(
+                        resume_run_id,
+                        turns = state.conversation.len(),
+                        has_checkpoint = state.latest_git_checkpoint.is_some(),
+                        "Resume state loaded"
+                    );
+                    *self.resume_state.lock().expect("resume lock") = Some(state);
+                    self.send_resume_message(session, task_run.as_ref()).await;
+                    return;
+                }
+                Ok(_) => {
+                    tracing::debug!(resume_run_id, "Resume log empty; starting fresh");
+                }
+                Err(err) => {
+                    tracing::debug!(error = %err, "Failed to load resume state, starting fresh");
+                }
+            }
+        }
 
         let task = match pre_task {
             Some(task) => Some(task),
@@ -606,36 +698,47 @@ impl AgentServer {
         // A prewarmed run gets its first message forwarded as a user_message
         // command on activation; building one from task.description here too
         // would deliver it twice.
-        let prewarmed = pre_task_run
-            .as_ref()
-            .and_then(|run| run.state_bool("prewarmed"))
-            .unwrap_or(false);
+        let prewarmed = self.prewarmed_run.load(Ordering::SeqCst);
 
-        let description = task.as_ref().and_then(|t| t.description.clone());
-        let initial_prompt: Vec<Value> = match description {
-            Some(description) if !description.is_empty() && !prewarmed => {
-                vec![json!({ "type": "text", "text": description })]
+        let pending_prompt = self.pending_user_prompt(task_run.as_ref()).await;
+        let initial_prompt_override = task_run
+            .as_ref()
+            .and_then(|run| run.state_string("initial_prompt_override"))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        let built: Option<BuiltPrompt> = if let Some(pending) = pending_prompt {
+            Some(pending)
+        } else if let Some(override_text) = initial_prompt_override {
+            Some(BuiltPrompt {
+                prompt: vec![json!({ "type": "text", "text": override_text })],
+                meta: None,
+            })
+        } else {
+            match task.as_ref().and_then(|t| t.description.clone()) {
+                Some(description) if !description.is_empty() && !prewarmed => Some(BuiltPrompt {
+                    prompt: vec![json!({ "type": "text", "text": description })],
+                    meta: None,
+                }),
+                _ => None,
             }
-            _ => Vec::new(),
         };
 
-        if initial_prompt.is_empty() {
+        let Some(built) = built else {
             tracing::debug!(
                 prewarmed,
                 "No initial prompt to send (prewarmed run or empty task description)"
             );
             return;
-        }
+        };
 
         session.shared.log_writer.reset_turn_messages().await;
 
-        let result = session
-            .peer
-            .request(
-                methods::SESSION_PROMPT,
-                json!({ "sessionId": session.acp_session_id, "prompt": initial_prompt }),
-            )
-            .await;
+        let mut request = json!({ "sessionId": session.acp_session_id, "prompt": built.prompt });
+        if let Some(meta) = built.meta {
+            request["_meta"] = meta;
+        }
+        let result = session.peer.request(methods::SESSION_PROMPT, request).await;
 
         match result {
             Ok(response) => {
@@ -645,6 +748,8 @@ impl AgentServer {
                     .unwrap_or("end_turn")
                     .to_string();
                 tracing::debug!(stop_reason, "Initial task message completed");
+                self.clear_pending_initial_prompt_state(payload, task_run.as_ref())
+                    .await;
                 self.finish_turn(session, &stop_reason, true).await;
             }
             Err(err) => {
@@ -659,6 +764,273 @@ impl AgentServer {
                 .await;
             }
         }
+    }
+
+    /// `getResumeRunId`: env var takes precedence over run state.
+    fn resume_run_id(&self, task_run: Option<&TaskRun>) -> Option<String> {
+        if let Some(env_run_id) = &self.config.resume_run_id {
+            return Some(env_run_id.clone());
+        }
+        task_run
+            .and_then(|run| run.state_string("resume_from_run_id"))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// `sendResumeMessage`: apply the latest git checkpoint (best-effort) and
+    /// prompt with the summarized prior conversation.
+    async fn send_resume_message(
+        self: &Arc<Self>,
+        session: &Arc<ActiveSession>,
+        task_run: Option<&TaskRun>,
+    ) {
+        let payload = &session.payload;
+        let state = self.resume_state.lock().expect("resume lock").take();
+        let Some(state) = state else { return };
+
+        let conversation_summary = resume::format_conversation_for_resume(&state.conversation);
+        let checkpoint_applied = self
+            .apply_resume_git_checkpoint(payload, state.latest_git_checkpoint.as_ref())
+            .await;
+
+        let checkpoint_context = if checkpoint_applied {
+            "The workspace environment (all files, packages, and code changes) has been fully restored from the latest checkpoint."
+        } else {
+            "No additional git checkpoint was applied before resuming. Use the current workspace contents together with the preserved conversation history below."
+        };
+
+        let pending_prompt = self.pending_user_prompt(task_run).await;
+        fn hidden_text_block(text: String) -> Value {
+            json!({ "type": "text", "text": text, "_meta": { "ui": { "hidden": true } } })
+        }
+        let (prompt, meta): (Vec<Value>, Option<Value>) = match pending_prompt {
+            Some(pending) if !pending.prompt.is_empty() => {
+                let mut blocks = vec![hidden_text_block(format!(
+                    "You are resuming a previous conversation. {checkpoint_context}\n\nHere is the conversation history from the previous session:\n\n{conversation_summary}\n\nThe user has sent a new message:\n\n"
+                ))];
+                blocks.extend(pending.prompt);
+                blocks.push(hidden_text_block(
+                    "\n\nRespond to the user's new message above. You have full context from the previous session."
+                        .to_string(),
+                ));
+                (blocks, pending.meta)
+            }
+            _ => (
+                vec![hidden_text_block(format!(
+                    "You are resuming a previous conversation. {checkpoint_context}\n\nHere is the conversation history from the previous session:\n\n{conversation_summary}\n\nContinue from where you left off. The user is waiting for your response."
+                ))],
+                None,
+            ),
+        };
+
+        tracing::debug!(
+            turns = state.conversation.len(),
+            checkpoint_applied,
+            "Sending resume message"
+        );
+
+        session.shared.log_writer.reset_turn_messages().await;
+        let mut request = json!({ "sessionId": session.acp_session_id, "prompt": prompt });
+        if let Some(meta) = meta {
+            request["_meta"] = meta;
+        }
+        let result = session.peer.request(methods::SESSION_PROMPT, request).await;
+
+        match result {
+            Ok(response) => {
+                let stop_reason = response
+                    .get("stopReason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("end_turn")
+                    .to_string();
+                tracing::debug!(stop_reason, "Resume message completed");
+                self.clear_pending_initial_prompt_state(payload, task_run)
+                    .await;
+                self.finish_turn(session, &stop_reason, true).await;
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "Failed to send resume message");
+                session.shared.log_writer.flush().await;
+                self.handle_turn_failure(
+                    session,
+                    TurnPhase::Resume,
+                    &err.message,
+                    err.data.as_ref(),
+                )
+                .await;
+            }
+        }
+    }
+
+    /// `applyResumeGitCheckpoint` — best-effort; resume proceeds without it.
+    async fn apply_resume_git_checkpoint(
+        &self,
+        payload: &JwtPayload,
+        checkpoint_params: Option<&Value>,
+    ) -> bool {
+        let (Some(params), Some(repo)) = (checkpoint_params, &self.config.repository_path) else {
+            return false;
+        };
+        let Some(checkpoint) = GitCheckpoint::from_event_params(params) else {
+            return false;
+        };
+        let tracker = HandoffTracker {
+            repository_path: repo,
+            task_id: &payload.task_id,
+            run_id: &payload.run_id,
+            api: &self.api,
+        };
+        match tracker.apply_from_handoff(&checkpoint).await {
+            Ok(()) => {
+                tracing::debug!(branch = ?checkpoint.branch, head = ?checkpoint.head, "Git checkpoint applied");
+                true
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, branch = ?checkpoint.branch, "Failed to apply git checkpoint");
+                false
+            }
+        }
+    }
+
+    /// `getPendingUserPrompt`: the message + attachments queued in run state.
+    async fn pending_user_prompt(&self, task_run: Option<&TaskRun>) -> Option<BuiltPrompt> {
+        let task_run = task_run?;
+        let state = task_run.state.as_ref()?;
+        let message = state
+            .get("pending_user_message")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let artifact_ids: Vec<String> = state
+            .get("pending_user_artifact_ids")
+            .and_then(Value::as_array)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .filter(|id| !id.trim().is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if message.is_none() && artifact_ids.is_empty() {
+            return None;
+        }
+
+        // The manifest can momentarily lag the pending ids; refetch once
+        // before treating an attachment as lost.
+        let mut manifest: Vec<Value> = task_run
+            .artifacts
+            .as_ref()
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut resolved = artifacts_by_id(&manifest, &artifact_ids, false);
+        if !artifact_ids.is_empty() && resolved.len() < artifact_ids.len() {
+            if let (Some(task_id), Some(run_id)) = (&task_run.task, &task_run.id) {
+                if let Ok(refreshed) = self.api.get_task_run(task_id, run_id).await {
+                    if let Some(refreshed_manifest) =
+                        refreshed.artifacts.as_ref().and_then(Value::as_array)
+                    {
+                        manifest = refreshed_manifest.clone();
+                        resolved = artifacts_by_id(&manifest, &artifact_ids, true);
+                    }
+                }
+            }
+        }
+
+        let content_blocks = message
+            .as_deref()
+            .map(normalize_cloud_prompt_content)
+            .unwrap_or_default();
+        let task_id = task_run
+            .task
+            .clone()
+            .unwrap_or_else(|| self.config.task_id.clone());
+        let run_id = task_run
+            .id
+            .clone()
+            .unwrap_or_else(|| self.config.run_id.clone());
+        let mut built = self
+            .artifact_manager
+            .build_prompt(
+                &self.api,
+                &self.workspace_root(),
+                &task_id,
+                &run_id,
+                content_blocks,
+                &resolved,
+            )
+            .await;
+
+        // Ids the manifest can't account for are attachments, not skills —
+        // surface the missing-attachment notice instead of silently misleading.
+        let expected_attachments = artifact_ids
+            .iter()
+            .filter(|artifact_id| {
+                let known = manifest.iter().find(|artifact| {
+                    artifact.get("id").and_then(Value::as_str) == Some(artifact_id.as_str())
+                });
+                match known {
+                    Some(artifact) => {
+                        artifact.get("type").and_then(Value::as_str) != Some("skill_bundle")
+                    }
+                    None => true,
+                }
+            })
+            .count();
+        let hydrated = built
+            .prompt
+            .iter()
+            .filter(|block| block.get("type").and_then(Value::as_str) == Some("resource_link"))
+            .count();
+        if expected_attachments > hydrated {
+            let lost = expected_attachments - hydrated;
+            tracing::warn!(lost, "Pending user attachments could not be loaded");
+            built
+                .prompt
+                .push(json!({ "type": "text", "text": missing_attachment_notice(lost) }));
+        }
+
+        (!built.prompt.is_empty()).then_some(built)
+    }
+
+    /// `clearPendingInitialPromptState`.
+    async fn clear_pending_initial_prompt_state(
+        &self,
+        payload: &JwtPayload,
+        task_run: Option<&TaskRun>,
+    ) {
+        let Some(state) = task_run.and_then(|run| run.state.as_ref()) else {
+            return;
+        };
+        let keys: Vec<&str> = [
+            "pending_user_message",
+            "pending_user_artifact_ids",
+            "pending_user_message_ts",
+        ]
+        .into_iter()
+        .filter(|key| state.get(key).is_some())
+        .collect();
+        if keys.is_empty() {
+            return;
+        }
+        if let Err(err) = self
+            .api
+            .update_task_run(
+                &payload.task_id,
+                &payload.run_id,
+                json!({ "state_remove_keys": keys }),
+            )
+            .await
+        {
+            tracing::debug!(error = %err, "Failed to clear pending prompt state");
+        }
+    }
+
+    fn workspace_root(&self) -> String {
+        self.config
+            .repository_path
+            .clone()
+            .unwrap_or_else(|| "/tmp/workspace".to_string())
     }
 
     /// Shared end-of-turn bookkeeping: branch sync, turn_complete broadcast,
@@ -914,8 +1286,13 @@ impl AgentServer {
             }
             CommandMethod::Close => {
                 tracing::debug!("Close requested");
-                // TODO(phase-1.5): persist handoff localGitState from params
-                // for the final checkpoint capture.
+                if let Some(local_git_state) = params.get("localGitState") {
+                    *session
+                        .shared
+                        .pending_handoff_git_state
+                        .lock()
+                        .expect("handoff lock") = Some(local_git_state.clone());
+                }
                 self.cleanup_session(false).await;
                 Ok(json!({ "closed": true }))
             }
@@ -1007,38 +1384,46 @@ impl AgentServer {
         session: &Arc<ActiveSession>,
         params: Value,
     ) -> Result<Value, String> {
-        // TODO(phase-1.5): artifact attachment loading (resource links).
-        // Until then artifact-only messages surface the missing-attachment
-        // notice rather than pointing the agent at files it was never given.
-        let mut prompt: Vec<Value> = match params.get("content") {
+        let content_blocks: Vec<Value> = match params.get("content") {
             Some(Value::String(text)) if !text.trim().is_empty() => {
-                vec![json!({ "type": "text", "text": text })]
+                normalize_cloud_prompt_content(text)
             }
             Some(Value::Array(blocks)) => blocks.clone(),
             _ => Vec::new(),
         };
-        let artifact_count = params
+        let artifacts: Vec<Value> = params
             .get("artifacts")
             .and_then(Value::as_array)
-            .map(Vec::len)
-            .unwrap_or(0);
-        if prompt.is_empty() && artifact_count > 0 {
-            let subject = if artifact_count == 1 {
-                "A file".to_string()
-            } else {
-                format!("{artifact_count} files")
-            };
-            let pronoun = if artifact_count == 1 { "it" } else { "they" };
-            let noun = if artifact_count == 1 {
-                "attachment"
-            } else {
-                "attachments"
-            };
+            .cloned()
+            .unwrap_or_default();
+
+        let built = self
+            .artifact_manager
+            .build_prompt(
+                &self.api,
+                &self.workspace_root(),
+                &session.payload.task_id,
+                &session.payload.run_id,
+                content_blocks,
+                &artifacts,
+            )
+            .await;
+        let mut prompt = built.prompt;
+
+        // Attachments that failed to hydrate must not point the agent at
+        // files it was never given.
+        let expected_attachments = artifacts
+            .iter()
+            .filter(|a| a.get("type").and_then(Value::as_str) != Some("skill_bundle"))
+            .count();
+        let hydrated = prompt
+            .iter()
+            .filter(|block| block.get("type").and_then(Value::as_str) == Some("resource_link"))
+            .count();
+        if expected_attachments > hydrated {
             prompt.push(json!({
                 "type": "text",
-                "text": format!(
-                    "{subject} the user attached to this message could not be loaded into the session, so {pronoun} are unavailable here. Do not guess at the contents. Tell the user the {noun} didn't come through, and ask them to paste the text directly or send {pronoun} again."
-                ),
+                "text": missing_attachment_notice(expected_attachments - hydrated),
             }));
         }
         if prompt.is_empty() {
@@ -1069,18 +1454,38 @@ impl AgentServer {
 
         session.shared.log_writer.reset_turn_messages().await;
 
+        // Resolve before the detected-PR context so a warm auto-publish
+        // upgrade also flips it to its push variant.
+        let auto_publish_upgrade = self.resolve_warm_auto_publish_upgrade(session).await;
+        let effective_config = self.effective_prompt_config();
         let detected_pr = session
             .shared
             .detected_pr_url
             .lock()
             .expect("pr lock")
             .clone();
+        let mut host_context: Vec<String> = Vec::new();
+        if let Some(upgrade) = auto_publish_upgrade {
+            host_context.push(upgrade);
+        }
+        if let Some(pr_url) = &detected_pr {
+            host_context.push(detected_pr_context(&effective_config, pr_url));
+        }
+
+        let mut prompt_meta = built.meta.unwrap_or_else(|| json!({}));
+        if !host_context.is_empty() {
+            prompt_meta["prContext"] = json!(host_context.join("\n\n"));
+        }
         let mut request = json!({
             "sessionId": session.acp_session_id,
             "prompt": prompt,
         });
-        if let Some(pr_url) = detected_pr {
-            request["_meta"] = json!({ "prContext": detected_pr_context(&self.config, &pr_url) });
+        if prompt_meta
+            .as_object()
+            .map(|m| !m.is_empty())
+            .unwrap_or(false)
+        {
+            request["_meta"] = prompt_meta;
         }
 
         let result = session.peer.request(methods::SESSION_PROMPT, request).await;
@@ -1127,6 +1532,134 @@ impl AgentServer {
         Ok(result)
     }
 
+    /// `resolveWarmAutoPublishUpgrade`: prewarmed runs boot before the user's
+    /// auto-publish choice exists; resolve it from run state on the first
+    /// message and inject the publish instructions as a prompt override.
+    async fn resolve_warm_auto_publish_upgrade(
+        self: &Arc<Self>,
+        session: &Arc<ActiveSession>,
+    ) -> Option<String> {
+        if !self.prewarmed_run.load(Ordering::SeqCst)
+            || self.warm_auto_publish_resolved.load(Ordering::SeqCst)
+        {
+            return None;
+        }
+        let config = self.effective_prompt_config();
+        if config.auto_publish == Some(true)
+            || config.create_pr == Some(false)
+            || crate::system_prompt::is_automated_origin(&config)
+        {
+            // The boot decision already publishes (or never may).
+            self.warm_auto_publish_resolved
+                .store(true, Ordering::SeqCst);
+            return None;
+        }
+        let run = match self
+            .api
+            .get_task_run(&session.payload.task_id, &session.payload.run_id)
+            .await
+        {
+            Ok(run) => run,
+            Err(err) => {
+                // Leave unresolved so the next message retries.
+                tracing::debug!(error = %err, "Failed to fetch run state for auto-publish upgrade");
+                return None;
+            }
+        };
+        self.warm_auto_publish_resolved
+            .store(true, Ordering::SeqCst);
+        if run.state_bool("auto_publish") != Some(true) {
+            return None;
+        }
+        *self.auto_publish_override.lock().expect("override lock") = Some(true);
+        tracing::debug!("Warm run upgraded to auto-publish from run state");
+
+        let upgraded_config = self.effective_prompt_config();
+        let detected_pr = session
+            .shared
+            .detected_pr_url
+            .lock()
+            .expect("pr lock")
+            .clone();
+        let ctx = PromptContext {
+            config: &upgraded_config,
+            pr_url: detected_pr.as_deref(),
+            slack_thread_url: None,
+            inbox_report_url: None,
+        };
+        Some(
+            [
+                "IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.",
+                "The user has auto-publish enabled for this run. The review-first cloud task instructions in your system prompt are replaced by the following:",
+                "",
+                &crate::system_prompt::build_cloud_system_prompt(&ctx),
+            ]
+            .join("\n"),
+        )
+    }
+
+    /// Config with the warm auto-publish override applied — prompt builders
+    /// must see the resolved value.
+    fn effective_prompt_config(&self) -> ServerConfig {
+        let mut config = self.config.clone();
+        if let Some(auto_publish) = *self.auto_publish_override.lock().expect("override lock") {
+            config.auto_publish = Some(auto_publish);
+        }
+        config
+    }
+
+    /// `captureCheckpointState`: capture + upload a handoff checkpoint and
+    /// broadcast it as `_posthog/git_checkpoint`.
+    async fn capture_checkpoint_state(
+        &self,
+        session: &ActiveSession,
+        local_git_state: Option<LocalGitState>,
+    ) {
+        let Some(repo) = &self.config.repository_path else {
+            return;
+        };
+        let tracker = HandoffTracker {
+            repository_path: repo,
+            task_id: &session.payload.task_id,
+            run_id: &session.payload.run_id,
+            api: &self.api,
+        };
+        let checkpoint = match tracker.capture_for_handoff(local_git_state.as_ref()).await {
+            Ok(checkpoint) => checkpoint,
+            Err(err) => {
+                tracing::warn!(error = %err, "Failed to capture handoff checkpoint");
+                return;
+            }
+        };
+
+        let device = json!({
+            "type": "cloud",
+            "name": self.config.hostname.as_deref().unwrap_or("cloud-sandbox"),
+        });
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": ext::GIT_CHECKPOINT,
+            "params": checkpoint.to_event_params(&device),
+        });
+        self.broadcast_and_log(session, &notification).await;
+    }
+
+    /// Checkpoint worker: coalesces capture requests from file-mutating tool
+    /// calls so a burst of edits produces one capture.
+    fn spawn_checkpoint_worker(
+        self: &Arc<Self>,
+        session: Arc<ActiveSession>,
+        mut requests: tokio::sync::mpsc::UnboundedReceiver<()>,
+    ) {
+        let server = Arc::clone(self);
+        tokio::spawn(async move {
+            while requests.recv().await.is_some() {
+                while requests.try_recv().is_ok() {}
+                server.capture_checkpoint_state(&session, None).await;
+            }
+        });
+    }
+
     /// `cleanupSession`.
     pub async fn cleanup_session(&self, complete_event_stream: bool) {
         let session = {
@@ -1143,7 +1676,15 @@ impl AgentServer {
         tracing::debug!("Cleaning up session");
         self.session_active.store(false, Ordering::SeqCst);
 
-        // TODO(phase-1.5): capture the final handoff git checkpoint here.
+        let local_git_state = session
+            .shared
+            .pending_handoff_git_state
+            .lock()
+            .expect("handoff lock")
+            .take()
+            .map(|value| LocalGitState::from_value(&value));
+        self.capture_checkpoint_state(&session, local_git_state)
+            .await;
 
         session.shared.log_writer.flush().await;
 
@@ -1195,6 +1736,26 @@ impl AgentServer {
         self.cleanup_session(true).await;
         tracing::debug!("Agent server stopped");
     }
+}
+
+/// `deserializeCloudPrompt`: strings normally become one text block; the
+/// `__twig_cloud_prompt_v1__:` prefix carries serialized ContentBlock arrays.
+fn normalize_cloud_prompt_content(content: &str) -> Vec<Value> {
+    const CLOUD_PROMPT_PREFIX: &str = "__twig_cloud_prompt_v1__:";
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if let Some(payload) = trimmed.strip_prefix(CLOUD_PROMPT_PREFIX) {
+        if let Ok(parsed) = serde_json::from_str::<Value>(payload) {
+            if let Some(blocks) = parsed.get("blocks").and_then(Value::as_array) {
+                if !blocks.is_empty() {
+                    return blocks.clone();
+                }
+            }
+        }
+    }
+    vec![json!({ "type": "text", "text": trimmed })]
 }
 
 fn parse_classification(raw: &str) -> Option<AgentErrorClassification> {

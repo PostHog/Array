@@ -48,6 +48,12 @@ pub struct SessionShared {
     pub pending_permissions: Mutex<HashMap<String, PendingPermission>>,
     pub detected_pr_url: Mutex<Option<String>>,
     pub evaluated_pr_urls: Mutex<HashSet<String>>,
+    /// `localGitState` from the `close` command, consumed by the final
+    /// checkpoint capture during cleanup.
+    pub pending_handoff_git_state: Mutex<Option<Value>>,
+    /// Wakes the checkpoint worker after file-mutating tool calls; capture
+    /// requests coalesce while one is in flight.
+    pub checkpoint_requests: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl SessionShared {
@@ -175,8 +181,6 @@ impl ClientHandler {
 
         // Capture checkpoints for file-changing tools so cloud resumes restore
         // from git checkpoints rather than tree snapshots.
-        // TODO(phase-1.5): port HandoffCheckpointTracker (git pack capture +
-        // artifact upload). Until then only the trigger wiring exists.
         if update
             .and_then(|u| u.get("sessionUpdate"))
             .and_then(Value::as_str)
@@ -196,10 +200,7 @@ impl ClientHandler {
                     "Write" | "Edit" | "MultiEdit" | "Delete" | "Move"
                 )
             {
-                tracing::debug!(
-                    tool_name,
-                    "File-mutating tool completed (checkpoint capture pending port)"
-                );
+                let _ = self.shared.checkpoint_requests.send(());
             }
         }
     }

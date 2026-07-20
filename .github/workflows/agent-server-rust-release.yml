@@ -1,0 +1,83 @@
+name: Release Rust agent-server
+
+# Tag-driven release of the Rust agent-server binary (rust/README.md).
+# Produces static musl binaries plus a SHA256SUMS file so the sandbox image
+# can install it agentsh-style: pinned version, checksum-verified.
+#
+#   git tag agent-server-rs-v0.1.0 && git push origin agent-server-rs-v0.1.0
+
+on:
+  push:
+    tags:
+      - "agent-server-rs-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install toolchain and musl target
+        working-directory: rust
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add ${{ matrix.target }}
+          sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          workspaces: rust
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        working-directory: rust
+        run: cargo build --release --target ${{ matrix.target }} --bin agent-server
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          cp rust/target/${{ matrix.target }}/release/agent-server \
+            dist/agent-server-${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-server-${{ matrix.target }}
+          path: dist/agent-server-${{ matrix.target }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum agent-server-* > SHA256SUMS
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Rust agent-server ${{ github.ref_name }}" \
+            --notes "Static musl builds of the Rust agent-server (see rust/README.md). Install pinned + SHA256-verified in the sandbox image." \
+            dist/agent-server-* dist/SHA256SUMS

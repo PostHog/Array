@@ -13,7 +13,9 @@
 //! referenced from each module.
 
 pub mod adapter;
+pub mod artifacts;
 pub mod bus;
+pub mod checkpoint;
 pub mod client;
 pub mod command;
 pub mod config;
@@ -24,6 +26,7 @@ pub mod ingest;
 pub mod jwt;
 pub mod log_writer;
 pub mod posthog_api;
+pub mod resume;
 pub mod server;
 pub mod system_prompt;
 

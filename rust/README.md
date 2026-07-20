@@ -72,18 +72,21 @@ POSTHOG_PROJECT_ID="2" \
 
 (Point `POSTHOG_API_URL` at a real or mock PostHog API; with an empty task description the session initializes without an LLM call.)
 
-## Phase 1 gaps
+## Ported in phase 1.5
 
-Tracked here so the rollout flag stays off for runs that need them; each is a `TODO(phase-1.5)` in the source:
+- summary session resume (`POSTHOG_RESUME_RUN_ID` / `resume_from_run_id`): prior-run log fetch, conversation rebuild, token-budgeted summary prompt (`resume.rs`)
+- git handoff checkpoints, capture and apply (`checkpoint.rs`): checkpoint commits via plumbing, >1 MiB blob reconciliation, `pack-objects` artifacts, branch restore with divergence detection
+- skill bundle installation (sha256 + unzip with traversal protection) and artifact attachment hydration to `resource_link` blocks (`artifacts.rs`), including `/skill` invocation context
+- pending user prompts, initial-prompt overrides, and the prewarmed-run auto-publish upgrade from run state
 
-- session resume (`POSTHOG_RESUME_RUN_ID` / `resume_from_run_id`): logs a warning and starts fresh
-- git handoff checkpoints (capture/apply) — the trigger wiring exists, the pack capture is not ported
-- skill bundle installation and artifact attachment loading (artifact-only messages surface the missing-attachment notice)
-- prewarmed-run auto-publish upgrade and initial-prompt overrides from run state
+## Remaining gaps
+
+- native resume (Claude session JSONL hydration / `session/load`) — summary resume is the fallback the TS server also uses when hydration is unavailable
 - file-read enrichment is disabled in the sidecar (tree-sitter WASM assets are not bundled into `acp-stdio.cjs` yet)
 - OTEL log export (`/i/v1/agent-logs`) — only the `append_log` API path is ported
 - tool-update coalescing for the local log cache (API-path coalescing is ported)
 
-## Rollout
+## Release and rollout
 
-The binary is CLI-compatible: pointing Django's `_build_agent_server_command` at the Rust binary (behind a feature flag, both binaries baked into the sandbox image) is the only integration change. Distribution should follow the `agentsh` pattern in `Dockerfile.sandbox-base` — pinned release, SHA256-verified — via a release workflow building `x86_64/aarch64-unknown-linux-musl`.
+`agent-server-rust-release.yml` builds static musl binaries (`x86_64`/`aarch64`) with a `SHA256SUMS` file on `agent-server-rs-v*` tags.
+The sandbox image (`Dockerfile.sandbox-base` in posthog/posthog) installs a pinned, checksum-verified release to `/usr/local/bin/agent-server-rs` when the `RUST_AGENT_SERVER_TAG` build args are set, and Django's `SANDBOX_RUST_AGENT_SERVER` setting switches the launch command onto it (`agent_server_launch_binary()` in `products/tasks/backend/logic/services/sandbox.py`).

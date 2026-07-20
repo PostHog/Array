@@ -36,6 +36,7 @@ pub struct Task {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TaskRun {
     pub id: Option<String>,
+    pub task: Option<String>,
     pub status: Option<String>,
     pub state: Option<Value>,
     pub artifacts: Option<Value>,
@@ -188,6 +189,115 @@ impl PostHogApiClient {
         )
         .await?;
         Ok(())
+    }
+
+    /// Upload artifacts; the backend returns the full manifest — callers get
+    /// the artifacts corresponding to this upload (the tail).
+    pub async fn upload_task_artifacts(
+        &self,
+        task_id: &str,
+        run_id: &str,
+        artifacts: Vec<Value>,
+    ) -> Result<Vec<Value>, ApiError> {
+        let count = artifacts.len();
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let response = self
+            .request(
+                reqwest::Method::POST,
+                &format!(
+                    "/api/projects/{}/tasks/{task_id}/runs/{run_id}/artifacts/",
+                    self.project_id
+                ),
+                Some(json!({ "artifacts": artifacts })),
+            )
+            .await?;
+        let manifest = response
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let skip = manifest.len().saturating_sub(count);
+        Ok(manifest.into_iter().skip(skip).collect())
+    }
+
+    /// Download artifact content by storage path (raw response bytes; handoff
+    /// artifacts are stored base64-encoded, skill bundles as raw zips).
+    pub async fn download_artifact(
+        &self,
+        task_id: &str,
+        run_id: &str,
+        storage_path: &str,
+    ) -> Result<Vec<u8>, ApiError> {
+        let url = format!(
+            "{}/api/projects/{}/tasks/{task_id}/runs/{run_id}/artifacts/download/",
+            self.base_url, self.project_id
+        );
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("User-Agent", &self.user_agent)
+            .json(&json!({ "storage_path": storage_path }))
+            .send()
+            .await
+            .map_err(|err| ApiError(format!("Artifact download failed: {err}")))?;
+        if !response.status().is_success() {
+            return Err(ApiError(format!(
+                "Failed to download artifact: {}",
+                response.status().as_u16()
+            )));
+        }
+        response
+            .bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|err| ApiError(format!("Artifact download read failed: {err}")))
+    }
+
+    /// Fetch the run's persisted log as parsed NDJSON entries. 404 → empty.
+    pub async fn fetch_task_run_logs(
+        &self,
+        task_id: &str,
+        run_id: &str,
+    ) -> Result<Vec<Value>, ApiError> {
+        let url = format!(
+            "{}/api/projects/{}/tasks/{task_id}/runs/{run_id}/logs",
+            self.base_url, self.project_id
+        );
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("User-Agent", &self.user_agent)
+            .send()
+            .await
+            .map_err(|err| ApiError(format!("Failed to fetch task run logs: {err}")))?;
+        if response.status().as_u16() == 404 {
+            return Ok(Vec::new());
+        }
+        if !response.status().is_success() {
+            return Err(ApiError(format!(
+                "Failed to fetch logs: {}",
+                response.status().as_u16()
+            )));
+        }
+        let content = response
+            .text()
+            .await
+            .map_err(|err| ApiError(format!("Failed to read task run logs: {err}")))?;
+        let mut entries = Vec::new();
+        for line in content.trim().lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let entry: Value = serde_json::from_str(line)
+                .map_err(|err| ApiError(format!("Failed to parse task run logs: {err}")))?;
+            entries.push(entry);
+        }
+        Ok(entries)
     }
 
     pub async fn relay_message(
