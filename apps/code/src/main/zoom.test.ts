@@ -28,6 +28,10 @@ class FakeWebContents extends EventEmitter {
     return this.destroyed;
   }
 
+  public getZoomLevel(): number {
+    return this.zoomLevel;
+  }
+
   public setZoomLevel(level: number): void {
     this.setZoomLevelCalls.push(level);
     this.zoomLevel = level;
@@ -98,7 +102,6 @@ describe("window zoom", () => {
 
     window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
     vi.runAllTimers();
-    vi.advanceTimersByTime(5 * 60 * 1000);
     window.webContents.zoomLevel = 0;
 
     window.emit("resize");
@@ -166,17 +169,29 @@ describe("window zoom", () => {
     },
   );
 
-  it("debounces repeated resize restorations", () => {
+  it("skips redundant restoration during a resize storm", () => {
     const window = createWindow();
     setupWindowZoom(window);
-    window.webContents.zoomLevel = 0;
+    window.webContents.zoomLevel = 0.5;
 
     window.emit("resize");
+    vi.runAllTimers();
+    vi.advanceTimersByTime(16);
     window.emit("resize");
-    window.emit("resized");
+    vi.runAllTimers();
+    const callsBeforeReset = [...window.webContents.setZoomLevelCalls];
+
+    window.webContents.zoomLevel = 0;
+    window.emit("resize");
     vi.runAllTimers();
 
-    expect(window.webContents.setZoomLevelCalls).toEqual([0.5]);
+    expect({
+      callsBeforeReset,
+      callsAfterReset: window.webContents.setZoomLevelCalls,
+    }).toEqual({
+      callsBeforeReset: [],
+      callsAfterReset: [0.5],
+    });
   });
 
   it("ignores queued zoom work after the window is destroyed", () => {
