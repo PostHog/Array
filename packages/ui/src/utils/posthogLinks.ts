@@ -137,16 +137,8 @@ const POSTHOG_HOSTS = new Set(
     .filter(Boolean),
 );
 
-export function parseShareLink(href: string): ShareLinkTarget | null {
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return null;
-  }
-  if (!POSTHOG_HOSTS.has(url.host)) return null;
-
-  const segments = url.pathname
+function decodePathSegments(pathname: string): string[] {
+  return pathname
     .split("/")
     .filter(Boolean)
     .map((segment) => {
@@ -156,23 +148,39 @@ export function parseShareLink(href: string): ShareLinkTarget | null {
         return segment;
       }
     });
+}
 
-  if (segments[0] !== "code") return null;
-
-  if (segments[1] === "canvas" && segments.length === 4) {
-    return { kind: "canvas", channelId: segments[2], dashboardId: segments[3] };
+function parseCanvasShareLink(segments: string[]): ShareLinkTarget | null {
+  const [root, kind, channelId, dashboardId] = segments;
+  if (root === "code" && kind === "canvas" && segments.length === 4) {
+    return { kind: "canvas", channelId, dashboardId };
   }
-
-  if (segments[1] === "channel") {
-    if (segments.length === 3) {
-      return { kind: "channel", channelId: segments[2] };
-    }
-    if (segments.length === 5 && segments[3] === "tasks") {
-      return { kind: "channel", channelId: segments[2], taskId: segments[4] };
-    }
-  }
-
   return null;
+}
+
+function parseChannelShareLink(segments: string[]): ShareLinkTarget | null {
+  const [root, kind, channelId, maybeTasks, taskId] = segments;
+  if (root !== "code" || kind !== "channel") return null;
+  if (segments.length === 3) {
+    return { kind: "channel", channelId };
+  }
+  if (segments.length === 5 && maybeTasks === "tasks") {
+    return { kind: "channel", channelId, taskId };
+  }
+  return null;
+}
+
+export function parseShareLink(href: string): ShareLinkTarget | null {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (!POSTHOG_HOSTS.has(url.host)) return null;
+
+  const segments = decodePathSegments(url.pathname);
+  return parseCanvasShareLink(segments) ?? parseChannelShareLink(segments);
 }
 
 export function errorTrackingIssueUrl(
