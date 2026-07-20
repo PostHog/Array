@@ -54,5 +54,14 @@ describe("Agent", () => {
         reasoningEffort: "xhigh",
       }),
     );
+    expect(config.codexModels).toEqual([
+      expect.objectContaining({ id: "gpt-5.5", allowed: true }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: { Authorization: "Bearer token" },
+      }),
+    );
   });
 });
