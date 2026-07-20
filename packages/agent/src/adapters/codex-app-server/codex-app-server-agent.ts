@@ -94,6 +94,7 @@ type AppServerSessionMeta = {
   channelMode?: boolean;
   spokenNarration?: boolean;
   baseBranch?: string;
+  posthogExecPermissionRegex?: string;
   nativeGoal?: NativeGoalState;
 };
 
@@ -492,10 +493,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         { error: String(err) },
       );
     }
-    const mcpServers = toCodexMcpServers([
-      ...(params.mcpServers ?? []),
-      ...(localTools ? [localTools] : []),
-    ]);
+    const mcpServers = toCodexMcpServers(
+      [...(params.mcpServers ?? []), ...(localTools ? [localTools] : [])],
+      params.meta?.posthogExecPermissionRegex,
+    );
     const config = buildThreadConfig(mcpServers, params.additionalDirectories);
 
     const result = await this.rpc.request<{ thread?: AppServerThread }>(

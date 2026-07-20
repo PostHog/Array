@@ -1039,7 +1039,11 @@ describe("CodexAppServerAgent", () => {
 
     await agent.newSession({
       cwd: "/r",
-      _meta: { systemPrompt: "You are a repo selector." },
+      _meta: {
+        systemPrompt: "You are a repo selector.",
+        permissionMode: "bypassPermissions",
+        posthogExecPermissionRegex: "delete|destroy",
+      },
       mcpServers: [
         {
           name: "posthog",
@@ -1059,6 +1063,7 @@ describe("CodexAppServerAgent", () => {
             command: "node",
             args: ["server.js"],
             env: { TOKEN: "abc" },
+            tools: { exec: { approval_mode: "prompt" } },
           },
         },
       },

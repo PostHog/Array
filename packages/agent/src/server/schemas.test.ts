@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mcpServersSchema,
+  posthogExecPermissionRegexSchema,
   relayMcpServerNamesSchema,
   validateCommandParams,
 } from "./schemas";
@@ -117,6 +118,22 @@ describe("mcpServersSchema", () => {
       },
     ]);
     expect(result.success).toBe(false);
+  });
+});
+
+describe("posthogExecPermissionRegexSchema", () => {
+  it("accepts a valid permission regex", () => {
+    expect(
+      posthogExecPermissionRegexSchema.safeParse(
+        "(^|-)(update|patch|delete|destroy)(-|$)",
+      ).success,
+    ).toBe(true);
+  });
+
+  it.each(["", "["])("rejects %j", (source) => {
+    expect(posthogExecPermissionRegexSchema.safeParse(source).success).toBe(
+      false,
+    );
   });
 });
 

@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { compilePostHogExecPermissionRegex } from "../posthog-exec-permission";
 
 const httpHeaderSchema = z.object({
   name: z.string(),
@@ -26,6 +27,21 @@ const remoteMcpServerSchema = z.object({
 });
 
 export const mcpServersSchema = z.array(remoteMcpServerSchema);
+
+export const posthogExecPermissionRegexSchema = z
+  .string()
+  .min(1, "PostHog exec permission regex cannot be empty")
+  .refine(
+    (source) => {
+      try {
+        compilePostHogExecPermissionRegex(source);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { error: "PostHog exec permission regex must be valid" },
+  );
 
 export type RemoteMcpServer = z.infer<typeof remoteMcpServerSchema>;
 

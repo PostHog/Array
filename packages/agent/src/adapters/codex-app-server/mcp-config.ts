@@ -1,12 +1,28 @@
 import type { McpServer } from "@agentclientprotocol/sdk";
+import { isPostHogExecDescriptor } from "../../posthog-exec-permission";
+
+interface CodexMcpServerToolConfig {
+  approval_mode: "prompt";
+}
+
+interface CodexMcpServerPolicyConfig {
+  tools?: Record<string, CodexMcpServerToolConfig>;
+}
 
 /**
  * Codex's per-thread `mcp_servers` config entry (stdio: command/args/env; http:
  * url + headers), accepted under `thread/start`'s `config.mcp_servers`.
  */
 export type CodexMcpServerConfig =
-  | { command: string; args: string[]; env?: Record<string, string> }
-  | { url: string; http_headers?: Record<string, string> };
+  | (CodexMcpServerPolicyConfig & {
+      command: string;
+      args: string[];
+      env?: Record<string, string>;
+    })
+  | (CodexMcpServerPolicyConfig & {
+      url: string;
+      http_headers?: Record<string, string>;
+    });
 
 /**
  * Translates the ACP `McpServer[]` into the shape Codex's app-server expects under
@@ -15,6 +31,7 @@ export type CodexMcpServerConfig =
  */
 export function toCodexMcpServers(
   servers: McpServer[] | undefined,
+  posthogExecPermissionRegex?: string,
 ): Record<string, CodexMcpServerConfig> | undefined {
   if (!servers || servers.length === 0) {
     return undefined;
@@ -22,18 +39,25 @@ export function toCodexMcpServers(
 
   const out: Record<string, CodexMcpServerConfig> = {};
   for (const server of servers) {
+    const policy =
+      posthogExecPermissionRegex &&
+      isPostHogExecDescriptor({ server: server.name, tool: "exec" })
+        ? { tools: { exec: { approval_mode: "prompt" as const } } }
+        : {};
     if ("command" in server && server.command) {
       const env = pairsToRecord(server.env);
       out[server.name] = {
         command: server.command,
         args: server.args ?? [],
         ...(env ? { env } : {}),
+        ...policy,
       };
     } else if ("url" in server && server.url) {
       const headers = pairsToRecord(server.headers);
       out[server.name] = {
         url: server.url,
         ...(headers ? { http_headers: headers } : {}),
+        ...policy,
       };
     }
   }
