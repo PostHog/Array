@@ -59,9 +59,6 @@ function makeCacheWriter(
   return {
     cancelPathFilter: () =>
       queryClient.cancelQueries({ queryKey: keys.archivePathFilterKey }),
-    invalidateArchiveList: () => {
-      queryClient.invalidateQueries({ queryKey: keys.archiveListQueryKey });
-    },
     invalidatePathFilter: () => {
       queryClient.invalidateQueries({ queryKey: keys.archivePathFilterKey });
     },
@@ -144,6 +141,7 @@ export async function archiveTaskImperative(
   keys: ArchiveCacheKeys,
   options?: {
     skipNavigate?: boolean;
+    optimistic?: boolean;
     navigateSpace?: "code" | "website";
   },
 ): Promise<void> {
@@ -183,6 +181,7 @@ export function useArchiveTask(options?: {
 
   const archiveTask = async ({ taskId }: { taskId: string }) => {
     await archiveTaskImperative(taskId, queryClient, keys, {
+      optimistic: true,
       navigateSpace: options?.navigateSpace,
     });
     const toastId = `archive-undo-${taskId}`;

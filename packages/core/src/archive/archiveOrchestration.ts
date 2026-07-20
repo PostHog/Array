@@ -14,7 +14,6 @@ export interface ArchiveWorkspaceInfo extends OptimisticWorkspaceInfo {
 
 export interface ArchiveCacheWriter {
   cancelPathFilter(): Promise<void>;
-  invalidateArchiveList(): void;
   invalidatePathFilter(): void;
   setArchivedTaskIds(updater: (old: string[] | undefined) => string[]): void;
   setArchiveList(
@@ -47,6 +46,13 @@ export interface ArchiveOrchestrationDeps {
 
 export interface ArchiveTaskOptions {
   skipNavigate?: boolean;
+  /**
+   * When true (default), the task is removed from the sidebar list immediately
+   * via an optimistic cache write and rolled back on failure. When false, the
+   * row stays put until the archive actually succeeds — used by the interactive
+   * single-archive flow so the row can show a spinner until it's confirmed gone.
+   */
+  optimistic?: boolean;
 }
 
 export async function archiveTask(
@@ -54,68 +60,64 @@ export async function archiveTask(
   deps: ArchiveOrchestrationDeps,
   options?: ArchiveTaskOptions,
 ): Promise<void> {
+  const workspace = await deps.getWorkspace(taskId);
+  const stopped = await deps.stopCloudRun(taskId);
+  if (!stopped) {
+    throw new Error("Couldn't stop the task. Try again in a moment.");
+  }
+
+  const optimistic = options?.optimistic ?? true;
+  const pinnedTaskIds = await deps.getPinnedTaskIds();
+  const wasPinned = pinnedTaskIds.includes(taskId);
+
   if (!options?.skipNavigate) {
     deps.navigateAwayFromTaskIfActive(taskId);
   }
 
   const commandCenterSnapshot = deps.snapshotCommandCenter(taskId);
+
+  await deps.unpin(taskId);
   deps.removeFromCommandCenter(taskId);
 
-  const optimisticArchived = buildOptimisticArchivedTask(taskId, null);
-  deps.cache.setArchivedTaskIds((old) => appendArchivedTaskId(old, taskId));
-  deps.cache.setArchiveList((old) =>
-    appendOptimisticArchivedTask(old, optimisticArchived),
-  );
+  await deps.cache.cancelPathFilter();
 
-  let wasPinned = false;
-  let didUnpin = false;
+  const optimisticArchived = buildOptimisticArchivedTask(taskId, workspace);
+
+  const applyArchivedCacheWrites = () => {
+    deps.cache.setArchivedTaskIds((old) => appendArchivedTaskId(old, taskId));
+    deps.cache.setArchiveList((old) =>
+      appendOptimisticArchivedTask(old, optimisticArchived),
+    );
+  };
+
+  if (optimistic) {
+    applyArchivedCacheWrites();
+  }
+
+  if (
+    workspace?.worktreePath &&
+    deps.getFocusedWorktreePath() === workspace.worktreePath
+  ) {
+    await deps.disableFocus();
+  }
 
   try {
-    const cancelPathFilter = deps.cache.cancelPathFilter();
-    await cancelPathFilter;
-    const [workspace, pinnedTaskIds, stopped] = await Promise.all([
-      deps.getWorkspace(taskId),
-      deps.getPinnedTaskIds(),
-      deps.stopCloudRun(taskId),
-    ]);
-    if (!stopped) {
-      throw new Error("Couldn't stop the task. Try again in a moment.");
-    }
-
-    wasPinned = pinnedTaskIds.includes(taskId);
-    await deps.unpin(taskId);
-    didUnpin = true;
-
-    deps.cache.setArchiveList((old) =>
-      appendOptimisticArchivedTask(
-        old,
-        buildOptimisticArchivedTask(
-          taskId,
-          workspace,
-          optimisticArchived.archivedAt,
-        ),
-      ),
-    );
-
-    if (
-      workspace?.worktreePath &&
-      deps.getFocusedWorktreePath() === workspace.worktreePath
-    ) {
-      await deps.disableFocus();
-    }
-
     await deps.disconnectFromTask(taskId);
     await deps.archive(taskId);
     deps.clearTerminalStates(taskId);
     deps.clearViewedState(taskId);
-    deps.cache.invalidateArchiveList();
+    // Non-optimistic flows keep the row visible during the request, then remove
+    // it the moment the archive succeeds.
+    if (!optimistic) {
+      applyArchivedCacheWrites();
+    }
     deps.cache.invalidatePathFilter();
   } catch (error) {
     deps.logError("Failed to archive task", error);
 
     deps.cache.setArchivedTaskIds((old) => removeArchivedTaskId(old, taskId));
     deps.cache.setArchiveList((old) => removeArchivedTask(old, taskId));
-    if (wasPinned && didUnpin) {
+    if (wasPinned) {
       await deps.togglePin(taskId);
     }
     if (commandCenterSnapshot.index !== -1) {

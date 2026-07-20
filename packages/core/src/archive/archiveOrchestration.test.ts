@@ -33,7 +33,6 @@ class Harness {
     logError: vi.fn(),
     cache: {
       cancelPathFilter: vi.fn().mockResolvedValue(undefined),
-      invalidateArchiveList: vi.fn(),
       invalidatePathFilter: vi.fn(),
       setArchivedTaskIds: (updater) => {
         this.ids = updater(this.ids);
@@ -62,26 +61,8 @@ describe("archiveTask", () => {
     expect(harness.deps.archive).toHaveBeenCalledWith(TASK_ID);
     expect(harness.deps.disconnectFromTask).toHaveBeenCalledWith(TASK_ID);
     expect(harness.deps.clearViewedState).toHaveBeenCalledWith(TASK_ID);
-    expect(harness.ids).toEqual([TASK_ID]);
-    expect(harness.list.map((task) => task.taskId)).toEqual([TASK_ID]);
-  });
-
-  it("updates both archive caches before host preparation resolves", async () => {
-    let resolveCancellation: () => void = () => undefined;
-    harness.deps.cache.cancelPathFilter = vi.fn().mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveCancellation = resolve;
-        }),
-    );
-
-    const result = archiveTask(TASK_ID, harness.deps);
-
     expect(harness.ids).toContain(TASK_ID);
-    expect(harness.list.some((task) => task.taskId === TASK_ID)).toBe(true);
-
-    resolveCancellation();
-    await result;
+    expect(harness.list.some((a) => a.taskId === TASK_ID)).toBe(true);
   });
 
   it("does not clear read state when the archive request fails", async () => {
@@ -90,6 +71,35 @@ describe("archiveTask", () => {
     await expect(archiveTask(TASK_ID, harness.deps)).rejects.toThrow("boom");
 
     expect(harness.deps.clearViewedState).not.toHaveBeenCalled();
+  });
+
+  it("with optimistic:false, defers cache writes until archive resolves", async () => {
+    let idsWhenArchiveCalled: string[] = ["sentinel"];
+    harness.deps.archive = vi.fn().mockImplementation(async () => {
+      // Snapshot the cache at the moment the request is made — the row must
+      // still be present (not yet marked archived) while it's in flight.
+      idsWhenArchiveCalled = [...harness.ids];
+    });
+
+    await archiveTask(TASK_ID, harness.deps, { optimistic: false });
+
+    expect(idsWhenArchiveCalled).not.toContain(TASK_ID);
+    // Once the archive resolves, the row is removed from the list.
+    expect(harness.ids).toContain(TASK_ID);
+    expect(harness.list.some((a) => a.taskId === TASK_ID)).toBe(true);
+  });
+
+  it("with optimistic:false, leaves caches untouched when archive fails", async () => {
+    harness.deps.getPinnedTaskIds = vi.fn().mockResolvedValue([TASK_ID]);
+    harness.deps.archive = vi.fn().mockRejectedValue(new Error("boom"));
+
+    await expect(
+      archiveTask(TASK_ID, harness.deps, { optimistic: false }),
+    ).rejects.toThrow("boom");
+
+    expect(harness.ids).not.toContain(TASK_ID);
+    expect(harness.list).toEqual([]);
+    expect(harness.deps.togglePin).toHaveBeenCalledWith(TASK_ID);
   });
 
   it("rolls back caches and re-pins when archive fails", async () => {
