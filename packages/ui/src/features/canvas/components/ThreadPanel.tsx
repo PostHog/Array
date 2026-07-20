@@ -11,7 +11,6 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
-  isAgentThreadMessage,
   normalizeAgentPromptText,
   shouldSuspendThreadSession,
   type ThreadAgentMessage,
@@ -183,50 +182,6 @@ export function ThreadMessageRow({
           </DropdownMenu>
         </ThreadItemActions>
       )}
-    </ThreadItem>
-  );
-}
-
-/**
- * A durable row the agent posted — its final turn, or a question it needs
- * answered. Authorless by design, so it names itself rather than resolving an
- * author (which would read as "Unknown").
- *
- * Renders `content` through MentionText, not markdown: the server writes the
- * body with a real mention token for the task creator, and markdown would spell
- * that token out instead of chipping it.
- *
- * No hover menu — there's nothing to forward to the agent (it *is* the agent),
- * and its rows aren't the reader's to delete.
- */
-function AgentThreadRow({
-  message,
-  currentUserEmail,
-}: {
-  message: TaskThreadMessage;
-  currentUserEmail?: string | null;
-}) {
-  return (
-    <ThreadItem>
-      <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>
-            <RobotIcon size={14} />
-          </AvatarFallback>
-        </Avatar>
-      </ThreadItemGutter>
-      <ThreadItemContent>
-        <ThreadItemHeader>
-          <ThreadItemAuthor>Agent</ThreadItemAuthor>
-          <ThreadTimestamp dateTime={message.created_at} />
-        </ThreadItemHeader>
-        <ThreadItemBody>
-          <MentionText
-            content={message.content}
-            currentUserEmail={currentUserEmail}
-          />
-        </ThreadItemBody>
-      </ThreadItemContent>
     </ThreadItem>
   );
 }
@@ -454,29 +409,19 @@ function ThreadTimeline({
             author={taskAuthor}
           />
         ) : row.kind === "human" ? (
-          // A durable row the agent wrote — authorless, so the human row would
-          // credit it to "Unknown".
-          isAgentThreadMessage(row.message.value ?? {}) ? (
-            <AgentThreadRow
-              key={row.message.id}
-              message={row.message.value as TaskThreadMessage}
-              currentUserEmail={currentUserEmail}
-            />
-          ) : (
-            <ThreadMessageRow
-              key={row.message.id}
-              message={row.message.value as TaskThreadMessage}
-              isTaskAuthor={isTaskAuthor}
-              isOwnMessage={
-                !!currentUserUuid &&
-                currentUserUuid === row.message.value?.author?.uuid
-              }
-              currentUserEmail={currentUserEmail}
-              canForward={canForward}
-              onSendToAgent={() => onSendToAgent(row.message.id)}
-              onDelete={() => onDelete(row.message.id)}
-            />
-          )
+          <ThreadMessageRow
+            key={row.message.id}
+            message={row.message.value as TaskThreadMessage}
+            isTaskAuthor={isTaskAuthor}
+            isOwnMessage={
+              !!currentUserUuid &&
+              currentUserUuid === row.message.value?.author?.uuid
+            }
+            currentUserEmail={currentUserEmail}
+            canForward={canForward}
+            onSendToAgent={() => onSendToAgent(row.message.id)}
+            onDelete={() => onDelete(row.message.id)}
+          />
         ) : (
           <AgentTurnRow
             key={row.message.id}

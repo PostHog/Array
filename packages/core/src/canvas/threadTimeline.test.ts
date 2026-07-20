@@ -3,7 +3,6 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
-  isAgentThreadMessage,
   normalizeAgentPromptText,
   shouldSuspendThreadSession,
   visibleThreadMessages,
@@ -167,18 +166,6 @@ describe("shouldSuspendThreadSession", () => {
     { isCloud: false, hasRun: false, hasSession: true },
   ])("keeps an existing or cloud session attached", (input) => {
     expect(shouldSuspendThreadSession(input)).toBe(false);
-  });
-});
-
-describe("isAgentThreadMessage", () => {
-  it.each([
-    { author_kind: "agent", expected: true },
-    { author_kind: "human", expected: false },
-    { author_kind: "system", expected: false },
-    // Older payloads predate agent rows; absent means human.
-    { author_kind: undefined, expected: false },
-  ])("author_kind $author_kind → $expected", ({ author_kind, expected }) => {
-    expect(isAgentThreadMessage({ author_kind })).toBe(expected);
   });
 });
 

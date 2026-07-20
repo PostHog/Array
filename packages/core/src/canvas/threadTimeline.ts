@@ -144,17 +144,6 @@ export function shouldSuspendThreadSession({
 }
 
 /**
- * Agent rows are authorless by design, so anything reading `author` alone sees
- * nobody and calls them "Unknown". `author_kind` is the only thing that says
- * the agent wrote it.
- */
-export function isAgentThreadMessage(message: {
-  author_kind?: string;
-}): boolean {
-  return message.author_kind === "agent";
-}
-
-/**
  * The durable thread messages worth rendering, given the run whose turns the
  * viewer is already watching stream.
  *
