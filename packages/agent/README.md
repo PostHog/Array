@@ -74,15 +74,7 @@ Four modes defined in `src/execution-mode.ts`:
 
 In cloud background mode, permissions are always auto-approved. In interactive mode, the permission system is active and configurable per session. Tool categorization lives in `src/adapters/claude/tools.ts` â€” each tool belongs to a group (read, write, bash, search, web, agent) and modes whitelist groups.
 
-Cloud provisioning can pass `--posthogExecPermissionRegex <regex>` to require
-one-time client approval for matching PostHog MCP `exec` sub-tools in every
-interactive cloud Claude and Codex permission mode. Local Claude `auto` and
-`bypassPermissions` modes remain hands-off. Matching is case-insensitive against
-the delegated name in `call [--json] <sub-tool> ...`. These prompts offer Claude
-users an always-allow choice remembered in local repository settings; Codex
-approvals remain one-time. Background runs keep their existing auto-approval
-behavior. The default is
-`(^|-)(partial-update|update|patch|delete|destroy)(-|$)`.
+Cloud provisioning can pass `--posthogExecPermissionRegex <regex>` to require one-time client approval for matching PostHog MCP `exec` sub-tools in every interactive cloud Claude and Codex permission mode. Non-matching sub-tools never prompt. Locally, hands-off modes stay hands-off: Claude `auto` and `bypassPermissions`, and Codex `auto` and `full-access`, auto-approve matching sub-tools; other local modes prompt. Matching is case-insensitive against the delegated name in `call [--json] <sub-tool> ...`. These prompts offer Claude users an always-allow choice remembered in local repository settings; Codex approvals remain one-time. An invalid or empty regex is logged and falls back to the default. Background runs keep their existing auto-approval behavior. The default is `(^|-)(partial-update|update|patch|delete|destroy)(-|$)`.
 
 ## ACP connection layer
 
@@ -154,10 +146,7 @@ When `POST /command` receives a `user_message`, it doesn't handle it directly â€
 
 ### Permission routing in cloud mode
 
-The `AgentServer` provides the `requestPermission` callback to the
-`ClientSideConnection`. Background mode selects an allow option automatically.
-Interactive mode relays approvals that need a person over SSE and parks them
-until a client responds; other requests follow the selected permission mode.
+The `AgentServer` provides the `requestPermission` callback to the `ClientSideConnection`. Background mode selects an allow option automatically. Interactive mode relays approvals that need a person over SSE and parks them until a client responds; other requests follow the selected permission mode.
 
 ### Checkpoint capture
 

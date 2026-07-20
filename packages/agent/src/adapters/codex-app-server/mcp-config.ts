@@ -31,7 +31,7 @@ export type CodexMcpServerConfig =
  */
 export function toCodexMcpServers(
   servers: McpServer[] | undefined,
-  posthogExecPermissionRegex?: string,
+  options?: { gatePosthogExec?: boolean },
 ): Record<string, CodexMcpServerConfig> | undefined {
   if (!servers || servers.length === 0) {
     return undefined;
@@ -39,8 +39,11 @@ export function toCodexMcpServers(
 
   const out: Record<string, CodexMcpServerConfig> = {};
   for (const server of servers) {
+    // `approval_mode: "prompt"` makes codex ask before every exec call; the
+    // per-sub-tool regex filtering happens in the adapter's approval handlers,
+    // which auto-accept calls the session's permission policy does not gate.
     const policy =
-      posthogExecPermissionRegex &&
+      options?.gatePosthogExec &&
       isPostHogExecDescriptor({ server: server.name, tool: "exec" })
         ? { tools: { exec: { approval_mode: "prompt" as const } } }
         : {};

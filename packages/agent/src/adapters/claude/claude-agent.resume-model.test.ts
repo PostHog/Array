@@ -224,6 +224,41 @@ describe("ClaudeAcpAgent session creation", () => {
     ).resolves.toBe("ask");
   });
 
+  it.each(["[", ""])(
+    "warns and falls back to the default regex when metadata carries the invalid regex %j",
+    async (posthogExecPermissionRegex) => {
+      const agent = makeAgent();
+      const warnSpy = vi.spyOn(agent.logger, "warn");
+
+      await agent.newSession({
+        cwd: permissionCwd,
+        mcpServers: [],
+        _meta: {
+          taskRunId: "run-permission-invalid",
+          posthogExecPermissionRegex,
+        },
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid posthogExecPermissionRegex"),
+        expect.anything(),
+      );
+      expect(createdQueryOptions).toHaveLength(1);
+      await expect(
+        runPostHogExecPreToolUse(
+          createdQueryOptions[0] as Options,
+          "dashboard-update",
+        ),
+      ).resolves.toBe("ask");
+      await expect(
+        runPostHogExecPreToolUse(
+          createdQueryOptions[0] as Options,
+          "dashboard-get",
+        ),
+      ).resolves.toBe("allow");
+    },
+  );
+
   it.each([
     { environment: "local", expectedCloudMode: false },
     { environment: "cloud", expectedCloudMode: true },

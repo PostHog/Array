@@ -323,7 +323,7 @@ describe("Question relay", () => {
             optionId: string,
             customInput?: string,
             answers?: Record<string, string>,
-          ) => boolean;
+          ) => "resolved" | "not_found" | "invalid_option";
         };
         srv.session = {
           payload: TEST_PAYLOAD,
@@ -465,7 +465,10 @@ describe("Question relay", () => {
           options: unknown[];
           toolCall?: unknown;
         }) => Promise<{ outcome: { outcome: string; optionId: string } }>;
-        resolvePermission: (requestId: string, optionId: string) => boolean;
+        resolvePermission: (
+          requestId: string,
+          optionId: string,
+        ) => "resolved" | "not_found" | "invalid_option";
         session: {
           payload: typeof TEST_PAYLOAD;
           sseController: null;
@@ -494,7 +497,7 @@ describe("Question relay", () => {
       expect(request.params.toolCallId).toBe("tool-1");
       const requestId = request.params.requestId;
 
-      expect(srv.resolvePermission(requestId, "allow")).toBe(true);
+      expect(srv.resolvePermission(requestId, "allow")).toBe("resolved");
 
       const resolved = logged("_posthog/permission_resolved");
       expect(resolved).toBeTruthy();

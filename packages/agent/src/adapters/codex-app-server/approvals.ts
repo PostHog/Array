@@ -119,6 +119,17 @@ export interface HandleServerRequestOptions {
   resolveMcpToolCall?: (
     serverName: string,
   ) => { server: string; tool: string; args: unknown } | undefined;
+  /**
+   * When an elicitation gates a known in-flight MCP call, accept it without
+   * prompting if this returns true (e.g. a PostHog exec sub-tool the session's
+   * permission policy does not gate). Elicitations with no resolvable call, or
+   * from other servers, always prompt.
+   */
+  shouldAutoAcceptMcpToolCall?: (mcp: {
+    server: string;
+    tool: string;
+    args: unknown;
+  }) => boolean;
 }
 
 /**
@@ -343,6 +354,9 @@ async function handleMcpElicitation(
   // If the elicitation gates a known in-flight MCP call, carry its real tool +
   // args + `_meta.posthog` so the host renders the proper MCP permission.
   const mcp = opts.resolveMcpToolCall?.(params.serverName);
+  if (mcp && opts.shouldAutoAcceptMcpToolCall?.(mcp)) {
+    return { action: "accept", content: {}, _meta: null };
+  }
   const toolCall = mcp
     ? {
         toolCallId: `${params.serverName}:elicitation`,

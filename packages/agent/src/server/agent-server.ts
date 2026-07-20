@@ -394,6 +394,12 @@ export class AgentServer {
       }) => void;
       toolCallId?: string;
       optionIds: Set<string>;
+      /**
+       * Question responses carry synthetic `option_<idx>`/submit ids built by
+       * the client from the question `_meta`, not from the relayed options, so
+       * the offered-option check must not apply to them.
+       */
+      validateOptionIds: boolean;
     }
   >();
   private readonly posthogExecPermissionRegex: RegExp;
@@ -1245,9 +1251,14 @@ export class AgentServer {
           customInput,
           answers,
         );
-        if (!resolved) {
+        if (resolved === "not_found") {
           throw new Error(
             `No pending permission request found for id: ${requestId}`,
+          );
+        }
+        if (resolved === "invalid_option") {
+          throw new Error(
+            `Option "${optionId}" was not offered for permission request ${requestId}`,
           );
         }
         return { resolved: true };
@@ -4412,11 +4423,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       toolCall: params.toolCall,
     });
 
+    const toolCallMeta = params.toolCall?._meta as
+      | { codeToolKind?: unknown }
+      | undefined;
     return new Promise((resolve) => {
       this.pendingPermissions.set(requestId, {
         resolve,
         toolCallId,
         optionIds: new Set(params.options.map((option) => option.optionId)),
+        validateOptionIds: toolCallMeta?.codeToolKind !== "question",
       });
     });
   }
@@ -4439,10 +4454,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     optionId: string,
     customInput?: string,
     answers?: Record<string, string>,
-  ): boolean {
+  ): "resolved" | "not_found" | "invalid_option" {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return false;
-    if (!pending.optionIds.has(optionId)) return false;
+    if (!pending) return "not_found";
+    // The request stays parked and resolvable — a corrected response with an
+    // offered option can still settle it.
+    if (pending.validateOptionIds && !pending.optionIds.has(optionId)) {
+      return "invalid_option";
+    }
 
     this.pendingPermissions.delete(requestId);
 
@@ -4460,6 +4479,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       outcome: { outcome: "selected" as const, optionId },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     });
-    return true;
+    return "resolved";
   }
 }

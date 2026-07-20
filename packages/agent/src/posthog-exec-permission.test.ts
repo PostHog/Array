@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   compilePostHogExecPermissionRegex,
   DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
@@ -6,6 +6,7 @@ import {
   isPostHogExecDescriptor,
   isPostHogExecTool,
   matchesPostHogExecPermission,
+  resolvePostHogExecPermissionRegex,
 } from "./posthog-exec-permission";
 
 const permissionRegex = compilePostHogExecPermissionRegex(
@@ -81,4 +82,37 @@ describe("configured permission regex", () => {
   it("rejects invalid regex source", () => {
     expect(() => compilePostHogExecPermissionRegex("[")).toThrow();
   });
+});
+
+describe("resolvePostHogExecPermissionRegex", () => {
+  it.each([undefined, null])("compiles the default for %s", (value) => {
+    const onInvalid = vi.fn();
+    const regex = resolvePostHogExecPermissionRegex(value, onInvalid);
+    expect(regex.source).toBe(
+      compilePostHogExecPermissionRegex(
+        DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+      ).source,
+    );
+    expect(onInvalid).not.toHaveBeenCalled();
+  });
+
+  it("compiles a valid custom source case-insensitively", () => {
+    const regex = resolvePostHogExecPermissionRegex("(^|-)archive(-|$)");
+    expect(regex.test("Dashboard-Archive")).toBe(true);
+    expect(regex.test("dashboard-delete")).toBe(false);
+  });
+
+  it.each(["", "[", 42])(
+    "falls back to the default and reports %j as invalid",
+    (value) => {
+      const onInvalid = vi.fn();
+      const regex = resolvePostHogExecPermissionRegex(value, onInvalid);
+      expect(regex.source).toBe(
+        compilePostHogExecPermissionRegex(
+          DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+        ).source,
+      );
+      expect(onInvalid).toHaveBeenCalledTimes(1);
+    },
+  );
 });

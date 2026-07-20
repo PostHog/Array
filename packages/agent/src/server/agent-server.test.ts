@@ -1298,7 +1298,10 @@ describe("AgentServer HTTP Mode", () => {
         eventStreamSender: unknown;
         relayPermissionToClient: (params: unknown) => Promise<unknown>;
         pendingPermissions: Map<string, unknown>;
-        resolvePermission: (requestId: string, optionId: string) => boolean;
+        resolvePermission: (
+          requestId: string,
+          optionId: string,
+        ) => "resolved" | "not_found" | "invalid_option";
         createCloudClient(payload: {
           run_id: string;
           task_id: string;
@@ -1626,14 +1629,52 @@ describe("AgentServer HTTP Mode", () => {
       expect(requestId).toBeDefined();
       expect(
         testServer.resolvePermission(requestId as string, "allow_always"),
-      ).toBe(false);
+      ).toBe("invalid_option");
       expect(testServer.pendingPermissions.has(requestId as string)).toBe(true);
+      expect(testServer.resolvePermission("nope", "allow_once")).toBe(
+        "not_found",
+      );
       expect(
         testServer.resolvePermission(requestId as string, "allow_once"),
-      ).toBe(true);
+      ).toBe("resolved");
       await expect(pending).resolves.toEqual({
         outcome: { outcome: "selected", optionId: "allow_once" },
       });
+    });
+
+    it("distinguishes unknown requests from unoffered options in permission_response errors", async () => {
+      const server = createServer();
+      const testServer = exposeCloudClient(server);
+      const commandServer = server as unknown as {
+        session: unknown;
+        executeCommand(
+          method: string,
+          params: Record<string, unknown>,
+        ): Promise<unknown>;
+      };
+      void testServer.relayPermissionToClient({
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+      });
+      const requestId = [...testServer.pendingPermissions.keys()][0] as string;
+      // Both error paths return before touching the session; the guard at the
+      // top of executeCommand only needs it to exist.
+      commandServer.session = {};
+
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId: "missing",
+          optionId: "allow_once",
+        }),
+      ).rejects.toThrow("No pending permission request found for id: missing");
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId,
+          optionId: "allow_always",
+        }),
+      ).rejects.toThrow(
+        `Option "allow_always" was not offered for permission request ${requestId}`,
+      );
+      expect(testServer.pendingPermissions.has(requestId)).toBe(true);
     });
   });
 

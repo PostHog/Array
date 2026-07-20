@@ -58,7 +58,7 @@ describe("toCodexMcpServers", () => {
     });
   });
 
-  it("prompts for PostHog exec when the permission regex is configured", () => {
+  it("prompts for PostHog exec when gating is enabled", () => {
     const servers = [
       {
         type: "http",
@@ -72,7 +72,7 @@ describe("toCodexMcpServers", () => {
       },
     ] as unknown as McpServer[];
 
-    expect(toCodexMcpServers(servers, "delete|destroy")).toEqual({
+    expect(toCodexMcpServers(servers, { gatePosthogExec: true })).toEqual({
       posthog_cloud: {
         url: "https://mcp.example/mcp",
         tools: { exec: { approval_mode: "prompt" } },
@@ -81,7 +81,7 @@ describe("toCodexMcpServers", () => {
     });
   });
 
-  it("leaves PostHog exec unchanged when no permission regex is configured", () => {
+  it("leaves PostHog exec unchanged when gating is not enabled", () => {
     const servers = [
       {
         type: "http",

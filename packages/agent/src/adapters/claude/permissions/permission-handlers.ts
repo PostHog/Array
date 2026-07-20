@@ -761,6 +761,23 @@ export async function canUseTool(
       return { behavior: "deny", message, interrupt: false };
     }
 
+    // Narration is a fire-and-forget no-op on the agent side; a permission
+    // prompt for it interrupts the user to approve a line they may never hear.
+    // An explicit do_not_use block above still wins.
+    if (toolName === SPEAK_TOOL_ID) {
+      return {
+        behavior: "allow",
+        updatedInput: toolInput as Record<string, unknown>,
+      };
+    }
+
+    // An explicit needs_approval setting always prompts — it must precede the
+    // PostHog exec gate so a remembered sub-tool approval or a local hands-off
+    // mode cannot silently allow a tool the user asked to be asked about.
+    if (approvalState === "needs_approval") {
+      return handleMcpApprovalFlow(context);
+    }
+
     if (session.posthogExecPermissionRegex && isPostHogExecTool(toolName)) {
       const subTool = extractPostHogSubTool(toolInput);
       if (
@@ -792,20 +809,6 @@ export async function canUseTool(
         }
         return handlePostHogExecApprovalFlow(context, subTool);
       }
-    }
-
-    // Narration is a fire-and-forget no-op on the agent side; a permission
-    // prompt for it interrupts the user to approve a line they may never hear.
-    // An explicit do_not_use block above still wins.
-    if (toolName === SPEAK_TOOL_ID) {
-      return {
-        behavior: "allow",
-        updatedInput: toolInput as Record<string, unknown>,
-      };
-    }
-
-    if (approvalState === "needs_approval") {
-      return handleMcpApprovalFlow(context);
     }
   }
 

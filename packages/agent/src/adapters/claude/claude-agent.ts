@@ -57,10 +57,7 @@ import {
   type Enrichment,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
-import {
-  compilePostHogExecPermissionRegex,
-  DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
-} from "../../posthog-exec-permission";
+import { resolvePostHogExecPermissionRegex } from "../../posthog-exec-permission";
 import {
   classifyPostHogExecCall,
   isUnclassifiedPostHogSubTool,
@@ -1954,9 +1951,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       CODE_EXECUTION_MODES.includes(meta.permissionMode as CodeExecutionMode)
         ? (meta.permissionMode as CodeExecutionMode)
         : "default";
-    const posthogExecPermissionRegex = compilePostHogExecPermissionRegex(
-      meta?.posthogExecPermissionRegex ??
-        DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+    const posthogExecPermissionRegex = resolvePostHogExecPermissionRegex(
+      meta?.posthogExecPermissionRegex,
+      (message) =>
+        this.logger.warn(
+          "Invalid posthogExecPermissionRegex in session metadata; using default",
+          { message },
+        ),
     );
 
     const taskState: TaskState = new Map();

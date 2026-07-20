@@ -345,6 +345,55 @@ describe("canUseTool MCP approval enforcement", () => {
     expect(context.client.requestPermission).not.toHaveBeenCalled();
   });
 
+  // An explicit needs_approval MCP setting must win over every exec-gate
+  // shortcut: a remembered sub-tool approval and the local hands-off modes.
+  it.each([
+    {
+      label: "a remembered sub-tool approval",
+      permissionMode: "default" as const,
+      hasApproval: true,
+    },
+    {
+      label: "local auto mode",
+      permissionMode: "auto" as const,
+      hasApproval: false,
+    },
+    {
+      label: "local bypassPermissions mode",
+      permissionMode: "bypassPermissions" as const,
+      hasApproval: false,
+    },
+  ])(
+    "still prompts via the MCP approval flow for a needs_approval exec tool despite $label",
+    async ({ permissionMode, hasApproval }) => {
+      setMcpToolApprovalStates({ mcp__posthog__exec: "needs_approval" });
+
+      const context = createContext("mcp__posthog__exec", {
+        toolInput: { command: "call notebooks-destroy {}" },
+        session: {
+          permissionMode,
+          cloudMode: false,
+          posthogExecPermissionRegex,
+          settingsManager: {
+            getRepoRoot: vi.fn().mockReturnValue("/repo"),
+            hasPostHogExecApproval: vi.fn().mockReturnValue(hasApproval),
+            addPostHogExecApproval: vi.fn(),
+          },
+        },
+      });
+      const result = await canUseTool(context);
+
+      expect(result.behavior).toBe("allow");
+      expect(context.client.requestPermission).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCall: expect.objectContaining({
+            title: "The agent wants to call exec (posthog)",
+          }),
+        }),
+      );
+    },
+  );
+
   it("does not gate matching sub-tools when the regex is not configured", async () => {
     setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
 

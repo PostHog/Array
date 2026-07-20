@@ -30,7 +30,12 @@ import {
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
-import { DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE } from "../../posthog-exec-permission";
+import {
+  extractPostHogSubTool,
+  isPostHogExecDescriptor,
+  matchesPostHogExecPermission,
+  resolvePostHogExecPermissionRegex,
+} from "../../posthog-exec-permission";
 import type { ProcessSpawnedCallback } from "../../types";
 import { ALLOW_BYPASS } from "../../utils/common";
 import { Logger } from "../../utils/logger";
@@ -237,6 +242,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private taskRunId?: string;
   /** Deployment environment; on "cloud" a non-danger sandbox would panic, so we skip the override. */
   private environment?: "local" | "cloud";
+  /** Gates PostHog exec sub-tools; set per session, defaults to the destructive-verbs regex. */
+  private posthogExecPermissionRegex =
+    resolvePostHogExecPermissionRegex(undefined);
   private readonly commandOutputs = new Map<string, string>();
   /** Extra writable roots for this session, folded into workspaceWrite sandbox turns. */
   private additionalDirectories?: string[];
@@ -494,10 +502,17 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         { error: String(err) },
       );
     }
+    this.posthogExecPermissionRegex = resolvePostHogExecPermissionRegex(
+      params.meta?.posthogExecPermissionRegex,
+      (message) =>
+        this.logger.warn(
+          "Invalid posthogExecPermissionRegex in session metadata; using default",
+          { message },
+        ),
+    );
     const mcpServers = toCodexMcpServers(
       [...(params.mcpServers ?? []), ...(localTools ? [localTools] : [])],
-      params.meta?.posthogExecPermissionRegex ??
-        DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+      { gatePosthogExec: true },
     );
     const config = buildThreadConfig(mcpServers, params.additionalDirectories);
 
@@ -1544,6 +1559,36 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   /**
+   * Sub-tool policy for a gated PostHog exec call. Codex's `approval_mode:
+   * "prompt"` gates the whole exec tool, so this is where the configured regex
+   * actually filters: non-matching sub-tools never prompt, and matching ones
+   * stay hands-off in local auto/full-access modes (parity with the Claude
+   * adapter's `!cloudMode && (auto || bypassPermissions)` branch). Cloud
+   * sessions always relay matching sub-tools so AgentServer routes them by the
+   * run's effective mode.
+   */
+  private shouldAutoAcceptPostHogExec(mcp: {
+    server: string;
+    tool: string;
+    args: unknown;
+  }): boolean {
+    if (!isPostHogExecDescriptor({ server: mcp.server, tool: mcp.tool })) {
+      return false;
+    }
+    const subTool = extractPostHogSubTool(mcp.args);
+    if (
+      !subTool ||
+      !matchesPostHogExecPermission(subTool, this.posthogExecPermissionRegex)
+    ) {
+      return true;
+    }
+    return (
+      this.environment !== "cloud" &&
+      (this.config.mode === "auto" || this.config.mode === "full-access")
+    );
+  }
+
+  /**
    * Server-initiated requests. Simple approvals resolve to a `{ decision }` envelope (a bare
    * string is rejected); richer ones (AskUserQuestion / permission profile / elicitation) go
    * to `handleServerRequest`. Whatever we return is sent back as the JSON-RPC result.
@@ -1556,6 +1601,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       sessionId: this.sessionId,
       logger: this.logger,
       resolveMcpToolCall: (serverName) => this.mcp.byServer(serverName),
+      shouldAutoAcceptMcpToolCall: (mcp) =>
+        this.shouldAutoAcceptPostHogExec(mcp),
     });
     if (richer.handled) {
       return richer.response;
@@ -1603,6 +1650,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // Codex has no MCP-specific approval; a known MCP call surfaces the real server/tool/args
     // so the host renders the proper MCP permission (incl. PostHog `exec` unwrapping).
     const mcp = this.mcp.byItemId(detail.itemId);
+    if (mcp && this.shouldAutoAcceptPostHogExec(mcp)) {
+      return { decision: "accept" };
+    }
     // kind + content route plain command/file approvals to Execute/EditPermission (not the fallback).
     const toolCall = mcp
       ? {
