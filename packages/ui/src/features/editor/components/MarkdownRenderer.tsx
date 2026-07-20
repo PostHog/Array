@@ -5,6 +5,7 @@ import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { Divider } from "@posthog/ui/primitives/Divider";
 import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
 import { List, ListItem } from "@posthog/ui/primitives/List";
+import { handleShareLinkClick } from "@posthog/ui/utils/shareLinks";
 import { Blockquote, Checkbox, Code, Kbd, Text } from "@radix-ui/themes";
 import { memo, useMemo } from "react";
 import type { Components } from "react-markdown";
@@ -91,6 +92,7 @@ export const baseComponents: Components = {
       <a
         href={href}
         onClick={(event) => {
+          if (handleShareLinkClick(href, event)) return;
           if (!isDeeplink || !href) return;
           event.preventDefault();
           openExternalUrl(href);

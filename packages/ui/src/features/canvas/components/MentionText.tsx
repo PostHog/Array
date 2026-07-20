@@ -1,5 +1,6 @@
 import { splitMentionSegments } from "@posthog/shared";
 import { splitLinkSegments } from "@posthog/ui/features/canvas/utils/linkify";
+import { handleShareLinkClick } from "@posthog/ui/utils/shareLinks";
 import { Fragment, useMemo } from "react";
 import "./mention-chip.css";
 
@@ -105,6 +106,7 @@ export function MentionText({
             <a
               key={key}
               href={segment.href}
+              onClick={(event) => handleShareLinkClick(segment.href, event)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[var(--accent-11)] underline underline-offset-2 hover:text-[var(--accent-12)]"
