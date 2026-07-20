@@ -716,7 +716,11 @@ export function ChannelFeedView({
   const latestPendingId = pending[pending.length - 1]?.id;
 
   return (
-    <ChatMessageScrollerProvider defaultScrollPosition="end">
+    // Keyed by channel: switching channels swaps the content without a route
+    // remount, but the scroller only applies defaultScrollPosition once per
+    // mount — an un-keyed provider would keep the previous channel's scroll
+    // offset instead of landing at the latest message.
+    <ChatMessageScrollerProvider key={channelId} defaultScrollPosition="end">
       <FollowOwnPost latestPendingId={latestPendingId} />
       <ChatMessageScroller className="min-h-0 flex-1">
         <ChatMessageScrollerViewport>
