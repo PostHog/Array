@@ -482,6 +482,7 @@ function ThreadConversation({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary,
+  showAgentComms,
 }: {
   task: Task;
   channelId: string;
@@ -489,6 +490,7 @@ function ThreadConversation({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary: boolean;
+  showAgentComms: boolean;
 }) {
   const taskId = task.id;
   const client = useOptionalAuthenticatedClient();
@@ -557,8 +559,8 @@ function ThreadConversation({
   const timeline = useMemo(
     () =>
       buildThreadTimeline({
-        prompts: promptMsgs,
-        agentMessages: agentMsgs,
+        prompts: showAgentComms ? promptMsgs : [],
+        agentMessages: showAgentComms ? agentMsgs : [],
         humanMessages: messages.map((message) => ({
           id: message.id,
           content: message.content,
@@ -567,7 +569,7 @@ function ThreadConversation({
           value: message,
         })),
       }),
-    [promptMsgs, messages, agentMsgs],
+    [promptMsgs, messages, agentMsgs, showAgentComms],
   );
 
   const lastAgentId = agentMsgs[agentMsgs.length - 1]?.id;
@@ -680,7 +682,9 @@ function ThreadConversation({
         />
       </div>
 
-      {agentStatus && <AgentStatusLine status={agentStatus} />}
+      {showAgentComms && agentStatus && (
+        <AgentStatusLine status={agentStatus} />
+      )}
 
       <ThreadReplyComposer
         draft={draft}
@@ -704,6 +708,7 @@ export function ThreadPanel({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary = true,
+  showAgentComms = true,
 }: {
   taskId: string;
   channelId: string;
@@ -713,6 +718,7 @@ export function ThreadPanel({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  showAgentComms?: boolean;
 }) {
   const { data: fetchedTask } = useQuery({
     ...taskDetailQuery(taskId),
@@ -747,6 +753,7 @@ export function ThreadPanel({
       onToggleCollapsed={onToggleCollapsed}
       onOpenFull={onOpenFull}
       showTaskSummary={showTaskSummary}
+      showAgentComms={showAgentComms}
     />
   );
 }

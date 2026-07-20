@@ -73,6 +73,7 @@ function ChannelTaskDetailRoute() {
         channelId={channelId}
         task={task}
         showTaskSummary={false}
+        showAgentComms={false}
       />
     </div>
   );

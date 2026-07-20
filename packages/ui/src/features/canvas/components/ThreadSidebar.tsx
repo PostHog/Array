@@ -17,6 +17,7 @@ export function ThreadSidebar({
   onClose,
   onOpenFull,
   showTaskSummary,
+  showAgentComms = true,
 }: {
   taskId: string;
   channelId: string;
@@ -25,6 +26,8 @@ export function ThreadSidebar({
   onClose?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  /** Show agent turns/prompts and the agent status line. Off on the full task view, where the agent session already lives next to the thread. */
+  showAgentComms?: boolean;
 }) {
   const collapsed = useThreadPanelStore((s) => s.collapsed);
   const width = useThreadPanelStore((s) => s.width);
@@ -49,6 +52,7 @@ export function ThreadSidebar({
         task={task}
         collapsed
         onToggleCollapsed={() => toggleCollapsed(false)}
+        showAgentComms={showAgentComms}
       />
     );
   }
@@ -70,6 +74,7 @@ export function ThreadSidebar({
         onToggleCollapsed={() => toggleCollapsed(true)}
         onOpenFull={onOpenFull}
         showTaskSummary={showTaskSummary}
+        showAgentComms={showAgentComms}
       />
     </ResizableSidebar>
   );
