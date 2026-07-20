@@ -1,8 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { z } from "zod";
-import { PostHogAPIClient } from "../../../posthog-api";
+import {
+  DesktopCanvasVersionConflictError,
+  PostHogAPIClient,
+} from "../../../posthog-api";
 import { resolveSandboxPosthogApi } from "../../../signed-commit-artefacts";
 import { defineLocalTool, type LocalToolResult } from "../registry";
 
@@ -15,15 +17,11 @@ import { defineLocalTool, type LocalToolResult } from "../registry";
  *   deterministic scratch path tool-side (no model transcription), and stashes
  *   the fetched `currentVersionId` as the publish-time concurrency base.
  * - `canvas_publish` reads the scratch file from disk (again, no
- *   transcription), verifies the canvas hasn't moved past the stashed base
- *   (a concurrent edit or user undo), appends a full-file version snapshot,
- *   and PATCHes the merged meta — mirroring `dashboardsService.saveFreeform`
- *   in `@posthog/core`, including the linear-discard of any redo tail.
- *
- * The check-then-PATCH guard is tool-side and therefore not atomic; it shrinks
- * the clobber window from "the whole generation turn" to milliseconds. A
- * server-side `base_version` check on the desktop-fs PATCH remains the
- * follow-up that closes it completely.
+ *   transcription) and publishes through the desktop-fs canvas action, which
+ *   owns version composition server-side. The stashed base rides along as
+ *   `expected_current_version_id`, so a publish based on a stale read (a
+ *   concurrent edit, or a user's undo) is rejected atomically with a version
+ *   conflict instead of clobbering the newer head.
  *
  * Credentials come from the sandbox environment (see
  * `resolveSandboxPosthogApi`), so this works identically from the Claude
@@ -47,19 +45,9 @@ function baseVersionMarkerFile(canvasId: string): string {
   return path.join(canvasScratchDir(canvasId), ".base-version.json");
 }
 
-interface CanvasVersion {
-  id: string;
-  code: string;
-  context?: string;
-  prompt?: string;
-  createdAt: number;
-}
-
 interface CanvasMeta {
   code?: string;
-  versions?: CanvasVersion[];
   currentVersionId?: string;
-  updatedAt?: number;
   [key: string]: unknown;
 }
 
@@ -104,17 +92,6 @@ async function fetchCanvasEntry(canvasId: string): Promise<CanvasFsEntry> {
   return entry;
 }
 
-async function patchCanvasMeta(
-  canvasId: string,
-  meta: CanvasMeta,
-): Promise<void> {
-  const client = createClient();
-  if (!client) {
-    throw new Error("No PostHog credentials available in this session.");
-  }
-  await client.patchDesktopFsEntryMeta(canvasId, meta);
-}
-
 function readMarker(canvasId: string): BaseVersionMarker | undefined {
   try {
     return JSON.parse(
@@ -128,47 +105,6 @@ function readMarker(canvasId: string): BaseVersionMarker | undefined {
 function writeMarker(canvasId: string, marker: BaseVersionMarker): void {
   mkdirSync(canvasScratchDir(canvasId), { recursive: true });
   writeFileSync(baseVersionMarkerFile(canvasId), JSON.stringify(marker));
-}
-
-/**
- * Compose the published meta from a freshly-fetched entry: verify the base,
- * truncate any redo tail past the current pointer (linear-discard, matching
- * the client's undo semantics in `freeformSchemas.ts`), and append the new
- * full-file snapshot. Pure — exported for tests.
- */
-export function composePublishedMeta(input: {
-  freshMeta: CanvasMeta;
-  baseVersionId: string | undefined;
-  code: string;
-  prompt?: string;
-  now: number;
-}): { ok: true; meta: CanvasMeta; versionId: string } | { ok: false } {
-  const { freshMeta, baseVersionId, code, prompt, now } = input;
-  if ((freshMeta.currentVersionId ?? undefined) !== baseVersionId) {
-    return { ok: false };
-  }
-  const versions = freshMeta.versions ?? [];
-  const pointer = baseVersionId
-    ? versions.findIndex((v) => v.id === baseVersionId)
-    : -1;
-  const kept = pointer >= 0 ? versions.slice(0, pointer + 1) : [];
-  const version: CanvasVersion = {
-    id: randomUUID(),
-    code,
-    ...(prompt ? { prompt } : {}),
-    createdAt: now,
-  };
-  return {
-    ok: true,
-    versionId: version.id,
-    meta: {
-      ...freshMeta,
-      code,
-      versions: [...kept, version],
-      currentVersionId: version.id,
-      updatedAt: now,
-    },
-  };
 }
 
 function errorResult(text: string): LocalToolResult {
@@ -221,8 +157,8 @@ export const canvasCheckoutTool = defineLocalTool({
 export const canvasPublishTool = defineLocalTool({
   name: "canvas_publish",
   description:
-    "Publish the checked-out canvas: reads the scratch file written by canvas_checkout, verifies the " +
-    "canvas hasn't changed since checkout, and saves the file as the canvas's new live version. Call " +
+    "Publish the checked-out canvas: reads the scratch file written by canvas_checkout and saves it as " +
+    "the canvas's new live version, guarded against the canvas having changed since checkout. Call " +
     "exactly once when the edit is complete. On a version-conflict error, re-run canvas_checkout, " +
     "re-apply your edits, and publish again.",
   schema: {
@@ -256,36 +192,38 @@ export const canvasPublishTool = defineLocalTool({
         `canvas_publish failed: no checkout record for canvas "${args.id}". Call canvas_checkout first.`,
       );
     }
+    const client = createClient();
+    if (!client) {
+      return errorResult(
+        "canvas_publish failed: no PostHog credentials available in this session.",
+      );
+    }
     try {
-      const fresh = await fetchCanvasEntry(args.id);
-      const composed = composePublishedMeta({
-        freshMeta: fresh.meta ?? {},
-        baseVersionId: marker.versionId,
+      const entry = await client.publishDesktopCanvas<CanvasFsEntry>(args.id, {
         code,
         prompt: args.prompt,
-        now: Date.now(),
+        expectedCurrentVersionId: marker.versionId ?? null,
       });
-      if (!composed.ok) {
-        return errorResult(
-          `canvas_publish failed: ${CONFLICT_MESSAGE(args.id)}`,
-        );
-      }
-      await patchCanvasMeta(args.id, composed.meta);
       // Advance the base so a follow-up publish in the same session works
       // without a re-checkout.
-      writeMarker(args.id, {
-        versionId: composed.versionId,
-        fetchedAt: Date.now(),
-      });
+      const newVersionId = entry.meta?.currentVersionId;
+      writeMarker(args.id, { versionId: newVersionId, fetchedAt: Date.now() });
       return {
         content: [
           {
             type: "text",
-            text: `Published canvas "${args.id}" (new version ${composed.versionId}). The canvas is live; do not paste the code into chat.`,
+            text: `Published canvas "${args.id}"${
+              newVersionId ? ` (new version ${newVersionId})` : ""
+            }. The canvas is live; do not paste the code into chat.`,
           },
         ],
       };
     } catch (err) {
+      if (err instanceof DesktopCanvasVersionConflictError) {
+        return errorResult(
+          `canvas_publish failed: ${CONFLICT_MESSAGE(args.id)}`,
+        );
+      }
       return errorResult(
         `canvas_publish failed: ${err instanceof Error ? err.message : String(err)}`,
       );

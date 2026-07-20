@@ -63,6 +63,14 @@ export type TaskRunUpdate = Partial<
   state_remove_keys?: string[];
 };
 
+/** A guarded canvas publish was based on a stale version (409 from the API). */
+export class DesktopCanvasVersionConflictError extends Error {
+  constructor(readonly currentVersionId: string | null) {
+    super("Canvas version conflict: the canvas changed since it was read.");
+    this.name = "DesktopCanvasVersionConflictError";
+  }
+}
+
 export class PostHogAPIClient {
   private config: PostHogAPIConfig;
 
@@ -357,22 +365,50 @@ export class PostHogAPIClient {
   }
 
   /**
-   * PATCH a desktop file system entry's meta blob (the endpoint stores the
-   * sent meta verbatim, so callers merge into the previously-fetched meta —
-   * the same read-modify-write contract as `dashboardsService` in core).
+   * Publish a freeform canvas's source via the desktop-fs canvas action. The
+   * server owns version composition (appends the full-file snapshot, moves
+   * `currentVersionId`, truncates any redo tail) and rejects a publish whose
+   * `expectedCurrentVersionId` no longer matches the live head with a 409 —
+   * surfaced as DesktopCanvasVersionConflictError. Backends predating the
+   * guard ignore the field and publish unguarded, so this degrades gracefully.
    */
-  async patchDesktopFsEntryMeta<T>(
+  async publishDesktopCanvas<T>(
     entryId: string,
-    meta: Record<string, unknown>,
+    input: {
+      code: string;
+      prompt?: string;
+      /** The head version the code was based on; null when it was empty. */
+      expectedCurrentVersionId: string | null;
+    },
   ): Promise<T> {
     const teamId = this.getTeamId();
-    return this.apiRequest<T>(
-      `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(entryId)}/`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ meta }),
-      },
+    const body: Record<string, unknown> = {
+      code: input.code,
+      expected_current_version_id: input.expectedCurrentVersionId,
+    };
+    if (input.prompt) {
+      body.prompt = input.prompt;
+    }
+    const response = await this.performRequestWithRetry(
+      `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(entryId)}/canvas/`,
+      { method: "PATCH", body: JSON.stringify(body) },
     );
+    if (response.status === 409) {
+      let currentVersionId: string | null = null;
+      try {
+        const parsed = (await response.json()) as {
+          current_version_id?: string | null;
+        };
+        currentVersionId = parsed.current_version_id ?? null;
+      } catch {
+        // Conflict body unavailable — the status alone carries the signal.
+      }
+      throw new DesktopCanvasVersionConflictError(currentVersionId);
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to publish canvas (${response.status})`);
+    }
+    return response.json() as Promise<T>;
   }
 
   /** Signal reports the given task is associated with (via report task associations). */
