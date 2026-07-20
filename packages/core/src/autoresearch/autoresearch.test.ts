@@ -1030,13 +1030,22 @@ describe("AutoresearchService", () => {
     });
 
     it("resume waits for the agent when a turn is in flight", () => {
+      vi.setSystemTime(1_000);
       const run = service.startRun(baseConfig);
+
+      vi.setSystemTime(11_000);
       service.pauseRun(run.id);
       beginTurn();
       sentPrompts = [];
 
+      vi.setSystemTime(31_000);
       service.resumeRun(run.id);
       expect(sentPrompts).toHaveLength(0);
+      expect(activeRun().pausedAt).toBeNull();
+      expect(activeRun().pausedDurationMs).toBe(20_000);
+      expect(activeRun().pauseIntervals).toEqual([
+        { startedAt: 11_000, endedAt: 31_000 },
+      ]);
 
       completeTurn(reportText(10));
       expect(activeRun().iterations).toHaveLength(1);

@@ -196,6 +196,8 @@ export function parseStoredAutoresearchRun(
     ...run,
     status: "interrupted",
     interruptedReason: "app-restart",
+    pausedAt: Date.now(),
+    pausedDurationMs: run.pausedDurationMs ?? 0,
   };
 }
 
