@@ -43,6 +43,12 @@ export function DiffSettingsMenu({
   const toggleShowReviewComments = useDiffViewerStore(
     (s) => s.toggleShowReviewComments,
   );
+  const handleToggleReviewComments = () => {
+    if (showReviewComments && commentFilter !== "none") {
+      onCommentFilterChange?.("none");
+    }
+    toggleShowReviewComments();
+  };
 
   return (
     <DropdownMenu>
@@ -78,10 +84,10 @@ export function DiffSettingsMenu({
           {hideWhitespaceChanges ? "Show whitespace" : "Hide whitespace"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={toggleShowReviewComments}>
+        <DropdownMenuItem onClick={handleToggleReviewComments}>
           {showReviewComments ? "Hide review comments" : "Show review comments"}
         </DropdownMenuItem>
-        {onCommentFilterChange && (
+        {showReviewComments && onCommentFilterChange && (
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               Comment filter
