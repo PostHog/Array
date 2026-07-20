@@ -12,6 +12,7 @@ export type SettingsCategory =
   | "shortcuts"
   | "github"
   | "slack"
+  | "linear"
   | "signals"
   | "updates"
   | "advanced"
@@ -31,6 +32,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   "shortcuts",
   "github",
   "slack",
+  "linear",
   "signals",
   "updates",
   "advanced",

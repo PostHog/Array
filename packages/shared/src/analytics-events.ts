@@ -349,12 +349,16 @@ export interface DeepLinkNewTaskProperties {
   has_repo: boolean;
   mode?: string;
   model?: string;
+  source?: string;
+  issue_identifier?: string;
+  prompt_length_chars?: number;
 }
 
 export interface DeepLinkPlanProperties {
   has_repo: boolean;
   mode?: string;
   model?: string;
+  source?: string;
   plan_length_chars: number;
 }
 
@@ -364,6 +368,7 @@ export interface DeepLinkIssueProperties {
   issue_number: number;
   mode?: string;
   model?: string;
+  source?: string;
 }
 
 export interface DeepLinkIssueFailedProperties {

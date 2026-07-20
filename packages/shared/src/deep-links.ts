@@ -102,10 +102,17 @@ export interface NewTaskSharedParams {
   repo?: string;
   mode?: string;
   model?: string;
+  /** Attribution for links launched by an external tool, e.g. "linear". */
+  source?: string;
 }
 
 export type NewTaskLinkPayload =
-  | ({ action: "new"; prompt?: string } & NewTaskSharedParams)
+  | ({
+      action: "new";
+      prompt?: string;
+      /** External issue identifier carried for attribution, e.g. a Linear "ENG-123". */
+      issueIdentifier?: string;
+    } & NewTaskSharedParams)
   | ({ action: "plan"; plan: string } & NewTaskSharedParams)
   | ({
       action: "issue";

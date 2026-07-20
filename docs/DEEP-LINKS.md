@@ -28,6 +28,8 @@ Open the new-task input, optionally pre-filled.
 | `repo` | No* | Cloud repository slug (e.g. `posthog/posthog`) |
 | `mode` | No | Initial mode for the task (ignored unless it matches a known mode) |
 | `model` | No | Initial model for the task (ignored unless it matches a known model) |
+| `source` | No | Attribution for the launching tool (e.g. `linear`), recorded in analytics |
+| `issue` | No | External issue identifier (e.g. a Linear `ENG-123`), carried for attribution — not fetched |
 
 *At least one of `prompt` or `repo` must be present. `mode` and `model` alone are not enough to open a task with meaningful context.
 
@@ -35,6 +37,16 @@ Open the new-task input, optionally pre-filled.
 posthog-code://new?prompt=Fix%20the%20login%20bug&repo=posthog%2Fposthog
 posthog-code://new?repo=posthog%2Fposthog&model=claude-opus-4-7&mode=plan
 ```
+
+#### Using PostHog Code as a Linear custom coding tool
+
+Linear can open issues directly in PostHog Code. In Linear, go to **Settings → Code & reviews**, add a **custom coding tool**, and use this URL template (replace `OWNER/REPO` with your repository):
+
+```
+posthog-code://new?repo=OWNER/REPO&source=linear&issue={{issue.identifier}}&prompt={{context}}
+```
+
+`{{issue.identifier}}` and `{{context}}` are Linear template variables substituted at launch — `{{context}}` carries the full issue description, comments, and linked references, so the new-task composer opens pre-filled with everything needed. Keep `prompt` as the **last** parameter: very large issue contexts can be truncated by OS-level URL length limits (notably on Windows), and with `prompt` last only prompt text is clipped, never `repo`/`source`/`issue`. Dev builds use `posthog-code-dev://` instead. The same template is available to copy in **Settings → Linear** inside the app.
 
 ### `posthog-code://plan`
 

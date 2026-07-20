@@ -170,6 +170,53 @@ describe("NewTaskLinkService", () => {
         model: "opus",
       });
     });
+
+    it("parses source and issue params", () => {
+      const listener = vi.fn();
+      service.on(NewTaskLinkEvent.Action, listener);
+
+      const result = mockDeepLink._invoke(
+        "new",
+        new URLSearchParams(
+          "repo=org/repo&source=linear&issue=ENG-123&prompt=ctx",
+        ),
+      );
+
+      expect(result).toBe(true);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "new",
+          prompt: "ctx",
+          repo: "org/repo",
+          source: "linear",
+          issueIdentifier: "ENG-123",
+        }),
+      );
+    });
+
+    it("rejects source and issue without prompt or repo", () => {
+      const result = mockDeepLink._invoke(
+        "new",
+        new URLSearchParams("source=linear&issue=ENG-123"),
+      );
+      expect(result).toBe(false);
+    });
+
+    it("round-trips encoded newlines and unicode in prompt", () => {
+      const listener = vi.fn();
+      service.on(NewTaskLinkEvent.Action, listener);
+
+      const prompt = "Fix login 🐛\n\nSee comments — café";
+      const result = mockDeepLink._invoke(
+        "new",
+        new URLSearchParams(`prompt=${encodeURIComponent(prompt)}`),
+      );
+
+      expect(result).toBe(true);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt }),
+      );
+    });
   });
 
   describe("handlePlan", () => {

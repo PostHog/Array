@@ -46,6 +46,9 @@ export class NewTaskLinkResolver {
           has_repo: !!payload.repo,
           mode: payload.mode,
           model: payload.model,
+          source: payload.source,
+          issue_identifier: payload.issueIdentifier,
+          prompt_length_chars: payload.prompt?.length,
         },
       },
     };
@@ -68,6 +71,7 @@ export class NewTaskLinkResolver {
           has_repo: !!payload.repo,
           mode: payload.mode,
           model: payload.model,
+          source: payload.source,
           plan_length_chars: payload.plan.length,
         },
       },
@@ -141,6 +145,7 @@ export class NewTaskLinkResolver {
           issue_number: payload.issueNumber,
           mode: payload.mode,
           model: payload.model,
+          source: payload.source,
         },
       },
     };

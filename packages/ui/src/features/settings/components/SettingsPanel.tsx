@@ -10,6 +10,7 @@ import {
   Folder,
   GearSix,
   GithubLogo,
+  Kanban,
   Keyboard,
   Palette,
   SignOut,
@@ -33,6 +34,7 @@ import { DiscordSettings } from "@posthog/ui/features/settings/sections/DiscordS
 import { EnvironmentsSettings } from "@posthog/ui/features/settings/sections/environments/EnvironmentsSettings";
 import { GeneralSettings } from "@posthog/ui/features/settings/sections/GeneralSettings";
 import { GitHubSettings } from "@posthog/ui/features/settings/sections/GitHubSettings";
+import { LinearSettings } from "@posthog/ui/features/settings/sections/LinearSettings";
 import { NotificationsSettings } from "@posthog/ui/features/settings/sections/NotificationsSettings";
 import { PersonalizationSettings } from "@posthog/ui/features/settings/sections/PersonalizationSettings";
 import { PlanUsageSettings } from "@posthog/ui/features/settings/sections/PlanUsageSettings";
@@ -76,6 +78,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
   { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
+  { id: "linear", label: "Linear", icon: <Kanban size={16} /> },
   { id: "discord", label: "Discord", icon: <DiscordLogo size={16} /> },
   { id: "signals", label: "Self-driving", icon: <TrafficSignal size={16} /> },
   { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
@@ -92,6 +95,7 @@ const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
   "claude-code",
   "discord",
   "updates",
+  "linear",
 ]);
 
 const CATEGORY_TITLES: Record<SettingsCategory, string> = {
@@ -108,6 +112,7 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   shortcuts: "Shortcuts",
   github: "GitHub",
   slack: "Slack integration",
+  linear: "Linear",
   discord: "Discord",
   signals: "Self-driving",
   updates: "Updates",
@@ -128,6 +133,7 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   shortcuts: ShortcutsSettings,
   github: GitHubSettings,
   slack: SlackSettings,
+  linear: LinearSettings,
   discord: DiscordSettings,
   // Slack notification config lives in the dedicated Slack section; the Signals
   // section links out to it rather than duplicating the controls.

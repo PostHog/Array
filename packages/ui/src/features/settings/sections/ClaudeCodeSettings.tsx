@@ -1,51 +1,20 @@
-import { ArrowSquareOut, Check, Copy, Warning } from "@phosphor-icons/react";
+import { ArrowSquareOut, Warning } from "@phosphor-icons/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { CopyableCommand } from "@posthog/ui/features/settings/CopyableCommand";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import { PermissionsSettings } from "@posthog/ui/features/settings/sections/PermissionsSettings";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { track } from "@posthog/ui/shell/analytics";
 import {
   AlertDialog,
   Button,
   Callout,
   Flex,
-  IconButton,
   Link,
   Switch,
   Text,
 } from "@radix-ui/themes";
 import { useCallback, useState } from "react";
-
-function CopyableCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(command);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [command]);
-
-  return (
-    <Flex
-      align="center"
-      gap="2"
-      className="rounded border border-gray-6 bg-gray-2 px-2 py-1"
-    >
-      <Text className="text-[13px] text-gray-11">{command}</Text>
-      <Tooltip content={copied ? "Copied!" : "Copy"}>
-        <IconButton
-          variant="ghost"
-          size="1"
-          color={copied ? "green" : "gray"}
-          onClick={handleCopy}
-        >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-        </IconButton>
-      </Tooltip>
-    </Flex>
-  );
-}
 
 function SettingDescription({
   text,

@@ -47,6 +47,34 @@ describe("NewTaskLinkResolver", () => {
     expect(result.analytics.event).toBe(ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK);
     if (result.analytics.event !== ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK) return;
     expect(result.analytics.properties.has_prompt).toBe(true);
+    expect(result.analytics.properties.source).toBeUndefined();
+    expect(result.analytics.properties.issue_identifier).toBeUndefined();
+  });
+
+  it("carries source and issue identifier into analytics without touching navigation", async () => {
+    const resolver = makeResolver(vi.fn());
+    const payload: NewTaskLinkPayload = {
+      action: "new",
+      prompt: "do a thing",
+      repo: "acme/web",
+      source: "linear",
+      issueIdentifier: "ENG-123",
+    };
+
+    const result = await resolver.resolve(payload);
+
+    expect(result.kind).toBe("navigate");
+    if (result.kind !== "navigate") return;
+    expect(result.navigation).toEqual({
+      initialPrompt: "do a thing",
+      initialCloudRepository: "acme/web",
+      initialModel: undefined,
+      initialMode: undefined,
+    });
+    if (result.analytics.event !== ANALYTICS_EVENTS.DEEP_LINK_NEW_TASK) return;
+    expect(result.analytics.properties.source).toBe("linear");
+    expect(result.analytics.properties.issue_identifier).toBe("ENG-123");
+    expect(result.analytics.properties.prompt_length_chars).toBe(10);
   });
 
   it("uses the decoded plan as the prompt for a plan-action payload", async () => {

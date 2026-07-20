@@ -59,12 +59,14 @@ export class NewTaskLinkService extends TypedEventEmitter<NewTaskLinkEvents> {
       repo: params.get("repo") ?? undefined,
       mode: params.get("mode") ?? undefined,
       model: params.get("model") ?? undefined,
+      source: params.get("source") ?? undefined,
     };
   }
 
   private handleNew(params: URLSearchParams): boolean {
     const shared = this.extractSharedParams(params);
     const prompt = params.get("prompt") ?? undefined;
+    const issueIdentifier = params.get("issue") ?? undefined;
 
     if (!prompt && !shared.repo) {
       this.log.warn("New task link requires at least prompt or repo");
@@ -74,12 +76,16 @@ export class NewTaskLinkService extends TypedEventEmitter<NewTaskLinkEvents> {
     const payload: NewTaskLinkPayload = {
       action: "new",
       prompt,
+      issueIdentifier,
       ...shared,
     };
 
     this.log.info("Handling new task link", {
       hasPrompt: !!prompt,
+      promptLength: prompt?.length,
       repo: shared.repo,
+      source: shared.source,
+      hasIssue: !!issueIdentifier,
     });
     return this.emitOrQueue(payload);
   }
