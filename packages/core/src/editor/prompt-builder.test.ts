@@ -27,6 +27,13 @@ describe("buildChannelContextText", () => {
     const block = buildChannelContextBlock("# Billing", "billing");
     expect(block).toEqual({ type: "text", text });
   });
+
+  it("instructs the agent to correct stale facts via the PostHog MCP", () => {
+    const text = buildChannelContextText("# Billing", "billing");
+    expect(text).toContain("out of date");
+    expect(text).toContain("desktop-file-system-instructions-partial-update");
+    expect(text).toContain("base_version");
+  });
 });
 
 describe("buildCustomInstructionsText", () => {
