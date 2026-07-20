@@ -51,7 +51,8 @@ export type BuiltInCompletionSound =
   | "slide"
   | "switch"
   | "wilhelm"
-  | "icq";
+  | "icq"
+  | "msn";
 
 // A user-installed sound is selected by referencing its id as `custom:<id>`.
 export type CompletionSound =
