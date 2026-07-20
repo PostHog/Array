@@ -3139,6 +3139,10 @@ export class AgentServer {
     ].join("\n");
   }
 
+  private buildExistingPrCheckoutInstruction(prUrl: string): string {
+    return `Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.`;
+  }
+
   private buildDetectedPrContext(prUrl: string): string {
     if (!this.shouldAutoPublishCloudChanges()) {
       return (
@@ -3152,7 +3156,7 @@ export class AgentServer {
       `IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.\n` +
       `You already have an open pull request: ${prUrl}\n` +
       `You MUST:\n` +
-      `1. Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.\n` +
+      `1. ${this.buildExistingPrCheckoutInstruction(prUrl)}\n` +
       `2. Make changes, commit, and push to that branch\n` +
       `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
     );
@@ -3283,7 +3287,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 This task already has an open pull request: ${prUrl}
 
 After completing the requested changes:
-1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
+1. ${this.buildExistingPrCheckoutInstruction(prUrl)}
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
    - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:

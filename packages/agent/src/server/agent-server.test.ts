@@ -3504,8 +3504,12 @@ describe("AgentServer HTTP Mode", () => {
         "https://github.com/org/repo/pull/1",
       );
       expect(prompt).toContain(
-        "gh pr checkout https://github.com/org/repo/pull/1",
+        "If it is not already checked out, check it out with `gh pr checkout https://github.com/org/repo/pull/1`",
       );
+      expect(prompt).toContain(
+        "Do not check it out again when it is already active",
+      );
+      expect(prompt).not.toContain("Check out the existing PR branch");
       expect(prompt).toContain("git_signed_commit");
       expect(prompt).toContain("Committing (signed commits required)");
       expect(prompt).not.toContain("Create a draft pull request");
