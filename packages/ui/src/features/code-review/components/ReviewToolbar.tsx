@@ -125,11 +125,12 @@ export const ReviewToolbar = memo(function ReviewToolbar({
           >
             <Button
               size="icon-sm"
+              variant={showCommentedFilesOnly ? "primary" : "default"}
               onClick={onToggleCommentedFilesOnly}
               disabled={commentedFileCount === 0 && !showCommentedFilesOnly}
               aria-label="Filter files with comments"
               aria-pressed={showCommentedFilesOnly}
-              className={`rounded-xs ${showCommentedFilesOnly ? "bg-(--gray-4)" : ""}`}
+              className="rounded-xs"
             >
               <ChatCircle
                 size={14}
