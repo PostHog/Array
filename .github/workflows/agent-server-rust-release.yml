@@ -46,7 +46,7 @@ jobs:
         working-directory: rust
         run: |
           cargo build --release --target ${{ matrix.target }} \
-            --bin agent-server --bin claude-acp-driver
+            --bin agent-server --bin claude-acp-driver --bin codex-acp-driver
 
       - name: Stage artifacts
         run: |
@@ -55,6 +55,8 @@ jobs:
             dist/agent-server-${{ matrix.target }}
           cp rust/target/${{ matrix.target }}/release/claude-acp-driver \
             dist/claude-acp-driver-${{ matrix.target }}
+          cp rust/target/${{ matrix.target }}/release/codex-acp-driver \
+            dist/codex-acp-driver-${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -62,6 +64,7 @@ jobs:
           path: |
             dist/agent-server-${{ matrix.target }}
             dist/claude-acp-driver-${{ matrix.target }}
+            dist/codex-acp-driver-${{ matrix.target }}
           if-no-files-found: error
 
   release:
@@ -77,7 +80,7 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum agent-server-* claude-acp-driver-* > SHA256SUMS
+        run: sha256sum agent-server-* claude-acp-driver-* codex-acp-driver-* > SHA256SUMS
 
       - name: Create release
         env:
@@ -86,5 +89,5 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
             --title "Rust agent-server ${{ github.ref_name }}" \
-            --notes "Static musl builds of the Rust agent-server and Claude ACP driver (see rust/README.md). Install pinned + SHA256-verified in the sandbox image." \
-            dist/agent-server-* dist/claude-acp-driver-* dist/SHA256SUMS
+            --notes "Static musl builds of the Rust agent-server and the Claude/codex ACP drivers (see rust/README.md). Install pinned + SHA256-verified in the sandbox image." \
+            dist/agent-server-* dist/claude-acp-driver-* dist/codex-acp-driver-* dist/SHA256SUMS

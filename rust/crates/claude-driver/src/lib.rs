@@ -22,16 +22,12 @@
 //! - SDK→ACP conversion: `adapters/claude/conversion/*`
 //! - Signed-git tools: `adapters/signed-commit-shared.ts` + `@posthog/git/signed-commit`
 
-pub mod artefacts;
 pub mod cli;
 pub mod convert;
 pub mod driver;
 pub mod error_class;
-pub mod gh;
 pub mod instructions;
-pub mod mcp;
 pub mod prompt;
-pub mod signed_git;
 pub mod transport;
 
 pub fn driver_version() -> String {

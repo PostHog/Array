@@ -28,7 +28,7 @@ pub struct SidecarContext<'a> {
 
 pub fn spawn_adapter(ctx: &SidecarContext) -> std::io::Result<SpawnedAdapter> {
     let config = ctx.config;
-    let sidecar_config = json!({
+    let mut sidecar_config = json!({
         "taskId": config.task_id,
         "taskRunId": config.run_id,
         "deviceType": "cloud",
@@ -39,6 +39,20 @@ pub fn spawn_adapter(ctx: &SidecarContext) -> std::io::Result<SpawnedAdapter> {
             "projectId": config.project_id,
         },
     });
+    // Codex adapters take model/effort at spawn level (the app-server has no
+    // per-session model meta), mirroring the codexOptions the TS server built.
+    if config.runtime_adapter == crate::config::RuntimeAdapter::Codex {
+        let mut codex_options = json!({
+            "cwd": config.repository_path.clone().unwrap_or_else(|| "/tmp/workspace".to_string()),
+        });
+        if let Some(model) = &config.model {
+            codex_options["model"] = json!(model);
+        }
+        if let Some(effort) = &config.reasoning_effort {
+            codex_options["reasoningEffort"] = json!(effort);
+        }
+        sidecar_config["codexOptions"] = codex_options;
+    }
 
     let mut command = Command::new("sh");
     command

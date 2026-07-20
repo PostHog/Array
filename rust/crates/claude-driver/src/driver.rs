@@ -29,9 +29,9 @@ use crate::convert::{
     convert_result, tool_info, tool_update_from_edit_response, Converter, Outgoing,
 };
 use crate::instructions::APPENDED_INSTRUCTIONS;
-use crate::mcp::LocalToolsServer;
 use crate::prompt::{prompt_to_claude, user_message_updates};
 use crate::transport::{CliTransport, ControlHandler};
+use posthog_agent_tools::mcp::LocalToolsServer;
 
 const SESSION_ENDED_MESSAGE: &str =
     "The Claude Code process for this session has ended. Start a new session to continue.";

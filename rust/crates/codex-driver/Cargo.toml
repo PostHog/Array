@@ -1,23 +1,22 @@
 [package]
-name = "posthog-claude-driver"
+name = "posthog-codex-driver"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Native ACP driver for the Claude Code CLI — replaces the Node ACP sidecar for Claude cloud runs"
+description = "Native ACP driver for the codex app-server — replaces the Node ACP sidecar for codex cloud runs"
 
 [[bin]]
-name = "claude-acp-driver"
+name = "codex-acp-driver"
 path = "src/main.rs"
 
 [[bin]]
-name = "mock-claude-cli"
-path = "src/bin/mock_claude_cli.rs"
+name = "mock-codex-app-server"
+path = "src/bin/mock_codex_app_server.rs"
 
 [dependencies]
 async-trait = { workspace = true }
-libc = "0.2"
-regex = { workspace = true }
+base64 = { version = "0.22.1", default-features = false, features = ["std"] }
 posthog-acp = { path = "../acp" }
 posthog-agent-tools = { path = "../agent-tools" }
 serde = { workspace = true }
@@ -26,7 +25,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
