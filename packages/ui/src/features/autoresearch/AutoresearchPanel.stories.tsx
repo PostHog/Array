@@ -18,46 +18,50 @@ import { PreBaselineState } from "./PreBaselineState";
 function RunDashboard({ run }: { run: AutoresearchRun }) {
   if (run.iterations.length === 0) {
     return (
-      <Flex direction="column" gap="4">
-        <PreBaselineState
-          run={run}
-          sessionActivity={{
-            status: "connected",
-            isPromptPending: true,
-            isCompacting: false,
-          }}
-        />
-        <AutoresearchRuntimeStats run={run} usage={null} />
-      </Flex>
+      <div className="@container">
+        <Flex direction="column" gap="4">
+          <PreBaselineState
+            run={run}
+            sessionActivity={{
+              status: "connected",
+              isPromptPending: true,
+              isCompacting: false,
+            }}
+          />
+          <AutoresearchRuntimeStats run={run} usage={null} />
+        </Flex>
+      </div>
     );
   }
 
   return (
-    <Flex direction="column" gap="4">
-      <RunStats run={run} />
-      <MetricChart
-        iterations={run.iterations}
-        direction={run.config.direction}
-        targetValue={run.config.targetValue}
-        metricName={run.metricName ?? "the metric"}
-        unit={run.metricUnit}
-      />
-      <AutoresearchRuntimeStats
-        run={run}
-        usage={{
-          used: 42_800,
-          size: 200_000,
-          percentage: 21,
-          cost: null,
-          breakdown: null,
-        }}
-      />
-      <IterationsTable
-        iterations={run.iterations}
-        direction={run.config.direction}
-        unit={run.metricUnit}
-      />
-    </Flex>
+    <div className="@container">
+      <Flex direction="column" gap="4">
+        <RunStats run={run} />
+        <MetricChart
+          iterations={run.iterations}
+          direction={run.config.direction}
+          targetValue={run.config.targetValue}
+          metricName={run.metricName ?? "the metric"}
+          unit={run.metricUnit}
+        />
+        <AutoresearchRuntimeStats
+          run={run}
+          usage={{
+            used: 42_800,
+            size: 200_000,
+            percentage: 21,
+            cost: null,
+            breakdown: null,
+          }}
+        />
+        <IterationsTable
+          iterations={run.iterations}
+          direction={run.config.direction}
+          unit={run.metricUnit}
+        />
+      </Flex>
+    </div>
   );
 }
 

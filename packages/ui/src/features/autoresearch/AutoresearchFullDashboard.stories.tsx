@@ -58,7 +58,7 @@ function FullDashboardStory(props: FullDashboardStoryProps) {
     : null;
 
   return (
-    <div className="mx-auto min-h-screen max-w-[900px] bg-gray-1 p-5">
+    <div className="@container mx-auto min-h-screen max-w-[900px] bg-gray-1 p-5">
       <Flex direction="column" gap="4">
         <DashboardHeader run={run} />
         {run.iterations.length === 0 ? (

@@ -52,6 +52,13 @@ const meta: Meta<typeof PreBaselineState> = {
   title: "Autoresearch/Research Map",
   component: PreBaselineState,
   parameters: { testOptions: { waitForLoadersToDisappear: false } },
+  decorators: [
+    (Story) => (
+      <div className="@container">
+        <Story />
+      </div>
+    ),
+  ],
 };
 
 export default meta;
