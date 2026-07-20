@@ -57,6 +57,7 @@ function buildCloudFirstMessage(
   const channelContextText = buildChannelContextText(
     input.channelContext,
     input.channelName,
+    input.channelContextId,
   );
   const pendingUserMessage =
     [messageText, customInstructionsText, channelContextText]
@@ -500,6 +501,7 @@ export class TaskCreationSaga extends Saga<
       const channelContextBlock = buildChannelContextBlock(
         input.channelContext,
         input.channelName,
+        input.channelContextId,
       );
       if (initialPrompt && channelContextBlock) {
         initialPrompt.push(channelContextBlock);

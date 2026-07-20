@@ -291,6 +291,7 @@ export const ChannelHomeComposer = forwardRef<
     channelContext,
     channelName,
     channelId: backendChannelId,
+    channelContextId: channelId,
     onTaskCreated: handleTaskCreated,
   });
 
