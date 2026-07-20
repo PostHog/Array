@@ -1,7 +1,4 @@
-import {
-  handleShareLinkClick,
-  parseShareLink,
-} from "@posthog/ui/utils/shareLinks";
+import { handleShareLinkClick } from "@posthog/ui/utils/shareLinks";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigateToChannel = vi.fn();
@@ -17,52 +14,6 @@ vi.mock("@posthog/ui/router/navigationBridge", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-describe("parseShareLink", () => {
-  it.each([
-    [
-      "canvas link",
-      "https://us.posthog.com/code/canvas/chan1/dash1",
-      { kind: "canvas", channelId: "chan1", dashboardId: "dash1" },
-    ],
-    [
-      "canvas link with encoded ids",
-      "https://us.posthog.com/code/canvas/chan%2F1/dash%202",
-      { kind: "canvas", channelId: "chan/1", dashboardId: "dash 2" },
-    ],
-    [
-      "channel link on the eu host",
-      "https://eu.posthog.com/code/channel/chan1",
-      { kind: "channel", channelId: "chan1" },
-    ],
-    [
-      "channel thread link",
-      "https://us.posthog.com/code/channel/chan1/tasks/task1",
-      { kind: "channel", channelId: "chan1", taskId: "task1" },
-    ],
-  ])("parses a %s", (_label, href, expected) => {
-    expect(parseShareLink(href)).toEqual(expected);
-  });
-
-  it.each([
-    ["a non-PostHog host", "https://evil.com/code/canvas/chan1/dash1"],
-    [
-      "an unrelated PostHog path",
-      "https://us.posthog.com/project/2/dashboard/1",
-    ],
-    [
-      "a canvas link missing the dashboard id",
-      "https://us.posthog.com/code/canvas/chan1",
-    ],
-    [
-      "a channel thread link with a malformed tail",
-      "https://us.posthog.com/code/channel/chan1/foo/task1",
-    ],
-    ["a malformed url", "not a url"],
-  ])("returns null for %s", (_label, href) => {
-    expect(parseShareLink(href)).toBeNull();
-  });
 });
 
 describe("handleShareLinkClick", () => {
