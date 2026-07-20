@@ -5,12 +5,15 @@ import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { Flex } from "@radix-ui/themes";
 
 // The in-pane content header for the unified Bluebird chrome. Shows the active
-// view's title (pushed into the header store by each view) on the left and, on
-// a task detail, that task's action row (TaskHeaderActions) on the right — the
-// branch selector, review-panel toggle, cloud/local handoff, skill buttons and
-// task actions that used to live in the Code header bar. Renders nothing when
-// neither is present. The /website space keeps its own header (WebsiteLayout),
-// so this is mounted only outside it.
+// view's title (pushed into the header store by each view) on the left and that
+// task's action row (TaskHeaderActions) on the right — the branch selector,
+// review-panel toggle, cloud/local handoff, skill buttons and task actions that
+// used to live in the Code header bar.
+//
+// This breadcrumb row is now scoped to the task-detail view only: every other
+// page drops it (the title bar search carries wayfinding instead). The /website
+// (Channels) space keeps its own header (WebsiteLayout), so it's unaffected —
+// this is mounted only outside it.
 export function ContentHeader() {
   const content = useHeaderStore((state) => state.content);
   const view = useAppView();
@@ -21,6 +24,9 @@ export function ContentHeader() {
     ? tasks?.find((t) => t.id === activeTaskId)
     : undefined;
   const showTaskSection = view.type === "task-detail" && Boolean(activeTask);
+
+  // Only the task-detail view keeps the breadcrumb row.
+  if (view.type !== "task-detail") return null;
 
   if (!content && !showTaskSection) return null;
 

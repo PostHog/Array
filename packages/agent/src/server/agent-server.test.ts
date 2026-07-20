@@ -2306,6 +2306,111 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.result?.stopReason).toBe("end_turn");
       expect(prompt).toHaveBeenCalledTimes(2);
     }, 20000);
+
+    // Shared plumbing for the relay-echo tests: install a controllable
+    // prompt, stub the log writer so relayAgentResponse has an answer to
+    // relay, and spy on the relay_message client call.
+    const setupRelayEchoServer = async (
+      prompt: () => Promise<{ stopReason: string }>,
+    ) => {
+      const s = createServer();
+      await s.start();
+      const serverInternals = s as unknown as {
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: {
+            getFullAgentResponse: (runId: string) => string | undefined;
+            getAgentResponseParts: (runId: string) => string[];
+          };
+        };
+        posthogAPI: PostHogAPIClient;
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      vi.spyOn(
+        serverInternals.session.logWriter,
+        "getFullAgentResponse",
+      ).mockReturnValue("final answer");
+      vi.spyOn(
+        serverInternals.session.logWriter,
+        "getAgentResponseParts",
+      ).mockReturnValue(["final answer"]);
+      const relaySpy = vi
+        .spyOn(serverInternals.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+
+      const token = createToken();
+      const send = (messageId?: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: messageId ?? "no-id",
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              ...(messageId ? { messageId } : {}),
+            },
+          }),
+        });
+
+      return { relaySpy, send };
+    };
+
+    it("echoes each turn's own initiating messageId on relay_message", async () => {
+      const pendingTurns: Array<(result: { stopReason: string }) => void> = [];
+      const prompt = vi.fn(
+        () =>
+          new Promise<{ stopReason: string }>((resolve) => {
+            pendingTurns.push(resolve);
+          }),
+      );
+      const { relaySpy, send } = await setupRelayEchoServer(prompt);
+
+      // The second message lands while the first turn is still in flight;
+      // each relay carries its own sender's id, not the first turn's.
+      const first = send("m-first");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+      const second = send("m-second");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2));
+
+      pendingTurns[0]({ stopReason: "end_turn" });
+      await first;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBe("m-first");
+
+      pendingTurns[1]({ stopReason: "end_turn" });
+      await second;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(2));
+      expect(relaySpy.mock.calls[1][4]).toBe("m-second");
+
+      // A message without an id relays without correlation (backward
+      // compatible with backends that don't know message_id).
+      relaySpy.mockClear();
+      const anonymous = send(undefined);
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(3));
+      pendingTurns[2]({ stopReason: "end_turn" });
+      await anonymous;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBeUndefined();
+    }, 20000);
+
+    it("does not leak a failed turn's messageId into the next turn", async () => {
+      const prompt = vi
+        .fn(async () => ({ stopReason: "end_turn" }))
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const { relaySpy, send } = await setupRelayEchoServer(prompt);
+
+      await send("m-fail");
+      expect(relaySpy).not.toHaveBeenCalled();
+
+      await send("m-next");
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBe("m-next");
+    }, 20000);
   });
 
   describe("404 handling", () => {
@@ -3399,8 +3504,12 @@ describe("AgentServer HTTP Mode", () => {
         "https://github.com/org/repo/pull/1",
       );
       expect(prompt).toContain(
-        "gh pr checkout https://github.com/org/repo/pull/1",
+        "If it is not already checked out, check it out with `gh pr checkout https://github.com/org/repo/pull/1`",
       );
+      expect(prompt).toContain(
+        "Do not check it out again when it is already active",
+      );
+      expect(prompt).not.toContain("Check out the existing PR branch");
       expect(prompt).toContain("git_signed_commit");
       expect(prompt).toContain("Committing (signed commits required)");
       expect(prompt).not.toContain("Create a draft pull request");
@@ -3722,13 +3831,18 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).not.toContain("gh pr checkout");
     });
 
-    it("returns auto-update PR context for Slack-origin runs", () => {
+    it("avoids redundant PR checkout for auto-update runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       const s = createServer();
       const context = (s as unknown as TestableServer).buildDetectedPrContext(
         prUrl,
       );
-      expect(context).toContain(`gh pr checkout ${prUrl}`);
+      expect(context).toContain(
+        `If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\``,
+      );
+      expect(context).toContain(
+        "Do not check it out again when it is already active",
+      );
       expect(context).toContain(
         "Make changes, commit, and push to that branch",
       );

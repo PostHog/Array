@@ -1,8 +1,17 @@
 import type { ContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
+
+const flagState = vi.hoisted(() => ({ enabled: false }));
+vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
+  useFeatureFlag: () => flagState.enabled,
+}));
+
+beforeEach(() => {
+  flagState.enabled = false;
+});
 
 function usage(overrides?: Partial<ContextUsage>): ContextUsage {
   return {
@@ -51,6 +60,18 @@ describe("ContextUsageIndicator", () => {
     expect(
       screen.getByRole("button", { name: "Context usage: 50K tokens" }),
     ).toBeInTheDocument();
+  });
+
+  it("appends the estimated cost to the label when the flag is enabled", () => {
+    flagState.enabled = true;
+    render(
+      <Theme>
+        <ContextUsageIndicator
+          usage={usage({ cost: { amount: 0.42, currency: "USD" } })}
+        />
+      </Theme>,
+    );
+    expect(screen.getByText(/50K\/200K · 25% · \$0\.42/)).toBeInTheDocument();
   });
 
   it("renders a finite stroke offset at 0% (no NaN/Infinity)", () => {

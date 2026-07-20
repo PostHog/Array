@@ -247,7 +247,7 @@ describe("WorktreeManager worktree link/include processing", () => {
     await seedGit.addConfig("commit.gpgsign", "false");
     await writeFile(
       path.join(seedDir, ".gitignore"),
-      ".env\n.envrc\nnode_modules/\n",
+      ".claude/\n.env\n.envrc\nCLAUDE.local.md\nnode_modules/\n",
     );
     await writeFile(path.join(seedDir, ".worktreelink"), "# secrets\n.envrc\n");
     await writeFile(path.join(seedDir, ".worktreeinclude"), ".env\n");
@@ -264,6 +264,12 @@ describe("WorktreeManager worktree link/include processing", () => {
 
     await writeFile(path.join(localDir, ".env"), "secret\n");
     await writeFile(path.join(localDir, ".envrc"), "export FOO=1\n");
+    await mkdir(path.join(localDir, ".claude"));
+    await writeFile(
+      path.join(localDir, ".claude", "settings.local.json"),
+      "{}\n",
+    );
+    await writeFile(path.join(localDir, "CLAUDE.local.md"), "local rules\n");
     await mkdir(path.join(localDir, "node_modules", "dep"), {
       recursive: true,
     });
@@ -306,6 +312,30 @@ describe("WorktreeManager worktree link/include processing", () => {
     expect(await dirExists(path.join(info.worktreePath, "node_modules"))).toBe(
       false,
     );
+    expect(await dirExists(path.join(info.worktreePath, ".claude"))).toBe(
+      false,
+    );
+
+    const localInstructions = await lstat(
+      path.join(info.worktreePath, "CLAUDE.local.md"),
+    );
+    expect(localInstructions.isSymbolicLink()).toBe(true);
+  });
+
+  it("links .claude when explicitly configured", async () => {
+    await writeFile(
+      path.join(localDir, ".worktreelink"),
+      "# secrets\n.envrc\n.claude\n",
+    );
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    const info = await manager.createWorktree({ baseBranch: "main" });
+
+    const linked = await lstat(path.join(info.worktreePath, ".claude"));
+    expect(linked.isSymbolicLink()).toBe(true);
   });
 });
 

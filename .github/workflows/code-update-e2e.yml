@@ -106,6 +106,7 @@ jobs:
           pnpm --filter @posthog/shared run build
           pnpm --filter @posthog/git run build
           pnpm --filter @posthog/enricher run build
+          pnpm --filter @posthog/harness run build
           pnpm --filter @posthog/agent run build
 
       - name: Build old + new update pair
