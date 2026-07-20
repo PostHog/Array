@@ -85,34 +85,29 @@ describe("window zoom", () => {
     expect(window.webContents.zoomLevel).toBe(0.5);
   });
 
-  it("restores the persisted level after task navigation", () => {
+  it("restores the current level after an external window resize", () => {
     const window = createWindow();
     setupWindowZoom(window);
+
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    vi.runAllTimers();
+    vi.advanceTimersByTime(5 * 60 * 1000);
     window.webContents.zoomLevel = 0;
 
-    window.webContents.emit(
-      "did-navigate-in-page",
-      {},
-      "file:///app/tasks/next-task",
-      true,
-    );
+    window.emit("resize");
+    vi.runAllTimers();
+    const restoredZoomLevel = window.webContents.zoomLevel;
+    adjustWindowZoom(window, 0.5);
 
-    expect(window.webContents.zoomLevel).toBe(0.5);
-  });
-
-  it("ignores in-page navigation inside subframes", () => {
-    const window = createWindow();
-    setupWindowZoom(window);
-    window.webContents.zoomLevel = 0;
-
-    window.webContents.emit(
-      "did-navigate-in-page",
-      {},
-      "file:///embedded-content",
-      false,
-    );
-
-    expect(window.webContents.zoomLevel).toBe(0);
+    expect({
+      restoredZoomLevel,
+      zoomLevel: window.webContents.zoomLevel,
+      saved: store.save.mock.calls,
+    }).toEqual({
+      restoredZoomLevel: 1,
+      zoomLevel: 1.5,
+      saved: [[1], [1.5]],
+    });
   });
 
   it.each([

@@ -8,10 +8,6 @@ const ZOOM_MAX = 3;
 interface ZoomWebContents {
   on(event: "did-finish-load", listener: () => void): void;
   on(
-    event: "did-navigate-in-page",
-    listener: (event: unknown, url: string, isMainFrame: boolean) => void,
-  ): void;
-  on(
     event: "zoom-changed",
     listener: (
       event: { preventDefault(): void },
@@ -27,6 +23,7 @@ interface ZoomWindow {
       | "enter-full-screen"
       | "leave-full-screen"
       | "maximize"
+      | "resize"
       | "resized"
       | "unmaximize",
     listener: () => void,
@@ -109,9 +106,6 @@ export function setupWindowZoom(window: ZoomWindow): void {
   };
 
   window.webContents.on("did-finish-load", () => restoreWindowZoom(window));
-  window.webContents.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
-    if (isMainFrame) restoreWindowZoom(window);
-  });
   window.webContents.on("zoom-changed", (event, zoomDirection) => {
     event.preventDefault();
     state.wheelZoomDelta += zoomDirection === "in" ? ZOOM_STEP : -ZOOM_STEP;
@@ -127,6 +121,7 @@ export function setupWindowZoom(window: ZoomWindow): void {
 
   window.on("maximize", scheduleRestore);
   window.on("unmaximize", scheduleRestore);
+  window.on("resize", scheduleRestore);
   window.on("resized", scheduleRestore);
   window.on("enter-full-screen", scheduleRestore);
   window.on("leave-full-screen", scheduleRestore);
