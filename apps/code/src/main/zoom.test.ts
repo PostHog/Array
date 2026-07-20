@@ -20,9 +20,16 @@ vi.mock("./utils/store", () => ({
 import { adjustWindowZoom, restoreWindowZoom, setupWindowZoom } from "./zoom";
 
 class FakeWebContents extends EventEmitter {
+  public destroyed = false;
+  public readonly setZoomLevelCalls: number[] = [];
   public zoomLevel = 0;
 
+  public isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
   public setZoomLevel(level: number): void {
+    this.setZoomLevelCalls.push(level);
     this.zoomLevel = level;
   }
 }
@@ -135,20 +142,58 @@ describe("window zoom", () => {
     },
   );
 
-  it("keeps wheel zoom after resizing", () => {
+  it.each(["resize", "resized"] as const)(
+    "keeps wheel zoom after %s",
+    (resizeEvent) => {
+      const window = createWindow();
+      setupWindowZoom(window);
+
+      window.webContents.emit(
+        "zoom-changed",
+        { preventDefault: vi.fn() },
+        "in",
+      );
+      window.emit(resizeEvent);
+      vi.runAllTimers();
+
+      expect({
+        zoomLevel: window.webContents.zoomLevel,
+        saved: store.save.mock.calls,
+      }).toEqual({
+        zoomLevel: 1,
+        saved: [[1]],
+      });
+    },
+  );
+
+  it("debounces repeated resize restorations", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+    window.webContents.zoomLevel = 0;
+
+    window.emit("resize");
+    window.emit("resize");
+    window.emit("resized");
+    vi.runAllTimers();
+
+    expect(window.webContents.setZoomLevelCalls).toEqual([0.5]);
+  });
+
+  it("ignores queued zoom work after the window is destroyed", () => {
     const window = createWindow();
     setupWindowZoom(window);
 
     window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
-    window.emit("resized");
+    window.emit("resize");
+    window.webContents.destroyed = true;
     vi.runAllTimers();
 
     expect({
-      zoomLevel: window.webContents.zoomLevel,
+      zoomLevelCalls: window.webContents.setZoomLevelCalls,
       saved: store.save.mock.calls,
     }).toEqual({
-      zoomLevel: 1,
-      saved: [[1]],
+      zoomLevelCalls: [],
+      saved: [],
     });
   });
 

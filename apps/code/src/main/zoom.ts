@@ -6,6 +6,7 @@ const ZOOM_MIN = -3;
 const ZOOM_MAX = 3;
 
 interface ZoomWebContents {
+  isDestroyed(): boolean;
   on(event: "did-finish-load", listener: () => void): void;
   on(
     event: "zoom-changed",
@@ -63,6 +64,7 @@ function runAfterWheelZoom(window: ZoomWindow, action: () => void): void {
 }
 
 export function setWindowZoom(window: ZoomWindow, level: number): void {
+  if (window.webContents.isDestroyed()) return;
   const nextLevel = clampZoomLevel(level);
   const state = zoomStates.get(window);
   if (state) state.currentZoomLevel = nextLevel;
@@ -83,6 +85,7 @@ export function adjustWindowZoom(
 
 export function restoreWindowZoom(window: ZoomWindow): void {
   runAfterWheelZoom(window, () => {
+    if (window.webContents.isDestroyed()) return;
     window.webContents.setZoomLevel(getCurrentZoomLevel(window));
   });
 }
