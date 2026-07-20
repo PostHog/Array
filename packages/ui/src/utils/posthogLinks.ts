@@ -1,4 +1,8 @@
-import type { CloudRegion } from "@posthog/shared";
+import {
+  type CloudRegion,
+  getCloudUrlFromRegion,
+  REGION_LABELS,
+} from "@posthog/shared";
 import { useAuthStore } from "@posthog/ui/features/auth/store";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 
@@ -115,6 +119,93 @@ export function channelShareUrl(
   return getPostHogUrl(
     taskId ? `${base}/tasks/${encodeURIComponent(taskId)}` : base,
   );
+}
+
+export type ShareLinkTarget =
+  | { kind: "canvas"; channelId: string; dashboardId: string }
+  | { kind: "channel"; channelId: string; taskId?: string };
+
+const POSTHOG_HOSTS = new Set(
+  (Object.keys(REGION_LABELS) as CloudRegion[])
+    .map((region) => {
+      try {
+        return new URL(getCloudUrlFromRegion(region)).host;
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean),
+);
+
+interface ShareLinkRoute {
+  pattern: string[];
+  build: (params: Record<string, string>) => ShareLinkTarget;
+}
+
+const SHARE_LINK_ROUTES: ShareLinkRoute[] = [
+  {
+    pattern: ["code", "canvas", ":channelId", ":dashboardId"],
+    build: ({ channelId, dashboardId }) => ({
+      kind: "canvas",
+      channelId,
+      dashboardId,
+    }),
+  },
+  {
+    pattern: ["code", "channel", ":channelId"],
+    build: ({ channelId }) => ({ kind: "channel", channelId }),
+  },
+  {
+    pattern: ["code", "channel", ":channelId", "tasks", ":taskId"],
+    build: ({ channelId, taskId }) => ({ kind: "channel", channelId, taskId }),
+  },
+];
+
+function decodePathSegments(pathname: string): string[] {
+  return pathname
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    });
+}
+
+function matchRoute(
+  segments: string[],
+  route: ShareLinkRoute,
+): ShareLinkTarget | null {
+  if (segments.length !== route.pattern.length) return null;
+  const params: Record<string, string> = {};
+  for (const [index, token] of route.pattern.entries()) {
+    const segment = segments[index];
+    if (token.startsWith(":")) {
+      params[token.slice(1)] = segment;
+    } else if (token !== segment) {
+      return null;
+    }
+  }
+  return route.build(params);
+}
+
+export function parseShareLink(href: string): ShareLinkTarget | null {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (!POSTHOG_HOSTS.has(url.host)) return null;
+
+  const segments = decodePathSegments(url.pathname);
+  for (const route of SHARE_LINK_ROUTES) {
+    const target = matchRoute(segments, route);
+    if (target) return target;
+  }
+  return null;
 }
 
 export function errorTrackingIssueUrl(
