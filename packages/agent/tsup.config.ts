@@ -112,6 +112,8 @@ export default defineConfig([
       "src/posthog-api.ts",
       "src/posthog-products.ts",
       "src/pr-url-detector.ts",
+      "src/pi/rpc-client.ts",
+      "src/pi/rpc-host.ts",
       "src/resume.ts",
       "src/types.ts",
       "src/adapters/claude/questions/utils.ts",

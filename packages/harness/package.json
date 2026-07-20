@@ -8,17 +8,17 @@
     "hog": "dist/cli.js"
   },
   "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./cli": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js"
     },
-    "./session": {
-      "types": "./dist/session.d.ts",
-      "import": "./dist/session.js"
-    },
-    "./spawn": {
-      "types": "./dist/spawn.d.ts",
-      "import": "./dist/spawn.js"
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
     },
     "./extensions": {
       "types": "./dist/extensions/registry.d.ts",
@@ -82,16 +82,17 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && pnpm build:types",
+    "build:types": "tsc --emitDeclarationOnly --declaration --noEmit false --outDir dist --rootDir src",
     "dev": "tsup --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "node ../../scripts/rimraf.mjs dist .turbo"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.80.3",
-    "@earendil-works/pi-coding-agent": "0.80.6",
-    "@earendil-works/pi-tui": "0.80.6",
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@earendil-works/pi-tui": "catalog:",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@posthog/shared": "workspace:*",
     "lru-cache": "^11.1.0",

@@ -1091,9 +1091,11 @@ export class AgentServer {
 
         if (result.stopReason === "end_turn") {
           // Relay the response to Slack. For follow-ups this is the primary
-          // delivery path — the HTTP caller only handles reactions.
-          this.relayAgentResponse(this.session.payload).catch((err) =>
-            this.logger.debug("Failed to relay follow-up response", err),
+          // delivery path — the HTTP caller only handles reactions. Echo the
+          // initiating message's id so the backend can attribute the answer.
+          this.relayAgentResponse(this.session.payload, messageId).catch(
+            (err) =>
+              this.logger.debug("Failed to relay follow-up response", err),
           );
         }
 
@@ -3818,7 +3820,10 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     };
   }
 
-  private async relayAgentResponse(payload: JwtPayload): Promise<void> {
+  private async relayAgentResponse(
+    payload: JwtPayload,
+    messageId?: string,
+  ): Promise<void> {
     if (!this.session) {
       return;
     }
@@ -3862,6 +3867,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
         payload.run_id,
         message,
         messageParts,
+        messageId,
       );
     } catch (error) {
       this.logger.debug("Failed to relay initial agent response to Slack", {
