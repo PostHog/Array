@@ -59,6 +59,7 @@ import {
   memo,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
 } from "react";
@@ -628,6 +629,24 @@ function FollowOwnPost({ latestPendingId }: { latestPendingId?: string }) {
   return null;
 }
 
+// Land at the latest message when the feed swaps to another channel: the route
+// doesn't remount on a param change, so the provider's one-shot
+// defaultScrollPosition only covers the channel it mounted with. Imperative
+// rather than keying the provider — a remount would rebuild the entire feed
+// subtree on every switch. Layout effect so the jump happens in the same
+// commit as the swapped rows, before paint. Renders nothing.
+function LandAtLatestOnChannelChange({ channelId }: { channelId: string }) {
+  const { scrollToEnd } = useChatMessageScroller();
+  const prevRef = useRef(channelId);
+  useLayoutEffect(() => {
+    if (channelId !== prevRef.current) {
+      prevRef.current = channelId;
+      scrollToEnd({ behavior: "auto" });
+    }
+  }, [channelId, scrollToEnd]);
+  return null;
+}
+
 // A single feed entry, either a real task card or a synthetic system row, tagged
 // with the timestamp used to interleave the two.
 type FeedEntry =
@@ -716,11 +735,8 @@ export function ChannelFeedView({
   const latestPendingId = pending[pending.length - 1]?.id;
 
   return (
-    // Keyed by channel: switching channels swaps the content without a route
-    // remount, but the scroller only applies defaultScrollPosition once per
-    // mount — an un-keyed provider would keep the previous channel's scroll
-    // offset instead of landing at the latest message.
-    <ChatMessageScrollerProvider key={channelId} defaultScrollPosition="end">
+    <ChatMessageScrollerProvider defaultScrollPosition="end">
+      <LandAtLatestOnChannelChange channelId={channelId} />
       <FollowOwnPost latestPendingId={latestPendingId} />
       <ChatMessageScroller className="min-h-0 flex-1">
         <ChatMessageScrollerViewport>
