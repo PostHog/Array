@@ -45,6 +45,17 @@ const SIDEBAR_MIN_WIDTH = 200;
 const SIDEBAR_MAX_WIDTH = 500;
 const SIDEBAR_DEFAULT_WIDTH = 280;
 
+function getEmptyReviewMessage(commentFilter: CommentFileFilter): string {
+  switch (commentFilter) {
+    case "commented":
+      return "No files with comments";
+    case "unresolved":
+      return "No files with unresolved comments";
+    case "none":
+      return "No file changes to review";
+  }
+}
+
 function ExpandedSidebar({ task }: { task: Task }) {
   const reviewHost = useService<ReviewHost>(REVIEW_HOST);
   const [width, setWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
@@ -371,11 +382,7 @@ export function ReviewShell({
     reviewContent = (
       <Flex align="center" justify="center" className="min-h-0 flex-1">
         <Text color="gray" className="text-sm">
-          {activeCommentFilter === "commented"
-            ? "No files with comments"
-            : activeCommentFilter === "unresolved"
-              ? "No files with unresolved comments"
-              : "No file changes to review"}
+          {getEmptyReviewMessage(activeCommentFilter)}
         </Text>
       </Flex>
     );
