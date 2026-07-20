@@ -186,6 +186,31 @@ export function copyPiRpcHost(): Plugin {
   };
 }
 
+export function copyLocalToolsMcpServer(): Plugin {
+  return {
+    name: "copy-local-tools-mcp-server",
+    writeBundle() {
+      const rel = "adapters/codex-app-server/local-tools-mcp-server.js";
+      const candidates = [
+        join(__dirname, "node_modules/@posthog/agent/dist", rel),
+        join(__dirname, "../../node_modules/@posthog/agent/dist", rel),
+        join(__dirname, "../../packages/agent/dist", rel),
+      ];
+      const source = candidates.find((candidate) => existsSync(candidate));
+      if (!source) {
+        throw new Error(
+          `[copy-local-tools-mcp-server] Unable to find the Codex local-tools MCP server, spawned at runtime via resolveBundledMcpScript. Build @posthog/agent first. Checked:\n  ${candidates.join("\n  ")}`,
+        );
+      }
+      // Keep the dist-relative layout: resolveBundledMcpScript resolves this
+      // exact relative path against the running bundle's directory.
+      const dest = join(__dirname, ".vite/build", rel);
+      mkdirSync(dirname(dest), { recursive: true });
+      copyFileSync(source, dest);
+    },
+  };
+}
+
 export function copyClaudeExecutable(): Plugin {
   return {
     name: "copy-claude-executable",

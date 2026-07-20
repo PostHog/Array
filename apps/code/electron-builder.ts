@@ -51,6 +51,8 @@ const config: Configuration = {
     ".vite/build/grammars/**",
     ".vite/build/rpc-host.js",
     ".vite/build/rpc-host.js.map",
+    // Spawned by Codex (an external binary that can't read inside asar).
+    ".vite/build/adapters/**",
     ...asarUnpackGlobs,
   ],
 
