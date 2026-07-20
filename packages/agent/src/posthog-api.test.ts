@@ -78,6 +78,55 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it.each([
+    [
+      "includes message_id and text_parts when provided",
+      ["part one", "final answer"],
+      "msg-1",
+      {
+        text: "final answer",
+        text_parts: ["part one", "final answer"],
+        message_id: "msg-1",
+      },
+    ],
+    [
+      "omits optional fields when unknown",
+      undefined,
+      undefined,
+      { text: "final answer" },
+    ],
+  ])(
+    "relay_message body %s",
+    async (_label, textParts, messageId, expectedBody) => {
+      const client = new PostHogAPIClient({
+        apiUrl: "https://app.posthog.com",
+        getApiKey: vi.fn().mockResolvedValue("token"),
+        projectId: 7,
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: "ok" }),
+      });
+
+      await client.relayMessage(
+        "task-1",
+        "run-1",
+        "final answer",
+        textParts,
+        messageId,
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://app.posthog.com/api/projects/7/tasks/task-1/runs/run-1/relay_message/",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify(expectedBody),
+        }),
+      );
+    },
+  );
+
   it("returns only the artifacts created by the current upload request", async () => {
     const client = new PostHogAPIClient({
       apiUrl: "https://app.posthog.com",
