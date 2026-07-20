@@ -4,17 +4,17 @@ Rust rewrite of the cloud `agent-server` from `@posthog/agent` (`packages/agent/
 The TypeScript server wraps two full Node processes around every cloud run; this workspace replaces the outer one with a static binary while keeping every wire contract byte-compatible, so Django and clients cannot tell the implementations apart.
 
 ```text
-before                                    after (phase 1)
-──────                                    ───────────────
-node agent-server (~150-400 MB RSS)       agent-server (Rust, ~10-25 MB RSS)
-│  Hono HTTP /health /events /command     │  axum HTTP /health /events /command
-│  4× NDJSON tap layers                   │  parse-once bus → SSE/ingest/log sinks
-│  event ingest, JWT, logs, session       │  event ingest, JWT, logs, session
-└─ claude-agent-sdk (in-process)          └─ posthog-acp-claude sidecar (Node, ACP over stdio)
-   └─ claude CLI subprocess                  └─ claude CLI subprocess
+before                                 phase 1                                   phase 2 (Claude runs)
+──────                                 ───────                                   ─────────────────────
+node agent-server (~150-400 MB RSS)    agent-server (Rust, ~10-25 MB RSS)        agent-server (Rust)
+│  Hono HTTP /health /events /command  │  axum HTTP /health /events /command     │
+│  4× NDJSON tap layers                │  parse-once bus → SSE/ingest/log sinks  │
+│  event ingest, JWT, logs, session    │  event ingest, JWT, logs, session       │
+└─ claude-agent-sdk (in-process)       └─ posthog-acp-claude sidecar (Node)      └─ claude-acp-driver (Rust)
+   └─ claude CLI subprocess               └─ claude CLI subprocess                  └─ claude CLI subprocess
 ```
 
-Phase 2 replaces the Node sidecar with a native Claude Code driver crate; Codex runs can drop the sidecar earlier since `codex app-server` is already a native binary speaking JSON-RPC on stdio.
+Phase 2 replaces the Node sidecar for Claude runs with `claude-acp-driver`, a native crate speaking the Claude Code CLI's stream-json control protocol directly (the same wire protocol `@anthropic-ai/claude-agent-sdk` speaks) — no PostHog Node process is left in the tree. Codex runs keep the Node sidecar for now: `codex app-server` is already a native binary, but its ACP translation layer (`codex-app-server-agent.ts`) has not been ported yet.
 
 ## Layout
 
@@ -31,8 +31,17 @@ Phase 2 replaces the Node sidecar with a native Claude Code driver crate; Codex 
   - `system_prompt.rs` — faithful port of the cloud system prompt builder
   - `adapter.rs` — spawns the ACP agent subprocess (`--adapterCmd` / `POSTHOG_ACP_ADAPTER_CMD`, default `./node_modules/.bin/posthog-acp-claude`)
   - `src/bin/mock_acp_agent.rs` — scripted ACP agent used by the e2e tests
+- `crates/claude-driver` — the native Claude driver binary (`claude-acp-driver`), phase 2:
+  - `transport.rs` — the CLI's stream-json control protocol (`control_request`/`control_response` correlation, concurrent handler dispatch)
+  - `cli.rs` — CLI spawn: the SDK transport's argv construction plus `buildEnvironment` (gateway base URL/auth, attribution headers, `ENABLE_TOOL_SEARCH`, session-state events)
+  - `driver.rs` — the ACP agent surface (`initialize`, `session/new`, `session/prompt` with steer + turn queue, cancel, mode changes, `_posthog/refresh_session` via `--resume` respawn), the `canUseTool` permission relay port (mode gating, plan mode, AskUserQuestion, domain allowlist, PostHog exec sub-tool gate), and the hook chain (subagent rewrite, signed-commit guard, Task* plan updates, PostToolUse toolResponse reporting)
+  - `convert.rs` — SDK message → ACP session-update conversion (`sdk-to-acp.ts` / `tool-use-to-acp.ts` port): partial-message streaming with consolidated-copy dedupe, tool_call/tool_result mapping, Task*→plan suppression, result → stopReason/error classification
+  - `prompt.rs` — ACP prompt → SDK user message (`acp-to-sdk.ts` port), path-only file attachments, steer priority
+  - `signed_git.rs` + `gh.rs` + `artefacts.rs` — full port of `@posthog/git/signed-commit`: `createCommitOnBranch` commits/rewrites/merges with every guard (mid-operation, behind-remote, base-leak) and commit-artefact reporting
+  - `mcp.rs` — the in-process `posthog-code-tools` MCP server answering `tools/list`/`tools/call` over the CLI's `mcp_message` control channel
+  - `src/bin/mock_claude_cli.rs` — scripted Claude CLI used by the driver e2e tests
 
-The Node sidecar entry lives in `packages/agent/src/server/acp-stdio-bin.ts` (published as the `posthog-acp-claude` bin): the existing `ClaudeAcpAgent`/codex proxy wired to stdio, with no HTTP, tapping, or log writer — the Rust server owns those.
+The Node sidecar entry lives in `packages/agent/src/server/acp-stdio-bin.ts` (published as the `posthog-acp-claude` bin): the existing `ClaudeAcpAgent`/codex proxy wired to stdio, with no HTTP, tapping, or log writer — the Rust server owns those. It remains the default adapter and the codex path.
 
 ## Contracts that must not drift
 
@@ -79,14 +88,27 @@ POSTHOG_PROJECT_ID="2" \
 - skill bundle installation (sha256 + unzip with traversal protection) and artifact attachment hydration to `resource_link` blocks (`artifacts.rs`), including `/skill` invocation context
 - pending user prompts, initial-prompt overrides, and the prewarmed-run auto-publish upgrade from run state
 
+## Ported in phase 2 (`crates/claude-driver`)
+
+- the SDK's stream-json control protocol against the Claude Code CLI: initialize handshake (hooks, in-process MCP servers, system prompt, `ph-explore` subagent), `can_use_tool`, `hook_callback`, `mcp_message`, `interrupt`, `set_permission_mode`
+- the full `canUseTool` dispatch from `permissions/permission-handlers.ts`: domain allowlist, PostHog exec destructive sub-tool re-gate, mode gating, EnterPlanMode/ExitPlanMode (plan validation + mode-change approval options), AskUserQuestion (option relay, parked-question denial, answers injection), plan-file exception, default relay flow with allow_always permission persistence
+- the cloud hook chain: Explore→ph-explore subagent rewrite, the signed-commit guard, TaskCreated/TaskCompleted plan updates, and PostToolUse `toolResponse` reporting (the agent-server's git-checkpoint trigger)
+- the signed-git local tools (`git_signed_commit` / `git_signed_merge` / `git_signed_rewrite`) as an in-process MCP server over the control channel — byte-compatible descriptions, schemas, guards, and result texts with `@posthog/git/signed-commit`, including live `/tmp/agent-env` token refresh and best-effort commit-artefact reporting
+- turn steering (`_meta.steer` → priority "next"), turn queueing, cancellation, usage/structured-output/sdk-session extension notifications, and `_posthog/refresh_session` as a `--resume` respawn with fresh MCP servers
+
 ## Remaining gaps
 
+- codex runs still use the Node sidecar (`codex app-server` is native, but its ACP mapping layer is not ported)
 - native resume (Claude session JSONL hydration / `session/load`) — summary resume is the fallback the TS server also uses when hydration is unavailable
-- file-read enrichment is disabled in the sidecar (tree-sitter WASM assets are not bundled into `acp-stdio.cjs` yet)
+- file-read enrichment (tree-sitter) — disabled in the sidecar, not ported to the driver
 - OTEL log export (`/i/v1/agent-logs`) — only the `append_log` API path is ported
 - tool-update coalescing for the local log cache (API-path coalescing is ported)
 
 ## Release and rollout
 
-`agent-server-rust-release.yml` builds static musl binaries (`x86_64`/`aarch64`) with a `SHA256SUMS` file on `agent-server-rs-v*` tags.
-The sandbox image (`Dockerfile.sandbox-base` in posthog/posthog) installs a pinned, checksum-verified release to `/usr/local/bin/agent-server-rs` when the `RUST_AGENT_SERVER_TAG` build args are set, and Django's `SANDBOX_RUST_AGENT_SERVER` setting switches the launch command onto it (`agent_server_launch_binary()` in `products/tasks/backend/logic/services/sandbox.py`).
+`agent-server-rust-release.yml` builds static musl binaries (`x86_64`/`aarch64`) of both `agent-server` and `claude-acp-driver` with a `SHA256SUMS` file on `agent-server-rs-v*` tags.
+The sandbox image (`Dockerfile.sandbox-base` in posthog/posthog) installs pinned, checksum-verified releases to `/usr/local/bin/agent-server-rs` and `/usr/local/bin/claude-acp-driver` when the `RUST_AGENT_SERVER_TAG` build args are set.
+Django switches each layer independently:
+
+- `SANDBOX_RUST_AGENT_SERVER` swaps the launch command onto the Rust server (`agent_server_launch_binary()` in `products/tasks/backend/logic/services/sandbox.py`)
+- `SANDBOX_RUST_CLAUDE_DRIVER` additionally exports `POSTHOG_CLAUDE_ADAPTER_CMD=/usr/local/bin/claude-acp-driver`, which the Rust server applies **only to Claude runs** — codex runs keep the Node sidecar even when the variable is set (adapter resolution in `crates/agent-server/src/config.rs`)

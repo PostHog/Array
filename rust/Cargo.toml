@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/acp", "crates/agent-server"]
+members = ["crates/acp", "crates/agent-server", "crates/claude-driver"]
 
 [workspace.package]
 version = "0.1.0"

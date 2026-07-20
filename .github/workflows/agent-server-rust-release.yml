@@ -1,8 +1,9 @@
 name: Release Rust agent-server
 
-# Tag-driven release of the Rust agent-server binary (rust/README.md).
-# Produces static musl binaries plus a SHA256SUMS file so the sandbox image
-# can install it agentsh-style: pinned version, checksum-verified.
+# Tag-driven release of the Rust agent-server + Claude ACP driver binaries
+# (rust/README.md). Produces static musl binaries plus a SHA256SUMS file so
+# the sandbox image can install them agentsh-style: pinned version,
+# checksum-verified.
 #
 #   git tag agent-server-rs-v0.1.0 && git push origin agent-server-rs-v0.1.0
 
@@ -41,20 +42,26 @@ jobs:
           workspaces: rust
           key: ${{ matrix.target }}
 
-      - name: Build release binary
+      - name: Build release binaries
         working-directory: rust
-        run: cargo build --release --target ${{ matrix.target }} --bin agent-server
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            --bin agent-server --bin claude-acp-driver
 
-      - name: Stage artifact
+      - name: Stage artifacts
         run: |
           mkdir -p dist
           cp rust/target/${{ matrix.target }}/release/agent-server \
             dist/agent-server-${{ matrix.target }}
+          cp rust/target/${{ matrix.target }}/release/claude-acp-driver \
+            dist/claude-acp-driver-${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: agent-server-${{ matrix.target }}
-          path: dist/agent-server-${{ matrix.target }}
+          path: |
+            dist/agent-server-${{ matrix.target }}
+            dist/claude-acp-driver-${{ matrix.target }}
           if-no-files-found: error
 
   release:
@@ -70,7 +77,7 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum agent-server-* > SHA256SUMS
+        run: sha256sum agent-server-* claude-acp-driver-* > SHA256SUMS
 
       - name: Create release
         env:
@@ -79,5 +86,5 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
             --title "Rust agent-server ${{ github.ref_name }}" \
-            --notes "Static musl builds of the Rust agent-server (see rust/README.md). Install pinned + SHA256-verified in the sandbox image." \
-            dist/agent-server-* dist/SHA256SUMS
+            --notes "Static musl builds of the Rust agent-server and Claude ACP driver (see rust/README.md). Install pinned + SHA256-verified in the sandbox image." \
+            dist/agent-server-* dist/claude-acp-driver-* dist/SHA256SUMS

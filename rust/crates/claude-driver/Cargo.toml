@@ -1,0 +1,35 @@
+[package]
+name = "posthog-claude-driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Native ACP driver for the Claude Code CLI — replaces the Node ACP sidecar for Claude cloud runs"
+
+[[bin]]
+name = "claude-acp-driver"
+path = "src/main.rs"
+
+[[bin]]
+name = "mock-claude-cli"
+path = "src/bin/mock_claude_cli.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = { version = "0.22.1", default-features = false, features = ["std"] }
+futures = { workspace = true }
+libc = "0.2"
+regex = { workspace = true }
+reqwest = { workspace = true }
+posthog-acp = { path = "../acp" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

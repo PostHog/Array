@@ -316,9 +316,19 @@ impl ServerConfig {
                 }
             };
 
+        // POSTHOG_CLAUDE_ADAPTER_CMD applies only to Claude runs (the native
+        // driver rollout switch); codex runs keep the Node sidecar even when
+        // it is set, so Django can export it unconditionally.
+        let claude_adapter_cmd = match runtime_adapter {
+            RuntimeAdapter::Claude => std::env::var("POSTHOG_CLAUDE_ADAPTER_CMD")
+                .ok()
+                .filter(|cmd| !cmd.trim().is_empty()),
+            RuntimeAdapter::Codex => None,
+        };
         let adapter_cmd = cli
             .adapter_cmd
             .or_else(|| std::env::var("POSTHOG_ACP_ADAPTER_CMD").ok())
+            .or(claude_adapter_cmd)
             .unwrap_or_else(|| DEFAULT_ADAPTER_CMD.to_string());
 
         let interaction_origin = std::env::var("POSTHOG_CODE_INTERACTION_ORIGIN")
