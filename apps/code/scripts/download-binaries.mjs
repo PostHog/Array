@@ -22,7 +22,7 @@ const DEST_DIR = join(__dirname, "..", "resources", "codex-acp");
 const BINARIES = [
   {
     name: "codex",
-    version: "0.140.0",
+    version: "0.144.0",
     getUrl: (version, target) => {
       if (target.includes("windows")) {
         return `https://github.com/openai/codex/releases/download/rust-v${version}/codex-${target}.exe.zip`;

@@ -7,7 +7,15 @@ const ZOOM_MAX = 3;
 
 interface ZoomWebContents {
   getZoomLevel(): number;
-  on(event: "did-finish-load" | "zoom-changed", listener: () => void): void;
+  isDestroyed(): boolean;
+  on(event: "did-finish-load", listener: () => void): void;
+  on(
+    event: "zoom-changed",
+    listener: (
+      event: { preventDefault(): void },
+      zoomDirection: "in" | "out",
+    ) => void,
+  ): void;
   setZoomLevel(level: number): void;
 }
 
@@ -17,6 +25,7 @@ interface ZoomWindow {
       | "enter-full-screen"
       | "leave-full-screen"
       | "maximize"
+      | "resize"
       | "resized"
       | "unmaximize",
     listener: () => void,
@@ -25,8 +34,10 @@ interface ZoomWindow {
 }
 
 interface ZoomState {
+  currentZoomLevel: number;
   deferredActions: Array<() => void>;
-  nativeZoomTimeout: ReturnType<typeof setTimeout> | null;
+  wheelZoomDelta: number;
+  wheelZoomTimeout: ReturnType<typeof setTimeout> | null;
 }
 
 const zoomStates = new WeakMap<ZoomWindow, ZoomState>();
@@ -39,9 +50,13 @@ function getSavedZoomLevel(): number {
   return clampZoomLevel(windowStateStore.get("zoomLevel", 0));
 }
 
-function runAfterNativeZoom(window: ZoomWindow, action: () => void): void {
+function getCurrentZoomLevel(window: ZoomWindow): number {
+  return zoomStates.get(window)?.currentZoomLevel ?? getSavedZoomLevel();
+}
+
+function runAfterWheelZoom(window: ZoomWindow, action: () => void): void {
   const state = zoomStates.get(window);
-  if (!state?.nativeZoomTimeout) {
+  if (!state?.wheelZoomTimeout) {
     action();
     return;
   }
@@ -50,7 +65,10 @@ function runAfterNativeZoom(window: ZoomWindow, action: () => void): void {
 }
 
 export function setWindowZoom(window: ZoomWindow, level: number): void {
+  if (window.webContents.isDestroyed()) return;
   const nextLevel = clampZoomLevel(level);
+  const state = zoomStates.get(window);
+  if (state) state.currentZoomLevel = nextLevel;
   window.webContents.setZoomLevel(nextLevel);
   saveZoomLevel(nextLevel);
 }
@@ -59,22 +77,29 @@ export function adjustWindowZoom(
   window: ZoomWindow,
   delta: number | "reset",
 ): void {
-  runAfterNativeZoom(window, () => {
-    const nextLevel = delta === "reset" ? 0 : getSavedZoomLevel() + delta;
+  runAfterWheelZoom(window, () => {
+    const nextLevel =
+      delta === "reset" ? 0 : getCurrentZoomLevel(window) + delta;
     setWindowZoom(window, nextLevel);
   });
 }
 
 export function restoreWindowZoom(window: ZoomWindow): void {
-  runAfterNativeZoom(window, () => {
-    window.webContents.setZoomLevel(getSavedZoomLevel());
+  runAfterWheelZoom(window, () => {
+    if (window.webContents.isDestroyed()) return;
+    const zoomLevel = getCurrentZoomLevel(window);
+    if (window.webContents.getZoomLevel() !== zoomLevel) {
+      window.webContents.setZoomLevel(zoomLevel);
+    }
   });
 }
 
 export function setupWindowZoom(window: ZoomWindow): void {
   const state: ZoomState = {
+    currentZoomLevel: getSavedZoomLevel(),
     deferredActions: [],
-    nativeZoomTimeout: null,
+    wheelZoomDelta: 0,
+    wheelZoomTimeout: null,
   };
   let restoreTimeout: ReturnType<typeof setTimeout> | null = null;
   zoomStates.set(window, state);
@@ -88,11 +113,14 @@ export function setupWindowZoom(window: ZoomWindow): void {
   };
 
   window.webContents.on("did-finish-load", () => restoreWindowZoom(window));
-  window.webContents.on("zoom-changed", () => {
-    if (state.nativeZoomTimeout) clearTimeout(state.nativeZoomTimeout);
-    state.nativeZoomTimeout = setTimeout(() => {
-      state.nativeZoomTimeout = null;
-      saveZoomLevel(clampZoomLevel(window.webContents.getZoomLevel()));
+  window.webContents.on("zoom-changed", (event, zoomDirection) => {
+    event.preventDefault();
+    state.wheelZoomDelta += zoomDirection === "in" ? ZOOM_STEP : -ZOOM_STEP;
+    state.wheelZoomTimeout ??= setTimeout(() => {
+      const nextLevel = state.currentZoomLevel + state.wheelZoomDelta;
+      state.wheelZoomDelta = 0;
+      state.wheelZoomTimeout = null;
+      setWindowZoom(window, nextLevel);
       const deferredActions = state.deferredActions.splice(0);
       for (const action of deferredActions) action();
     }, 0);
@@ -100,6 +128,7 @@ export function setupWindowZoom(window: ZoomWindow): void {
 
   window.on("maximize", scheduleRestore);
   window.on("unmaximize", scheduleRestore);
+  window.on("resize", scheduleRestore);
   window.on("resized", scheduleRestore);
   window.on("enter-full-screen", scheduleRestore);
   window.on("leave-full-screen", scheduleRestore);

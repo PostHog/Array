@@ -29,6 +29,7 @@ import {
   type NativeGoalState,
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
+import type { ModelInfo } from "../../gateway-models";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
 import type { ProcessSpawnedCallback } from "../../types";
 import { ALLOW_BYPASS } from "../../utils/common";
@@ -203,6 +204,7 @@ export interface CodexAppServerAgentOptions {
   processOptions: CodexAppServerProcessOptions;
   model?: string;
   reasoningEffort?: string;
+  gatewayModels?: ReadonlyArray<ModelInfo>;
   processCallbacks?: ProcessSpawnedCallback;
   logger?: Logger;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
@@ -265,6 +267,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.config = new SessionConfigState(
       options.model ?? DEFAULT_CODEX_MODEL,
       options.reasoningEffort,
+      options.gatewayModels,
     );
     this.onStructuredOutput = options.onStructuredOutput;
     this.developerInstructions = options.processOptions.developerInstructions;
@@ -1300,6 +1303,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
             this.emitCompactionBoundary();
           }
           this.turns.fail(RequestError.internalError(undefined, message));
+          return;
+        }
+        if (
+          message.includes("413") ||
+          message.toLowerCase().includes("request body too large")
+        ) {
+          this.turns.fail(
+            RequestError.internalError(
+              undefined,
+              "This conversation is too large to continue. Start a new task and carry over a text summary instead of image or tool output.",
+            ),
+          );
           return;
         }
         void this.finalizeTurn("refusal");

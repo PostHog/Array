@@ -258,16 +258,8 @@ export function getProviderName(ownedBy: string): string {
   return PROVIDER_NAMES[ownedBy] ?? ownedBy;
 }
 
-// Sort key for ordering models oldest-to-newest in pickers. The model menu
-// opens upward (side="top"), so the last item sits closest to the trigger —
-// sorting ascending by this key puts the newest model right under the user's
-// cursor. The key is the version embedded in the model id, e.g.
-// "claude-sonnet-4-6" -> 4006, "claude-opus-4-8" -> 4008, "claude-fable-5" ->
-// 5000; a higher number means a newer model. An id with no recognisable
-// version (a brand-new or unexpected release) ranks as newest so it still
-// surfaces at the end rather than at an arbitrary gateway-determined position.
-// Only the first version group is read, so a trailing date suffix (e.g.
-// "-20251001") is ignored; the minor component is assumed to be < 1000.
+// Version embedded in the model id, e.g. "claude-opus-4-8" -> 4008. Ids with no
+// recognisable version rank newest. A trailing date suffix is ignored.
 export function getClaudeModelRecency(modelId: string): number {
   const match = modelId.toLowerCase().match(/-(\d+)(?:[-.](\d+))?/);
   if (!match) return Number.MAX_SAFE_INTEGER;
@@ -276,15 +268,48 @@ export function getClaudeModelRecency(modelId: string): number {
   return major * 1000 + minor;
 }
 
+// Families ordered most-capable first; unknown families sort last.
+const MODEL_FAMILY_ORDER = ["fable", "opus", "sonnet", "haiku"];
+
+function getModelFamilyRank(modelId: string): number {
+  const id = modelId.toLowerCase();
+  const index = MODEL_FAMILY_ORDER.findIndex((family) => id.includes(family));
+  return index === -1 ? MODEL_FAMILY_ORDER.length : index;
+}
+
+// Group by family, then newest version first within each family.
+export function compareModelsForPicker(a: string, b: string): number {
+  const familyDiff = getModelFamilyRank(a) - getModelFamilyRank(b);
+  if (familyDiff !== 0) return familyDiff;
+  return getClaudeModelRecency(b) - getClaudeModelRecency(a);
+}
+
 const PROVIDER_PREFIXES = ["anthropic/", "openai/", "google-vertex/"];
+
+const KNOWN_ACRONYMS = new Set(["gpt", "glm"]);
+
+// For a known acronym, uppercase it, keep the version attached, and title-case
+// any suffix: "gpt-5.6-sol" -> "GPT-5.6 Sol", "glm-5.2" -> "GLM-5.2". Other ids
+// stay lowercase to avoid mangling ordinary names (e.g. "llama-3.1-8b").
+function formatProviderModelName(modelId: string): string {
+  const [acronym, version, ...suffix] = modelId.split("-");
+  if (!KNOWN_ACRONYMS.has(acronym.toLowerCase())) return modelId.toLowerCase();
+  const head = version
+    ? `${acronym.toUpperCase()}-${version}`
+    : acronym.toUpperCase();
+  const tail = suffix.map(
+    (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+  );
+  return [head, ...tail].join(" ");
+}
 
 export function formatGatewayModelName(model: GatewayModel): string {
   if (isCloudflareModel(model)) {
-    return (model.id.split("/").pop() ?? model.id).toLowerCase();
+    return formatProviderModelName(model.id.split("/").pop() ?? model.id);
   }
 
   if (isOpenAIModel(model)) {
-    return stripProviderPrefix(model.id).toLowerCase();
+    return formatProviderModelName(stripProviderPrefix(model.id));
   }
 
   return formatModelId(model.id);

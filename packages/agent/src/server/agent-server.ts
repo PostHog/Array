@@ -1091,9 +1091,11 @@ export class AgentServer {
 
         if (result.stopReason === "end_turn") {
           // Relay the response to Slack. For follow-ups this is the primary
-          // delivery path — the HTTP caller only handles reactions.
-          this.relayAgentResponse(this.session.payload).catch((err) =>
-            this.logger.debug("Failed to relay follow-up response", err),
+          // delivery path — the HTTP caller only handles reactions. Echo the
+          // initiating message's id so the backend can attribute the answer.
+          this.relayAgentResponse(this.session.payload, messageId).catch(
+            (err) =>
+              this.logger.debug("Failed to relay follow-up response", err),
           );
         }
 
@@ -3137,6 +3139,10 @@ export class AgentServer {
     ].join("\n");
   }
 
+  private buildExistingPrCheckoutInstruction(prUrl: string): string {
+    return `Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.`;
+  }
+
   private buildDetectedPrContext(prUrl: string): string {
     if (!this.shouldAutoPublishCloudChanges()) {
       return (
@@ -3150,7 +3156,7 @@ export class AgentServer {
       `IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.\n` +
       `You already have an open pull request: ${prUrl}\n` +
       `You MUST:\n` +
-      `1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`\n` +
+      `1. ${this.buildExistingPrCheckoutInstruction(prUrl)}\n` +
       `2. Make changes, commit, and push to that branch\n` +
       `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
     );
@@ -3281,7 +3287,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 This task already has an open pull request: ${prUrl}
 
 After completing the requested changes:
-1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
+1. ${this.buildExistingPrCheckoutInstruction(prUrl)}
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
    - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
@@ -3818,7 +3824,10 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     };
   }
 
-  private async relayAgentResponse(payload: JwtPayload): Promise<void> {
+  private async relayAgentResponse(
+    payload: JwtPayload,
+    messageId?: string,
+  ): Promise<void> {
     if (!this.session) {
       return;
     }
@@ -3862,6 +3871,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
         payload.run_id,
         message,
         messageParts,
+        messageId,
       );
     } catch (error) {
       this.logger.debug("Failed to relay initial agent response to Slack", {
