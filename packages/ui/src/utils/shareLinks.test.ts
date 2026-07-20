@@ -41,6 +41,27 @@ describe("handleShareLinkClick", () => {
     expect(navigateToChannelTask).toHaveBeenCalledWith("chan1", "task1");
   });
 
+  it.each([
+    ["meta", { metaKey: true }],
+    ["ctrl", { ctrlKey: true }],
+    ["shift", { shiftKey: true }],
+    ["a middle button", { button: 1 }],
+  ])(
+    "leaves a %s-modified click to open in a new tab/window",
+    (_label, modifier) => {
+      const event = { preventDefault: vi.fn(), ...modifier };
+
+      const handled = handleShareLinkClick(
+        "https://us.posthog.com/code/canvas/chan1/dash1",
+        event,
+      );
+
+      expect(handled).toBe(false);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(navigateToChannelDashboard).not.toHaveBeenCalled();
+    },
+  );
+
   it("leaves an external link alone", () => {
     const event = { preventDefault: vi.fn() };
 

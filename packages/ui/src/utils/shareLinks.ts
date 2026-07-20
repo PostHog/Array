@@ -23,11 +23,30 @@ export function navigateToShareTarget(target: ShareLinkTarget): void {
   }
 }
 
+interface ShareLinkClickEvent {
+  preventDefault: () => void;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  shiftKey?: boolean;
+  altKey?: boolean;
+  button?: number;
+}
+
+function isModifiedClick(event: ShareLinkClickEvent): boolean {
+  return Boolean(
+    event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      (event.button != null && event.button !== 0),
+  );
+}
+
 export function handleShareLinkClick(
   href: string | undefined,
-  event: { preventDefault: () => void },
+  event: ShareLinkClickEvent,
 ): boolean {
-  if (!href) return false;
+  if (!href || isModifiedClick(event)) return false;
   const target = parseShareLink(href);
   if (!target) return false;
   event.preventDefault();
