@@ -586,11 +586,16 @@ async function handlePostHogExecApprovalFlow(
   context: ToolHandlerContext,
   subTool: string,
 ): Promise<ToolPermissionResult> {
-  const { toolName, toolInput, toolUseID, sessionId } = context;
+  const { toolName, toolInput, toolUseID, sessionId, session } = context;
 
   const response = await requestPermissionFromClient(context, {
     options: [
       { kind: "allow_once", name: "Yes", optionId: "allow" },
+      {
+        kind: "allow_always",
+        name: "Yes, always allow",
+        optionId: "allow_always",
+      },
       {
         kind: "reject_once",
         name: "Type here to tell the agent what to do differently",
@@ -622,8 +627,19 @@ async function handlePostHogExecApprovalFlow(
 
   if (
     response.outcome?.outcome === "selected" &&
-    response.outcome.optionId === "allow"
+    (response.outcome.optionId === "allow" ||
+      response.outcome.optionId === "allow_always")
   ) {
+    if (response.outcome.optionId === "allow_always") {
+      try {
+        await session.settingsManager.addPostHogExecApproval(subTool);
+      } catch (error) {
+        context.logger.warn(
+          "[canUseTool] Failed to persist PostHog exec approval",
+          { error: error instanceof Error ? error.message : String(error) },
+        );
+      }
+    }
     return {
       behavior: "allow",
       updatedInput: toolInput as Record<string, unknown>,
@@ -754,6 +770,12 @@ export async function canUseTool(
           session.posthogExecPermissionRegex,
         )
       ) {
+        if (session.settingsManager.hasPostHogExecApproval(subTool)) {
+          return {
+            behavior: "allow",
+            updatedInput: toolInput as Record<string, unknown>,
+          };
+        }
         return handlePostHogExecApprovalFlow(context, subTool);
       }
     }

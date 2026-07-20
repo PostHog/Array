@@ -127,6 +127,56 @@ describe("SettingsManager per-repo persistence", () => {
     expect(await fs.promises.readFile(filePath, "utf-8")).toBe(original);
   });
 
+  it("persists PostHog exec approvals and sees them across worktrees", async () => {
+    const writer = new SettingsManager(worktree);
+    await writer.initialize();
+    await writer.addPostHogExecApproval("experiment-update");
+
+    const filePath = path.join(mainRepo, ".claude", "settings.local.json");
+    const contents = JSON.parse(await fs.promises.readFile(filePath, "utf-8"));
+    expect(contents.posthogApprovedExecTools).toEqual(["experiment-update"]);
+
+    const sibling = path.join(tmpRoot, "wt-ph");
+    runGit(mainRepo, ["worktree", "add", "-b", "other-ph", sibling]);
+    const reader = new SettingsManager(sibling);
+    await reader.initialize();
+    expect(reader.hasPostHogExecApproval("experiment-update")).toBe(true);
+    expect(reader.hasPostHogExecApproval("experiment-delete")).toBe(false);
+  });
+
+  it("dedupes repeated PostHog exec approvals", async () => {
+    const manager = new SettingsManager(worktree);
+    await manager.initialize();
+
+    await manager.addPostHogExecApproval("foo-update");
+    await manager.addPostHogExecApproval("foo-update");
+    await manager.addPostHogExecApproval("bar-delete");
+
+    const filePath = path.join(mainRepo, ".claude", "settings.local.json");
+    const contents = JSON.parse(await fs.promises.readFile(filePath, "utf-8"));
+    expect(contents.posthogApprovedExecTools).toEqual([
+      "foo-update",
+      "bar-delete",
+    ]);
+  });
+
+  it("concurrent addPostHogExecApproval calls do not clobber each other", async () => {
+    const manager = new SettingsManager(worktree);
+    await manager.initialize();
+
+    await Promise.all([
+      manager.addPostHogExecApproval("a-update"),
+      manager.addPostHogExecApproval("b-delete"),
+      manager.addPostHogExecApproval("c-destroy"),
+    ]);
+
+    const filePath = path.join(mainRepo, ".claude", "settings.local.json");
+    const contents = JSON.parse(await fs.promises.readFile(filePath, "utf-8"));
+    expect(contents.posthogApprovedExecTools).toEqual(
+      expect.arrayContaining(["a-update", "b-delete", "c-destroy"]),
+    );
+  });
+
   it("concurrent addAllowRules calls do not clobber each other", async () => {
     const manager = new SettingsManager(worktree);
     await manager.initialize();

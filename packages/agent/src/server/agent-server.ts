@@ -3735,17 +3735,22 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
         const posthogExecSubTool =
           this.matchesPostHogExecPermissionRequest(params);
         if (mode !== "background" && posthogExecSubTool) {
-          const promptOnceParams = {
+          const isClaudeCodeRequest = Boolean(
+            params.toolCall?._meta?.claudeCode,
+          );
+          const relayParams = {
             ...params,
-            options: params.options.filter(
-              (option) => option.kind !== "allow_always",
-            ),
+            options: isClaudeCodeRequest
+              ? params.options
+              : params.options.filter(
+                  (option) => option.kind !== "allow_always",
+                ),
           };
           this.logger.debug("Relaying configured PostHog exec permission", {
             subTool: posthogExecSubTool,
             sessionPermissionMode: this.getSessionPermissionMode(),
           });
-          return this.relayPermissionToClient(promptOnceParams);
+          return this.relayPermissionToClient(relayParams);
         }
 
         // Relay permission requests to the connected client when:

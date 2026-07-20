@@ -215,7 +215,7 @@ describe("canUseTool MCP approval enforcement", () => {
     "auto",
     "bypassPermissions",
   ] as const)(
-    "prompts for a configured PostHog exec match in %s mode without remembering",
+    "prompts for a configured PostHog exec match in %s mode with a remembered choice",
     async (permissionMode) => {
       setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
 
@@ -226,6 +226,8 @@ describe("canUseTool MCP approval enforcement", () => {
           posthogExecPermissionRegex,
           settingsManager: {
             getRepoRoot: vi.fn().mockReturnValue("/repo"),
+            hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+            addPostHogExecApproval: vi.fn(),
           },
         },
       });
@@ -236,6 +238,7 @@ describe("canUseTool MCP approval enforcement", () => {
         expect.objectContaining({
           options: [
             expect.objectContaining({ kind: "allow_once" }),
+            expect.objectContaining({ kind: "allow_always" }),
             expect.objectContaining({ kind: "reject_once" }),
           ],
           toolCall: expect.objectContaining({
@@ -246,6 +249,54 @@ describe("canUseTool MCP approval enforcement", () => {
       );
     },
   );
+
+  it("skips the prompt for a remembered PostHog exec sub-tool", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: { command: "call experiment-update {}" },
+      session: {
+        permissionMode: "default",
+        posthogExecPermissionRegex,
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi.fn().mockReturnValue(true),
+          addPostHogExecApproval: vi.fn(),
+        },
+      },
+    });
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it("persists a PostHog exec sub-tool selected with allow always", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+    const addPostHogExecApproval = vi.fn().mockResolvedValue(undefined);
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: { command: "call notebooks-destroy {}" },
+      session: {
+        permissionMode: "default",
+        posthogExecPermissionRegex,
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+          addPostHogExecApproval,
+        },
+      },
+      client: createClient({
+        outcome: { outcome: "selected", optionId: "allow_always" },
+      }),
+    });
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(addPostHogExecApproval).toHaveBeenCalledWith("notebooks-destroy");
+  });
 
   it("does not gate a nonmatching PostHog sub-tool", async () => {
     setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });

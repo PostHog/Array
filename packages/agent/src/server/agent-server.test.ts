@@ -1522,14 +1522,16 @@ describe("AgentServer HTTP Mode", () => {
         request: claudePosthogExecPermissionRequest(
           "call notebooks-destroy {}",
         ),
+        expectedKinds: ["allow_once", "allow_always", "reject_once"],
       },
       {
         adapter: "Codex",
         request: codexPosthogExecPermissionRequest("call notebooks-destroy {}"),
+        expectedKinds: ["allow_once", "reject_once"],
       },
     ])(
-      "relays a configured PostHog exec match from $adapter without an always-allow option",
-      async ({ request }) => {
+      "relays a configured PostHog exec match from $adapter with adapter-specific choices",
+      async ({ request, expectedKinds }) => {
         const testServer = exposeCloudClient(createServer());
         testServer.session = null;
         testServer.eventStreamSender = null;
@@ -1542,13 +1544,11 @@ describe("AgentServer HTTP Mode", () => {
         const { requestPermission } = testServer.createCloudClient(basePayload);
         const result = await requestPermission(request);
 
-        expect(relaySpy).toHaveBeenCalledWith(
-          expect.objectContaining({
-            options: [
-              expect.objectContaining({ kind: "allow_once" }),
-              expect.objectContaining({ kind: "reject_once" }),
-            ],
-          }),
+        const relayed = relaySpy.mock.calls[0]?.[0] as {
+          options: Array<{ kind: string }>;
+        };
+        expect(relayed.options.map((option) => option.kind)).toEqual(
+          expectedKinds,
         );
         expect(result.outcome).toEqual({
           outcome: "selected",
