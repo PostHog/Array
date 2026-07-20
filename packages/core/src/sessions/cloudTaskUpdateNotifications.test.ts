@@ -210,6 +210,11 @@ describe("cloud task update notifications", () => {
   // most once even if the producer writes duplicate completion entries.
   it.each([
     {
+      label: "a completion event without an armed turn",
+      updates: [logsUpdate([turnComplete()], 1)],
+      expected: 0,
+    },
+    {
       label: "a live turn that starts and completes",
       updates: [logsUpdate([sessionPrompt(1), turnComplete()], 2)],
       expected: 1,

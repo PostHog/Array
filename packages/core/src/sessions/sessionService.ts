@@ -1947,7 +1947,9 @@ export class SessionService {
         // above. Cloud sessions never see that response.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
-          const completedActiveTurn = session.currentPromptId !== null;
+          const completedActiveTurn =
+            session.currentPromptId !== null &&
+            session.currentPromptId !== undefined;
           const turnStartedAtTs =
             this.liveTurnContent.get(taskRunId)?.startedAtTs ??
             session.promptStartedAt;
