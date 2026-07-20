@@ -1,4 +1,5 @@
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
+import { findNextScrollKey } from "@posthog/core/code-review/reviewShellGeometry";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
@@ -17,7 +18,6 @@ import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewListItem, ReviewShellProps } from "../reviewShellParts";
 import {
   findActiveScrollKey,
-  findNextScrollKey,
   findRenderedScrollAnchor,
   isFileViewed,
 } from "../reviewShellParts";
