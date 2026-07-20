@@ -3827,13 +3827,18 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).not.toContain("gh pr checkout");
     });
 
-    it("returns auto-update PR context for Slack-origin runs", () => {
+    it("avoids redundant PR checkout for auto-update runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       const s = createServer();
       const context = (s as unknown as TestableServer).buildDetectedPrContext(
         prUrl,
       );
-      expect(context).toContain(`gh pr checkout ${prUrl}`);
+      expect(context).toContain(
+        `If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\``,
+      );
+      expect(context).toContain(
+        "Do not check it out again when it is already active",
+      );
       expect(context).toContain(
         "Make changes, commit, and push to that branch",
       );

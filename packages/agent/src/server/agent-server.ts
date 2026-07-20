@@ -3152,7 +3152,7 @@ export class AgentServer {
       `IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.\n` +
       `You already have an open pull request: ${prUrl}\n` +
       `You MUST:\n` +
-      `1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`\n` +
+      `1. Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.\n` +
       `2. Make changes, commit, and push to that branch\n` +
       `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
     );
