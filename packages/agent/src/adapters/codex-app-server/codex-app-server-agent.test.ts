@@ -2783,7 +2783,13 @@ describe("CodexAppServerAgent", () => {
   }
 
   // permissionOutcome may be a value or a function (per-call, e.g. a pending promise).
-  function makePlanAgent(permissionOutcome: unknown) {
+  function makePlanAgent(
+    permissionOutcome: unknown,
+    options: {
+      rejectPlanToolUpdates?: boolean;
+      stallPlanToolUpdates?: boolean;
+    } = {},
+  ) {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
       "turn/start": { turn: { id: "turn_1" } },
@@ -2796,7 +2802,19 @@ describe("CodexAppServerAgent", () => {
     }> = [];
     const client = {
       sessionUpdate: async (n: unknown) => {
-        sessionUpdates.push(n as { update?: Record<string, unknown> });
+        const notification = n as { update?: Record<string, unknown> };
+        if (
+          notification.update?.sessionUpdate === "tool_call" ||
+          notification.update?.sessionUpdate === "tool_call_update"
+        ) {
+          if (options.rejectPlanToolUpdates) {
+            throw new Error("renderer disconnected");
+          }
+          if (options.stallPlanToolUpdates) {
+            return new Promise(() => {});
+          }
+        }
+        sessionUpdates.push(notification);
       },
       requestPermission: async (params: {
         toolCall: Record<string, unknown>;
@@ -2924,6 +2942,57 @@ describe("CodexAppServerAgent", () => {
     expect(permissionRequests[0].options.map((o) => o.optionId)).toContain(
       "auto",
     );
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "p1:implement",
+        title: "Ready to code?",
+        kind: "switch_mode",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "# The plan\n\n" },
+          },
+        ],
+        rawInput: { plan: "# The plan\n\n" },
+        status: "in_progress",
+      },
+    });
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1:implement",
+        status: "in_progress",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "# The plan\n\n1. do it" },
+          },
+        ],
+        rawInput: { plan: "# The plan\n\n1. do it" },
+      },
+    });
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1:implement",
+        status: "completed",
+      },
+    });
+    expect(
+      sessionUpdates.some((notification) => {
+        if (notification.update?.sessionUpdate !== "agent_message_chunk") {
+          return false;
+        }
+        const content = notification.update.content as
+          | { type?: string; text?: string }
+          | undefined;
+        return content?.text?.includes("# The plan") === true;
+      }),
+    ).toBe(false);
 
     // Mode flipped to auto and the host was told.
     expect(sessionUpdates).toContainEqual(
@@ -2949,8 +3018,66 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("coalesces streamed plan snapshots in notification history", async () => {
+    const { agent, stub } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "first" });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: " second" });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: " third" });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await done;
+
+    const session = (
+      agent as unknown as {
+        session: {
+          notificationHistory: Array<{ update?: Record<string, unknown> }>;
+        };
+      }
+    ).session;
+    const streamedUpdates = session.notificationHistory.filter(
+      (notification) =>
+        notification.update?.sessionUpdate === "tool_call_update" &&
+        notification.update.status === "in_progress",
+    );
+    expect(streamedUpdates).toHaveLength(1);
+    expect(streamedUpdates[0].update?.rawInput).toEqual({
+      plan: "first second third",
+    });
+  });
+
+  it("caps streamed plans before rendering or storing them", async () => {
+    const { agent, stub, permissionRequests, sessionUpdates } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "a".repeat(75_000) });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "b".repeat(75_000) });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await done;
+
+    const renderedPlans = sessionUpdates.flatMap((notification) => {
+      const rawInput = notification.update?.rawInput as
+        | { plan?: unknown }
+        | undefined;
+      return typeof rawInput?.plan === "string" ? [rawInput.plan] : [];
+    });
+    const approvalPlan = permissionRequests[0].toolCall.rawInput as {
+      plan: string;
+    };
+    expect(renderedPlans.every((plan) => plan.length <= 100_000)).toBe(true);
+    expect(approvalPlan.plan).toHaveLength(100_000);
+  });
+
   it("stays in plan mode when the handoff is rejected without feedback", async () => {
-    const { agent, stub, permissionRequests } = makePlanAgent({
+    const { agent, stub, sessionUpdates, permissionRequests } = makePlanAgent({
       outcome: { outcome: "selected", optionId: "reject_with_feedback" },
     });
     const { done } = await startPlanTurn(agent, stub);
@@ -2964,7 +3091,59 @@ describe("CodexAppServerAgent", () => {
 
     expect((await done).stopReason).toBe("end_turn");
     expect(permissionRequests).toHaveLength(1);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1:implement",
+        status: "failed",
+      },
+    });
     // No implementation turn started; the picker stays on plan.
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+  });
+
+  it("settles the handoff when plan tool-call updates cannot be delivered", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent(
+      {
+        outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+      },
+      { rejectPlanToolUpdates: true },
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(1);
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not block the handoff when plan tool-call updates never settle", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent(
+      {
+        outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+      },
+      { stallPlanToolUpdates: true },
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "# The plan" });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(1);
     expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
       1,
     );

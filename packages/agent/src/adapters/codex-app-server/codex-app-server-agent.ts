@@ -116,6 +116,8 @@ type GoalCommand =
   | { kind: "resume" }
   | { kind: "set"; objective: string };
 
+const MAX_PLAN_PROPOSAL_CHARS = 100_000;
+
 type CodexSkill = {
   name?: string;
   description?: string;
@@ -244,6 +246,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private workspaceDirectory?: string;
   /** The in-flight turn's <proposed_plan>, streamed or completed (drives the implement handoff). */
   private planProposal?: { itemId: string; text: string };
+  /** Structured plan tool call already emitted while the proposal streams. */
+  private streamedPlanToolCallId?: string;
   /** Idle signal deferred while the plan handoff keeps this prompt busy. */
   private deferredTurnComplete?: { usage: PromptResponse["usage"] };
   /** Settles the pending plan-approval race on cancel/close/preempting prompt. */
@@ -882,6 +886,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.lastAgentMessage = "";
     this.resetUsage();
     this.planProposal = undefined;
+    this.streamedPlanToolCallId = undefined;
     // A new turn owns the idle boundary; its own completion emits the signal.
     this.deferredTurnComplete = undefined;
     const { completion, turn } = this.turns.begin();
@@ -939,13 +944,22 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         // Re-check after the await: a cancel that raced the response wins, so a
         // late accept can never start implementation on a cancelled prompt.
         if (this.session.cancelled) {
+          if (outcome.kind === "implement") {
+            this.completePlanApprovalToolCall(outcome.toolCallId, "failed");
+          }
           result = { ...result, stopReason: "cancelled" };
           break;
         }
         // A picker change while approval was open owns the mode. Never let a
         // stale approval overwrite it with a broader implementation mode.
-        if (this.config.mode !== "plan") break;
+        if (this.config.mode !== "plan") {
+          if (outcome.kind === "implement") {
+            this.completePlanApprovalToolCall(outcome.toolCallId, "failed");
+          }
+          break;
+        }
         if (outcome.kind === "implement") {
+          this.completePlanApprovalToolCall(outcome.toolCallId, "completed");
           this.config.setOption("mode", outcome.mode);
           this.emitCurrentMode(outcome.mode);
           this.emitConfigOptions();
@@ -997,23 +1011,17 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     itemId: string;
     text: string;
   }): Promise<
-    | { kind: "implement"; mode: "auto" | "full-access" }
+    | {
+        kind: "implement";
+        mode: "auto" | "full-access";
+        toolCallId: string;
+      }
     | { kind: "feedback"; feedback: string }
     | { kind: "stay" }
   > {
     const toolCallId = `${proposal.itemId}:implement`;
-    const toolCall = {
-      toolCallId,
-      title: "Ready to code?",
-      kind: "switch_mode",
-      content: [
-        {
-          type: "content" as const,
-          content: { type: "text" as const, text: proposal.text },
-        },
-      ],
-      rawInput: { plan: proposal.text },
-    };
+    const toolCall = this.buildPlanApprovalToolCall(proposal);
+    this.emitPlanProposal(toolCall, proposal.text);
     const options = [
       {
         optionId: "auto",
@@ -1056,8 +1064,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     });
     const settled = await Promise.race([permission, cancelled]);
     this.planHandoffCancel = undefined;
-    if (!settled) return { kind: "stay" };
+    if (!settled) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
     if (settled.failed) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
       this.logger.warn("plan implementation prompt failed; staying in plan", {
         error: String(settled.err),
       });
@@ -1069,23 +1081,136 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     const response = settled.res;
     if (this.session.cancelled || response.outcome.outcome !== "selected") {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
       return { kind: "stay" };
     }
     const optionId = response.outcome.optionId;
-    if (!offered.has(optionId)) return { kind: "stay" };
-    if (optionId === "auto") return { kind: "implement", mode: "auto" };
+    if (!offered.has(optionId)) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
+    if (optionId === "auto") {
+      return { kind: "implement", mode: "auto", toolCallId };
+    }
     // Double-gated: only ever offered under ALLOW_BYPASS, and re-checked here.
     if (optionId === "full-access" && ALLOW_BYPASS) {
-      return { kind: "implement", mode: "full-access" };
+      return { kind: "implement", mode: "full-access", toolCallId };
     }
     if (optionId === "reject_with_feedback") {
       const feedback = (response as { _meta?: { customInput?: unknown } })._meta
         ?.customInput;
       if (typeof feedback === "string" && feedback.trim()) {
+        this.completePlanApprovalToolCall(toolCallId, "failed");
         return { kind: "feedback", feedback: feedback.trim() };
       }
     }
+    this.completePlanApprovalToolCall(toolCallId, "failed");
     return { kind: "stay" };
+  }
+
+  private buildPlanApprovalToolCall(proposal: {
+    itemId: string;
+    text: string;
+  }): {
+    toolCallId: string;
+    title: string;
+    kind: "switch_mode";
+    content: Array<{
+      type: "content";
+      content: { type: "text"; text: string };
+    }>;
+    rawInput: { plan: string };
+  } {
+    return {
+      toolCallId: `${proposal.itemId}:implement`,
+      title: "Ready to code?",
+      kind: "switch_mode",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: proposal.text },
+        },
+      ],
+      rawInput: { plan: proposal.text },
+    };
+  }
+
+  private emitPlanProposal(
+    toolCall: ReturnType<CodexAppServerAgent["buildPlanApprovalToolCall"]>,
+    text: string,
+  ): void {
+    if (this.streamedPlanToolCallId === toolCall.toolCallId) {
+      this.emitPlanApprovalToolCall({
+        sessionUpdate: "tool_call_update",
+        toolCallId: toolCall.toolCallId,
+        status: "in_progress",
+        content: [{ type: "content", content: { type: "text", text } }],
+        rawInput: { plan: text },
+      });
+      return;
+    }
+    this.streamedPlanToolCallId = toolCall.toolCallId;
+    this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call",
+      ...toolCall,
+      status: "in_progress",
+    });
+  }
+
+  private completePlanApprovalToolCall(
+    toolCallId: string,
+    status: "completed" | "failed",
+  ): void {
+    this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call_update",
+      toolCallId,
+      status,
+    });
+  }
+
+  private emitPlanApprovalToolCall(update: Record<string, unknown>): void {
+    const notification = {
+      sessionId: this.sessionId,
+      update,
+    } as unknown as Parameters<AgentSideConnection["sessionUpdate"]>[0];
+    this.appendPlanApprovalNotification(notification);
+    void this.client.sessionUpdate(notification).catch((error) => {
+      this.logger.warn("Failed to emit plan approval tool call update", {
+        error: String(error),
+        sessionUpdate: update.sessionUpdate,
+        toolCallId: update.toolCallId,
+      });
+    });
+  }
+
+  private appendPlanApprovalNotification(
+    notification: Parameters<AgentSideConnection["sessionUpdate"]>[0],
+  ): void {
+    const update = notification.update as Record<string, unknown>;
+    if (
+      update.sessionUpdate === "tool_call_update" &&
+      update.status === "in_progress" &&
+      typeof update.toolCallId === "string"
+    ) {
+      for (
+        let index = this.session.notificationHistory.length - 1;
+        index >= 0;
+        index--
+      ) {
+        const previous = this.session.notificationHistory[index] as unknown as {
+          update?: Record<string, unknown>;
+        };
+        if (
+          previous.update?.sessionUpdate === "tool_call_update" &&
+          previous.update.status === "in_progress" &&
+          previous.update.toolCallId === update.toolCallId
+        ) {
+          this.session.notificationHistory[index] = notification;
+          return;
+        }
+      }
+    }
+    this.appendNotification(this.sessionId, notification);
   }
 
   /** Emit a plain agent message (user-facing status the model didn't produce). */
@@ -1381,7 +1506,16 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       params as { item?: { type?: string; id?: string; text?: string } }
     )?.item;
     if (item?.type === "plan" && typeof item.text === "string" && item.text) {
-      this.planProposal = { itemId: item.id ?? "codex-plan", text: item.text };
+      this.planProposal = {
+        itemId: item.id ?? "codex-plan",
+        text: item.text.slice(0, MAX_PLAN_PROPOSAL_CHARS),
+      };
+      if (this.config.mode === "plan" && this.streamedPlanToolCallId) {
+        this.emitPlanProposal(
+          this.buildPlanApprovalToolCall(this.planProposal),
+          this.planProposal.text,
+        );
+      }
     }
   }
 
@@ -1398,7 +1532,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         : (this.planProposal?.itemId ?? "codex-plan");
     const previousText =
       this.planProposal?.itemId === proposalId ? this.planProposal.text : "";
-    this.planProposal = { itemId: proposalId, text: previousText + delta };
+    const remainingChars = MAX_PLAN_PROPOSAL_CHARS - previousText.length;
+    if (remainingChars <= 0) return;
+    this.planProposal = {
+      itemId: proposalId,
+      text: previousText + delta.slice(0, remainingChars),
+    };
+    if (this.config.mode === "plan") {
+      this.emitPlanProposal(
+        this.buildPlanApprovalToolCall(this.planProposal),
+        this.planProposal.text,
+      );
+    }
   }
 
   /** Compaction started: emit `_posthog/status` so the host sets `isCompacting` (gates steer/queue). */
