@@ -27,7 +27,8 @@ export function appendArchivedTaskId(
   old: string[] | undefined,
   taskId: string,
 ): string[] {
-  return old ? [...old, taskId] : [taskId];
+  if (!old) return [taskId];
+  return old.includes(taskId) ? old : [...old, taskId];
 }
 
 export function removeArchivedTaskId(
@@ -41,7 +42,11 @@ export function appendOptimisticArchivedTask(
   old: ArchivedTask[] | undefined,
   optimistic: ArchivedTask,
 ): ArchivedTask[] {
-  return old ? [...old, optimistic] : [optimistic];
+  if (!old) return [optimistic];
+  return [
+    ...old.filter((task) => task.taskId !== optimistic.taskId),
+    optimistic,
+  ];
 }
 
 export function removeArchivedTask(
