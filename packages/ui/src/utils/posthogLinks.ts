@@ -137,6 +137,30 @@ const POSTHOG_HOSTS = new Set(
     .filter(Boolean),
 );
 
+interface ShareLinkRoute {
+  pattern: string[];
+  build: (params: Record<string, string>) => ShareLinkTarget;
+}
+
+const SHARE_LINK_ROUTES: ShareLinkRoute[] = [
+  {
+    pattern: ["code", "canvas", ":channelId", ":dashboardId"],
+    build: ({ channelId, dashboardId }) => ({
+      kind: "canvas",
+      channelId,
+      dashboardId,
+    }),
+  },
+  {
+    pattern: ["code", "channel", ":channelId"],
+    build: ({ channelId }) => ({ kind: "channel", channelId }),
+  },
+  {
+    pattern: ["code", "channel", ":channelId", "tasks", ":taskId"],
+    build: ({ channelId, taskId }) => ({ kind: "channel", channelId, taskId }),
+  },
+];
+
 function decodePathSegments(pathname: string): string[] {
   return pathname
     .split("/")
@@ -150,24 +174,21 @@ function decodePathSegments(pathname: string): string[] {
     });
 }
 
-function parseCanvasShareLink(segments: string[]): ShareLinkTarget | null {
-  const [root, kind, channelId, dashboardId] = segments;
-  if (root === "code" && kind === "canvas" && segments.length === 4) {
-    return { kind: "canvas", channelId, dashboardId };
+function matchRoute(
+  segments: string[],
+  route: ShareLinkRoute,
+): ShareLinkTarget | null {
+  if (segments.length !== route.pattern.length) return null;
+  const params: Record<string, string> = {};
+  for (const [index, token] of route.pattern.entries()) {
+    const segment = segments[index];
+    if (token.startsWith(":")) {
+      params[token.slice(1)] = segment;
+    } else if (token !== segment) {
+      return null;
+    }
   }
-  return null;
-}
-
-function parseChannelShareLink(segments: string[]): ShareLinkTarget | null {
-  const [root, kind, channelId, maybeTasks, taskId] = segments;
-  if (root !== "code" || kind !== "channel") return null;
-  if (segments.length === 3) {
-    return { kind: "channel", channelId };
-  }
-  if (segments.length === 5 && maybeTasks === "tasks") {
-    return { kind: "channel", channelId, taskId };
-  }
-  return null;
+  return route.build(params);
 }
 
 export function parseShareLink(href: string): ShareLinkTarget | null {
@@ -180,7 +201,11 @@ export function parseShareLink(href: string): ShareLinkTarget | null {
   if (!POSTHOG_HOSTS.has(url.host)) return null;
 
   const segments = decodePathSegments(url.pathname);
-  return parseCanvasShareLink(segments) ?? parseChannelShareLink(segments);
+  for (const route of SHARE_LINK_ROUTES) {
+    const target = matchRoute(segments, route);
+    if (target) return target;
+  }
+  return null;
 }
 
 export function errorTrackingIssueUrl(
