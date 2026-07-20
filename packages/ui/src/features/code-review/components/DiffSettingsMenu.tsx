@@ -4,16 +4,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import { useDiffViewerStore } from "@posthog/ui/features/code-editor/diffViewerStore";
 import type { CommentFileFilter } from "../commentFileFilter";
+import { CommentFilterSubmenu } from "./CommentFilterSubmenu";
 
 interface DiffSettingsMenuProps {
   commentedFileCount: number;
@@ -87,41 +83,12 @@ export function DiffSettingsMenu({
           {showReviewComments ? "Hide review comments" : "Show review comments"}
         </DropdownMenuItem>
         {showReviewComments && onCommentFilterChange && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              Comment filter
-              {commentFilter === "commented"
-                ? " · All"
-                : commentFilter === "unresolved"
-                  ? " · Unresolved"
-                  : ""}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent side="right" sideOffset={4}>
-              <DropdownMenuRadioGroup
-                value={commentFilter === "none" ? "" : commentFilter}
-                onValueChange={(value) =>
-                  onCommentFilterChange(value as CommentFileFilter)
-                }
-              >
-                <DropdownMenuRadioItem value="commented">
-                  All comments ({commentedFileCount})
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="unresolved">
-                  Unresolved comments ({unresolvedCommentedFileCount})
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              {commentFilter !== "none" && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => onCommentFilterChange("none")}
-                  >
-                    Clear comment filter
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+          <CommentFilterSubmenu
+            commentedFileCount={commentedFileCount}
+            unresolvedCommentedFileCount={unresolvedCommentedFileCount}
+            commentFilter={commentFilter}
+            onCommentFilterChange={onCommentFilterChange}
+          />
         )}
       </DropdownMenuContent>
     </DropdownMenu>
