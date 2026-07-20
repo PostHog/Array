@@ -629,24 +629,6 @@ function FollowOwnPost({ latestPendingId }: { latestPendingId?: string }) {
   return null;
 }
 
-// Land at the latest message when the feed swaps to another channel: the route
-// doesn't remount on a param change, so the provider's one-shot
-// defaultScrollPosition only covers the channel it mounted with. Imperative
-// rather than keying the provider — a remount would rebuild the entire feed
-// subtree on every switch. Layout effect so the jump happens in the same
-// commit as the swapped rows, before paint. Renders nothing.
-function LandAtLatestOnChannelChange({ channelId }: { channelId: string }) {
-  const { scrollToEnd } = useChatMessageScroller();
-  const prevRef = useRef(channelId);
-  useLayoutEffect(() => {
-    if (channelId !== prevRef.current) {
-      prevRef.current = channelId;
-      scrollToEnd({ behavior: "auto" });
-    }
-  }, [channelId, scrollToEnd]);
-  return null;
-}
-
 // A single feed entry, either a real task card or a synthetic system row, tagged
 // with the timestamp used to interleave the two.
 type FeedEntry =
@@ -714,6 +696,16 @@ export function ChannelFeedView({
     return merged;
   }, [tasks, systemMessages]);
 
+  // Open every channel at its latest message. The scroller handles the first
+  // mount itself (defaultScrollPosition), but switching channels only swaps
+  // the rows — no remount — so jump to the bottom before paint whenever the
+  // channel changes. No-ops while the loading state has the viewport unmounted.
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [channelId]);
+
   // Hold the loading state even when some entries already exist (the "joined"
   // opener renders as soon as the channel resolves, before the task cards):
   // mounting the scroller around partial content spends its one-shot initial
@@ -736,10 +728,9 @@ export function ChannelFeedView({
 
   return (
     <ChatMessageScrollerProvider defaultScrollPosition="end">
-      <LandAtLatestOnChannelChange channelId={channelId} />
       <FollowOwnPost latestPendingId={latestPendingId} />
       <ChatMessageScroller className="min-h-0 flex-1">
-        <ChatMessageScrollerViewport>
+        <ChatMessageScrollerViewport ref={viewportRef}>
           {/* Horizontal padding is load-bearing: ThreadItem's actions float at
               the row's top-right corner (absolute, past the row edge). Without a
               gutter they hug the scroll container and get clipped. */}
