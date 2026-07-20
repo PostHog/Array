@@ -153,11 +153,25 @@ export const AllActivityKinds: Story = {
 };
 
 function ConcurrentCommandsStory() {
-  const startedAt = Date.now() - 10 * MINUTE;
+  const startedAt = Date.now() - 12 * MINUTE;
   return (
     <AutoresearchObservability
       run={{ ...run, startedAt, endedAt: null }}
       events={[
+        event(startedAt + 30_000, {
+          sessionUpdate: "tool_call",
+          toolCallId: "search",
+          title: "Find autoresearch dashboard components",
+          kind: "search",
+          status: "completed",
+        }),
+        event(startedAt + MINUTE, {
+          sessionUpdate: "tool_call",
+          toolCallId: "read",
+          title: "Read existing timeline implementation",
+          kind: "read",
+          status: "completed",
+        }),
         event(startedAt + 2 * MINUTE, {
           sessionUpdate: "tool_call",
           toolCallId: "server",
@@ -166,7 +180,36 @@ function ConcurrentCommandsStory() {
           rawInput: { command: "pnpm --filter code storybook" },
           status: "in_progress",
         }),
+        event(startedAt + 3 * MINUTE, {
+          sessionUpdate: "tool_call",
+          toolCallId: "edit-layout",
+          title: "Add responsive timeline layout",
+          kind: "edit",
+          status: "completed",
+        }),
+        event(startedAt + 4 * MINUTE, {
+          sessionUpdate: "tool_call",
+          toolCallId: "typecheck",
+          title: "Typecheck UI package",
+          kind: "execute",
+          rawInput: { command: "pnpm --filter @posthog/ui typecheck" },
+          status: "completed",
+        }),
         event(startedAt + 5 * MINUTE, {
+          sessionUpdate: "tool_call",
+          toolCallId: "screenshots",
+          title: "Inspect Storybook screenshots",
+          kind: "read",
+          status: "completed",
+        }),
+        event(startedAt + 6 * MINUTE, {
+          sessionUpdate: "tool_call",
+          toolCallId: "edit-stories",
+          title: "Add timeline story variants",
+          kind: "edit",
+          status: "completed",
+        }),
+        event(startedAt + 7 * MINUTE, {
           sessionUpdate: "tool_call",
           toolCallId: "benchmark",
           title: "Run bundle benchmark",
@@ -182,6 +225,17 @@ function ConcurrentCommandsStory() {
           rawInput: { command: "git status --short" },
           status: "completed",
         }),
+        event(startedAt + 9 * MINUTE, {
+          sessionUpdate: "tool_call",
+          toolCallId: "visual-tests",
+          title: "Capture visual snapshots",
+          kind: "execute",
+          rawInput: {
+            command:
+              "pnpm exec test-storybook --browsers chromium AutoresearchObservability.stories.tsx",
+          },
+          status: "completed",
+        }),
       ]}
     />
   );
@@ -190,6 +244,7 @@ function ConcurrentCommandsStory() {
 export const ConcurrentCommands: Story = {
   args: { run, events: [] },
   render: () => <ConcurrentCommandsStory />,
+  parameters: { testOptions: { viewport: { width: 1280, height: 1100 } } },
 };
 
 export const LongCommandLabels: Story = {
