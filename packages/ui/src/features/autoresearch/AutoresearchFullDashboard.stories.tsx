@@ -330,6 +330,7 @@ export const Playground: Story = {};
 
 export const BeforeBaseline: Story = {
   args: { iterationCount: 0, showResearch: true, status: "running" },
+  parameters: { testOptions: { waitForLoadersToDisappear: false } },
 };
 
 export const CompletedRun: Story = {

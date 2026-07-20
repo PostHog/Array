@@ -190,4 +190,5 @@ export const MaximizeCompleted: Story = {
 /** Before the first metric report arrives: active baseline measurement. */
 export const NoIterationsYet: Story = {
   args: { run: run() },
+  parameters: { testOptions: { waitForLoadersToDisappear: false } },
 };

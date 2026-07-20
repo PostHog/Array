@@ -90,4 +90,7 @@ type Story = StoryObj<typeof AutoresearchObservability>;
 
 export const ActiveExperiment: Story = { args: { run, events } };
 
-export const WaitingForPlan: Story = { args: { run, events: [] } };
+export const WaitingForPlan: Story = {
+  args: { run, events: [] },
+  parameters: { testOptions: { waitForLoadersToDisappear: false } },
+};

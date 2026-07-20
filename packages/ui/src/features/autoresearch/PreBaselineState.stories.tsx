@@ -51,6 +51,7 @@ const run: AutoresearchRun = {
 const meta: Meta<typeof PreBaselineState> = {
   title: "Autoresearch/Research Map",
   component: PreBaselineState,
+  parameters: { testOptions: { waitForLoadersToDisappear: false } },
 };
 
 export default meta;
