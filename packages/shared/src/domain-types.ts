@@ -100,9 +100,25 @@ export interface ChannelFeedMessage {
   created_at: string;
 }
 
+/** Server-emitted agent rows in a task's thread. */
+export type TaskThreadMessageEvent =
+  /** The agent's final turn, made durable. `payload.run_id` identifies the run,
+   *  so a client already streaming that run can drop this copy. */
+  | "turn_complete"
+  /** The agent is asking to do something before it proceeds. */
+  | "permission_request";
+
 /**
- * One human message in a task's thread. Thread messages never reach the agent
- * unless the task author forwards one, which stamps the forwarded_* fields.
+ * One message in a task's thread. Human messages never reach the agent unless
+ * the task author forwards one, which stamps the forwarded_* fields.
+ *
+ * Agent rows are authorless (`author_kind: "agent"`, no `author`) and carry a
+ * stable `event` + structured `payload`, so they can be rendered from those
+ * rather than by parsing `content` — which stays the rendered text, so a client
+ * that doesn't know the event still shows something sensible.
+ *
+ * `author_kind` is optional only so older payloads (and test fixtures) parse;
+ * absent means human, which is what every message was before agents could post.
  */
 export interface TaskThreadMessage {
   id: string;
@@ -116,6 +132,10 @@ export interface TaskThreadMessage {
   content: string;
   created_at: string;
   author?: UserBasic | null;
+  author_kind?: "human" | "system" | "agent";
+  /** Empty for human messages. */
+  event?: TaskThreadMessageEvent | string;
+  payload?: Record<string, unknown>;
   forwarded_to_agent_at?: string | null;
   forwarded_by?: UserBasic | null;
 }

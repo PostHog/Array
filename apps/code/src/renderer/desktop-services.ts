@@ -70,6 +70,7 @@ import {
   type IAuthSideEffects,
 } from "@posthog/ui/features/auth/identifiers";
 import { authKeys } from "@posthog/ui/features/auth/useCurrentUser";
+import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import {
   FEATURE_FLAGS,
   type FeatureFlags,
@@ -85,6 +86,7 @@ import {
 } from "@posthog/ui/features/integrations/integrationsClientImpl";
 import { NAVIGATION_TASK_BINDER } from "@posthog/ui/features/navigation/taskBinder";
 import { navigationTaskBinder } from "@posthog/ui/features/navigation/taskBinderImpl";
+import { activeNotificationTarget } from "@posthog/ui/features/notifications/activeTarget";
 import {
   ACTIVE_VIEW_PROVIDER,
   type IActiveView,
@@ -324,28 +326,18 @@ container.bind<IActiveView>(ACTIVE_VIEW_PROVIDER).toConstantValue({
   hasFocus: () => document.hasFocus(),
   // Read the active leaf route directly: AppView collapses the channel routes
   // and drops channelId/dashboardId, which we need to identify a canvas target.
+  // What counts as "viewing" is decided in ui — a task can be on screen in a
+  // thread panel without owning the route.
   getActiveTarget: (): NotificationTarget | undefined => {
     const matches = getCurrentMatches();
     const last = matches[matches.length - 1];
     if (!last) return undefined;
-    const params = last.params as Record<string, string | undefined>;
-    switch (last.routeId) {
-      case "/code/tasks/$taskId":
-      case "/website/$channelId/tasks/$taskId":
-        return params.taskId
-          ? { kind: "task", taskId: params.taskId }
-          : undefined;
-      case "/website/$channelId/dashboards/$dashboardId":
-        return params.channelId && params.dashboardId
-          ? {
-              kind: "canvas",
-              channelId: params.channelId,
-              dashboardId: params.dashboardId,
-            }
-          : undefined;
-      default:
-        return undefined;
-    }
+    const { openByChannel, collapsed } = useThreadPanelStore.getState();
+    return activeNotificationTarget({
+      routeId: last.routeId,
+      params: last.params as Record<string, string | undefined>,
+      threadPanel: { openByChannel, collapsed },
+    });
   },
 });
 

@@ -3,8 +3,10 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
+  isAgentThreadMessage,
   normalizeAgentPromptText,
   shouldSuspendThreadSession,
+  visibleThreadMessages,
 } from "./threadTimeline";
 
 describe("hasAgentMention", () => {
@@ -165,5 +167,77 @@ describe("shouldSuspendThreadSession", () => {
     { isCloud: false, hasRun: false, hasSession: true },
   ])("keeps an existing or cloud session attached", (input) => {
     expect(shouldSuspendThreadSession(input)).toBe(false);
+  });
+});
+
+describe("isAgentThreadMessage", () => {
+  it.each([
+    { author_kind: "agent", expected: true },
+    { author_kind: "human", expected: false },
+    { author_kind: "system", expected: false },
+    // Older payloads predate agent rows; absent means human.
+    { author_kind: undefined, expected: false },
+  ])("author_kind $author_kind → $expected", ({ author_kind, expected }) => {
+    expect(isAgentThreadMessage({ author_kind })).toBe(expected);
+  });
+});
+
+describe("visibleThreadMessages", () => {
+  const human = { id: "h", author_kind: "human" as const };
+  const turn = (runId: string, id = `turn-${runId}`) => ({
+    id,
+    author_kind: "agent" as const,
+    event: "turn_complete",
+    payload: { run_id: runId },
+  });
+
+  it("keeps everything when no run is streaming", () => {
+    expect(
+      visibleThreadMessages([human, turn("run-1")], undefined).map((m) => m.id),
+    ).toEqual(["h", "turn-run-1"]);
+  });
+
+  it("drops the durable turn for the run being streamed", () => {
+    expect(
+      visibleThreadMessages([human, turn("run-1")], "run-1").map((m) => m.id),
+    ).toEqual(["h"]);
+  });
+
+  it("keeps durable turns from other runs", () => {
+    expect(
+      visibleThreadMessages([turn("run-1"), turn("run-2")], "run-1").map(
+        (m) => m.id,
+      ),
+    ).toEqual(["turn-run-2"]);
+  });
+
+  it("never drops human messages", () => {
+    expect(visibleThreadMessages([human], "run-1").map((m) => m.id)).toEqual([
+      "h",
+    ]);
+  });
+
+  it("keeps other agent rows — only turn_complete collides with a live turn", () => {
+    const ask = {
+      id: "ask",
+      author_kind: "agent" as const,
+      event: "permission_request",
+      payload: { run_id: "run-1" },
+    };
+    expect(visibleThreadMessages([ask], "run-1").map((m) => m.id)).toEqual([
+      "ask",
+    ]);
+  });
+
+  it("keeps a turn row with no run id rather than dropping the only copy", () => {
+    const orphan = {
+      id: "orphan",
+      author_kind: "agent" as const,
+      event: "turn_complete",
+      payload: {},
+    };
+    expect(visibleThreadMessages([orphan], "run-1").map((m) => m.id)).toEqual([
+      "orphan",
+    ]);
   });
 });

@@ -142,3 +142,43 @@ export function shouldSuspendThreadSession({
 }): boolean {
   return !isCloud && !hasRun && !hasSession;
 }
+
+/**
+ * Agent rows are authorless by design, so anything reading `author` alone sees
+ * nobody and calls them "Unknown". `author_kind` is the only thing that says
+ * the agent wrote it.
+ */
+export function isAgentThreadMessage(message: {
+  author_kind?: string;
+}): boolean {
+  return message.author_kind === "agent";
+}
+
+/**
+ * The durable thread messages worth rendering, given the run whose turns the
+ * viewer is already watching stream.
+ *
+ * The backend posts every agent turn as a durable `turn_complete` row carrying
+ * `payload.run_id` so a client streaming that run can drop one copy. We drop
+ * the durable row rather than the live turn: the streamed one is what the
+ * reader watched arrive, and swapping it for the server's copy at the end would
+ * make the message jump. Anyone without that session — a teammate, or a run on
+ * another machine — has no live turn to collide with, so they keep the durable
+ * row and see the same conversation from the other side.
+ */
+export function visibleThreadMessages<
+  T extends {
+    author_kind?: string;
+    event?: string;
+    payload?: Record<string, unknown>;
+  },
+>(messages: readonly T[], streamingRunId: string | undefined): T[] {
+  if (!streamingRunId) return [...messages];
+  return messages.filter((message) => {
+    if (message.event !== "turn_complete") return true;
+    const runId = message.payload?.run_id;
+    // A row with no run id can't be matched to the live turn; keeping a
+    // possible duplicate beats silently dropping the only copy.
+    return typeof runId !== "string" || runId !== streamingRunId;
+  });
+}

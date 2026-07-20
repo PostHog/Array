@@ -44,6 +44,36 @@ export function countUnseenActivity(
   return items.filter((item) => item.createdAt > lastSeenAt).length;
 }
 
+/**
+ * Has the viewer read this mention?
+ *
+ * Read is per mention: it's earned by opening that mention's thread, not by
+ * glancing at the list. `lastSeenAt` stays on as a historical watermark —
+ * everything from before the viewer's last "seen the page" sweep counts as
+ * read, so switching to per-mention tracking doesn't resurface years of old
+ * mentions as unread. Anything after it is unread until opened.
+ */
+export function isMentionUnread(
+  item: MentionActivityItem,
+  lastSeenAt: string | null,
+  readMessageIds: ReadonlySet<string>,
+): boolean {
+  if (readMessageIds.has(item.messageId)) return false;
+  if (!lastSeenAt) return true;
+  return item.createdAt > lastSeenAt;
+}
+
+/** How many mentions the viewer hasn't read. Drives the sidebar's badge. */
+export function countUnreadMentions(
+  items: readonly MentionActivityItem[],
+  lastSeenAt: string | null,
+  readMessageIds: ReadonlySet<string>,
+): number {
+  return items.filter((item) =>
+    isMentionUnread(item, lastSeenAt, readMessageIds),
+  ).length;
+}
+
 // Bounds the cache so a long-running session's accumulated feed can't grow
 // without limit.
 const MAX_CACHED_MENTIONS = 300;

@@ -4,6 +4,14 @@ import { persist } from "zustand/middleware";
 
 const DEFAULT_PANEL_WIDTH = 360;
 
+/**
+ * The Activity page's key in `openByChannel`. Threads are keyed by channel, but
+ * Activity spans every channel, and borrowing a real channel's key would mean
+ * reading a mention there silently changed which thread that channel shows.
+ * Channel ids are UUIDs, so this can't collide with one.
+ */
+export const ACTIVITY_THREAD_KEY = "activity";
+
 interface ThreadPanelState {
   openByChannel: Record<string, string | null>;
   collapsed: boolean;

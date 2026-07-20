@@ -1,7 +1,10 @@
 import type { TaskMention, UserBasic } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
 import {
+  countUnreadMentions,
   countUnseenActivity,
+  isMentionUnread,
+  type MentionActivityItem,
   mergeTaskMentions,
   toMentionActivityItems,
 } from "./mentionActivity";
@@ -131,5 +134,54 @@ describe("mergeTaskMentions", () => {
     const merged = mergeTaskMentions(previous, incoming);
     expect(merged).toHaveLength(300);
     expect(merged[0].message_id).toBe("newest");
+  });
+});
+
+describe("isMentionUnread", () => {
+  const item = (over: Partial<MentionActivityItem> = {}) =>
+    ({
+      messageId: "m1",
+      taskId: "t1",
+      taskTitle: "Task",
+      channelId: "c1",
+      channelName: "mobile",
+      author: null,
+      content: "@you",
+      createdAt: "2026-07-17T10:00:00.000Z",
+      ...over,
+    }) as MentionActivityItem;
+
+  const none: ReadonlySet<string> = new Set();
+
+  it("is unread until its thread is opened", () => {
+    expect(isMentionUnread(item(), null, none)).toBe(true);
+    expect(isMentionUnread(item(), null, new Set(["m1"]))).toBe(false);
+  });
+
+  it("reading one mention leaves the others unread", () => {
+    const read = new Set(["m1"]);
+    expect(isMentionUnread(item({ messageId: "m2" }), null, read)).toBe(true);
+  });
+
+  it("treats anything before the legacy seen watermark as read", () => {
+    const old = item({ createdAt: "2026-07-01T00:00:00.000Z" });
+    expect(isMentionUnread(old, "2026-07-10T00:00:00.000Z", none)).toBe(false);
+  });
+
+  it("keeps mentions after the watermark unread until opened", () => {
+    const fresh = item({ createdAt: "2026-07-17T10:00:00.000Z" });
+    const seen = "2026-07-10T00:00:00.000Z";
+    expect(isMentionUnread(fresh, seen, none)).toBe(true);
+    expect(isMentionUnread(fresh, seen, new Set(["m1"]))).toBe(false);
+  });
+
+  it("counts only what's unread", () => {
+    const items = [
+      item({ messageId: "a" }),
+      item({ messageId: "b" }),
+      item({ messageId: "c" }),
+    ];
+    expect(countUnreadMentions(items, null, new Set(["b"]))).toBe(2);
+    expect(countUnreadMentions(items, null, new Set(["a", "b", "c"]))).toBe(0);
   });
 });

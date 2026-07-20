@@ -11,11 +11,13 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
+  isAgentThreadMessage,
   normalizeAgentPromptText,
   shouldSuspendThreadSession,
   type ThreadAgentMessage,
   type ThreadAgentStatus,
   type ThreadTimelineRow,
+  visibleThreadMessages,
 } from "@posthog/core/canvas/threadTimeline";
 import {
   Avatar,
@@ -60,6 +62,7 @@ import {
   MentionText,
   mentionChipClass,
 } from "@posthog/ui/features/canvas/components/MentionText";
+import { ThreadScrollBody } from "@posthog/ui/features/canvas/components/ThreadScrollBody";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { agentTurns } from "@posthog/ui/features/canvas/components/threadAgentTurns";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
@@ -184,6 +187,50 @@ export function ThreadMessageRow({
   );
 }
 
+/**
+ * A durable row the agent posted — its final turn, or a question it needs
+ * answered. Authorless by design, so it names itself rather than resolving an
+ * author (which would read as "Unknown").
+ *
+ * Renders `content` through MentionText, not markdown: the server writes the
+ * body with a real mention token for the task creator, and markdown would spell
+ * that token out instead of chipping it.
+ *
+ * No hover menu — there's nothing to forward to the agent (it *is* the agent),
+ * and its rows aren't the reader's to delete.
+ */
+function AgentThreadRow({
+  message,
+  currentUserEmail,
+}: {
+  message: TaskThreadMessage;
+  currentUserEmail?: string | null;
+}) {
+  return (
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg" className="sticky top-2">
+          <AvatarFallback>
+            <RobotIcon size={14} />
+          </AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>Agent</ThreadItemAuthor>
+          <ThreadTimestamp dateTime={message.created_at} />
+        </ThreadItemHeader>
+        <ThreadItemBody>
+          <MentionText
+            content={message.content}
+            currentUserEmail={currentUserEmail}
+          />
+        </ThreadItemBody>
+      </ThreadItemContent>
+    </ThreadItem>
+  );
+}
+
 function agentPrompts(items: ConversationItem[]): ThreadAgentMessage[] {
   const prompts: ThreadAgentMessage[] = [];
   for (const item of items) {
@@ -216,12 +263,15 @@ export function AgentStatusLine({ status }: { status: ThreadAgentStatus }) {
 export function AgentTurnRow({
   message,
   streaming,
+  onOpenTask,
 }: {
   message: ThreadAgentMessage;
   streaming: boolean;
+  /** Opens the task behind the turn; omitted where the task is already open. */
+  onOpenTask?: () => void;
 }) {
   return (
-    <ThreadItem>
+    <ThreadItem className="rounded-none hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
           <AvatarFallback>
@@ -240,13 +290,13 @@ export function AgentTurnRow({
         </ThreadItemHeader>
         {message.text && (
           <ThreadItemBody>
-            <div className="rounded-md border border-border bg-muted px-2 py-1.5">
+            <ThreadScrollBody pinned={streaming} onClick={onOpenTask}>
               {streaming ? (
                 <ChatStreamingMarkdown content={message.text} />
               ) : (
                 <ChatMarkdown content={message.text} />
               )}
-            </div>
+            </ThreadScrollBody>
           </ThreadItemBody>
         )}
       </ThreadItemContent>
@@ -264,7 +314,7 @@ export function UserPromptRow({
   const promptText = normalizeAgentPromptText(message.text);
 
   return (
-    <ThreadItem>
+    <ThreadItem className="rounded-none hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar size="lg" className="sticky top-2">
           <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
@@ -360,6 +410,7 @@ function ThreadTimeline({
   agentActive,
   onSendToAgent,
   onDelete,
+  onOpenTask,
 }: {
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
   isReady: boolean;
@@ -372,6 +423,7 @@ function ThreadTimeline({
   agentActive: boolean;
   onSendToAgent: (messageId: string) => void;
   onDelete: (messageId: string) => void;
+  onOpenTask?: () => void;
 }) {
   if (!isReady) return <ThreadLoadingState />;
   if (timeline.length === 0) {
@@ -402,24 +454,35 @@ function ThreadTimeline({
             author={taskAuthor}
           />
         ) : row.kind === "human" ? (
-          <ThreadMessageRow
-            key={row.message.id}
-            message={row.message.value as TaskThreadMessage}
-            isTaskAuthor={isTaskAuthor}
-            isOwnMessage={
-              !!currentUserUuid &&
-              currentUserUuid === row.message.value?.author?.uuid
-            }
-            currentUserEmail={currentUserEmail}
-            canForward={canForward}
-            onSendToAgent={() => onSendToAgent(row.message.id)}
-            onDelete={() => onDelete(row.message.id)}
-          />
+          // A durable row the agent wrote — authorless, so the human row would
+          // credit it to "Unknown".
+          isAgentThreadMessage(row.message.value ?? {}) ? (
+            <AgentThreadRow
+              key={row.message.id}
+              message={row.message.value as TaskThreadMessage}
+              currentUserEmail={currentUserEmail}
+            />
+          ) : (
+            <ThreadMessageRow
+              key={row.message.id}
+              message={row.message.value as TaskThreadMessage}
+              isTaskAuthor={isTaskAuthor}
+              isOwnMessage={
+                !!currentUserUuid &&
+                currentUserUuid === row.message.value?.author?.uuid
+              }
+              currentUserEmail={currentUserEmail}
+              canForward={canForward}
+              onSendToAgent={() => onSendToAgent(row.message.id)}
+              onDelete={() => onDelete(row.message.id)}
+            />
+          )
         ) : (
           <AgentTurnRow
             key={row.message.id}
             message={row.message}
             streaming={row.message.id === lastAgentId && agentActive}
+            onOpenTask={onOpenTask}
           />
         ),
       )}
@@ -554,12 +617,20 @@ function ThreadConversation({
     ],
   );
 
+  // The backend makes every agent turn durable, so a run we're streaming would
+  // otherwise show each turn twice — once live, once from the server.
+  const streamingRunId = session?.taskRunId;
+  const durableMessages = useMemo(
+    () => visibleThreadMessages(messages, streamingRunId),
+    [messages, streamingRunId],
+  );
+
   const timeline = useMemo(
     () =>
       buildThreadTimeline({
         prompts: promptMsgs,
         agentMessages: agentMsgs,
-        humanMessages: messages.map((message) => ({
+        humanMessages: durableMessages.map((message) => ({
           id: message.id,
           content: message.content,
           createdAt: message.created_at,
@@ -567,7 +638,7 @@ function ThreadConversation({
           value: message,
         })),
       }),
-    [promptMsgs, messages, agentMsgs],
+    [promptMsgs, durableMessages, agentMsgs],
   );
 
   const lastAgentId = agentMsgs[agentMsgs.length - 1]?.id;
@@ -660,7 +731,7 @@ function ThreadConversation({
       />
 
       {showTaskSummary && (
-        <div className="z-10 px-2">
+        <div className="z-10 mb-1 px-2">
           <TaskCard task={task} channelId={channelId} inThread />
         </div>
       )}
@@ -675,6 +746,7 @@ function ThreadConversation({
           canForward={canForward}
           lastAgentId={lastAgentId}
           agentActive={agentStatus?.phase === "active"}
+          onOpenTask={onOpenFull}
           onSendToAgent={handleSendToAgent}
           onDelete={handleDelete}
         />
