@@ -697,11 +697,12 @@ export function ChannelFeedView({
   }, [tasks, systemMessages]);
 
   const viewportRef = useRef<HTMLDivElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: channelId is the trigger — switching channels swaps the rows without a remount, so re-land at the latest message
+  // biome-ignore lint/correctness/useExhaustiveDependencies: channelId is a trigger — switching channels or finishing the initial load swaps/completes the rows without a remount, so re-land at the latest message
   useLayoutEffect(() => {
+    if (isLoading) return;
     const viewport = viewportRef.current;
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
-  }, [channelId]);
+  }, [channelId, isLoading]);
 
   // Wait for the complete feed: the scroller's initial end-scroll fires once,
   // so mounting around partial rows would land it short of the latest message.
