@@ -673,6 +673,14 @@ If a repository IS genuinely required, attach one in this priority order:
 1. **Reuse a folder the user already has locally.** ${localFolders.length ? "Pick the one that best matches the request and the channel CONTEXT.md, then `cd` into its absolute path and do all git and file work there. It is already on disk — do NOT clone it again." : "If the user names a folder or path, `cd` into that absolute path and work there."}
 2. **If you can't confidently pick one** (none clearly match, or it's ambiguous), use the AskUserQuestion tool to ask the user which local folder to use, or for the path where the folder lives on this machine. Do not guess.
 3. **Only as a last resort** — when the user has no local copy, or explicitly wants a fresh checkout — clone from remote. Call \`list_repos\` to see what's available (prefer repos named in CONTEXT.md), then **confirm with the user via AskUserQuestion before cloning**, and use \`clone_repo\` (pass \`owner/repo\`); it clones into a subdirectory of your working directory and returns the path to \`cd\` into.${localFoldersBlock}`;
+
+      prompt += `
+
+## Canvases
+A canvas is an agent-authored single-file React app that lives in PostHog (a desktop-fs "dashboard" row), not a file on disk. Build and edit canvases only through the \`canvas_checkout\` / \`canvas_publish\` tools (posthog-code-tools) — never publish canvas source through the raw PostHog MCP:
+- Edit an existing canvas: \`canvas_checkout\` with its id, edit the scratch file it writes, then \`canvas_publish\`.
+- Create a new canvas: \`canvas_checkout\` with a \`name\` AND \`parentPath\` set to the channel this task is in (its name, from the \`<channel_context channel="…">\` element above), omit the id, author the scratch file, then \`canvas_publish\`. A canvas must live under a channel — creating without \`parentPath\` is rejected; if you don't know the channel, ask the user.
+\`canvas_checkout\` returns the authoring contract (allowed imports, the \`ph\` data shim, style rules) — follow it. Editing through these tools is what applies the scratch-file workflow and the publish-time concurrency guard.`;
     }
 
     if (customInstructions) {

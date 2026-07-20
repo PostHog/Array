@@ -80,11 +80,13 @@ The root `AGENTS.md` architecture rules still apply.
   version composition server-side and accepts an optional
   `expected_current_version_id`: a publish based on a stale version (a
   concurrent edit or undo) is rejected 409 inside the row lock instead of
-  clobbering the newer head. The **agent publish path uses that guard**:
-  generation works the source as a local scratch file via the
-  `canvas_checkout` / `canvas_publish` local tools (`@posthog/agent`,
-  `adapters/local-tools/tools/canvas.ts`) — checkout records the fetched
-  `currentVersionId`, publish passes it as the expected version (backends
+  clobbering the newer head. The **agent edit path uses that guard**: the agent
+  works the source as a local scratch file via the `canvas_checkout` /
+  `canvas_publish` local tools (`@posthog/agent`,
+  `adapters/local-tools/tools/canvas.ts`) — `canvas_checkout` fetches an
+  existing canvas (or creates one from a `name`), writes the scratch file,
+  records the fetched `currentVersionId`, and returns the authoring contract;
+  `canvas_publish` passes that version as the expected version (backends
   predating the field ignore it and publish unguarded). **User-side saves**
   (`saveFreeform`) are still last-write-wins; adopt the same guard if
   multi-client editing becomes real.

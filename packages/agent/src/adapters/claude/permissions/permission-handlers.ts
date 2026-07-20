@@ -9,8 +9,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { text } from "../../../utils/acp-content";
 import type { Logger } from "../../../utils/logger";
-import { qualifiedLocalToolName } from "../../local-tools";
-import { SPEAK_TOOL_NAME } from "../../local-tools/tools/speak";
+import { AUTO_APPROVED_LOCAL_TOOL_IDS } from "../../local-tools";
 import { toolInfoFromToolUse } from "../conversion/tool-use-to-acp";
 import {
   getMcpToolApprovalState,
@@ -39,8 +38,6 @@ import {
   isPostHogDestructiveSubTool,
   isPostHogExecTool,
 } from "./posthog-exec-gate";
-
-const SPEAK_TOOL_ID = qualifiedLocalToolName(SPEAK_TOOL_NAME);
 
 export type ToolPermissionResult =
   | {
@@ -761,10 +758,10 @@ export async function canUseTool(
       return { behavior: "deny", message, interrupt: false };
     }
 
-    // Narration is a fire-and-forget no-op on the agent side; a permission
-    // prompt for it interrupts the user to approve a line they may never hear.
-    // An explicit do_not_use block above still wins.
-    if (toolName === SPEAK_TOOL_ID) {
+    // Auto-approve tools flagged `autoApprove` — read-only or fire-and-forget
+    // (canvas checkout, speak narration) where a permission prompt is pure
+    // friction. An explicit do_not_use block above still wins.
+    if (AUTO_APPROVED_LOCAL_TOOL_IDS.has(toolName)) {
       return {
         behavior: "allow",
         updatedInput: toolInput as Record<string, unknown>,

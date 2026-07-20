@@ -1,5 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
+import { freeformSystemPromptFor } from "@posthog/shared/canvas-freeform-prompt";
+import { FREEFORM_STARTER_CODE } from "@posthog/shared/canvas-freeform-starter";
 import { z } from "zod";
 import {
   DesktopCanvasVersionConflictError,
@@ -48,6 +50,7 @@ function baseVersionMarkerFile(canvasId: string): string {
 interface CanvasMeta {
   code?: string;
   currentVersionId?: string;
+  templateId?: string;
   [key: string]: unknown;
 }
 
@@ -92,6 +95,55 @@ async function fetchCanvasEntry(canvasId: string): Promise<CanvasFsEntry> {
   return entry;
 }
 
+// Create-if-missing for `canvas_checkout`: an agent working from a normal task
+// (not the channel generate bar) can start a canvas in one call instead of
+// chaining the raw desktop-fs create tool first.
+async function createCanvasEntry(
+  name: string | undefined,
+  parentPath: string | undefined,
+): Promise<CanvasFsEntry> {
+  if (!name?.trim()) {
+    throw new Error(
+      "pass `id` to edit an existing canvas, or `name` to create a new one.",
+    );
+  }
+  // A canvas must live under a channel folder — creating it at the top level
+  // (no parentPath) makes an orphan that never shows in any channel. The task's
+  // channel name is in the `<channel_context channel="…">` element of the
+  // prompt; the agent passes it as parentPath. Refuse rather than orphan.
+  if (!parentPath?.trim()) {
+    throw new Error(
+      "a new canvas needs a channel to live in: pass `parentPath` set to the " +
+        'channel this task is in (its name, from the `<channel_context channel="…">` ' +
+        "element of your prompt). Without a channel the canvas can't be placed. If " +
+        "there is no channel context, ask the user which channel to create it in.",
+    );
+  }
+  const client = createClient();
+  if (!client) {
+    throw new Error("No PostHog credentials available in this session.");
+  }
+  return client.createDesktopCanvas<CanvasFsEntry>({
+    name: name.trim(),
+    parentPath: parentPath.trim(),
+  });
+}
+
+// The freeform authoring rules (allowed imports, the `ph` data shim, style
+// rules) the channel generate bar injects up front. Returned on checkout so an
+// agent editing a canvas from any task authors valid source; an empty canvas
+// also gets the known-good starter scaffold to build on.
+function authoringContract(
+  templateId: string | undefined,
+  isEmpty: boolean,
+): string {
+  const contract = freeformSystemPromptFor(templateId);
+  const starter = isEmpty
+    ? `\n\nStarter scaffold — write this working baseline to the scratch file first, then build by editing it:\n\n\`\`\`tsx\n${FREEFORM_STARTER_CODE}\n\`\`\``
+    : "";
+  return `Authoring contract for this canvas (imports, the \`ph\` data shim, and style rules):\n\n${contract}${starter}`;
+}
+
 function readMarker(canvasId: string): BaseVersionMarker | undefined {
   try {
     return JSON.parse(
@@ -119,32 +171,56 @@ const CONFLICT_MESSAGE = (canvasId: string) =>
 export const canvasCheckoutTool = defineLocalTool({
   name: "canvas_checkout",
   description:
-    "Check out a PostHog canvas (a freeform React desktop-fs dashboard) for editing: fetches the live " +
-    "source, writes it to a local scratch file, and records the version your edits are based on. " +
-    "Returns the file path. Edit that file with your normal file-editing tools, then call " +
-    "canvas_publish to save. Always start canvas work with this tool.",
+    "Check out a PostHog canvas (a freeform React desktop-fs dashboard) for editing. Pass `id` to edit " +
+    "an existing canvas, or omit `id` and pass `name` to create a fresh one. Fetches (or creates) the " +
+    "canvas, writes its source to a local scratch file, records the base version for the publish-time " +
+    "concurrency guard, and returns the scratch path plus the authoring contract to follow. Edit that " +
+    "file with your normal file-editing tools, then call canvas_publish. Always start canvas work with " +
+    "this tool.",
   schema: {
-    id: z.string().describe("The canvas (desktop-fs dashboard row) id."),
+    id: z
+      .string()
+      .optional()
+      .describe(
+        "Existing canvas (desktop-fs dashboard row) id to edit. Omit to create a new canvas via `name`.",
+      ),
+    name: z
+      .string()
+      .optional()
+      .describe(
+        "Name for a NEW canvas when `id` is omitted — creates it, then checks it out.",
+      ),
+    parentPath: z
+      .string()
+      .optional()
+      .describe(
+        'Required when creating (no `id`): the channel the canvas belongs to — its name, from the `<channel_context channel="…">` element of your prompt. The canvas is created at "<parentPath>/<name>"; omitting it is rejected (a canvas must live under a channel).',
+      ),
   },
   alwaysLoad: true,
+  autoApprove: true,
   isEnabled: () => resolveSandboxPosthogApi() !== undefined,
   handler: async (_ctx, args): Promise<LocalToolResult> => {
     try {
-      const entry = await fetchCanvasEntry(args.id);
-      const file = canvasScratchFile(args.id);
+      const entry = args.id
+        ? await fetchCanvasEntry(args.id)
+        : await createCanvasEntry(args.name, args.parentPath);
+      const canvasId = entry.id;
+      const file = canvasScratchFile(canvasId);
       const code = entry.meta?.code ?? "";
-      mkdirSync(canvasScratchDir(args.id), { recursive: true });
+      mkdirSync(canvasScratchDir(canvasId), { recursive: true });
       writeFileSync(file, code);
-      writeMarker(args.id, {
+      writeMarker(canvasId, {
         versionId: entry.meta?.currentVersionId,
         fetchedAt: Date.now(),
       });
       const lines = code ? code.split("\n").length : 0;
-      const text = code
-        ? `Checked out canvas "${entry.path}" to ${file} (${lines} lines, base version ${
+      const header = code
+        ? `Checked out canvas "${entry.path}" (id ${canvasId}) to ${file} (${lines} lines, base version ${
             entry.meta?.currentVersionId ?? "none"
-          }).\nApply your changes by editing that file, then call canvas_publish with id "${args.id}".`
-        : `Canvas "${entry.path}" is empty. Author the complete single-file React app at ${file}, then call canvas_publish with id "${args.id}".`;
+          }). Edit that file, then call canvas_publish with id "${canvasId}".`
+        : `Canvas "${entry.path}" (id ${canvasId}) is empty — author the complete single-file React app at ${file}, then call canvas_publish with id "${canvasId}".`;
+      const text = `${header}\n\n${authoringContract(entry.meta?.templateId, !code)}`;
       return { content: [{ type: "text", text }] };
     } catch (err) {
       return errorResult(

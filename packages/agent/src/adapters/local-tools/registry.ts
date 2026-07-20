@@ -53,6 +53,13 @@ export interface LocalToolDef<S extends z.ZodRawShape> {
    * by default in the Claude adapter (ENABLE_TOOL_SEARCH). Ignored by Codex.
    */
   alwaysLoad?: boolean;
+  /**
+   * Auto-approve this tool's calls without a permission prompt — for read-only
+   * or fire-and-forget tools where prompting is pure friction (an explicit
+   * do_not_use block still wins). Honored by the Claude permission handler;
+   * Codex does not prompt for MCP tool calls, so it is a no-op there.
+   */
+  autoApprove?: boolean;
   isEnabled(ctx: LocalToolCtx, meta: LocalToolGateMeta | undefined): boolean;
   handler(
     ctx: LocalToolCtx,
@@ -66,6 +73,8 @@ export interface LocalTool {
   description: string;
   schema: z.ZodRawShape;
   alwaysLoad?: boolean;
+  /** See {@link LocalToolDef.autoApprove}. */
+  autoApprove?: boolean;
   isEnabled(ctx: LocalToolCtx, meta: LocalToolGateMeta | undefined): boolean;
   handler(
     ctx: LocalToolCtx,

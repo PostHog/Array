@@ -365,6 +365,31 @@ export class PostHogAPIClient {
   }
 
   /**
+   * Create a new freeform canvas ("dashboard" row) on the desktop surface and
+   * return the created entry (with its id). `parentPath` nests it under a
+   * folder (e.g. a channel); omit it for a top-level canvas.
+   */
+  async createDesktopCanvas<T>(input: {
+    name: string;
+    parentPath?: string;
+  }): Promise<T> {
+    const teamId = this.getTeamId();
+    const parent = input.parentPath?.replace(/\/+$/, "");
+    const path = parent ? `${parent}/${input.name}` : input.name;
+    const response = await this.performRequestWithRetry(
+      `/api/projects/${teamId}/desktop_file_system/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ path, type: "dashboard", meta: {} }),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to create canvas (${response.status})`);
+    }
+    return response.json() as Promise<T>;
+  }
+
+  /**
    * Publish a freeform canvas's source via the desktop-fs canvas action. The
    * server owns version composition (appends the full-file snapshot, moves
    * `currentVersionId`, truncates any redo tail) and rejects a publish whose

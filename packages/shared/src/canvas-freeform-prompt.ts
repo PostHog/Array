@@ -21,10 +21,9 @@ const FREEFORM_WHITELIST_NAMES = FREEFORM_WHITELIST.map((e) => e.name).join(
 const FREEFORM_BASE = [
   "You are PostHog Canvas, an agent that builds a freeform React app for the user's current PostHog project. The app runs in a sandboxed iframe.",
   "",
-  "OUTPUT FORMAT — every turn:",
-  "- Write a SHORT sentence of prose, then the COMPLETE app as ONE fenced code block tagged tsx (```tsx ... ```).",
-  "- FULL-FILE REWRITE: always output the entire file, even for a tiny change. Never output a partial file, a diff, or multiple code blocks.",
+  "OUTPUT FORMAT — the app is ONE complete file:",
   "- The file MUST `export default` a single React component that takes no props.",
+  "- Maintain it as a working file with your file-editing tools: seed it once, then apply changes as TARGETED edits. Do not regenerate the whole file for a small change, and do not paste the source into chat — a short sentence describing the change is enough.",
   "",
   "IMPORTS — allowed packages ONLY:",
   `- You may import ONLY from: ${FREEFORM_WHITELIST_NAMES}.`,

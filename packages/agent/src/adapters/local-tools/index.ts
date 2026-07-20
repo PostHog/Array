@@ -1,4 +1,9 @@
-import type { LocalTool, LocalToolCtx, LocalToolGateMeta } from "./registry";
+import {
+  type LocalTool,
+  type LocalToolCtx,
+  type LocalToolGateMeta,
+  qualifiedLocalToolName,
+} from "./registry";
 import { canvasCheckoutTool, canvasPublishTool } from "./tools/canvas";
 import { cloneRepoTool } from "./tools/clone-repo";
 import { listReposTool } from "./tools/list-repos";
@@ -27,6 +32,17 @@ export const LOCAL_TOOLS: LocalTool[] = [
   canvasCheckoutTool,
   canvasPublishTool,
 ];
+
+/**
+ * Qualified ids of local tools flagged `autoApprove` — the Claude permission
+ * handler allows these without a prompt. Codex does not prompt for MCP tool
+ * calls, so it does not consult this.
+ */
+export const AUTO_APPROVED_LOCAL_TOOL_IDS: ReadonlySet<string> = new Set(
+  LOCAL_TOOLS.filter((t) => t.autoApprove).map((t) =>
+    qualifiedLocalToolName(t.name),
+  ),
+);
 
 /** Tools whose gate passes for the given context — the set to actually expose. */
 export function enabledLocalTools(

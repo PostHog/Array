@@ -59,6 +59,7 @@ export const speakTool = defineLocalTool({
   description: SPEAK_TOOL_DESCRIPTION,
   schema: speakSchema,
   alwaysLoad: true,
+  autoApprove: true,
   isEnabled: (_ctx, meta) => meta?.spokenNarration === true,
   handler: async (): Promise<LocalToolResult> => {
     return { content: [{ type: "text", text: "ok" }] };

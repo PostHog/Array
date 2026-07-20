@@ -4,7 +4,8 @@ import { z } from "zod";
 // generation path can resolve the right system prompt.
 
 // A single point in a freeform canvas's edit history. Every agent turn appends
-// one full-file snapshot (Q7: full-file rewrite); the user can revert to any of
+// one full-file snapshot (the agent edits a local scratch copy incrementally,
+// then publishes the finished file wholesale); the user can revert to any of
 // them and the `currentVersionId` pointer is what publishes. We keep whole-file
 // snapshots rather than diffs because canvases are small and a snapshot can
 // never fail to reconstruct.
