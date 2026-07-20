@@ -13,6 +13,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  readAgentToolName,
   readParentToolCallId,
   type UserShellExecuteParams,
 } from "@posthog/shared";
@@ -31,6 +32,7 @@ import {
   type SkillButtonId,
 } from "@posthog/ui/features/skill-buttons/prompts";
 import type { Step, StepStatus } from "@posthog/ui/primitives/StepList";
+import { SUBAGENT_SPAWN_TOOL_NAMES } from "./session-update/collaborationTools";
 import type { RenderItem } from "./session-update/SessionUpdateView";
 
 export interface TurnContext {
@@ -163,6 +165,56 @@ const TERMINAL_TOOL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 function isTerminalToolStatus(status: string | null | undefined): boolean {
   return status != null && TERMINAL_TOOL_STATUSES.has(status);
+}
+
+/**
+ * Whether a subagent spawn (Task/Agent tool call) still has work in flight.
+ * The parent turn ends when the spawn tool call returns, but the subagent keeps
+ * running detached; its nested tool calls arrive as children on the spawn's
+ * `TurnContext`. Without this check the spawn row's spinner stops the moment
+ * the parent turn completes, making the conversation look done mid-subagent.
+ */
+export function hasActiveSubagent(
+  context: Pick<TurnContext, "toolCalls" | "childItems">,
+  spawnToolCallId: string,
+): boolean {
+  const children = context.childItems.get(spawnToolCallId);
+  if (!children?.length) return false;
+  for (const child of children) {
+    if (child.type !== "session_update") continue;
+    if (child.update.sessionUpdate !== "tool_call") continue;
+    const resolved = child.update.toolCallId
+      ? context.toolCalls.get(child.update.toolCallId)
+      : undefined;
+    const status = resolved?.status ?? child.update.status;
+    if (!isTerminalToolStatus(status)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether any subagent anywhere in the conversation still has work in flight.
+ * Drives the footer's generating indicator after the parent prompt has
+ * completed but a detached subagent is still running.
+ */
+export function conversationHasActiveSubagent(
+  items: ConversationItem[],
+): boolean {
+  for (const item of items) {
+    if (item.type !== "session_update") continue;
+    if (item.update.sessionUpdate !== "tool_call") continue;
+    if (!isSubagentSpawnUpdate(item.update)) continue;
+    if (hasActiveSubagent(item.turnContext, item.update.toolCallId))
+      return true;
+  }
+  return false;
+}
+
+function isSubagentSpawnUpdate(
+  update: RenderItem,
+): update is Extract<RenderItem, { sessionUpdate: "tool_call" }> {
+  if (update.sessionUpdate !== "tool_call") return false;
+  return SUBAGENT_SPAWN_TOOL_NAMES.has(readAgentToolName(update._meta) ?? "");
 }
 
 function isThoughtItem(

@@ -10,7 +10,9 @@ import { readAgentToolName } from "@posthog/shared";
 import type { ToolCall } from "@posthog/ui/features/sessions/types";
 import { memo } from "react";
 import type { ConversationItem } from "../buildConversationItems";
+import { hasActiveSubagent } from "../buildConversationItems";
 import { grouping } from "../new-thread/conversationThreadConfig";
+import { isSubagentSpawnTool } from "../session-update/collaborationTools";
 import { SessionUpdateView } from "../session-update/SessionUpdateView";
 import { iconForToolCall } from "../session-update/toolCallUtils";
 
@@ -64,13 +66,18 @@ function friendlyName(key: string): string {
 }
 
 export function isToolActive(item: ToolGroupItem["tools"][number]): boolean {
-  const { toolCall } = resolveTool(item);
+  const { toolCall, toolName } = resolveTool(item);
+  if (item.turnContext.turnCancelled) return false;
+
   const incomplete =
     toolCall.status === "pending" || toolCall.status === "in_progress";
+  if (incomplete && !item.turnContext.turnComplete) return true;
+
+  // The spawn settled and the parent turn ended, but the subagent keeps running
+  // detached — keep the group live on its nested child work.
   return (
-    incomplete &&
-    !item.turnContext.turnCancelled &&
-    !item.turnContext.turnComplete
+    isSubagentSpawnTool(toolName) &&
+    hasActiveSubagent(item.turnContext, toolCall.toolCallId)
   );
 }
 

@@ -1,9 +1,10 @@
 import { makeAttachmentUri } from "@posthog/core/sessions/promptContent";
-import type { AcpMessage } from "@posthog/shared";
+import { type AcpMessage, posthogToolMeta } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   buildConversationItems,
   type ConversationItem,
+  conversationHasActiveSubagent,
 } from "./buildConversationItems";
 
 function consoleMsg(ts: number, message: string, level = "info"): AcpMessage {
@@ -950,6 +951,139 @@ describe("buildConversationItems", () => {
 
       expect(lastTurnInfo?.isComplete).toBe(true);
       expect(lastTurnInfo?.durationMs).toBeGreaterThan(0);
+    });
+  });
+
+  describe("active subagent detection", () => {
+    const spawnMsg = (ts: number, toolCallId: string): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            kind: "other",
+            status: "in_progress",
+            title: "Do the thing",
+            _meta: posthogToolMeta({ toolName: "Task" }),
+          },
+        },
+      },
+    });
+
+    const spawnUpdate = (
+      ts: number,
+      toolCallId: string,
+      status: string,
+    ): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: { sessionUpdate: "tool_call_update", toolCallId, status },
+        },
+      },
+    });
+
+    const childToolMsg = (
+      ts: number,
+      toolCallId: string,
+      parentId: string,
+      status: string,
+    ): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            kind: "execute",
+            status,
+            title: toolCallId,
+            _meta: posthogToolMeta({
+              toolName: "Bash",
+              parentToolCallId: parentId,
+            }),
+          },
+        },
+      },
+    });
+
+    const childToolUpdate = (
+      ts: number,
+      toolCallId: string,
+      status: string,
+    ): AcpMessage => ({
+      type: "acp_message",
+      ts,
+      message: {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          update: { sessionUpdate: "tool_call_update", toolCallId, status },
+        },
+      },
+    });
+
+    it("reports an active subagent while a child tool call is in_progress", () => {
+      // Claude: the subagent's nested tool calls stream within the parent turn,
+      // before the prompt response settles it. The spawn row is already marked
+      // completed (its result is being assembled), but a child is mid-flight.
+      const events = [
+        userPromptMsg(1, 1, "go"),
+        spawnMsg(2, "spawn-1"),
+        spawnUpdate(3, "spawn-1", "completed"),
+        childToolMsg(4, "child-1", "spawn-1", "in_progress"),
+      ];
+
+      const { items } = buildConversationItems(events, true);
+      expect(conversationHasActiveSubagent(items)).toBe(true);
+    });
+
+    it("still reports active after the parent turn ends but a child is in_flight (detached subagent)", () => {
+      const events = [
+        userPromptMsg(1, 1, "go"),
+        spawnMsg(2, "spawn-1"),
+        childToolMsg(3, "child-1", "spawn-1", "in_progress"),
+        spawnUpdate(4, "spawn-1", "completed"),
+        promptResponseMsg(5, 1),
+      ];
+
+      const { items } = buildConversationItems(events, false);
+      expect(conversationHasActiveSubagent(items)).toBe(true);
+    });
+
+    it("clears once every child tool call has settled", () => {
+      const events = [
+        userPromptMsg(1, 1, "go"),
+        spawnMsg(2, "spawn-1"),
+        childToolMsg(3, "child-1", "spawn-1", "in_progress"),
+        childToolUpdate(4, "child-1", "completed"),
+        spawnUpdate(5, "spawn-1", "completed"),
+        promptResponseMsg(6, 1),
+      ];
+
+      const { items } = buildConversationItems(events, false);
+      expect(conversationHasActiveSubagent(items)).toBe(false);
+    });
+
+    it("ignores a non-subagent tool call with no children", () => {
+      const events = [
+        userPromptMsg(1, 1, "go"),
+        childToolMsg(2, "t1", "nonexistent-parent", "in_progress"),
+        promptResponseMsg(3, 1),
+      ];
+
+      const { items } = buildConversationItems(events, false);
+      expect(conversationHasActiveSubagent(items)).toBe(false);
     });
   });
 });

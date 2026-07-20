@@ -13,6 +13,7 @@ import {
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import type { ConversationItem, TurnContext } from "../buildConversationItems";
+import { hasActiveSubagent } from "../buildConversationItems";
 import { useChatThreadChrome } from "../chat-thread/chatThreadChrome";
 import { SessionUpdateView } from "./SessionUpdateView";
 import { ToolRow } from "./ToolRow";
@@ -40,6 +41,10 @@ export function SubagentToolView({
     turnCancelled,
     turnComplete,
   );
+  // The parent turn completes when the spawn tool call returns, but the subagent
+  // keeps running detached. Keep the spinner alive while any of its child tool
+  // calls are non-terminal, or the row reads as done mid-subagent.
+  const subagentActive = hasActiveSubagent(turnContext, toolCall.toolCallId);
   const chatChrome = useChatThreadChrome();
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -75,7 +80,7 @@ export function SubagentToolView({
                   <span className="flex items-center">
                     <LoadingIcon
                       icon={Robot}
-                      isLoading={isLoading}
+                      isLoading={isLoading || subagentActive}
                       className="text-gray-10"
                     />
                   </span>
@@ -124,14 +129,17 @@ export function SubagentToolView({
             <TooltipTrigger
               render={
                 <span className="flex items-center">
-                  <LoadingIcon icon={Robot} isLoading={isLoading} />
+                  <LoadingIcon
+                    icon={Robot}
+                    isLoading={isLoading || subagentActive}
+                  />
                 </span>
               }
             />
             <TooltipContent side="top">Delegated to a subagent</TooltipContent>
           </Tooltip>
         }
-        isLoading={isLoading}
+        isLoading={isLoading || subagentActive}
         isFailed={isFailed}
         wasCancelled={wasCancelled}
         content={childContent}

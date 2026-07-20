@@ -1,6 +1,7 @@
 import type { Icon } from "@phosphor-icons/react";
 import { readAgentToolName, readMcpToolDescriptor } from "@posthog/shared";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { hasActiveSubagent } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import {
   buildDoneLabel,
   type CollapseMode,
@@ -140,6 +141,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
   let liveLabel: string | null = null;
   let lastToolStatus: string | undefined;
   let trailingThoughtStreaming = false;
+  let subagentActive = false;
   const icons: GroupIconEntry[] = [];
   const seenIcons = new Set<string>();
 
@@ -160,6 +162,15 @@ function summarize(items: ConversationItem[]): GroupSummary {
       if (name && grouping.subagentToolNames.has(name)) {
         counts.subagents++;
         addIcon(SUBAGENT_ICON, "subagent");
+        // A settled spawn with the parent turn complete can still have a detached
+        // subagent running in its children — that keeps the chip live.
+        if (
+          !subagentActive &&
+          update.toolCallId &&
+          hasActiveSubagent(item.turnContext, update.toolCallId)
+        ) {
+          subagentActive = true;
+        }
       } else if (readMcpToolDescriptor(update._meta)) {
         counts.other++;
         addIcon(MCP_ICON, "mcp");
@@ -211,6 +222,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
   if (trailingThoughtStreaming) liveLabel = "Thinking…";
   const active =
     trailingThoughtStreaming ||
+    subagentActive ||
     lastToolStatus === "pending" ||
     lastToolStatus === "in_progress";
   const hasCountableWork =

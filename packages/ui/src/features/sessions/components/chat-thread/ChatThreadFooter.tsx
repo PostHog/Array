@@ -1,5 +1,6 @@
 import type { AcpMessage } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { conversationHasActiveSubagent } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
@@ -37,18 +38,24 @@ export function ChatThreadFooter({
 }: ChatThreadFooterProps) {
   const showDebugLogs = useSettingsStore((s) => s.debugLogsCloudRuns);
   const contextUsage = useContextUsage(events);
-  const { lastTurnInfo, isCompacting, completedToolCallCount } =
+  const { items, lastTurnInfo, isCompacting, completedToolCallCount } =
     useConversationItems(events, isPromptPending, { showDebugLogs });
   const pendingPermissions = usePendingPermissionsForTask(taskId ?? "");
   const queuedCount = useQueuedMessagesForTask(taskId).length;
   const session = useSessionForTask(taskId);
   const pausedDurationMs = session?.pausedDurationMs ?? 0;
 
+  // Keep the generating indicator alive while a detached subagent is still
+  // running after the parent prompt completed. Display-only; the prompt
+  // lifecycle (queue/steer) still reads the raw `isPromptPending`.
+  const footerPromptPending =
+    !!isPromptPending || conversationHasActiveSubagent(items);
+
   return (
     <div className="pt-1">
       <SessionFooter
         task={task}
-        isPromptPending={isPromptPending}
+        isPromptPending={footerPromptPending}
         promptStartedAt={promptStartedAt}
         lastGenerationDuration={
           lastTurnInfo?.isComplete

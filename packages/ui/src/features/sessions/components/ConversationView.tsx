@@ -15,6 +15,7 @@ import type {
   ConversationItem,
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { conversationHasActiveSubagent } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
 import {
   PROMPT_RECALL_HINT_KEY,
@@ -195,6 +196,15 @@ export function ConversationView({
         isCloud,
       }),
     [conversationItems, optimisticItems, isCloud],
+  );
+
+  // A subagent keeps running detached after the parent prompt completes; keep the
+  // footer's generating indicator alive until its nested child work settles. This
+  // is display-only: the prompt-lifecycle gates (queue/steer) still read the raw
+  // `isPromptPending`, so a follow-up message sends instead of queueing.
+  const footerPromptPending = useMemo(
+    () => !!isPromptPending || conversationHasActiveSubagent(items),
+    [isPromptPending, items],
   );
 
   // Fold each completed turn's tool-call work into a collapsible chip, and emit
@@ -454,7 +464,7 @@ export function ConversationView({
     <div className={compact ? "pb-1" : "pb-16"}>
       <SessionFooter
         task={task}
-        isPromptPending={isPromptPending}
+        isPromptPending={footerPromptPending}
         promptStartedAt={promptStartedAt}
         lastGenerationDuration={
           lastTurnInfo?.isComplete
