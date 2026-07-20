@@ -1,0 +1,6 @@
+target/
+
+# The repo root ignores bin/ (the phrocs binary dir); cargo's src/bin/
+# convention must stay tracked.
+!**/src/bin/
+!**/src/bin/**

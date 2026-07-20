@@ -114,7 +114,8 @@
     }
   },
   "bin": {
-    "agent-server": "./dist/server/bin.cjs"
+    "agent-server": "./dist/server/bin.cjs",
+    "posthog-acp-claude": "./dist/server/acp-stdio.cjs"
   },
   "type": "module",
   "keywords": [

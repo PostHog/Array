@@ -184,4 +184,12 @@ export default defineConfig([
     noExternal: [/^(?!node:)/],
     external: [...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
   },
+  {
+    // ACP-over-stdio sidecar for the Rust agent-server (rust/README.md).
+    entry: { "server/acp-stdio": "src/server/acp-stdio-bin.ts" },
+    format: ["cjs"],
+    dts: false,
+    clean: false,
+    ...sharedOptions,
+  },
 ]);

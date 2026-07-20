@@ -1,0 +1,40 @@
+[package]
+name = "posthog-agent-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PostHog cloud agent server — hosts an ACP agent inside cloud sandboxes"
+
+[[bin]]
+name = "agent-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "mock-acp-agent"
+path = "src/bin/mock_acp_agent.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+jsonwebtoken = { workspace = true }
+posthog-acp = { path = "../acp" }
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
