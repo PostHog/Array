@@ -45,6 +45,34 @@ function formatFileCount(count: number, suffix: string): string {
   return `${count} ${noun} ${suffix}`;
 }
 
+function getVisibleFileSummary(
+  commentFilter: CommentFileFilter,
+  fileCount: number,
+  commentedFileCount: number,
+  unresolvedCommentedFileCount: number,
+): { count: number; label: string } {
+  switch (commentFilter) {
+    case "commented":
+      return {
+        count: commentedFileCount,
+        label: formatFileCount(commentedFileCount, "with comments"),
+      };
+    case "unresolved":
+      return {
+        count: unresolvedCommentedFileCount,
+        label: formatFileCount(
+          unresolvedCommentedFileCount,
+          "with unresolved comments",
+        ),
+      };
+    case "none":
+      return {
+        count: fileCount,
+        label: formatFileCount(fileCount, "changed"),
+      };
+  }
+}
+
 export const ReviewToolbar = memo(function ReviewToolbar({
   taskId,
   fileCount,
@@ -79,21 +107,13 @@ export const ReviewToolbar = memo(function ReviewToolbar({
     setReviewMode(taskId, "closed");
   };
 
-  const visibleFileCount =
-    commentFilter === "commented"
-      ? commentedFileCount
-      : commentFilter === "unresolved"
-        ? unresolvedCommentedFileCount
-        : fileCount;
-  const fileCountLabel =
-    commentFilter === "commented"
-      ? formatFileCount(commentedFileCount, "with comments")
-      : commentFilter === "unresolved"
-        ? formatFileCount(
-            unresolvedCommentedFileCount,
-            "with unresolved comments",
-          )
-        : formatFileCount(fileCount, "changed");
+  const { count: visibleFileCount, label: fileCountLabel } =
+    getVisibleFileSummary(
+      commentFilter,
+      fileCount,
+      commentedFileCount,
+      unresolvedCommentedFileCount,
+    );
 
   return (
     <Flex
