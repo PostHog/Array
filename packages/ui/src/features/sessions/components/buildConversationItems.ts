@@ -12,6 +12,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  readParentToolCallId,
   type UserShellExecuteParams,
 } from "@posthog/shared";
 import {
@@ -173,7 +174,17 @@ function isThoughtItem(
 }
 
 export function markThoughtCompletion(items: ConversationItem[]) {
+  markThoughtCompletionInItems(items, new Set());
+}
+
+function markThoughtCompletionInItems(
+  items: ConversationItem[],
+  visited: Set<ConversationItem[]>,
+) {
+  if (visited.has(items)) return;
+  visited.add(items);
   const seenContexts = new Set<TurnContext>();
+  const itemContexts = new Set<TurnContext>();
 
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
@@ -185,6 +196,13 @@ export function markThoughtCompletion(items: ConversationItem[]) {
 
     if (item.type === "session_update") {
       seenContexts.add(item.turnContext);
+      itemContexts.add(item.turnContext);
+    }
+  }
+
+  for (const context of itemContexts) {
+    for (const children of context.childItems.values()) {
+      markThoughtCompletionInItems(children, visited);
     }
   }
 }
@@ -747,10 +765,7 @@ function extractUserPrompt(params: unknown): {
 }
 
 function getParentToolCallId(update: SessionUpdate): string | undefined {
-  const meta = (update as Record<string, unknown>)?._meta as
-    | { claudeCode?: { parentToolCallId?: string } }
-    | undefined;
-  return meta?.claudeCode?.parentToolCallId;
+  return readParentToolCallId((update as Record<string, unknown>)._meta);
 }
 
 function pushChildItem(b: ItemBuilder, parentId: string, update: RenderItem) {

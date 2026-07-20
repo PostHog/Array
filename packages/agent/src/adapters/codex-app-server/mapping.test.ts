@@ -42,20 +42,14 @@ describe("mapAppServerNotification", () => {
     });
   });
 
-  it("streams a plan delta as an ACP agent_message_chunk", () => {
+  it("keeps plan deltas out of the agent transcript", () => {
     const result = mapAppServerNotification(
       "s-1",
       APP_SERVER_NOTIFICATIONS.PLAN_DELTA,
       { itemId: "p1", delta: "## Plan\n" },
     );
 
-    expect(result).toEqual({
-      sessionId: "s-1",
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: "## Plan\n" },
-      },
-    });
+    expect(result).toBeNull();
   });
 
   it("returns null when the delta is missing or empty", () => {
@@ -609,15 +603,25 @@ describe("mapHistoryItem", () => {
     ]);
   });
 
-  it("replays a persisted plan item as an agent_message_chunk", () => {
+  it("replays a persisted plan item as a historical plan tool call", () => {
     expect(
       mapHistoryItem("s-1", { type: "plan", id: "p1", text: "# The plan" }),
     ).toEqual([
       {
         sessionId: "s-1",
         update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: "# The plan" },
+          sessionUpdate: "tool_call",
+          toolCallId: "p1:implement",
+          title: "Plan",
+          kind: "switch_mode",
+          status: "completed",
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "# The plan" },
+            },
+          ],
+          rawInput: { plan: "# The plan", historical: true },
         },
       },
     ]);

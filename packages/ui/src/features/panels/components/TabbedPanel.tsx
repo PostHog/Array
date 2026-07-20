@@ -56,6 +56,7 @@ const TabBarButton = forwardRef<HTMLButtonElement, TabBarButtonProps>(
 
 interface TabbedPanelProps {
   panelId: string;
+  mountScopeKey: string;
   content: PanelContent;
   onActiveTabChange?: (panelId: string, tabId: string) => void;
   onCloseOtherTabs?: (panelId: string, tabId: string) => void;
@@ -72,6 +73,7 @@ interface TabbedPanelProps {
 
 export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   panelId,
+  mountScopeKey,
   content,
   onActiveTabChange,
   onCloseOtherTabs,
@@ -86,6 +88,27 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   emptyState,
 }) => {
   const hostClient = useHostTRPCClient();
+  const [mountedTabs, setMountedTabs] = useState<{
+    scopeKey: string;
+    tabIds: Set<string>;
+  }>(() => ({ scopeKey: mountScopeKey, tabIds: new Set() }));
+
+  useEffect(() => {
+    if (!content.activeTabId) return;
+    setMountedTabs((current) => {
+      if (current.scopeKey !== mountScopeKey) {
+        return {
+          scopeKey: mountScopeKey,
+          tabIds: new Set([content.activeTabId]),
+        };
+      }
+      if (current.tabIds.has(content.activeTabId)) return current;
+      return {
+        scopeKey: mountScopeKey,
+        tabIds: new Set(current.tabIds).add(content.activeTabId),
+      };
+    });
+  }, [content.activeTabId, mountScopeKey]);
 
   const handleSplitClick = async () => {
     const result = await hostClient.contextMenu.showSplitContextMenu.mutate();
@@ -236,16 +259,25 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
       >
         {content.tabs.length > 0 &&
         content.tabs.some((t) => t.id === content.activeTabId) ? (
-          content.tabs.map((tab) => (
-            <div
-              key={tab.id}
-              style={
-                tab.id === content.activeTabId ? activeTabStyle : hiddenTabStyle
-              }
-            >
-              {tab.component}
-            </div>
-          ))
+          content.tabs
+            .filter(
+              (tab) =>
+                tab.id === content.activeTabId ||
+                (mountedTabs.scopeKey === mountScopeKey &&
+                  mountedTabs.tabIds.has(tab.id)),
+            )
+            .map((tab) => (
+              <div
+                key={tab.id}
+                style={
+                  tab.id === content.activeTabId
+                    ? activeTabStyle
+                    : hiddenTabStyle
+                }
+              >
+                {tab.component}
+              </div>
+            ))
         ) : emptyState ? (
           emptyState
         ) : (

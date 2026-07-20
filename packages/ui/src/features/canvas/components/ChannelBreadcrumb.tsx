@@ -22,6 +22,7 @@ interface ChannelBreadcrumbProps {
   leafIcon?: ReactNode;
   /** The trailing (current page) segment label. */
   leafLabel: string;
+  editScopeKey?: string;
   /**
    * When provided, the leaf becomes inline-editable: double-click to rename,
    * Enter or blur to submit, Escape to cancel. Receives the trimmed new value.
@@ -40,10 +41,13 @@ export function ChannelBreadcrumb({
   channelId,
   leafIcon,
   leafLabel,
+  editScopeKey,
   onRename,
   trailing,
 }: ChannelBreadcrumbProps) {
-  const [editing, setEditing] = useState(false);
+  const currentEditScope = editScopeKey ?? leafLabel;
+  const [editingScope, setEditingScope] = useState<string | null>(null);
+  const editing = editingScope === currentEditScope;
   const navigate = useNavigate();
 
   const channelSegment = (
@@ -87,10 +91,10 @@ export function ChannelBreadcrumb({
             <HeaderTitleEditor
               initialTitle={leafLabel}
               onSubmit={(next) => {
-                setEditing(false);
+                setEditingScope(null);
                 onRename(next);
               }}
-              onCancel={() => setEditing(false)}
+              onCancel={() => setEditingScope(null)}
             />
           ) : (
             <Tooltip>
@@ -100,7 +104,9 @@ export function ChannelBreadcrumb({
                     truncate
                     className="no-drag min-w-0 whitespace-nowrap text-[13px]"
                     onDoubleClick={
-                      onRename ? () => setEditing(true) : undefined
+                      onRename
+                        ? () => setEditingScope(currentEditScope)
+                        : undefined
                     }
                   />
                 }
