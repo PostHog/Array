@@ -116,6 +116,30 @@ snapshots:
         hash: v1.k4693efd2.1d199b2c4bba8034cb18fb5b49866b64a6eb3311591add5f58ec288710dce2e9.FCc9egSaO1Onih417yciSYKNROe8zqDZyyS6xuXCZGw
     billing-usagemeter--zero-spend-limit--light:
         hash: v1.k4693efd2.b50c18736bbde45fc89f4c0ac7fd616286e5c1ecc2a56910fffca13eaa13d8a2.31z4F0JmvMeR4yqk5pjs_OQ3MypnM2miZI9al4wuc8c
+    channels-taskfeedrow--agent-origin--dark:
+        hash: v1.k4693efd2.82f8c70a399c9ea768201933e202fcc2fde74332c5153aeabf6835ace79beee6.-SVboDRIZ_-nh4PtMliCv7e7iCtdUm-1m2xQ9Xzcdfw
+    channels-taskfeedrow--agent-origin--light:
+        hash: v1.k4693efd2.4c1db3470d5ec9b4db9872d0e048314d0078979e8fbdb602b8c648ba70d7209f._KPUvj46p33u7A4Xndz-git-4rp7VKca1MpeTztlB6w
+    channels-taskfeedrow--human-email-only--dark:
+        hash: v1.k4693efd2.0f4dece4643b7375b77746347658f4fe65b37817cdfa9ad1ba697067e619f428.f0jKZ4OYqsmeJjXffjt-amK9cwE81JF0lgSMqtn37PA
+    channels-taskfeedrow--human-email-only--light:
+        hash: v1.k4693efd2.14db0510f7ea5c57985cf0cb60ab08f5e146c7243eeb1b0b963f74e85c7d60f4.ijHQLK0lZjjUlOQuzYzisImU9DWsNmZM7i5GYfWU4E0
+    channels-taskfeedrow--human-started--dark:
+        hash: v1.k4693efd2.e0abdae2e8ac2ef29793ea7afc2a2580c6610e07a3c640ad782af7fd3c12592a.YUgF_BTPzZoqnWXvyLBRs3w9C_P3Yfh4-cP4mUqs2NQ
+    channels-taskfeedrow--human-started--light:
+        hash: v1.k4693efd2.84c26deb1a587fe061238b3982b555167575893bacc9cd2667d4d3f74646261f.abqc0Voe6FIQFflzDJTv1KewcZ4XxcDz1a0mFlJu7oM
+    channels-taskfeedrow--long-prompt--dark:
+        hash: v1.k4693efd2.2547e88d76889aa7290c5221ff5ecb674cdb1cd9f1ae5efd211fb648a88037b6.4c9RO1upuz3VijYp2xU2MTNrW_87zWQLX5kRKCYABq4
+    channels-taskfeedrow--long-prompt--light:
+        hash: v1.k4693efd2.6b0f609e0155bc3b6e3149714b70d33ef83f7c2ca7b72e6d3a495b8db36828d0.eC5ZQDilDw7Y9EJqhfIdlk186GJjgGbYolZ9cm9Xtt0
+    channels-taskfeedrow--no-prompt--dark:
+        hash: v1.k4693efd2.9fa967f1a9acdeba0c50a9e45ae649f118ee26938037dbefd1bb0577067b03d4.va1lGsscqLW86-5yCKc3H6pQ8Az7_HBItkgGTnTQiYU
+    channels-taskfeedrow--no-prompt--light:
+        hash: v1.k4693efd2.a02339aecdb6fc327fdf6586e28ceeebf8490442fe217eb8bb46f1ce66bff78a.2l7XdvdW3D0GlLmPwDdTFgjZWdav68bZX_LYResVKwo
+    channels-taskfeedrow--no-starter--dark:
+        hash: v1.k4693efd2.66fff212f14afa9dd3bc532698a042383014a0cabd4331d30eff878148e1773d.RiectZxFTqk1husLYI-UV5ko1uZ4lpbjWstE7Hy3MJE
+    channels-taskfeedrow--no-starter--light:
+        hash: v1.k4693efd2.9ee4ad64ed7d2c5c62d0cd682d903b09da643d462d49aae0858afa500e92256b.OhGj64l-o7iWtxzJo1qt0A_CU9ME0ZRr_5e455RGUJQ
     components-permissions-permissionselector--create-new-file--dark:
         hash: v1.k4693efd2.c54203a4e636b83b3d24d7ed9c4ace8659db87cd8f231d9dc2ecc03320e31646.epDm7LebiLzlp0uuZBrE-Obt_anAn0xsE8bHFnm5vos
     components-permissions-permissionselector--create-new-file--light:
