@@ -1,13 +1,24 @@
 import {
   ArrowCounterClockwise,
   ArrowsClockwise,
+  CaretDown,
   ChatCircle,
   Columns,
   Rows,
   X,
 } from "@phosphor-icons/react";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
-import { Button } from "@posthog/quill";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  MenuLabel,
+} from "@posthog/quill";
 import { useDiffViewerStore } from "@posthog/ui/features/code-editor/diffViewerStore";
 import {
   type ReviewMode,
@@ -25,8 +36,9 @@ interface ReviewToolbarProps {
   fileCount: number;
   viewedCount: number;
   commentedFileCount: number;
-  showCommentedFilesOnly: boolean;
-  onToggleCommentedFilesOnly?: () => void;
+  unresolvedCommentedFileCount: number;
+  commentFilter: CommentFileFilter;
+  onCommentFilterChange?: (filter: CommentFileFilter) => void;
   linesAdded: number;
   linesRemoved: number;
   allExpanded: boolean;
@@ -40,6 +52,8 @@ interface ReviewToolbarProps {
   defaultBranch?: string | null;
 }
 
+export type CommentFileFilter = "none" | "commented" | "unresolved";
+
 function formatFileCount(count: number, suffix: string): string {
   const noun = count === 1 ? "file" : "files";
   return `${count} ${noun} ${suffix}`;
@@ -50,8 +64,9 @@ export const ReviewToolbar = memo(function ReviewToolbar({
   fileCount,
   viewedCount,
   commentedFileCount,
-  showCommentedFilesOnly,
-  onToggleCommentedFilesOnly,
+  unresolvedCommentedFileCount,
+  commentFilter,
+  onCommentFilterChange,
   allExpanded,
   onExpandAll,
   onCollapseAll,
@@ -78,12 +93,21 @@ export const ReviewToolbar = memo(function ReviewToolbar({
     setReviewMode(taskId, "closed");
   };
 
-  const visibleFileCount = showCommentedFilesOnly
-    ? commentedFileCount
-    : fileCount;
-  const fileCountLabel = showCommentedFilesOnly
-    ? formatFileCount(commentedFileCount, "with comments")
-    : formatFileCount(fileCount, "changed");
+  const visibleFileCount =
+    commentFilter === "commented"
+      ? commentedFileCount
+      : commentFilter === "unresolved"
+        ? unresolvedCommentedFileCount
+        : fileCount;
+  const fileCountLabel =
+    commentFilter === "commented"
+      ? formatFileCount(commentedFileCount, "with comments")
+      : commentFilter === "unresolved"
+        ? formatFileCount(
+            unresolvedCommentedFileCount,
+            "with unresolved comments",
+          )
+        : formatFileCount(fileCount, "changed");
 
   return (
     <Flex
@@ -115,29 +139,56 @@ export const ReviewToolbar = memo(function ReviewToolbar({
       </Flex>
 
       <Flex align="center" gap="1" ml="auto">
-        {onToggleCommentedFilesOnly && (
-          <Tooltip
-            content={
-              showCommentedFilesOnly
-                ? "Show all files"
-                : `Show only files with comments (${commentedFileCount})`
-            }
-          >
-            <Button
-              size="icon-sm"
-              variant={showCommentedFilesOnly ? "primary" : "default"}
-              onClick={onToggleCommentedFilesOnly}
-              disabled={commentedFileCount === 0 && !showCommentedFilesOnly}
-              aria-label="Filter files with comments"
-              aria-pressed={showCommentedFilesOnly}
-              className="rounded-xs"
+        {onCommentFilterChange && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant={commentFilter === "none" ? "default" : "primary"}
+                  aria-label="Filter files by review comments"
+                  className="rounded-xs"
+                >
+                  <ChatCircle
+                    size={14}
+                    weight={commentFilter === "none" ? "regular" : "fill"}
+                  />
+                  <CaretDown size={10} weight="bold" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent
+              align="end"
+              side="bottom"
+              sideOffset={6}
+              className="min-w-[220px]"
             >
-              <ChatCircle
-                size={14}
-                weight={showCommentedFilesOnly ? "fill" : "regular"}
-              />
-            </Button>
-          </Tooltip>
+              <MenuLabel>Comment filter</MenuLabel>
+              <DropdownMenuRadioGroup
+                value={commentFilter === "none" ? "" : commentFilter}
+                onValueChange={(value) =>
+                  onCommentFilterChange(value as CommentFileFilter)
+                }
+              >
+                <DropdownMenuRadioItem value="commented">
+                  All comments ({commentedFileCount})
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="unresolved">
+                  Unresolved comments ({unresolvedCommentedFileCount})
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              {commentFilter !== "none" && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => onCommentFilterChange("none")}
+                  >
+                    Clear comment filter
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         {onRefresh && (

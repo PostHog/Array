@@ -155,7 +155,8 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onCollapseFiles={collapseFiles}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
-      commentedFilePaths={commentedFilePaths}
+      commentedFilePaths={commentedFilePaths?.all}
+      unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
       currentSignatures={currentSignatures}
       viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}

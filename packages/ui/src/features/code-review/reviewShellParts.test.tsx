@@ -166,27 +166,40 @@ describe("review scroll anchors", () => {
 });
 
 describe("commented file filtering", () => {
-  it("collects paths from threads containing comments", () => {
+  it("collects paths for all and unresolved comment threads", () => {
     const commentedPaths = getCommentedFilePaths(
       new Map([
         [
           1,
           {
             filePath: "src/commented.ts",
+            isResolved: false,
             comments: [{ id: 1 }],
           },
         ],
         [
           2,
           {
+            filePath: "src/resolved.ts",
+            isResolved: true,
+            comments: [{ id: 2 }],
+          },
+        ],
+        [
+          3,
+          {
             filePath: "src/empty.ts",
+            isResolved: false,
             comments: [],
           },
         ],
       ]) as Parameters<typeof getCommentedFilePaths>[0],
     );
 
-    expect(commentedPaths).toEqual(new Set(["src/commented.ts"]));
+    expect(commentedPaths).toEqual({
+      all: new Set(["src/commented.ts", "src/resolved.ts"]),
+      unresolved: new Set(["src/commented.ts"]),
+    });
   });
 
   it("keeps matching files and their section headers", () => {

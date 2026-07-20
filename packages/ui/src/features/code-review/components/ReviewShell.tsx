@@ -32,7 +32,7 @@ import {
 import { ReviewViewedContext } from "../reviewViewedContext";
 import { useReviewViewedStore } from "../reviewViewedStore";
 import { PendingReviewBar } from "./PendingReviewBar";
-import { ReviewToolbar } from "./ReviewToolbar";
+import { type CommentFileFilter, ReviewToolbar } from "./ReviewToolbar";
 
 // Pure helpers, hooks, types, and presentational sub-components live in
 // ../reviewShellParts. Re-exported here so consumers can import everything
@@ -123,6 +123,7 @@ export function ReviewShell({
   items,
   itemIndexByFilePath,
   commentedFilePaths,
+  unresolvedCommentedFilePaths,
   currentSignatures,
   viewedRecord,
   onToggleViewed,
@@ -145,9 +146,9 @@ export function ReviewShell({
   const lastActiveRef = useRef<string | null>(null);
   const pendingNavigationRef = useRef<string | null>(null);
   const navigationFrameRef = useRef<number | null>(null);
-  const [showCommentedFilesOnly, setShowCommentedFilesOnly] = useState(false);
-  const isCommentFilterActive =
-    showCommentedFilesOnly && commentedFilePaths !== undefined;
+  const [commentFilter, setCommentFilter] = useState<CommentFileFilter>("none");
+  const activeCommentFilter =
+    commentedFilePaths && unresolvedCommentedFilePaths ? commentFilter : "none";
 
   const commentedItems = useMemo(
     () =>
@@ -156,7 +157,19 @@ export function ReviewShell({
         : [],
     [commentedFilePaths, items],
   );
-  const visibleItems = isCommentFilterActive ? commentedItems : items;
+  const unresolvedCommentedItems = useMemo(
+    () =>
+      unresolvedCommentedFilePaths
+        ? filterReviewItemsByFilePaths(items, unresolvedCommentedFilePaths)
+        : [],
+    [items, unresolvedCommentedFilePaths],
+  );
+  const visibleItems =
+    activeCommentFilter === "commented"
+      ? commentedItems
+      : activeCommentFilter === "unresolved"
+        ? unresolvedCommentedItems
+        : items;
   const visibleItemIndexByFilePath = useMemo(
     () => buildItemIndex(visibleItems),
     [visibleItems],
@@ -164,6 +177,10 @@ export function ReviewShell({
   const commentedFileCount = useMemo(
     () => commentedItems.filter((item) => item.filePaths).length,
     [commentedItems],
+  );
+  const unresolvedCommentedFileCount = useMemo(
+    () => unresolvedCommentedItems.filter((item) => item.filePaths).length,
+    [unresolvedCommentedItems],
   );
 
   const workerFactory = useCallback(
@@ -177,20 +194,21 @@ export function ReviewShell({
   const isExpanded = reviewMode === "expanded";
 
   const viewedCount = useMemo(() => {
-    const visibleKeys = isCommentFilterActive
-      ? new Set(
-          visibleItems.flatMap((item) =>
-            item.scrollKey ? [item.scrollKey] : [],
-          ),
-        )
-      : null;
+    const visibleKeys =
+      activeCommentFilter !== "none"
+        ? new Set(
+            visibleItems.flatMap((item) =>
+              item.scrollKey ? [item.scrollKey] : [],
+            ),
+          )
+        : null;
     let count = 0;
     for (const [key, sig] of currentSignatures) {
       if (visibleKeys && !visibleKeys.has(key)) continue;
       if (isFileViewed(viewedRecord[key], sig)) count++;
     }
     return count;
-  }, [currentSignatures, isCommentFilterActive, viewedRecord, visibleItems]);
+  }, [activeCommentFilter, currentSignatures, viewedRecord, visibleItems]);
 
   // Collapse already-viewed files on first open per task (mirrors GitHub).
   // Skips on re-opens: seededTaskRef prevents re-collapsing files the user
@@ -259,8 +277,11 @@ export function ReviewShell({
     if (!scrollRequest) return;
     const targetIndex = visibleItemIndexByFilePath.get(scrollRequest);
     if (targetIndex === undefined) {
-      if (isCommentFilterActive && itemIndexByFilePath.has(scrollRequest)) {
-        setShowCommentedFilesOnly(false);
+      if (
+        activeCommentFilter !== "none" &&
+        itemIndexByFilePath.has(scrollRequest)
+      ) {
+        setCommentFilter("none");
       }
       return;
     }
@@ -307,7 +328,7 @@ export function ReviewShell({
     onUncollapseFile,
     scrollRequest,
     setActiveFilePath,
-    isCommentFilterActive,
+    activeCommentFilter,
     taskId,
     visibleItemIndexByFilePath,
     viewedRecord,
@@ -349,9 +370,11 @@ export function ReviewShell({
     reviewContent = (
       <Flex align="center" justify="center" className="min-h-0 flex-1">
         <Text color="gray" className="text-sm">
-          {isCommentFilterActive
+          {activeCommentFilter === "commented"
             ? "No files with comments"
-            : "No file changes to review"}
+            : activeCommentFilter === "unresolved"
+              ? "No files with unresolved comments"
+              : "No file changes to review"}
         </Text>
       </Flex>
     );
@@ -405,10 +428,11 @@ export function ReviewShell({
             fileCount={fileCount}
             viewedCount={viewedCount}
             commentedFileCount={commentedFileCount}
-            showCommentedFilesOnly={isCommentFilterActive}
-            onToggleCommentedFilesOnly={
-              commentedFilePaths
-                ? () => setShowCommentedFilesOnly((current) => !current)
+            unresolvedCommentedFileCount={unresolvedCommentedFileCount}
+            commentFilter={activeCommentFilter}
+            onCommentFilterChange={
+              commentedFilePaths && unresolvedCommentedFilePaths
+                ? setCommentFilter
                 : undefined
             }
             linesAdded={linesAdded}

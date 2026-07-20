@@ -178,7 +178,8 @@ export function ReviewPage({ task }: ReviewPageProps) {
         branchSourceAvailable={branchSourceAvailable}
         prSourceAvailable={prSourceAvailable}
         commentThreads={effectiveCommentThreads}
-        commentedFilePaths={commentedFilePaths}
+        commentedFilePaths={commentedFilePaths?.all}
+        unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
       />
     );
   }
@@ -212,7 +213,8 @@ export function ReviewPage({ task }: ReviewPageProps) {
       untrackedFiles={untrackedFiles}
       stagedPathSet={stagedPathSet}
       commentThreads={effectiveCommentThreads}
-      commentedFilePaths={commentedFilePaths}
+      commentedFilePaths={commentedFilePaths?.all}
+      unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
       effectiveSource={effectiveSource}
       branchSourceAvailable={branchSourceAvailable}
       prSourceAvailable={prSourceAvailable}
@@ -250,6 +252,7 @@ function LocalReviewContent({
   stagedPathSet,
   commentThreads,
   commentedFilePaths,
+  unresolvedCommentedFilePaths,
   effectiveSource,
   branchSourceAvailable,
   prSourceAvailable,
@@ -283,6 +286,7 @@ function LocalReviewContent({
   stagedPathSet: Set<string>;
   commentThreads?: Map<number, PrCommentThread>;
   commentedFilePaths?: ReadonlySet<string>;
+  unresolvedCommentedFilePaths?: ReadonlySet<string>;
   effectiveSource: ResolvedDiffSource;
   branchSourceAvailable: boolean;
   prSourceAvailable: boolean;
@@ -447,6 +451,7 @@ function LocalReviewContent({
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
       commentedFilePaths={commentedFilePaths}
+      unresolvedCommentedFilePaths={unresolvedCommentedFilePaths}
       currentSignatures={currentSignatures}
       viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}
@@ -466,6 +471,7 @@ function RemoteReviewPage({
   prSourceAvailable,
   commentThreads,
   commentedFilePaths,
+  unresolvedCommentedFilePaths,
 }: {
   task: Task;
   repoPath: string | null;
@@ -478,6 +484,7 @@ function RemoteReviewPage({
   prSourceAvailable: boolean;
   commentThreads?: Map<number, PrCommentThread>;
   commentedFilePaths?: ReadonlySet<string>;
+  unresolvedCommentedFilePaths?: ReadonlySet<string>;
 }) {
   const taskId = task.id;
   const isBranch = effectiveSource === "branch";
@@ -561,6 +568,7 @@ function RemoteReviewPage({
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
       commentedFilePaths={commentedFilePaths}
+      unresolvedCommentedFilePaths={unresolvedCommentedFilePaths}
       currentSignatures={currentSignatures}
       viewedRecord={reviewState.viewedRecord}
       onToggleViewed={reviewState.toggleViewed}

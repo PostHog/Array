@@ -210,6 +210,7 @@ export interface ReviewShellProps {
   items: ReviewListItem[];
   itemIndexByFilePath: Map<string, number>;
   commentedFilePaths?: ReadonlySet<string>;
+  unresolvedCommentedFilePaths?: ReadonlySet<string>;
   currentSignatures: Map<string, string>;
   viewedRecord: Record<string, string>;
   onToggleViewed: (key: string, sig: string | null) => void;
@@ -233,14 +234,20 @@ export interface ReviewListItem {
   node: ReactNode;
 }
 
-export function getCommentedFilePaths(
-  threads: Map<number, PrCommentThread>,
-): Set<string> {
-  return new Set(
-    [...threads.values()]
-      .filter((thread) => thread.comments.length > 0)
-      .map((thread) => thread.filePath),
-  );
+export function getCommentedFilePaths(threads: Map<number, PrCommentThread>): {
+  all: Set<string>;
+  unresolved: Set<string>;
+} {
+  const all = new Set<string>();
+  const unresolved = new Set<string>();
+
+  for (const thread of threads.values()) {
+    if (thread.comments.length === 0) continue;
+    all.add(thread.filePath);
+    if (!thread.isResolved) unresolved.add(thread.filePath);
+  }
+
+  return { all, unresolved };
 }
 
 export function filterReviewItemsByFilePaths(
