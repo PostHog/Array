@@ -712,6 +712,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: 0.109.0
         version: 0.109.0(zod@4.4.3)
+      '@earendil-works/pi-coding-agent':
+        specifier: 'catalog:'
+        version: 0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
       '@hono/node-server':
         specifier: ^1.19.9
         version: 1.19.9(hono@4.11.7)
@@ -736,6 +739,9 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: ^1.28.0
         version: 1.39.0
+      '@posthog/harness':
+        specifier: workspace:*
+        version: link:../harness
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
@@ -977,13 +983,13 @@ importers:
   packages/harness:
     dependencies:
       '@earendil-works/pi-ai':
-        specifier: 0.80.3
+        specifier: 'catalog:'
         version: 0.80.3(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
       '@earendil-works/pi-coding-agent':
-        specifier: 0.80.6
+        specifier: 'catalog:'
         version: 0.80.6(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.19.0)(zod@4.4.3)
       '@earendil-works/pi-tui':
-        specifier: 0.80.6
+        specifier: 'catalog:'
         version: 0.80.6
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
