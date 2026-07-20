@@ -1,5 +1,6 @@
 import { Clock, Gauge } from "@phosphor-icons/react";
 import type { AutoresearchRun } from "@posthog/core/autoresearch/schemas";
+import { getAutoresearchElapsedMs } from "@posthog/core/autoresearch/stats";
 import type { ContextUsage } from "@posthog/core/sessions/contextUsage";
 import { Text } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
@@ -26,16 +27,14 @@ export function AutoresearchRuntimeStats({
     : "No usage update yet";
   return (
     <section
-      className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+      className="grid @min-[520px]:grid-cols-2 grid-cols-1 gap-2"
       aria-label="Autoresearch runtime metrics"
     >
       <RuntimeMetric
         icon={<Clock size={15} />}
-        label="Elapsed"
+        label="This run's active time"
         value={formatDuration(elapsed, 0)}
-        detail={
-          run.endedAt === null ? "Since this run started" : "Total run time"
-        }
+        detail={runtimeDetail(run)}
       />
       <RuntimeMetric
         icon={<Gauge size={15} />}
@@ -76,7 +75,7 @@ function RuntimeMetric({
 
 function useRunElapsed(run: AutoresearchRun): number {
   const [now, setNow] = useState(() => Date.now());
-  const live = run.endedAt === null;
+  const live = run.endedAt === null && run.status === "running";
 
   useEffect(() => {
     if (!live) return;
@@ -84,5 +83,12 @@ function useRunElapsed(run: AutoresearchRun): number {
     return () => window.clearInterval(interval);
   }, [live]);
 
-  return Math.max(0, (run.endedAt ?? now) - run.startedAt);
+  return getAutoresearchElapsedMs(run, now);
+}
+
+function runtimeDetail(run: AutoresearchRun): string {
+  if (run.status === "paused") return "Paused · this run only";
+  if (run.status === "interrupted") return "Reconnecting · active time paused";
+  if (run.endedAt !== null) return "Final duration for this run";
+  return "This run only · excludes pauses";
 }

@@ -185,7 +185,12 @@ export function AutoresearchPanel({ taskId }: AutoresearchPanelProps) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <Flex direction="column" gap="4" p="4" className="mx-auto max-w-[760px]">
+      <Flex
+        direction="column"
+        gap="4"
+        p="4"
+        className="@container mx-auto max-w-[760px]"
+      >
         <RunHeader
           run={selectedRun}
           runs={runs}
@@ -294,9 +299,11 @@ function RunHeader({
           <Badge color="gray" size="1">
             {run.config.direction}
           </Badge>
-          <Badge color={badge.color} size="1">
-            {badge.label}
-          </Badge>
+          {run.status !== "paused" && (
+            <Badge color={badge.color} size="1">
+              {badge.label}
+            </Badge>
+          )}
         </Flex>
         <Flex align="center" gap="2" className="shrink-0">
           {runs.length > 1 && (
@@ -429,7 +436,7 @@ export function RunStats({ run }: { run: AutoresearchRun }) {
   const cardClassName = "rounded-md border border-(--gray-5) p-3";
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className="grid @min-[360px]:grid-cols-2 @min-[700px]:grid-cols-4 grid-cols-1 gap-2">
       <MetricCard
         title="Best"
         value={summary.best?.value ?? Number.NaN}

@@ -124,6 +124,14 @@ export function isTerminalRunStatus(status: AutoresearchRunStatus): boolean {
 export const autoresearchPhaseSchema = z.enum(["implement", "measure"]);
 export type AutoresearchPhase = z.infer<typeof autoresearchPhaseSchema>;
 
+export const autoresearchPauseIntervalSchema = z.object({
+  startedAt: z.number(),
+  endedAt: z.number(),
+});
+export type AutoresearchPauseInterval = z.infer<
+  typeof autoresearchPauseIntervalSchema
+>;
+
 export const autoresearchRunSchema = z.object({
   id: z.string().min(1),
   config: autoresearchConfigSchema,
@@ -150,6 +158,9 @@ export const autoresearchRunSchema = z.object({
   researchFindings: z.array(autoresearchResearchFindingSchema).default([]),
   iterations: z.array(autoresearchIterationSchema),
   startedAt: z.number(),
+  pausedAt: z.number().nullable().optional(),
+  pausedDurationMs: z.number().min(0).optional(),
+  pauseIntervals: z.array(autoresearchPauseIntervalSchema).optional(),
   endedAt: z.number().nullable(),
   endReason: autoresearchEndReasonSchema.nullable(),
   interruptedReason: autoresearchInterruptionReasonSchema
@@ -176,12 +187,17 @@ export function parseStoredAutoresearchRun(
   }
   const parsed = autoresearchRunSchema.safeParse(raw);
   if (!parsed.success) return null;
-  const run = parsed.data;
+  let run = parsed.data;
+  if (run.status === "paused" && run.pausedAt === undefined) {
+    run = { ...run, pausedAt: Date.now(), pausedDurationMs: 0 };
+  }
   if (run.status !== "running") return run;
   return {
     ...run,
     status: "interrupted",
     interruptedReason: "app-restart",
+    pausedAt: Date.now(),
+    pausedDurationMs: run.pausedDurationMs ?? 0,
   };
 }
 
