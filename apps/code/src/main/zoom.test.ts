@@ -85,6 +85,36 @@ describe("window zoom", () => {
     expect(window.webContents.zoomLevel).toBe(0.5);
   });
 
+  it("restores the persisted level after task navigation", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+    window.webContents.zoomLevel = 0;
+
+    window.webContents.emit(
+      "did-navigate-in-page",
+      {},
+      "file:///app/tasks/next-task",
+      true,
+    );
+
+    expect(window.webContents.zoomLevel).toBe(0.5);
+  });
+
+  it("ignores in-page navigation inside subframes", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+    window.webContents.zoomLevel = 0;
+
+    window.webContents.emit(
+      "did-navigate-in-page",
+      {},
+      "file:///embedded-content",
+      false,
+    );
+
+    expect(window.webContents.zoomLevel).toBe(0);
+  });
+
   it.each([
     ["in", 1],
     ["out", 0],
