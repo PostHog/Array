@@ -30,6 +30,7 @@ import { useReviewViewedStore } from "./reviewViewedStore";
 export type { DeferredReason } from "@posthog/core/code-review/reviewShellGeometry";
 export {
   buildItemIndex,
+  findNextScrollKey,
   splitFilePath,
 } from "@posthog/core/code-review/reviewShellGeometry";
 

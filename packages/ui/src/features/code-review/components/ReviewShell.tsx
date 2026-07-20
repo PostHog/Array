@@ -17,6 +17,7 @@ import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewListItem, ReviewShellProps } from "../reviewShellParts";
 import {
   findActiveScrollKey,
+  findNextScrollKey,
   findRenderedScrollAnchor,
   isFileViewed,
 } from "../reviewShellParts";
@@ -187,25 +188,39 @@ export function ReviewShell({
     if (prState === "merged") clearTasks([taskId]);
   }, [prState, taskId, clearTasks]);
 
-  const viewedContextValue = useMemo(
-    () => ({
-      viewedRecord,
-      currentSignatures,
-      toggleViewed: onToggleViewed,
-    }),
-    [viewedRecord, currentSignatures, onToggleViewed],
-  );
-
   const scrollRequest = useReviewNavigationStore(
     (s) => s.scrollRequests[taskId] ?? null,
   );
   const clearScrollRequest = useReviewNavigationStore(
     (s) => s.clearScrollRequest,
   );
+  const requestScrollToFile = useReviewNavigationStore(
+    (s) => s.requestScrollToFile,
+  );
   const setActiveFilePath = useReviewNavigationStore(
     (s) => s.setActiveFilePath,
   );
   const clearTask = useReviewNavigationStore((s) => s.clearTask);
+
+  const toggleViewed = useCallback(
+    (key: string, signature: string | null) => {
+      onToggleViewed(key, signature);
+      if (signature === null) return;
+
+      const nextKey = findNextScrollKey(items, key);
+      if (nextKey) requestScrollToFile(taskId, nextKey);
+    },
+    [items, onToggleViewed, requestScrollToFile, taskId],
+  );
+
+  const viewedContextValue = useMemo(
+    () => ({
+      viewedRecord,
+      currentSignatures,
+      toggleViewed,
+    }),
+    [viewedRecord, currentSignatures, toggleViewed],
+  );
 
   useEffect(() => {
     return () => {

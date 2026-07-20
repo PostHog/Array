@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildItemIndex,
+  findNextScrollKey,
   getDeferredMessage,
   splitFilePath,
   sumHunkStats,
@@ -42,6 +43,18 @@ describe("buildItemIndex", () => {
     expect(index.get("a")).toBe(0);
     expect(index.get("b")).toBe(2);
     expect(index.size).toBe(2);
+  });
+});
+
+describe("findNextScrollKey", () => {
+  it.each([
+    ["a", "b"],
+    ["b", null],
+    ["missing", null],
+  ])("finds the next file after %s", (currentKey, expected) => {
+    const items = [{ scrollKey: "a" }, {}, { scrollKey: "b" }, {}];
+
+    expect(findNextScrollKey(items, currentKey)).toBe(expected);
   });
 });
 

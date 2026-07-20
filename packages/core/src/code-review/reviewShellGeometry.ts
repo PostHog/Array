@@ -37,6 +37,20 @@ export function buildItemIndex(
   return index;
 }
 
+export function findNextScrollKey(
+  items: { scrollKey?: string }[],
+  currentKey: string,
+): string | null {
+  const currentIndex = items.findIndex((item) => item.scrollKey === currentKey);
+  if (currentIndex === -1) return null;
+
+  for (let i = currentIndex + 1; i < items.length; i++) {
+    const key = items[i].scrollKey;
+    if (key) return key;
+  }
+  return null;
+}
+
 export function getDeferredMessage(reason: DeferredReason): string {
   switch (reason) {
     case "line-limit":
