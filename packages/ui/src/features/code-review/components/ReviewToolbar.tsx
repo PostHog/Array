@@ -16,7 +16,8 @@ import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Flex, Separator, Text } from "@radix-ui/themes";
 import { FoldVertical, Maximize, Minimize, UnfoldVertical } from "lucide-react";
 import { memo } from "react";
-import { type CommentFileFilter, DiffSettingsMenu } from "./DiffSettingsMenu";
+import type { CommentFileFilter } from "../commentFileFilter";
+import { DiffSettingsMenu } from "./DiffSettingsMenu";
 import { DiffSourceSelector } from "./DiffSourceSelector";
 
 interface ReviewToolbarProps {

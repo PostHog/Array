@@ -18,18 +18,16 @@ import { useCwd } from "../../sidebar/useCwd";
 import { useDiscardAllChanges } from "../../task-detail/hooks/useDiscardAllChanges";
 import { useDiscardFile } from "../../task-detail/hooks/useDiscardFile";
 import { useStageToggle } from "../../task-detail/hooks/useStageToggle";
+import {
+  getCommentedFilePaths,
+  type ReviewListItem,
+} from "../commentFileFilter";
 import { REVIEW_FILE_CACHE_TIME_MS, REVIEW_MAX_FILE_LINES } from "../constants";
 import { useEffectiveDiffSource } from "../hooks/useEffectiveDiffSource";
 import { useReviewDiffs } from "../hooks/useReviewDiffs";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { DiffOptions } from "../types";
-import {
-  buildItemIndex,
-  getCommentedFilePaths,
-  type ReviewListItem,
-  ReviewShell,
-  useReviewState,
-} from "./ReviewShell";
+import { buildItemIndex, ReviewShell, useReviewState } from "./ReviewShell";
 import {
   buildPatchReviewItems,
   buildRemoteReviewItems,

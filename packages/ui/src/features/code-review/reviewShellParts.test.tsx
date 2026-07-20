@@ -15,13 +15,16 @@ vi.mock("../../primitives/FileIcon", () => ({
 }));
 
 import {
-  DeferredDiffPlaceholder,
-  DiffFileHeader,
+  deriveCommentFileFilterState,
   filterReviewItemsByFilePaths,
-  findActiveScrollKey,
-  findRenderedScrollAnchor,
   getCommentedFilePaths,
   type ReviewListItem,
+} from "./commentFileFilter";
+import {
+  DeferredDiffPlaceholder,
+  DiffFileHeader,
+  findActiveScrollKey,
+  findRenderedScrollAnchor,
 } from "./reviewShellParts";
 
 type FileDiffMetadata = import("@pierre/diffs/react").FileDiffMetadata;
@@ -256,5 +259,25 @@ describe("commented file filtering", () => {
         (item) => item.key,
       ),
     ).toEqual(["section:changes", "unstaged:b.ts"]);
+  });
+
+  it("derives visible items and counts for the selected filter", () => {
+    const items: ReviewListItem[] = [
+      { key: "a.ts", filePaths: ["a.ts"], node: <span>A</span> },
+      { key: "b.ts", filePaths: ["b.ts"], node: <span>B</span> },
+      { key: "c.ts", filePaths: ["c.ts"], node: <span>C</span> },
+    ];
+
+    const state = deriveCommentFileFilterState({
+      items,
+      requestedFilter: "unresolved",
+      commentedFilePaths: new Set(["a.ts", "b.ts"]),
+      unresolvedCommentedFilePaths: new Set(["b.ts"]),
+    });
+
+    expect(state.activeFilter).toBe("unresolved");
+    expect(state.visibleItems.map((item) => item.key)).toEqual(["b.ts"]);
+    expect(state.commentedFileCount).toBe(2);
+    expect(state.unresolvedCommentedFileCount).toBe(1);
   });
 });

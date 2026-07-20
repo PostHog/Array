@@ -15,23 +15,27 @@ import {
 } from "react";
 import { VList, type VListHandle } from "virtua";
 import {
+  type CommentFileFilter,
+  deriveCommentFileFilterState,
+  getEmptyReviewMessage,
+  type ReviewListItem,
+} from "../commentFileFilter";
+import {
   REVIEW_LIST_BUFFER_PX,
   REVIEW_LIST_ESTIMATED_ITEM_SIZE,
 } from "../constants";
 import { useReviewDraftsStore } from "../reviewDraftsStore";
 import { REVIEW_HOST, type ReviewHost } from "../reviewHost";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
-import type { ReviewListItem, ReviewShellProps } from "../reviewShellParts";
+import type { ReviewShellProps } from "../reviewShellParts";
 import {
   buildItemIndex,
-  filterReviewItemsByFilePaths,
   findActiveScrollKey,
   findRenderedScrollAnchor,
   isFileViewed,
 } from "../reviewShellParts";
 import { ReviewViewedContext } from "../reviewViewedContext";
 import { useReviewViewedStore } from "../reviewViewedStore";
-import type { CommentFileFilter } from "./DiffSettingsMenu";
 import { PendingReviewBar } from "./PendingReviewBar";
 import { ReviewToolbar } from "./ReviewToolbar";
 
@@ -44,17 +48,6 @@ export * from "../reviewShellParts";
 const SIDEBAR_MIN_WIDTH = 200;
 const SIDEBAR_MAX_WIDTH = 500;
 const SIDEBAR_DEFAULT_WIDTH = 280;
-
-function getEmptyReviewMessage(commentFilter: CommentFileFilter): string {
-  switch (commentFilter) {
-    case "commented":
-      return "No files with comments";
-    case "unresolved":
-      return "No files with unresolved comments";
-    case "none":
-      return "No file changes to review";
-  }
-}
 
 function ExpandedSidebar({ task }: { task: Task }) {
   const reviewHost = useService<ReviewHost>(REVIEW_HOST);
@@ -159,40 +152,24 @@ export function ReviewShell({
   const pendingNavigationRef = useRef<string | null>(null);
   const navigationFrameRef = useRef<number | null>(null);
   const [commentFilter, setCommentFilter] = useState<CommentFileFilter>("none");
-  const activeCommentFilter =
-    commentedFilePaths && unresolvedCommentedFilePaths ? commentFilter : "none";
-
-  const commentedItems = useMemo(
+  const {
+    activeFilter: activeCommentFilter,
+    visibleItems,
+    commentedFileCount,
+    unresolvedCommentedFileCount,
+  } = useMemo(
     () =>
-      commentedFilePaths
-        ? filterReviewItemsByFilePaths(items, commentedFilePaths)
-        : [],
-    [commentedFilePaths, items],
+      deriveCommentFileFilterState({
+        items,
+        requestedFilter: commentFilter,
+        commentedFilePaths,
+        unresolvedCommentedFilePaths,
+      }),
+    [commentFilter, commentedFilePaths, items, unresolvedCommentedFilePaths],
   );
-  const unresolvedCommentedItems = useMemo(
-    () =>
-      unresolvedCommentedFilePaths
-        ? filterReviewItemsByFilePaths(items, unresolvedCommentedFilePaths)
-        : [],
-    [items, unresolvedCommentedFilePaths],
-  );
-  const visibleItems =
-    activeCommentFilter === "commented"
-      ? commentedItems
-      : activeCommentFilter === "unresolved"
-        ? unresolvedCommentedItems
-        : items;
   const visibleItemIndexByFilePath = useMemo(
     () => buildItemIndex(visibleItems),
     [visibleItems],
-  );
-  const commentedFileCount = useMemo(
-    () => commentedItems.filter((item) => item.filePaths).length,
-    [commentedItems],
-  );
-  const unresolvedCommentedFileCount = useMemo(
-    () => unresolvedCommentedItems.filter((item) => item.filePaths).length,
-    [unresolvedCommentedItems],
   );
 
   const workerFactory = useCallback(

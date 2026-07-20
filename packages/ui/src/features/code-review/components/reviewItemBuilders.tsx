@@ -7,7 +7,7 @@ import {
 import type { PrCommentThread } from "@posthog/core/code-review/types";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { makeFileKey } from "../../git-interaction/utils/fileKey";
-import type { ReviewListItem } from "../reviewShellParts";
+import type { ReviewListItem } from "../commentFileFilter";
 import type { DiffOptions } from "../types";
 import { PatchRow, RemoteRow, UntrackedRow } from "./ReviewRows";
 

@@ -16,7 +16,6 @@ import {
   splitFilePath,
   sumHunkStats,
 } from "@posthog/core/code-review/reviewShellGeometry";
-import type { PrCommentThread } from "@posthog/core/code-review/types";
 import { Badge } from "@posthog/quill";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
@@ -25,6 +24,7 @@ import { Tooltip } from "../../primitives/Tooltip";
 import { useThemeStore } from "../../shell/themeStore";
 import { useDiffViewerStore } from "../code-editor/diffViewerStore";
 import { computeDiffStats } from "../git-interaction/utils/diffStats";
+import type { ReviewListItem } from "./commentFileFilter";
 import { useReviewViewedContext } from "./reviewViewedContext";
 import { useReviewViewedStore } from "./reviewViewedStore";
 
@@ -33,6 +33,7 @@ export {
   buildItemIndex,
   splitFilePath,
 } from "@posthog/core/code-review/reviewShellGeometry";
+export type { ReviewListItem } from "./commentFileFilter";
 
 const STICKY_HEADER_CSS = `[data-diffs-header] { position: sticky; top: 0; z-index: 1; background: var(--gray-2); }`;
 const SCROLL_ANCHOR_SELECTOR = "[data-scroll-key]";
@@ -225,51 +226,6 @@ export interface ReviewShellProps {
   branchSourceAvailable?: boolean;
   prSourceAvailable?: boolean;
   defaultBranch?: string | null;
-}
-
-export interface ReviewListItem {
-  key: string;
-  scrollKey?: string;
-  filePaths?: string[];
-  node: ReactNode;
-}
-
-export function getCommentedFilePaths(threads: Map<number, PrCommentThread>): {
-  all: Set<string>;
-  unresolved: Set<string>;
-} {
-  const all = new Set<string>();
-  const unresolved = new Set<string>();
-
-  for (const thread of threads.values()) {
-    if (thread.comments.length === 0) continue;
-    all.add(thread.filePath);
-    if (!thread.isResolved) unresolved.add(thread.filePath);
-  }
-
-  return { all, unresolved };
-}
-
-export function filterReviewItemsByFilePaths(
-  items: ReviewListItem[],
-  filePaths: ReadonlySet<string>,
-): ReviewListItem[] {
-  const filteredItems: ReviewListItem[] = [];
-  let pendingSectionItems: ReviewListItem[] = [];
-
-  for (const item of items) {
-    if (!item.filePaths) {
-      pendingSectionItems = [item];
-      continue;
-    }
-
-    if (!item.filePaths.some((filePath) => filePaths.has(filePath))) continue;
-
-    filteredItems.push(...pendingSectionItems, item);
-    pendingSectionItems = [];
-  }
-
-  return filteredItems;
 }
 
 export function FileHeaderRow({

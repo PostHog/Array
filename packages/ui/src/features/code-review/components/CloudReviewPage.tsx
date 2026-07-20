@@ -7,15 +7,13 @@ import { useMemo } from "react";
 import { useDiffViewerStore } from "../../code-editor/diffViewerStore";
 import { usePrDetails } from "../../git-interaction/usePrDetails";
 import { useCloudChangedFiles } from "../../task-detail/hooks/useCloudChangedFiles";
-import { useReviewNavigationStore } from "../reviewNavigationStore";
-import { PatchedFileDiff } from "./PatchedFileDiff";
 import {
-  buildItemIndex,
   getCommentedFilePaths,
   type ReviewListItem,
-  ReviewShell,
-  useReviewState,
-} from "./ReviewShell";
+} from "../commentFileFilter";
+import { useReviewNavigationStore } from "../reviewNavigationStore";
+import { PatchedFileDiff } from "./PatchedFileDiff";
+import { buildItemIndex, ReviewShell, useReviewState } from "./ReviewShell";
 import { changedFileSignature } from "./reviewItemBuilders";
 
 interface CloudReviewPageProps {

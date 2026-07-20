@@ -13,8 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import { useDiffViewerStore } from "@posthog/ui/features/code-editor/diffViewerStore";
-
-export type CommentFileFilter = "none" | "commented" | "unresolved";
+import type { CommentFileFilter } from "../commentFileFilter";
 
 interface DiffSettingsMenuProps {
   commentedFileCount: number;
