@@ -17,8 +17,11 @@ vi.mock("../../primitives/FileIcon", () => ({
 import {
   DeferredDiffPlaceholder,
   DiffFileHeader,
+  filterReviewItemsByFilePaths,
   findActiveScrollKey,
   findRenderedScrollAnchor,
+  getCommentedFilePaths,
+  type ReviewListItem,
 } from "./reviewShellParts";
 
 type FileDiffMetadata = import("@pierre/diffs/react").FileDiffMetadata;
@@ -159,5 +162,86 @@ describe("review scroll anchors", () => {
     setRect(below, 180, 260);
 
     expect(findActiveScrollKey(root)).toBe("target.ts");
+  });
+});
+
+describe("commented file filtering", () => {
+  it("collects paths from threads containing comments", () => {
+    const commentedPaths = getCommentedFilePaths(
+      new Map([
+        [
+          1,
+          {
+            filePath: "src/commented.ts",
+            comments: [{ id: 1 }],
+          },
+        ],
+        [
+          2,
+          {
+            filePath: "src/empty.ts",
+            comments: [],
+          },
+        ],
+      ]) as Parameters<typeof getCommentedFilePaths>[0],
+    );
+
+    expect(commentedPaths).toEqual(new Set(["src/commented.ts"]));
+  });
+
+  it("keeps matching files and their section headers", () => {
+    const items: ReviewListItem[] = [
+      { key: "section:staged", node: <span>Staged</span> },
+      {
+        key: "staged:a.ts",
+        filePaths: ["a.ts"],
+        node: <span>A</span>,
+      },
+      {
+        key: "staged:b.ts",
+        filePaths: ["b.ts"],
+        node: <span>B</span>,
+      },
+      { key: "section:changes", node: <span>Changes</span> },
+      {
+        key: "unstaged:c.ts",
+        filePaths: ["c.ts", "old-c.ts"],
+        node: <span>C</span>,
+      },
+    ];
+
+    expect(
+      filterReviewItemsByFilePaths(items, new Set(["b.ts", "old-c.ts"])).map(
+        (item) => item.key,
+      ),
+    ).toEqual([
+      "section:staged",
+      "staged:b.ts",
+      "section:changes",
+      "unstaged:c.ts",
+    ]);
+  });
+
+  it("drops section headers without matching files", () => {
+    const items: ReviewListItem[] = [
+      { key: "section:staged", node: <span>Staged</span> },
+      {
+        key: "staged:a.ts",
+        filePaths: ["a.ts"],
+        node: <span>A</span>,
+      },
+      { key: "section:changes", node: <span>Changes</span> },
+      {
+        key: "unstaged:b.ts",
+        filePaths: ["b.ts"],
+        node: <span>B</span>,
+      },
+    ];
+
+    expect(
+      filterReviewItemsByFilePaths(items, new Set(["b.ts"])).map(
+        (item) => item.key,
+      ),
+    ).toEqual(["section:changes", "unstaged:b.ts"]);
   });
 });

@@ -11,6 +11,7 @@ import { useReviewNavigationStore } from "../reviewNavigationStore";
 import { PatchedFileDiff } from "./PatchedFileDiff";
 import {
   buildItemIndex,
+  getCommentedFilePaths,
   type ReviewListItem,
   ReviewShell,
   useReviewState,
@@ -37,8 +38,12 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     isLoading,
   } = useCloudChangedFiles(taskId, task, isReviewOpen);
   const { commentThreads } = usePrDetails(prUrl, {
-    includeComments: isReviewOpen && showReviewComments,
+    includeComments: isReviewOpen,
   });
+  const commentedFilePaths = useMemo(
+    () => (prUrl ? getCommentedFilePaths(commentThreads) : undefined),
+    [commentThreads, prUrl],
+  );
 
   const allPaths = useMemo(() => reviewFiles.map((f) => f.path), [reviewFiles]);
 
@@ -83,6 +88,9 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       return {
         key: file.path,
         scrollKey: file.path,
+        filePaths: [file.path, file.originalPath].filter(
+          (path): path is string => !!path,
+        ),
         node: (
           <PatchedFileDiff
             file={file}
@@ -147,6 +155,7 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onCollapseFiles={collapseFiles}
       items={items}
       itemIndexByFilePath={itemIndexByFilePath}
+      commentedFilePaths={commentedFilePaths}
       currentSignatures={currentSignatures}
       viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}

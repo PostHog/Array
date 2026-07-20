@@ -5,7 +5,14 @@ import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTask
 import { useCloudPrUrl } from "@posthog/ui/features/git-interaction/useCloudPrUrl";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { VList, type VListHandle } from "virtua";
 import {
   REVIEW_LIST_BUFFER_PX,
@@ -16,6 +23,8 @@ import { REVIEW_HOST, type ReviewHost } from "../reviewHost";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewListItem, ReviewShellProps } from "../reviewShellParts";
 import {
+  buildItemIndex,
+  filterReviewItemsByFilePaths,
   findActiveScrollKey,
   findRenderedScrollAnchor,
   isFileViewed,
@@ -113,6 +122,7 @@ export function ReviewShell({
   isEmpty,
   items,
   itemIndexByFilePath,
+  commentedFilePaths,
   currentSignatures,
   viewedRecord,
   onToggleViewed,
@@ -135,6 +145,26 @@ export function ReviewShell({
   const lastActiveRef = useRef<string | null>(null);
   const pendingNavigationRef = useRef<string | null>(null);
   const navigationFrameRef = useRef<number | null>(null);
+  const [showCommentedFilesOnly, setShowCommentedFilesOnly] = useState(false);
+  const isCommentFilterActive =
+    showCommentedFilesOnly && commentedFilePaths !== undefined;
+
+  const commentedItems = useMemo(
+    () =>
+      commentedFilePaths
+        ? filterReviewItemsByFilePaths(items, commentedFilePaths)
+        : [],
+    [commentedFilePaths, items],
+  );
+  const visibleItems = isCommentFilterActive ? commentedItems : items;
+  const visibleItemIndexByFilePath = useMemo(
+    () => buildItemIndex(visibleItems),
+    [visibleItems],
+  );
+  const commentedFileCount = useMemo(
+    () => commentedItems.filter((item) => item.filePaths).length,
+    [commentedItems],
+  );
 
   const workerFactory = useCallback(
     () => reviewHost.diffWorkerFactory(),
@@ -147,12 +177,20 @@ export function ReviewShell({
   const isExpanded = reviewMode === "expanded";
 
   const viewedCount = useMemo(() => {
+    const visibleKeys = isCommentFilterActive
+      ? new Set(
+          visibleItems.flatMap((item) =>
+            item.scrollKey ? [item.scrollKey] : [],
+          ),
+        )
+      : null;
     let count = 0;
     for (const [key, sig] of currentSignatures) {
+      if (visibleKeys && !visibleKeys.has(key)) continue;
       if (isFileViewed(viewedRecord[key], sig)) count++;
     }
     return count;
-  }, [currentSignatures, viewedRecord]);
+  }, [currentSignatures, isCommentFilterActive, viewedRecord, visibleItems]);
 
   // Collapse already-viewed files on first open per task (mirrors GitHub).
   // Skips on re-opens: seededTaskRef prevents re-collapsing files the user
@@ -219,8 +257,13 @@ export function ReviewShell({
 
   useEffect(() => {
     if (!scrollRequest) return;
-    const targetIndex = itemIndexByFilePath.get(scrollRequest);
-    if (targetIndex === undefined) return;
+    const targetIndex = visibleItemIndexByFilePath.get(scrollRequest);
+    if (targetIndex === undefined) {
+      if (isCommentFilterActive && itemIndexByFilePath.has(scrollRequest)) {
+        setShowCommentedFilesOnly(false);
+      }
+      return;
+    }
 
     const currentSignature = currentSignatures.get(scrollRequest);
     const viewed =
@@ -264,7 +307,9 @@ export function ReviewShell({
     onUncollapseFile,
     scrollRequest,
     setActiveFilePath,
+    isCommentFilterActive,
     taskId,
+    visibleItemIndexByFilePath,
     viewedRecord,
   ]);
 
@@ -292,6 +337,40 @@ export function ReviewShell({
     ),
     [],
   );
+
+  let reviewContent: ReactNode;
+  if (isLoading) {
+    reviewContent = (
+      <Flex align="center" justify="center" className="min-h-0 flex-1">
+        <Spinner size="2" />
+      </Flex>
+    );
+  } else if (isEmpty || visibleItems.length === 0) {
+    reviewContent = (
+      <Flex align="center" justify="center" className="min-h-0 flex-1">
+        <Text color="gray" className="text-sm">
+          {isCommentFilterActive
+            ? "No files with comments"
+            : "No file changes to review"}
+        </Text>
+      </Flex>
+    );
+  } else {
+    reviewContent = (
+      <VList
+        ref={listRef}
+        bufferSize={REVIEW_LIST_BUFFER_PX}
+        itemSize={REVIEW_LIST_ESTIMATED_ITEM_SIZE}
+        className="pierre-scroll-root scrollbar-overlay-y min-h-0 flex-1 overflow-auto bg-(--gray-2)"
+        shift={false}
+        style={{ scrollbarGutter: "stable" }}
+        onScroll={handleScroll}
+        data={visibleItems}
+      >
+        {renderItem}
+      </VList>
+    );
+  }
 
   return (
     <WorkerPoolContextProvider
@@ -325,6 +404,13 @@ export function ReviewShell({
             taskId={taskId}
             fileCount={fileCount}
             viewedCount={viewedCount}
+            commentedFileCount={commentedFileCount}
+            showCommentedFilesOnly={isCommentFilterActive}
+            onToggleCommentedFilesOnly={
+              commentedFilePaths
+                ? () => setShowCommentedFilesOnly((current) => !current)
+                : undefined
+            }
             linesAdded={linesAdded}
             linesRemoved={linesRemoved}
             allExpanded={allExpanded}
@@ -343,38 +429,7 @@ export function ReviewShell({
               direction="column"
               className="min-w-0 flex-1"
             >
-              {isLoading ? (
-                <Flex
-                  align="center"
-                  justify="center"
-                  className="min-h-0 flex-1"
-                >
-                  <Spinner size="2" />
-                </Flex>
-              ) : isEmpty ? (
-                <Flex
-                  align="center"
-                  justify="center"
-                  className="min-h-0 flex-1"
-                >
-                  <Text color="gray" className="text-sm">
-                    No file changes to review
-                  </Text>
-                </Flex>
-              ) : (
-                <VList
-                  ref={listRef}
-                  bufferSize={REVIEW_LIST_BUFFER_PX}
-                  itemSize={REVIEW_LIST_ESTIMATED_ITEM_SIZE}
-                  className="pierre-scroll-root scrollbar-overlay-y min-h-0 flex-1 overflow-auto bg-(--gray-2)"
-                  shift={false}
-                  style={{ scrollbarGutter: "stable" }}
-                  onScroll={handleScroll}
-                  data={items}
-                >
-                  {renderItem}
-                </VList>
-              )}
+              {reviewContent}
               <PendingReviewBar taskId={taskId} />
             </Flex>
 

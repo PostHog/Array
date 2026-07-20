@@ -1,6 +1,7 @@
 import {
   ArrowCounterClockwise,
   ArrowsClockwise,
+  ChatCircle,
   Columns,
   Rows,
   X,
@@ -23,6 +24,9 @@ interface ReviewToolbarProps {
   taskId: string;
   fileCount: number;
   viewedCount: number;
+  commentedFileCount: number;
+  showCommentedFilesOnly: boolean;
+  onToggleCommentedFilesOnly?: () => void;
   linesAdded: number;
   linesRemoved: number;
   allExpanded: boolean;
@@ -36,10 +40,18 @@ interface ReviewToolbarProps {
   defaultBranch?: string | null;
 }
 
+function formatFileCount(count: number, suffix: string): string {
+  const noun = count === 1 ? "file" : "files";
+  return `${count} ${noun} ${suffix}`;
+}
+
 export const ReviewToolbar = memo(function ReviewToolbar({
   taskId,
   fileCount,
   viewedCount,
+  commentedFileCount,
+  showCommentedFilesOnly,
+  onToggleCommentedFilesOnly,
   allExpanded,
   onExpandAll,
   onCollapseAll,
@@ -66,6 +78,13 @@ export const ReviewToolbar = memo(function ReviewToolbar({
     setReviewMode(taskId, "closed");
   };
 
+  const visibleFileCount = showCommentedFilesOnly
+    ? commentedFileCount
+    : fileCount;
+  const fileCountLabel = showCommentedFilesOnly
+    ? formatFileCount(commentedFileCount, "with comments")
+    : formatFileCount(fileCount, "changed");
+
   return (
     <Flex
       id="review-toolbar"
@@ -78,12 +97,10 @@ export const ReviewToolbar = memo(function ReviewToolbar({
       className="sticky top-0 h-[32px] shrink-0 border-b border-b-(--gray-6) bg-(--color-background)"
     >
       <Flex align="center" gap="2">
-        <Text className="font-medium text-[13px]">
-          {fileCount} file{fileCount !== 1 ? "s" : ""} changed
-        </Text>
-        {fileCount > 0 && (
+        <Text className="font-medium text-[13px]">{fileCountLabel}</Text>
+        {visibleFileCount > 0 && (
           <Text className="text-(--gray-10) text-[13px]">
-            {viewedCount}/{fileCount} viewed
+            {viewedCount}/{visibleFileCount} viewed
           </Text>
         )}
         {effectiveSource && (
@@ -98,6 +115,30 @@ export const ReviewToolbar = memo(function ReviewToolbar({
       </Flex>
 
       <Flex align="center" gap="1" ml="auto">
+        {onToggleCommentedFilesOnly && (
+          <Tooltip
+            content={
+              showCommentedFilesOnly
+                ? "Show all files"
+                : `Show only files with comments (${commentedFileCount})`
+            }
+          >
+            <Button
+              size="icon-sm"
+              onClick={onToggleCommentedFilesOnly}
+              disabled={commentedFileCount === 0 && !showCommentedFilesOnly}
+              aria-label="Filter files with comments"
+              aria-pressed={showCommentedFilesOnly}
+              className={`rounded-xs ${showCommentedFilesOnly ? "bg-(--gray-4)" : ""}`}
+            >
+              <ChatCircle
+                size={14}
+                weight={showCommentedFilesOnly ? "fill" : "regular"}
+              />
+            </Button>
+          </Tooltip>
+        )}
+
         {onRefresh && (
           <Tooltip content="Refresh diff">
             <Button size="icon-sm" onClick={onRefresh} className="rounded-xs">
