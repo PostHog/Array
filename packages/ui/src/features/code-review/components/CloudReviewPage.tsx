@@ -13,7 +13,7 @@ import {
 } from "../commentFileFilter";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import { PatchedFileDiff } from "./PatchedFileDiff";
-import { buildItemIndex, ReviewShell, useReviewState } from "./ReviewShell";
+import { ReviewShell, useReviewState } from "./ReviewShell";
 import { changedFileSignature } from "./reviewItemBuilders";
 
 interface CloudReviewPageProps {
@@ -35,12 +35,15 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     toolCalls,
     isLoading,
   } = useCloudChangedFiles(taskId, task, isReviewOpen);
-  const { commentThreads } = usePrDetails(prUrl, {
-    includeComments: isReviewOpen,
+  const { commentThreads, commentsLoading } = usePrDetails(prUrl, {
+    includeComments: isReviewOpen && showReviewComments,
   });
   const commentedFilePaths = useMemo(
-    () => (prUrl ? getCommentedFilePaths(commentThreads) : undefined),
-    [commentThreads, prUrl],
+    () =>
+      prUrl && !commentsLoading
+        ? getCommentedFilePaths(commentThreads)
+        : undefined,
+    [commentThreads, commentsLoading, prUrl],
   );
 
   const allPaths = useMemo(() => reviewFiles.map((f) => f.path), [reviewFiles]);
@@ -117,8 +120,6 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     toolCallFallbacks,
   ]);
 
-  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
-
   if (!prUrl && !effectiveBranch && reviewFiles.length === 0) {
     if (isRunActive) {
       return (
@@ -152,7 +153,6 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onUncollapseFile={uncollapseFile}
       onCollapseFiles={collapseFiles}
       items={items}
-      itemIndexByFilePath={itemIndexByFilePath}
       commentedFilePaths={commentedFilePaths?.all}
       unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
       currentSignatures={currentSignatures}

@@ -27,7 +27,7 @@ import { useEffectiveDiffSource } from "../hooks/useEffectiveDiffSource";
 import { useReviewDiffs } from "../hooks/useReviewDiffs";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { DiffOptions } from "../types";
-import { buildItemIndex, ReviewShell, useReviewState } from "./ReviewShell";
+import { ReviewShell, useReviewState } from "./ReviewShell";
 import {
   buildPatchReviewItems,
   buildRemoteReviewItems,
@@ -108,15 +108,18 @@ export function ReviewPage({ task }: ReviewPageProps) {
   } = useEffectiveDiffSource(taskId);
 
   const showReviewComments = useDiffViewerStore((s) => s.showReviewComments);
-  const { commentThreads } = usePrDetails(prUrl, {
-    includeComments: isReviewOpen,
+  const { commentThreads, commentsLoading } = usePrDetails(prUrl, {
+    includeComments: isReviewOpen && showReviewComments,
   });
   const effectiveCommentThreads = showReviewComments
     ? commentThreads
     : undefined;
   const commentedFilePaths = useMemo(
-    () => (prUrl ? getCommentedFilePaths(commentThreads) : undefined),
-    [commentThreads, prUrl],
+    () =>
+      prUrl && !commentsLoading
+        ? getCommentedFilePaths(commentThreads)
+        : undefined,
+    [commentThreads, commentsLoading, prUrl],
   );
 
   const isLocalActive = isReviewOpen && effectiveSource === "local";
@@ -425,8 +428,6 @@ function LocalReviewContent({
     unstagedParsedFiles,
   ]);
 
-  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
-
   return (
     <ReviewShell
       task={task}
@@ -447,7 +448,6 @@ function LocalReviewContent({
       prSourceAvailable={prSourceAvailable}
       defaultBranch={defaultBranch}
       items={items}
-      itemIndexByFilePath={itemIndexByFilePath}
       commentedFilePaths={commentedFilePaths}
       unresolvedCommentedFilePaths={unresolvedCommentedFilePaths}
       currentSignatures={currentSignatures}
@@ -543,8 +543,6 @@ function RemoteReviewPage({
       taskId,
     ],
   );
-  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
-
   return (
     <ReviewShell
       task={task}
@@ -564,7 +562,6 @@ function RemoteReviewPage({
       prSourceAvailable={prSourceAvailable}
       defaultBranch={defaultBranch}
       items={items}
-      itemIndexByFilePath={itemIndexByFilePath}
       commentedFilePaths={commentedFilePaths}
       unresolvedCommentedFilePaths={unresolvedCommentedFilePaths}
       currentSignatures={currentSignatures}

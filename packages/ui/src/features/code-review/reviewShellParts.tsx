@@ -209,7 +209,6 @@ export interface ReviewShellProps {
   isLoading: boolean;
   isEmpty: boolean;
   items: ReviewListItem[];
-  itemIndexByFilePath: Map<string, number>;
   commentedFilePaths?: ReadonlySet<string>;
   unresolvedCommentedFilePaths?: ReadonlySet<string>;
   currentSignatures: Map<string, string>;

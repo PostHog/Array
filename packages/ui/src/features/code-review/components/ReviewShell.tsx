@@ -15,7 +15,6 @@ import {
 } from "react";
 import { VList, type VListHandle } from "virtua";
 import {
-  type CommentFileFilter,
   deriveCommentFileFilterState,
   getEmptyReviewMessage,
   type ReviewListItem,
@@ -126,7 +125,6 @@ export function ReviewShell({
   isLoading,
   isEmpty,
   items,
-  itemIndexByFilePath,
   commentedFilePaths,
   unresolvedCommentedFilePaths,
   currentSignatures,
@@ -151,7 +149,12 @@ export function ReviewShell({
   const lastActiveRef = useRef<string | null>(null);
   const pendingNavigationRef = useRef<string | null>(null);
   const navigationFrameRef = useRef<number | null>(null);
-  const [commentFilter, setCommentFilter] = useState<CommentFileFilter>("none");
+  const commentFilter = useReviewNavigationStore(
+    (state) => state.commentFileFilters[taskId] ?? "none",
+  );
+  const setCommentFileFilter = useReviewNavigationStore(
+    (state) => state.setCommentFileFilter,
+  );
   const {
     activeFilter: activeCommentFilter,
     visibleItems,
@@ -265,15 +268,7 @@ export function ReviewShell({
   useEffect(() => {
     if (!scrollRequest) return;
     const targetIndex = visibleItemIndexByFilePath.get(scrollRequest);
-    if (targetIndex === undefined) {
-      if (
-        activeCommentFilter !== "none" &&
-        itemIndexByFilePath.has(scrollRequest)
-      ) {
-        setCommentFilter("none");
-      }
-      return;
-    }
+    if (targetIndex === undefined) return;
 
     const currentSignature = currentSignatures.get(scrollRequest);
     const viewed =
@@ -313,11 +308,9 @@ export function ReviewShell({
   }, [
     clearScrollRequest,
     currentSignatures,
-    itemIndexByFilePath,
     onUncollapseFile,
     scrollRequest,
     setActiveFilePath,
-    activeCommentFilter,
     taskId,
     visibleItemIndexByFilePath,
     viewedRecord,
@@ -417,7 +410,7 @@ export function ReviewShell({
             commentFilter={activeCommentFilter}
             onCommentFilterChange={
               commentedFilePaths && unresolvedCommentedFilePaths
-                ? setCommentFilter
+                ? (filter) => setCommentFileFilter(taskId, filter)
                 : undefined
             }
             linesAdded={linesAdded}

@@ -280,4 +280,18 @@ describe("commented file filtering", () => {
     expect(state.commentedFileCount).toBe(2);
     expect(state.unresolvedCommentedFileCount).toBe(1);
   });
+
+  it("keeps all files visible while comment paths are loading", () => {
+    const items: ReviewListItem[] = [
+      { key: "a.ts", filePaths: ["a.ts"], node: <span>A</span> },
+    ];
+
+    const state = deriveCommentFileFilterState({
+      items,
+      requestedFilter: "unresolved",
+    });
+
+    expect(state.activeFilter).toBe("none");
+    expect(state.visibleItems).toBe(items);
+  });
 });
