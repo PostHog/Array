@@ -58,9 +58,8 @@ source to a local scratch file and returns the path.`;
 
   const editStep = isEdit
     ? `
-Then apply the user's request by EDITING that file with your file-editing
-tools. Make TARGETED edits — do not rewrite the whole file for a small change,
-and do not paste the source into chat.
+Then apply the user's request by editing that file with your file-editing
+tools. Do not paste the source into chat.
 `
     : "";
 

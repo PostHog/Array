@@ -121,8 +121,8 @@ export const canvasCheckoutTool = defineLocalTool({
   description:
     "Check out a PostHog canvas (a freeform React desktop-fs dashboard) for editing: fetches the live " +
     "source, writes it to a local scratch file, and records the version your edits are based on. " +
-    "Returns the file path. Edit that file with your normal file-editing tools (targeted edits — do not " +
-    "regenerate it wholesale), then call canvas_publish to save. Always start canvas work with this tool.",
+    "Returns the file path. Edit that file with your normal file-editing tools, then call " +
+    "canvas_publish to save. Always start canvas work with this tool.",
   schema: {
     id: z.string().describe("The canvas (desktop-fs dashboard row) id."),
   },
@@ -143,7 +143,7 @@ export const canvasCheckoutTool = defineLocalTool({
       const text = code
         ? `Checked out canvas "${entry.path}" to ${file} (${lines} lines, base version ${
             entry.meta?.currentVersionId ?? "none"
-          }).\nApply your changes by EDITING that file (targeted edits), then call canvas_publish with id "${args.id}".`
+          }).\nApply your changes by editing that file, then call canvas_publish with id "${args.id}".`
         : `Canvas "${entry.path}" is empty. Author the complete single-file React app at ${file}, then call canvas_publish with id "${args.id}".`;
       return { content: [{ type: "text", text }] };
     } catch (err) {
