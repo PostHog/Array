@@ -262,6 +262,49 @@ describe("mapAppServerNotification", () => {
     });
   });
 
+  it("maps a started wait tool call so the UI shows the main thread waiting on its subagents", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_STARTED,
+      {
+        item: {
+          type: "collabAgentToolCall",
+          id: "wait-1",
+          tool: "wait",
+          status: "inProgress",
+          senderThreadId: "main-thread",
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "wait-1",
+        title: "Wait for subagents",
+        kind: "other",
+        status: "in_progress",
+        rawInput: {},
+        _meta: { posthog: { toolName: "wait_agent" } },
+      },
+    });
+  });
+
+  it("still drops closeAgent lifecycle events", () => {
+    expect(
+      mapAppServerNotification("s-1", APP_SERVER_NOTIFICATIONS.ITEM_STARTED, {
+        item: {
+          type: "collabAgentToolCall",
+          id: "close-1",
+          tool: "closeAgent",
+          status: "inProgress",
+          senderThreadId: "main-thread",
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("keeps a completed spawn tool call terminal while its subagent is running", () => {
     const result = mapAppServerNotification(
       "s-1",
