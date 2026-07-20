@@ -365,22 +365,42 @@ export class PostHogAPIClient {
   }
 
   /**
-   * Create a new freeform canvas ("dashboard" row) on the desktop surface and
-   * return the created entry (with its id). `parentPath` nests it under a
-   * folder (e.g. a channel); omit it for a top-level canvas.
+   * List desktop file system entries matching a raw query string (e.g.
+   * `type=task&ref=<taskId>` or `type=folder&path=<path>`). Returns one page
+   * of results — callers here only need exact-match lookups.
+   */
+  async listDesktopFsEntries<T>(query: string): Promise<T[]> {
+    const teamId = this.getTeamId();
+    const response = await this.performRequestWithRetry(
+      `/api/projects/${teamId}/desktop_file_system/?${query}`,
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to list desktop-fs entries (${response.status})`);
+    }
+    const page = (await response.json()) as { results?: T[] };
+    return page.results ?? [];
+  }
+
+  /**
+   * Create a new freeform canvas ("dashboard" row) on the desktop surface at
+   * the given path and return the created entry (with its id). The backend
+   * auto-creates missing parent folders, so callers must resolve the parent to
+   * an existing folder first — a typo'd path silently mints a phantom one.
    */
   async createDesktopCanvas<T>(input: {
-    name: string;
-    parentPath?: string;
+    path: string;
+    meta?: Record<string, unknown>;
   }): Promise<T> {
     const teamId = this.getTeamId();
-    const parent = input.parentPath?.replace(/\/+$/, "");
-    const path = parent ? `${parent}/${input.name}` : input.name;
     const response = await this.performRequestWithRetry(
       `/api/projects/${teamId}/desktop_file_system/`,
       {
         method: "POST",
-        body: JSON.stringify({ path, type: "dashboard", meta: {} }),
+        body: JSON.stringify({
+          path: input.path,
+          type: "dashboard",
+          meta: input.meta ?? {},
+        }),
       },
     );
     if (!response.ok) {

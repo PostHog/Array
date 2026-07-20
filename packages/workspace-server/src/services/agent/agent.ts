@@ -679,7 +679,7 @@ If a repository IS genuinely required, attach one in this priority order:
 ## Canvases
 A canvas is an agent-authored single-file React app that lives in PostHog (a desktop-fs "dashboard" row), not a file on disk. Build and edit canvases only through the \`canvas_checkout\` / \`canvas_publish\` tools (posthog-code-tools) — never publish canvas source through the raw PostHog MCP:
 - Edit an existing canvas: \`canvas_checkout\` with its id, edit the scratch file it writes, then \`canvas_publish\`.
-- Create a new canvas: \`canvas_checkout\` with a \`name\` AND \`parentPath\` set to the channel this task is in (its name, from the \`<channel_context channel="…">\` element above), omit the id, author the scratch file, then \`canvas_publish\`. A canvas must live under a channel — creating without \`parentPath\` is rejected; if you don't know the channel, ask the user.
+- Create a new canvas: \`canvas_checkout\` with a \`name\` (omit the id), author the scratch file, then \`canvas_publish\`. It is placed in this task's channel automatically — don't pass \`parentPath\` unless the user explicitly names a different channel.
 \`canvas_checkout\` returns the authoring contract (allowed imports, the \`ph\` data shim, style rules) — follow it. Editing through these tools is what applies the scratch-file workflow and the publish-time concurrency guard.`;
     }
 
@@ -996,6 +996,7 @@ A canvas is an agent-authored single-file React app that lives in PostHog (a des
               ...(logUrl && {
                 persistence: { taskId, runId: taskRunId, logUrl },
               }),
+              taskId,
               taskRunId,
               environment: "local",
               sessionId: importedSessionId,
@@ -1071,6 +1072,7 @@ A canvas is an agent-authored single-file React app that lives in PostHog (a des
             ...(logUrl && {
               persistence: { taskId, runId: taskRunId, logUrl },
             }),
+            taskId,
             taskRunId,
             environment: "local",
             sessionId: existingSessionId,
@@ -1101,6 +1103,9 @@ A canvas is an agent-authored single-file React app that lives in PostHog (a des
           cwd: repoPath,
           mcpServers: sessionMcpServers,
           _meta: {
+            // taskId feeds the local tools' ctx (resolveTaskId) — canvas
+            // placement resolves the task's channel from it.
+            taskId,
             taskRunId,
             environment: "local",
             systemPrompt,

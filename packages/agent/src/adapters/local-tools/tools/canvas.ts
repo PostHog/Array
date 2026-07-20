@@ -1,6 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { freeformSystemPromptFor } from "@posthog/shared/canvas-freeform-prompt";
+import {
+  FREEFORM_TEMPLATE_ID,
+  freeformSystemPromptFor,
+} from "@posthog/shared/canvas-freeform-prompt";
 import { FREEFORM_STARTER_CODE } from "@posthog/shared/canvas-freeform-starter";
 import { z } from "zod";
 import {
@@ -95,10 +98,77 @@ async function fetchCanvasEntry(canvasId: string): Promise<CanvasFsEntry> {
   return entry;
 }
 
+// The app files every channel task as a desktop-fs `task` row at
+// `<channelFolder>/<title>` with `ref=<taskId>`, alongside a home row under
+// this prefix. The channel row is the deterministic task→channel join.
+const UNFILED_PREFIX = "Unfiled/";
+
+interface ChannelPlacement {
+  folderId: string;
+  folderPath: string;
+}
+
+function parentOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
+}
+
+// Path segments are "/"-separated on the backend, so a name can't contain one.
+function sanitizeSegment(name: string): string {
+  const cleaned = name.replace(/\//g, " ").replace(/\s+/g, " ").trim();
+  return cleaned || "Untitled canvas";
+}
+
+async function folderByPath(
+  client: PostHogAPIClient,
+  path: string,
+): Promise<ChannelPlacement | undefined> {
+  const folders = await client.listDesktopFsEntries<CanvasFsEntry>(
+    `type=folder&path=${encodeURIComponent(path)}`,
+  );
+  const folder = folders[0];
+  return folder ? { folderId: folder.id, folderPath: folder.path } : undefined;
+}
+
+// Resolve the channel this task was created in from its desktop-fs filing row
+// (`type=task&ref=<taskId>`, written by the app at task creation). An id-based
+// join — no name matching, so it survives channel renames and duplicate names.
+async function channelPlacementForTask(
+  client: PostHogAPIClient,
+  taskId: string | undefined,
+): Promise<ChannelPlacement | undefined> {
+  if (!taskId) return undefined;
+  const rows = await client.listDesktopFsEntries<CanvasFsEntry>(
+    `type=task&ref=${encodeURIComponent(taskId)}`,
+  );
+  const filed = rows.find(
+    (r) => r.path.includes("/") && !r.path.startsWith(UNFILED_PREFIX),
+  );
+  if (!filed) return undefined;
+  return folderByPath(client, parentOf(filed.path));
+}
+
+// For the not-in-a-channel error: name the channels the agent could offer the
+// user instead of leaving it to guess what a valid `parentPath` looks like.
+async function channelPathsForError(client: PostHogAPIClient): Promise<string> {
+  try {
+    const folders = await client.listDesktopFsEntries<CanvasFsEntry>(
+      "type=folder&depth=1",
+    );
+    const paths = folders.slice(0, 20).map((f) => `"${f.path}"`);
+    return paths.length ? ` Existing channels: ${paths.join(", ")}.` : "";
+  } catch {
+    return "";
+  }
+}
+
 // Create-if-missing for `canvas_checkout`: an agent working from a normal task
 // (not the channel generate bar) can start a canvas in one call instead of
-// chaining the raw desktop-fs create tool first.
+// chaining the raw desktop-fs create tool first. The canvas is placed in the
+// task's own channel, resolved tool-side from the task id — the model never
+// has to know (or correctly relay) the channel.
 async function createCanvasEntry(
+  ctx: { taskId?: string },
   name: string | undefined,
   parentPath: string | undefined,
 ): Promise<CanvasFsEntry> {
@@ -107,25 +177,43 @@ async function createCanvasEntry(
       "pass `id` to edit an existing canvas, or `name` to create a new one.",
     );
   }
-  // A canvas must live under a channel folder — creating it at the top level
-  // (no parentPath) makes an orphan that never shows in any channel. The task's
-  // channel name is in the `<channel_context channel="…">` element of the
-  // prompt; the agent passes it as parentPath. Refuse rather than orphan.
-  if (!parentPath?.trim()) {
-    throw new Error(
-      "a new canvas needs a channel to live in: pass `parentPath` set to the " +
-        'channel this task is in (its name, from the `<channel_context channel="…">` ' +
-        "element of your prompt). Without a channel the canvas can't be placed. If " +
-        "there is no channel context, ask the user which channel to create it in.",
-    );
-  }
   const client = createClient();
   if (!client) {
     throw new Error("No PostHog credentials available in this session.");
   }
+  // Resolve the destination to an EXISTING channel folder before creating —
+  // the backend auto-creates missing parents, so an unresolved path would
+  // silently mint a phantom top-level folder instead of failing.
+  let placement: ChannelPlacement | undefined;
+  const overridePath = parentPath?.trim().replace(/\/+$/, "");
+  if (overridePath) {
+    placement = await folderByPath(client, overridePath);
+    if (!placement) {
+      throw new Error(
+        `no channel folder exists at "${overridePath}".${await channelPathsForError(client)} ` +
+          "Pass one of these as `parentPath`, or omit it to use this task's own channel.",
+      );
+    }
+  } else {
+    placement = await channelPlacementForTask(client, ctx.taskId);
+    if (!placement) {
+      throw new Error(
+        `this task isn't filed in a channel, so the canvas has nowhere to live.${await channelPathsForError(client)} ` +
+          "Ask the user which channel to create it in, then pass that folder path as `parentPath`.",
+      );
+    }
+  }
+  const now = Date.now();
   return client.createDesktopCanvas<CanvasFsEntry>({
-    name: name.trim(),
-    parentPath: parentPath.trim(),
+    path: `${placement.folderPath}/${sanitizeSegment(name)}`,
+    // The same meta shape the app stamps on UI-created canvases, so the canvas
+    // opens and lists identically to one made from the channel grid.
+    meta: {
+      channelId: placement.folderId,
+      templateId: FREEFORM_TEMPLATE_ID,
+      createdAt: now,
+      updatedAt: now,
+    },
   });
 }
 
@@ -172,11 +260,11 @@ export const canvasCheckoutTool = defineLocalTool({
   name: "canvas_checkout",
   description:
     "Check out a PostHog canvas (a freeform React desktop-fs dashboard) for editing. Pass `id` to edit " +
-    "an existing canvas, or omit `id` and pass `name` to create a fresh one. Fetches (or creates) the " +
-    "canvas, writes its source to a local scratch file, records the base version for the publish-time " +
-    "concurrency guard, and returns the scratch path plus the authoring contract to follow. Edit that " +
-    "file with your normal file-editing tools, then call canvas_publish. Always start canvas work with " +
-    "this tool.",
+    "an existing canvas, or omit `id` and pass `name` to create a fresh one — it is placed in this " +
+    "task's own channel automatically. Fetches (or creates) the canvas, writes its source to a local " +
+    "scratch file, records the base version for the publish-time concurrency guard, and returns the " +
+    "scratch path plus the authoring contract to follow. Edit that file with your normal file-editing " +
+    "tools, then call canvas_publish. Always start canvas work with this tool.",
   schema: {
     id: z
       .string()
@@ -188,23 +276,25 @@ export const canvasCheckoutTool = defineLocalTool({
       .string()
       .optional()
       .describe(
-        "Name for a NEW canvas when `id` is omitted — creates it, then checks it out.",
+        "Name for a NEW canvas when `id` is omitted — creates it in this task's channel, then checks it out.",
       ),
     parentPath: z
       .string()
       .optional()
       .describe(
-        'Required when creating (no `id`): the channel the canvas belongs to — its name, from the `<channel_context channel="…">` element of your prompt. The canvas is created at "<parentPath>/<name>"; omitting it is rejected (a canvas must live under a channel).',
+        "Override the destination channel when creating: the exact folder path of an EXISTING channel. " +
+          "Normally omit it — the new canvas lands in this task's own channel automatically. Only pass it " +
+          "when the user explicitly names a different channel (or this task isn't in one).",
       ),
   },
   alwaysLoad: true,
   autoApprove: true,
   isEnabled: () => resolveSandboxPosthogApi() !== undefined,
-  handler: async (_ctx, args): Promise<LocalToolResult> => {
+  handler: async (ctx, args): Promise<LocalToolResult> => {
     try {
       const entry = args.id
         ? await fetchCanvasEntry(args.id)
-        : await createCanvasEntry(args.name, args.parentPath);
+        : await createCanvasEntry(ctx, args.name, args.parentPath);
       const canvasId = entry.id;
       const file = canvasScratchFile(canvasId);
       const code = entry.meta?.code ?? "";

@@ -84,7 +84,10 @@ The root `AGENTS.md` architecture rules still apply.
   works the source as a local scratch file via the `canvas_checkout` /
   `canvas_publish` local tools (`@posthog/agent`,
   `adapters/local-tools/tools/canvas.ts`) — `canvas_checkout` fetches an
-  existing canvas (or creates one from a `name`), writes the scratch file,
+  existing canvas (or creates one from a `name`, placed in the task's own
+  channel by resolving the task's desktop-fs filing row — `type=task&ref=
+  <taskId>` — to its parent folder tool-side, never from a model-relayed
+  channel name), writes the scratch file,
   records the fetched `currentVersionId`, and returns the authoring contract;
   `canvas_publish` passes that version as the expected version (backends
   predating the field ignore it and publish unguarded). **User-side saves**
