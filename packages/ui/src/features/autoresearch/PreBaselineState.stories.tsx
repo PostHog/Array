@@ -33,11 +33,65 @@ const run: AutoresearchRun = {
     },
     {
       index: 2,
+      area: "build",
+      summary: "Found the dashboard entry chunk",
+      finding:
+        "The route entry includes editor and modal code before either feature is opened.",
+      nextStep: "Compare the entry chunk with lazy boundaries enabled",
+      at: 2,
+    },
+    {
+      index: 3,
       area: "frontend",
       summary: "Mapped eager dashboard imports",
       finding: "Dashboard modals load before users open them.",
       nextStep: "Inspect modal boundaries",
-      at: 2,
+      at: 3,
+    },
+    {
+      index: 4,
+      area: "frontend",
+      summary: "Traced editor initialization",
+      finding:
+        "The rich text editor initializes with the dashboard even when no editor is visible.",
+      nextStep: "Move editor setup behind the edit action",
+      at: 4,
+    },
+    {
+      index: 5,
+      area: "data",
+      summary: "Identified duplicate insight requests",
+      finding:
+        "The summary and chart issue equivalent requests during the first render.",
+      nextStep: "Share the initial query result",
+      at: 5,
+    },
+    {
+      index: 6,
+      area: "data",
+      summary: "Measured oversized response fields",
+      finding:
+        "Dashboard cards receive metadata that is only needed in the detail view.",
+      nextStep: "Select the minimal card response shape",
+      at: 6,
+    },
+    {
+      index: 7,
+      area: "testing",
+      summary: "Located the bundle regression test",
+      finding:
+        "The current threshold covers the full application instead of the dashboard entry.",
+      nextStep: "Add a dashboard-specific bundle assertion",
+      at: 7,
+    },
+    {
+      index: 8,
+      area: "testing",
+      summary: "Confirmed a stable measurement command",
+      finding:
+        "The production build emits deterministic metadata for the dashboard chunk.",
+      nextStep: "Establish the baseline bundle size",
+      at: 8,
     },
   ],
   iterations: [],
@@ -73,6 +127,7 @@ export const FindingsByCodeArea: Story = {
       isCompacting: false,
     },
   },
+  parameters: { testOptions: { viewport: { width: 1280, height: 1200 } } },
 };
 
 export const EstablishingBaseline: Story = {
