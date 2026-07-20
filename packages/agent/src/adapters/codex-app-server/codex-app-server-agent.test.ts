@@ -143,7 +143,7 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
-  it("isolates subagent output, usage, compaction, and completion", async () => {
+  it("surfaces subagent activity while isolating its lifecycle state", async () => {
     const stub = makeStubRpc({
       initialize: {},
       "thread/start": { thread: { id: "thr_1" } },
@@ -191,7 +191,6 @@ describe("CodexAppServerAgent", () => {
         prompt: "Review the implementation",
       },
     });
-    const sessionUpdateCount = sessionUpdates.length;
     const extNotificationCount = extNotifications.length;
 
     stub.emit("item/agentMessage/delta", {
@@ -213,6 +212,16 @@ describe("CodexAppServerAgent", () => {
         type: "agentMessage",
         id: "subagent_message_1",
         text: '{"source":"child"}',
+      },
+    });
+    stub.emit("item/started", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      item: {
+        type: "commandExecution",
+        id: "shared_command_id",
+        command: "echo child",
+        status: "inProgress",
       },
     });
     stub.emit("item/commandExecution/outputDelta", {
@@ -251,11 +260,9 @@ describe("CodexAppServerAgent", () => {
     expect({
       extNotifications: extNotifications.length,
       promptSettled,
-      sessionUpdates: sessionUpdates.length,
     }).toEqual({
       extNotifications: extNotificationCount,
       promptSettled: false,
-      sessionUpdates: sessionUpdateCount,
     });
 
     stub.emit("item/agentMessage/delta", {
@@ -292,16 +299,156 @@ describe("CodexAppServerAgent", () => {
     await expect(promptDone).resolves.toMatchObject({ stopReason: "end_turn" });
     const serializedUpdates = JSON.stringify(sessionUpdates);
     expect(serializedUpdates).toContain("spawn_agent");
+    expect(serializedUpdates).toContain("subagent prose");
+    expect(serializedUpdates).toContain("subagent reasoning");
+    expect(serializedUpdates).toContain("child command output");
+    expect(serializedUpdates).toContain(
+      "subagent:subagent_1:shared_command_id",
+    );
+    expect(serializedUpdates).toContain('"parentToolCallId":"spawn_1"');
     expect(serializedUpdates).toContain("parent response");
-    expect(serializedUpdates).not.toContain("subagent prose");
-    expect(serializedUpdates).not.toContain("subagent reasoning");
-    expect(serializedUpdates).not.toContain("child command output");
     expect(structuredOutputs).toEqual([{ source: "parent" }]);
     expect(
       extNotifications.filter(
         (notification) => notification.method === "_posthog/turn_complete",
       ),
     ).toHaveLength(1);
+  });
+
+  it.each(["resumeAgent", "sendInput"])(
+    "attaches child activity to the current %s call",
+    async (collaborationTool) => {
+      let turnNumber = 0;
+      const stub = makeStubRpc({
+        initialize: {},
+        "thread/start": { thread: { id: "thr_1" } },
+        "turn/start": () => ({
+          turn: {
+            id: `turn_${++turnNumber}`,
+            status: "inProgress",
+          },
+        }),
+      });
+      const { client, sessionUpdates } = makeFakeClient();
+      const agent = new CodexAppServerAgent(client, {
+        processOptions: { binaryPath: "/bundle/codex" },
+        model: "gpt-5.5",
+        rpcFactory: stub.factory,
+      });
+
+      await agent.initialize(init);
+      await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+      const firstPrompt = agent.prompt({
+        sessionId: "thr_1",
+        prompt: [{ type: "text", text: "spawn" }],
+      } as unknown as PromptRequest);
+      stub.emit("item/started", {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        item: {
+          type: "collabAgentToolCall",
+          id: "spawn_1",
+          tool: "spawnAgent",
+          receiverThreadIds: ["subagent_1"],
+          status: "inProgress",
+        },
+      });
+      stub.emit("turn/completed", {
+        threadId: "thr_1",
+        turn: { id: "turn_1", status: "completed" },
+      });
+      await firstPrompt;
+
+      const secondPrompt = agent.prompt({
+        sessionId: "thr_1",
+        prompt: [{ type: "text", text: "continue" }],
+      } as unknown as PromptRequest);
+      const currentCallId = `${collaborationTool}_1`;
+      stub.emit("item/started", {
+        threadId: "thr_1",
+        turnId: "turn_2",
+        item: {
+          type: "collabAgentToolCall",
+          id: currentCallId,
+          tool: collaborationTool,
+          receiverThreadIds: ["subagent_1"],
+          status: "inProgress",
+        },
+      });
+      stub.emit("item/agentMessage/delta", {
+        threadId: "subagent_1",
+        turnId: "subagent_turn_2",
+        itemId: "message_2",
+        delta: "continued work",
+      });
+
+      expect(JSON.stringify(sessionUpdates)).toContain(
+        `"parentToolCallId":"${currentCallId}"`,
+      );
+
+      stub.emit("turn/completed", {
+        threadId: "thr_1",
+        turn: { id: "turn_2", status: "completed" },
+      });
+      await secondPrompt;
+    },
+  );
+
+  it("buffers child activity until its parent tool call arrives", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+      "turn/start": { turn: { id: "turn_1", status: "inProgress" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    const promptDone = agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "delegate" }],
+    } as unknown as PromptRequest);
+
+    stub.emit("item/agentMessage/delta", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      itemId: "message_1",
+      delta: "early child activity",
+    });
+    expect(JSON.stringify(sessionUpdates)).not.toContain(
+      "early child activity",
+    );
+
+    stub.emit("item/started", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn_1",
+        tool: "spawnAgent",
+        receiverThreadIds: ["subagent_1"],
+        status: "inProgress",
+      },
+    });
+
+    const serializedUpdates = JSON.stringify(sessionUpdates);
+    expect(serializedUpdates).toContain("early child activity");
+    expect(serializedUpdates).toContain('"parentToolCallId":"spawn_1"');
+    expect(serializedUpdates.indexOf("spawn_agent")).toBeLessThan(
+      serializedUpdates.indexOf("early child activity"),
+    );
+
+    stub.emit("turn/completed", {
+      threadId: "thr_1",
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await promptDone;
   });
 
   it.each([
@@ -2490,6 +2637,53 @@ describe("CodexAppServerAgent", () => {
         content: { type: "text", text: "fix the bug" },
       },
     });
+  });
+
+  it("restores subagent relationships from resumed thread history", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/resume": {
+        thread: {
+          id: "t1",
+          turns: [
+            {
+              items: [
+                {
+                  type: "collabAgentToolCall",
+                  id: "spawn_1",
+                  tool: "spawnAgent",
+                  receiverThreadIds: ["subagent_1"],
+                  status: "completed",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.initialize(init);
+    await agent.resumeSession({
+      sessionId: "t1",
+      cwd: "/r",
+      mcpServers: [],
+    } as unknown as Parameters<typeof agent.resumeSession>[0]);
+
+    stub.emit("item/agentMessage/delta", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      itemId: "message_1",
+      delta: "still working",
+    });
+
+    expect(JSON.stringify(sessionUpdates)).toContain(
+      '"parentToolCallId":"spawn_1"',
+    );
   });
 
   it("forwards additionalDirectories to thread/start as writable_roots", async () => {
