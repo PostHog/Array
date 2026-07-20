@@ -23,11 +23,6 @@ export function navigateToShareTarget(target: ShareLinkTarget): void {
   }
 }
 
-/**
- * If `href` is a PostHog Code share link, navigate to it in-app and return true
- * (cancelling the click's default open-in-browser). Otherwise return false so
- * the caller lets the link open externally as usual.
- */
 export function handleShareLinkClick(
   href: string | undefined,
   event: { preventDefault: () => void },

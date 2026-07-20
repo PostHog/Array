@@ -63,7 +63,7 @@ describe("MentionText", () => {
     const link = screen.getByRole("link", { name: "Signups" });
     const defaultAllowed = fireEvent.click(link);
 
-    expect(defaultAllowed).toBe(false); // preventDefault was called
+    expect(defaultAllowed).toBe(false);
     expect(navigateToChannelDashboard).toHaveBeenCalledWith("chan1", "dash1");
   });
 
@@ -73,7 +73,7 @@ describe("MentionText", () => {
     const link = screen.getByRole("link", { name: "Docs" });
     const defaultAllowed = fireEvent.click(link);
 
-    expect(defaultAllowed).toBe(true); // default not prevented
+    expect(defaultAllowed).toBe(true);
     expect(navigateToChannelDashboard).not.toHaveBeenCalled();
   });
 

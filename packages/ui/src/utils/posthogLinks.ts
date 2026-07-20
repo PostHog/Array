@@ -121,17 +121,10 @@ export function channelShareUrl(
   );
 }
 
-/**
- * The in-app destination a PostHog Code share link points at — the inverse of
- * the `canvasShareUrl` / `channelShareUrl` builders above.
- */
 export type ShareLinkTarget =
   | { kind: "canvas"; channelId: string; dashboardId: string }
   | { kind: "channel"; channelId: string; taskId?: string };
 
-// Hosts we recognise as PostHog share-link origins, one per cloud region. The
-// host check keeps `parseShareLink` from hijacking unrelated links that happen
-// to share the `/code/...` path shape.
 const POSTHOG_HOSTS = new Set(
   (Object.keys(REGION_LABELS) as CloudRegion[])
     .map((region) => {
@@ -144,13 +137,6 @@ const POSTHOG_HOSTS = new Set(
     .filter(Boolean),
 );
 
-/**
- * Parse a PostHog Code share link into its in-app navigation target, or `null`
- * if it isn't one. Recognises the `/code/canvas/...` and `/code/channel/...`
- * links built above, on any region's host — the inbound deep-link handlers
- * navigate by id against the current session, so bouncing through the browser
- * to reach the app buys nothing.
- */
 export function parseShareLink(href: string): ShareLinkTarget | null {
   let url: URL;
   try {
@@ -160,8 +146,6 @@ export function parseShareLink(href: string): ShareLinkTarget | null {
   }
   if (!POSTHOG_HOSTS.has(url.host)) return null;
 
-  // Split the still-encoded pathname first, then decode each segment, so an id
-  // containing an encoded slash (`%2F`) stays a single segment.
   const segments = url.pathname
     .split("/")
     .filter(Boolean)
