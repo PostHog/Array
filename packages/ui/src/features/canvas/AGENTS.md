@@ -76,9 +76,16 @@ The root `AGENTS.md` architecture rules still apply.
   and channel names in sync with the backend — the same surface that owns
   channels (top-level `folder` rows, see `hooks/useChannels.ts`).
 - `meta` is **last-write-wins, unversioned** at the fs layer (no `base_version`).
-  Freeform autosaves the whole file each agent turn, so a concurrent edit from
-  another client can clobber. Acceptable for now; revisit with optimistic
-  concurrency if multi-client editing becomes real.
+  The **agent publish path is guarded**: generation works the source as a local
+  scratch file via the `canvas_checkout` / `canvas_publish` local tools
+  (`@posthog/agent`, `adapters/local-tools/tools/canvas.ts`) — checkout records
+  the fetched `currentVersionId`, and publish re-fetches and refuses when the
+  canvas moved past that base (a concurrent edit or undo), instead of
+  clobbering it. The check is tool-side (check-then-PATCH, not atomic); a
+  server-side `base_version` check on the fs PATCH is the follow-up that closes
+  it completely. **User-side saves** (`saveFreeform`) are still last-write-wins;
+  revisit with the same optimistic concurrency if multi-client editing becomes
+  real.
 
 ## Channel sidebar preloading
 

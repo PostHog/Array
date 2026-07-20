@@ -338,6 +338,43 @@ export class PostHogAPIClient {
       .filter((artifact): artifact is TaskRunArtifact => !!artifact);
   }
 
+  /**
+   * Fetch a desktop file system entry (e.g. a canvas "dashboard" row) by id.
+   * Returns null on 404 so callers can produce a friendly not-found message.
+   */
+  async getDesktopFsEntry<T>(entryId: string): Promise<T | null> {
+    const teamId = this.getTeamId();
+    const response = await this.performRequestWithRetry(
+      `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(entryId)}/`,
+    );
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to fetch desktop-fs entry (${response.status})`);
+    }
+    return response.json() as Promise<T>;
+  }
+
+  /**
+   * PATCH a desktop file system entry's meta blob (the endpoint stores the
+   * sent meta verbatim, so callers merge into the previously-fetched meta —
+   * the same read-modify-write contract as `dashboardsService` in core).
+   */
+  async patchDesktopFsEntryMeta<T>(
+    entryId: string,
+    meta: Record<string, unknown>,
+  ): Promise<T> {
+    const teamId = this.getTeamId();
+    return this.apiRequest<T>(
+      `/api/projects/${teamId}/desktop_file_system/${encodeURIComponent(entryId)}/`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ meta }),
+      },
+    );
+  }
+
   /** Signal reports the given task is associated with (via report task associations). */
   async getSignalReportIdsForTask(taskId: string): Promise<string[]> {
     const teamId = this.getTeamId();

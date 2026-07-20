@@ -7,16 +7,24 @@ import { FREEFORM_STARTER_CODE } from "@posthog/shared/canvas-freeform-starter";
 // authoring contract
 // (imports, the `ph` data shim, Quill/style rules) therefore has to live in the
 // task's content (its first user message). The canvas is not a file on disk — it
-// lives in PostHog — so the agent publishes the result via the PostHog MCP tool
-// `desktop-file-system-canvas-partial-update` rather than replying with code or
-// writing a file.
+// lives in PostHog — but the agent WORKS on it as a local scratch file through
+// the `canvas_checkout` / `canvas_publish` local tools (posthog-code-tools):
+// checkout writes the live source to a scratch path tool-side and records the
+// base version; the agent applies the change with its native file-editing tools
+// (targeted edits, not a full regeneration — and no transcribing the source
+// through chat); publish reads the file from disk and saves it as the new
+// version, rejecting a publish whose base is stale (a concurrent edit or undo)
+// instead of silently clobbering it.
 export function buildFreeformGenerationPrompt(input: {
   dashboardId: string;
   name: string;
   channelName: string;
   templateId?: string;
   instruction: string;
-  // The current source, when editing an existing canvas. Omitted for a first build.
+  // Present when editing an existing canvas; omitted for a first build. Only
+  // its presence matters — `canvas_checkout` fetches the authoritative source
+  // itself (fresher than anything embedded at task-creation time), so the
+  // content is no longer folded into the prompt.
   currentCode?: string;
   // Default on (opt out via the generate bar): seed a known-good starter
   // scaffold as the agent's baseline on a FIRST build, so it edits a compiling
@@ -43,8 +51,17 @@ export function buildFreeformGenerationPrompt(input: {
     ? `Edit the freeform React canvas "${name}" in the channel "${channelName}", per the user's request at the start of this message.`
     : `Build a freeform React canvas "${name}" for the channel "${channelName}", per the user's request at the start of this message.`;
 
-  const currentBlock = isEdit
-    ? `\n[Current code] — the canvas as it stands now. Rewrite the WHOLE file with the change applied; do not output a partial file.\n\n\`\`\`tsx\n${currentCode}\n\`\`\`\n`
+  const checkoutStep = `
+[Working copy] — FIRST, check out the canvas: call the \`canvas_checkout\` tool
+(posthog-code-tools) with id "${dashboardId}". It writes the canvas's live
+source to a local scratch file and returns the path.`;
+
+  const editStep = isEdit
+    ? `
+Then apply the user's request by EDITING that file with your file-editing
+tools. Make TARGETED edits — do not rewrite the whole file for a small change,
+and do not paste the source into chat.
+`
     : "";
 
   // First-build only: hand the agent a working scaffold to build ON instead of
@@ -52,7 +69,26 @@ export function buildFreeformGenerationPrompt(input: {
   // picker, theme tokens, loading skeletons, typed-node result reading).
   const starterBlock =
     !isEdit && useStarter
-      ? `\n[Starter scaffold] — begin from this WORKING baseline instead of authoring from scratch. It already wires the things that are easy to get wrong: the date picker, theme-aware tokens, per-card loading skeletons, and reading a typed-node result correctly. KEEP that wiring; replace the sample "total events" metric and the layout with what the user asked for, and output the COMPLETE rewritten file.\n\n\`\`\`tsx\n${FREEFORM_STARTER_CODE}\n\`\`\`\n`
+      ? `
+[Starter scaffold] — the canvas is empty, so write this WORKING baseline to the
+checked-out path, then build by EDITING that file. It already wires the things
+that are easy to get wrong: the date picker, theme-aware tokens, per-card
+loading skeletons, and reading a typed-node result correctly. KEEP that wiring;
+replace the sample "total events" metric and the layout with what the user
+asked for.
+
+\`\`\`tsx
+${FREEFORM_STARTER_CODE}
+\`\`\`
+`
+      : "";
+
+  const freshBuildStep =
+    !isEdit && !useStarter
+      ? `
+The canvas is empty: author the complete app at the checked-out path and
+iterate on it there with your file-editing tools.
+`
       : "";
 
   // The standing authoring contract + publishing/data rules are the same
@@ -62,22 +98,27 @@ export function buildFreeformGenerationPrompt(input: {
   // inline (see extractCanvasInstructions). Kept after the user's instruction so
   // the request leads, mirroring how channel CONTEXT.md is appended.
   const instructions = `${header}
-${currentBlock}${starterBlock}
+${checkoutStep}${editStep}${starterBlock}${freshBuildStep}
 Follow this authoring contract for the canvas (imports, the \`ph\` data shim, and
 style rules):
 
 ${contract}
 
-PUBLISHING — this OVERRIDES any instruction above about replying with the code in
-a fenced \`\`\`tsx block. In this task you do NOT reply with the code. When the
-canvas is ready, PUBLISH it by calling the PostHog MCP tool
-\`desktop-file-system-canvas-partial-update\` exactly once with:
+PUBLISHING — the scratch file is only your working copy; the canvas lives in
+PostHog. When it is ready, call the \`canvas_publish\` tool (posthog-code-tools)
+exactly once with:
 - id: "${dashboardId}"
-- code: the COMPLETE single-file React source for the canvas.
+- prompt: one short sentence describing the change.
 
-The canvas lives in PostHog, not on disk — calling that MCP tool is what saves it.
-Do not write a local file. Verify event/property names via the PostHog MCP before
-using them, and operate only on this project.
+It reads the scratch file from disk and saves it as the canvas's new version —
+do not paste the code into the tool call or into chat, and do not call
+\`desktop-file-system-canvas-partial-update\` directly. If it fails with a
+version-conflict error, the canvas changed while you worked (another edit, or
+the user's undo): call \`canvas_checkout\` again, re-apply your edits to the
+re-seeded file, then publish again.
+
+Verify event/property names via the PostHog MCP before using them, and operate
+only on this project.
 
 DATA — for each metric, first SAVE an insight via the PostHog MCP insight tools
 (prefer an insight query type — Trends, Funnels, Retention, web-analytics kinds —
