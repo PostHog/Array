@@ -166,9 +166,12 @@ function ScrollableConversationDemo() {
           that message, or hover one for a preview.
         </span>
       </div>
-      <div className="relative flex-1">
-        {/* The scroll viewport. `scrollbar-gutter: stable` reserves the gutter the
-            rail sits over, matching the real ConversationView. */}
+      <div className="relative min-h-0 flex-1">
+        {/* The scroll viewport. `min-h-0` lets the flex child shrink to the
+            viewport instead of growing with content, so the rail (`h-full`)
+            matches the *visible* height — the real ConversationView pins its
+            list with `absolute inset-0` for the same reason. `scrollbar-gutter:
+            stable` reserves the gutter the rail sits over. */}
         <div
           ref={scrollRef}
           className="scroll-mask-8 h-full overflow-y-auto"
