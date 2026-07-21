@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { SignedCommitResult } from "@posthog/git/signed-commit";
 import { PostHogAPIClient } from "./posthog-api";
+
 const SANDBOX_ENV_FILE = "/tmp/agent-env";
 
 /**
