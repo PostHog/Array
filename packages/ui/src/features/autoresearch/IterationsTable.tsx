@@ -3,6 +3,11 @@ import type {
   AutoresearchIteration,
 } from "@posthog/core/autoresearch/schemas";
 import { computeBest } from "@posthog/core/autoresearch/stats";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@posthog/quill";
 import { Badge, Table, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
 import {
@@ -93,13 +98,7 @@ export function IterationsTable({
                     {iteration.approach}
                   </Badge>
                 )}
-                <Text
-                  size="1"
-                  className="block truncate"
-                  title={iteration.summary ?? undefined}
-                >
-                  {iteration.summary ?? "None"}
-                </Text>
+                <ChangeSummary summary={iteration.summary} />
               </div>
             </Table.Cell>
             <Table.Cell>
@@ -111,5 +110,22 @@ export function IterationsTable({
         ))}
       </Table.Body>
     </Table.Root>
+  );
+}
+
+function ChangeSummary({ summary }: { summary: string | null }) {
+  if (!summary) return <Text size="1">None</Text>;
+  return (
+    <Collapsible className="min-w-0 flex-1 bg-transparent hover:bg-transparent data-open:bg-transparent">
+      <CollapsibleTrigger
+        aria-label="Expand change details"
+        className="min-h-0 w-full min-w-0 bg-transparent px-0 py-0 text-left hover:bg-transparent aria-expanded:bg-transparent"
+      >
+        <span className="min-w-0 flex-1 truncate text-xs">{summary}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-1 pr-5 text-gray-11 text-xs leading-4">
+        {summary}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

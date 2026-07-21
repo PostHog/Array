@@ -163,6 +163,29 @@ function copyClaudeSupportAssets(sourcePath: string, destDir: string): void {
   }
 }
 
+export function copyPiRpcHost(): Plugin {
+  return {
+    name: "copy-pi-rpc-host",
+    writeBundle() {
+      const candidates = [
+        join(__dirname, "node_modules/@posthog/agent/dist/pi/rpc-host.js"),
+        join(
+          __dirname,
+          "../../node_modules/@posthog/agent/dist/pi/rpc-host.js",
+        ),
+        join(__dirname, "../../packages/agent/dist/pi/rpc-host.js"),
+      ];
+      const source = candidates.find((candidate) => existsSync(candidate));
+      if (!source) {
+        throw new Error(
+          `[copy-pi-rpc-host] Unable to find Pi RPC host, required at runtime by createPiRpcClient. Build @posthog/agent first. Checked:\n  ${candidates.join("\n  ")}`,
+        );
+      }
+      copyFileSync(source, join(__dirname, ".vite/build/rpc-host.js"));
+    },
+  };
+}
+
 export function copyClaudeExecutable(): Plugin {
   return {
     name: "copy-claude-executable",
@@ -569,10 +592,12 @@ export function copyCodexAcpBinaries(): Plugin {
       const sourceDir = join(__dirname, "resources/codex-acp");
       const binaries = [
         { name: "codex", winName: "codex.exe" },
-        // The native codex CLI must ship next to codex-acp: the app-server
-        // sub-adapter resolves it as a sibling and silently falls back to
-        // codex-acp when it's missing.
-        { name: "codex", winName: "codex.exe" },
+        // codex resolves the code-mode host as a sibling of its own executable;
+        // code-mode models (gpt-5.6+) cannot run commands without it.
+        {
+          name: "codex-code-mode-host",
+          winName: "codex-code-mode-host.exe",
+        },
         { name: "rg", winName: "rg.exe" },
       ];
 

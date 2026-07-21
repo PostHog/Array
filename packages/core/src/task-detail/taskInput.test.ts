@@ -21,6 +21,23 @@ describe("prepareTaskInput", () => {
     },
   );
 
+  it("defaults task creation to the ACP runtime", () => {
+    const input = prepareTaskInput("do the thing", [], {
+      workspaceMode: "local",
+    });
+
+    expect(input.runtime).toBe("acp");
+  });
+
+  it("preserves the selected Pi runtime", () => {
+    const input = prepareTaskInput("do the thing", [], {
+      workspaceMode: "local",
+      runtime: "pi",
+    });
+
+    expect(input.runtime).toBe("pi");
+  });
+
   it("drops customInstructions for cloud when none is set", () => {
     const input = prepareTaskInput("do the thing", [], {
       workspaceMode: "cloud",

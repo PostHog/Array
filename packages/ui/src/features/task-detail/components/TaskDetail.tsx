@@ -18,6 +18,7 @@ import { clearGitReviewQueries } from "../../git-interaction/gitCacheKeys";
 import { PanelLayout } from "../../panels/components/PanelLayout";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { getLeafPanel, parseTabId } from "../../panels/panelStoreHelpers";
+import { PiSessionView } from "../../pi-sessions/PiSessionView";
 import { MIN_CHAT_WIDTH } from "../../sessions/constants";
 import { useCwd } from "../../sidebar/useCwd";
 import { useRenameTask } from "../../tasks/useTaskMutations";
@@ -52,6 +53,7 @@ export function TaskDetail({
   const taskId = initialTask.id;
 
   const { task } = useTaskData({ taskId, initialTask });
+  const runtime = task.runtime === "pi" ? "pi" : "acp";
 
   const effectiveRepoPath = useCwd(taskId);
 
@@ -99,12 +101,13 @@ export function TaskDetail({
   useBlurOnEscape();
   useWorkspaceEvents(taskId);
 
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const isEditingTitle = editingTaskId === taskId;
   const { renameTask } = useRenameTask();
 
   const handleTitleEditSubmit = useCallback(
     async (newTitle: string) => {
-      setIsEditingTitle(false);
+      setEditingTaskId(null);
 
       try {
         await renameTask({
@@ -120,7 +123,7 @@ export function TaskDetail({
   );
 
   const handleTitleEditCancel = useCallback(() => {
-    setIsEditingTitle(false);
+    setEditingTaskId(null);
   }, []);
   // Inside a channel the thread also gets a "copy link" share affordance.
   // Memoized so the headerContent memo below isn't busted by unrelated renders.
@@ -157,6 +160,7 @@ export function TaskDetail({
             </span>
           }
           leafLabel={task.title}
+          editScopeKey={taskId}
           onRename={handleTitleEditSubmit}
           trailing={trailing}
         />
@@ -179,7 +183,7 @@ export function TaskDetail({
                 <Text
                   truncate
                   className="no-drag min-w-0 font-medium text-[13px]"
-                  onDoubleClick={() => setIsEditingTitle(true)}
+                  onDoubleClick={() => setEditingTaskId(taskId)}
                 >
                   {task.title}
                 </Text>
@@ -197,6 +201,7 @@ export function TaskDetail({
       isEditingTitle,
       workspaceMode,
       effectiveRepoPath,
+      taskId,
       handleTitleEditSubmit,
       handleTitleEditCancel,
     ],
@@ -265,10 +270,11 @@ export function TaskDetail({
   );
 
   return (
-    <Box height="100%" ref={containerRef}>
+    <Box data-task-detail-id={taskId} height="100%" ref={containerRef}>
       <Flex height="100%">
         <Box className={`min-w-0 flex-1 ${isExpanded ? "hidden" : ""}`}>
-          <PanelLayout taskId={taskId} task={task} />
+          {runtime === "pi" && <PiSessionView taskId={taskId} />}
+          {runtime === "acp" && <PanelLayout taskId={taskId} task={task} />}
         </Box>
 
         {isReviewOpen && !isExpanded && (

@@ -15,6 +15,12 @@ vi.mock("../../primitives/FileIcon", () => ({
 }));
 
 import {
+  deriveCommentFileFilterState,
+  filterReviewItemsByFilePaths,
+  getCommentedFilePaths,
+  type ReviewListItem,
+} from "./commentFileFilter";
+import {
   DeferredDiffPlaceholder,
   DiffFileHeader,
   findActiveScrollKey,
@@ -159,5 +165,133 @@ describe("review scroll anchors", () => {
     setRect(below, 180, 260);
 
     expect(findActiveScrollKey(root)).toBe("target.ts");
+  });
+});
+
+describe("commented file filtering", () => {
+  it("collects paths for all and unresolved comment threads", () => {
+    const commentedPaths = getCommentedFilePaths(
+      new Map([
+        [
+          1,
+          {
+            filePath: "src/commented.ts",
+            isResolved: false,
+            comments: [{ id: 1 }],
+          },
+        ],
+        [
+          2,
+          {
+            filePath: "src/resolved.ts",
+            isResolved: true,
+            comments: [{ id: 2 }],
+          },
+        ],
+        [
+          3,
+          {
+            filePath: "src/empty.ts",
+            isResolved: false,
+            comments: [],
+          },
+        ],
+      ]) as Parameters<typeof getCommentedFilePaths>[0],
+    );
+
+    expect(commentedPaths).toEqual({
+      all: new Set(["src/commented.ts", "src/resolved.ts"]),
+      unresolved: new Set(["src/commented.ts"]),
+    });
+  });
+
+  it("keeps matching files and their section headers", () => {
+    const items: ReviewListItem[] = [
+      { key: "section:staged", node: <span>Staged</span> },
+      {
+        key: "staged:a.ts",
+        filePaths: ["a.ts"],
+        node: <span>A</span>,
+      },
+      {
+        key: "staged:b.ts",
+        filePaths: ["b.ts"],
+        node: <span>B</span>,
+      },
+      { key: "section:changes", node: <span>Changes</span> },
+      {
+        key: "unstaged:c.ts",
+        filePaths: ["c.ts", "old-c.ts"],
+        node: <span>C</span>,
+      },
+    ];
+
+    expect(
+      filterReviewItemsByFilePaths(items, new Set(["b.ts", "old-c.ts"])).map(
+        (item) => item.key,
+      ),
+    ).toEqual([
+      "section:staged",
+      "staged:b.ts",
+      "section:changes",
+      "unstaged:c.ts",
+    ]);
+  });
+
+  it("drops section headers without matching files", () => {
+    const items: ReviewListItem[] = [
+      { key: "section:staged", node: <span>Staged</span> },
+      {
+        key: "staged:a.ts",
+        filePaths: ["a.ts"],
+        node: <span>A</span>,
+      },
+      { key: "section:changes", node: <span>Changes</span> },
+      {
+        key: "unstaged:b.ts",
+        filePaths: ["b.ts"],
+        node: <span>B</span>,
+      },
+    ];
+
+    expect(
+      filterReviewItemsByFilePaths(items, new Set(["b.ts"])).map(
+        (item) => item.key,
+      ),
+    ).toEqual(["section:changes", "unstaged:b.ts"]);
+  });
+
+  it("derives visible items and counts for the selected filter", () => {
+    const items: ReviewListItem[] = [
+      { key: "a.ts", filePaths: ["a.ts"], node: <span>A</span> },
+      { key: "b.ts", filePaths: ["b.ts"], node: <span>B</span> },
+      { key: "c.ts", filePaths: ["c.ts"], node: <span>C</span> },
+    ];
+
+    const state = deriveCommentFileFilterState({
+      items,
+      requestedFilter: "unresolved",
+      commentedFilePaths: new Set(["a.ts", "b.ts"]),
+      unresolvedCommentedFilePaths: new Set(["b.ts"]),
+    });
+
+    expect(state.activeFilter).toBe("unresolved");
+    expect(state.visibleItems.map((item) => item.key)).toEqual(["b.ts"]);
+    expect(state.commentedFileCount).toBe(2);
+    expect(state.unresolvedCommentedFileCount).toBe(1);
+  });
+
+  it("keeps all files visible while comment paths are loading", () => {
+    const items: ReviewListItem[] = [
+      { key: "a.ts", filePaths: ["a.ts"], node: <span>A</span> },
+    ];
+
+    const state = deriveCommentFileFilterState({
+      items,
+      requestedFilter: "unresolved",
+    });
+
+    expect(state.activeFilter).toBe("none");
+    expect(state.visibleItems).toBe(items);
   });
 });

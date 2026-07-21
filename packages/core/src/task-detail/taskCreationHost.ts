@@ -1,6 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import type { CloudSkillBundleRef } from "@posthog/core/sessions/cloudArtifactIdentifiers";
-import type { Workspace, WorkspaceMode } from "@posthog/shared";
+import type { Workspace, WorkspaceInfo, WorkspaceMode } from "@posthog/shared";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 
 export interface CloudPromptTransport {
@@ -21,16 +21,7 @@ export interface CreateWorkspaceArgs {
   reuseExistingWorktree?: boolean;
 }
 
-export interface CreatedWorkspaceInfo {
-  worktree?: {
-    worktreePath?: string | null;
-    worktreeName?: string | null;
-    branchName?: string | null;
-    baseBranch?: string | null;
-    createdAt?: string | null;
-  } | null;
-  linkedBranch?: string | null;
-}
+export type CreatedWorkspaceInfo = WorkspaceInfo;
 
 export interface TaskFolderInfo {
   id: string;

@@ -131,6 +131,11 @@ export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
 
 export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
 
+export interface TaskRunSessionLogsResult {
+  entries: StoredLogEntry[];
+  complete: boolean;
+}
+
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
   limitType: UsageLimitType;
@@ -2426,6 +2431,7 @@ export class PostHogAPIClient {
           | "repository"
           | "json_schema"
           | "origin_product"
+          | "runtime"
           | "signal_report"
         >
       > & {
@@ -3156,6 +3162,15 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    return (await this.getTaskRunSessionLogsResult(taskId, runId, options))
+      .entries;
+  }
+
+  async getTaskRunSessionLogsResult(
+    taskId: string,
+    runId: string,
+    options?: { limit?: number; after?: string },
+  ): Promise<TaskRunSessionLogsResult> {
     const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
     const entries: StoredLogEntry[] = [];
     try {
@@ -3186,21 +3201,21 @@ export class PostHogAPIClient {
           log.warn(
             `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
           );
-          break;
+          return { entries, complete: false };
         }
 
         const page = (await response.json()) as StoredLogEntry[];
         entries.push(...page);
         const hasMore = response.headers.get("X-Has-More") === "true";
         if (!hasMore || page.length === 0) {
-          break;
+          return { entries, complete: true };
         }
         offset += page.length;
       }
-      return entries;
+      return { entries, complete: false };
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return entries;
+      return { entries, complete: false };
     }
   }
 
@@ -4677,6 +4692,34 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(
         `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async updateSandboxCustomImage(
+    id: string,
+    input: { name?: string; description?: string },
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update sandbox custom image: ${response.statusText}`,
       );
     }
     return (await response.json()) as SandboxCustomImage;

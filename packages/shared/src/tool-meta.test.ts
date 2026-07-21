@@ -4,6 +4,7 @@ import {
   readAgentToolName,
   readMcpToolDescriptor,
   readMcpToolName,
+  readParentToolCallId,
 } from "./tool-meta";
 
 describe("parseMcpToolName", () => {
@@ -46,6 +47,43 @@ describe("readAgentToolName", () => {
   it("returns undefined for non-tool meta", () => {
     expect(readAgentToolName(undefined)).toBeUndefined();
     expect(readAgentToolName({})).toBeUndefined();
+  });
+});
+
+describe("readParentToolCallId", () => {
+  it("prefers the posthog channel over the legacy claudeCode fallback", () => {
+    expect(
+      readParentToolCallId({
+        posthog: { toolName: "Bash", parentToolCallId: "parent-1" },
+        claudeCode: { parentToolCallId: "stale" },
+      }),
+    ).toBe("parent-1");
+  });
+
+  it("falls back to claudeCode when posthog is absent", () => {
+    expect(
+      readParentToolCallId({
+        claudeCode: { parentToolCallId: "parent-2" },
+      }),
+    ).toBe("parent-2");
+  });
+
+  it("ignores malformed canonical metadata and uses a valid legacy fallback", () => {
+    expect(
+      readParentToolCallId({
+        posthog: { toolName: "Bash", parentToolCallId: {} },
+        claudeCode: { parentToolCallId: "parent-3" },
+      }),
+    ).toBe("parent-3");
+  });
+
+  it("returns undefined for empty or non-string parent ids", () => {
+    expect(
+      readParentToolCallId({ posthog: { parentToolCallId: "" } }),
+    ).toBeUndefined();
+    expect(
+      readParentToolCallId({ claudeCode: { parentToolCallId: 123 } }),
+    ).toBeUndefined();
   });
 });
 

@@ -48,6 +48,27 @@ procs:
     groups:
       layer: Tools
 
+  web:
+    shell: 'node scripts/pnpm-run.mjs --filter @posthog/web run dev'
+    autostart: false
+    groups:
+      layer: Application
+
+  web-playwright:
+    shell: 'node scripts/pnpm-run.mjs --filter @posthog/web run test:e2e'
+    autostart: false
+    groups:
+      layer: Tools
+
+  # The desktop e2e fixture launches the PACKAGED app from out/, so package
+  # first (matches CI) or it fails with "No packaged app found". Slow on first
+  # run; re-run test:e2e directly if the app is already packaged and unchanged.
+  desktop-playwright:
+    shell: 'node scripts/pnpm-run.mjs --filter code run package && node scripts/pnpm-run.mjs --filter code run test:e2e'
+    autostart: false
+    groups:
+      layer: Tools
+
 # Grouping dimension the sidebar starts grouped by (press `g` to cycle/disable).
 default_group: layer
 

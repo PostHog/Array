@@ -12,6 +12,8 @@ export interface PosthogToolMeta {
   toolName: string;
   /** Set only for MCP tool calls — the originating server + tool. */
   mcp?: { server: string; tool: string };
+  /** Parent subagent tool call for nested activity. */
+  parentToolCallId?: string;
 }
 
 /** `_meta` fragment for adapters to spread onto a tool_call update. */
@@ -45,7 +47,7 @@ export function parseMcpToolName(
 interface ToolCallMeta {
   posthog?: PosthogToolMeta;
   /** Legacy Claude-adapter channel, read only as a fallback. */
-  claudeCode?: { toolName?: string };
+  claudeCode?: { toolName?: string; parentToolCallId?: string };
 }
 
 function asToolCallMeta(meta: unknown): ToolCallMeta | undefined {
@@ -56,6 +58,15 @@ function asToolCallMeta(meta: unknown): ToolCallMeta | undefined {
 export function readAgentToolName(meta: unknown): string | undefined {
   const m = asToolCallMeta(meta);
   return m?.posthog?.toolName ?? m?.claudeCode?.toolName;
+}
+
+/** Parent subagent tool call: neutral channel first, legacy fallback. */
+export function readParentToolCallId(meta: unknown): string | undefined {
+  const m = asToolCallMeta(meta);
+  const canonical = m?.posthog?.parentToolCallId;
+  if (typeof canonical === "string" && canonical.length > 0) return canonical;
+  const legacy = m?.claudeCode?.parentToolCallId;
+  return typeof legacy === "string" && legacy.length > 0 ? legacy : undefined;
 }
 
 /**

@@ -26,6 +26,8 @@
     "test:vitest": "pnpm --filter code --filter @posthog/electron-trpc test",
     "test:e2e": "pnpm --filter code test:e2e",
     "test:e2e:headed": "pnpm --filter code test:e2e:headed",
+    "test:e2e:web": "pnpm --filter @posthog/web test:e2e",
+    "test:e2e:web:ui": "pnpm --filter @posthog/web test:e2e:ui",
     "rebuild:sqlite-node": "node scripts/rebuild-better-sqlite3-node.mjs",
     "rebuild:sqlite-electron": "node scripts/rebuild-better-sqlite3-electron.mjs",
     "typecheck": "turbo typecheck",

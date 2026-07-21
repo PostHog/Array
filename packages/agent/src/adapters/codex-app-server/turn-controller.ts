@@ -48,11 +48,6 @@ export class TurnController {
     if (typeof id === "string") this.turnId = id;
   }
 
-  /** Await the in-flight turn's completion (the steer path reuses the original). */
-  awaitCompletion(): Promise<PromptResponse> {
-    return this.completion ?? Promise.resolve({ stopReason: "end_turn" });
-  }
-
   /** Atomically claim the pending turn (clears the slot + turnId synchronously), or undefined if already claimed. */
   claim(): PendingTurn | undefined {
     const pending = this.pending;

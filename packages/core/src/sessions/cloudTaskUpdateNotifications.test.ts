@@ -206,11 +206,14 @@ describe("cloud task update notifications", () => {
   });
 
   // Each case applies a sequence of updates to a fresh harness; `expected` is
-  // the resulting notify count. Snapshots never ring; each live turn_complete
-  // rings once. Re-delivered stream entries are dropped upstream in
-  // CloudTaskService by their event id (see cloud-task.test.ts), so a replay
-  // never reaches this layer.
+  // the resulting notify count. Snapshots never ring; each armed turn rings at
+  // most once even if the producer writes duplicate completion entries.
   it.each([
+    {
+      label: "a completion event without an armed turn",
+      updates: [logsUpdate([turnComplete()], 1)],
+      expected: 0,
+    },
     {
       label: "a live turn that starts and completes",
       updates: [logsUpdate([sessionPrompt(1), turnComplete()], 2)],
@@ -223,6 +226,14 @@ describe("cloud task update notifications", () => {
         logsUpdate([sessionPrompt(2), turnComplete()], 4),
       ],
       expected: 2,
+    },
+    {
+      label: "duplicate completion events for one turn",
+      updates: [
+        logsUpdate([sessionPrompt(1), turnComplete()], 2),
+        logsUpdate([turnComplete()], 3),
+      ],
+      expected: 1,
     },
     {
       // Opening a task mid-turn: its session/prompt is already in history and

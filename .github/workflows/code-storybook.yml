@@ -149,15 +149,19 @@ jobs:
           pid2=$!
           wait_all "$pid1" "$pid2"
 
-          # @posthog/agent imports @posthog/git's dist, so git must finish
-          # before the last group starts.
-          pnpm --filter @posthog/git build
-
-          pnpm --filter @posthog/enricher build &
+          # @posthog/agent imports the dist of @posthog/git and
+          # @posthog/harness, so both must finish before the last group starts.
+          pnpm --filter @posthog/git build &
           pid3=$!
-          pnpm --filter @posthog/agent build &
+          pnpm --filter @posthog/harness build &
           pid4=$!
           wait_all "$pid3" "$pid4"
+
+          pnpm --filter @posthog/enricher build &
+          pid5=$!
+          pnpm --filter @posthog/agent build &
+          pid6=$!
+          wait_all "$pid5" "$pid6"
 
       - name: Build Storybook
         working-directory: apps/code

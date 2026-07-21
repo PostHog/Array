@@ -1,4 +1,8 @@
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { fileURLToPath } from "node:url";
+import type {
+  ExtensionFactory,
+  InlineExtension,
+} from "@earendil-works/pi-coding-agent";
 import { createBackgroundJobsExtension } from "./background-jobs/extension";
 import type { HogBrandingOptions } from "./hog-branding/extension";
 import { createHogBrandingExtension } from "./hog-branding/extension";
@@ -33,8 +37,25 @@ export const HARNESS_EXTENSION_NAMES: readonly string[] = EXTENSIONS.map(
   (extension) => extension.name,
 );
 
+export interface HarnessExtensionFilesOptions {
+  exclude?: string[];
+}
+
+/** Compiled extension entry points consumed by Pi's native CLI. */
+export function harnessExtensionFiles(
+  options: HarnessExtensionFilesOptions = {},
+): string[] {
+  const exclude = new Set(options.exclude ?? []);
+  return HARNESS_EXTENSION_NAMES.filter((name) => !exclude.has(name)).map(
+    (name) => fileURLToPath(new URL(`./${name}/index.js`, import.meta.url)),
+  );
+}
+
 export function harnessExtensions(
   options: HarnessExtensionOptions = {},
-): ExtensionFactory[] {
-  return EXTENSIONS.map((extension) => extension.create(options));
+): InlineExtension[] {
+  return EXTENSIONS.map((extension) => ({
+    name: extension.name,
+    factory: extension.create(options),
+  }));
 }

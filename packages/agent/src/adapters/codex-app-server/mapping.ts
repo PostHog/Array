@@ -41,18 +41,9 @@ export function mapAppServerNotification(
         },
       };
     }
-    // Plan-mode proposal streaming as agent prose (codex strips it from agentMessage deltas).
-    case APP_SERVER_NOTIFICATIONS.PLAN_DELTA: {
-      const delta = readStringField(params, "delta");
-      if (!delta) return null;
-      return {
-        sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: delta },
-        },
-      };
-    }
+    // Plan deltas are buffered by the adapter for the structured approval UI.
+    case APP_SERVER_NOTIFICATIONS.PLAN_DELTA:
+      return null;
     case APP_SERVER_NOTIFICATIONS.TOKEN_USAGE_UPDATED: {
       // Context indicator: renderer reads `used`/`size`; detailed breakdown comes via `_posthog/usage_update`.
       const usage = readTokenUsage(params);
@@ -276,19 +267,29 @@ export function mapHistoryItem(
         : [];
     case "reasoning":
       return [];
-    // Replay the proposed plan as agent prose so a reattached host still shows it.
-    case "plan":
-      return item.text
-        ? [
-            {
-              sessionId,
-              update: {
-                sessionUpdate: "agent_message_chunk",
+    case "plan": {
+      if (!item.text) return [];
+      const toolCallId = `${item.id ?? "codex-plan"}:implement`;
+      return [
+        {
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: "Plan",
+            kind: "switch_mode",
+            status: "completed",
+            content: [
+              {
+                type: "content",
                 content: { type: "text", text: item.text },
               },
-            },
-          ]
-        : [];
+            ],
+            rawInput: { plan: item.text, historical: true },
+          },
+        },
+      ];
+    }
     default: {
       const tool = describeTool(item);
       if (!tool || !item.id) return [];

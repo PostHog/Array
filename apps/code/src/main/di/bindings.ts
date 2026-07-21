@@ -186,6 +186,12 @@ import type {
   MCP_RELAY_SERVICE,
   McpRelayService,
 } from "@posthog/workspace-server/services/mcp-relay/identifiers";
+import type {
+  PI_RPC_CLIENT_FACTORY,
+  PI_RUNTIME_FACTORY,
+  PiRpcClientFactory,
+  PiRuntimeFactory,
+} from "@posthog/workspace-server/services/pi-session/identifiers";
 import type { PosthogPluginService } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin";
 import type { ProcessTrackingService } from "@posthog/workspace-server/services/process-tracking/process-tracking";
 import type {
@@ -350,6 +356,9 @@ export interface MainBindings {
   [AGENT_REPO_FILES]: unknown;
   [AGENT_AUTH]: unknown;
   [AGENT_LOGGER]: RootLogger;
+  [PI_RPC_CLIENT_FACTORY]: PiRpcClientFactory;
+
+  [PI_RUNTIME_FACTORY]: PiRuntimeFactory;
 
   // Logger
   [ROOT_LOGGER]: RootLogger;

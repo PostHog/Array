@@ -7,7 +7,7 @@ import {
 import type { PrCommentThread } from "@posthog/core/code-review/types";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { makeFileKey } from "../../git-interaction/utils/fileKey";
-import type { ReviewListItem } from "../reviewShellParts";
+import type { ReviewListItem } from "../commentFileFilter";
 import type { DiffOptions } from "../types";
 import { PatchRow, RemoteRow, UntrackedRow } from "./ReviewRows";
 
@@ -73,6 +73,9 @@ export function buildPatchReviewItems({
     return {
       key,
       scrollKey: key,
+      filePaths: [filePath, fileDiff.prevName].filter(
+        (path): path is string => !!path,
+      ),
       node: (
         <PatchRow
           itemKey={key}
@@ -124,6 +127,7 @@ export function buildUntrackedReviewItems({
     return {
       key,
       scrollKey: key,
+      filePaths: [file.path],
       node: (
         <UntrackedRow
           itemKey={key}
@@ -167,6 +171,9 @@ export function buildRemoteReviewItems({
     return {
       key: file.path,
       scrollKey: file.path,
+      filePaths: [file.path, file.originalPath].filter(
+        (path): path is string => !!path,
+      ),
       node: (
         <RemoteRow
           file={file}
