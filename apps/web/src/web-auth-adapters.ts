@@ -11,7 +11,7 @@ import type {
 } from "@posthog/core/auth/identifiers";
 import type { IPowerManager } from "@posthog/platform/power-manager";
 import type { CloudRegion } from "@posthog/shared";
-import { readJson, removeKey, writeJson } from "./web-local-store";
+import { readJson, removeKeyStrict, writeJsonStrict } from "./web-local-store";
 
 // Web counterparts of the desktop auth adapters. Desktop persists the session
 // in workspace-server SQLite behind a machine-bound node:crypto cipher and
@@ -27,11 +27,13 @@ export class WebAuthSessionStore implements IAuthSessionStore {
   }
 
   saveCurrent(input: PersistAuthSessionRecord): void {
-    writeJson(SESSION_KEY, input);
+    writeJsonStrict(SESSION_KEY, input);
   }
 
   clearCurrent(): void {
-    removeKey(SESSION_KEY);
+    // Strict: a swallowed failure here would report logout as complete while the
+    // session stays in localStorage, recoverable on reload. Let it propagate.
+    removeKeyStrict(SESSION_KEY);
   }
 }
 
@@ -80,7 +82,7 @@ export class WebAuthPreferenceStore implements IAuthPreferenceStore {
   }
 
   private write(preferences: StoredPreferences): void {
-    writeJson(PREFERENCES_KEY, preferences);
+    writeJsonStrict(PREFERENCES_KEY, preferences);
   }
 }
 

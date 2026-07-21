@@ -18,6 +18,13 @@ import type { z } from "zod";
 // createRecordStore) parse persisted data against a Zod schema on load and shed
 // anything that fails — a shape change needs only a schema edit, never a
 // hand-written localStorage migration.
+//
+// Two write tiers. The best-effort helpers (writeJson/removeKey) swallow storage
+// failures because for a rebuildable cache a dropped write only costs persistence
+// across reloads, never correctness. The *Strict variants propagate the failure
+// and MUST be used where a silently-dropped write would be a correctness or
+// security bug — the auth session/preferences, where a clear() that looked like
+// it succeeded but didn't would leave a stale session recoverable on reload.
 
 export function readJson<T>(key: string, fallback: () => T): T {
   try {
@@ -36,7 +43,8 @@ export function writeJson<T>(key: string, value: T): void {
   } catch {
     // Best-effort: a storage failure (quota, privacy mode) only costs
     // persistence across reloads, never correctness — the in-memory value is
-    // still authoritative for this session.
+    // still authoritative for this session. Use writeJsonStrict where a dropped
+    // write must surface.
   }
 }
 
@@ -44,8 +52,20 @@ export function removeKey(key: string): void {
   try {
     window.localStorage.removeItem(key);
   } catch {
-    // Best-effort, same rationale as writeJson.
+    // Best-effort, same rationale as writeJson. Use removeKeyStrict where a
+    // dropped removal must surface (e.g. clearing an auth session on logout).
   }
+}
+
+// Strict write/remove: let storage failures propagate so the caller can react
+// instead of treating a dropped write as success. For auth state (see the two-
+// tier note above), not the rebuildable caches.
+export function writeJsonStrict<T>(key: string, value: T): void {
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+export function removeKeyStrict(key: string): void {
+  window.localStorage.removeItem(key);
 }
 
 // Schema-validated read of a single persisted object. Parses the JSON, checks it
@@ -113,18 +133,16 @@ export function createRecordStore<S extends z.ZodType>(
 }
 
 // StateStorage backend for @posthog/ui's zustand persist (web-storage.ts).
-// Zustand already serializes, so this passes raw strings straight through — the
-// one localStorage consumer that does not go through the JSON helpers above.
+// Zustand already serializes, so this passes raw strings straight through. It
+// also lets storage errors propagate: the renderer persistence layer awaits and
+// logs failed writes, so swallowing here would report a dropped draft/setting/
+// layout write as a success that vanishes on reload.
 export const rawLocalStorage = {
   getItem: (name: string): string | null => window.localStorage.getItem(name),
   setItem: (name: string, value: string): void => {
-    try {
-      window.localStorage.setItem(name, value);
-    } catch {
-      // Best-effort, same rationale as writeJson.
-    }
+    window.localStorage.setItem(name, value);
   },
   removeItem: (name: string): void => {
-    removeKey(name);
+    window.localStorage.removeItem(name);
   },
 };
