@@ -10,6 +10,7 @@ import type {
   AppServerClientHandlers,
   AppServerRpc,
 } from "./app-server-client";
+import { AppServerRequestError } from "./app-server-client";
 import { CodexAppServerAgent } from "./codex-app-server-agent";
 import { sandboxPolicyFor } from "./session-config";
 
@@ -48,6 +49,9 @@ function makeStubRpc(responses: Record<string, unknown>) {
         };
       }
       const response = responses[method];
+      if (response instanceof Error) {
+        throw response;
+      }
       return (
         typeof response === "function"
           ? await response(params)
@@ -2133,7 +2137,12 @@ describe("CodexAppServerAgent", () => {
       prompt: [{ type: "text", text: "more context" }],
     } as unknown as PromptRequest);
 
-    // The single turn/completed resolves both the original and the folded prompt.
+    await expect(second).resolves.toMatchObject({
+      stopReason: "end_turn",
+      _meta: { steer: true },
+    });
+
+    // The original prompt remains the sole owner of turn completion.
     stub.emit("thread/tokenUsage/updated", {
       tokenUsage: {
         last: {
@@ -2145,12 +2154,11 @@ describe("CodexAppServerAgent", () => {
       },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const firstResult = await first;
     expect(firstResult).toMatchObject({
       stopReason: "end_turn",
       usage: { totalTokens: 45 },
     });
-    expect(secondResult).toEqual({ stopReason: "end_turn" });
 
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect(steer?.params).toMatchObject({
@@ -2161,6 +2169,118 @@ describe("CodexAppServerAgent", () => {
     // Only one turn/start — the second prompt steered rather than starting anew.
     expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
       1,
+    );
+  });
+
+  it("rejects a failed turn/steer without echoing or acknowledging it", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new Error("steer transport failed"),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "lost steer" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).rejects.toThrow("steer transport failed");
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "lost steer" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines a stale turn/steer so the caller can queue it normally", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new AppServerRequestError(
+        -32600,
+        "expected active turn id `turn_1` but found `turn_2`",
+      ),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "queue me" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "queue me" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines an explicit steer after the active turn has ended", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "too late" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(
+      stub.requests.filter((request) => request.method === "turn/start"),
+    ).toHaveLength(0);
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "too late" },
+        }),
+      }),
     );
   });
 

@@ -50,6 +50,7 @@ import { resolveSpokenNarration } from "../session-meta";
 import {
   AppServerClient,
   type AppServerClientHandlers,
+  AppServerRequestError,
   type AppServerRpc,
 } from "./app-server-client";
 import { handleServerRequest } from "./approvals";
@@ -87,6 +88,16 @@ import {
 import { parseStructuredOutput } from "./structured-output";
 import { TurnController } from "./turn-controller";
 import { UsageTracker } from "./usage-tracker";
+
+function isStaleTurnSteerError(error: unknown): boolean {
+  if (!(error instanceof AppServerRequestError) || error.code !== -32600) {
+    return false;
+  }
+  return (
+    error.message === "no active turn to steer" ||
+    /^expected active turn id `.*` but found `.*`$/.test(error.message)
+  );
+}
 
 type AppServerSessionMeta = {
   // The host sends either a plain string or the Claude-style `{ append }` form.
@@ -753,32 +764,43 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (dropped > 0) {
       this.logger.warn("Dropped non-text/non-image prompt blocks", { dropped });
     }
-    // Echo the user prompt (codex emits none), for fresh turns and steering alike.
-    this.broadcastUserInput(params.prompt);
-
     if (this.turns.isRunning) {
       // A turn is already running: fold the message in via turn/steer (precondition: the
       // active turnId). Refresh from the response's rotated turnId so a later steer/interrupt
       // still targets the live turn (no turn/started is re-emitted for a steer).
-      const steerRes = await this.rpc
-        .request<{ turnId?: string }>(APP_SERVER_METHODS.TURN_STEER, {
-          threadId: this.threadId,
-          input,
-          expectedTurnId: this.turns.activeTurnId,
-        })
-        .catch((err) => {
-          this.logger.warn("turn/steer failed", err);
-          return undefined;
-        });
+      let steerRes: { turnId?: string };
+      try {
+        steerRes = await this.rpc.request<{ turnId?: string }>(
+          APP_SERVER_METHODS.TURN_STEER,
+          {
+            threadId: this.threadId,
+            input,
+            expectedTurnId: this.turns.activeTurnId,
+          },
+        );
+      } catch (error) {
+        if (
+          (params._meta as { steer?: unknown } | undefined)?.steer === true &&
+          isStaleTurnSteerError(error)
+        ) {
+          return { stopReason: "end_turn", _meta: { steer: false } };
+        }
+        throw error;
+      }
       this.turns.onSteered(steerRes?.turnId);
-      const response = await this.turns.awaitCompletion();
-      return { stopReason: response.stopReason };
+      this.broadcastUserInput(params.prompt);
+      return { stopReason: "end_turn", _meta: { steer: true } };
+    }
+    if ((params._meta as { steer?: unknown } | undefined)?.steer === true) {
+      return { stopReason: "end_turn", _meta: { steer: false } };
     }
     if (this.turns.isPending) {
       // A turn is pending but has no turnId yet, so we can't steer; fail fast.
       throw new Error("prompt() called while a turn is already in progress");
     }
 
+    // Codex does not echo user input, so emit it only once delivery can proceed.
+    this.broadcastUserInput(params.prompt);
     const response = await this.runTurn(input);
     return this.maybeOfferPlanImplementation(response);
   }
