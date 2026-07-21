@@ -1,5 +1,10 @@
 import type { SignalSourceConfig } from "@posthog/api-client/posthog-client";
-import { ANALYTICS_EVENTS } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  EXTERNAL_INBOX_SOURCES,
+  type SignalRecordKind,
+  sourceNeedsFullRefresh,
+} from "@posthog/shared";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import type { SignalSourceValues } from "@posthog/ui/features/inbox/components/SignalSourceToggles";
@@ -10,26 +15,17 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 
-type SourceProduct = SignalSourceConfig["source_product"];
 type SourceType = SignalSourceConfig["source_type"];
-type SetupSourceProduct =
-  | "github"
-  | "linear"
-  | "jira"
-  | "zendesk"
-  | "pganalyze";
+type SourceKey = keyof SignalSourceValues;
 
-const SOURCE_TYPE_MAP: Record<
-  Exclude<SourceProduct, "error_tracking" | "llm_analytics" | "signals_scout">,
-  SourceType
-> = {
+// Non-warehouse toggles are hard-wired; every warehouse source is derived from the shared
+// EXTERNAL_INBOX_SOURCES registry so adding a source is a one-line change there.
+const SOURCE_TYPE_MAP: Partial<Record<SourceKey, SourceType>> = {
   session_replay: "session_analysis_cluster",
-  github: "issue",
-  linear: "issue",
-  jira: "issue",
-  zendesk: "ticket",
   conversations: "ticket",
-  pganalyze: "issue",
+  ...Object.fromEntries(
+    EXTERNAL_INBOX_SOURCES.map((s) => [s.product, s.recordKind]),
+  ),
 };
 
 const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
@@ -38,58 +34,46 @@ const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
   "issue_spiking",
 ];
 
-const SOURCE_LABELS: Record<keyof SignalSourceValues, string> = {
+const SOURCE_LABELS: Partial<Record<SourceKey, string>> = {
   session_replay: "Session replay",
   error_tracking: "Error tracking",
-  github: "GitHub Issues",
-  linear: "Linear Issues",
-  jira: "Jira Issues",
-  zendesk: "Zendesk Tickets",
   conversations: "PostHog Support",
-  pganalyze: "pganalyze",
+  ...Object.fromEntries(
+    EXTERNAL_INBOX_SOURCES.map((s) => [s.product, s.label]),
+  ),
 };
 
 const DATA_WAREHOUSE_SOURCES: Record<
   string,
-  { dwSourceType: string; requiredTable: string }
-> = {
-  github: { dwSourceType: "Github", requiredTable: "issues" },
-  linear: { dwSourceType: "Linear", requiredTable: "issues" },
-  jira: { dwSourceType: "Jira", requiredTable: "issues" },
-  zendesk: { dwSourceType: "Zendesk", requiredTable: "tickets" },
-  pganalyze: { dwSourceType: "PgAnalyze", requiredTable: "issues" },
-};
+  { dwSourceType: string; requiredTable: string; recordKind: SourceType }
+> = Object.fromEntries(
+  EXTERNAL_INBOX_SOURCES.map((s) => [
+    s.product,
+    {
+      dwSourceType: s.dwSourceType,
+      requiredTable: s.requiredTables[0],
+      recordKind: s.recordKind,
+    },
+  ]),
+);
 
-const ALL_SOURCE_PRODUCTS: (keyof SignalSourceValues)[] = [
+const ALL_SOURCE_PRODUCTS: SourceKey[] = [
   "session_replay",
   "error_tracking",
-  "github",
-  "linear",
-  "jira",
-  "zendesk",
   "conversations",
-  "pganalyze",
+  ...EXTERNAL_INBOX_SOURCES.map((s) => s.product as SourceKey),
 ];
 
-function isSetupSourceProduct(
-  product: keyof SignalSourceValues,
-): product is SetupSourceProduct {
+function isSetupSourceProduct(product: SourceKey): boolean {
   return product in DATA_WAREHOUSE_SOURCES;
 }
 
 function computeValues(
   configs: SignalSourceConfig[] | undefined,
 ): SignalSourceValues {
-  const result: SignalSourceValues = {
-    session_replay: false,
-    error_tracking: false,
-    github: false,
-    linear: false,
-    jira: false,
-    zendesk: false,
-    conversations: false,
-    pganalyze: false,
-  };
+  const result = Object.fromEntries(
+    ALL_SOURCE_PRODUCTS.map((p) => [p, false]),
+  ) as SignalSourceValues;
   if (!configs?.length) return result;
   for (const product of ALL_SOURCE_PRODUCTS) {
     if (product === "error_tracking") {
@@ -134,9 +118,7 @@ export function useSignalSourceToggles() {
   >({});
   const pendingRef = useRef(new Set<keyof SignalSourceValues>());
 
-  const [setupSource, setSetupSource] = useState<SetupSourceProduct | null>(
-    null,
-  );
+  const [setupSource, setSetupSource] = useState<SourceKey | null>(null);
   const [loadingSources, setLoadingSources] = useState<
     Partial<Record<keyof SignalSourceValues, boolean>>
   >({});
@@ -212,11 +194,10 @@ export function useSignalSourceToggles() {
       );
       if (!requiredSchema) return;
 
-      const issuesFullReplication =
-        (product === "github" || product === "linear" || product === "jira") &&
-        dwConfig.requiredTable === "issues";
-
-      if (issuesFullReplication) {
+      // Issue-like records (issues, findings, feedback, reviews) get edited/closed after
+      // creation, so incremental append would miss updates — force a full refresh. Tickets
+      // are treated as append-only (matches the original Zendesk behavior).
+      if (sourceNeedsFullRefresh(dwConfig.recordKind as SignalRecordKind)) {
         const syncType = requiredSchema.sync_type;
         const needsUpdate =
           !requiredSchema.should_sync || syncType !== "full_refresh";
@@ -311,20 +292,15 @@ export function useSignalSourceToggles() {
           }
         } else {
           const existing = configs?.find((c) => c.source_product === product);
+          const sourceType = SOURCE_TYPE_MAP[product];
           if (existing) {
             await client.updateSignalSourceConfig(projectId, existing.id, {
               enabled,
             });
-          } else if (enabled) {
+          } else if (enabled && sourceType) {
             await client.createSignalSourceConfig(projectId, {
               source_product: product,
-              source_type:
-                SOURCE_TYPE_MAP[
-                  product as Exclude<
-                    SourceProduct,
-                    "error_tracking" | "llm_analytics" | "signals_scout"
-                  >
-                ],
+              source_type: sourceType,
               enabled: true,
             });
           }
@@ -370,14 +346,15 @@ export function useSignalSourceToggles() {
       const existing = configs?.find(
         (c) => c.source_product === completedSource,
       );
+      const sourceType = SOURCE_TYPE_MAP[completedSource];
       try {
-        if (!existing) {
+        if (!existing && sourceType) {
           await client.createSignalSourceConfig(projectId, {
             source_product: completedSource,
-            source_type: SOURCE_TYPE_MAP[completedSource],
+            source_type: sourceType,
             enabled: true,
           });
-        } else if (!existing.enabled) {
+        } else if (existing && !existing.enabled) {
           await client.updateSignalSourceConfig(projectId, existing.id, {
             enabled: true,
           });

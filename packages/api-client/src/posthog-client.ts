@@ -254,7 +254,37 @@ export interface SignalSourceConfig {
     | "conversations"
     | "error_tracking"
     | "pganalyze"
-    | "signals_scout";
+    | "signals_scout"
+    | "freshdesk"
+    | "freshservice"
+    | "front"
+    | "gorgias"
+    | "kustomer"
+    | "dixa"
+    | "plain"
+    | "gitlab"
+    | "gitea"
+    | "shortcut"
+    | "sentry"
+    | "rollbar"
+    | "bugsnag"
+    | "honeybadger"
+    | "raygun"
+    | "snyk"
+    | "sonarqube"
+    | "semgrep"
+    | "rapid7_insightvm"
+    | "featurebase"
+    | "frill"
+    | "aha"
+    | "uservoice"
+    | "productboard"
+    | "canny"
+    | "asknicely"
+    | "retently"
+    | "appfigures"
+    | "appfollow"
+    | "judgeme_reviews";
   source_type:
     | "session_analysis_cluster"
     | "evaluation"
@@ -263,7 +293,10 @@ export interface SignalSourceConfig {
     | "issue_created"
     | "issue_reopened"
     | "issue_spiking"
-    | "cross_source_issue";
+    | "cross_source_issue"
+    | "scanner_finding"
+    | "feedback"
+    | "review";
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
