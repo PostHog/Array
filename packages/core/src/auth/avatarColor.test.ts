@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { avatarColorClass } from "./avatarColor";
+import { avatarColorVar } from "./avatarColor";
 
-describe("avatarColorClass", () => {
+describe("avatarColorVar", () => {
   it("is deterministic for a given seed", () => {
-    expect(avatarColorClass("user-uuid-123")).toBe(
-      avatarColorClass("user-uuid-123"),
+    expect(avatarColorVar("user-uuid-123")).toBe(
+      avatarColorVar("user-uuid-123"),
     );
   });
 
-  it("always returns a white-text palette class", () => {
+  it("returns a Radix color-scale CSS variable reference", () => {
     for (const seed of ["a", "raquel@posthog.com", "uuid", "", "James Doe"]) {
-      expect(avatarColorClass(seed)).toMatch(/^bg-\(--[a-z]+-9\) text-white$/);
+      expect(avatarColorVar(seed)).toMatch(/^var\(--[a-z]+-9\)$/);
     }
   });
 
-  it("spreads distinct seeds across more than one hue", () => {
+  it("spreads distinct seeds across more than one color", () => {
     const seeds = Array.from({ length: 40 }, (_, i) => `person-${i}`);
-    const distinct = new Set(seeds.map(avatarColorClass));
+    const distinct = new Set(seeds.map(avatarColorVar));
     expect(distinct.size).toBeGreaterThan(1);
   });
 });

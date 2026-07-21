@@ -1,4 +1,4 @@
-import { avatarColorClass } from "@posthog/core/auth/avatarColor";
+import { avatarColorVar } from "@posthog/core/auth/avatarColor";
 import { Avatar, AvatarFallback, AvatarImage } from "@posthog/quill";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useGravatarUrl } from "@posthog/ui/features/auth/useGravatarUrl";
@@ -29,7 +29,10 @@ export function UserAvatar({
       {gravatarUrl ? (
         <AvatarImage src={gravatarUrl} alt={userDisplayName(user)} />
       ) : null}
-      <AvatarFallback className={avatarColorClass(seed)}>
+      <AvatarFallback
+        className="text-white"
+        style={{ backgroundColor: avatarColorVar(seed) }}
+      >
         {getUserInitials(user)}
       </AvatarFallback>
     </Avatar>
