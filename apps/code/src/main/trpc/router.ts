@@ -26,6 +26,7 @@ import { gitRouter } from "@posthog/host-router/routers/git.router";
 import { githubIntegrationRouter } from "@posthog/host-router/routers/github-integration.router";
 import { githubReleasesRouter } from "@posthog/host-router/routers/github-releases.router";
 import { handoffRouter } from "@posthog/host-router/routers/handoff.router";
+import { integrationRouter } from "@posthog/host-router/routers/integration.router";
 import { linearIntegrationRouter } from "@posthog/host-router/routers/linear-integration.router";
 import { llmGatewayRouter } from "@posthog/host-router/routers/llm-gateway.router";
 import { localMcpRouter } from "@posthog/host-router/routers/local-mcp.router";
@@ -87,6 +88,7 @@ export const trpcRouter = router({
   githubIntegration: githubIntegrationRouter,
   githubReleases: githubReleasesRouter,
   handoff: handoffRouter,
+  integration: integrationRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
   localMcp: localMcpRouter,
