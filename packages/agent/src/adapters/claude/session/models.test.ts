@@ -95,6 +95,13 @@ describe("model capability flags", () => {
       xhighEffort: false,
       mcpInjection: false,
     },
+    {
+      modelId: "@cf/zai-org/glm-5.2",
+      oneMContext: false,
+      effort: true,
+      xhighEffort: false,
+      mcpInjection: true,
+    },
   ])(
     "$modelId capability flags",
     ({ modelId, oneMContext, effort, xhighEffort, mcpInjection }) => {
@@ -118,6 +125,7 @@ describe("resolveEffortForModel", () => {
     ["claude-opus-4-7", undefined, "high"],
     ["claude-sonnet-4-6", undefined, "high"],
     ["claude-sonnet-5", undefined, "high"],
+    ["@cf/zai-org/glm-5.2", undefined, "high"],
     // Models without effort support stay unset (SDK disables thinking).
     ["claude-haiku-4-5", undefined, undefined],
     ["claude-opus-4-6", undefined, undefined],
@@ -139,20 +147,12 @@ describe("getEffortOptions", () => {
     expect(getEffortOptions("claude-opus-4-6")).toBeNull();
   });
 
-  it("returns low/medium/high for effort-supporting models", () => {
-    const opts = getEffortOptions("claude-sonnet-4-6");
-    expect(opts?.map((o) => o.value)).toEqual(["low", "medium", "high"]);
-  });
-
-  it("appends xhigh and max for xhigh-supporting models", () => {
-    const opts = getEffortOptions("claude-opus-4-7");
-    expect(opts?.map((o) => o.value)).toEqual([
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
+  it.each([
+    ["claude-sonnet-4-6", ["low", "medium", "high"]],
+    ["claude-opus-4-7", ["low", "medium", "high", "xhigh", "max"]],
+    ["@cf/zai-org/glm-5.2", ["high", "max"]],
+  ])("returns the exact effort levels for %s", (modelId, expected) => {
+    expect(getEffortOptions(modelId)?.map((o) => o.value)).toEqual(expected);
   });
 });
 

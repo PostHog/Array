@@ -239,6 +239,32 @@ describe("gateway models cache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(cached[0]?.allowed).toBe(false);
   });
+
+  it("corrects stale GLM 5.2 context-window metadata", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          object: "list",
+          data: [
+            {
+              id: "@cf/zai-org/glm-5.2",
+              owned_by: "cloudflare",
+              context_window: 128_000,
+              supports_streaming: true,
+              supports_vision: false,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const models = await fetchGatewayModels({
+      gatewayUrl: "https://gateway.glm-context-test",
+    });
+
+    expect(models[0]?.context_window).toBe(1_000_000);
+  });
 });
 
 describe("isCloudflareModel", () => {

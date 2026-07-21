@@ -651,6 +651,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       };
     };
 
+    const recordContextUsage = (nextTotal: number): boolean => {
+      if (nextTotal <= 0 || nextTotal === lastAssistantTotalUsage) {
+        return false;
+      }
+      const knownTotal = Math.max(
+        lastAssistantTotalUsage ?? 0,
+        session.contextUsed ?? 0,
+      );
+      if (nextTotal < knownTotal) {
+        return false;
+      }
+      lastAssistantTotalUsage = nextTotal;
+      return true;
+    };
+
     const resetTurnScratch = () => {
       lastAssistantTotalUsage = null;
       lastRefusalExplanation = null;
@@ -832,16 +847,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 fetchContextUsedTokens(query, this.logger),
                 cancelController.signal,
               );
-              lastAssistantTotalUsage =
-                usedTokens.result === "success" ? (usedTokens.value ?? 0) : 0;
-              await this.client.sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "usage_update",
-                  used: lastAssistantTotalUsage,
-                  size: windowSize(),
-                },
-              });
+              if (usedTokens.result === "success" && usedTokens.value != null) {
+                lastAssistantTotalUsage = usedTokens.value;
+                session.contextUsed = usedTokens.value;
+                session.contextSize = windowSize();
+                await this.client.sessionUpdate({
+                  sessionId,
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: lastAssistantTotalUsage,
+                    size: windowSize(),
+                  },
+                });
+              }
             }
             if (message.subtype === "commands_changed") {
               session.knownSlashCommands = collectKnownSlashCommands(
@@ -1201,8 +1219,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 lastStreamUsage.cache_read_input_tokens +
                 lastStreamUsage.cache_creation_input_tokens;
 
-              if (nextTotal !== lastAssistantTotalUsage) {
-                lastAssistantTotalUsage = nextTotal;
+              if (recordContextUsage(nextTotal)) {
                 await this.client.sessionUpdate({
                   sessionId,
                   update: {
@@ -1297,21 +1314,23 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 cache_read_input_tokens: number | null;
                 cache_creation_input_tokens: number | null;
               };
-              lastAssistantTotalUsage =
+              const nextTotal =
                 (usage.input_tokens ?? 0) +
                 (usage.output_tokens ?? 0) +
                 (usage.cache_read_input_tokens ?? 0) +
                 (usage.cache_creation_input_tokens ?? 0);
 
-              await this.client.sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "usage_update",
-                  used: lastAssistantTotalUsage,
-                  size: windowSize(),
-                  cost: null,
-                },
-              });
+              if (recordContextUsage(nextTotal)) {
+                await this.client.sessionUpdate({
+                  sessionId,
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: nextTotal,
+                    size: windowSize(),
+                    cost: null,
+                  },
+                });
+              }
             }
 
             const result = await handleUserAssistantMessage(message, context);

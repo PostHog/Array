@@ -7984,6 +7984,134 @@ describe("SessionService", () => {
       expect(mockTrpcAgent.reconnect.mutate).toHaveBeenCalled();
     });
 
+    it("does not restore persisted options unsupported by the resumed session", async () => {
+      const service = getSessionService();
+      const modelOption: SessionConfigOption = {
+        id: "model",
+        name: "Model",
+        type: "select",
+        category: "model",
+        currentValue: "@cf/zai-org/glm-5.2",
+        options: [{ value: "@cf/zai-org/glm-5.2", name: "GLM 5.2" }],
+      };
+      const effortOption: SessionConfigOption = {
+        id: "effort",
+        name: "Effort",
+        type: "select",
+        category: "thought_level",
+        currentValue: "medium",
+        options: [{ value: "medium", name: "Medium" }],
+      };
+      const mockSession = createMockSession({
+        status: "error",
+        logUrl: "https://logs.example.com/run-123",
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(mockSession);
+      mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue([
+        modelOption,
+        effortOption,
+      ]);
+      mockTrpcAgent.reconnect.mutate.mockResolvedValue({
+        sessionId: "run-123",
+        channel: "agent-event:run-123",
+        configOptions: [modelOption],
+      });
+      mockTrpcWorkspace.verify.query.mockResolvedValue({ exists: true });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+
+      await service.clearSessionError("task-123", "/repo");
+
+      expect(mockTrpcAgent.setConfigOption.mutate).toHaveBeenCalledTimes(1);
+      expect(mockTrpcAgent.setConfigOption.mutate).toHaveBeenCalledWith({
+        sessionId: "run-123",
+        configId: "model",
+        value: "@cf/zai-org/glm-5.2",
+      });
+      expect(
+        mockSessionConfigStore.setPersistedConfigOptions,
+      ).toHaveBeenCalledWith("run-123", [modelOption]);
+    });
+
+    it("drops a persisted value the resumed option no longer offers", async () => {
+      const service = getSessionService();
+      // Same option id, but the resumed model only offers high/max — the
+      // persisted "medium" is stale and must not be restored or displayed.
+      const staleEffort: SessionConfigOption = {
+        id: "effort",
+        name: "Effort",
+        type: "select",
+        category: "thought_level",
+        currentValue: "medium",
+        options: [{ value: "medium", name: "Medium" }],
+      };
+      const liveEffort: SessionConfigOption = {
+        id: "effort",
+        name: "Effort",
+        type: "select",
+        category: "thought_level",
+        currentValue: "high",
+        options: [
+          { value: "high", name: "High" },
+          { value: "max", name: "Max" },
+        ],
+      };
+      const mockSession = createMockSession({
+        status: "error",
+        logUrl: "https://logs.example.com/run-123",
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(mockSession);
+      mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue([
+        staleEffort,
+      ]);
+      mockTrpcAgent.reconnect.mutate.mockResolvedValue({
+        sessionId: "run-123",
+        channel: "agent-event:run-123",
+        configOptions: [liveEffort],
+      });
+      mockTrpcWorkspace.verify.query.mockResolvedValue({ exists: true });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+
+      await service.clearSessionError("task-123", "/repo");
+
+      expect(mockTrpcAgent.setConfigOption.mutate).not.toHaveBeenCalled();
+      // Stored config keeps the live value, never the rejected "medium".
+      expect(
+        mockSessionConfigStore.setPersistedConfigOptions,
+      ).toHaveBeenCalledWith("run-123", [liveEffort]);
+    });
+
+    it("restores nothing when the resumed session reports no options", async () => {
+      const service = getSessionService();
+      const effortOption: SessionConfigOption = {
+        id: "effort",
+        name: "Effort",
+        type: "select",
+        category: "thought_level",
+        currentValue: "medium",
+        options: [{ value: "medium", name: "Medium" }],
+      };
+      const mockSession = createMockSession({
+        status: "error",
+        logUrl: "https://logs.example.com/run-123",
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(mockSession);
+      mockSessionConfigStore.getPersistedConfigOptions.mockReturnValue([
+        effortOption,
+      ]);
+      // Reconnect omits configOptions (e.g. after compaction): support can't
+      // be confirmed, so persisted options must not be pushed to the server.
+      mockTrpcAgent.reconnect.mutate.mockResolvedValue({
+        sessionId: "run-123",
+        channel: "agent-event:run-123",
+      });
+      mockTrpcWorkspace.verify.query.mockResolvedValue({ exists: true });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+
+      await service.clearSessionError("task-123", "/repo");
+
+      expect(mockTrpcAgent.setConfigOption.mutate).not.toHaveBeenCalled();
+    });
+
     it("keeps the in-memory transcript when the log read returns nothing", async () => {
       const service = getSessionService();
       const previousEvents = [
