@@ -200,6 +200,7 @@ export interface SessionTrpc {
     fetchS3Logs: TrpcQuery;
     writeLocalLogs: TrpcMutation;
     seedLocalLogs: TrpcMutation;
+    cloneLocalLogs: TrpcMutation;
   };
   os: { openExternal: TrpcMutation };
 }
@@ -1534,15 +1535,10 @@ export class SessionService {
     await this.d.trpc.agent.flushLogs.mutate({
       taskRunId: params.sourceTaskRunId,
     });
-    const sourceLogs = await this.d.trpc.logs.readLocalLogs.query({
-      taskRunId: params.sourceTaskRunId,
+    await this.d.trpc.logs.cloneLocalLogs.mutate({
+      sourceTaskRunId: params.sourceTaskRunId,
+      targetTaskRunId: taskRun.id,
     });
-    if (sourceLogs) {
-      await this.d.trpc.logs.seedLocalLogs.mutate({
-        taskRunId: taskRun.id,
-        content: sourceLogs,
-      });
-    }
 
     const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
       this.d.settings;
@@ -1563,6 +1559,18 @@ export class SessionService {
         : undefined,
       model: source.model ?? this.d.DEFAULT_GATEWAY_MODEL,
     });
+
+    params.task.latest_run = await authStatus.auth.client.updateTaskRun(
+      params.task.id,
+      taskRun.id,
+      {
+        state: {
+          ...taskRun.state,
+          forked_from_task_id: params.sourceTaskId,
+          forked_from_run_id: params.sourceTaskRunId,
+        },
+      },
+    );
 
     const session = createBaseSession(
       taskRun.id,
@@ -1591,18 +1599,6 @@ export class SessionService {
     this.localRepoPaths.set(params.task.id, params.repoPath);
     this.d.store.setSession(session);
     this.subscribeToChannel(taskRun.id);
-
-    params.task.latest_run = await authStatus.auth.client.updateTaskRun(
-      params.task.id,
-      taskRun.id,
-      {
-        state: {
-          ...taskRun.state,
-          forked_from_task_id: params.sourceTaskId,
-          forked_from_run_id: params.sourceTaskRunId,
-        },
-      },
-    );
 
     this.d.track(ANALYTICS_EVENTS.TASK_RUN_STARTED, {
       task_id: params.task.id,

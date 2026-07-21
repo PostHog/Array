@@ -5,6 +5,10 @@ import {
   type Task,
 } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
+import {
+  getCloudPrAuthorshipMode,
+  getCloudRunSource,
+} from "../sessions/cloudRunOptions";
 import { TASK_CREATION_HOST, TASK_SERVICE } from "./identifiers";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import type { CreateTaskResult, TaskService } from "./taskService";
@@ -78,10 +82,8 @@ export class TaskForkService {
             : undefined,
         cloudAutoPublish: state.auto_publish === true,
         cloudRtkEnabled: state.rtk_enabled === false ? false : undefined,
-        cloudRunSource:
-          state.run_source === "signal_report" ? "signal_report" : "manual",
-        cloudPrAuthorshipMode:
-          state.pr_authorship_mode === "bot" ? "bot" : "user",
+        cloudRunSource: getCloudRunSource(state),
+        cloudPrAuthorshipMode: getCloudPrAuthorshipMode(state),
         forkFrom: {
           taskId: sourceTask.id,
           taskRunId: sourceRun.id,

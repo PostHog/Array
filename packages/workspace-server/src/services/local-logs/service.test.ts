@@ -255,6 +255,20 @@ describe("LocalLogsService", () => {
     });
   });
 
+  describe("cloneLocalLogs", () => {
+    it("seeds the target from the source log", async () => {
+      const service = new LocalLogsService();
+      vi.spyOn(service, "readLocalLogs").mockResolvedValue("source log\n");
+      const seedLocalLogs = vi
+        .spyOn(service, "seedLocalLogs")
+        .mockResolvedValue(undefined);
+
+      await service.cloneLocalLogs("source-run", "target-run");
+
+      expect(seedLocalLogs).toHaveBeenCalledWith("target-run", "source log\n");
+    });
+  });
+
   describe("countLocalLogEntries", () => {
     it("counts non-blank lines", async () => {
       mockReadFile.mockResolvedValue("a\n\nb\n c \n\n");

@@ -21,4 +21,8 @@ export interface ILogsService {
   ): Promise<{ content: string; truncated: boolean } | null>;
   writeLocalLogs(taskRunId: string, content: string): Promise<void>;
   seedLocalLogs(taskRunId: string, content: string): Promise<void>;
+  cloneLocalLogs(
+    sourceTaskRunId: string,
+    targetTaskRunId: string,
+  ): Promise<void>;
 }

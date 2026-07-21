@@ -311,6 +311,34 @@ describe("AgentService", () => {
       expect(mockNewSession).toHaveBeenCalledTimes(1);
     });
 
+    it("retries a fork as a fork after an authentication error", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "claude",
+      });
+      mockForkSession.mockRejectedValueOnce(
+        new Error("Authentication required"),
+      );
+
+      await service.forkSession({
+        ...baseSessionParams,
+        taskId: "task-2",
+        taskRunId: "run-2",
+        sourceTaskRunId: "run-1",
+        adapter: "claude",
+      });
+
+      expect(mockForkSession).toHaveBeenCalledTimes(2);
+      expect(mockForkSession).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          sessionId: "test-session-id",
+          _meta: expect.objectContaining({ taskRunId: "run-2" }),
+        }),
+      );
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+    });
+
     it("marks desktop sessions as local even though they have a taskRunId", async () => {
       await service.startSession({
         ...baseSessionParams,

@@ -159,4 +159,26 @@ describe("TaskForkService", () => {
       undefined,
     );
   });
+
+  it("keeps signal-report forks bot-authored by default", async () => {
+    vi.mocked(host.getWorkspace).mockResolvedValue(
+      createWorkspace({ mode: "cloud", folderPath: "" }),
+    );
+    const task = createTask({
+      latest_run: createRun({
+        environment: "cloud",
+        state: { run_source: "signal_report" },
+      }),
+    });
+
+    await service.forkTask(task);
+
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cloudRunSource: "signal_report",
+        cloudPrAuthorshipMode: "bot",
+      }),
+      undefined,
+    );
+  });
 });

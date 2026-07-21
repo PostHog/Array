@@ -67,21 +67,22 @@ const mockWorktreeManager = {
   createWorktreeForExistingBranch: vi.fn(),
   createWorktreeForRemoteBranch: vi.fn(),
 };
+const {
+  mockCaptureWorktreeCheckpoint,
+  mockDeleteWorktreeCheckpoint,
+  mockRestoreWorktreeFromCheckpoint,
+} = vi.hoisted(() => ({
+  mockCaptureWorktreeCheckpoint: vi.fn(),
+  mockDeleteWorktreeCheckpoint: vi.fn(),
+  mockRestoreWorktreeFromCheckpoint: vi.fn(),
+}));
 const mockGitClient = {
   revparse: vi.fn(),
-  diff: vi.fn(),
   raw: vi.fn(),
 };
-const mockApplyPatch = vi.fn();
 
 vi.mock("@posthog/git/client", () => ({
   createGitClient: () => mockGitClient,
-}));
-
-vi.mock("@posthog/git/sagas/patch", () => ({
-  ApplyPatchSaga: class {
-    run = mockApplyPatch;
-  },
 }));
 
 vi.mock("@posthog/git/worktree", () => ({
@@ -92,6 +93,12 @@ vi.mock("@posthog/git/worktree", () => ({
     createWorktreeForRemoteBranch =
       mockWorktreeManager.createWorktreeForRemoteBranch;
   },
+}));
+
+vi.mock("../worktree-checkpoint/worktree-checkpoint", () => ({
+  captureWorktreeCheckpoint: mockCaptureWorktreeCheckpoint,
+  deleteWorktreeCheckpoint: mockDeleteWorktreeCheckpoint,
+  restoreWorktreeFromCheckpoint: mockRestoreWorktreeFromCheckpoint,
 }));
 
 function createMocks() {
@@ -206,9 +213,9 @@ describe("WorkspaceService", () => {
     mocks = createMocks();
     service = makeService(mocks);
     mockGitClient.revparse.mockResolvedValue("abc123\n");
-    mockGitClient.diff.mockResolvedValue("");
     mockGitClient.raw.mockResolvedValue("");
-    mockApplyPatch.mockResolvedValue({ success: true, data: undefined });
+    mockCaptureWorktreeCheckpoint.mockResolvedValue(undefined);
+    mockDeleteWorktreeCheckpoint.mockResolvedValue(undefined);
   });
 
   describe("reconcileCloudWorkspaces", () => {
@@ -760,37 +767,20 @@ describe("WorkspaceService", () => {
   });
 
   describe("createWorkspace (fork)", () => {
-    const tempDirs: string[] = [];
-
-    afterEach(() => {
-      for (const dir of tempDirs.splice(0)) {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
-    });
-
-    function mkTemp(prefix: string): string {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-      tempDirs.push(dir);
-      return dir;
-    }
-
-    it("creates the child worktree at the source HEAD and applies its changes", async () => {
+    it("captures and restores the source workspace checkpoint", async () => {
       seedWorktreeTask(mocks, {
         taskId: "source-task",
         repoPath: "/repo",
         name: "source",
         worktreePath: "/worktrees/source",
       });
-      mockWorktreeManager.createWorktree.mockResolvedValue({
+      mockRestoreWorktreeFromCheckpoint.mockResolvedValue({
         worktreePath: "/worktrees/child",
         worktreeName: "child",
         branchName: null,
         baseBranch: "abc123",
         createdAt: "2026-07-21T00:00:00Z",
       });
-      mockGitClient.diff
-        .mockResolvedValueOnce("staged patch")
-        .mockResolvedValueOnce("unstaged patch");
 
       await service.createWorkspace({
         taskId: "child-task",
@@ -801,56 +791,24 @@ describe("WorkspaceService", () => {
         forkFromTaskId: "source-task",
       });
 
-      expect(mockWorktreeManager.createWorktree).toHaveBeenCalledWith(
-        expect.objectContaining({ baseBranch: "abc123" }),
+      expect(mockCaptureWorktreeCheckpoint).toHaveBeenCalledWith(
+        "/repo",
+        "/worktrees/source",
+        "fork-child-task",
       );
-      expect(mockApplyPatch).toHaveBeenNthCalledWith(1, {
-        baseDir: "/worktrees/child",
-        patch: "staged patch",
-        cached: true,
-      });
-      expect(mockApplyPatch).toHaveBeenNthCalledWith(2, {
-        baseDir: "/worktrees/child",
-        patch: "unstaged patch",
-        cached: false,
-      });
-    });
-
-    it("preserves untracked symlinks", async () => {
-      const sourcePath = mkTemp("posthog-fork-source-");
-      const targetPath = mkTemp("posthog-fork-target-");
-      fs.writeFileSync(path.join(sourcePath, "target.txt"), "target");
-      fs.symlinkSync("target.txt", path.join(sourcePath, "link.txt"));
-      seedWorktreeTask(mocks, {
-        taskId: "source-task",
-        repoPath: "/repo",
-        name: "source",
-        worktreePath: sourcePath,
-      });
-      mockWorktreeManager.createWorktree.mockResolvedValue({
-        worktreePath: targetPath,
-        worktreeName: "child",
-        branchName: null,
-        baseBranch: "abc123",
-        createdAt: "2026-07-21T00:00:00Z",
-      });
-      mockGitClient.raw.mockResolvedValue("link.txt\0");
-
-      await service.createWorkspace({
-        taskId: "child-task",
-        mainRepoPath: "/repo",
-        folderId: "folder-1",
-        folderPath: "/repo",
-        mode: "worktree",
-        forkFromTaskId: "source-task",
-      });
-
-      expect(
-        fs.lstatSync(path.join(targetPath, "link.txt")).isSymbolicLink(),
-      ).toBe(true);
-      expect(fs.readlinkSync(path.join(targetPath, "link.txt"))).toBe(
-        "target.txt",
+      expect(mockRestoreWorktreeFromCheckpoint).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mainRepoPath: "/repo",
+          worktreeBasePath: "/tmp/worktrees",
+          branchName: null,
+          checkpointId: "fork-child-task",
+        }),
       );
+      expect(mockDeleteWorktreeCheckpoint).toHaveBeenCalledWith(
+        "/repo",
+        "fork-child-task",
+      );
+      expect(mockWorktreeManager.createWorktree).not.toHaveBeenCalled();
     });
   });
 

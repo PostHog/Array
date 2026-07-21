@@ -4,39 +4,58 @@ import type { TaskForkService } from "@posthog/core/task-detail/taskForkService"
 import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
 import { isTerminalStatus, type Task } from "@posthog/shared/domain-types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { navigateToTaskDetail } from "@posthog/ui/router/navigationBridge";
+import { openTask } from "@posthog/ui/router/useOpenTask";
 import { useState } from "react";
+import { shallow } from "zustand/shallow";
 
 export function ForkTaskButton({ task }: { task: Task }) {
   const taskForkService = useService<TaskForkService>(TASK_FORK_SERVICE);
   const workspace = useWorkspace(task.id);
-  const session = useSessionForTask(task.id);
+  const { cloudStatus, isPromptPending, sessionStatus } = useSessionSelector(
+    task.id,
+    (session) => ({
+      cloudStatus: session?.cloudStatus,
+      isPromptPending: session?.isPromptPending ?? false,
+      sessionStatus: session?.status,
+    }),
+    shallow,
+  );
   const [isForking, setIsForking] = useState(false);
   const run = task.latest_run;
   const isCloud = workspace?.mode === "cloud" || run?.environment === "cloud";
-  const canForkCloud = !!run && isTerminalStatus(run.status);
-  const canForkLocal =
-    !!run &&
-    !!workspace &&
-    !workspace.isScratch &&
-    session?.status === "connected" &&
-    !session.isPromptPending;
-  const canFork = isCloud ? canForkCloud : canForkLocal;
-  const tooltip = canFork
-    ? "Fork task"
-    : isCloud
-      ? "Wait for the cloud run to finish"
-      : "Wait for the local task to finish";
+  const currentCloudStatus = cloudStatus ?? run?.status;
+
+  let disabledReason: string | null = null;
+  if (task.runtime === "pi") {
+    disabledReason = "Pi tasks cannot be forked yet";
+  } else if (!run) {
+    disabledReason = "This task has no run to fork";
+  } else if (isCloud && !isTerminalStatus(currentCloudStatus)) {
+    disabledReason = "Wait for the cloud run to finish before forking it";
+  } else if (!isCloud && (!workspace || workspace.isScratch)) {
+    disabledReason = "Only repository-backed local tasks can be forked";
+  } else if (!isCloud && sessionStatus !== "connected") {
+    disabledReason =
+      sessionStatus === "disconnected" || sessionStatus === "error"
+        ? "Reconnect the local task before forking it"
+        : "Wait for the local task to connect before forking it";
+  } else if (!isCloud && isPromptPending) {
+    disabledReason = "Wait for the local task to finish before forking it";
+  }
+
+  const canFork = disabledReason === null;
+  const tooltip = disabledReason ?? "Fork task";
 
   const handleFork = async () => {
     setIsForking(true);
     try {
       const result = await taskForkService.forkTask(task, ({ task: child }) => {
-        navigateToTaskDetail(child.id);
+        void openTask(child);
       });
       if (!result.success) {
         toast.error("Could not fork task", { description: result.error });

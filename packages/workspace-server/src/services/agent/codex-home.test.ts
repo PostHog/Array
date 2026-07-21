@@ -14,6 +14,7 @@ vi.mock("node:os", async (importOriginal) => {
 
 import {
   cleanupCodexHome,
+  copyCodexSessionState,
   getCodexHomeDir,
   prepareCodexHome,
 } from "./codex-home";
@@ -186,5 +187,45 @@ describe("prepareCodexHome", () => {
     }
 
     expect(existsSync(path.join(outside, "precious", "SKILL.md"))).toBe(true);
+  });
+});
+
+describe("copyCodexSessionState", () => {
+  it("copies sessions and shell snapshots from the source run only", async () => {
+    const sourceHome = getCodexHomeDir(appDataPath, "source-run");
+    const otherHome = getCodexHomeDir(appDataPath, "other-run");
+    const targetHome = getCodexHomeDir(appDataPath, "target-run");
+    await mkdir(path.join(sourceHome, "sessions"), { recursive: true });
+    await mkdir(path.join(sourceHome, "shell_snapshots"), { recursive: true });
+    await mkdir(path.join(otherHome, "sessions"), { recursive: true });
+    await mkdir(targetHome, { recursive: true });
+    await writeFile(
+      path.join(sourceHome, "sessions", "session.jsonl"),
+      "source",
+    );
+    await writeFile(
+      path.join(sourceHome, "shell_snapshots", "snapshot.sh"),
+      "source snapshot",
+    );
+    await writeFile(path.join(otherHome, "sessions", "other.jsonl"), "other");
+
+    await copyCodexSessionState({
+      appDataPath,
+      sourceTaskRunId: "source-run",
+      targetTaskRunId: "target-run",
+    });
+
+    expect(
+      readFileSync(path.join(targetHome, "sessions", "session.jsonl"), "utf-8"),
+    ).toBe("source");
+    expect(
+      readFileSync(
+        path.join(targetHome, "shell_snapshots", "snapshot.sh"),
+        "utf-8",
+      ),
+    ).toBe("source snapshot");
+    expect(existsSync(path.join(targetHome, "sessions", "other.jsonl"))).toBe(
+      false,
+    );
   });
 });

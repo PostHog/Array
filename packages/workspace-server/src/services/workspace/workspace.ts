@@ -16,7 +16,6 @@ import {
 } from "@posthog/git/queries";
 import { CreateOrSwitchBranchSaga } from "@posthog/git/sagas/branch";
 import { DetachHeadSaga } from "@posthog/git/sagas/head";
-import { ApplyPatchSaga } from "@posthog/git/sagas/patch";
 import { WorktreeManager } from "@posthog/git/worktree";
 import {
   ANALYTICS_SERVICE,
@@ -47,6 +46,11 @@ import type { ProcessTrackingService } from "../process-tracking/process-trackin
 import { getBranchFromPath, hasAnyFiles } from "../repo-fs-query/repo-fs-query";
 import { SUSPENSION_SERVICE } from "../suspension/identifiers";
 import type { SuspensionService } from "../suspension/suspension";
+import {
+  captureWorktreeCheckpoint,
+  deleteWorktreeCheckpoint,
+  restoreWorktreeFromCheckpoint,
+} from "../worktree-checkpoint/worktree-checkpoint";
 import {
   deleteWorktree as deleteGitWorktree,
   listLinkedWorktrees,
@@ -764,12 +768,29 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
         if (!sourcePath) {
           throw new Error("The source task workspace is unavailable");
         }
-        const sourceHead = await createGitClient(sourcePath).revparse(["HEAD"]);
-        worktree = await worktreeManager.createWorktree({
-          baseBranch: sourceHead.trim(),
-          onOutput,
-        });
-        await this.copyWorkspaceChanges(sourcePath, worktree.worktreePath);
+        const checkpointId = `fork-${taskId}`;
+        await captureWorktreeCheckpoint(mainRepoPath, sourcePath, checkpointId);
+        try {
+          worktree = await restoreWorktreeFromCheckpoint({
+            mainRepoPath,
+            worktreeBasePath,
+            preferredName: undefined,
+            branchName: null,
+            checkpointId,
+            logger: this.log,
+            onOutput,
+          });
+        } finally {
+          await deleteWorktreeCheckpoint(mainRepoPath, checkpointId).catch(
+            (error) => {
+              this.log.warn("Failed to delete fork checkpoint", {
+                taskId,
+                checkpointId,
+                error,
+              });
+            },
+          );
+        }
       } else if (existingWorktree) {
         const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
         if (occupant) {
@@ -891,59 +912,6 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       branchName: worktree.branchName,
       linkedBranch: null,
     };
-  }
-
-  private async copyWorkspaceChanges(
-    sourcePath: string,
-    targetPath: string,
-  ): Promise<void> {
-    const sourceGit = createGitClient(sourcePath);
-    const [stagedPatch, unstagedPatch, untrackedFiles] = await Promise.all([
-      sourceGit.diff(["--binary", "--cached", "HEAD"]),
-      sourceGit.diff(["--binary"]),
-      sourceGit.raw(["ls-files", "--others", "--exclude-standard", "-z"]),
-    ]);
-
-    for (const [patch, cached] of [
-      [stagedPatch, true],
-      [unstagedPatch, false],
-    ] as const) {
-      if (!patch) continue;
-      const result = await new ApplyPatchSaga().run({
-        baseDir: targetPath,
-        patch,
-        cached,
-      });
-      if (!result.success) {
-        throw new Error(
-          `Failed to copy forked workspace changes: ${result.error}`,
-        );
-      }
-    }
-
-    await Promise.all(
-      untrackedFiles
-        .split("\0")
-        .filter(Boolean)
-        .map(async (filePath) => {
-          const sourceFile = path.join(sourcePath, filePath);
-          const targetFile = path.join(targetPath, filePath);
-          await fs.promises.mkdir(path.dirname(targetFile), {
-            recursive: true,
-          });
-          const stat = await fs.promises.lstat(sourceFile);
-          if (stat.isSymbolicLink()) {
-            await fs.promises.symlink(
-              await fs.promises.readlink(sourceFile),
-              targetFile,
-            );
-          } else if (stat.isFile()) {
-            await fs.promises.copyFile(sourceFile, targetFile);
-          } else {
-            throw new Error(`Cannot copy untracked path: ${filePath}`);
-          }
-        }),
-    );
   }
 
   async deleteWorkspace(taskId: string, mainRepoPath: string): Promise<void> {

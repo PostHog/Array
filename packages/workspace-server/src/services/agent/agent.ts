@@ -1227,9 +1227,9 @@ If a repository IS genuinely required, attach one in this priority order:
           { taskRunId },
         );
         if (isReconnect) {
-          return this.getOrCreateSession(config, true, true);
+          return this.getOrCreateSession(config, true, true, forkSource);
         }
-        return this.getOrCreateSession(config, false, true);
+        return this.getOrCreateSession(config, false, true, forkSource);
       }
       // When the in-process ACP layer masks a thrown error as a generic
       // "Internal error", the real text survives in `data.details`. Surface it

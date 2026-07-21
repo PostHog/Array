@@ -34,6 +34,11 @@ export const seedLocalLogsInput = z.object({
   content: z.string(),
 });
 
+export const cloneLocalLogsInput = z.object({
+  sourceTaskRunId: z.string().min(1),
+  targetTaskRunId: z.string().min(1),
+});
+
 export const countLocalLogEntriesInput = z.object({
   taskRunId: z.string().min(1),
 });

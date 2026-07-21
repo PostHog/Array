@@ -16,6 +16,7 @@ export interface RestoreWorktreeFromCheckpointParams {
   checkpointId: string;
   recreateBranch?: boolean;
   logger?: SagaLogger;
+  onOutput?: (data: string) => void;
 }
 
 /**
@@ -34,31 +35,61 @@ export async function restoreWorktreeFromCheckpoint(
 
   let newWorktree: WorktreeInfo;
   if (params.branchName && !params.recreateBranch) {
-    newWorktree = await manager.createWorktreeForExistingBranch(
-      params.branchName,
-      params.preferredName,
-    );
+    newWorktree = params.onOutput
+      ? await manager.createWorktreeForExistingBranch(
+          params.branchName,
+          params.preferredName,
+          { onOutput: params.onOutput },
+        )
+      : await manager.createWorktreeForExistingBranch(
+          params.branchName,
+          params.preferredName,
+        );
   } else {
-    newWorktree = await manager.createDetachedWorktreeAtCommit(
-      "HEAD",
-      params.preferredName,
-    );
+    newWorktree = params.onOutput
+      ? await manager.createDetachedWorktreeAtCommit(
+          "HEAD",
+          params.preferredName,
+          { onOutput: params.onOutput },
+        )
+      : await manager.createDetachedWorktreeAtCommit(
+          "HEAD",
+          params.preferredName,
+        );
   }
 
-  const revertSaga = new RevertCheckpointSaga();
-  const result = await revertSaga.run({
-    baseDir: newWorktree.worktreePath,
-    checkpointId: params.checkpointId,
-  });
-  if (!result.success) {
-    throw new Error(
-      `Worktree restored but failed to apply checkpoint: ${result.error}`,
-    );
-  }
+  try {
+    const revertSaga = new RevertCheckpointSaga();
+    const result = await revertSaga.run({
+      baseDir: newWorktree.worktreePath,
+      checkpointId: params.checkpointId,
+    });
+    if (!result.success) {
+      throw new Error(
+        `Worktree restored but failed to apply checkpoint: ${result.error}`,
+      );
+    }
 
-  if (params.recreateBranch && params.branchName) {
-    const git = createGitClient(newWorktree.worktreePath);
-    await git.checkoutLocalBranch(params.branchName);
+    if (params.recreateBranch && params.branchName) {
+      const git = createGitClient(newWorktree.worktreePath);
+      await git.checkoutLocalBranch(params.branchName);
+    }
+  } catch (error) {
+    await manager
+      .deleteWorktree(newWorktree.worktreePath)
+      .catch((cleanupError) => {
+        params.logger?.warn(
+          "Failed to clean up worktree after restore failure",
+          {
+            worktreePath: newWorktree.worktreePath,
+            error:
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : String(cleanupError),
+          },
+        );
+      });
+    throw error;
   }
 
   return newWorktree;
@@ -84,4 +115,11 @@ export async function captureWorktreeCheckpoint(
   if (!result.success) {
     throw new Error(`Failed to capture checkpoint: ${result.error}`);
   }
+}
+
+export async function deleteWorktreeCheckpoint(
+  folderPath: string,
+  checkpointId: string,
+): Promise<void> {
+  await deleteCheckpoint(createGitClient(folderPath), checkpointId);
 }

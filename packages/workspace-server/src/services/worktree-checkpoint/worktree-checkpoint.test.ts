@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockManager = vi.hoisted(() => ({
   createWorktreeForExistingBranch: vi.fn(),
   createDetachedWorktreeAtCommit: vi.fn(),
+  deleteWorktree: vi.fn(),
 }));
 const mockRevertRun = vi.hoisted(() => vi.fn());
 const mockCaptureRun = vi.hoisted(() => vi.fn());
@@ -14,6 +15,7 @@ vi.mock("@posthog/git/worktree", () => ({
     createWorktreeForExistingBranch =
       mockManager.createWorktreeForExistingBranch;
     createDetachedWorktreeAtCommit = mockManager.createDetachedWorktreeAtCommit;
+    deleteWorktree = mockManager.deleteWorktree;
   },
 }));
 
@@ -35,6 +37,7 @@ vi.mock("@posthog/git/client", () => ({
 
 import {
   captureWorktreeCheckpoint,
+  deleteWorktreeCheckpoint,
   restoreWorktreeFromCheckpoint,
 } from "./worktree-checkpoint";
 
@@ -52,6 +55,7 @@ const baseParams = {
 beforeEach(() => {
   mockManager.createWorktreeForExistingBranch.mockResolvedValue(BRANCH_WT);
   mockManager.createDetachedWorktreeAtCommit.mockResolvedValue(DETACHED_WT);
+  mockManager.deleteWorktree.mockResolvedValue(undefined);
   mockRevertRun.mockResolvedValue({ success: true });
   mockCaptureRun.mockResolvedValue({ success: true });
   mockDeleteCheckpoint.mockResolvedValue(undefined);
@@ -101,6 +105,7 @@ describe("restoreWorktreeFromCheckpoint", () => {
     await expect(restoreWorktreeFromCheckpoint(baseParams)).rejects.toThrow(
       /failed to apply checkpoint: bad patch/,
     );
+    expect(mockManager.deleteWorktree).toHaveBeenCalledWith("/wt/branch");
   });
 
   it("recreates the branch after revert when recreateBranch is set", async () => {
@@ -148,5 +153,16 @@ describe("captureWorktreeCheckpoint", () => {
     await expect(
       captureWorktreeCheckpoint("/repo", "/wt/branch", "cp-1"),
     ).rejects.toThrow(/Failed to capture checkpoint: dirty index/);
+  });
+});
+
+describe("deleteWorktreeCheckpoint", () => {
+  it("deletes the checkpoint from the repository", async () => {
+    await deleteWorktreeCheckpoint("/repo", "cp-1");
+
+    expect(mockDeleteCheckpoint).toHaveBeenCalledWith(
+      expect.anything(),
+      "cp-1",
+    );
   });
 });

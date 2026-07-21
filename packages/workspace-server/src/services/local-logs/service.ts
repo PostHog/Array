@@ -231,6 +231,16 @@ export class LocalLogsService implements ILogsService {
     );
   }
 
+  async cloneLocalLogs(
+    sourceTaskRunId: string,
+    targetTaskRunId: string,
+  ): Promise<void> {
+    const content = await this.readLocalLogs(sourceTaskRunId);
+    if (content) {
+      await this.seedLocalLogs(targetTaskRunId, content);
+    }
+  }
+
   async countLocalLogEntries(taskRunId: string): Promise<number> {
     const logPath = this.getLocalLogPath(taskRunId);
     try {

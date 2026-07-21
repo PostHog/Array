@@ -2,6 +2,7 @@ import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import type { ILogsService } from "@posthog/workspace-server/services/local-logs/identifiers";
 import { LOGS_SERVICE } from "@posthog/workspace-server/services/local-logs/identifiers";
 import {
+  cloneLocalLogsInput,
   fetchS3LogsInput,
   fetchS3LogsOutput,
   readLocalLogsCollapsedInput,
@@ -63,5 +64,13 @@ export const logsRouter = router({
       ctx.container
         .get<ILogsService>(LOGS_SERVICE)
         .seedLocalLogs(input.taskRunId, input.content),
+    ),
+
+  cloneLocalLogs: publicProcedure
+    .input(cloneLocalLogsInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<ILogsService>(LOGS_SERVICE)
+        .cloneLocalLogs(input.sourceTaskRunId, input.targetTaskRunId),
     ),
 });
