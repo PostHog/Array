@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 
 /**
  * The PostHog MCP exposes a single `exec` dispatcher tool that runs
- * subcommands like `call [--json] <tool-name> [json]`. These helpers identify
+ * subcommands like `call [--flags] <tool-name> [json]`. These helpers identify
  * that dispatcher, extract the delegated tool, and apply the externally
  * configured permission regex at sub-tool granularity.
  */
@@ -18,7 +18,14 @@ import { z } from "zod/v4";
  */
 const POSTHOG_EXEC_TOOL_RE = /^mcp__posthog(?:_[^_]+)*__exec$/;
 
-const POSTHOG_CALL_COMMAND_RE = /^\s*call\s+(?:--json\s+)?([a-zA-Z0-9_-]+)/;
+// Skip every `--flag` token after `call` (`--json`, `--confirm`, future ones)
+// before capturing the sub-tool, and require the sub-tool to start with an
+// alphanumeric. Matching only `--json` let `call --confirm dashboard-update`
+// capture `--confirm` as the sub-tool, which never matches the destructive
+// regex — so exactly the calls the dispatcher flags as destructive bypassed
+// the permission gate.
+const POSTHOG_CALL_COMMAND_RE =
+  /^\s*call\s+(?:--\S+\s+)*([a-zA-Z0-9][a-zA-Z0-9_-]*)/;
 
 const posthogExecInputSchema = z.looseObject({ command: z.string() });
 

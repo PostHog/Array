@@ -36,6 +36,8 @@ describe("extractPostHogSubTool", () => {
   it.each([
     ["call experiment-update", "experiment-update"],
     ['call --json experiment-update {"id":1}', "experiment-update"],
+    ['call --confirm dashboard-update {"id":2}', "dashboard-update"],
+    ['call --json --confirm dashboard-update {"id":2}', "dashboard-update"],
     ["  call foo-delete", "foo-delete"],
   ])("extracts the sub-tool from %s", (command, expected) => {
     expect(extractPostHogSubTool({ command })).toBe(expected);
@@ -45,6 +47,7 @@ describe("extractPostHogSubTool", () => {
     { command: "tools" },
     { command: "search experiments" },
     { command: "info flag-get" },
+    { command: "call --confirm" },
     undefined,
     null,
     {},
