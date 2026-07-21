@@ -1,8 +1,8 @@
 import { MessageScrollbarRail } from "@posthog/ui/features/sessions/components/scrollbar-rail/MessageScrollbarRail";
-import { useMessageRailMarkers } from "@posthog/ui/features/sessions/components/scrollbar-rail/useMessageRailMarkers";
 import type { MessageRailMarker } from "@posthog/ui/features/sessions/components/scrollbar-rail/messageRailTypes";
-import { useCallback, useRef, useState } from "react";
+import { useMessageRailMarkers } from "@posthog/ui/features/sessions/components/scrollbar-rail/useMessageRailMarkers";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useCallback, useRef, useState } from "react";
 
 /**
  * Stories for the conversation scrollbar marker rail.

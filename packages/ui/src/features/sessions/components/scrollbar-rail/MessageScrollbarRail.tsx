@@ -53,6 +53,13 @@ export function MessageScrollbarRail({
               <button
                 type="button"
                 onClick={marker.onClick}
+                // The rail is mouse-only (aria-hidden on the root, below) — the
+                // messages it jumps to are already accessible in the transcript.
+                // `tabIndex={-1}` keeps these spatial shortcuts out of the tab
+                // order so the rail never produces focusable-but-unlabeled
+                // controls in the accessibility tree.
+                tabIndex={-1}
+                aria-label={`Jump to message: ${marker.label}`}
                 // The marker button spans the rail's full width; its vertical
                 // position is the fractional offset of the message within the
                 // scrollable content.

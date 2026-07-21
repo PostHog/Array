@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MESSAGE_RAIL_LABEL_MAX_LENGTH,
-  truncateMessageLabel,
   type MessageRailMarker,
+  truncateMessageLabel,
 } from "./messageRailTypes";
 
 interface UserMessageEntry {
