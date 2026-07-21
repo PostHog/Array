@@ -10,6 +10,7 @@ import {
   isBlockedModelId,
   isCloudflareModel,
   pickAllowedModel,
+  resetGatewayModelCaches,
 } from "./gateway-models";
 
 const model = (id: string, owned_by = ""): GatewayModel => ({
@@ -239,6 +240,55 @@ describe("gateway models cache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(cached[0]?.allowed).toBe(false);
   });
+
+  // The stale-catalog bug: a model can be marked restricted (or dropped) for a
+  // token, then become available for that same token after an entitlement
+  // change. resetGatewayModelCaches() must let the next fetch re-read the
+  // gateway so the model reappears without a token change (i.e. without a full
+  // sign-out/sign-in — the workaround affected users had to use).
+  const codexResponse = (allowed: boolean) =>
+    new Response(
+      JSON.stringify({
+        object: "list",
+        data: [
+          {
+            id: "gpt-5.5",
+            owned_by: "openai",
+            context_window: 400000,
+            supports_streaming: true,
+            supports_vision: false,
+            allowed,
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  it.each([
+    { name: "fetchGatewayModels", fn: fetchGatewayModels },
+    { name: "fetchModelsList", fn: fetchModelsList },
+  ])(
+    "$name refreshes the catalog for the same token after a reset",
+    async ({ fn }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(codexResponse(false))
+        .mockResolvedValueOnce(codexResponse(true));
+      const gatewayUrl = "https://gateway.reset-refresh-test";
+
+      const before = await fn({ gatewayUrl, authToken: "tok-a" });
+      // Same token would otherwise be served the stale cached list.
+      const stillCached = await fn({ gatewayUrl, authToken: "tok-a" });
+
+      resetGatewayModelCaches();
+      const afterReset = await fn({ gatewayUrl, authToken: "tok-a" });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(before[0]?.allowed).toBe(false);
+      expect(stillCached[0]?.allowed).toBe(false);
+      expect(afterReset[0]?.allowed).toBe(true);
+    },
+  );
 
   it("corrects stale GLM 5.2 context-window metadata", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(

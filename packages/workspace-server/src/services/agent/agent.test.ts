@@ -164,6 +164,7 @@ function createMockDependencies() {
       getPluginPath: vi.fn(() => "/mock/plugin"),
     },
     agentAuthAdapter: {
+      onAuthStateChanged: vi.fn(() => () => {}),
       ensureGatewayProxy: vi.fn().mockResolvedValue("http://127.0.0.1:9999"),
       configureProcessEnv: vi.fn().mockResolvedValue(undefined),
       createPosthogConfig: vi.fn((credentials) => ({

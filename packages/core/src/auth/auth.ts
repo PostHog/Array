@@ -120,6 +120,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   getState(): AuthState {
     return { ...this.state };
   }
+  /**
+   * Subscribe to auth-state changes; returns an unsubscribe. A thin wrapper
+   * over the `StateChanged` event for consumers that only need "something
+   * changed" (e.g. dropping identity-scoped caches) without depending on the
+   * event key.
+   */
+  onAuthStateChanged(listener: () => void): () => void {
+    this.on(AuthServiceEvent.StateChanged, listener);
+    return () => this.off(AuthServiceEvent.StateChanged, listener);
+  }
   async login(region: CloudRegion): Promise<AuthState> {
     await this.authenticateWithFlow(
       () => this.oauthFlow.startFlow(region),

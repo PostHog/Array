@@ -151,6 +151,11 @@ export class AgentAuthAdapter {
     }
   }
 
+  /** Subscribe to auth-state changes; returns an unsubscribe. */
+  onAuthStateChanged(listener: () => void): () => void {
+    return this.authService.onAuthStateChanged(listener);
+  }
+
   async configureProcessEnv({
     credentials,
     proxyUrl,

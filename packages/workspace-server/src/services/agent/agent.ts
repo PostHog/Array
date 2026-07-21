@@ -38,6 +38,7 @@ import {
   isCloudflareModel,
   isOpenAIModel,
   pickAllowedModel,
+  resetGatewayModelCaches,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import {
@@ -441,6 +442,14 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     this.onAgentLog = makeOnAgentLog(loggerFactory);
 
     powerManager.onResume(() => this.checkIdleDeadlines());
+
+    // A stale model catalog must not outlive an entitlement change. Dropping
+    // the cache on every auth-state change means the next picker/config read
+    // re-reads the gateway, so a model that becomes available (or an org
+    // switch) surfaces without a full sign-out/sign-in. The refetch is cheap
+    // and still TTL-cached, and this service is a process-lifetime singleton so
+    // the subscription never needs tearing down.
+    this.agentAuthAdapter.onAuthStateChanged(() => resetGatewayModelCaches());
   }
 
   private getClaudeCliPath(): string {

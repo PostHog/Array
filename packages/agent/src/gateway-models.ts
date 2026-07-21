@@ -237,6 +237,21 @@ export async function fetchModelsList(
 }
 
 /**
+ * Drop the in-process model caches so the next fetch re-reads the gateway.
+ *
+ * The caches are otherwise only busted by TTL expiry or a change of the
+ * `(url, token)` key, so an entitlement change that keeps the same token — a
+ * plan upgrade, an org switch that reuses the access token, a model rollout —
+ * would keep serving a stale catalog until the TTL lapsed. Wiring this to
+ * auth-state changes (see AgentService) lets a model that becomes available
+ * surface without waiting out the TTL or forcing a full sign-out/sign-in.
+ */
+export function resetGatewayModelCaches(): void {
+  gatewayModelsCache = null;
+  modelsListCache = null;
+}
+
+/**
  * The model a session should start on: the preferred id when present and
  * allowed, else the newest allowed model — a free-tier org must not default
  * onto a model that 403s its first message. Falls back to the preferred id

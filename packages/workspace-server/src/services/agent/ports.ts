@@ -69,4 +69,6 @@ export interface AgentAuth {
     input: string | Request,
     init?: RequestInit,
   ): Promise<Response>;
+  /** Subscribe to auth-state changes; returns an unsubscribe. */
+  onAuthStateChanged(listener: () => void): () => void;
 }
