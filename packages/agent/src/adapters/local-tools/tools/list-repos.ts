@@ -60,8 +60,16 @@ export const listReposTool = defineLocalTool({
     );
 
     try {
+      // An empty token is a managed logout, not "no preference": clear both token
+      // vars so gh cannot fall back to the previous actor's frozen process-env
+      // token and enumerate their private repos. Only an undefined token (an
+      // unmanaged local/desktop sandbox) inherits the process env unchanged.
+      const env =
+        token === undefined
+          ? process.env
+          : { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token };
       const { stdout } = await execFileAsync("gh", cmdArgs, {
-        env: token ? { ...process.env, GH_TOKEN: token } : process.env,
+        env,
         maxBuffer: 1024 * 1024 * 8,
       });
       const parsed = ghRepoSchema.safeParse(JSON.parse(stdout));

@@ -49,6 +49,13 @@ describe("github-token", () => {
       ).toBeUndefined();
     });
 
+    it("fails closed ('') when the file exists but is unreadable (not ENOENT)", () => {
+      // A directory path triggers EISDIR, standing in for a transiently unreadable
+      // managed file during a transition — must not resurrect the process env.
+      const dir = mkdtempSync(join(tmpdir(), "agent-env-dir-"));
+      expect(readGithubTokenFromSandboxEnvFile(dir)).toBe("");
+    });
+
     it("ignores an empty token value", () => {
       const path = writeEnvFile("GH_TOKEN=\0GITHUB_TOKEN=ghs_real\0");
       expect(readGithubTokenFromSandboxEnvFile(path)).toBe("ghs_real");
@@ -96,6 +103,14 @@ describe("github-token", () => {
       vi.stubEnv("GH_TOKEN", "ghs_fromprocess");
       const path = writeEnvFile("PATH=/usr/bin\0");
       expect(resolveGithubToken(path)).toBe("ghs_fromprocess");
+    });
+
+    it("does not fall back to the process env when the file is unreadable", () => {
+      // Present-but-unreadable (EISDIR here) is a managed sandbox mid-transition,
+      // not an absent file, so it must not resurrect the frozen process token.
+      vi.stubEnv("GH_TOKEN", "ghs_previous_actor");
+      const dir = mkdtempSync(join(tmpdir(), "agent-env-dir-"));
+      expect(resolveGithubToken(dir)).toBe("");
     });
   });
 });

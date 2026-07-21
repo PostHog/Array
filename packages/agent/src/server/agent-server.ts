@@ -4443,12 +4443,21 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   }
 
   private ghLoginPromise: Promise<string | null> | null = null;
+  private ghLoginToken: string | undefined;
 
   private fetchGhLogin(): Promise<string | null> {
-    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+    // Key the memoized login on the live token: an actor transition rebinds
+    // /tmp/agent-env, so a cached login would otherwise attribute the new actor's
+    // work to the previous one (or reject their PR).
+    const token = resolveGithubToken();
+    if (this.ghLoginPromise !== null && this.ghLoginToken === token) {
+      return this.ghLoginPromise;
+    }
+    this.ghLoginToken = token;
+    this.ghLoginPromise = execGh(["api", "user", "--jq", ".login"], {
       cwd: this.config.repositoryPath,
       timeoutMs: 10_000,
-      env: this.ghActorEnv(),
+      env: token === undefined ? undefined : ghTokenEnv(token),
     })
       .then((res) => {
         const login = res.exitCode === 0 ? res.stdout.trim() : "";

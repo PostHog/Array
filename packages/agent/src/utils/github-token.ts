@@ -18,10 +18,15 @@ export function readGithubTokenFromSandboxEnvFile(
   let raw: string;
   try {
     raw = readFileSync(envFilePath, "utf8");
-  } catch {
-    // No env file (local/desktop or test) — signal "unmanaged" so the caller
-    // falls back to the process env.
-    return undefined;
+  } catch (err) {
+    // A genuinely absent file (local/desktop or test) is unmanaged: signal that so
+    // the caller falls back to the process env. But an existing-yet-unreadable file
+    // during an actor transition must NOT resurrect the frozen process token, so
+    // treat any other read error as an explicit logout (fail closed).
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    return "";
   }
   const env: Record<string, string> = {};
   for (const entry of raw.split("\0")) {
