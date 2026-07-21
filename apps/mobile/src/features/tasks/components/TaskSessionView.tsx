@@ -2,6 +2,7 @@ import type {
   PortableSessionEvent as SessionEvent,
   PortableSessionNotification as SessionNotification,
 } from "@posthog/core/sessions/portableSessionEvents";
+import { pickThinkingActivity } from "@posthog/core/sessions/thinkingActivities";
 import {
   ArrowDown,
   Brain,
@@ -24,7 +25,6 @@ import {
   ToolMessage,
   type ToolStatus,
 } from "@/features/chat";
-import { getRandomThinkingActivity } from "@/features/chat/utils/thinkingMessages";
 import { useThemeColors } from "@/lib/theme";
 import type {
   CloudPendingPermissionRequest,
@@ -732,7 +732,9 @@ function useElapsedTimer() {
 
 function ThinkingIndicator() {
   const [dots, setDots] = useState(1);
-  const [activity, setActivity] = useState(getRandomThinkingActivity);
+  const [activity, setActivity] = useState(() =>
+    pickThinkingActivity(Math.random()),
+  );
   const elapsed = useElapsedTimer();
   const themeColors = useThemeColors();
 
@@ -745,7 +747,7 @@ function ThinkingIndicator() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setActivity(getRandomThinkingActivity());
+      setActivity(pickThinkingActivity(Math.random()));
     }, 2000);
     return () => clearInterval(interval);
   }, []);

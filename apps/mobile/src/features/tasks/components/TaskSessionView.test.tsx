@@ -24,8 +24,8 @@ vi.mock("@/features/chat", () => ({
   deriveToolKind: () => "other",
 }));
 
-vi.mock("@/features/chat/utils/thinkingMessages", () => ({
-  getRandomThinkingActivity: () => "Thinking",
+vi.mock("@posthog/core/sessions/thinkingActivities", () => ({
+  pickThinkingActivity: () => "Thinking",
 }));
 
 vi.mock("@/lib/theme", () => ({

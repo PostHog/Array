@@ -1,10 +1,10 @@
+import { pickThinkingActivity } from "@posthog/core/sessions/thinkingActivities";
 import { Brain } from "phosphor-react-native";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { formatRelativeTime } from "@/lib/format";
 import { useThemeColors } from "@/lib/theme";
 import { usePeriodicRerender } from "../hooks/usePeriodicRerender";
-import { getRandomThinkingMessage } from "../utils/thinkingMessages";
 import { CopyButton } from "./CopyButton";
 import { MarkdownText } from "./MarkdownText";
 import { ToolMessage } from "./ToolMessage";
@@ -110,7 +110,7 @@ export function AgentMessage({
       {isLoading && !content && !thinkingText && (
         <View className="max-w-[95%] px-4 py-1">
           <Text className="font-mono text-[13px] text-gray-9 italic">
-            {getRandomThinkingMessage()}
+            {pickThinkingActivity(Math.random())}...
           </Text>
         </View>
       )}

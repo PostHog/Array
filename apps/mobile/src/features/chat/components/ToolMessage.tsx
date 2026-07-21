@@ -1,3 +1,8 @@
+import {
+  formatPosthogExecBody,
+  getPostHogExecDisplay,
+  isPostHogExecTool,
+} from "@posthog/core/sessions/posthogExecDisplay";
 import { useRouter } from "expo-router";
 import {
   ArrowsClockwise,
@@ -22,11 +27,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  formatPosthogExecBody,
-  getPostHogExecDisplay,
-  isPostHogExecTool,
-} from "@/features/chat/utils/posthogExecDisplay";
 import { McpAppHost } from "@/features/mcp/components/McpAppHost";
 import { isMcpToolName } from "@/features/mcp/utils/mcpToolName";
 import {
