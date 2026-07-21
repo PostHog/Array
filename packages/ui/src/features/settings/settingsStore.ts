@@ -151,6 +151,11 @@ interface SettingsStore {
   completionVolume: number;
   scaleSoundWithTaskLength: boolean;
   customSounds: CustomSound[];
+  // Producer tag: a signature sound that plays when you push code to origin
+  // (push/sync/publish). "none" turns it off. It draws from the same built-in
+  // and custom-sound pool as the completion sound.
+  producerTagSound: CompletionSound;
+  producerTagVolume: number;
   setDesktopNotifications: (enabled: boolean) => void;
   setDockBadgeNotifications: (enabled: boolean) => void;
   setDockBounceNotifications: (enabled: boolean) => void;
@@ -161,6 +166,8 @@ interface SettingsStore {
   addCustomSound: (sound: CustomSound) => void;
   removeCustomSound: (id: string) => void;
   renameCustomSound: (id: string, name: string) => void;
+  setProducerTagSound: (sound: CompletionSound) => void;
+  setProducerTagVolume: (volume: number) => void;
 
   // Spoken notifications
   spokenNotifications: boolean;
@@ -279,6 +286,8 @@ export const NOTIFICATION_DEFAULTS = {
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
   scaleSoundWithTaskLength: false,
+  producerTagSound: "none" as CompletionSound,
+  producerTagVolume: 80,
   spokenNotifications: false,
   spokenNotifyNeedsInput: true,
   spokenNotifyCompletion: true,
@@ -385,15 +394,20 @@ export const useSettingsStore = create<SettingsStore>()(
       removeCustomSound: (id) =>
         set((state) => {
           const customSounds = state.customSounds.filter((s) => s.id !== id);
-          const soundNowUnplayable =
-            state.completionSound === `custom:${id}` ||
-            (state.completionSound === "random-custom" &&
-              customSounds.length === 0);
+          // A selection is orphaned if it pointed at the removed clip, or was
+          // "random-custom" with no custom sounds left to pick from. Applies to
+          // every setting that references the shared sound pool.
+          const isOrphaned = (sound: CompletionSound) =>
+            sound === `custom:${id}` ||
+            (sound === "random-custom" && customSounds.length === 0);
           return {
             customSounds,
-            completionSound: soundNowUnplayable
+            completionSound: isOrphaned(state.completionSound)
               ? "none"
               : state.completionSound,
+            producerTagSound: isOrphaned(state.producerTagSound)
+              ? "none"
+              : state.producerTagSound,
           };
         }),
       renameCustomSound: (id, name) =>
@@ -402,6 +416,8 @@ export const useSettingsStore = create<SettingsStore>()(
             s.id === id ? { ...s, name } : s,
           ),
         })),
+      setProducerTagSound: (sound) => set({ producerTagSound: sound }),
+      setProducerTagVolume: (volume) => set({ producerTagVolume: volume }),
 
       // Composer / chat
       autoConvertLongText: "2500",
@@ -543,6 +559,8 @@ export const useSettingsStore = create<SettingsStore>()(
         completionVolume: state.completionVolume,
         scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         customSounds: state.customSounds,
+        producerTagSound: state.producerTagSound,
+        producerTagVolume: state.producerTagVolume,
         spokenNotifications: state.spokenNotifications,
         spokenNotifyNeedsInput: state.spokenNotifyNeedsInput,
         spokenNotifyCompletion: state.spokenNotifyCompletion,
@@ -612,6 +630,12 @@ export const useSettingsStore = create<SettingsStore>()(
           (!merged.customSounds || merged.customSounds.length === 0)
         ) {
           (merged as Record<string, unknown>).completionSound = "none";
+        }
+        if (
+          merged.producerTagSound === "random-custom" &&
+          (!merged.customSounds || merged.customSounds.length === 0)
+        ) {
+          (merged as Record<string, unknown>).producerTagSound = "none";
         }
         return merged;
       },

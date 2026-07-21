@@ -352,6 +352,85 @@ describe("feature settingsStore custom sounds", () => {
   );
 });
 
+describe("feature settingsStore producer tag", () => {
+  beforeEach(async () => {
+    await resetPersistenceMocks();
+    useSettingsStore.setState({
+      customSounds: [],
+      completionSound: "none",
+      producerTagSound: "none",
+      producerTagVolume: 80,
+    });
+  });
+
+  const sound = {
+    id: "abc",
+    name: "My tag",
+    dataUrl: "data:audio/webm;base64,AAAA",
+    durationMs: 1200,
+  };
+
+  it("sets the producer tag sound and volume independently", () => {
+    useSettingsStore.getState().setProducerTagSound("guitar");
+    useSettingsStore.getState().setProducerTagVolume(40);
+    expect(useSettingsStore.getState().producerTagSound).toBe("guitar");
+    expect(useSettingsStore.getState().producerTagVolume).toBe(40);
+    // The completion sound is a separate setting and stays untouched.
+    expect(useSettingsStore.getState().completionSound).toBe("none");
+  });
+
+  it.each([
+    {
+      label: "custom tag pointing at the removed clip",
+      activeSound: "custom:abc" as CompletionSound,
+      expectedSound: "none" as CompletionSound,
+    },
+    {
+      label: "built-in tag",
+      activeSound: "guitar" as CompletionSound,
+      expectedSound: "guitar" as CompletionSound,
+    },
+    {
+      label: "random-custom tag with no clips left",
+      activeSound: "random-custom" as CompletionSound,
+      expectedSound: "none" as CompletionSound,
+    },
+  ])(
+    "removing a custom sound leaves the $label as $expectedSound",
+    ({ activeSound, expectedSound }) => {
+      useSettingsStore.getState().addCustomSound(sound);
+      useSettingsStore.getState().setProducerTagSound(activeSound);
+      useSettingsStore.getState().removeCustomSound("abc");
+      expect(useSettingsStore.getState().producerTagSound).toBe(expectedSound);
+    },
+  );
+
+  it("persists the producer tag selection", async () => {
+    useSettingsStore.getState().setProducerTagSound("guitar");
+    useSettingsStore.getState().setProducerTagVolume(55);
+
+    await waitForPersistedWrite();
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+    expect(persisted.state.producerTagSound).toBe("guitar");
+    expect(persisted.state.producerTagVolume).toBe(55);
+  });
+
+  it("normalizes a rehydrated random-custom tag with no clips to none", async () => {
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: { producerTagSound: "random-custom", customSounds: [] },
+        version: 0,
+      }),
+    );
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().producerTagSound).toBe("none");
+  });
+});
+
 describe("getEffectiveCustomInstructions", () => {
   const synced = {
     path: "/home/u/.claude/CLAUDE.md",

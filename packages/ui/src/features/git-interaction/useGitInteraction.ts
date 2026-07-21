@@ -11,7 +11,9 @@ import {
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { ChangedFile } from "@posthog/shared/domain-types";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
+import { playCompletionSound } from "@posthog/ui/utils/sounds";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import { WORKSPACE_QUERY_KEY } from "../workspace/identifiers";
@@ -330,6 +332,11 @@ export function useGitInteraction(
       updateGitCacheFromSnapshot(queryClient, repoPath, result.snapshot);
     }
     modal.setPushState("success");
+    // Drop the user's producer tag now that code has landed on origin.
+    // playCompletionSound no-ops when the tag is set to "none".
+    const { producerTagSound, producerTagVolume, customSounds } =
+      useSettingsStore.getState();
+    playCompletionSound(producerTagSound, producerTagVolume, customSounds);
   };
 
   const runPush = async (mode?: PushMode) => {

@@ -55,6 +55,8 @@ export function NotificationsSettings() {
     completionVolume,
     scaleSoundWithTaskLength,
     customSounds,
+    producerTagSound,
+    producerTagVolume,
     setDesktopNotifications,
     setDockBadgeNotifications,
     setDockBounceNotifications,
@@ -62,6 +64,8 @@ export function NotificationsSettings() {
     setCompletionSound,
     setCompletionVolume,
     setScaleSoundWithTaskLength,
+    setProducerTagSound,
+    setProducerTagVolume,
     removeCustomSound,
     renameCustomSound,
   } = useSettingsStore();
@@ -153,6 +157,22 @@ export function NotificationsSettings() {
     [completionSound, setCompletionSound],
   );
 
+  const handleProducerTagSoundChange = useCallback(
+    (value: CompletionSound) => {
+      // Don't leak generated custom-sound ids into analytics.
+      const analyticsValue = value.startsWith("custom:") ? "custom" : value;
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "producer_tag_sound",
+        new_value: analyticsValue,
+        old_value: producerTagSound.startsWith("custom:")
+          ? "custom"
+          : producerTagSound,
+      });
+      setProducerTagSound(value);
+    },
+    [producerTagSound, setProducerTagSound],
+  );
+
   const handleScaleSoundChange = useCallback(
     (checked: boolean) => {
       track(ANALYTICS_EVENTS.SETTING_CHANGED, {
@@ -173,6 +193,8 @@ export function NotificationsSettings() {
     setCompletionSound(NOTIFICATION_DEFAULTS.completionSound);
     setCompletionVolume(NOTIFICATION_DEFAULTS.completionVolume);
     setScaleSoundWithTaskLength(NOTIFICATION_DEFAULTS.scaleSoundWithTaskLength);
+    setProducerTagSound(NOTIFICATION_DEFAULTS.producerTagSound);
+    setProducerTagVolume(NOTIFICATION_DEFAULTS.producerTagVolume);
     toast.success("Notification settings reset to defaults");
   }, [
     setDesktopNotifications,
@@ -182,6 +204,8 @@ export function NotificationsSettings() {
     setCompletionSound,
     setCompletionVolume,
     setScaleSoundWithTaskLength,
+    setProducerTagSound,
+    setProducerTagVolume,
   ]);
 
   return (
@@ -255,47 +279,11 @@ export function NotificationsSettings() {
         noBorder={completionSound === "none"}
       >
         <Flex align="center" gap="2">
-          <Select.Root
+          <SoundSelect
             value={completionSound}
-            onValueChange={(value) =>
-              handleCompletionSoundChange(value as CompletionSound)
-            }
-            size="1"
-          >
-            <Select.Trigger className="min-w-[100px]" />
-            <Select.Content>
-              <Select.Item value="none">None</Select.Item>
-              <Select.Item value="random-all">Random (all)</Select.Item>
-              {customSounds.length > 0 && (
-                <Select.Item value="random-custom">Random (custom)</Select.Item>
-              )}
-              <Select.Item value="guitar">Guitar solo</Select.Item>
-              <Select.Item value="danilo">I'm ready</Select.Item>
-              <Select.Item value="revi">Cute noise</Select.Item>
-              <Select.Item value="meep">Meep</Select.Item>
-              <Select.Item value="meep-smol">Meep (smol)</Select.Item>
-              <Select.Item value="bubbles">Bubbles</Select.Item>
-              <Select.Item value="drop">Drop</Select.Item>
-              <Select.Item value="knock">Knock</Select.Item>
-              <Select.Item value="ring">Ring</Select.Item>
-              <Select.Item value="shoot">Shoot</Select.Item>
-              <Select.Item value="slide">Slide</Select.Item>
-              <Select.Item value="switch">Switch</Select.Item>
-              <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
-              <Select.Item value="icq">ICQ</Select.Item>
-              <Select.Item value="msn">MSN Messenger</Select.Item>
-              {customSounds.length > 0 && (
-                <Select.Group>
-                  <Select.Label>Custom</Select.Label>
-                  {customSounds.map((sound) => (
-                    <Select.Item key={sound.id} value={`custom:${sound.id}`}>
-                      {sound.name}
-                    </Select.Item>
-                  ))}
-                </Select.Group>
-              )}
-            </Select.Content>
-          </Select.Root>
+            onValueChange={handleCompletionSoundChange}
+            customSounds={customSounds}
+          />
           {completionSound !== "none" && (
             <Tooltip content="Test sound">
               <IconButton
@@ -384,6 +372,15 @@ export function NotificationsSettings() {
         </SettingRow>
       )}
 
+      <ProducerTagSection
+        sound={producerTagSound}
+        volume={producerTagVolume}
+        customSounds={customSounds}
+        onSoundChange={handleProducerTagSoundChange}
+        onVolumeChange={setProducerTagVolume}
+        onAddSound={() => setAddSoundOpen(true)}
+      />
+
       {spokenNarrationEnabled && <SpokenNotificationsSection />}
 
       <NotificationTestHarness
@@ -393,6 +390,142 @@ export function NotificationsSettings() {
         canvasEnabled={canvasEnabled}
       />
     </Flex>
+  );
+}
+
+// Sound picker shared by the completion sound and the producer tag: the "none"
+// / random options, the bundled built-ins, and the user's custom-sound pool.
+function SoundSelect({
+  value,
+  onValueChange,
+  customSounds,
+}: {
+  value: CompletionSound;
+  onValueChange: (value: CompletionSound) => void;
+  customSounds: CustomSound[];
+}) {
+  return (
+    <Select.Root
+      value={value}
+      onValueChange={(next) => onValueChange(next as CompletionSound)}
+      size="1"
+    >
+      <Select.Trigger className="min-w-[100px]" />
+      <Select.Content>
+        <Select.Item value="none">None</Select.Item>
+        <Select.Item value="random-all">Random (all)</Select.Item>
+        {customSounds.length > 0 && (
+          <Select.Item value="random-custom">Random (custom)</Select.Item>
+        )}
+        <Select.Item value="guitar">Guitar solo</Select.Item>
+        <Select.Item value="danilo">I'm ready</Select.Item>
+        <Select.Item value="revi">Cute noise</Select.Item>
+        <Select.Item value="meep">Meep</Select.Item>
+        <Select.Item value="meep-smol">Meep (smol)</Select.Item>
+        <Select.Item value="bubbles">Bubbles</Select.Item>
+        <Select.Item value="drop">Drop</Select.Item>
+        <Select.Item value="knock">Knock</Select.Item>
+        <Select.Item value="ring">Ring</Select.Item>
+        <Select.Item value="shoot">Shoot</Select.Item>
+        <Select.Item value="slide">Slide</Select.Item>
+        <Select.Item value="switch">Switch</Select.Item>
+        <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
+        <Select.Item value="icq">ICQ</Select.Item>
+        <Select.Item value="msn">MSN Messenger</Select.Item>
+        {customSounds.length > 0 && (
+          <Select.Group>
+            <Select.Label>Custom</Select.Label>
+            {customSounds.map((sound) => (
+              <Select.Item key={sound.id} value={`custom:${sound.id}`}>
+                {sound.name}
+              </Select.Item>
+            ))}
+          </Select.Group>
+        )}
+      </Select.Content>
+    </Select.Root>
+  );
+}
+
+// Producer tag: a signature drop that plays when you push code to origin, à la
+// a music producer's tag. Reuses the shared sound pool — import your tag under
+// "Custom sounds" above, then select it here.
+function ProducerTagSection({
+  sound,
+  volume,
+  customSounds,
+  onSoundChange,
+  onVolumeChange,
+  onAddSound,
+}: {
+  sound: CompletionSound;
+  volume: number;
+  customSounds: CustomSound[];
+  onSoundChange: (value: CompletionSound) => void;
+  onVolumeChange: (volume: number) => void;
+  onAddSound: () => void;
+}) {
+  const enabled = sound !== "none";
+  return (
+    <>
+      <Text className="mt-4 mb-1 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Producer tag
+      </Text>
+      <Text color="gray" className="mb-1 text-[13px]">
+        Drop a signature sound — your producer tag — every time you push code to
+        origin. Import your tag under "Custom sounds" above, then pick it here.
+      </Text>
+
+      <SettingRow
+        label="Tag sound"
+        description="Plays on a successful push, sync, or publish to the remote."
+        noBorder={!enabled}
+      >
+        <Flex align="center" gap="2">
+          <SoundSelect
+            value={sound}
+            onValueChange={onSoundChange}
+            customSounds={customSounds}
+          />
+          {enabled && (
+            <Tooltip content="Test tag">
+              <IconButton
+                variant="soft"
+                size="1"
+                aria-label="Test tag"
+                onClick={() => playCompletionSound(sound, volume, customSounds)}
+              >
+                <Play weight="fill" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {customSounds.length === 0 && (
+            <Button variant="soft" size="1" onClick={onAddSound}>
+              <Plus /> Add
+            </Button>
+          )}
+        </Flex>
+      </SettingRow>
+
+      {enabled && (
+        <SettingRow label="Tag volume" noBorder>
+          <Flex align="center" gap="3">
+            <Slider
+              value={[volume]}
+              onValueChange={([value]) => onVolumeChange(value)}
+              min={0}
+              max={100}
+              step={1}
+              size="1"
+              className="w-[120px]"
+            />
+            <Text color="gray" className="text-[13px]">
+              {volume}%
+            </Text>
+          </Flex>
+        </SettingRow>
+      )}
+    </>
   );
 }
 
