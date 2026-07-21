@@ -450,7 +450,7 @@ function SoundSelect({
 // Producer tag: a signature drop that plays when you push code to origin, à la
 // a music producer's tag. Reuses the shared sound pool — import your tag under
 // "Custom sounds" above, then select it here.
-function ProducerTagSection({
+export function ProducerTagSection({
   sound,
   volume,
   customSounds,
