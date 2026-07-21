@@ -29,6 +29,21 @@ describe("inboxFilterStore", () => {
       expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([]);
     },
   );
+
+  it("clears the source filter", () => {
+    const { toggleSourceProduct, clearSourceProductFilter } =
+      useInboxFilterStore.getState();
+
+    toggleSourceProduct("github");
+    toggleSourceProduct("linear");
+    expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([
+      "github",
+      "linear",
+    ]);
+
+    clearSourceProductFilter();
+    expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([]);
+  });
 });
 
 const INITIAL_STATE = useInboxFilterStore.getState();
