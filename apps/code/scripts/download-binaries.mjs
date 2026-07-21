@@ -47,11 +47,11 @@ function codexReleaseUrl(binary, version, target) {
 // Codex release archives contain a target-suffixed binary
 // (e.g. `codex-aarch64-apple-darwin`); rename it after extract.
 const codexArchiveBinaryName = (binary) => (target) =>
-  process.platform === "win32"
+  target.includes("windows")
     ? `${binary}-${target}.exe`
     : `${binary}-${target}`;
 
-const BINARIES = [
+export const BINARIES = [
   {
     name: "codex",
     version: CODEX_VERSION,
@@ -140,10 +140,10 @@ function signForMacOS(binaryPath) {
   execSync(`codesign --force --sign - "${binaryPath}"`, { stdio: "pipe" });
 }
 
-async function downloadBinary(binary) {
+export async function downloadBinary(binary, destDir = DEST_DIR) {
   const binaryName =
     process.platform === "win32" ? `${binary.name}.exe` : binary.name;
-  const binaryPath = join(DEST_DIR, binaryName);
+  const binaryPath = join(destDir, binaryName);
 
   console.log(`\n[${binary.name}] v${binary.version}`);
 
@@ -155,16 +155,16 @@ async function downloadBinary(binary) {
   const target = binary.getTarget();
   const url = binary.getUrl(binary.version, target);
   const archiveName = `${binary.name}-archive${url.endsWith(".zip") ? ".zip" : ".tar.gz"}`;
-  const archivePath = join(DEST_DIR, archiveName);
+  const archivePath = join(destDir, archiveName);
 
   console.log(`  Platform: ${process.platform}/${process.arch} -> ${target}`);
 
   await downloadFile(url, archivePath);
-  await extractArchive(archivePath, DEST_DIR);
+  await extractArchive(archivePath, destDir);
   rmSync(archivePath);
 
   if (binary.archiveBinaryName) {
-    const extractedPath = join(DEST_DIR, binary.archiveBinaryName(target));
+    const extractedPath = join(destDir, binary.archiveBinaryName(target));
     if (extractedPath !== binaryPath && existsSync(extractedPath)) {
       renameSync(extractedPath, binaryPath);
     }
