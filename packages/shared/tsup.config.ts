@@ -11,6 +11,7 @@ export default defineConfig({
     "src/domain-types.ts",
     "src/mcp-sandbox-proxy.ts",
     "src/posthog-property-headers.ts",
+    "src/theme.ts",
     "src/types.ts",
   ],
   format: ["esm"],

@@ -43,6 +43,10 @@
     "./posthog-property-headers": {
       "types": "./dist/posthog-property-headers.d.ts",
       "import": "./dist/posthog-property-headers.js"
+    },
+    "./theme": {
+      "types": "./dist/theme.d.ts",
+      "import": "./dist/theme.js"
     }
   },
   "scripts": {

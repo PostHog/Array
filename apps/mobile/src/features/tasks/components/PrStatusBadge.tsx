@@ -1,3 +1,4 @@
+import { getPrVisualConfig } from "@posthog/core/git-interaction/prStatus";
 import { GitMerge, GitPullRequest } from "phosphor-react-native";
 import { Pressable } from "react-native";
 import { openExternalUrl } from "@/lib/openExternalUrl";
@@ -13,11 +14,6 @@ interface PrStatusBadgeProps {
   size?: "sm" | "md";
 }
 
-// Mirrors the desktop "merged" PR color (Radix purple-9 family). Theme tokens
-// don't include a purple, and merged-PR purple is recognisable enough that a
-// fixed value works in both light and dark.
-const MERGED_COLOR = "#8e4ec6";
-
 export function PrStatusBadge({
   prUrl,
   hideWhenUnresolved = false,
@@ -32,24 +28,23 @@ export function PrStatusBadge({
     openExternalUrl(prUrl);
   };
 
-  let color: string = themeColors.gray[11];
-  let Icon: typeof GitPullRequest = GitPullRequest;
-  let label = "Open PR";
-
-  if (status?.merged) {
-    color = MERGED_COLOR;
-    Icon = GitMerge;
-    label = "Open merged PR";
-  } else if (status?.state === "closed") {
-    color = themeColors.status.error;
-    label = "Open closed PR";
-  } else if (status?.draft) {
-    color = themeColors.gray[11];
-    label = "Open draft PR";
-  } else if (status?.state === "open") {
-    color = themeColors.status.success;
-    label = "Open PR";
-  }
+  const visual = getPrVisualConfig(
+    status?.state ?? "open",
+    status?.merged ?? false,
+    status?.draft ?? false,
+  );
+  const colorByTone = {
+    gray: themeColors.gray[11],
+    green: themeColors.status.success,
+    red: themeColors.status.error,
+    purple: themeColors.status.merged,
+  } satisfies Record<typeof visual.color, string>;
+  const color = colorByTone[visual.color];
+  const Icon = visual.icon === "merged" ? GitMerge : GitPullRequest;
+  const label =
+    visual.label === "Open"
+      ? "Open PR"
+      : `Open ${visual.label.toLowerCase()} PR`;
 
   const box = size === "sm" ? "h-7 w-7" : "h-9 w-9";
   const iconSize = size === "sm" ? 16 : 20;

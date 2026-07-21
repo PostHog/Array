@@ -2,6 +2,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
+import { APP_COLOR_PALETTE } from "@posthog/shared/theme";
 
 function withAlpha(hex: string, alpha: number): string {
   const a = Math.round(alpha * 255)
@@ -15,40 +16,42 @@ const dark = {
   chalky: "#e5c07b",
   coral: "#e06c75",
   cyan: "#56b6c2",
-  invalid: "#e6e6e6",
-  ivory: "#e6e6e6",
-  stone: "#9898b6",
+  invalid: APP_COLOR_PALETTE.dark.gray[12],
+  ivory: APP_COLOR_PALETTE.dark.gray[12],
+  stone: APP_COLOR_PALETTE.dark.gray[11],
   malibu: "#61afef",
   sage: "#98c379",
   whiskey: "#d19a66",
   violet: "#c678dd",
-  background: "#131316",
-  highlightBackground: "#1e1e28",
-  tooltipBackground: "#24243e",
-  selection: "#2e2e3d",
-  cursor: "#f8be2a",
+  background: APP_COLOR_PALETTE.dark.background,
+  highlightBackground: APP_COLOR_PALETTE.dark.gray[3],
+  tooltipBackground: APP_COLOR_PALETTE.dark.gray[4],
+  selection: APP_COLOR_PALETTE.dark.gray[6],
+  cursor: APP_COLOR_PALETTE.dark.accent[9],
 };
+
+type EditorColors = { [K in keyof typeof dark]: string };
 
 // PostHog-inspired light theme colors
 const light = {
   chalky: "#c18401",
   coral: "#c45649",
   cyan: "#0184bc",
-  invalid: "#0d0d0d",
+  invalid: APP_COLOR_PALETTE.light.gray[12],
   ivory: "#1a1d17",
-  stone: "#6b7165",
+  stone: APP_COLOR_PALETTE.light.gray[9],
   malibu: "#4078f2",
   sage: "#50a14f",
   whiskey: "#986801",
   violet: "#a626a4",
-  background: "#f2f3ee",
-  highlightBackground: "#e4e5de",
-  tooltipBackground: "#eceee8",
-  selection: "#d8dbd1",
-  cursor: "#f54d00",
+  background: APP_COLOR_PALETTE.light.background,
+  highlightBackground: APP_COLOR_PALETTE.light.gray[3],
+  tooltipBackground: APP_COLOR_PALETTE.light.gray[2],
+  selection: APP_COLOR_PALETTE.light.gray[4],
+  cursor: APP_COLOR_PALETTE.light.accent[9],
 };
 
-function createEditorTheme(colors: typeof dark, isDark: boolean) {
+function createEditorTheme(colors: EditorColors, isDark: boolean) {
   return EditorView.theme(
     {
       "&": {
@@ -184,7 +187,7 @@ function createEditorTheme(colors: typeof dark, isDark: boolean) {
   );
 }
 
-function createHighlightStyle(colors: typeof dark) {
+function createHighlightStyle(colors: EditorColors) {
   return HighlightStyle.define([
     { tag: t.keyword, color: colors.violet },
     {

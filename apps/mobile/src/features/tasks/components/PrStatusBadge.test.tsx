@@ -14,7 +14,7 @@ vi.mock("phosphor-react-native", () => ({
 vi.mock("@/lib/theme", () => ({
   useThemeColors: () => ({
     gray: { 11: "#444444" },
-    status: { success: "#00aa00", error: "#cc0000" },
+    status: { success: "#00aa00", error: "#cc0000", merged: "#8800aa" },
   }),
   toRgba: (hex: string, alpha: number) => `${hex}/${alpha}`,
 }));

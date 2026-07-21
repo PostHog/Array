@@ -1,6 +1,7 @@
 import { DEFAULT_TERMINAL_FONT_FAMILY } from "@posthog/core/terminal/resolveTerminalFontFamily";
 import { resolveService } from "@posthog/di/container";
 import { getErrorMessage } from "@posthog/shared";
+import { APP_COLOR_PALETTE } from "@posthog/shared/theme";
 import {
   SHELL_CLIENT,
   type ShellClient,
@@ -89,22 +90,22 @@ type Listener<T extends EventType> = (payload: EventPayloadMap[T]) => void;
 function getTerminalTheme(isDarkMode: boolean) {
   return isDarkMode
     ? {
-        background: "#131316",
-        foreground: "#e6e6e6",
-        cursor: "#f8be2a",
-        cursorAccent: "#131316",
+        background: APP_COLOR_PALETTE.dark.background,
+        foreground: APP_COLOR_PALETTE.dark.gray[12],
+        cursor: APP_COLOR_PALETTE.dark.accent[9],
+        cursorAccent: APP_COLOR_PALETTE.dark.background,
         selectionBackground: "rgba(248, 190, 42, 0.25)",
         selectionInactiveBackground: "rgba(248, 190, 42, 0.12)",
-        selectionForeground: "#e6e6e6",
+        selectionForeground: APP_COLOR_PALETTE.dark.gray[12],
       }
     : {
-        background: "#f2f3ee",
-        foreground: "#3a4036",
-        cursor: "#f54d00",
-        cursorAccent: "#f2f3ee",
+        background: APP_COLOR_PALETTE.light.background,
+        foreground: APP_COLOR_PALETTE.light.gray[11],
+        cursor: APP_COLOR_PALETTE.light.accent[9],
+        cursorAccent: APP_COLOR_PALETTE.light.background,
         selectionBackground: "#fbd0b8",
         selectionInactiveBackground: "#f3e2d6",
-        selectionForeground: "#3a4036",
+        selectionForeground: APP_COLOR_PALETTE.light.gray[11],
       };
 }
 
