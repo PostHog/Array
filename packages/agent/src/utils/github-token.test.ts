@@ -66,11 +66,28 @@ describe("github-token", () => {
       expect(resolveGithubToken(path)).toBe("ghs_fromfile");
     });
 
-    it("falls back to the process env when the sandbox file is absent", () => {
+    it("prefers the github env file over the legacy env file", () => {
+      const githubPath = writeEnvFile("GH_TOKEN=ghs_github\0");
+      const legacyPath = writeEnvFile("GH_TOKEN=ghs_legacy\0");
+      expect(resolveGithubToken(githubPath, legacyPath)).toBe("ghs_github");
+    });
+
+    it("falls back to the legacy env file when the github env file is absent", () => {
       vi.stubEnv("GH_TOKEN", "ghs_fromprocess");
-      expect(resolveGithubToken("/nonexistent/agent-env")).toBe(
-        "ghs_fromprocess",
-      );
+      const legacyPath = writeEnvFile("GH_TOKEN=ghs_legacy\0");
+      expect(
+        resolveGithubToken("/nonexistent/agent-github-env", legacyPath),
+      ).toBe("ghs_legacy");
+    });
+
+    it("falls back to the process env when both sandbox files are absent", () => {
+      vi.stubEnv("GH_TOKEN", "ghs_fromprocess");
+      expect(
+        resolveGithubToken(
+          "/nonexistent/agent-github-env",
+          "/nonexistent/agent-env",
+        ),
+      ).toBe("ghs_fromprocess");
     });
   });
 });

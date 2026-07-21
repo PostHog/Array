@@ -8,6 +8,11 @@ import { readGithubTokenFromEnv } from "@posthog/git/signed-commit";
 // this live file is how in-process tools pick up a refreshed token without a
 // process restart.
 const SANDBOX_GITHUB_ENV_FILE = "/tmp/agent-github-env";
+// Legacy pre-split file. Before GitHub credentials got their own file, the
+// backend refreshed them in place here. Kept as a fallback so that during a
+// mixed-version rollout (new agent, old backend that only writes this file) we
+// still read a live, refreshed token instead of the frozen process env.
+const SANDBOX_LEGACY_ENV_FILE = "/tmp/agent-env";
 
 export function readGithubTokenFromSandboxEnvFile(
   envFilePath: string = SANDBOX_GITHUB_ENV_FILE,
@@ -31,14 +36,21 @@ export function readGithubTokenFromSandboxEnvFile(
 
 /** The GitHub token available to the sandbox, if any.
  *
- * Prefers the live agentsh env file (refreshed in place mid-session) over the
- * process env (frozen at launch) so long-running in-process tools — e.g. the
- * signed-commit tool — pick up a refreshed token without a restart.
+ * Precedence: the dedicated live credential file, then the legacy live file,
+ * then the process env (frozen at launch). Reading a live file first is how
+ * long-running in-process tools — e.g. the signed-commit tool — pick up a
+ * refreshed token without a restart. The legacy fallback covers a mixed-version
+ * rollout where an older backend still refreshes credentials only into
+ * `/tmp/agent-env`; without it the reader would drop straight to the frozen
+ * process env and sign commits with an expired or previous actor's token.
  */
 export function resolveGithubToken(
-  envFilePath: string = SANDBOX_GITHUB_ENV_FILE,
+  githubEnvFilePath: string = SANDBOX_GITHUB_ENV_FILE,
+  legacyEnvFilePath: string = SANDBOX_LEGACY_ENV_FILE,
 ): string | undefined {
   return (
-    readGithubTokenFromSandboxEnvFile(envFilePath) ?? readGithubTokenFromEnv()
+    readGithubTokenFromSandboxEnvFile(githubEnvFilePath) ??
+    readGithubTokenFromSandboxEnvFile(legacyEnvFilePath) ??
+    readGithubTokenFromEnv()
   );
 }
