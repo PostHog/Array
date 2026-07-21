@@ -88,10 +88,12 @@ import type {
 import { resourceLink } from "../utils/acp-content";
 import { AsyncMutex } from "../utils/async-mutex";
 import {
+  buildGatewayPropertiesHeader,
+  buildGatewayPropertiesHeaderRecord,
   buildGatewayPropertyHeaderRecord,
   buildGatewayPropertyHeaders,
   resolveGatewayProduct,
-  resolveLlmGatewayUrl,
+  resolveGatewayTarget,
 } from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
@@ -3661,11 +3663,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   } = {}): GatewayEnv {
     const { apiKey, apiUrl, projectId } = this.config;
     const product = resolveGatewayProduct({ isInternal, originProduct });
-    const gatewayUrl = resolveLlmGatewayUrl(
-      process.env.LLM_GATEWAY_URL,
-      apiUrl,
-      product,
-    );
+    const {
+      baseUrl: gatewayUrl,
+      slugless,
+      aiProduct,
+    } = resolveGatewayTarget({ product, aiStage, posthogHost: apiUrl });
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
       ? gatewayUrl
       : `${gatewayUrl}/v1`;
@@ -3684,14 +3686,31 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       task_user_id: taskUserId,
       task_title: taskTitle,
     };
-    const customHeaders = buildGatewayPropertyHeaders(gatewayProperties);
     // The Claude path appends `team_id` in buildEnvironment from
     // POSTHOG_PROJECT_ID; the codex path has no such hook, so fold it into the
     // record here to keep team attribution working for both adapters.
-    const openaiCustomHeaders = buildGatewayPropertyHeaderRecord({
-      ...gatewayProperties,
-      team_id: projectId,
-    });
+    let customHeaders: string;
+    let openaiCustomHeaders: Record<string, string>;
+    if (slugless) {
+      // The Go gateway reads one X-PostHog-Properties JSON blob and ignores
+      // per-property headers, and it has no product route, so `ai_product`
+      // has to travel in the blob or the spend lands unattributed. `team_id`
+      // is included for both adapters since the Claude hook sets it as a
+      // per-property header the Go gateway does not read.
+      const properties = {
+        ...gatewayProperties,
+        ai_product: aiProduct,
+        team_id: projectId,
+      };
+      customHeaders = buildGatewayPropertiesHeader(properties);
+      openaiCustomHeaders = buildGatewayPropertiesHeaderRecord(properties);
+    } else {
+      customHeaders = buildGatewayPropertyHeaders(gatewayProperties);
+      openaiCustomHeaders = buildGatewayPropertyHeaderRecord({
+        ...gatewayProperties,
+        team_id: projectId,
+      });
+    }
 
     // Server-level constants that don't vary per task — safe to keep in
     // process.env so spawned tools (PostHog MCP, workspace-server, etc.) can
