@@ -4,22 +4,20 @@ import {
   CalendarPlus,
   Clock,
   CompassIcon,
-  GithubLogoIcon,
-  KanbanIcon,
   LifebuoyIcon,
   ListNumbers,
-  TicketIcon,
+  PlugIcon,
   TrendUp,
   VideoIcon,
 } from "@phosphor-icons/react";
+import { EXTERNAL_INBOX_SOURCES } from "@posthog/shared";
 import type {
   AvailableSuggestedReviewer,
   SignalReportOrderingField,
   SignalReportPriority,
   SourceProduct,
 } from "@posthog/shared/types";
-import { JiraIcon } from "@posthog/ui/features/inbox/components/utils/JiraIcon";
-import { PgAnalyzeIcon } from "@posthog/ui/features/inbox/components/utils/PgAnalyzeIcon";
+import { getSourceProductMeta } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import type { ReactNode } from "react";
 
 export type InboxSortField = Extract<
@@ -92,17 +90,22 @@ export const INBOX_SOURCE_OPTIONS: {
     label: "AI observability",
     icon: <BrainIcon size={14} />,
   },
-  { value: "github", label: "GitHub", icon: <GithubLogoIcon size={14} /> },
-  { value: "linear", label: "Linear", icon: <KanbanIcon size={14} /> },
-  { value: "jira", label: "Jira", icon: <JiraIcon size={14} /> },
-  { value: "zendesk", label: "Zendesk", icon: <TicketIcon size={14} /> },
   {
     value: "conversations",
     label: "Conversations",
     icon: <LifebuoyIcon size={14} />,
   },
-  { value: "pganalyze", label: "pganalyze", icon: <PgAnalyzeIcon size={14} /> },
   { value: "signals_scout", label: "Scouts", icon: <CompassIcon size={14} /> },
+  // Warehouse-backed sources, derived from the shared registry.
+  ...EXTERNAL_INBOX_SOURCES.map((source) => {
+    const meta = getSourceProductMeta(source.product);
+    const Icon = meta?.Icon ?? PlugIcon;
+    return {
+      value: source.product,
+      label: meta?.label ?? source.label,
+      icon: <Icon size={14} />,
+    };
+  }),
 ];
 
 export function inboxSortOptionKey(
