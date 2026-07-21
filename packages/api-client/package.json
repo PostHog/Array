@@ -25,7 +25,6 @@
     "src/**/*"
   ],
   "dependencies": {
-    "@posthog/agent": "workspace:*",
     "@posthog/shared": "workspace:*"
   }
 }

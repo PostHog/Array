@@ -476,6 +476,12 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      '@posthog/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
+      '@posthog/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@posthog/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -833,9 +839,6 @@ importers:
 
   packages/api-client:
     dependencies:
-      '@posthog/agent':
-        specifier: workspace:*
-        version: link:../agent
       '@posthog/shared':
         specifier: workspace:*
         version: link:../shared
