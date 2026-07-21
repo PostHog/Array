@@ -4697,6 +4697,34 @@ export class PostHogAPIClient {
     return (await response.json()) as SandboxCustomImage;
   }
 
+  async updateSandboxCustomImage(
+    id: string,
+    input: { name?: string; description?: string },
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
   async ensureSandboxCustomImageBuilderTask(
     id: string,
   ): Promise<SandboxCustomImage> {
