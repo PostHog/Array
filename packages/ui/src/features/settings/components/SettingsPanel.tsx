@@ -66,13 +66,13 @@ interface SidebarItem {
 }
 
 interface SidebarGroup {
-  label: string | null;
+  label: string;
   items: SidebarItem[];
 }
 
 const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
-    label: null,
+    label: "Account",
     items: [
       { id: "general", label: "General", icon: <GearSix size={16} /> },
       { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
@@ -80,25 +80,6 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
         id: "plan-usage",
         label: "Plan & usage",
         icon: <CreditCard size={16} />,
-      },
-    ],
-  },
-  {
-    label: "Configure",
-    items: [
-      { id: "agents", label: "Agents", icon: <Robot size={16} /> },
-      { id: "skills", label: "Skills", icon: <Lightbulb size={16} /> },
-      { id: "mcp-servers", label: "MCP servers", icon: <Plugs size={16} /> },
-      { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
-      {
-        id: "personalization",
-        label: "Personalization",
-        icon: <Palette size={16} />,
-      },
-      {
-        id: "signals",
-        label: "Self-driving",
-        icon: <TrafficSignal size={16} />,
       },
     ],
   },
@@ -115,6 +96,32 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     ],
   },
   {
+    label: "Configure",
+    items: [
+      { id: "agents", label: "Agents", icon: <Robot size={16} /> },
+      { id: "skills", label: "Skills", icon: <Lightbulb size={16} /> },
+      { id: "mcp-servers", label: "MCP servers", icon: <Plugs size={16} /> },
+      {
+        id: "signals",
+        label: "Self-driving",
+        icon: <TrafficSignal size={16} />,
+      },
+    ],
+  },
+  {
+    label: "Experience",
+    items: [
+      {
+        id: "personalization",
+        label: "Personalization",
+        icon: <Palette size={16} />,
+      },
+      { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
+      { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
+      { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
+    ],
+  },
+  {
     label: "Integrations",
     items: [
       { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
@@ -123,10 +130,8 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     ],
   },
   {
-    label: "App",
+    label: "Application",
     items: [
-      { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
-      { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
       { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
       { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
     ],
@@ -313,17 +318,12 @@ export function SettingsPanel({
         </button>
 
         <ScrollArea className="flex-1">
-          <div className="flex flex-col py-2">
+          <div className="flex flex-col gap-3 py-2">
             {sidebarGroups.map((group) => (
-              <div key={group.label ?? "general"}>
-                {group.label && (
-                  <Text
-                    color="gray"
-                    className="px-3 pt-4 pb-1 font-medium text-[10px] uppercase tracking-[0.06em]"
-                  >
-                    {group.label}
-                  </Text>
-                )}
+              <div key={group.label}>
+                <Text className="px-3 pb-1 font-medium text-[10px] text-gray-9 uppercase tracking-wider">
+                  {group.label}
+                </Text>
                 {group.items.map((item) => {
                   const isActive =
                     resolvedCategory === item.id ||
