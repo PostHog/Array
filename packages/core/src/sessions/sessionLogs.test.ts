@@ -17,6 +17,27 @@ describe("parseSessionLogContent", () => {
     expect(result.adapter).toBeUndefined();
   });
 
+  it("returns an empty result for blank content", () => {
+    expect(parseSessionLogContent(" \n ")).toEqual({
+      notifications: [],
+      rawEntries: [],
+      totalLineCount: 0,
+      parseFailureCount: 0,
+    });
+  });
+
+  it("collects session update notifications", () => {
+    const params = {
+      update: { sessionUpdate: "agent_message_chunk" },
+    };
+    const content = JSON.stringify({
+      type: "notification",
+      notification: { method: "session/update", params },
+    });
+
+    expect(parseSessionLogContent(content).notifications).toEqual([params]);
+  });
+
   it("extracts sessionId and adapter from a posthog/sdk_session notification", () => {
     const content = JSON.stringify({
       type: "notification",

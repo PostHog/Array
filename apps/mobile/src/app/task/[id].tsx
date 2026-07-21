@@ -1,4 +1,8 @@
 import { Text } from "@components/text";
+import type {
+  CloudTaskQueuedMessage,
+  CloudTaskQueueMoveDirection,
+} from "@posthog/core/sessions/cloudTaskQueue";
 import {
   countUserMessages,
   getSessionActivityPhase,
@@ -45,17 +49,18 @@ import {
   useQueuedCount,
   useToggleMessagingMode,
 } from "@/features/tasks/hooks/useMessagingMode";
+import { useTaskMessageQueue } from "@/features/tasks/hooks/useTaskMessageQueue";
 import { taskKeys } from "@/features/tasks/hooks/useTasks";
-import {
-  type MoveDirection,
-  type QueuedMessage,
-  useMessageQueueStore,
-} from "@/features/tasks/stores/messageQueueStore";
+import { taskMessageQueue } from "@/features/tasks/lib/taskMessageQueue";
+import { taskSessionActions } from "@/features/tasks/services/taskSessionService";
 import {
   pendingTaskPromptStoreApi,
   usePendingTaskPrompt,
 } from "@/features/tasks/stores/pendingTaskPromptStore";
-import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
+import {
+  getTaskSession,
+  useTaskSessionStore,
+} from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import { confirmStopRun } from "@/features/tasks/utils/archiveGuard";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
@@ -69,6 +74,7 @@ import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
+type QueuedMessage = CloudTaskQueuedMessage<PendingAttachment>;
 
 function getFirstParam(value?: string | string[]): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -107,12 +113,13 @@ export default function TaskDetailScreen() {
     sendInterrupting,
     sendPermissionResponse,
     setConfigOption,
-    getSessionForTask,
-    setFocusedTaskId,
     steerQueuedMessage,
     flushQueuedMessagesIfIdle,
     stopRun,
-  } = useTaskSessionStore();
+  } = taskSessionActions;
+  const setFocusedTaskId = useTaskSessionStore(
+    (state) => state.setFocusedTaskId,
+  );
 
   useEffect(() => {
     if (!taskId) return;
@@ -127,7 +134,7 @@ export default function TaskDetailScreen() {
   // Cleared when the screen unmounts. Matches the desktop super-property.
   useActiveTaskAnalyticsContext(task?.signal_report ?? null);
 
-  const session = taskId ? getSessionForTask(taskId) : undefined;
+  const session = taskId ? getTaskSession(taskId) : undefined;
 
   // Optimistic echo set by the new-task screen (or the terminal-resume path
   // below) so the user's prompt appears in the thread immediately, before
@@ -176,9 +183,7 @@ export default function TaskDetailScreen() {
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
-  const editingQueuedId = useMessageQueueStore((s) =>
-    taskId ? s.editingByTaskId[taskId] : undefined,
-  );
+  const { editingId: editingQueuedId } = useTaskMessageQueue(taskId);
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const analytics = useAnalytics();
 
@@ -369,11 +374,13 @@ export default function TaskDetailScreen() {
       // Saving an in-place edit: overwrite the queued message and release the
       // drain hold. If the turn already ended while editing, flush now — the
       // turn-end drain won't fire again on its own.
-      const queue = useMessageQueueStore.getState();
-      const editingId = queue.editingByTaskId[taskId];
+      const editingId = taskMessageQueue.getSnapshot().editingByTaskId[taskId];
       if (editingId) {
-        queue.update(taskId, editingId, { content: text, attachments });
-        queue.clearEditing(taskId);
+        taskMessageQueue.update(taskId, editingId, {
+          content: text,
+          attachments,
+        });
+        taskMessageQueue.clearEditing(taskId);
         flushQueuedMessagesIfIdle(taskId);
         return;
       }
@@ -395,7 +402,7 @@ export default function TaskDetailScreen() {
       // Steer interrupts the turn and resends right away.
       if (session?.isPromptPending) {
         if (messagingMode === "queue") {
-          useMessageQueueStore.getState().enqueue(taskId, text, attachments);
+          taskMessageQueue.enqueue(taskId, text, attachments);
           return;
         }
         sendInterrupting(taskId, text, attachments)
@@ -448,7 +455,7 @@ export default function TaskDetailScreen() {
   const handleEditQueued = useCallback(
     (message: QueuedMessage) => {
       if (!taskId) return;
-      useMessageQueueStore.getState().setEditing(taskId, message.id);
+      taskMessageQueue.setEditing(taskId, message.id);
       setRestoredDraft({
         text: message.content,
         attachments: message.attachments,
@@ -459,16 +466,16 @@ export default function TaskDetailScreen() {
 
   const handleCancelEdit = useCallback(() => {
     if (!taskId) return;
-    useMessageQueueStore.getState().clearEditing(taskId);
+    taskMessageQueue.clearEditing(taskId);
     setRestoredDraft({ text: "", attachments: [] });
     flushQueuedMessagesIfIdle(taskId);
   }, [taskId, flushQueuedMessagesIfIdle]);
 
   const handleMoveQueued = useCallback(
-    (message: QueuedMessage, direction: MoveDirection) => {
+    (message: QueuedMessage, direction: CloudTaskQueueMoveDirection) => {
       if (!taskId) return;
       Haptics.selectionAsync();
-      useMessageQueueStore.getState().move(taskId, message.id, direction);
+      taskMessageQueue.move(taskId, message.id, direction);
     },
     [taskId],
   );
@@ -477,8 +484,8 @@ export default function TaskDetailScreen() {
     (message: QueuedMessage) => {
       if (!taskId) return;
       const wasEditing =
-        useMessageQueueStore.getState().editingByTaskId[taskId] === message.id;
-      useMessageQueueStore.getState().remove(taskId, message.id);
+        taskMessageQueue.getSnapshot().editingByTaskId[taskId] === message.id;
+      taskMessageQueue.remove(taskId, message.id);
       if (wasEditing) setRestoredDraft({ text: "", attachments: [] });
     },
     [taskId],
@@ -525,7 +532,7 @@ export default function TaskDetailScreen() {
   const handleStopRun = useCallback(() => {
     if (!taskId) return;
     confirmStopRun(() => {
-      const promptsSent = countUserMessages(getSessionForTask(taskId)?.events);
+      const promptsSent = countUserMessages(getTaskSession(taskId)?.events);
       stopRun(taskId)
         .then((ok) => {
           if (ok) {
@@ -543,7 +550,7 @@ export default function TaskDetailScreen() {
         })
         .catch(() => {});
     });
-  }, [taskId, stopRun, analytics, getSessionForTask]);
+  }, [taskId, stopRun, analytics]);
 
   const canStopRun =
     !!task &&

@@ -1,10 +1,10 @@
 import { useCallback } from "react";
-import { useMessageQueueStore } from "../stores/messageQueueStore";
+import { taskSessionActions } from "../services/taskSessionService";
 import {
   type MessagingMode,
   useMessagingModeStore,
 } from "../stores/messagingModeStore";
-import { useTaskSessionStore } from "../stores/taskSessionStore";
+import { useTaskMessageQueue } from "./useTaskMessageQueue";
 
 /** Effective mode for a task: per-task override, else the global default. */
 export function useMessagingMode(taskId: string | undefined): MessagingMode {
@@ -12,7 +12,7 @@ export function useMessagingMode(taskId: string | undefined): MessagingMode {
 }
 
 export function useQueuedCount(taskId: string | undefined): number {
-  return useMessageQueueStore((s) => (taskId ? s.getQueue(taskId).length : 0));
+  return useTaskMessageQueue(taskId ?? "").messages.length;
 }
 
 /**
@@ -27,7 +27,7 @@ export function useToggleMessagingMode(taskId: string | undefined): () => void {
     const next: MessagingMode = mode === "steer" ? "queue" : "steer";
     useMessagingModeStore.getState().setMode(taskId, next);
     if (next === "steer") {
-      void useTaskSessionStore.getState().flushQueuedMessages(taskId);
+      void taskSessionActions.flushQueuedMessages(taskId);
     }
   }, [taskId, mode]);
 }

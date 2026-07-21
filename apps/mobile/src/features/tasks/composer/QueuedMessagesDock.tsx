@@ -1,4 +1,8 @@
 import { Text } from "@components/text";
+import type {
+  CloudTaskQueuedMessage,
+  CloudTaskQueueMoveDirection,
+} from "@posthog/core/sessions/cloudTaskQueue";
 import {
   CaretDown,
   CaretUp,
@@ -12,11 +16,10 @@ import { type ReactNode, useState } from "react";
 import { Pressable, View } from "react-native";
 import { SheetContainer } from "@/components/SheetContainer";
 import { useThemeColors } from "@/lib/theme";
-import {
-  type MoveDirection,
-  type QueuedMessage,
-  useMessageQueueStore,
-} from "../stores/messageQueueStore";
+import { useTaskMessageQueue } from "../hooks/useTaskMessageQueue";
+import type { PendingAttachment } from "./attachments/types";
+
+type QueuedMessage = CloudTaskQueuedMessage<PendingAttachment>;
 
 interface QueuedMessagesDockProps {
   taskId: string;
@@ -24,7 +27,10 @@ interface QueuedMessagesDockProps {
   onSteer: (message: QueuedMessage) => void;
   onEdit: (message: QueuedMessage) => void;
   onDiscard: (message: QueuedMessage) => void;
-  onMove: (message: QueuedMessage, direction: MoveDirection) => void;
+  onMove: (
+    message: QueuedMessage,
+    direction: CloudTaskQueueMoveDirection,
+  ) => void;
 }
 
 function previewText(message: QueuedMessage): string {
@@ -42,11 +48,10 @@ export function QueuedMessagesDock({
   onMove,
 }: QueuedMessagesDockProps) {
   const themeColors = useThemeColors();
-  const queued = useMessageQueueStore((s) => s.queuesByTaskId[taskId]);
-  const editingId = useMessageQueueStore((s) => s.editingByTaskId[taskId]);
+  const { messages: queued, editingId } = useTaskMessageQueue(taskId);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  if (!queued || queued.length === 0) return null;
+  if (queued.length === 0) return null;
   const active = queued.find((m) => m.id === activeId) ?? null;
 
   return (

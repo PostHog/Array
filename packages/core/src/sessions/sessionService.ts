@@ -71,6 +71,11 @@ import {
   extractLatestConfigOptionsFromEntries,
 } from "./cloudSessionConfig";
 import {
+  CloudTaskCommandController,
+  type CloudTaskPermissionResponseCommand,
+} from "./cloudTaskCommandController";
+import { CloudTaskRunLifecycle } from "./cloudTaskRunLifecycle";
+import {
   computeAutoRetryFinalState,
   OFFLINE_SESSION_MESSAGE,
   routeLocalConnect,
@@ -142,6 +147,8 @@ class GitHubAuthorizationRequiredForCloudHandoffError extends Error {
     this.name = "GitHubAuthorizationRequiredForCloudHandoffError";
   }
 }
+
+class CloudTaskCommandRejectedError extends Error {}
 
 type TrpcMutation = { mutate: (input?: any) => Promise<any> };
 type TrpcQuery = { query: (input?: any) => Promise<any> };
@@ -1611,8 +1618,59 @@ export class SessionService {
    * the placeholder with this richer text instead, then drop it once consumed.
    */
   private initialCloudOptimisticPrompt = new Map<string, string>();
+  private readonly cloudTaskCommandController: CloudTaskCommandController;
+  private readonly cloudTaskRunLifecycle: CloudTaskRunLifecycle;
 
   constructor(private readonly d: SessionServiceDeps) {
+    this.cloudTaskCommandController = new CloudTaskCommandController({
+      sendCommand: async (target, method, params) => {
+        const auth = await this.getCloudCommandAuth();
+        if (!auth) {
+          throw new Error("No cloud auth credentials available");
+        }
+        const result = await this.d.trpc.cloudTask.sendCommand.mutate({
+          taskId: target.taskId,
+          runId: target.taskRunId,
+          apiHost: auth.apiHost,
+          teamId: auth.teamId,
+          method,
+          params,
+        });
+        if (!result.success) {
+          throw new CloudTaskCommandRejectedError(
+            result.error ?? "Failed to send cloud command",
+          );
+        }
+        return result.result;
+      },
+      stopRun: async (target) => {
+        const result = await this.d.trpc.cloudTask.stop.mutate({
+          taskId: target.taskId,
+          runId: target.taskRunId,
+        });
+        if (!result.success) {
+          throw new CloudTaskCommandRejectedError(
+            result.error ?? "Failed to stop cloud run",
+          );
+        }
+      },
+    });
+    this.cloudTaskRunLifecycle = new CloudTaskRunLifecycle(
+      this.cloudTaskCommandController,
+      {
+        get: (taskRunId) => {
+          const session = this.getSessionByRunId(taskRunId);
+          return session
+            ? {
+                ...session,
+                activityVersion: `${session.events.length}:${session.processedLineCount ?? ""}:${session.cloudStatus ?? ""}:${session.status}`,
+              }
+            : undefined;
+        },
+        update: (taskRunId, patch) =>
+          this.d.store.updateSession(taskRunId, patch),
+      },
+    );
     this.cloudRunIdleTracker = new CloudRunIdleTracker();
     this.cloudLogGapReconciler = new CloudLogGapReconciler({
       fetchLogs: (logUrl, taskRunId, minEntryCount) =>
@@ -4115,22 +4173,13 @@ export class SessionService {
     });
 
     try {
-      const result = await this.d.trpc.cloudTask.sendCommand.mutate({
-        taskId: session.taskId,
-        runId: session.taskRunId,
-        apiHost: cloudCommandAuth.apiHost,
-        teamId: cloudCommandAuth.teamId,
-        method: "user_message",
-        params,
-      });
-
-      if (!result.success) {
-        throw new Error(result.error ?? "Failed to send cloud command");
-      }
-
-      const commandResult = result.result as
-        | { queued?: boolean; steered?: boolean; stopReason?: string }
-        | undefined;
+      const commandResult =
+        (await this.cloudTaskCommandController.sendUserMessage(
+          { taskId: session.taskId, taskRunId: session.taskRunId },
+          params,
+        )) as
+          | { queued?: boolean; steered?: boolean; stopReason?: string }
+          | undefined;
       const stopReason = commandResult?.queued
         ? "queued"
         : (commandResult?.stopReason ?? "end_turn");
@@ -4444,26 +4493,14 @@ export class SessionService {
       return false;
     }
 
-    const auth = await this.getCloudCommandAuth();
-    if (!auth) {
-      this.d.log.error("No auth for cloud cancel");
-      return false;
-    }
-
-    try {
-      const result = await this.d.trpc.cloudTask.sendCommand.mutate({
-        taskId: session.taskId,
-        runId: session.taskRunId,
-        apiHost: auth.apiHost,
-        teamId: auth.teamId,
-        method: "cancel",
-      });
-
+    const trackCancellation = (): void => {
       const durationSeconds = Math.round(
         (Date.now() - session.startedAt) / 1000,
       );
       const promptCount = session.events.filter(
-        (e) => "method" in e.message && e.message.method === "session/prompt",
+        (event) =>
+          "method" in event.message &&
+          event.message.method === "session/prompt",
       ).length;
       this.d.track(ANALYTICS_EVENTS.TASK_RUN_CANCELLED, {
         task_id: session.taskId,
@@ -4471,14 +4508,23 @@ export class SessionService {
         duration_seconds: durationSeconds,
         prompts_sent: promptCount,
       });
+    };
 
-      if (!result.success) {
-        this.d.log.warn("Cloud cancel command failed", { error: result.error });
-        return false;
-      }
-
+    try {
+      await this.cloudTaskCommandController.cancelPrompt({
+        taskId: session.taskId,
+        taskRunId: session.taskRunId,
+      });
+      trackCancellation();
       return true;
     } catch (error) {
+      if (error instanceof CloudTaskCommandRejectedError) {
+        trackCancellation();
+        this.d.log.warn("Cloud cancel command failed", {
+          error: error.message,
+        });
+        return false;
+      }
       this.d.log.error("Failed to cancel cloud prompt", error);
       return false;
     }
@@ -4520,40 +4566,17 @@ export class SessionService {
 
     const matchingSession =
       session?.isCloud && session.taskRunId === taskRunId ? session : undefined;
-    const previousPromptState = matchingSession
-      ? {
-          isPromptPending: matchingSession.isPromptPending,
-          promptStartedAt: matchingSession.promptStartedAt,
-        }
-      : undefined;
-    if (matchingSession) {
-      this.d.store.updateSession(matchingSession.taskRunId, {
-        stopRequested: true,
-        isPromptPending: false,
-        promptStartedAt: null,
-      });
-    }
-
     try {
-      const result = await this.d.trpc.cloudTask.stop.mutate({
-        taskId,
-        runId: taskRunId,
-      });
-
-      if (!result.success) {
-        if (matchingSession) {
-          this.d.store.updateSession(matchingSession.taskRunId, {
-            stopRequested: false,
-            ...previousPromptState,
-          });
-        }
-        this.d.log.warn("Cloud run stop failed", {
-          taskId,
-          error: result.error,
-          retryable: result.retryable,
-        });
-        return false;
-      }
+      await this.cloudTaskRunLifecycle.stopRun(
+        { taskId, taskRunId },
+        matchingSession
+          ? {
+              ...matchingSession,
+              stopRequested: matchingSession.stopRequested ?? false,
+              activityVersion: `${matchingSession.events.length}:${matchingSession.processedLineCount ?? ""}:${matchingSession.cloudStatus ?? ""}:${matchingSession.status}`,
+            }
+          : undefined,
+      );
 
       const durationSeconds = matchingSession
         ? Math.round((Date.now() - matchingSession.startedAt) / 1000)
@@ -4572,13 +4595,14 @@ export class SessionService {
 
       return true;
     } catch (error) {
-      if (matchingSession) {
-        this.d.store.updateSession(matchingSession.taskRunId, {
-          stopRequested: false,
-          ...previousPromptState,
+      if (error instanceof CloudTaskCommandRejectedError) {
+        this.d.log.warn("Cloud run stop failed", {
+          taskId,
+          error: error.message,
         });
+      } else {
+        this.d.log.error("Failed to stop cloud run", error);
       }
-      this.d.log.error("Failed to stop cloud run", error);
       return false;
     }
   }
@@ -4595,27 +4619,14 @@ export class SessionService {
     };
   }
 
-  /**
-   * Send a command to the cloud agent server via the backend proxy.
-   * Handles auth lookup and throws if credentials are unavailable.
-   */
-  private async sendCloudCommand(
+  private async sendCloudPermissionResponse(
     session: AgentSession,
-    method: "permission_response" | "set_config_option",
-    params: Record<string, unknown>,
+    params: CloudTaskPermissionResponseCommand,
   ): Promise<void> {
-    const auth = await this.getCloudCommandAuth();
-    if (!auth) {
-      throw new Error("No cloud auth credentials available");
-    }
-    await this.d.trpc.cloudTask.sendCommand.mutate({
-      taskId: session.taskId,
-      runId: session.taskRunId,
-      apiHost: auth.apiHost,
-      teamId: auth.teamId,
-      method,
+    await this.cloudTaskCommandController.respondToPermission(
+      { taskId: session.taskId, taskRunId: session.taskRunId },
       params,
-    });
+    );
   }
 
   private async refreshCloudRunStatus(
@@ -4752,19 +4763,28 @@ export class SessionService {
 
   // --- Permissions ---
 
-  private resolvePermission(session: AgentSession, toolCallId: string): void {
+  private resolvePermission(
+    session: AgentSession,
+    toolCallId: string,
+  ): {
+    previousPausedDurationMs: number;
+    resolvedPausedDurationMs: number;
+  } {
     const permission = session.pendingPermissions.get(toolCallId);
     const newPermissions = new Map(session.pendingPermissions);
     newPermissions.delete(toolCallId);
     this.d.store.setPendingPermissions(session.taskRunId, newPermissions);
 
+    const previousPausedDurationMs = session.pausedDurationMs ?? 0;
+    const resolvedPausedDurationMs = permission?.receivedAt
+      ? previousPausedDurationMs + (Date.now() - permission.receivedAt)
+      : previousPausedDurationMs;
     if (permission?.receivedAt) {
       this.d.store.updateSession(session.taskRunId, {
-        pausedDurationMs:
-          (session.pausedDurationMs ?? 0) +
-          (Date.now() - permission.receivedAt),
+        pausedDurationMs: resolvedPausedDurationMs,
       });
     }
+    return { previousPausedDurationMs, resolvedPausedDurationMs };
   }
 
   /**
@@ -4790,7 +4810,7 @@ export class SessionService {
     });
 
     const cloudRequestId = this.cloudPermissionRequestIds.get(toolCallId);
-    this.resolvePermission(session, toolCallId);
+    const permissionResolution = this.resolvePermission(session, toolCallId);
 
     try {
       const refreshedCloudStatus =
@@ -4820,7 +4840,7 @@ export class SessionService {
       if (session.isCloud && cloudRequestId) {
         this.cloudPermissionRequestIds.delete(toolCallId);
         try {
-          await this.sendCloudCommand(session, "permission_response", {
+          await this.sendCloudPermissionResponse(session, {
             requestId: cloudRequestId,
             optionId,
             customInput,
@@ -4865,6 +4885,28 @@ export class SessionService {
         hasCustomInput: !!customInput,
       });
     } catch (error) {
+      const latestSession = this.d.store.getSessionByTaskId(taskId);
+      if (
+        latestSession?.pausedDurationMs ===
+        permissionResolution.resolvedPausedDurationMs
+      ) {
+        this.d.store.updateSession(latestSession.taskRunId, {
+          pausedDurationMs: permissionResolution.previousPausedDurationMs,
+        });
+      }
+      const currentCloudRequestId =
+        this.cloudPermissionRequestIds.get(toolCallId);
+      if (permission && latestSession && !currentCloudRequestId) {
+        const restoredPermissions = new Map(latestSession.pendingPermissions);
+        restoredPermissions.set(toolCallId, permission);
+        this.d.store.setPendingPermissions(
+          latestSession.taskRunId,
+          restoredPermissions,
+        );
+      }
+      if (cloudRequestId && !currentCloudRequestId) {
+        this.cloudPermissionRequestIds.set(toolCallId, cloudRequestId);
+      }
       this.d.log.error("Failed to respond to permission", {
         taskId,
         toolCallId,
@@ -4912,7 +4954,7 @@ export class SessionService {
       }
       if (session.isCloud && cloudRequestId) {
         this.cloudPermissionRequestIds.delete(toolCallId);
-        await this.sendCloudCommand(session, "permission_response", {
+        await this.sendCloudPermissionResponse(session, {
           requestId: cloudRequestId,
           optionId: "reject_with_feedback",
           customInput: "User cancelled the permission request.",
@@ -4990,10 +5032,11 @@ export class SessionService {
 
     try {
       if (session.isCloud) {
-        await this.sendCloudCommand(session, "set_config_option", {
+        await this.cloudTaskCommandController.setConfigOption(
+          { taskId: session.taskId, taskRunId: session.taskRunId },
           configId,
           value,
-        });
+        );
       } else {
         await this.d.trpc.agent.setConfigOption.mutate({
           sessionId: session.taskRunId,
@@ -7199,6 +7242,7 @@ export class SessionService {
     options: { minEntryCount?: number } = {},
   ): Promise<ParsedSessionLogs> {
     const empty: ParsedSessionLogs = {
+      notifications: [],
       rawEntries: [],
       totalLineCount: 0,
       parseFailureCount: 0,

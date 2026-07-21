@@ -127,6 +127,7 @@ function createHarness() {
   const notifyPermissionRequest = vi.fn();
   const enqueueSpeech = vi.fn();
   const markActivity = vi.fn();
+  const sendCommand = vi.fn().mockResolvedValue({ success: true });
   const noopLog = {
     info: vi.fn(),
     warn: vi.fn(),
@@ -141,6 +142,23 @@ function createHarness() {
     notifyPermissionRequest,
     enqueueSpeech,
     taskViewedApi: { markActivity },
+    track: vi.fn(),
+    buildPermissionToolMetadata: vi.fn().mockReturnValue({}),
+    fetchAuthState: vi.fn().mockResolvedValue({
+      status: "authenticated",
+      bootstrapComplete: true,
+      cloudRegion: "us",
+      currentProjectId: 1,
+    }),
+    createAuthenticatedClient: vi.fn().mockReturnValue({
+      getTaskRun: vi.fn().mockResolvedValue({
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        log_url: "https://example.com/log",
+      }),
+    }),
     getPersistedConfigOptions: () => undefined,
     setPersistedConfigOptions: vi.fn(),
     adapterStore: {
@@ -161,6 +179,7 @@ function createHarness() {
         readLocalLogs: { query: vi.fn().mockResolvedValue("") },
       },
       cloudTask: {
+        sendCommand: { mutate: sendCommand },
         onUpdate: {
           subscribe: (
             _input: unknown,
@@ -186,6 +205,9 @@ function createHarness() {
     notifyPermissionRequest,
     enqueueSpeech,
     markActivity,
+    sendCommand,
+    service,
+    sessions,
   };
 }
 
@@ -320,5 +342,82 @@ describe("cloud task update notifications", () => {
       options: [],
     });
     expect(harness.notifyPermissionRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores a rejected permission response so it can be retried", async () => {
+    const harness = createHarness();
+    harness.sendUpdate({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      kind: "permission_request",
+      requestId: "r1",
+      toolCall: { toolCallId: "t1", title: "Run command", kind: "execute" },
+      options: [],
+    });
+    const session = harness.sessions[RUN_ID];
+    const permission = session?.pendingPermissions.get("t1");
+    if (permission) permission.receivedAt = Date.now() - 1_000;
+    if (session) session.pausedDurationMs = 25;
+    harness.sendCommand.mockResolvedValueOnce({
+      success: false,
+      error: "sandbox rejected response",
+    });
+
+    await harness.service.respondToPermission(TASK_ID, "t1", "allow");
+
+    expect(harness.sessions[RUN_ID]?.pendingPermissions.has("t1")).toBe(true);
+    expect(harness.sessions[RUN_ID]?.pausedDurationMs).toBe(25);
+
+    await harness.service.respondToPermission(TASK_ID, "t1", "allow");
+    expect(harness.sendCommand).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        method: "permission_response",
+        params: { requestId: "r1", optionId: "allow" },
+      }),
+    );
+  });
+
+  it("does not restore a stale permission over a newer request", async () => {
+    const harness = createHarness();
+    harness.sendUpdate({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      kind: "permission_request",
+      requestId: "r1",
+      toolCall: { toolCallId: "t1", title: "Run command", kind: "execute" },
+      options: [],
+    });
+    let rejectResponse: (error: Error) => void = () => undefined;
+    harness.sendCommand.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectResponse = reject;
+        }),
+    );
+
+    const response = harness.service.respondToPermission(
+      TASK_ID,
+      "t1",
+      "allow",
+    );
+    await vi.waitFor(() => expect(harness.sendCommand).toHaveBeenCalled());
+    harness.sendUpdate({
+      taskId: TASK_ID,
+      runId: RUN_ID,
+      kind: "permission_request",
+      requestId: "r2",
+      toolCall: { toolCallId: "t1", title: "Run command", kind: "execute" },
+      options: [],
+    });
+    rejectResponse(new Error("failed"));
+    await response;
+
+    await harness.service.respondToPermission(TASK_ID, "t1", "allow");
+    expect(harness.sendCommand).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        method: "permission_response",
+        params: { requestId: "r2", optionId: "allow" },
+      }),
+    );
   });
 });

@@ -45,12 +45,17 @@ function createHarness(
       }
     : { id: "run-1", environment: "cloud", status: "in_progress" },
 ) {
-  const updateSession = vi.fn();
+  const updateSession = vi.fn(
+    (_taskRunId: string, updates: Partial<AgentSession>) => {
+      if (session) Object.assign(session, updates);
+    },
+  );
   const track = vi.fn();
   const deps = {
     store: {
       getSessionByTaskId: (taskId: string) =>
         session?.taskId === taskId ? session : undefined,
+      getSessions: () => (session ? { [session.taskRunId]: session } : {}),
       updateSession,
     },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

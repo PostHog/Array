@@ -1,6 +1,8 @@
 import type { Adapter, StoredLogEntry } from "@posthog/shared";
+import type { PortableSessionNotification } from "./portableSessionEvents";
 
 export interface ParsedSessionLogs {
+  notifications: PortableSessionNotification[];
   rawEntries: StoredLogEntry[];
   totalLineCount: number;
   parseFailureCount: number;
@@ -12,6 +14,16 @@ export function parseSessionLogContent(
   content: string,
   options: { onParseError?: (line: string) => void } = {},
 ): ParsedSessionLogs {
+  if (!content.trim()) {
+    return {
+      notifications: [],
+      rawEntries: [],
+      totalLineCount: 0,
+      parseFailureCount: 0,
+    };
+  }
+
+  const notifications: PortableSessionNotification[] = [];
   const rawEntries: StoredLogEntry[] = [];
   let sessionId: string | undefined;
   let adapter: Adapter | undefined;
@@ -22,6 +34,16 @@ export function parseSessionLogContent(
     try {
       const stored = JSON.parse(line) as StoredLogEntry;
       rawEntries.push(stored);
+
+      if (
+        stored.type === "notification" &&
+        stored.notification?.method === "session/update" &&
+        stored.notification.params
+      ) {
+        notifications.push(
+          stored.notification.params as PortableSessionNotification,
+        );
+      }
 
       if (
         stored.type === "notification" &&
@@ -43,6 +65,7 @@ export function parseSessionLogContent(
   }
 
   return {
+    notifications,
     rawEntries,
     totalLineCount: lines.length,
     parseFailureCount,

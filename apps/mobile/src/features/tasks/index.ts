@@ -16,10 +16,7 @@ export {
   useUpdateTask,
 } from "./hooks/useTasks";
 // Stores
-export {
-  type TaskSession,
-  useTaskSessionStore,
-} from "./stores/taskSessionStore";
+export { useTaskSessionStore } from "./stores/taskSessionStore";
 export { useTaskStore } from "./stores/taskStore";
 
 // Types

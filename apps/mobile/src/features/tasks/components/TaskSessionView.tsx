@@ -1,3 +1,7 @@
+import type {
+  PortableSessionEvent as SessionEvent,
+  PortableSessionNotification as SessionNotification,
+} from "@posthog/core/sessions/portableSessionEvents";
 import {
   ArrowDown,
   Brain,
@@ -25,8 +29,6 @@ import { useThemeColors } from "@/lib/theme";
 import type {
   CloudPendingPermissionRequest,
   PlanEntry,
-  SessionEvent,
-  SessionNotification,
   SessionNotificationAttachment,
 } from "../types";
 import { PlanApprovalCard } from "./PlanApprovalCard";
