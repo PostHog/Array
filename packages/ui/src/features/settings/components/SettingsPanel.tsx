@@ -22,6 +22,7 @@ import {
   TreeStructure,
   Wrench,
 } from "@phosphor-icons/react";
+import { MenuLabel } from "@posthog/quill";
 import { BILLING_FLAG } from "@posthog/shared";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -31,6 +32,7 @@ import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsPageContent } from "@posthog/ui/features/settings/components/SettingsPageContent";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { getHiddenSettingsCategories } from "@posthog/ui/features/settings/settingsVisibility";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
@@ -122,43 +124,6 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
 
 const SIDEBAR_ITEMS = SIDEBAR_GROUPS.flatMap((group) => group.items);
 
-// Settings that only make sense with a local filesystem/host (local worktrees,
-// terminal, the local `claude` CLI, the desktop app itself). Hidden on the
-// cloud-only web host.
-const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
-  "workspaces",
-  "worktrees",
-  "terminal",
-  "claude-code",
-  "discord",
-  "updates",
-]);
-
-interface SettingsVisibility {
-  billingEnabled: boolean;
-  spendAnalysisEnabled: boolean;
-  localWorkspaces: boolean;
-}
-
-function getHiddenSettingsCategories({
-  billingEnabled,
-  spendAnalysisEnabled,
-  localWorkspaces,
-}: SettingsVisibility): ReadonlySet<SettingsCategory> {
-  const hiddenCategories = new Set<SettingsCategory>();
-
-  if (!billingEnabled && !spendAnalysisEnabled) {
-    hiddenCategories.add("plan-usage");
-  }
-  if (!localWorkspaces) {
-    for (const category of LOCAL_ONLY_CATEGORIES) {
-      hiddenCategories.add(category);
-    }
-  }
-
-  return hiddenCategories;
-}
-
 export interface SettingsPanelProps {
   /**
    * Override the active category. Defaults to the `$category` URL param
@@ -206,10 +171,11 @@ export function SettingsPanel({
   // Guard direct navigation (URL, deep link, programmatic openSettings) to a
   // category hidden on this host. Fall back to General so a hidden section is
   // never rendered.
-  const resolvedCategory: SettingsCategory =
-    !localWorkspaces && LOCAL_ONLY_CATEGORIES.has(activeCategory)
-      ? "general"
-      : activeCategory;
+  const resolvedCategory: SettingsCategory = hiddenCategories.has(
+    activeCategory,
+  )
+    ? "general"
+    : activeCategory;
   const activeSidebarCategory: SettingsCategory =
     resolvedCategory === "cloud-environments"
       ? "environments"
@@ -266,9 +232,9 @@ export function SettingsPanel({
           <div className="flex flex-col gap-3 py-2">
             {sidebarGroups.map((group) => (
               <div key={group.label}>
-                <Text className="px-3 pb-1 font-medium text-[10px] text-gray-9 uppercase tracking-wider">
+                <MenuLabel className="px-3 pb-1 text-gray-9">
                   {group.label}
-                </Text>
+                </MenuLabel>
                 {group.items.map((item) => {
                   const isActive = activeSidebarCategory === item.id;
                   return (
