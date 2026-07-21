@@ -5,9 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   forkTask: vi.fn(),
+  invalidateTasks: vi.fn(),
   navigateToTaskDetail: vi.fn(),
   openTask: vi.fn(),
+  setProvisioningFailed: vi.fn(),
   session: null as Record<string, unknown> | null,
+  toastError: vi.fn(),
   useWorkspace: vi.fn(),
 }));
 
@@ -28,6 +31,17 @@ vi.mock("@posthog/ui/router/navigationBridge", () => ({
 }));
 vi.mock("@posthog/ui/router/useOpenTask", () => ({
   openTask: mocks.openTask,
+}));
+vi.mock("@posthog/ui/features/tasks/useTaskCrudMutations", () => ({
+  useCreateTask: () => ({ invalidateTasks: mocks.invalidateTasks }),
+}));
+vi.mock("@posthog/ui/features/provisioning/store", () => ({
+  useProvisioningStore: {
+    getState: () => ({ setFailed: mocks.setProvisioningFailed }),
+  },
+}));
+vi.mock("@posthog/ui/features/notifications/errorDetails", () => ({
+  toastError: mocks.toastError,
 }));
 vi.mock("@posthog/ui/primitives/Tooltip", () => ({
   Tooltip: ({
@@ -64,8 +78,11 @@ describe("ForkTaskButton", () => {
 
   it("forks a completed cloud task and opens the child", async () => {
     mocks.forkTask.mockImplementation(
-      async (_task: Task, onReady: (output: { task: Task }) => void) => {
-        onReady({ task: { id: "task-2" } as Task });
+      async (
+        _task: Task,
+        options: { onTaskReady: (output: { task: Task }) => void },
+      ) => {
+        options.onTaskReady({ task: { id: "task-2" } as Task });
         return { success: true, data: {} };
       },
     );
@@ -80,13 +97,53 @@ describe("ForkTaskButton", () => {
     await waitFor(() =>
       expect(mocks.forkTask).toHaveBeenCalledWith(
         cloudTask,
-        expect.any(Function),
+        expect.objectContaining({
+          sourceRunStatus: "completed",
+          onTaskReady: expect.any(Function),
+        }),
       ),
+    );
+    expect(mocks.invalidateTasks).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-2" }),
     );
     expect(mocks.openTask).toHaveBeenCalledWith(
       expect.objectContaining({ id: "task-2" }),
     );
     expect(mocks.navigateToTaskDetail).not.toHaveBeenCalledWith("task-2");
+  });
+
+  it("records and reports a provisioning failure on the child task", async () => {
+    const child = { id: "task-2" } as Task;
+    mocks.forkTask.mockImplementation(
+      async (
+        _task: Task,
+        options: { onTaskReady: (output: { task: Task }) => void },
+      ) => {
+        options.onTaskReady({ task: child });
+        return {
+          success: true,
+          data: { task: child, provisioningError: "git checkout failed" },
+        };
+      },
+    );
+
+    render(
+      <Theme>
+        <ForkTaskButton task={cloudTask} />
+      </Theme>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fork task" }));
+
+    await waitFor(() =>
+      expect(mocks.setProvisioningFailed).toHaveBeenCalledWith(
+        "task-2",
+        "git checkout failed",
+      ),
+    );
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      "Failed to create workspace",
+      "git checkout failed",
+    );
   });
 
   it("uses the live cloud status before the persisted run status", () => {

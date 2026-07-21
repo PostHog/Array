@@ -96,6 +96,20 @@ describe("restoreWorktreeFromCheckpoint", () => {
     expect(mockRevertRun).toHaveBeenCalledWith({
       baseDir: "/wt/branch",
       checkpointId: "cp-1",
+      restoreBranch: undefined,
+    });
+  });
+
+  it("can restore the checkpoint without claiming its recorded branch", async () => {
+    await restoreWorktreeFromCheckpoint({
+      ...baseParams,
+      restoreBranch: false,
+    });
+
+    expect(mockRevertRun).toHaveBeenCalledWith({
+      baseDir: "/wt/branch",
+      checkpointId: "cp-1",
+      restoreBranch: false,
     });
   });
 

@@ -3,6 +3,7 @@ import {
   executionModeSchema,
   isTerminalStatus,
   type Task,
+  type TaskRun,
 } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
 import {
@@ -12,6 +13,11 @@ import {
 import { TASK_CREATION_HOST, TASK_SERVICE } from "./identifiers";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import type { CreateTaskResult, TaskService } from "./taskService";
+
+export interface ForkTaskOptions {
+  sourceRunStatus?: TaskRun["status"];
+  onTaskReady?: (output: TaskCreationOutput) => void;
+}
 
 @injectable()
 export class TaskForkService {
@@ -24,7 +30,7 @@ export class TaskForkService {
 
   async forkTask(
     sourceTask: Task,
-    onTaskReady?: (output: TaskCreationOutput) => void,
+    options: ForkTaskOptions = {},
   ): Promise<CreateTaskResult> {
     const sourceRun = sourceTask.latest_run;
     if (!sourceRun) {
@@ -37,7 +43,10 @@ export class TaskForkService {
     const sourceWorkspace = await this.host.getWorkspace(sourceTask.id);
     const isCloud =
       sourceWorkspace?.mode === "cloud" || sourceRun.environment === "cloud";
-    if (isCloud && !isTerminalStatus(sourceRun.status)) {
+    if (
+      isCloud &&
+      !isTerminalStatus(options.sourceRunStatus ?? sourceRun.status)
+    ) {
       return this.validationError(
         "Wait for the cloud run to finish before forking it",
       );
@@ -89,7 +98,7 @@ export class TaskForkService {
           taskRunId: sourceRun.id,
         },
       },
-      onTaskReady,
+      options.onTaskReady,
     );
   }
 

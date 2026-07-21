@@ -82,6 +82,22 @@ describe("TaskForkService", () => {
     });
   });
 
+  it("uses the effective cloud status when the persisted run is stale", async () => {
+    vi.mocked(host.getWorkspace).mockResolvedValue(
+      createWorkspace({ mode: "cloud", folderPath: "" }),
+    );
+    const task = createTask({
+      latest_run: createRun({ environment: "cloud", status: "in_progress" }),
+    });
+
+    const result = await service.forkTask(task, {
+      sourceRunStatus: "completed",
+    });
+
+    expect(result.success).toBe(true);
+    expect(taskService.createTask).toHaveBeenCalledOnce();
+  });
+
   it("creates a local worktree fork", async () => {
     const task = createTask({
       latest_run: createRun({

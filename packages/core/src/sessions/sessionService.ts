@@ -1540,6 +1540,18 @@ export class SessionService {
       targetTaskRunId: taskRun.id,
     });
 
+    params.task.latest_run = await authStatus.auth.client.updateTaskRun(
+      params.task.id,
+      taskRun.id,
+      {
+        state: {
+          ...taskRun.state,
+          forked_from_task_id: params.sourceTaskId,
+          forked_from_run_id: params.sourceTaskRunId,
+        },
+      },
+    );
+
     const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
       this.d.settings;
     const result = await this.d.trpc.agent.fork.mutate({
@@ -1559,18 +1571,6 @@ export class SessionService {
         : undefined,
       model: source.model ?? this.d.DEFAULT_GATEWAY_MODEL,
     });
-
-    params.task.latest_run = await authStatus.auth.client.updateTaskRun(
-      params.task.id,
-      taskRun.id,
-      {
-        state: {
-          ...taskRun.state,
-          forked_from_task_id: params.sourceTaskId,
-          forked_from_run_id: params.sourceTaskRunId,
-        },
-      },
-    );
 
     const session = createBaseSession(
       taskRun.id,

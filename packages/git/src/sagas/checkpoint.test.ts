@@ -75,9 +75,14 @@ async function captureCheckpoint(
 async function revertCheckpoint(
   repoPath: string,
   checkpointId: string,
+  restoreBranch?: boolean,
 ): Promise<void> {
   const revert = new RevertCheckpointSaga();
-  const result = await revert.run({ baseDir: repoPath, checkpointId });
+  const result = await revert.run({
+    baseDir: repoPath,
+    checkpointId,
+    restoreBranch,
+  });
   expect(result.success).toBe(true);
 }
 
@@ -247,6 +252,37 @@ describe("checkpoint sagas", () => {
       expect(aIndex).toBe("wt-staged");
       expect(bWorktree).toBe("wt-unstaged\n");
       expect(cWorktree).toBe("wt-untracked\n");
+    });
+  });
+
+  it("restores detached when the source branch is checked out elsewhere", async () => {
+    await withRepoAndWorktree(async (repoPath, sourceWorktreePath) => {
+      const sourceGit = createGitClient(sourceWorktreePath);
+      await writeFile(path.join(sourceWorktreePath, "a.txt"), "forked\n");
+      await captureCheckpoint(sourceWorktreePath, "fork");
+
+      const childWorktreePath = await mkdtemp(
+        path.join(tmpdir(), "posthog-code-child-worktree-"),
+      );
+      try {
+        const repoGit = createGitClient(repoPath);
+        await repoGit.raw(["worktree", "add", "--detach", childWorktreePath]);
+
+        await revertCheckpoint(childWorktreePath, "fork", false);
+
+        const childGit = createGitClient(childWorktreePath);
+        expect(
+          await readFile(path.join(childWorktreePath, "a.txt"), "utf8"),
+        ).toBe("forked\n");
+        expect((await childGit.raw(["branch", "--show-current"])).trim()).toBe(
+          "",
+        );
+        expect(
+          (await sourceGit.raw(["branch", "--show-current"])).trim(),
+        ).not.toBe("");
+      } finally {
+        await rm(childWorktreePath, { recursive: true, force: true });
+      }
     });
   });
 

@@ -1,10 +1,14 @@
 import { GitBranch, Spinner } from "@phosphor-icons/react";
 import { TASK_FORK_SERVICE } from "@posthog/core/task-detail/identifiers";
+import { getErrorTitle } from "@posthog/core/task-detail/taskInput";
 import type { TaskForkService } from "@posthog/core/task-detail/taskForkService";
 import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
 import { isTerminalStatus, type Task } from "@posthog/shared/domain-types";
 import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
+import { toastError } from "@posthog/ui/features/notifications/errorDetails";
+import { useProvisioningStore } from "@posthog/ui/features/provisioning/store";
+import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -15,6 +19,7 @@ import { shallow } from "zustand/shallow";
 
 export function ForkTaskButton({ task }: { task: Task }) {
   const taskForkService = useService<TaskForkService>(TASK_FORK_SERVICE);
+  const { invalidateTasks } = useCreateTask();
   const workspace = useWorkspace(task.id);
   const { cloudStatus, isPromptPending, sessionStatus } = useSessionSelector(
     task.id,
@@ -54,11 +59,23 @@ export function ForkTaskButton({ task }: { task: Task }) {
   const handleFork = async () => {
     setIsForking(true);
     try {
-      const result = await taskForkService.forkTask(task, ({ task: child }) => {
-        void openTask(child);
+      const result = await taskForkService.forkTask(task, {
+        sourceRunStatus: currentCloudStatus,
+        onTaskReady: ({ task: child }) => {
+          invalidateTasks(child);
+          void openTask(child);
+        },
       });
       if (!result.success) {
         toast.error("Could not fork task", { description: result.error });
+      } else if (result.data.provisioningError) {
+        useProvisioningStore
+          .getState()
+          .setFailed(result.data.task.id, result.data.provisioningError);
+        toastError(
+          getErrorTitle("workspace_creation"),
+          result.data.provisioningError,
+        );
       }
     } catch (error) {
       toast.error("Could not fork task", {

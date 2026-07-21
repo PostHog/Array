@@ -59,6 +59,12 @@ function createHarness(updateTaskRun: ReturnType<typeof vi.fn>) {
   const setAdapter = vi.fn();
   const subscribe = vi.fn(() => ({ unsubscribe: vi.fn() }));
   const track = vi.fn();
+  const flushLogs = vi.fn().mockResolvedValue(undefined);
+  const cloneLocalLogs = vi.fn().mockResolvedValue(undefined);
+  const fork = vi.fn().mockResolvedValue({
+    channel: "child-channel",
+    configOptions: [{ id: "model", type: "select" }],
+  });
   const deps = {
     store: {
       getSessionByTaskId: vi.fn(() => sourceSession),
@@ -66,19 +72,14 @@ function createHarness(updateTaskRun: ReturnType<typeof vi.fn>) {
     },
     trpc: {
       agent: {
-        flushLogs: { mutate: vi.fn().mockResolvedValue(undefined) },
-        fork: {
-          mutate: vi.fn().mockResolvedValue({
-            channel: "child-channel",
-            configOptions: [{ id: "model", type: "select" }],
-          }),
-        },
+        flushLogs: { mutate: flushLogs },
+        fork: { mutate: fork },
         onSessionEvent: { subscribe },
         onPermissionRequest: { subscribe },
         onSessionIdleKilled: { subscribe },
       },
       logs: {
-        cloneLocalLogs: { mutate: vi.fn().mockResolvedValue(undefined) },
+        cloneLocalLogs: { mutate: cloneLocalLogs },
       },
     },
     fetchAuthState: vi.fn().mockResolvedValue({
@@ -111,6 +112,9 @@ function createHarness(updateTaskRun: ReturnType<typeof vi.fn>) {
     setAdapter,
     subscribe,
     track,
+    flushLogs,
+    cloneLocalLogs,
+    fork,
   };
 }
 
@@ -124,8 +128,15 @@ describe("SessionService.forkLocalTask", () => {
         forked_from_run_id: "source-run",
       },
     });
-    const { service, setSession, setPersistedConfigOptions, setAdapter } =
-      createHarness(updateTaskRun);
+    const {
+      service,
+      setSession,
+      setPersistedConfigOptions,
+      setAdapter,
+      flushLogs,
+      cloneLocalLogs,
+      fork,
+    } = createHarness(updateTaskRun);
 
     await service.forkLocalTask({
       sourceTaskId: "source-task",
@@ -141,6 +152,20 @@ describe("SessionService.forkLocalTask", () => {
         forked_from_run_id: "source-run",
       },
     });
+    expect(flushLogs).toHaveBeenCalledWith({ taskRunId: "source-run" });
+    expect(cloneLocalLogs).toHaveBeenCalledWith({
+      sourceTaskRunId: "source-run",
+      targetTaskRunId: "child-run",
+    });
+    expect(flushLogs.mock.invocationCallOrder[0]).toBeLessThan(
+      cloneLocalLogs.mock.invocationCallOrder[0],
+    );
+    expect(cloneLocalLogs.mock.invocationCallOrder[0]).toBeLessThan(
+      updateTaskRun.mock.invocationCallOrder[0],
+    );
+    expect(updateTaskRun.mock.invocationCallOrder[0]).toBeLessThan(
+      fork.mock.invocationCallOrder[0],
+    );
     expect(updateTaskRun.mock.invocationCallOrder[0]).toBeLessThan(
       setPersistedConfigOptions.mock.invocationCallOrder[0],
     );
@@ -163,6 +188,7 @@ describe("SessionService.forkLocalTask", () => {
       setAdapter,
       subscribe,
       track,
+      fork,
     } = createHarness(updateTaskRun);
 
     await expect(
@@ -177,6 +203,7 @@ describe("SessionService.forkLocalTask", () => {
     expect(setPersistedConfigOptions).not.toHaveBeenCalled();
     expect(setAdapter).not.toHaveBeenCalled();
     expect(setSession).not.toHaveBeenCalled();
+    expect(fork).not.toHaveBeenCalled();
     expect(subscribe).toHaveBeenCalledTimes(1);
     expect(track).not.toHaveBeenCalled();
   });
