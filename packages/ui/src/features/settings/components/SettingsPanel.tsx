@@ -152,58 +152,58 @@ const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
   "updates",
 ]);
 
-const CATEGORY_TITLES: Record<SettingsCategory, string> = {
-  general: "General",
-  notifications: "Notifications",
-  "plan-usage": "Plan & usage",
-  workspaces: "Workspaces",
-  worktrees: "Worktrees",
-  environments: "Environments",
-  "cloud-environments": "Environments",
-  agents: "Agents",
-  skills: "Skills",
-  "mcp-servers": "MCP servers",
-  personalization: "Personalization",
-  terminal: "Terminal",
-  "claude-code": "Claude Code",
-  shortcuts: "Shortcuts",
-  github: "GitHub",
-  slack: "Slack integration",
-  discord: "Discord",
-  signals: "Self-driving",
-  updates: "Updates",
-  advanced: "Advanced",
-};
+type SettingsPageLayout = "contained" | "full-bleed";
 
-const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
-  general: GeneralSettings,
-  notifications: NotificationsSettings,
-  "plan-usage": PlanUsageSettings,
-  workspaces: WorkspacesSettings,
-  worktrees: WorktreesSettings,
-  environments: EnvironmentsSettings,
-  "cloud-environments": EnvironmentsSettings,
-  agents: AgentsSettings,
-  skills: SkillsView,
-  "mcp-servers": McpServersView,
-  personalization: PersonalizationSettings,
-  terminal: TerminalSettings,
-  "claude-code": ClaudeCodeSettings,
-  shortcuts: ShortcutsSettings,
-  github: GitHubSettings,
-  slack: SlackSettings,
-  discord: DiscordSettings,
+interface SettingsPageDefinition {
+  title: string;
+  component: React.ComponentType;
+  layout: SettingsPageLayout;
+}
+
+function defineSettingsPage(
+  title: string,
+  component: React.ComponentType,
+  layout: SettingsPageLayout = "contained",
+): SettingsPageDefinition {
+  return { title, component, layout };
+}
+
+const SETTINGS_PAGES: Record<SettingsCategory, SettingsPageDefinition> = {
+  general: defineSettingsPage("General", GeneralSettings),
+  notifications: defineSettingsPage("Notifications", NotificationsSettings),
+  "plan-usage": defineSettingsPage("Plan & usage", PlanUsageSettings),
+  workspaces: defineSettingsPage("Workspaces", WorkspacesSettings),
+  worktrees: defineSettingsPage("Worktrees", WorktreesSettings),
+  environments: defineSettingsPage("Environments", EnvironmentsSettings),
+  "cloud-environments": defineSettingsPage(
+    "Environments",
+    EnvironmentsSettings,
+  ),
+  agents: defineSettingsPage("Agents", AgentsSettings),
+  skills: defineSettingsPage("Skills", SkillsView, "full-bleed"),
+  "mcp-servers": defineSettingsPage(
+    "MCP servers",
+    McpServersView,
+    "full-bleed",
+  ),
+  personalization: defineSettingsPage(
+    "Personalization",
+    PersonalizationSettings,
+  ),
+  terminal: defineSettingsPage("Terminal", TerminalSettings),
+  "claude-code": defineSettingsPage("Claude Code", ClaudeCodeSettings),
+  shortcuts: defineSettingsPage("Shortcuts", ShortcutsSettings),
+  github: defineSettingsPage("GitHub", GitHubSettings),
+  slack: defineSettingsPage("Slack integration", SlackSettings),
+  discord: defineSettingsPage("Discord", DiscordSettings),
   // Slack notification config lives in the dedicated Slack section; the Signals
   // section links out to it rather than duplicating the controls.
-  signals: () => <SignalSourcesSettings showSlackNotifications={false} />,
-  updates: UpdatesSettings,
-  advanced: AdvancedSettings,
+  signals: defineSettingsPage("Self-driving", () => (
+    <SignalSourcesSettings showSlackNotifications={false} />
+  )),
+  updates: defineSettingsPage("Updates", UpdatesSettings),
+  advanced: defineSettingsPage("Advanced", AdvancedSettings),
 };
-
-const FULL_HEIGHT_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
-  "skills",
-  "mcp-servers",
-]);
 
 export interface SettingsPanelProps {
   /**
@@ -277,7 +277,8 @@ export function SettingsPanel({
     preventDefault: true,
   });
 
-  const ActiveComponent = CATEGORY_COMPONENTS[resolvedCategory];
+  const activePage = SETTINGS_PAGES[resolvedCategory];
+  const ActiveComponent = activePage.component;
 
   const activeCategoryIcon = SIDEBAR_ITEMS.find(
     (item) => item.id === activeSidebarCategory,
@@ -390,7 +391,7 @@ export function SettingsPanel({
               fill="url(#settings-dot-pattern)"
             />
           </svg>
-          {FULL_HEIGHT_CATEGORIES.has(resolvedCategory) ? (
+          {activePage.layout === "full-bleed" ? (
             <Flex
               direction="column"
               className="relative z-[1] h-full min-h-0 w-full"
@@ -405,7 +406,7 @@ export function SettingsPanel({
                     <span className="text-gray-10">{activeCategoryIcon}</span>
                   )}
                   <Text className="font-medium text-lg leading-6.5">
-                    {CATEGORY_TITLES[resolvedCategory]}
+                    {activePage.title}
                   </Text>
                 </Flex>
               )}
@@ -425,7 +426,7 @@ export function SettingsPanel({
                         </span>
                       )}
                       <Text className="font-medium text-lg leading-6.5">
-                        {CATEGORY_TITLES[resolvedCategory]}
+                        {activePage.title}
                       </Text>
                     </Flex>
                   )}
