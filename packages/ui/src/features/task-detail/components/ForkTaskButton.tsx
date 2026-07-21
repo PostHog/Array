@@ -3,7 +3,9 @@ import { TASK_FORK_SERVICE } from "@posthog/core/task-detail/identifiers";
 import { getErrorTitle } from "@posthog/core/task-detail/taskInput";
 import type { TaskForkService } from "@posthog/core/task-detail/taskForkService";
 import { useService } from "@posthog/di/react";
+import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
+import type { Workspace } from "@posthog/shared";
 import { isTerminalStatus, type Task } from "@posthog/shared/domain-types";
 import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
 import { toastError } from "@posthog/ui/features/notifications/errorDetails";
@@ -14,11 +16,14 @@ import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { navigateToTaskDetail } from "@posthog/ui/router/navigationBridge";
 import { openTask } from "@posthog/ui/router/useOpenTask";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { shallow } from "zustand/shallow";
 
 export function ForkTaskButton({ task }: { task: Task }) {
   const taskForkService = useService<TaskForkService>(TASK_FORK_SERVICE);
+  const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
   const { invalidateTasks } = useCreateTask();
   const workspace = useWorkspace(task.id);
   const { cloudStatus, isPromptPending, sessionStatus, sessionTaskRunId } =
@@ -78,6 +83,15 @@ export function ForkTaskButton({ task }: { task: Task }) {
           .setFailed(result.data.task.id, result.data.provisioningError);
       }
 
+      if (result.data.workspace) {
+        queryClient.setQueryData<Record<string, Workspace>>(
+          trpc.workspace.getAll.queryKey(),
+          (workspaces) => ({
+            ...workspaces,
+            [result.data.task.id]: result.data.workspace as Workspace,
+          }),
+        );
+      }
       invalidateTasks(result.data.task);
       void openTask(result.data.task);
       if (result.data.provisioningError) {

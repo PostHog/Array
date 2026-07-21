@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   invalidateTasks: vi.fn(),
   navigateToTaskDetail: vi.fn(),
   openTask: vi.fn(),
+  setQueryData: vi.fn(),
   setProvisioningFailed: vi.fn(),
   session: null as Record<string, unknown> | null,
   toast: vi.fn(),
@@ -17,6 +18,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@posthog/di/react", () => ({
   useService: () => ({ forkTask: mocks.forkTask }),
+}));
+vi.mock("@posthog/host-router/react", () => ({
+  useHostTRPC: () => ({
+    workspace: { getAll: { queryKey: () => ["workspace", "getAll"] } },
+  }),
+}));
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ setQueryData: mocks.setQueryData }),
 }));
 vi.mock("@posthog/ui/features/workspace/useWorkspace", () => ({
   useWorkspace: mocks.useWorkspace,
@@ -106,6 +115,36 @@ describe("ForkTaskButton", () => {
       expect.objectContaining({ id: "task-2" }),
     );
     expect(mocks.navigateToTaskDetail).not.toHaveBeenCalledWith("task-2");
+  });
+
+  it("caches the forked workspace before opening a local child", async () => {
+    const child = { id: "task-2" } as Task;
+    const workspace = { taskId: "task-2", mode: "worktree" };
+    mocks.useWorkspace.mockReturnValue({ mode: "worktree" });
+    mocks.session = { status: "connected", taskRunId: "run-1" };
+    mocks.forkTask.mockResolvedValue({
+      success: true,
+      data: { task: child, workspace },
+    });
+
+    render(
+      <Theme>
+        <ForkTaskButton task={cloudTask} />
+      </Theme>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fork task" }));
+
+    await waitFor(() => expect(mocks.openTask).toHaveBeenCalledWith(child));
+    const updateWorkspaces = mocks.setQueryData.mock.calls[0]?.[1] as (
+      workspaces: Record<string, unknown>,
+    ) => Record<string, unknown>;
+    expect(updateWorkspaces({ existing: {} })).toEqual({
+      existing: {},
+      "task-2": workspace,
+    });
+    expect(mocks.setQueryData.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.openTask.mock.invocationCallOrder[0],
+    );
   });
 
   it("records and reports a provisioning failure on the child task", async () => {
