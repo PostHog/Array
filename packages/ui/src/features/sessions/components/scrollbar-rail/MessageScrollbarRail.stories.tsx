@@ -162,10 +162,10 @@ function ScrollableConversationDemo() {
             {transcript.map((entry) => (
               <div
                 key={entry.id}
-                data-conversation-item-id={entry.id}
                 className="mx-auto max-w-[640px] px-4 py-3"
               >
                 <div
+                  data-conversation-item-id={entry.id}
                   className="rounded-(--radius-2) px-3 py-2 text-[13px] text-white"
                   style={{ backgroundColor: ACCENT }}
                 >
