@@ -1,6 +1,6 @@
 # PostHog
 
-The PostHog desktop task manager
+The agentic workspace for product builders
 
 ## The Goal
 
