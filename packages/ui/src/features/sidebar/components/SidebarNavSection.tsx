@@ -56,7 +56,7 @@ export function SidebarNavSection({
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
-  // Loops stays behind posthog-desktop-loops; default on in dev so local builds
+  // Loops stays behind the loops flag; default on in dev so local builds
   // keep the nav item. Also gates the per-channel Loops tab (see ChannelTabs).
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
   // Channels stay behind project-bluebird: the "Enable channels" nav row (and
