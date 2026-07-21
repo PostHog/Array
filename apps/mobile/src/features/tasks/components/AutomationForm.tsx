@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { CreateTaskAutomationOptions } from "@posthog/shared";
 import { CaretDown, GithubLogo } from "phosphor-react-native";
 import { type MutableRefObject, useEffect, useMemo, useState } from "react";
 import {
@@ -12,10 +13,7 @@ import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { useThemeColors } from "@/lib/theme";
 import { RepositoryPickerInline } from "../composer/RepositoryPickerInline";
 import { useIntegrations } from "../hooks/useIntegrations";
-import type {
-  CreateTaskAutomationOptions,
-  RepositorySelection,
-} from "../types";
+import type { RepositorySelection } from "../types";
 import {
   type AutomationScheduleDraft,
   buildCronExpression,

@@ -1,5 +1,5 @@
+import { isTerminalStatus, type Task } from "@posthog/shared";
 import { Alert } from "react-native";
-import { isTerminalStatus, type Task } from "../types";
 
 export function isTaskRunning(task: Task): boolean {
   const status = task.latest_run?.status;

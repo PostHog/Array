@@ -1,3 +1,4 @@
+import type { Task } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { Archive, ArrowCounterClockwise } from "phosphor-react-native";
 import { useEffect, useRef } from "react";
@@ -10,7 +11,6 @@ import {
   View,
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import type { Task } from "../types";
 import {
   confirmArchiveRunningTask,
   isTaskRunning,

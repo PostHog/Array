@@ -1,6 +1,6 @@
+import type { Task, TaskRunStatus } from "@posthog/shared";
 import { Alert } from "react-native";
 import { describe, expect, it, vi } from "vitest";
-import type { Task, TaskRunStatus } from "../types";
 import { confirmArchiveRunningTask, isTaskRunning } from "./archiveGuard";
 
 function makeTask(status?: TaskRunStatus): Task {
@@ -39,7 +39,7 @@ describe("isTaskRunning", () => {
     expect(isTaskRunning(makeTask())).toBe(false);
   });
 
-  it.each(["not_started", "queued", "started", "in_progress"] as const)(
+  it.each(["not_started", "queued", "in_progress"] as const)(
     "treats %s as running",
     (status) => {
       expect(isTaskRunning(makeTask(status))).toBe(true);

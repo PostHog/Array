@@ -1,4 +1,4 @@
-import type { Task } from "../types";
+import type { Task } from "@posthog/shared";
 
 export type TaskStatusIconKind =
   | "pr"
@@ -34,7 +34,7 @@ export function getTaskStatusIconKind(task: Task): TaskStatusIconKind {
     return "running";
   }
 
-  if (status === "queued" || status === "started") {
+  if (status === "queued") {
     return "started";
   }
 

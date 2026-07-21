@@ -1,4 +1,4 @@
-import type { TaskAutomation } from "../types";
+import type { TaskAutomation } from "@posthog/shared";
 
 export type AutomationScheduleMode =
   | "hourly"

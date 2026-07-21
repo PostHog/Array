@@ -1,3 +1,9 @@
+import {
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type StoredLogEntry,
+  type Task,
+} from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { AppState } from "react-native";
 import { create } from "zustand";
@@ -18,15 +24,11 @@ import {
   type WatchCloudTaskHandle,
   watchCloudTask,
 } from "../lib/cloudTaskStream";
-import {
-  type CloudPendingPermissionRequest,
-  type CloudTaskUpdatePayload,
-  isTerminalStatus,
-  type SessionEvent,
-  type SessionNotification,
-  type SessionNotificationAttachment,
-  type StoredLogEntry,
-  type Task,
+import type {
+  CloudPendingPermissionRequest,
+  SessionEvent,
+  SessionNotification,
+  SessionNotificationAttachment,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playbackRateForTaskDuration } from "../utils/playbackRate";

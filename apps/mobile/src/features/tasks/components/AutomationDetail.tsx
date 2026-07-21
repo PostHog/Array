@@ -1,6 +1,6 @@
 import { Text } from "@components/text";
+import type { TaskAutomation, TaskRun } from "@posthog/shared";
 import { ActivityIndicator, Pressable, View } from "react-native";
-import type { TaskAutomation, TaskRun } from "../types";
 import { formatAutomationScheduleSummary } from "../utils/automationSchedule";
 import { getAutomationTemplatePresentation } from "../utils/automationTemplatePresentation";
 import { AutomationStatusBadge } from "./AutomationStatusBadge";

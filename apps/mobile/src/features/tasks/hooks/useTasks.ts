@@ -1,3 +1,4 @@
+import type { Task } from "@posthog/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useUserQuery } from "@/features/auth";
 import { logger } from "@/lib/logger";
@@ -10,7 +11,7 @@ import {
   updateTask,
 } from "../api";
 import { filterAndSortTasks, useTaskStore } from "../stores/taskStore";
-import type { CreateTaskOptions, Task } from "../types";
+import type { CreateTaskOptions } from "../types";
 
 const log = logger.scope("tasks-mutations");
 const ACTIVE_TASK_POLLING_INTERVAL_MS = 5_000;

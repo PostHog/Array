@@ -1,3 +1,10 @@
+import {
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type StoredLogEntry,
+  type TaskRun,
+  type TaskRunStatus,
+} from "@posthog/shared";
 import { fetch } from "expo/fetch";
 import { createTimeoutSignal } from "@/lib/api";
 import { logger } from "@/lib/logger";
@@ -8,16 +15,11 @@ import {
   streamCloudTask,
 } from "../api";
 import {
-  type CloudTaskUpdatePayload,
   isKeepaliveEvent,
   isPermissionRequestEvent,
   isSseErrorEvent,
   isTaskRunStateEvent,
-  isTerminalStatus,
-  type StoredLogEntry,
-  type TaskRun,
   type TaskRunStateEvent,
-  type TaskRunStatus,
 } from "../types";
 import { parseSessionLogs } from "../utils/parseSessionLogs";
 import { type SseEvent, SseEventParser } from "./sseParser";

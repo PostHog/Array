@@ -1,3 +1,8 @@
+import type {
+  CreateTaskAutomationOptions,
+  TaskAutomation,
+  UpdateTaskAutomationOptions,
+} from "@posthog/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/features/auth";
 import { logger } from "@/lib/logger";
@@ -9,11 +14,6 @@ import {
   runTaskAutomation,
   updateTaskAutomation,
 } from "../api";
-import type {
-  CreateTaskAutomationOptions,
-  TaskAutomation,
-  UpdateTaskAutomationOptions,
-} from "../types";
 import { taskKeys } from "./useTasks";
 
 const log = logger.scope("automations-mutations");

@@ -1,7 +1,7 @@
+import type { Task } from "@posthog/shared";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import type { Task } from "../types";
 import { TaskItem } from "./TaskItem";
 
 vi.mock("phosphor-react-native", () => ({

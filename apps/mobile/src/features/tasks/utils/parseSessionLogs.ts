@@ -1,12 +1,12 @@
 import type {
+  MobileStoredLogEntry,
   SessionEvent,
   SessionNotification,
-  StoredLogEntry,
 } from "../types";
 
 export interface ParsedSessionLogs {
   notifications: SessionNotification[];
-  rawEntries: StoredLogEntry[];
+  rawEntries: MobileStoredLogEntry[];
 }
 
 export function parseSessionLogs(content: string): ParsedSessionLogs {
@@ -15,11 +15,11 @@ export function parseSessionLogs(content: string): ParsedSessionLogs {
   }
 
   const notifications: SessionNotification[] = [];
-  const rawEntries: StoredLogEntry[] = [];
+  const rawEntries: MobileStoredLogEntry[] = [];
 
   for (const line of content.trim().split("\n")) {
     try {
-      const stored = JSON.parse(line) as StoredLogEntry;
+      const stored = JSON.parse(line) as MobileStoredLogEntry;
 
       const msg = stored.notification;
       if (msg) {
@@ -54,7 +54,7 @@ export function parseSessionLogs(content: string): ParsedSessionLogs {
 }
 
 export function convertRawEntriesToEvents(
-  rawEntries: StoredLogEntry[],
+  rawEntries: MobileStoredLogEntry[],
   notifications: SessionNotification[],
 ): SessionEvent[] {
   const events: SessionEvent[] = [];
@@ -89,7 +89,7 @@ export function convertRawEntriesToEvents(
   return events;
 }
 
-function inferDirection(entry: StoredLogEntry): "client" | "agent" {
+function inferDirection(entry: MobileStoredLogEntry): "client" | "agent" {
   if (entry.direction) return entry.direction;
   const msg = entry.notification;
   if (!msg) return "agent";
@@ -102,7 +102,7 @@ function inferDirection(entry: StoredLogEntry): "client" | "agent" {
 }
 
 export function convertStoredEntriesToEvents(
-  entries: StoredLogEntry[],
+  entries: MobileStoredLogEntry[],
 ): SessionEvent[] {
   const events: SessionEvent[] = [];
   for (const entry of entries) {

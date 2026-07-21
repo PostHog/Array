@@ -1,88 +1,11 @@
-export interface Task {
-  id: string;
-  task_number: number | null;
-  slug: string;
-  title: string;
-  description: string;
-  created_at: string;
-  updated_at: string;
-  origin_product: string;
-  /** Inbox report UUID when origin_product is "signal_report". */
-  signal_report?: string | null;
-  repository?: string | null;
-  github_integration?: number | null;
-  internal?: boolean;
-  latest_run?: TaskRun;
-}
+import type {
+  CloudPermissionOption,
+  CloudTaskPermissionRequestUpdate,
+  StoredLogEntry as SharedStoredLogEntry,
+  TaskRunStatus,
+} from "@posthog/shared";
 
-export interface TaskAutomation {
-  id: string;
-  name: string;
-  prompt: string;
-  repository: string;
-  github_integration?: number | null;
-  cron_expression: string;
-  timezone?: string | null;
-  template_id?: string | null;
-  enabled: boolean;
-  last_run_at: string | null;
-  last_run_status: string | null;
-  last_task_id: string | null;
-  last_task_run_id: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export type TaskRunStatus =
-  | "not_started"
-  | "queued"
-  | "started"
-  | "in_progress"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
-
-export function isTerminalStatus(
-  status: TaskRunStatus | string | null | undefined,
-): boolean {
-  return (
-    status !== null &&
-    status !== undefined &&
-    TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number])
-  );
-}
-
-export interface TaskRun {
-  id: string;
-  task: string;
-  team: number;
-  branch: string | null;
-  stage?: string | null;
-  environment?: "local" | "cloud";
-  status: TaskRunStatus;
-  log_url: string;
-  error_message: string | null;
-  reasoning_effort?: string | null;
-  output: Record<string, unknown> | null;
-  state: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-  completed_at: string | null;
-}
-
-export interface StoredLogEntry {
-  type: string;
-  timestamp?: string;
-  notification?: {
-    id?: number;
-    method?: string;
-    params?: unknown;
-    result?: unknown;
-    error?: unknown;
-  };
+export interface MobileStoredLogEntry extends SharedStoredLogEntry {
   direction?: "client" | "agent";
 }
 
@@ -138,22 +61,6 @@ export interface SessionUpdateEvent {
 
 export type SessionEvent = AcpMessage | SessionUpdateEvent;
 
-export interface CloudPermissionOption {
-  kind: string;
-  optionId: string;
-  name: string;
-  _meta?: Record<string, unknown>;
-}
-
-export interface CloudPermissionToolCall {
-  toolCallId: string;
-  title: string;
-  kind: string;
-  content?: unknown[];
-  rawInput?: Record<string, unknown>;
-  _meta?: Record<string, unknown>;
-}
-
 export interface CloudPermissionResponseSelection {
   optionId: string;
   displayText: string;
@@ -163,62 +70,10 @@ export interface CloudPermissionResponseSelection {
 
 export interface CloudPendingPermissionRequest {
   requestId: string;
-  toolCall: CloudPermissionToolCall;
+  toolCall: CloudTaskPermissionRequestUpdate["toolCall"];
   options: CloudPermissionOption[];
   response?: CloudPermissionResponseSelection;
 }
-
-interface CloudTaskUpdateBase {
-  taskId: string;
-  runId: string;
-}
-
-export interface CloudTaskLogsUpdate extends CloudTaskUpdateBase {
-  kind: "logs";
-  newEntries: StoredLogEntry[];
-  totalEntryCount: number;
-}
-
-export interface CloudTaskStatusUpdate extends CloudTaskUpdateBase {
-  kind: "status";
-  status?: TaskRunStatus;
-  stage?: string | null;
-  output?: Record<string, unknown> | null;
-  errorMessage?: string | null;
-  branch?: string | null;
-}
-
-export interface CloudTaskSnapshotUpdate extends CloudTaskUpdateBase {
-  kind: "snapshot";
-  newEntries: StoredLogEntry[];
-  totalEntryCount: number;
-  status?: TaskRunStatus;
-  stage?: string | null;
-  output?: Record<string, unknown> | null;
-  errorMessage?: string | null;
-  branch?: string | null;
-}
-
-export interface CloudTaskErrorUpdate extends CloudTaskUpdateBase {
-  kind: "error";
-  errorTitle: string;
-  errorMessage: string;
-  retryable: boolean;
-}
-
-export interface CloudTaskPermissionRequestUpdate extends CloudTaskUpdateBase {
-  kind: "permission_request";
-  requestId: string;
-  toolCall: CloudPermissionToolCall;
-  options: CloudPermissionOption[];
-}
-
-export type CloudTaskUpdatePayload =
-  | CloudTaskLogsUpdate
-  | CloudTaskStatusUpdate
-  | CloudTaskSnapshotUpdate
-  | CloudTaskErrorUpdate
-  | CloudTaskPermissionRequestUpdate;
 
 export interface TaskRunStateEvent {
   type: "task_run_state";
@@ -234,7 +89,7 @@ export interface TaskRunStateEvent {
 export interface PermissionRequestEventData {
   type: "permission_request";
   requestId: string;
-  toolCall: CloudPermissionToolCall;
+  toolCall: CloudTaskPermissionRequestUpdate["toolCall"];
   options: CloudPermissionOption[];
 }
 
@@ -324,26 +179,4 @@ export interface CreateTaskOptions {
   /** User-scoped GitHub integration UUID (UserIntegration pk) for user-authored
    *  cloud runs. Preferred over `github_integration` for interactive tasks. */
   github_user_integration?: string;
-}
-
-export interface CreateTaskAutomationOptions {
-  name: string;
-  prompt: string;
-  repository: string;
-  github_integration?: number | null;
-  cron_expression: string;
-  timezone: string;
-  enabled?: boolean;
-  template_id?: string | null;
-}
-
-export interface UpdateTaskAutomationOptions {
-  name?: string;
-  prompt?: string;
-  repository?: string;
-  github_integration?: number | null;
-  cron_expression?: string;
-  timezone?: string;
-  enabled?: boolean;
-  template_id?: string | null;
 }

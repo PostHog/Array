@@ -1,3 +1,9 @@
+import type {
+  CloudTaskUpdatePayload,
+  StoredLogEntry,
+  Task,
+  TaskRun,
+} from "@posthog/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-haptics", () => ({
@@ -25,12 +31,6 @@ vi.mock("../api", () => ({
 
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getTask, runTaskInCloud } from "../api";
-import type {
-  CloudTaskUpdatePayload,
-  StoredLogEntry,
-  Task,
-  TaskRun,
-} from "../types";
 import { useMessageQueueStore } from "./messageQueueStore";
 import { type TaskSession, useTaskSessionStore } from "./taskSessionStore";
 import { useTaskStore } from "./taskStore";

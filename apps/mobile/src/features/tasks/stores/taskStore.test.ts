@@ -1,5 +1,5 @@
+import type { Task } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import type { Task } from "../types";
 import { filterAndSortTasks } from "./taskStore";
 
 function makeTask(overrides: Partial<Task>): Task {

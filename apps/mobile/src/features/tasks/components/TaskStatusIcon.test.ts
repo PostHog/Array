@@ -1,5 +1,5 @@
+import type { Task } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import type { Task } from "../types";
 import { getTaskStatusIconKind } from "./taskStatusIconKind";
 
 function makeTask(latestRun?: Partial<NonNullable<Task["latest_run"]>>): Task {
@@ -55,12 +55,6 @@ describe("getTaskStatusIconKind", () => {
     expect(
       getTaskStatusIconKind(
         makeTask({ environment: "cloud", status: "in_progress" }),
-      ),
-    ).toBe("chat");
-
-    expect(
-      getTaskStatusIconKind(
-        makeTask({ environment: "cloud", status: "started" }),
       ),
     ).toBe("chat");
 

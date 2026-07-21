@@ -1,4 +1,12 @@
-import type { Adapter } from "@posthog/shared";
+import type {
+  Adapter,
+  CreateTaskAutomationOptions,
+  StoredLogEntry,
+  Task,
+  TaskAutomation,
+  TaskRun,
+  UpdateTaskAutomationOptions,
+} from "@posthog/shared";
 import type {
   SandboxCustomImage,
   SandboxEnvironment,
@@ -13,14 +21,8 @@ import {
 } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type {
-  CreateTaskAutomationOptions,
   CreateTaskOptions,
   Integration,
-  StoredLogEntry,
-  Task,
-  TaskAutomation,
-  TaskRun,
-  UpdateTaskAutomationOptions,
   UserGithubIntegration,
 } from "./types";
 

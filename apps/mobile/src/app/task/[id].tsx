@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { Task } from "@posthog/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -51,7 +52,6 @@ import {
 } from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import type { Task } from "@/features/tasks/types";
 import {
   confirmStopRun,
   isTaskRunning,

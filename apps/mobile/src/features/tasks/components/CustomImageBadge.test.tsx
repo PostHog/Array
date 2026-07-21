@@ -1,8 +1,8 @@
+import type { Task, TaskRun } from "@posthog/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Task, TaskRun } from "../types";
 
 const { mockUseAuthStore, mockGetImages, mockGetEnvironments } = vi.hoisted(
   () => ({

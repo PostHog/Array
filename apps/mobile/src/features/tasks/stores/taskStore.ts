@@ -1,9 +1,10 @@
+import type { Task } from "@posthog/shared";
 import { isContentlessTask } from "@posthog/shared/domain-types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ExecutionMode, ReasoningEffort } from "../composer/options";
-import type { RepositorySelection, Task } from "../types";
+import type { RepositorySelection } from "../types";
 
 export type OrganizeMode = "by-project" | "chronological";
 export type SortMode = "created" | "updated";
