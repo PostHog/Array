@@ -2267,6 +2267,106 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toHaveBeenCalledTimes(4);
     }, 20000);
 
+    it("steers an active turn without emitting a separate turn completion", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async () => ({
+        stopReason: "end_turn",
+        _meta: { steer: true },
+      }));
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-1",
+          method: "user_message",
+          params: { content: "change direction", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "steered", steered: true },
+      });
+      expect(prompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(broadcastTurnComplete).not.toHaveBeenCalled();
+      expect(resetTurnMessages).not.toHaveBeenCalled();
+    }, 20000);
+
+    it("declines steering without blocking on a fallback normal turn", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn();
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      prompt.mockImplementationOnce(async () => {
+        serverInternals.activeOwnedTurnCount = 0;
+        return { stopReason: "end_turn", _meta: { steer: false } };
+      });
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-race",
+          method: "user_message",
+          params: { content: "continue normally", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "steer_declined", steered: false },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+      expect(prompt.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(resetTurnMessages).not.toHaveBeenCalled();
+      expect(broadcastTurnComplete).not.toHaveBeenCalled();
+    }, 20000);
+
     it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
       const s = createServer();
       await s.start();
@@ -2305,6 +2405,163 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.result?.duplicate).toBeUndefined();
       expect(body.result?.stopReason).toBe("end_turn");
       expect(prompt).toHaveBeenCalledTimes(2);
+    }, 20000);
+
+    it("keeps a recoverable delivery committed across an ambiguous retry", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn()
+        .mockRejectedValue(new Error("API Error: The operation timed out."));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              messageId: "m-recoverable",
+            },
+          }),
+        });
+
+      const first = await send("first-attempt");
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "error_recoverable" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const retry = await send("ambiguous-retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    it("shares a failed in-flight messageId outcome with concurrent retries", async () => {
+      const s = createServer();
+      await s.start();
+      let rejectFirstDelivery!: (error: Error) => void;
+      const prompt = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectFirstDelivery = reject;
+            }),
+        )
+        .mockResolvedValueOnce({ stopReason: "end_turn" });
+      const serverInternals = s as unknown as {
+        logger: { info: (...args: unknown[]) => void };
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      const infoLog = vi.spyOn(serverInternals.logger, "info");
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-concurrent" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      let retrySettled = false;
+      const retryResponse = send("concurrent-retry").finally(() => {
+        retrySettled = true;
+      });
+      await vi.waitFor(() => {
+        expect(infoLog).toHaveBeenCalledWith(
+          "Awaiting in-flight user_message delivery",
+          { messageId: "m-concurrent" },
+        );
+        expect(prompt).toHaveBeenCalledTimes(1);
+        expect(retrySettled).toBe(false);
+      });
+
+      rejectFirstDelivery(new Error("sdk connection lost"));
+      const [first, retry] = await Promise.all([firstResponse, retryResponse]);
+      await expect(first.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      await expect(retry.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    it("keeps an accepted messageId committed when teardown clears the active session", async () => {
+      const s = createServer();
+      await s.start();
+      let finishPrompt!: (result: { stopReason: "end_turn" }) => void;
+      const prompt = vi.fn(
+        () =>
+          new Promise<{ stopReason: "end_turn" }>((resolve) => {
+            finishPrompt = resolve;
+          }),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } } | null;
+      };
+      const acceptedSession = serverInternals.session;
+      if (!acceptedSession) throw new Error("expected active test session");
+      acceptedSession.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-teardown" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      serverInternals.session = null;
+      finishPrompt({ stopReason: "end_turn" });
+      const first = await firstResponse;
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "end_turn" },
+      });
+
+      serverInternals.session = acceptedSession;
+      const retry = await send("retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
     }, 20000);
 
     // Shared plumbing for the relay-echo tests: install a controllable
@@ -2447,6 +2704,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(runStarted?.notification?.params).toMatchObject({
             runId: "test-run-id",
             taskId: "test-task-id",
+            steering: "native",
           });
           // Agent reports its semver so clients can gate UI features
           // against agent capabilities (e.g. `>=0.40.1`). The exact value

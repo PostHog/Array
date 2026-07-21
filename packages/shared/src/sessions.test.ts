@@ -95,15 +95,20 @@ describe("sessionSupportsNativeSteer", () => {
       { isCloud: false, steering: "interrupt-resend", adapter: "claude" },
       false,
     ],
-    // Cloud runs queue/resend; they never steer locally regardless of capability.
+    // Cloud runs steer only when the sandbox explicitly advertises support.
     [
       "cloud claude native",
       { isCloud: true, steering: "native", adapter: "claude" },
-      false,
+      true,
     ],
     [
       "cloud codex native",
       { isCloud: true, steering: "native", adapter: "codex" },
+      true,
+    ],
+    [
+      "cloud without capability",
+      { isCloud: true, steering: undefined, adapter: "claude" },
       false,
     ],
   ])("%s", (_label, session, expected) => {

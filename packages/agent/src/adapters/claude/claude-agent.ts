@@ -482,12 +482,20 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const hasInFlightTurns =
       this.session.activeTurn !== null || this.session.turnQueue.length > 0;
 
-    if (hasInFlightTurns && isSteerMeta(params._meta)) {
+    const isSteer = isSteerMeta(params._meta);
+    if (hasInFlightTurns && isSteer) {
       // Fold into the running turn (promptToClaude tagged it priority:"next");
       // the benign end_turn is ignored by clients, which key off _meta.steer.
+      const owner =
+        this.session.activeTurn ??
+        this.session.turnQueue.find((turn) => !turn.settled);
+      owner?.pendingSteerUuids.add(promptUuid);
       this.session.input.push(userMessage);
       await this.broadcastUserMessage(params);
-      return { stopReason: "end_turn" };
+      return { stopReason: "end_turn", _meta: { steer: true } };
+    }
+    if (isSteer) {
+      return { stopReason: "end_turn", _meta: { steer: false } };
     }
 
     if (!hasInFlightTurns && !isLocalOnlyCommand) {
@@ -507,6 +515,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const turn: Turn = {
       promptUuid,
+      pendingSteerUuids: new Set(),
       isLocalOnlyCommand,
       commandName: commandMatch?.[1],
       broadcast: () => this.broadcastUserMessage(params),
@@ -1060,6 +1069,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             );
 
             if (
+              !isTaskNotification &&
+              session.activeTurn &&
+              session.activeTurn.pendingSteerUuids.size > 0
+            ) {
+              this.logger.debug(
+                "Deferring turn completion until pending steers are consumed",
+                {
+                  sessionId,
+                  pendingSteers: session.activeTurn.pendingSteerUuids.size,
+                },
+              );
+              break;
+            }
+
+            if (
               (message as { stop_reason?: string }).stop_reason === "refusal"
             ) {
               // The API's stop_details.explanation is integrator-facing prose,
@@ -1198,6 +1222,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             // active one first), then drops from the feed. Runs before the
             // cancelled guard so a turn enqueued after a cancel still starts.
             if (message.type === "user" && "uuid" in message && message.uuid) {
+              if (session.activeTurn?.pendingSteerUuids.delete(message.uuid)) {
+                break;
+              }
               const queued = session.turnQueue.find(
                 (t) => t.promptUuid === message.uuid && !t.settled,
               );

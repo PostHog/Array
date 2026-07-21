@@ -243,6 +243,64 @@ describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
     ]);
   });
 
+  it("keeps the original turn open until a pending steer is consumed", async () => {
+    const { agent, client } = makeAgent();
+    const sessionId = "s-steer-ordering";
+    const { query, input } = installFakeSession(agent, sessionId);
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "use orange" }],
+    });
+    let promptSettled = false;
+    void promptPromise.then(() => {
+      promptSettled = true;
+    });
+    await tick();
+    await echoUserMessage(query, input);
+
+    const steerResult = await agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "use green instead" }],
+      _meta: { steer: true },
+    });
+    expect(steerResult._meta).toEqual({ steer: true });
+
+    await send(query, assistantMessage(sessionId, "msg_orange", "ORANGE"));
+    await send(query, resultSuccess(sessionId));
+    expect(promptSettled).toBe(false);
+
+    await echoUserMessage(query, input);
+    await send(query, assistantMessage(sessionId, "msg_green", "GREEN"));
+    await send(query, resultSuccess(sessionId));
+
+    await expect(promptPromise).resolves.toMatchObject({
+      stopReason: "end_turn",
+    });
+    expect(messageChunkTexts(client.sessionUpdate.mock.calls)).toEqual([
+      "ORANGE",
+      "GREEN",
+    ]);
+  });
+
+  it("declines an explicit steer after the active turn has ended", async () => {
+    const { agent } = makeAgent();
+    const sessionId = "s-expired-steer";
+    installFakeSession(agent, sessionId);
+
+    await expect(
+      agent.prompt({
+        sessionId,
+        prompt: [{ type: "text", text: "too late" }],
+        _meta: { steer: true },
+      }),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+
+    const session = (agent as unknown as { session: { turnQueue: unknown[] } })
+      .session;
+    expect(session.turnQueue).toHaveLength(0);
+  });
+
   it("reconnects a disconnected signed-commit server before the turn", async () => {
     const { agent } = makeAgent();
     const sessionId = "s-heal";
