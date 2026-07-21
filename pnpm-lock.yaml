@@ -479,9 +479,6 @@ importers:
       '@posthog/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
-      '@posthog/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@posthog/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -3,8 +3,8 @@ import * as WebBrowser from "expo-web-browser";
 import { Pressable, View } from "react-native";
 import { useAuthStore } from "@/features/auth";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useThemeColors } from "@/lib/theme";
-import { startGithubUserIntegrationConnect } from "../api";
 
 const log = logger.scope("github-connection-prompt");
 
@@ -44,7 +44,8 @@ export function GitHubConnectionPrompt({
       // and, because we pass `connect_from: "posthog_mobile"`, redirects the
       // callback to `posthog://github/callback` so this in-app browser closes.
       try {
-        const { install_url } = await startGithubUserIntegrationConnect();
+        const { install_url } =
+          await getPostHogApiClient().startGithubUserIntegrationConnect();
         authorizeUrl = install_url;
       } catch (error) {
         log.error("Failed to start GitHub connection", { error });

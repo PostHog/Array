@@ -14,9 +14,11 @@ vi.mock("@/features/auth", () => ({
   useAuthStore: mockUseAuthStore,
 }));
 
-vi.mock("../api", () => ({
-  getGithubRepositories: mockGetGithubRepositories,
-  getIntegrations: mockGetIntegrations,
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({
+    getGithubRepositories: mockGetGithubRepositories,
+    getIntegrations: mockGetIntegrations,
+  }),
 }));
 
 import { useRepositoryCacheStore } from "../stores/repositoryCacheStore";

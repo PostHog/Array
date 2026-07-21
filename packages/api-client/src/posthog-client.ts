@@ -2692,16 +2692,13 @@ export class PostHogAPIClient {
     return normalizeTaskResponse(data, { teamId });
   }
 
-  async updateTask(
-    taskId: string,
-    updates: Partial<Schemas.Task>,
-  ): Promise<Task> {
+  async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
     const teamId = await this.getTeamId();
     const data = await this.api.patch(
       `/api/projects/{project_id}/tasks/{id}/`,
       {
         path: { project_id: teamId.toString(), id: taskId },
-        body: updates,
+        body: updates as unknown as Partial<Schemas.Task>,
       },
     );
 

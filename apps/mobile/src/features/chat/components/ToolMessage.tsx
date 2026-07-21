@@ -659,9 +659,12 @@ function CreateTaskPreview({
 
     try {
       // Dynamic import to avoid circular dependency
-      const { createTask, runTaskInCloud } = await import("../../tasks/api");
+      const [{ runTaskInCloud }, { getPostHogApiClient }] = await Promise.all([
+        import("../../tasks/api"),
+        import("@/lib/posthogApiClient"),
+      ]);
 
-      const task = await createTask({
+      const task = await getPostHogApiClient().createTask({
         title: args.title,
         description: args.description,
         repository: args.repository,

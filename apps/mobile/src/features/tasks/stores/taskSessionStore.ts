@@ -10,10 +10,10 @@ import { create } from "zustand";
 import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import {
   CloudCommandError,
   cancelRun,
-  getTask,
   runTaskInCloud,
   sendCloudCommand,
 } from "../api";
@@ -1214,7 +1214,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     previousRunId: string,
     prompt: string,
   ) => {
-    const freshTask = await getTask(taskId);
+    const freshTask = await getPostHogApiClient().getTask(taskId);
     const previousRun = freshTask.latest_run;
     const previousBranch = previousRun?.branch ?? null;
 

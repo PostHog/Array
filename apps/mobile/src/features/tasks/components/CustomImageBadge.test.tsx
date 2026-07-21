@@ -14,9 +14,11 @@ const { mockUseAuthStore, mockGetImages, mockGetEnvironments } = vi.hoisted(
 
 vi.mock("@/features/auth", () => ({ useAuthStore: mockUseAuthStore }));
 
-vi.mock("../api", () => ({
-  getSandboxCustomImages: mockGetImages,
-  getSandboxEnvironments: mockGetEnvironments,
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({
+    listSandboxCustomImages: mockGetImages,
+    listSandboxEnvironments: mockGetEnvironments,
+  }),
 }));
 
 vi.mock("phosphor-react-native", () => ({

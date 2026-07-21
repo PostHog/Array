@@ -15,7 +15,7 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { getTask, runTaskInCloud } from "@/features/tasks/api";
+import { runTaskInCloud } from "@/features/tasks/api";
 import { CustomImageBadge } from "@/features/tasks/components/CustomImageBadge";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
@@ -67,6 +67,7 @@ import {
   useAnalytics,
 } from "@/lib/analytics";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
@@ -221,7 +222,8 @@ export default function TaskDetailScreen() {
     setLoading(true);
     setError(null);
 
-    getTask(taskId)
+    getPostHogApiClient()
+      .getTask(taskId)
       .then((fetchedTask) => {
         if (cancelled) return;
         setTask(fetchedTask);
@@ -252,7 +254,8 @@ export default function TaskDetailScreen() {
     if (retrying) return;
 
     let cancelled = false;
-    getTask(taskId)
+    getPostHogApiClient()
+      .getTask(taskId)
       .then((freshTask) => {
         if (cancelled) return;
         setTask(freshTask);

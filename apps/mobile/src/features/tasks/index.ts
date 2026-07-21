@@ -1,7 +1,5 @@
 // Tasks feature
 
-// API
-export * from "./api";
 // Components
 export { TaskItem } from "./components/TaskItem";
 export { TaskList } from "./components/TaskList";

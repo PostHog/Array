@@ -9,6 +9,16 @@ vi.mock("expo/fetch", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  HttpError: class HttpError extends Error {
+    constructor(
+      readonly status: number,
+      readonly statusText: string,
+      message: string,
+    ) {
+      super(message);
+      this.name = "HttpError";
+    }
+  },
   getBaseUrl: () => "https://app.posthog.test",
   getProjectId: () => 42,
   getAccessToken: () => "token",

@@ -1,8 +1,8 @@
 import { TASKS_PREWARM_SANDBOX_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "posthog-react-native";
 import { useEffect, useRef } from "react";
-import { warmTask } from "@/features/tasks/api";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 
 const log = logger.scope("warm-task");
 
@@ -71,17 +71,19 @@ export function useWarmTask({
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
       lastWarmedKeyRef.current = key;
-      void warmTask({
-        repository: repo,
-        github_integration: githubIntegration,
-        branch: warmBranch,
-        runtime_adapter: warmRuntimeAdapter,
-        model: warmModel,
-        reasoning_effort: warmReasoningEffort,
-      }).catch((error) => {
-        lastWarmedKeyRef.current = null;
-        log.warn("Failed to warm task", error);
-      });
+      void getPostHogApiClient()
+        .warmTask({
+          repository: repo,
+          github_integration: githubIntegration,
+          branch: warmBranch,
+          runtime_adapter: warmRuntimeAdapter,
+          model: warmModel,
+          reasoning_effort: warmReasoningEffort,
+        })
+        .catch((error) => {
+          lastWarmedKeyRef.current = null;
+          log.warn("Failed to warm task", error);
+        });
     }, WARM_DEBOUNCE_MS);
 
     return clearDebounce;

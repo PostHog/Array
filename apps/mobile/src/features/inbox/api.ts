@@ -1,5 +1,4 @@
-import { HttpError } from "@/features/tasks/api";
-import { authedFetch, getBaseUrl, getProjectId } from "@/lib/api";
+import { authedFetch, getBaseUrl, getProjectId, HttpError } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type { DismissalReasonOptionValue } from "./constants";
 
