@@ -132,6 +132,9 @@ describe("ForkTaskButton", () => {
         "git checkout failed",
       ),
     );
+    expect(
+      mocks.setProvisioningFailed.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.openTask.mock.invocationCallOrder[0]);
     expect(mocks.toastError).toHaveBeenCalledWith(
       "Failed to create workspace",
       "git checkout failed",

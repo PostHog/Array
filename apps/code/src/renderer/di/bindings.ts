@@ -120,10 +120,12 @@ import {
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
+  TASK_FORK_SERVICE,
   WORKSPACE_SETUP_SAGA,
 } from "@posthog/core/task-detail/identifiers";
 import type { TaskCreationEffects } from "@posthog/core/task-detail/taskCreationEffects";
 import type { ITaskCreationHost } from "@posthog/core/task-detail/taskCreationHost";
+import type { TaskForkService } from "@posthog/core/task-detail/taskForkService";
 import {
   TASK_SERVICE,
   type TaskService,
@@ -299,6 +301,7 @@ export interface RendererBindings {
   [TASK_CREATION_EFFECTS]: TaskCreationEffects;
   [RENDERER_TASK_SERVICE]: TaskService;
   [TASK_SERVICE]: TaskService;
+  [TASK_FORK_SERVICE]: TaskForkService;
   [WORKSPACE_SETUP_SAGA]: WorkspaceSetupSaga;
   [SESSION_SERVICE]: SessionService;
   [LOCAL_HANDOFF_HOST]: LocalHandoffHost;

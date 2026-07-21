@@ -799,6 +799,22 @@ container.bind(LOGS_SERVICE).toDynamicValue((ctx) => {
       ws.localLogs.readTail.query({ taskRunId, maxBytes }),
     writeLocalLogs: (taskRunId: string, content: string) =>
       ws.localLogs.write.mutate({ taskRunId, content }),
+    seedLocalLogs: (taskRunId: string, content: string) =>
+      ws.localLogs.seed.mutate({ taskRunId, content }),
+    cloneLocalLogs: async (
+      sourceTaskRunId: string,
+      targetTaskRunId: string,
+    ) => {
+      const content = await ws.localLogs.read.query({
+        taskRunId: sourceTaskRunId,
+      });
+      if (content) {
+        await ws.localLogs.seed.mutate({
+          taskRunId: targetTaskRunId,
+          content,
+        });
+      }
+    },
   };
 });
 container.bind(MAIN_ENCRYPTION_SERVICE).to(EncryptionService);

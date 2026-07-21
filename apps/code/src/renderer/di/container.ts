@@ -63,9 +63,11 @@ import type { SkillsWorkspaceClient } from "@posthog/core/skills/teamSkillsServi
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
+  TASK_FORK_SERVICE,
   WORKSPACE_SETUP_SAGA,
 } from "@posthog/core/task-detail/identifiers";
 import type { ITaskCreationHost } from "@posthog/core/task-detail/taskCreationHost";
+import { TaskForkService } from "@posthog/core/task-detail/taskForkService";
 import {
   TASK_SERVICE,
   TaskService,
@@ -302,6 +304,10 @@ container.load(piRuntimeModule);
 container.bind(TASK_CREATION_EFFECTS).toConstantValue(taskCreationEffects);
 container.bind<TaskService>(RENDERER_TASK_SERVICE).to(TaskService);
 container.bind<TaskService>(TASK_SERVICE).toService(RENDERER_TASK_SERVICE);
+container
+  .bind<TaskForkService>(TASK_FORK_SERVICE)
+  .to(TaskForkService)
+  .inSingletonScope();
 container
   .bind<WorkspaceSetupSaga>(WORKSPACE_SETUP_SAGA)
   .to(WorkspaceSetupSaga)

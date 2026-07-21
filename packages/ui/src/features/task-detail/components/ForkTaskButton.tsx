@@ -72,12 +72,15 @@ export function ForkTaskButton({ task }: { task: Task }) {
         return;
       }
 
-      invalidateTasks(result.data.task);
-      void openTask(result.data.task);
       if (result.data.provisioningError) {
         useProvisioningStore
           .getState()
           .setFailed(result.data.task.id, result.data.provisioningError);
+      }
+
+      invalidateTasks(result.data.task);
+      void openTask(result.data.task);
+      if (result.data.provisioningError) {
         toastError(
           getErrorTitle("workspace_creation"),
           result.data.provisioningError,
