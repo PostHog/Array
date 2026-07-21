@@ -23,6 +23,8 @@ import {
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
 import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
+import { MessageScrollbarRail } from "@posthog/ui/features/sessions/components/scrollbar-rail/MessageScrollbarRail";
+import { useMessageRailMarkers } from "@posthog/ui/features/sessions/components/scrollbar-rail/useMessageRailMarkers";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -235,6 +237,10 @@ export function ConversationView({
         id != null ? itemIdToRowIndexRef.current.get(id) : undefined;
       listRef.current?.scrollToIndex(rowIdx ?? index);
     },
+    // Search doesn't read scroll/content geometry, so these forward to the real
+    // handle purely to satisfy the (now-extended) VirtualizedListHandle shape.
+    getScrollElement: () => listRef.current?.getScrollElement() ?? null,
+    getContentElement: () => listRef.current?.getContentElement() ?? null,
   });
 
   const search = useConversationSearch({
@@ -329,6 +335,54 @@ export function ConversationView({
     },
     [userMessages, scrollToUserMessage],
   );
+
+  // The scrollbar marker rail needs the VirtualizedList's scroll + content
+  // elements. They're only available after mount, so resolve them into state from
+  // the imperative handle; the rail re-renders once they're populated. The list's
+  // internal refs are stable for its lifetime, so a mount-time resolve (with a
+  // rAF retry for the first paint where the ref isn't attached yet) is enough.
+  const [scrollElements, setScrollElements] = useState<{
+    scrollEl: HTMLElement | null;
+    contentEl: HTMLElement | null;
+  }>({ scrollEl: null, contentEl: null });
+  useEffect(() => {
+    const sync = () => {
+      const handle = listRef.current;
+      if (!handle) return;
+      const scrollEl = handle.getScrollElement();
+      const contentEl = handle.getContentElement();
+      setScrollElements((prev) =>
+        prev.scrollEl === scrollEl && prev.contentEl === contentEl
+          ? prev
+          : { scrollEl, contentEl },
+      );
+    };
+    sync();
+    const raf = requestAnimationFrame(sync);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const railUserMessages = useMemo(
+    () =>
+      userMessages.map((m) => ({
+        id: m.id,
+        content: m.content,
+        index: m.index,
+      })),
+    [userMessages],
+  );
+  const railMarkers = useMessageRailMarkers({
+    contentEl: scrollElements.contentEl,
+    scrollEl: scrollElements.scrollEl,
+    userMessages: railUserMessages,
+    onJump: (id) => {
+      const message = userMessages.find((entry) => entry.id === id);
+      if (!message) return;
+      setKeyboardFocusedMessageId(id);
+      scrollToUserMessage(id, message.index);
+    },
+    activeId: keyboardFocusedMessageId,
+  });
 
   const handleScrollStateChange = useCallback((isAtBottom: boolean) => {
     isAtBottomRef.current = isAtBottom;
@@ -521,6 +575,7 @@ export function ConversationView({
             scrollX={scrollX}
           />
         </SessionTaskIdProvider>
+        <MessageScrollbarRail markers={railMarkers} />
         {showScrollButton && (
           <Box className="absolute right-6 bottom-4 z-10">
             <Tooltip>
