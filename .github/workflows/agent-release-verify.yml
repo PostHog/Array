@@ -1,5 +1,8 @@
 name: Verify Agent Release
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches:
@@ -14,6 +17,7 @@ on:
       - ".github/workflows/agent-release.yml"
       - ".github/workflows/agent-release-verify.yml"
       - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
 
 jobs:
   verify:
