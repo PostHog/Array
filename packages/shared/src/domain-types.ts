@@ -3,6 +3,7 @@ import type { Adapter } from "./adapter";
 import type { AgentRuntime } from "./agent-runtime";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
+import type { UploadableSkillSource } from "./skills";
 
 // Execution mode schema and type - shared between main and renderer
 export const executionModeSchema = z.enum([
@@ -146,6 +147,37 @@ export type TaskRunStatus =
   | "failed"
   | "cancelled";
 
+export type TaskRunEnvironment = "local" | "cloud";
+
+export type ArtifactType =
+  | "plan"
+  | "context"
+  | "reference"
+  | "output"
+  | "artifact"
+  | "user_attachment"
+  | "skill_bundle";
+
+export interface TaskRunArtifactMetadata {
+  skill_name: string;
+  skill_source: UploadableSkillSource;
+  content_sha256: string;
+  bundle_format: "zip";
+  schema_version: number;
+}
+
+export interface TaskRunArtifact {
+  id?: string;
+  name: string;
+  type: ArtifactType;
+  source?: string;
+  size?: number;
+  content_type?: string;
+  metadata?: TaskRunArtifactMetadata;
+  storage_path?: string;
+  uploaded_at?: string;
+}
+
 export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
 export function isTerminalStatus(
@@ -174,12 +206,13 @@ export interface TaskRun {
   model?: string | null;
   reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')
-  environment?: "local" | "cloud";
+  environment?: TaskRunEnvironment;
   status: TaskRunStatus;
   log_url: string;
   error_message: string | null;
   output: Record<string, unknown> | null; // Structured output (PR URL, commit SHA, etc.)
   state: Record<string, unknown>; // Intermediate run state (defaults to {}, never null)
+  artifacts?: TaskRunArtifact[];
   created_at: string;
   updated_at: string;
   completed_at: string | null;

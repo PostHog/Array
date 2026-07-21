@@ -8,9 +8,9 @@ import type {
 } from "@agentclientprotocol/sdk";
 import type { Adapter } from "./adapter";
 import type { SkillButtonId } from "./analytics-events";
+import type { TaskRunStatus } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
-import type { TaskRunStatus } from "./task";
 
 export type { Adapter };
 
