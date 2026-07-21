@@ -11,6 +11,7 @@ import type {
 } from "@posthog/core/auth/identifiers";
 import type { IPowerManager } from "@posthog/platform/power-manager";
 import type { CloudRegion } from "@posthog/shared";
+import { readJson, removeKey, writeJson } from "./web-local-store";
 
 // Web counterparts of the desktop auth adapters. Desktop persists the session
 // in workspace-server SQLite behind a machine-bound node:crypto cipher and
@@ -22,22 +23,15 @@ const PREFERENCES_KEY = "posthog-code:auth-preferences";
 
 export class WebAuthSessionStore implements IAuthSessionStore {
   getCurrent(): AuthSessionRecord | null {
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as AuthSessionRecord;
-    } catch {
-      window.localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
+    return readJson<AuthSessionRecord | null>(SESSION_KEY, () => null);
   }
 
   saveCurrent(input: PersistAuthSessionRecord): void {
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify(input));
+    writeJson(SESSION_KEY, input);
   }
 
   clearCurrent(): void {
-    window.localStorage.removeItem(SESSION_KEY);
+    removeKey(SESSION_KEY);
   }
 }
 
@@ -79,17 +73,14 @@ export class WebAuthPreferenceStore implements IAuthPreferenceStore {
   }
 
   private read(): StoredPreferences {
-    const raw = window.localStorage.getItem(PREFERENCES_KEY);
-    if (!raw) return { accounts: {}, orgProjects: {} };
-    try {
-      return JSON.parse(raw) as StoredPreferences;
-    } catch {
-      return { accounts: {}, orgProjects: {} };
-    }
+    return readJson<StoredPreferences>(PREFERENCES_KEY, () => ({
+      accounts: {},
+      orgProjects: {},
+    }));
   }
 
   private write(preferences: StoredPreferences): void {
-    window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+    writeJson(PREFERENCES_KEY, preferences);
   }
 }
 
