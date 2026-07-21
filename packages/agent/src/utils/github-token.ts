@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
-import { readGithubTokenFromEnv } from "@posthog/git/signed-commit";
+import {
+  GITHUB_TOKEN_ENV_VARS,
+  readGithubTokenFromEnv,
+} from "@posthog/git/signed-commit";
 
 // helpers for resolving the in-sandbox GitHub token
 // Dedicated agentsh credential file (NUL-delimited `key=value` pairs) that the
@@ -12,19 +15,33 @@ const SANDBOX_GITHUB_ENV_FILE = "/tmp/agent-github-env";
 export function readGithubTokenFromSandboxEnvFile(
   envFilePath: string = SANDBOX_GITHUB_ENV_FILE,
 ): string | undefined {
+  let raw: string;
   try {
-    const raw = readFileSync(envFilePath, "utf8");
-    const env: Record<string, string> = {};
-    for (const entry of raw.split("\0")) {
-      const eq = entry.indexOf("=");
-      if (eq > 0) {
-        env[entry.slice(0, eq)] = entry.slice(eq + 1);
-      }
-    }
-    // Reuse the shared token-var allowlist + precedence instead of hardcoding.
-    return readGithubTokenFromEnv(env);
+    raw = readFileSync(envFilePath, "utf8");
   } catch {
-    // No env file (local/desktop or test) — fall back to the process env.
+    // No env file (local/desktop or test) — signal "unmanaged" so the caller
+    // falls back to the process env.
+    return undefined;
+  }
+  const env: Record<string, string> = {};
+  for (const entry of raw.split("\0")) {
+    const eq = entry.indexOf("=");
+    if (eq > 0) {
+      env[entry.slice(0, eq)] = entry.slice(eq + 1);
+    }
+  }
+  // A non-empty value wins by the shared token-var precedence.
+  const token = readGithubTokenFromEnv(env);
+  if (token) {
+    return token;
+  }
+  // The file is the backend's live credential channel. If it carries the token
+  // vars but they are emptied, that is an explicit logout on an actor
+  // transition — return "" so the caller does NOT resurrect the previous
+  // actor's token from the frozen launch-time process env. Only a file with no
+  // token vars at all is "unmanaged" and defers to the process env.
+  if (GITHUB_TOKEN_ENV_VARS.some((name) => name in env)) {
+    return "";
   }
   return undefined;
 }

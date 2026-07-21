@@ -53,6 +53,16 @@ describe("github-token", () => {
       const path = writeEnvFile("GH_TOKEN=\0GITHUB_TOKEN=ghs_real\0");
       expect(readGithubTokenFromSandboxEnvFile(path)).toBe("ghs_real");
     });
+
+    it("returns '' (explicit logout) when every token var is present but empty", () => {
+      const path = writeEnvFile("PATH=/usr/bin\0GH_TOKEN=\0GITHUB_TOKEN=\0");
+      expect(readGithubTokenFromSandboxEnvFile(path)).toBe("");
+    });
+
+    it("returns undefined when the file carries no token var at all", () => {
+      const path = writeEnvFile("PATH=/usr/bin\0HOME=/root\0");
+      expect(readGithubTokenFromSandboxEnvFile(path)).toBeUndefined();
+    });
   });
 
   describe("resolveGithubToken", () => {
@@ -71,6 +81,21 @@ describe("github-token", () => {
       expect(resolveGithubToken("/nonexistent/agent-env")).toBe(
         "ghs_fromprocess",
       );
+    });
+
+    it("does not resurrect the process-env token after a logout (emptied file)", () => {
+      // The backend logs the sandbox out by emptying the token vars in the file.
+      // The frozen launch-time process env still holds the previous actor's
+      // token; resolving must NOT fall back to it.
+      vi.stubEnv("GH_TOKEN", "ghs_previous_actor");
+      const path = writeEnvFile("GH_TOKEN=\0GITHUB_TOKEN=\0");
+      expect(resolveGithubToken(path)).toBe("");
+    });
+
+    it("falls back to the process env when the file carries no token var", () => {
+      vi.stubEnv("GH_TOKEN", "ghs_fromprocess");
+      const path = writeEnvFile("PATH=/usr/bin\0");
+      expect(resolveGithubToken(path)).toBe("ghs_fromprocess");
     });
   });
 });
