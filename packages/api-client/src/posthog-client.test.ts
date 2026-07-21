@@ -169,6 +169,38 @@ describe("PostHogAPIClient", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  it.each(["high", "max"] as const)(
+    "forwards supported GLM 5.2 reasoning effort %s",
+    async (reasoningLevel) => {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+
+      const post = vi.fn().mockResolvedValue({ id: "run-123" });
+      (client as unknown as { api: { post: typeof post } }).api = { post };
+
+      await client.runTaskInCloud("task-123", "feature/glm-effort", {
+        adapter: "claude",
+        model: "@cf/zai-org/glm-5.2",
+        reasoningLevel,
+      });
+
+      expect(post).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/tasks/{id}/run/",
+        expect.objectContaining({
+          body: expect.objectContaining({
+            runtime_adapter: "claude",
+            model: "@cf/zai-org/glm-5.2",
+            reasoning_effort: reasoningLevel,
+          }),
+        }),
+      );
+    },
+  );
+
   it("rejects unsupported minimal reasoning effort for cloud runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",

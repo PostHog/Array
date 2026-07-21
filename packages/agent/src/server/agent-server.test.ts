@@ -1297,6 +1297,11 @@ describe("AgentServer HTTP Mode", () => {
         session: { hasDesktopConnected?: boolean } | null;
         eventStreamSender: unknown;
         relayPermissionToClient: (params: unknown) => Promise<unknown>;
+        pendingPermissions: Map<string, unknown>;
+        resolvePermission: (
+          requestId: string,
+          optionId: string,
+        ) => "resolved" | "not_found" | "invalid_option";
         createCloudClient(payload: {
           run_id: string;
           task_id: string;
@@ -1339,6 +1344,41 @@ describe("AgentServer HTTP Mode", () => {
             },
           },
           rawInput: { some: "arg" },
+        },
+      };
+    }
+
+    function posthogExecPermissionOptions() {
+      return [
+        { optionId: "allow_once", kind: "allow_once" },
+        { optionId: "allow_always", kind: "allow_always" },
+        { optionId: "reject_once", kind: "reject_once" },
+      ];
+    }
+
+    function claudePosthogExecPermissionRequest(command: string) {
+      return {
+        options: posthogExecPermissionOptions(),
+        toolCall: {
+          kind: "other",
+          _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
+          rawInput: { command },
+        },
+      };
+    }
+
+    function codexPosthogExecPermissionRequest(command: string) {
+      return {
+        options: posthogExecPermissionOptions(),
+        toolCall: {
+          kind: "other",
+          _meta: {
+            posthog: {
+              toolName: "mcp__posthog_cloud__exec",
+              mcp: { server: "posthog_cloud", tool: "exec" },
+            },
+          },
+          rawInput: { command },
         },
       };
     }
@@ -1477,6 +1517,164 @@ describe("AgentServer HTTP Mode", () => {
 
       expect(relaySpy).not.toHaveBeenCalled();
       expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it.each([
+      {
+        adapter: "Claude",
+        request: claudePosthogExecPermissionRequest(
+          "call notebooks-destroy {}",
+        ),
+        expectedKinds: ["allow_once", "allow_always", "reject_once"],
+      },
+      {
+        adapter: "Codex",
+        request: codexPosthogExecPermissionRequest("call notebooks-destroy {}"),
+        expectedKinds: ["allow_once", "reject_once"],
+      },
+    ])(
+      "relays a configured PostHog exec match from $adapter with adapter-specific choices",
+      async ({ request, expectedKinds }) => {
+        const testServer = exposeCloudClient(createServer());
+        testServer.session = null;
+        testServer.eventStreamSender = null;
+        const relaySpy = vi
+          .spyOn(testServer, "relayPermissionToClient")
+          .mockResolvedValue({
+            outcome: { outcome: "selected", optionId: "allow_once" },
+          });
+
+        const { requestPermission } = testServer.createCloudClient(basePayload);
+        const result = await requestPermission(request);
+
+        const relayed = relaySpy.mock.calls[0]?.[0] as {
+          options: Array<{ kind: string }>;
+        };
+        expect(relayed.options.map((option) => option.kind)).toEqual(
+          expectedKinds,
+        );
+        expect(result.outcome).toEqual({
+          outcome: "selected",
+          optionId: "allow_once",
+        });
+      },
+    );
+
+    it("auto-approves a nonmatching PostHog exec sub-tool", async () => {
+      const testServer = exposeCloudClient(
+        createServer({ posthogExecPermissionRegex: "delete|destroy" }),
+      );
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        claudePosthogExecPermissionRequest("call experiment-get {}"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({
+        outcome: "selected",
+        optionId: "allow_once",
+      });
+    });
+
+    it.each([
+      {
+        modeSource: "JWT payload",
+        configMode: "interactive",
+        payloadMode: "background",
+      },
+      {
+        modeSource: "server config",
+        configMode: "background",
+        payloadMode: undefined,
+      },
+    ] as const)(
+      "keeps PostHog exec matches auto-approved in background mode from $modeSource",
+      async ({ configMode, payloadMode }) => {
+        const testServer = exposeCloudClient(
+          createServer({
+            mode: configMode,
+            posthogExecPermissionRegex: "delete|destroy",
+          }),
+        );
+        const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+        const { requestPermission } = testServer.createCloudClient({
+          ...basePayload,
+          ...(payloadMode ? { mode: payloadMode } : {}),
+        });
+        const result = await requestPermission(
+          codexPosthogExecPermissionRequest("call experiment-delete {}"),
+        );
+
+        expect(relaySpy).not.toHaveBeenCalled();
+        expect(result.outcome).toEqual({
+          outcome: "selected",
+          optionId: "allow_once",
+        });
+      },
+    );
+
+    it("rejects permission responses for options that were not offered", async () => {
+      const testServer = exposeCloudClient(createServer());
+      const pending = testServer.relayPermissionToClient({
+        options: [
+          { optionId: "allow_once", kind: "allow_once" },
+          { optionId: "reject_once", kind: "reject_once" },
+        ],
+      });
+      const requestId = [...testServer.pendingPermissions.keys()][0];
+
+      expect(requestId).toBeDefined();
+      expect(
+        testServer.resolvePermission(requestId as string, "allow_always"),
+      ).toBe("invalid_option");
+      expect(testServer.pendingPermissions.has(requestId as string)).toBe(true);
+      expect(testServer.resolvePermission("nope", "allow_once")).toBe(
+        "not_found",
+      );
+      expect(
+        testServer.resolvePermission(requestId as string, "allow_once"),
+      ).toBe("resolved");
+      await expect(pending).resolves.toEqual({
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      });
+    });
+
+    it("distinguishes unknown requests from unoffered options in permission_response errors", async () => {
+      const server = createServer();
+      const testServer = exposeCloudClient(server);
+      const commandServer = server as unknown as {
+        session: unknown;
+        executeCommand(
+          method: string,
+          params: Record<string, unknown>,
+        ): Promise<unknown>;
+      };
+      void testServer.relayPermissionToClient({
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+      });
+      const requestId = [...testServer.pendingPermissions.keys()][0] as string;
+      // Both error paths return before touching the session; the guard at the
+      // top of executeCommand only needs it to exist.
+      commandServer.session = {};
+
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId: "missing",
+          optionId: "allow_once",
+        }),
+      ).rejects.toThrow("No pending permission request found for id: missing");
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId,
+          optionId: "allow_always",
+        }),
+      ).rejects.toThrow(
+        `Option "allow_always" was not offered for permission request ${requestId}`,
+      );
+      expect(testServer.pendingPermissions.has(requestId)).toBe(true);
     });
   });
 

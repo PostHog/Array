@@ -24,6 +24,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  isPersistedOptionSupported,
   isRateLimitError,
   isTransientUpstreamError,
   mergeConfigOptions,
@@ -2022,18 +2023,33 @@ export class SessionService {
       });
 
       if (result) {
-        // Cast and merge live configOptions with persisted values.
-        // Fall back to persisted options if the agent doesn't return any
-        // (e.g. after session compaction).
-        let configOptions = result.configOptions as
+        const liveConfigOptions = result.configOptions as
           | SessionConfigOption[]
           | undefined;
-        if (configOptions && persistedConfigOptions) {
-          configOptions = mergeConfigOptions(
-            configOptions,
-            persistedConfigOptions,
-          );
-        } else if (!configOptions) {
+
+        // Only restore persisted options the resumed session still supports:
+        // it must advertise an option with the same id and still offer the
+        // persisted value (see isPersistedOptionSupported). Without live
+        // options (e.g. after session compaction) we can't confirm support, so
+        // we restore nothing rather than push a value the agent may reject —
+        // the same failure this guard exists to prevent.
+        const restorableConfigOptions =
+          liveConfigOptions && persistedConfigOptions
+            ? persistedConfigOptions.filter((persistedOption) =>
+                isPersistedOptionSupported(persistedOption, liveConfigOptions),
+              )
+            : [];
+
+        // Merge only the restorable persisted values into the live options so
+        // the stored and displayed config never shows a setting the resumed
+        // agent rejected. Fall back to persisted options for display when the
+        // agent returns none (nothing is pushed to the server in that case).
+        let configOptions: SessionConfigOption[] | undefined;
+        if (liveConfigOptions) {
+          configOptions = restorableConfigOptions.length
+            ? mergeConfigOptions(liveConfigOptions, restorableConfigOptions)
+            : liveConfigOptions;
+        } else {
           configOptions = persistedConfigOptions ?? undefined;
         }
 
@@ -2048,10 +2064,10 @@ export class SessionService {
           this.d.setPersistedConfigOptions(taskRunId, configOptions);
         }
 
-        // Restore persisted config options to server in parallel
-        if (persistedConfigOptions) {
+        // Restore supported persisted config options to server in parallel
+        if (restorableConfigOptions.length) {
           await Promise.all(
-            persistedConfigOptions.map((opt) =>
+            restorableConfigOptions.map((opt) =>
               this.d.trpc.agent.setConfigOption
                 .mutate({
                   sessionId: taskRunId,

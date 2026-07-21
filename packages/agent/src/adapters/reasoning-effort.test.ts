@@ -39,4 +39,16 @@ describe("isSupportedReasoningEffort", () => {
       isSupportedReasoningEffort("claude", "claude-sonnet-4-6", "xhigh"),
     ).toBe(false);
   });
+
+  it.each([
+    ["high", true],
+    ["max", true],
+    ["low", false],
+    ["medium", false],
+    ["xhigh", false],
+  ])("validates GLM 5.2 effort %s", (effort, expected) => {
+    expect(
+      isSupportedReasoningEffort("claude", "@cf/zai-org/glm-5.2", effort),
+    ).toBe(expected);
+  });
 });

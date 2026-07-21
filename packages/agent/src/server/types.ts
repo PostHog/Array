@@ -34,6 +34,11 @@ export interface AgentServerConfig {
   version?: string;
   mcpServers?: RemoteMcpServer[];
   /**
+   * Case-insensitive JavaScript regex matched against PostHog `exec` sub-tool
+   * names. Overrides the default approval regex for interactive calls.
+   */
+  posthogExecPermissionRegex?: string;
+  /**
    * Names of desktop-only local MCP servers to expose through loopback relay
    * endpoints (docs/cloud-mcp-relay.md). Names only; the desktop resolves
    * each name against local config at execution time.
