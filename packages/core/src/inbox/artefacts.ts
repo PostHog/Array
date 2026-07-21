@@ -48,22 +48,7 @@ export function extractSuggestedReviewers(
   return artefact?.content ?? [];
 }
 
-const AVATAR_PALETTE = [
-  "bg-(--orange-9) text-white",
-  "bg-(--blue-9) text-white",
-  "bg-(--purple-9) text-white",
-  "bg-(--green-9) text-white",
-  "bg-(--pink-9) text-white",
-  "bg-(--teal-9) text-white",
-] as const;
-
-export function reviewerAvatarToneClass(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash + seed.charCodeAt(i) * (i + 1)) % 9973;
-  }
-  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
-}
+export { avatarColorClass as reviewerAvatarToneClass } from "@posthog/core/auth/avatarColor";
 
 export function reviewerInitials(
   name: string | null | undefined,
