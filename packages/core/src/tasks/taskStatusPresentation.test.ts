@@ -1,6 +1,9 @@
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
-import { getTaskStatusPresentationKind } from "./taskStatusPresentation";
+import {
+  getTaskRunStatusPresentationKind,
+  getTaskStatusPresentationKind,
+} from "./taskStatusPresentation";
 
 function makeTask(latestRun?: Partial<TaskRun>): Pick<Task, "latest_run"> {
   return {
@@ -78,4 +81,22 @@ describe("getTaskStatusPresentationKind", () => {
       }),
     ).toBe("started");
   });
+});
+
+describe("getTaskRunStatusPresentationKind", () => {
+  it.each([
+    ["completed", false, "completed"],
+    ["failed", false, "failed"],
+    ["in_progress", false, "running"],
+    ["queued", false, "started"],
+    ["not_started", false, "chat"],
+    ["completed", true, "running"],
+  ] as const)(
+    "maps %s with generating=%s to %s",
+    (status, isGenerating, expected) => {
+      expect(getTaskRunStatusPresentationKind(status, isGenerating)).toBe(
+        expected,
+      );
+    },
+  );
 });

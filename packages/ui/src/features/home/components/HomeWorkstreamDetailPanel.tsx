@@ -18,9 +18,9 @@ import type {
   HomeWorkstream,
   HomeWorkstreamTask,
 } from "@posthog/core/home/schemas";
+import { getTaskRunStatusPresentationKind } from "@posthog/core/tasks/taskStatusPresentation";
 import { Badge, Button } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
-import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import {
   type BoundAction,
   useBoundActions,
@@ -339,15 +339,16 @@ function TaskStatusIcon({
   status,
   isGenerating,
 }: {
-  status: TaskRunStatus | undefined;
+  status: HomeWorkstreamTask["status"] | undefined;
   isGenerating: boolean;
 }) {
-  if (isGenerating || status === "in_progress" || status === "queued") {
+  const kind = getTaskRunStatusPresentationKind(status, isGenerating);
+  if (kind === "running") {
     return (
       <Spinner size={11} className="shrink-0 animate-spin text-(--accent-11)" />
     );
   }
-  if (status === "completed") {
+  if (kind === "completed") {
     return (
       <CheckCircle
         size={11}
@@ -356,7 +357,7 @@ function TaskStatusIcon({
       />
     );
   }
-  if (status === "failed") {
+  if (kind === "failed") {
     return (
       <XCircle size={11} weight="fill" className="shrink-0 text-(--red-9)" />
     );

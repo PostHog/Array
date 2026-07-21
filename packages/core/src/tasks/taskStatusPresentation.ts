@@ -8,6 +8,27 @@ export type TaskStatusPresentationKind =
   | "started"
   | "chat";
 
+export function getTaskRunStatusPresentationKind(
+  status: string | null | undefined,
+  isGenerating = false,
+): Exclude<TaskStatusPresentationKind, "pr"> {
+  if (isGenerating) return "running";
+
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "in_progress":
+      return "running";
+    case "queued":
+    case "started":
+      return "started";
+    default:
+      return "chat";
+  }
+}
+
 export function getTaskStatusPresentationKind(task: {
   latest_run?: {
     environment?: "local" | "cloud";
@@ -25,17 +46,5 @@ export function getTaskStatusPresentationKind(task: {
     return "chat";
   }
 
-  switch (latestRun?.status) {
-    case "completed":
-      return "completed";
-    case "failed":
-      return "failed";
-    case "in_progress":
-      return "running";
-    case "queued":
-    case "started":
-      return "started";
-    default:
-      return "chat";
-  }
+  return getTaskRunStatusPresentationKind(latestRun?.status);
 }
