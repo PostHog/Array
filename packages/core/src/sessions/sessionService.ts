@@ -2904,7 +2904,11 @@ export class SessionService {
         isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
       ) {
         const session = this.d.store.getSessions()[taskRunId];
-        const params = (msg as { params?: { agentVersion?: unknown } }).params;
+        const params = (
+          msg as {
+            params?: { agentVersion?: unknown; steering?: unknown };
+          }
+        ).params;
         const agentVersion =
           typeof params?.agentVersion === "string"
             ? params.agentVersion
@@ -2912,6 +2916,12 @@ export class SessionService {
         const updates: Partial<AgentSession> = {};
         if (agentVersion && session?.agentVersion !== agentVersion) {
           updates.agentVersion = agentVersion;
+        }
+        if (
+          typeof params?.steering === "string" &&
+          session?.steering !== params.steering
+        ) {
+          updates.steering = params.steering;
         }
         if (session?.isCloud && session.status !== "connected") {
           updates.status = "connected";
@@ -3387,22 +3397,27 @@ export class SessionService {
     // Steer: the user sent a message mid-turn and asked to fold it into the
     // running turn rather than queue it. Adapters that negotiated
     // `steering: "native"` (Claude, codex) inject at the next tool boundary;
-    // unknown adapters cancel and resend. Cloud has no real mid-turn steer
-    // (the backend only delivers messages between turns), so it falls through
-    // to the queue; compaction too.
-    if (
-      options?.steer &&
-      !session.isCloud &&
-      session.isPromptPending &&
-      !session.isCompacting
-    ) {
+    // unknown local adapters cancel and resend. Cloud sessions only enter this
+    // path after the sandbox advertises native steering; compaction still queues.
+    if (options?.steer && session.isPromptPending && !session.isCompacting) {
       if (sessionSupportsNativeSteer(session)) {
-        return this.sendSteerPrompt(session, prompt);
+        if (session.isCloud) {
+          if (session.status === "connected") {
+            return this.sendCloudPrompt(session, prompt, {
+              skipQueueGuard: true,
+              steer: true,
+            });
+          }
+        } else {
+          return this.sendSteerPrompt(session, prompt);
+        }
       }
-      await this.cancelPrompt(taskId);
-      const refreshed = this.d.store.getSessionByTaskId(taskId);
-      if (refreshed) {
-        session = refreshed;
+      if (!session.isCloud) {
+        await this.cancelPrompt(taskId);
+        const refreshed = this.d.store.getSessionByTaskId(taskId);
+        if (refreshed) {
+          session = refreshed;
+        }
       }
     }
 
@@ -3934,7 +3949,7 @@ export class SessionService {
   private async sendCloudPrompt(
     session: AgentSession,
     prompt: string | ContentBlock[],
-    options?: { skipQueueGuard?: boolean },
+    options?: { skipQueueGuard?: boolean; steer?: boolean },
   ): Promise<{ stopReason: string }> {
     const normalizedPrompt = await this.resolveCloudPrompt(prompt);
     const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
@@ -4066,19 +4081,24 @@ export class SessionService {
     if (artifactIds.length > 0) {
       params.artifact_ids = artifactIds;
     }
+    if (options?.steer) {
+      params.steer = true;
+    }
 
     const currentSessionBeforeSend =
       this.getSessionByRunId(session.taskRunId) ?? session;
     const idleEvidenceBeforeSend = this.cloudRunIdleTracker.capture(
       currentSessionBeforeSend,
     );
-    this.d.store.updateSession(session.taskRunId, {
-      isPromptPending: true,
-      promptStartedAt: Date.now(),
-      pausedDurationMs: 0,
-      agentIdleForRunId: undefined,
-    });
-    this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
+    if (!options?.steer) {
+      this.d.store.updateSession(session.taskRunId, {
+        isPromptPending: true,
+        promptStartedAt: Date.now(),
+        pausedDurationMs: 0,
+        agentIdleForRunId: undefined,
+      });
+      this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
+    }
     this.d.store.appendOptimisticItem(session.taskRunId, {
       type: "user_message",
       content: transport.promptText,
@@ -4091,6 +4111,7 @@ export class SessionService {
       is_initial: session.events.length === 0,
       execution_type: "cloud",
       prompt_length_chars: transport.promptText.length,
+      ...(options?.steer ? { is_steer: true } : {}),
     });
 
     try {
@@ -4108,7 +4129,7 @@ export class SessionService {
       }
 
       const commandResult = result.result as
-        | { queued?: boolean; stopReason?: string }
+        | { queued?: boolean; steered?: boolean; stopReason?: string }
         | undefined;
       const stopReason = commandResult?.queued
         ? "queued"
@@ -4116,15 +4137,17 @@ export class SessionService {
 
       return { stopReason };
     } catch (error) {
-      this.d.store.updateSession(session.taskRunId, {
-        isPromptPending: false,
-        promptStartedAt: null,
-      });
+      if (!options?.steer) {
+        this.d.store.updateSession(session.taskRunId, {
+          isPromptPending: false,
+          promptStartedAt: null,
+        });
+      }
       this.d.store.clearTailOptimisticItems(session.taskRunId);
       const currentSessionAfterFailure = this.getSessionByRunId(
         session.taskRunId,
       );
-      if (currentSessionAfterFailure) {
+      if (currentSessionAfterFailure && !options?.steer) {
         const restoreResult = this.cloudRunIdleTracker.restoreAfterFailedSend(
           idleEvidenceBeforeSend,
           currentSessionAfterFailure,
