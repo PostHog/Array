@@ -83,6 +83,12 @@ export function initializePostHog(sessionId?: string) {
     session_recording: {
       captureCanvas: { recordCanvas: false },
     },
+    // The shared analytics project runs many popover surveys aimed at the
+    // PostHog web app; any one without URL/event conditions would render here
+    // too. This app only submits survey responses through its own UI
+    // (captureSurveyResponse), which posthog-js survey rendering being off
+    // does not affect.
+    disable_surveys: true,
     session_idle_timeout_seconds: SESSION_IDLE_TIMEOUT_SECONDS,
     ...(sessionId ? { bootstrap: { sessionID: sessionId } } : {}),
     capture_exceptions: import.meta.env.DEV
