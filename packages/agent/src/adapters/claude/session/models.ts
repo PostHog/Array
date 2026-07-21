@@ -33,23 +33,27 @@ export function supports1MContext(modelId: string): boolean {
   return MODELS_WITH_1M_CONTEXT.has(modelId);
 }
 
-const MODELS_WITH_EFFORT = new Set([
-  "claude-opus-4-7",
-  "claude-opus-4-8",
-  "claude-sonnet-4-6",
-  "claude-sonnet-5",
-  "claude-fable-5",
-]);
-
-const MODELS_WITH_XHIGH_EFFORT = new Set([
-  "claude-opus-4-7",
-  "claude-opus-4-8",
-  "claude-sonnet-5",
-  "claude-fable-5",
-]);
+const STANDARD_EFFORT_LEVELS: readonly EffortLevel[] = [
+  "low",
+  "medium",
+  "high",
+];
+const EXTENDED_EFFORT_LEVELS: readonly EffortLevel[] = [
+  ...STANDARD_EFFORT_LEVELS,
+  "xhigh",
+  "max",
+];
+const MODEL_EFFORT_LEVELS: Readonly<Record<string, readonly EffortLevel[]>> = {
+  "claude-opus-4-7": EXTENDED_EFFORT_LEVELS,
+  "claude-opus-4-8": EXTENDED_EFFORT_LEVELS,
+  "claude-sonnet-4-6": STANDARD_EFFORT_LEVELS,
+  "claude-sonnet-5": EXTENDED_EFFORT_LEVELS,
+  "claude-fable-5": EXTENDED_EFFORT_LEVELS,
+  "@cf/zai-org/glm-5.2": ["high", "max"],
+};
 
 export function supportsEffort(modelId: string): boolean {
-  return MODELS_WITH_EFFORT.has(modelId);
+  return MODEL_EFFORT_LEVELS[modelId] !== undefined;
 }
 
 export function resolveEffortForModel(
@@ -61,7 +65,7 @@ export function resolveEffortForModel(
 }
 
 export function supportsXhighEffort(modelId: string): boolean {
-  return MODELS_WITH_XHIGH_EFFORT.has(modelId);
+  return MODEL_EFFORT_LEVELS[modelId]?.includes("xhigh") ?? false;
 }
 
 const MODELS_TO_EXCLUDE_MCP_TOOLS = new Set(["claude-haiku-4-5"]);
@@ -82,27 +86,23 @@ export function fastModeStateEnabled(state: string | undefined): boolean {
 }
 
 interface EffortOption {
-  value: string;
+  value: EffortLevel;
   name: string;
 }
 
+const EFFORT_LABELS: Record<EffortLevel, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+};
+
 export function getEffortOptions(modelId: string): EffortOption[] | null {
-  if (!supportsEffort(modelId)) return null;
-
-  const options: EffortOption[] = [
-    { value: "low", name: "Low" },
-    { value: "medium", name: "Medium" },
-    { value: "high", name: "High" },
-  ];
-
-  if (supportsXhighEffort(modelId)) {
-    options.push(
-      { value: "xhigh", name: "Extra High" },
-      { value: "max", name: "Max" },
-    );
-  }
-
-  return options;
+  const levels = MODEL_EFFORT_LEVELS[modelId];
+  return (
+    levels?.map((value) => ({ value, name: EFFORT_LABELS[value] })) ?? null
+  );
 }
 
 // Model alias resolution — lets callers use human-friendly aliases like
