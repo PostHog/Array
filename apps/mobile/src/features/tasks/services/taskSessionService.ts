@@ -12,8 +12,8 @@ import { usePreferencesStore } from "@/features/preferences/stores/preferencesSt
 import { logger } from "@/lib/logger";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import {
-  cancelRun,
   CloudCommandError,
+  cancelRun,
   runTaskInCloud,
   sendCloudCommand,
 } from "../api";
