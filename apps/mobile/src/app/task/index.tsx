@@ -10,6 +10,12 @@ import {
   getAvailableModes,
 } from "@posthog/core/sessions/executionModes";
 import {
+  getComposerModelOptions,
+  getConfigOptionLabel,
+  getModelConfigOption,
+  resolveComposerModelChange,
+} from "@posthog/core/task-detail/composerControls";
+import {
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
@@ -61,12 +67,6 @@ import {
 } from "@/features/tasks/composer/attachments/pickers";
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
-import {
-  getMobileModelOptions,
-  getModelConfigOption,
-  getModelLabel,
-  resolveAvailableModel,
-} from "@/features/tasks/composer/options";
 import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
@@ -129,7 +129,7 @@ export default function NewTaskScreen() {
   const restingBottom = bottom("compact");
   const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
   const modelConfigOption = getModelConfigOption(configOptions);
-  const mobileModelOptions = getMobileModelOptions(modelConfigOption);
+  const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const {
     error,
     hasGithubIntegration,
@@ -212,12 +212,14 @@ export default function NewTaskScreen() {
 
   useEffect(() => {
     if (!hasLiveConfig) return;
-    const availableModel = resolveAvailableModel(modelConfigOption, model);
-    if (availableModel === model) return;
-    setModel(availableModel);
-    if (!isSupportedReasoningEffort("claude", availableModel, reasoning)) {
-      setReasoning(DEFAULT_REASONING_EFFORT);
-    }
+    const next = resolveComposerModelChange({
+      adapter: "claude",
+      modelOption: modelConfigOption,
+      requestedModel: model,
+      reasoning,
+    });
+    if (next.model !== model) setModel(next.model);
+    if (next.reasoning !== reasoning) setReasoning(next.reasoning);
   }, [hasLiveConfig, model, modelConfigOption, reasoning]);
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
@@ -647,7 +649,12 @@ export default function NewTaskScreen() {
 
                     <Pill
                       icon={<Robot size={14} color={themeColors.gray[11]} />}
-                      label={getModelLabel(modelConfigOption, model)}
+                      label={
+                        getConfigOptionLabel(
+                          modelConfigOption.options,
+                          model,
+                        ) ?? model
+                      }
                       onPress={() => setModelSheetOpen(true)}
                     />
 
@@ -767,10 +774,14 @@ export default function NewTaskScreen() {
         title="Model"
         value={model}
         onChange={(value) => {
-          setModel(value);
-          if (!isSupportedReasoningEffort("claude", value, reasoning)) {
-            setReasoning(DEFAULT_REASONING_EFFORT);
-          }
+          const next = resolveComposerModelChange({
+            adapter: "claude",
+            modelOption: modelConfigOption,
+            requestedModel: value,
+            reasoning,
+          });
+          setModel(next.model);
+          setReasoning(next.reasoning);
         }}
         onClose={() => setModelSheetOpen(false)}
         options={mobileModelOptions.map((modelOption) => ({

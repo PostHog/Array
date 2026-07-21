@@ -4,11 +4,17 @@ import {
   getAvailableModes,
 } from "@posthog/core/sessions/executionModes";
 import {
+  getComposerModelOptions,
+  getConfigOptionLabel,
+  getModelConfigOption,
+  resolveComposerModelChange,
+  resolveComposerPrimaryAction,
+} from "@posthog/core/task-detail/composerControls";
+import {
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
   getReasoningEffortOptions,
-  isSupportedReasoningEffort,
   type SupportedReasoningEffort,
 } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
@@ -56,12 +62,6 @@ import {
   pickPhotoFromLibrary,
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
-import {
-  getMobileModelOptions,
-  getModelConfigOption,
-  getModelLabel,
-  resolveAvailableModel,
-} from "./options";
 import { Pill } from "./Pill";
 import { SelectSheet } from "./SelectSheet";
 
@@ -188,7 +188,7 @@ export function TaskChatComposer({
   const themeColors = useThemeColors();
   const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
   const modelConfigOption = getModelConfigOption(configOptions);
-  const mobileModelOptions = getMobileModelOptions(modelConfigOption);
+  const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
@@ -206,12 +206,14 @@ export function TaskChatComposer({
 
   useEffect(() => {
     if (!hasLiveConfig) return;
-    const availableModel = resolveAvailableModel(modelConfigOption, model);
-    if (availableModel === model) return;
-    onModelChange(availableModel);
-    if (!isSupportedReasoningEffort("claude", availableModel, reasoning)) {
-      onReasoningChange(DEFAULT_REASONING_EFFORT);
-    }
+    const next = resolveComposerModelChange({
+      adapter: "claude",
+      modelOption: modelConfigOption,
+      requestedModel: model,
+      reasoning,
+    });
+    if (next.model !== model) onModelChange(next.model);
+    if (next.reasoning !== reasoning) onReasoningChange(next.reasoning);
   }, [
     hasLiveConfig,
     model,
@@ -239,9 +241,16 @@ export function TaskChatComposer({
   const showReasoningPill = reasoningOptions.length > 0;
 
   const hasContent = message.trim().length > 0 || attachments.length > 0;
-  const canSend = hasContent && !disabled && !isRecording;
-  const showStop =
-    !isUserTurn && !canSend && !isRecording && !isTranscribing && !!onStop;
+  const primaryAction = resolveComposerPrimaryAction({
+    hasContent,
+    disabled,
+    isRecording,
+    isTranscribing,
+    canStop: !isUserTurn && !!onStop,
+    allowSendWhileRunning: true,
+  });
+  const canSend = primaryAction === "send";
+  const showStop = primaryAction === "stop";
 
   const handleSend = () => {
     const trimmed = message.trim();
@@ -410,7 +419,10 @@ export function TaskChatComposer({
 
                 <Pill
                   icon={<Robot size={14} color={themeColors.gray[11]} />}
-                  label={getModelLabel(modelConfigOption, model)}
+                  label={
+                    getConfigOptionLabel(modelConfigOption.options, model) ??
+                    model
+                  }
                   onPress={() => setModelSheetOpen(true)}
                 />
 
@@ -486,10 +498,14 @@ export function TaskChatComposer({
         title="Model"
         value={model}
         onChange={(v) => {
-          onModelChange(v);
-          if (!isSupportedReasoningEffort("claude", v, reasoning)) {
-            onReasoningChange(DEFAULT_REASONING_EFFORT);
-          }
+          const next = resolveComposerModelChange({
+            adapter: "claude",
+            modelOption: modelConfigOption,
+            requestedModel: v,
+            reasoning,
+          });
+          onModelChange(next.model);
+          onReasoningChange(next.reasoning);
         }}
         onClose={() => setModelSheetOpen(false)}
         options={mobileModelOptions.map((m) => ({
