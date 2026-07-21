@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   openTask: vi.fn(),
   setProvisioningFailed: vi.fn(),
   session: null as Record<string, unknown> | null,
+  toast: vi.fn(),
   toastError: vi.fn(),
   useWorkspace: vi.fn(),
 }));
@@ -53,7 +54,7 @@ vi.mock("@posthog/ui/primitives/Tooltip", () => ({
   }) => <div data-tooltip={content}>{children}</div>,
 }));
 vi.mock("@posthog/ui/primitives/toast", () => ({
-  toast: { error: vi.fn() },
+  toast: { error: mocks.toast },
 }));
 
 import { ForkedFromTaskButton, ForkTaskButton } from "./ForkTaskButton";
@@ -77,15 +78,11 @@ describe("ForkTaskButton", () => {
   });
 
   it("forks a completed cloud task and opens the child", async () => {
-    mocks.forkTask.mockImplementation(
-      async (
-        _task: Task,
-        options: { onTaskReady: (output: { task: Task }) => void },
-      ) => {
-        options.onTaskReady({ task: { id: "task-2" } as Task });
-        return { success: true, data: {} };
-      },
-    );
+    const child = { id: "task-2" } as Task;
+    mocks.forkTask.mockResolvedValue({
+      success: true,
+      data: { task: child, workspace: null },
+    });
 
     render(
       <Theme>
@@ -99,7 +96,6 @@ describe("ForkTaskButton", () => {
         cloudTask,
         expect.objectContaining({
           sourceRunStatus: "completed",
-          onTaskReady: expect.any(Function),
         }),
       ),
     );
@@ -114,18 +110,14 @@ describe("ForkTaskButton", () => {
 
   it("records and reports a provisioning failure on the child task", async () => {
     const child = { id: "task-2" } as Task;
-    mocks.forkTask.mockImplementation(
-      async (
-        _task: Task,
-        options: { onTaskReady: (output: { task: Task }) => void },
-      ) => {
-        options.onTaskReady({ task: child });
-        return {
-          success: true,
-          data: { task: child, provisioningError: "git checkout failed" },
-        };
+    mocks.forkTask.mockResolvedValue({
+      success: true,
+      data: {
+        task: child,
+        workspace: null,
+        provisioningError: "git checkout failed",
       },
-    );
+    });
 
     render(
       <Theme>
@@ -144,6 +136,48 @@ describe("ForkTaskButton", () => {
       "Failed to create workspace",
       "git checkout failed",
     );
+  });
+
+  it("reports a failed fork and leaves the button ready to retry", async () => {
+    mocks.forkTask.mockResolvedValue({
+      success: false,
+      error: "fork failed",
+      failedStep: "agent_session",
+    });
+
+    render(
+      <Theme>
+        <ForkTaskButton task={cloudTask} />
+      </Theme>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fork task" }));
+
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith("Could not fork task", {
+        description: "fork failed",
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Fork task" })).toBeEnabled();
+    expect(mocks.openTask).not.toHaveBeenCalled();
+  });
+
+  it("reports a rejected fork and leaves the button ready to retry", async () => {
+    mocks.forkTask.mockRejectedValue(new Error("network failed"));
+
+    render(
+      <Theme>
+        <ForkTaskButton task={cloudTask} />
+      </Theme>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fork task" }));
+
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith("Could not fork task", {
+        description: "network failed",
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Fork task" })).toBeEnabled();
+    expect(mocks.openTask).not.toHaveBeenCalled();
   });
 
   it("uses the live cloud status before the persisted run status", () => {

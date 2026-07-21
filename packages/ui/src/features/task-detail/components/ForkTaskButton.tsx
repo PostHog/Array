@@ -61,14 +61,15 @@ export function ForkTaskButton({ task }: { task: Task }) {
     try {
       const result = await taskForkService.forkTask(task, {
         sourceRunStatus: currentCloudStatus,
-        onTaskReady: ({ task: child }) => {
-          invalidateTasks(child);
-          void openTask(child);
-        },
       });
       if (!result.success) {
         toast.error("Could not fork task", { description: result.error });
-      } else if (result.data.provisioningError) {
+        return;
+      }
+
+      invalidateTasks(result.data.task);
+      void openTask(result.data.task);
+      if (result.data.provisioningError) {
         useProvisioningStore
           .getState()
           .setFailed(result.data.task.id, result.data.provisioningError);

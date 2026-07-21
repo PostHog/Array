@@ -802,7 +802,7 @@ describe("WorkspaceService", () => {
           worktreeBasePath: "/tmp/worktrees",
           branchName: null,
           checkpointId: "fork-child-task",
-          restoreBranch: false,
+          restoreCheckpointBranch: false,
         }),
       );
       expect(mockDeleteWorktreeCheckpoint).toHaveBeenCalledWith(

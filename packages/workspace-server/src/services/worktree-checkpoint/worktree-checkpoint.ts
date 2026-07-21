@@ -15,7 +15,7 @@ export interface RestoreWorktreeFromCheckpointParams {
   branchName: string | null;
   checkpointId: string;
   recreateBranch?: boolean;
-  restoreBranch?: boolean;
+  restoreCheckpointBranch?: boolean;
   logger?: SagaLogger;
   onOutput?: (data: string) => void;
 }
@@ -64,7 +64,7 @@ export async function restoreWorktreeFromCheckpoint(
     const result = await revertSaga.run({
       baseDir: newWorktree.worktreePath,
       checkpointId: params.checkpointId,
-      restoreBranch: params.restoreBranch,
+      restoreCheckpointBranch: params.restoreCheckpointBranch,
     });
     if (!result.success) {
       throw new Error(

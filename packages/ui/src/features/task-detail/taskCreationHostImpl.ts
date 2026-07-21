@@ -121,6 +121,10 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     await hostClient().additionalDirectories.addForTask.mutate(args);
   }
 
+  getAdditionalDirectories(taskId: string): Promise<string[]> {
+    return hostClient().additionalDirectories.listForTask.query({ taskId });
+  }
+
   async removeAdditionalDirectory(args: {
     taskId: string;
     path: string;

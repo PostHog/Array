@@ -83,6 +83,7 @@ export interface ITaskCreationHost {
   getFolders(): Promise<TaskFolderInfo[]>;
   addFolder(args: { folderPath: string }): Promise<TaskFolderInfo>;
   addAdditionalDirectory(args: { taskId: string; path: string }): Promise<void>;
+  getAdditionalDirectories(taskId: string): Promise<string[]>;
   removeAdditionalDirectory(args: {
     taskId: string;
     path: string;

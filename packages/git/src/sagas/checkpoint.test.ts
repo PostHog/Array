@@ -75,13 +75,13 @@ async function captureCheckpoint(
 async function revertCheckpoint(
   repoPath: string,
   checkpointId: string,
-  restoreBranch?: boolean,
+  restoreCheckpointBranch?: boolean,
 ): Promise<void> {
   const revert = new RevertCheckpointSaga();
   const result = await revert.run({
     baseDir: repoPath,
     checkpointId,
-    restoreBranch,
+    restoreCheckpointBranch,
   });
   expect(result.success).toBe(true);
 }

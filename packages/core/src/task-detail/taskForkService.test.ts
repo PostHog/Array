@@ -53,6 +53,7 @@ const createWorkspace = (overrides: Partial<Workspace> = {}): Workspace => ({
 describe("TaskForkService", () => {
   const host = {
     getWorkspace: vi.fn(),
+    getAdditionalDirectories: vi.fn(),
   } as unknown as ITaskCreationHost;
   const taskService = {
     createTask: vi.fn(),
@@ -62,6 +63,7 @@ describe("TaskForkService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(host.getWorkspace).mockResolvedValue(createWorkspace());
+    vi.mocked(host.getAdditionalDirectories).mockResolvedValue([]);
     vi.mocked(taskService.createTask).mockResolvedValue({
       success: true,
       data: {} as never,
@@ -99,6 +101,9 @@ describe("TaskForkService", () => {
   });
 
   it("creates a local worktree fork", async () => {
+    vi.mocked(host.getAdditionalDirectories).mockResolvedValue([
+      "/repos/shared",
+    ]);
     const task = createTask({
       latest_run: createRun({
         runtime_adapter: "codex",
@@ -121,6 +126,7 @@ describe("TaskForkService", () => {
         model: "gpt-5.4",
         reasoningLevel: "high",
         executionMode: "full-access",
+        additionalDirectories: ["/repos/shared"],
         forkFrom: { taskId: "source-task", taskRunId: "source-run" },
       }),
       undefined,

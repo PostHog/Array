@@ -56,6 +56,9 @@ export class TaskForkService {
         "Only repository-backed local tasks can be forked",
       );
     }
+    const additionalDirectories = isCloud
+      ? undefined
+      : await this.host.getAdditionalDirectories(sourceTask.id);
 
     const output = sourceRun.output ?? {};
     const state = sourceRun.state ?? {};
@@ -81,6 +84,7 @@ export class TaskForkService {
         adapter: sourceRun.runtime_adapter ?? undefined,
         model: sourceRun.model ?? undefined,
         reasoningLevel: sourceRun.reasoning_effort ?? undefined,
+        additionalDirectories,
         sandboxEnvironmentId:
           typeof state.sandbox_environment_id === "string"
             ? state.sandbox_environment_id

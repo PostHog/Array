@@ -131,7 +131,7 @@ export class TaskCreationSaga extends Saga<
 
     if (hasProvisioning) {
       this.deps.host.setProvisioningActive(task.id);
-      if (this.deps.onTaskReady) {
+      if (!input.forkFrom && this.deps.onTaskReady) {
         this.deps.onTaskReady({ task, workspace });
       }
     }
@@ -197,7 +197,12 @@ export class TaskCreationSaga extends Saga<
         // back here would run task_creation's deleteTask and destroy that task,
         // losing the prompt. Instead keep the task with no workspace (the shape
         // openTask re-provisions from) so the user can retry setup on it.
-        if (!hasProvisioning) throw error;
+        if (!hasProvisioning || input.forkFrom) {
+          if (hasProvisioning) {
+            this.deps.host.clearProvisioning(task.id);
+          }
+          throw error;
+        }
         const provisioningError =
           error instanceof Error ? error.message : String(error);
         this.log.error("Worktree provisioning failed; keeping task for retry", {

@@ -1301,6 +1301,33 @@ describe("TaskCreationSaga", () => {
     expect(onTaskReady.mock.calls[0][0].workspace).toBeNull();
   });
 
+  it("rolls back a fork when checkpoint provisioning fails", async () => {
+    const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const deleteTaskMock = vi.fn().mockResolvedValue(undefined);
+    const onTaskReady = vi.fn();
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockRejectedValue(new Error("checkpoint failed"));
+
+    const saga = makeSaga(
+      { createTask: createTaskMock, deleteTask: deleteTaskMock },
+      { onTaskReady },
+    );
+
+    const result = await saga.run({
+      content: "Fork the task",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+      forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(deleteTaskMock).toHaveBeenCalledWith(createdTask.id);
+    expect(mockHost.clearProvisioning).toHaveBeenCalledWith(createdTask.id);
+    expect(onTaskReady).not.toHaveBeenCalled();
+  });
+
   it("still rolls back a worktree task when a later (non-provisioning) step fails", async () => {
     const createdTask = createTask();
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);

@@ -157,7 +157,7 @@ export class CaptureCheckpointSaga extends GitSaga<
 
 export interface RevertCheckpointInput extends GitSagaInput {
   checkpointId: string;
-  restoreBranch?: boolean;
+  restoreCheckpointBranch?: boolean;
 }
 
 export interface RevertCheckpointOutput {
@@ -211,7 +211,7 @@ export class RevertCheckpointSaga extends GitSaga<
       name: "checkout_head",
       execute: async () => {
         if (!head) return;
-        if (input.restoreBranch !== false && branch) {
+        if (input.restoreCheckpointBranch !== false && branch) {
           const branchExists = await refExists(
             this.git,
             `refs/heads/${branch}`,

@@ -777,7 +777,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
             preferredName: undefined,
             branchName: null,
             checkpointId,
-            restoreBranch: false,
+            restoreCheckpointBranch: false,
             logger: this.log,
             onOutput,
           });
