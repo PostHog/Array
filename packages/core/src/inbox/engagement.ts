@@ -173,13 +173,16 @@ export function buildBulkActionEvents(
 export interface InboxViewedFilterState {
   sourceProductFilter: string[];
   priorityFilter: string[];
-  searchQuery: string;
+  searchQuery?: string;
+  statusFilter?: readonly string[];
+  defaultStatusFilter?: readonly string[];
+  suggestedReviewerFilter?: string[];
   /**
    * True when the reviewer scope is the default ("For you"). False when the
    * user has narrowed to a teammate or the whole project — treated as an
    * active filter for `has_active_filters`.
    */
-  isDefaultScope: boolean;
+  isDefaultScope?: boolean;
 }
 
 export interface BuildInboxViewedInput {
@@ -191,7 +194,7 @@ export interface BuildInboxViewedInput {
   /** Server-reported total of reports matching the active query — the headline inbox number. */
   totalCount: number;
   /** Tab badge counts shown in the v2 header (the numbers the user actually sees). */
-  tabCounts: { pulls: number; reports: number };
+  tabCounts?: { pulls: number; reports: number };
   filters: InboxViewedFilterState;
 }
 
@@ -206,7 +209,8 @@ export interface BuildInboxViewedInput {
 export function buildInboxViewedProperties(
   input: BuildInboxViewedInput,
 ): InboxViewedProperties {
-  const { visibleReports, totalCount, tabCounts, filters } = input;
+  const { visibleReports, totalCount, filters } = input;
+  const tabCounts = input.tabCounts ?? { pulls: 0, reports: totalCount };
 
   const priorityCounts = { P0: 0, P1: 0, P2: 0, P3: 0, P4: 0, unknown: 0 };
   const actionabilityCounts = {
@@ -236,11 +240,20 @@ export function buildInboxViewedProperties(
     }
   }
 
+  const statusFiltered =
+    filters.statusFilter !== undefined &&
+    filters.defaultStatusFilter !== undefined &&
+    (filters.statusFilter.length !== filters.defaultStatusFilter.length ||
+      filters.statusFilter.some(
+        (status) => !filters.defaultStatusFilter?.includes(status),
+      ));
   const hasActiveFilters =
     filters.sourceProductFilter.length > 0 ||
     filters.priorityFilter.length > 0 ||
-    filters.searchQuery.trim().length > 0 ||
-    !filters.isDefaultScope;
+    (filters.searchQuery?.trim().length ?? 0) > 0 ||
+    statusFiltered ||
+    (filters.suggestedReviewerFilter?.length ?? 0) > 0 ||
+    filters.isDefaultScope === false;
 
   return {
     report_count: visibleReports.length,
@@ -248,7 +261,7 @@ export function buildInboxViewedProperties(
     ready_count: readyCount,
     has_active_filters: hasActiveFilters,
     source_product_filter: filters.sourceProductFilter,
-    status_filter_count: 0,
+    status_filter_count: filters.statusFilter?.length ?? 0,
     is_empty: totalCount === 0,
     priority_p0_count: priorityCounts.P0,
     priority_p1_count: priorityCounts.P1,
