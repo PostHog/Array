@@ -1,9 +1,4 @@
-import type {
-  Adapter,
-  StoredLogEntry,
-  Task,
-  TaskRun,
-} from "@posthog/shared";
+import type { Adapter, StoredLogEntry, Task, TaskRun } from "@posthog/shared";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
