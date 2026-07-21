@@ -10,6 +10,7 @@ import {
   readLocalLogsOutput,
   readLocalLogsTailInput,
   readLocalLogsTailOutput,
+  seedLocalLogsInput,
   writeLocalLogsInput,
 } from "@posthog/workspace-server/services/local-logs/schemas";
 
@@ -54,5 +55,13 @@ export const logsRouter = router({
       ctx.container
         .get<ILogsService>(LOGS_SERVICE)
         .writeLocalLogs(input.taskRunId, input.content),
+    ),
+
+  seedLocalLogs: publicProcedure
+    .input(seedLocalLogsInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<ILogsService>(LOGS_SERVICE)
+        .seedLocalLogs(input.taskRunId, input.content),
     ),
 });

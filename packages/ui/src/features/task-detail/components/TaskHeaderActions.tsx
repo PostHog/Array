@@ -26,6 +26,7 @@ import {
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Flex } from "@radix-ui/themes";
 import { useState } from "react";
+import { ForkedFromTaskButton, ForkTaskButton } from "./ForkTaskButton";
 
 const CLOUD_HANDOFF_FLAG = "phc-cloud-handoff";
 
@@ -158,6 +159,8 @@ export function TaskHeaderActions({ task }: { task: Task }) {
         </div>
       )}
       <TaskDiffStatsBadge task={task} />
+      <ForkedFromTaskButton task={task} />
+      <ForkTaskButton task={task} />
 
       {workspaceLoaded && (
         <>

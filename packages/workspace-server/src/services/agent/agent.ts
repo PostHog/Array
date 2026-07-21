@@ -88,7 +88,11 @@ import type { ProcessTrackingService } from "../process-tracking/process-trackin
 import { loadSessionEnvOverrides } from "../session-env/loader";
 import { isScratchPath } from "../workspace/scratch";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
-import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
+import {
+  cleanupCodexHome,
+  copyCodexSessionState,
+  prepareCodexHome,
+} from "./codex-home";
 import { discoverExternalPlugins } from "./discover-plugins";
 import {
   AGENT_AUTH_ADAPTER,
@@ -109,6 +113,7 @@ import {
   type AgentServiceEvents,
   type Credentials,
   type EffortLevel,
+  type ForkSessionInput,
   type InterruptReason,
   type PromptOutput,
   type ReconnectSessionInput,
@@ -329,6 +334,11 @@ interface ManagedSession {
   // cycles can't drop each other's URLs from the accumulated list.
   evaluatedPrUrls: Set<string>;
   prAttachChain: Promise<void>;
+}
+
+interface ForkSessionSource {
+  sessionId: string;
+  taskRunId: string;
 }
 
 /** Get the agent session ID from a managed session, throwing if not set. */
@@ -698,6 +708,24 @@ If a repository IS genuinely required, attach one in this priority order:
     return this.toSessionResponse(session);
   }
 
+  async forkSession(params: ForkSessionInput): Promise<SessionResponse> {
+    this.validateSessionParams(params);
+    const source = this.sessions.get(params.sourceTaskRunId);
+    if (!source) {
+      throw new Error("The source agent session is not connected");
+    }
+    if (source.promptPending) {
+      throw new Error("Wait for the source task to finish before forking it");
+    }
+
+    const config = this.toSessionConfig(params);
+    const session = await this.getOrCreateSession(config, false, false, {
+      sessionId: getAgentSessionId(source),
+      taskRunId: source.taskRunId,
+    });
+    return this.toSessionResponse(session);
+  }
+
   async reconnectSession(
     params: ReconnectSessionInput,
   ): Promise<SessionResponse | null> {
@@ -717,16 +745,19 @@ If a repository IS genuinely required, attach one in this priority order:
     config: SessionConfig,
     isReconnect: false,
     isRetry?: boolean,
+    forkSource?: ForkSessionSource,
   ): Promise<ManagedSession>;
   private async getOrCreateSession(
     config: SessionConfig,
     isReconnect: true,
     isRetry?: boolean,
+    forkSource?: ForkSessionSource,
   ): Promise<ManagedSession | null>;
   private async getOrCreateSession(
     config: SessionConfig,
     isReconnect: boolean,
     isRetry = false,
+    forkSource?: ForkSessionSource,
   ): Promise<ManagedSession | null> {
     const {
       taskId,
@@ -835,6 +866,13 @@ If a repository IS genuinely required, attach one in this priority order:
             bundledSkillsDir,
             log: this.log,
           });
+          if (forkSource) {
+            await copyCodexSessionState({
+              appDataPath: this.storagePaths.appDataPath,
+              sourceTaskRunId: forkSource.taskRunId,
+              targetTaskRunId: taskRunId,
+            });
+          }
         } catch (err) {
           // A skills-prep failure must not kill the session; Codex falls back
           // to its default home and the user's own ~/.agents/skills.
@@ -973,11 +1011,43 @@ If a repository IS genuinely required, attach one in this priority order:
       let configOptions: SessionConfigOption[] | undefined;
       let agentSessionId: string | undefined;
 
+      if (forkSource) {
+        const forkResponse = await connection.unstable_forkSession({
+          sessionId: forkSource.sessionId,
+          cwd: repoPath,
+          mcpServers: sessionMcpServers,
+          _meta: {
+            ...(logUrl && {
+              persistence: { taskId, runId: taskRunId, logUrl },
+            }),
+            taskRunId,
+            environment: "local",
+            systemPrompt,
+            ...(channelMode && { channelMode }),
+            ...(config.spokenNarration !== undefined && {
+              spokenNarration: config.spokenNarration,
+            }),
+            mcpToolApprovals: toolApprovals,
+            ...(permissionMode && { permissionMode }),
+            ...(model != null && { model }),
+            ...(jsonSchema && { jsonSchema }),
+            claudeCode: { options: claudeCodeOptions },
+          },
+        });
+        configOptions = forkResponse.configOptions ?? undefined;
+        agentSessionId = forkResponse.sessionId;
+      }
+
       // Imported Claude Code CLI session: the transcript JSONL was copied
       // into CLAUDE_CONFIG_DIR at import time, so load it directly and let
       // the adapter replay its history to the client. On failure, fall
       // through to a fresh session so the task still starts.
-      if (!isReconnect && config.importedSessionId && adapter !== "codex") {
+      if (
+        !forkSource &&
+        !isReconnect &&
+        config.importedSessionId &&
+        adapter !== "codex"
+      ) {
         const importedSessionId = config.importedSessionId;
         try {
           const loadResponse = await connection.loadSession({
@@ -1390,6 +1460,14 @@ If a repository IS genuinely required, attach one in this priority order:
 
   getSession(taskRunId: string): ManagedSession | undefined {
     return this.sessions.get(taskRunId);
+  }
+
+  async flushSessionLogs(taskRunId: string): Promise<void> {
+    const session = this.sessions.get(taskRunId);
+    if (!session) {
+      throw new Error("The agent session is not connected");
+    }
+    await session.agent.flushAllLogs();
   }
 
   getDebugSnapshot(): {

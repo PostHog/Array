@@ -616,6 +616,7 @@ interface CreateTaskRunOptions extends CloudRunOptions {
   environment?: "local" | "cloud";
   mode?: "interactive" | "background";
   branch?: string | null;
+  resumeFromRunId?: string;
 }
 
 interface StartTaskRunOptions {

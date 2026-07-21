@@ -94,3 +94,27 @@ export async function prepareCodexHome(options: {
 
   return codexHome;
 }
+
+export async function copyCodexSessionState(options: {
+  appDataPath: string;
+  sourceTaskRunId: string;
+  targetTaskRunId: string;
+}): Promise<void> {
+  const sourceHome = getCodexHomeDir(
+    options.appDataPath,
+    options.sourceTaskRunId,
+  );
+  const targetHome = getCodexHomeDir(
+    options.appDataPath,
+    options.targetTaskRunId,
+  );
+
+  for (const directory of ["sessions", "shell_snapshots"]) {
+    const source = path.join(sourceHome, directory);
+    if (!fs.existsSync(source)) continue;
+    await fs.promises.cp(source, path.join(targetHome, directory), {
+      recursive: true,
+      force: true,
+    });
+  }
+}

@@ -16,6 +16,13 @@ const mockNewSession = vi.hoisted(() =>
   }),
 );
 
+const mockForkSession = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    sessionId: "forked-session-id",
+    configOptions: [],
+  }),
+);
+
 const mockAcpClient = vi.hoisted(() => ({
   current: undefined as
     | {
@@ -39,6 +46,7 @@ const mockClientSideConnection = vi.hoisted(() =>
     mockAcpClient.current = clientFactory({});
     this.initialize = vi.fn().mockResolvedValue({});
     this.newSession = mockNewSession;
+    this.unstable_forkSession = mockForkSession;
     this.loadSession = vi.fn().mockResolvedValue({ configOptions: [] });
     this.resumeSession = vi.fn().mockResolvedValue({ configOptions: [] });
     this.setSessionConfigOption = vi.fn(
@@ -276,6 +284,33 @@ describe("AgentService", () => {
   });
 
   describe("MCP servers", () => {
+    it("forks the source agent session into the target run", async () => {
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "claude",
+      });
+
+      await service.forkSession({
+        ...baseSessionParams,
+        taskId: "task-2",
+        taskRunId: "run-2",
+        sourceTaskRunId: "run-1",
+        adapter: "claude",
+      });
+
+      expect(mockForkSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "test-session-id",
+          cwd: "/mock/repo",
+          _meta: expect.objectContaining({
+            taskRunId: "run-2",
+            environment: "local",
+          }),
+        }),
+      );
+      expect(mockNewSession).toHaveBeenCalledTimes(1);
+    });
+
     it("marks desktop sessions as local even though they have a taskRunId", async () => {
       await service.startSession({
         ...baseSessionParams,

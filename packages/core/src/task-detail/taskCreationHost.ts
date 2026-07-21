@@ -19,6 +19,7 @@ export interface CreateWorkspaceArgs {
   branch?: string;
   allowRemoteBranchCheckout?: boolean;
   reuseExistingWorktree?: boolean;
+  forkFromTaskId?: string;
 }
 
 export type CreatedWorkspaceInfo = WorkspaceInfo;

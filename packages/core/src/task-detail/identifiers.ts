@@ -1,4 +1,7 @@
 export const TASK_SERVICE = Symbol.for("posthog.core.taskDetail.taskService");
+export const TASK_FORK_SERVICE = Symbol.for(
+  "posthog.core.taskDetail.taskForkService",
+);
 export const TASK_CREATION_HOST = Symbol.for(
   "posthog.core.taskDetail.taskCreationHost",
 );

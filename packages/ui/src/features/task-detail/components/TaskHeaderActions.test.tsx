@@ -79,6 +79,10 @@ vi.mock("@posthog/ui/features/diff-stats/DiffStatsBadge", () => ({
 vi.mock("@posthog/ui/primitives/Tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
 }));
+vi.mock("./ForkTaskButton", () => ({
+  ForkTaskButton: () => null,
+  ForkedFromTaskButton: () => null,
+}));
 
 import { TaskHeaderActions } from "./TaskHeaderActions";
 

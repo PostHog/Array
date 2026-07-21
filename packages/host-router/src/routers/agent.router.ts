@@ -9,6 +9,7 @@ import {
   cancelPermissionInput,
   cancelPromptInput,
   cancelSessionInput,
+  forkSessionInput,
   getGatewayModelsInput,
   getGatewayModelsOutput,
   getPreviewConfigOptionsInput,
@@ -38,6 +39,21 @@ export const agentRouter = router({
     .output(sessionResponseSchema)
     .mutation(({ ctx, input }) =>
       ctx.container.get<AgentService>(AGENT_SERVICE).startSession(input),
+    ),
+
+  fork: publicProcedure
+    .input(forkSessionInput)
+    .output(sessionResponseSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<AgentService>(AGENT_SERVICE).forkSession(input),
+    ),
+
+  flushLogs: publicProcedure
+    .input(subscribeSessionInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<AgentService>(AGENT_SERVICE)
+        .flushSessionLogs(input.taskRunId),
     ),
 
   prompt: publicProcedure

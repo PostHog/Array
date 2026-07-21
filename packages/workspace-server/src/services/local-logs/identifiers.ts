@@ -20,4 +20,5 @@ export interface ILogsService {
     maxBytes: number,
   ): Promise<{ content: string; truncated: boolean } | null>;
   writeLocalLogs(taskRunId: string, content: string): Promise<void>;
+  seedLocalLogs(taskRunId: string, content: string): Promise<void>;
 }

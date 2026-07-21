@@ -29,6 +29,7 @@ export const createWorkspaceInput = z
     // When set, an existing worktree already checked out on the branch is reused
     // for the task instead of creating a new one. Gated behind a confirmation.
     reuseExistingWorktree: z.boolean().optional(),
+    forkFromTaskId: z.string().optional(),
   })
   .refine(
     (data) =>

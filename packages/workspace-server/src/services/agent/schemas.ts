@@ -102,6 +102,12 @@ export const startSessionInput = z.object({
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
 
+export const forkSessionInput = startSessionInput.extend({
+  sourceTaskRunId: z.string(),
+});
+
+export type ForkSessionInput = z.infer<typeof forkSessionInput>;
+
 export const modelOptionSchema = z.object({
   modelId: z.string(),
   name: z.string(),

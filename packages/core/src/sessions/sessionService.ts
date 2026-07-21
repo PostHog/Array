@@ -154,6 +154,8 @@ type TrpcSubscription = {
 export interface SessionTrpc {
   agent: {
     start: TrpcMutation;
+    fork: TrpcMutation;
+    flushLogs: TrpcMutation;
     reconnect: TrpcMutation;
     cancel: TrpcMutation;
     prompt: TrpcMutation;
@@ -197,6 +199,7 @@ export interface SessionTrpc {
     readLocalLogsTail?: TrpcQuery;
     fetchS3Logs: TrpcQuery;
     writeLocalLogs: TrpcMutation;
+    seedLocalLogs: TrpcMutation;
   };
   os: { openExternal: TrpcMutation };
 }
@@ -1501,6 +1504,112 @@ export class SessionService {
     if (initialPrompt?.length) {
       await this.sendPrompt(taskId, initialPrompt);
     }
+  }
+
+  async forkLocalTask(params: {
+    sourceTaskId: string;
+    sourceTaskRunId: string;
+    task: Task;
+    repoPath: string;
+  }): Promise<void> {
+    const source = this.d.store.getSessionByTaskId(params.sourceTaskId);
+    if (!source || source.taskRunId !== params.sourceTaskRunId) {
+      throw new Error("The source task session is not available");
+    }
+    if (source.isPromptPending) {
+      throw new Error("Wait for the source task to finish before forking it");
+    }
+
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") {
+      throw new Error("Unable to reach server. Please check your connection.");
+    }
+
+    const taskRun = await authStatus.auth.client.createTaskRun(params.task.id);
+    if (!taskRun?.id) {
+      throw new Error("Failed to create task run. Please try again.");
+    }
+    params.task.latest_run = taskRun;
+
+    await this.d.trpc.agent.flushLogs.mutate({
+      taskRunId: params.sourceTaskRunId,
+    });
+    const sourceLogs = await this.d.trpc.logs.readLocalLogs.query({
+      taskRunId: params.sourceTaskRunId,
+    });
+    if (sourceLogs) {
+      await this.d.trpc.logs.seedLocalLogs.mutate({
+        taskRunId: taskRun.id,
+        content: sourceLogs,
+      });
+    }
+
+    const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
+      this.d.settings;
+    const result = await this.d.trpc.agent.fork.mutate({
+      sourceTaskRunId: params.sourceTaskRunId,
+      taskId: params.task.id,
+      taskRunId: taskRun.id,
+      repoPath: params.repoPath,
+      apiHost: authStatus.auth.apiHost,
+      projectId: authStatus.auth.projectId,
+      permissionMode: source.executionMode,
+      adapter: source.adapter,
+      customInstructions: customInstructions || undefined,
+      rtkEnabled: rtkEnabledLocal,
+      spokenNarration: spokenNarrationEnabled === true,
+      effort: effortLevelSchema.safeParse(source.reasoningLevel).success
+        ? (source.reasoningLevel as EffortLevel)
+        : undefined,
+      model: source.model ?? this.d.DEFAULT_GATEWAY_MODEL,
+    });
+
+    const session = createBaseSession(
+      taskRun.id,
+      params.task.id,
+      params.task.title,
+    );
+    session.channel = result.channel;
+    session.status = "connected";
+    session.events = [...source.events];
+    session.adapter = source.adapter;
+    session.model = source.model;
+    session.executionMode = source.executionMode;
+    session.reasoningLevel = source.reasoningLevel;
+    session.configOptions = result.configOptions as
+      | SessionConfigOption[]
+      | undefined;
+    session.steering = readSteering(result);
+
+    if (session.configOptions) {
+      this.d.setPersistedConfigOptions(taskRun.id, session.configOptions);
+    }
+    if (source.adapter) {
+      this.d.adapterStore.setAdapter(taskRun.id, source.adapter);
+    }
+
+    this.localRepoPaths.set(params.task.id, params.repoPath);
+    this.d.store.setSession(session);
+    this.subscribeToChannel(taskRun.id);
+
+    params.task.latest_run = await authStatus.auth.client.updateTaskRun(
+      params.task.id,
+      taskRun.id,
+      {
+        state: {
+          ...taskRun.state,
+          forked_from_task_id: params.sourceTaskId,
+          forked_from_run_id: params.sourceTaskRunId,
+        },
+      },
+    );
+
+    this.d.track(ANALYTICS_EVENTS.TASK_RUN_STARTED, {
+      task_id: params.task.id,
+      execution_type: "local",
+      initial_mode: source.executionMode,
+      adapter: source.adapter,
+    });
   }
 
   async loadLogsOnly(params: {

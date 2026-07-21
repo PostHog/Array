@@ -16,6 +16,7 @@ import {
 } from "@posthog/git/queries";
 import { CreateOrSwitchBranchSaga } from "@posthog/git/sagas/branch";
 import { DetachHeadSaga } from "@posthog/git/sagas/head";
+import { ApplyPatchSaga } from "@posthog/git/sagas/patch";
 import { WorktreeManager } from "@posthog/git/worktree";
 import {
   ANALYTICS_SERVICE,
@@ -636,6 +637,7 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       useExistingBranch,
       allowRemoteBranchCheckout,
       reuseExistingWorktree,
+      forkFromTaskId,
     } = options;
 
     const existingWorkspace = await this.getWorkspaceInfo(taskId);
@@ -748,7 +750,27 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       // re-check here so a lost race (the worktree got claimed between preflight
       // and now) fails the saga step rather than sharing one worktree across two
       // tasks.
-      if (existingWorktree) {
+      if (forkFromTaskId) {
+        const sourceAssociation = this.findTaskAssociation(forkFromTaskId);
+        if (!sourceAssociation || sourceAssociation.mode === "cloud") {
+          throw new Error("The source task does not have a local workspace");
+        }
+        const sourcePath =
+          sourceAssociation.mode === "worktree"
+            ? sourceAssociation.path
+            : sourceAssociation.folderId
+              ? this.getFolderPath(sourceAssociation.folderId)
+              : null;
+        if (!sourcePath) {
+          throw new Error("The source task workspace is unavailable");
+        }
+        const sourceHead = await createGitClient(sourcePath).revparse(["HEAD"]);
+        worktree = await worktreeManager.createWorktree({
+          baseBranch: sourceHead.trim(),
+          onOutput,
+        });
+        await this.copyWorkspaceChanges(sourcePath, worktree.worktreePath);
+      } else if (existingWorktree) {
         const [occupant] = this.getWorktreeTasks(existingWorktree.worktreePath);
         if (occupant) {
           throw new Error(
@@ -869,6 +891,59 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
       branchName: worktree.branchName,
       linkedBranch: null,
     };
+  }
+
+  private async copyWorkspaceChanges(
+    sourcePath: string,
+    targetPath: string,
+  ): Promise<void> {
+    const sourceGit = createGitClient(sourcePath);
+    const [stagedPatch, unstagedPatch, untrackedFiles] = await Promise.all([
+      sourceGit.diff(["--binary", "--cached", "HEAD"]),
+      sourceGit.diff(["--binary"]),
+      sourceGit.raw(["ls-files", "--others", "--exclude-standard", "-z"]),
+    ]);
+
+    for (const [patch, cached] of [
+      [stagedPatch, true],
+      [unstagedPatch, false],
+    ] as const) {
+      if (!patch) continue;
+      const result = await new ApplyPatchSaga().run({
+        baseDir: targetPath,
+        patch,
+        cached,
+      });
+      if (!result.success) {
+        throw new Error(
+          `Failed to copy forked workspace changes: ${result.error}`,
+        );
+      }
+    }
+
+    await Promise.all(
+      untrackedFiles
+        .split("\0")
+        .filter(Boolean)
+        .map(async (filePath) => {
+          const sourceFile = path.join(sourcePath, filePath);
+          const targetFile = path.join(targetPath, filePath);
+          await fs.promises.mkdir(path.dirname(targetFile), {
+            recursive: true,
+          });
+          const stat = await fs.promises.lstat(sourceFile);
+          if (stat.isSymbolicLink()) {
+            await fs.promises.symlink(
+              await fs.promises.readlink(sourceFile),
+              targetFile,
+            );
+          } else if (stat.isFile()) {
+            await fs.promises.copyFile(sourceFile, targetFile);
+          } else {
+            throw new Error(`Cannot copy untracked path: ${filePath}`);
+          }
+        }),
+    );
   }
 
   async deleteWorkspace(taskId: string, mainRepoPath: string): Promise<void> {

@@ -1,0 +1,162 @@
+import type { Workspace } from "@posthog/shared";
+import type { Task, TaskRun } from "@posthog/shared/domain-types";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ITaskCreationHost } from "./taskCreationHost";
+import { TaskForkService } from "./taskForkService";
+import type { TaskService } from "./taskService";
+
+const createTask = (overrides: Partial<Task> = {}): Task => ({
+  id: "source-task",
+  task_number: 1,
+  slug: "source-task",
+  title: "Fork task",
+  description: "Preserve the existing context",
+  origin_product: "user_created",
+  repository: "PostHog/code",
+  created_at: "2026-07-21T00:00:00Z",
+  updated_at: "2026-07-21T00:00:00Z",
+  latest_run: createRun(),
+  ...overrides,
+});
+
+const createRun = (overrides: Partial<TaskRun> = {}): TaskRun => ({
+  id: "source-run",
+  task: "source-task",
+  team: 1,
+  branch: "main",
+  environment: "local",
+  status: "completed",
+  log_url: "https://example.com/logs/source-run",
+  error_message: null,
+  output: null,
+  state: {},
+  created_at: "2026-07-21T00:00:00Z",
+  updated_at: "2026-07-21T00:00:00Z",
+  completed_at: "2026-07-21T00:01:00Z",
+  ...overrides,
+});
+
+const createWorkspace = (overrides: Partial<Workspace> = {}): Workspace => ({
+  taskId: "source-task",
+  folderId: "folder-1",
+  folderPath: "/repos/code",
+  mode: "worktree",
+  worktreePath: "/worktrees/source-task",
+  worktreeName: "source-task",
+  branchName: "posthog-code/source-task",
+  baseBranch: "main",
+  linkedBranch: null,
+  createdAt: "2026-07-21T00:00:00Z",
+  ...overrides,
+});
+
+describe("TaskForkService", () => {
+  const host = {
+    getWorkspace: vi.fn(),
+  } as unknown as ITaskCreationHost;
+  const taskService = {
+    createTask: vi.fn(),
+  } as unknown as TaskService;
+  const service = new TaskForkService(host, taskService);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(host.getWorkspace).mockResolvedValue(createWorkspace());
+    vi.mocked(taskService.createTask).mockResolvedValue({
+      success: true,
+      data: {} as never,
+    });
+  });
+
+  it("rejects an active cloud run", async () => {
+    const task = createTask({
+      latest_run: createRun({ environment: "cloud", status: "in_progress" }),
+    });
+
+    const result = await service.forkTask(task);
+
+    expect(result).toEqual({
+      success: false,
+      error: "Wait for the cloud run to finish before forking it",
+      failedStep: "validation",
+    });
+  });
+
+  it("creates a local worktree fork", async () => {
+    const task = createTask({
+      latest_run: createRun({
+        runtime_adapter: "codex",
+        model: "gpt-5.4",
+        reasoning_effort: "high",
+        state: { initial_permission_mode: "full-access" },
+      }),
+    });
+
+    await service.forkTask(task);
+
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Preserve the existing context",
+        repoPath: "/repos/code",
+        repository: "PostHog/code",
+        workspaceMode: "worktree",
+        branch: null,
+        adapter: "codex",
+        model: "gpt-5.4",
+        reasoningLevel: "high",
+        executionMode: "full-access",
+        forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+      }),
+      undefined,
+    );
+  });
+
+  it("preserves cloud runtime and sandbox options", async () => {
+    vi.mocked(host.getWorkspace).mockResolvedValue(
+      createWorkspace({ mode: "cloud", folderPath: "" }),
+    );
+    const task = createTask({
+      github_integration: 12,
+      github_user_integration: "integration-1",
+      latest_run: createRun({
+        environment: "cloud",
+        branch: "posthog-code/source",
+        runtime_adapter: "claude",
+        model: "claude-sonnet-4-5",
+        reasoning_effort: "medium",
+        state: {
+          auto_publish: true,
+          custom_image_id: "image-1",
+          initial_permission_mode: "acceptEdits",
+          pr_authorship_mode: "bot",
+          rtk_enabled: false,
+          run_source: "signal_report",
+          sandbox_environment_id: "environment-1",
+        },
+      }),
+    });
+
+    await service.forkTask(task);
+
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceMode: "cloud",
+        branch: "posthog-code/source",
+        githubIntegrationId: 12,
+        githubUserIntegrationId: "integration-1",
+        executionMode: "acceptEdits",
+        adapter: "claude",
+        model: "claude-sonnet-4-5",
+        reasoningLevel: "medium",
+        sandboxEnvironmentId: "environment-1",
+        customImageId: "image-1",
+        cloudAutoPublish: true,
+        cloudRtkEnabled: false,
+        cloudRunSource: "signal_report",
+        cloudPrAuthorshipMode: "bot",
+        forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+      }),
+      undefined,
+    );
+  });
+});

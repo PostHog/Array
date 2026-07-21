@@ -25,6 +25,7 @@ export interface CreateTaskRunClientOptions {
   homeQuickAction?: string;
   importedMcpServers?: CloudMcpServerImport[];
   relayedMcpServers?: CloudMcpServerRelayDesignation[];
+  resumeFromRunId?: string;
 }
 
 export interface StartTaskRunClientOptions {
@@ -46,4 +47,9 @@ export interface TaskCreationApiClient {
     runId: string,
     options?: StartTaskRunClientOptions,
   ): Promise<Task>;
+  updateTaskRun(
+    taskId: string,
+    runId: string,
+    updates: Partial<Pick<TaskRun, "state">>,
+  ): Promise<TaskRun>;
 }

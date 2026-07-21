@@ -95,7 +95,7 @@ export class TaskCreationSaga extends Saga<
     const importedClaude = await this.importClaudeSession(input);
 
     const warmPayload =
-      !taskId && input.workspaceMode === "cloud"
+      !taskId && input.workspaceMode === "cloud" && !input.forkFrom
         ? await this.prepareWarmActivation(input)
         : null;
 
@@ -156,6 +156,7 @@ export class TaskCreationSaga extends Saga<
               branch: branch ?? undefined,
               allowRemoteBranchCheckout: input.allowRemoteBranchCheckout,
               reuseExistingWorktree: input.reuseExistingWorktree,
+              forkFromTaskId: input.forkFrom?.taskId,
             });
           },
           rollback: async () => {
@@ -357,6 +358,7 @@ export class TaskCreationSaga extends Saga<
           const buildTransport =
             async (): Promise<CloudPromptTransport | null> => {
               if (
+                input.forkFrom ||
                 !(input.content || input.filePaths?.length) ||
                 workspaceMode !== "cloud"
               ) {
@@ -411,6 +413,9 @@ export class TaskCreationSaga extends Saga<
             homeQuickAction: input.homeQuickActionLabel,
             importedMcpServers: input.importedMcpServers,
             relayedMcpServers: input.relayedMcpServers,
+            ...(input.forkFrom && {
+              resumeFromRunId: input.forkFrom.taskRunId,
+            }),
             initialPermissionMode:
               input.executionMode ??
               (cloudAdapter === "codex" ? "auto" : "plan"),
@@ -452,6 +457,20 @@ export class TaskCreationSaga extends Saga<
             },
           );
 
+          if (input.forkFrom && startedRun.latest_run) {
+            startedRun.latest_run = await this.deps.posthogClient.updateTaskRun(
+              task.id,
+              startedRun.latest_run.id,
+              {
+                state: {
+                  ...startedRun.latest_run.state,
+                  forked_from_task_id: input.forkFrom.taskId,
+                  forked_from_run_id: input.forkFrom.taskRunId,
+                },
+              },
+            );
+          }
+
           if (transport) {
             this.deps.track(ANALYTICS_EVENTS.PROMPT_SENT, {
               task_id: task.id,
@@ -486,7 +505,7 @@ export class TaskCreationSaga extends Saga<
 
     if (shouldConnect) {
       const initialPrompt =
-        !input.taskId && input.content
+        !input.taskId && input.content && !input.forkFrom
           ? await this.readOnlyStep("build_prompt_blocks", () =>
               buildPromptBlocks(
                 input.content ?? "",
@@ -527,7 +546,16 @@ export class TaskCreationSaga extends Saga<
             connectParams.adapter = "claude";
           }
 
-          this.deps.sessionService.connectToTask(connectParams);
+          if (input.forkFrom) {
+            await this.deps.sessionService.forkLocalTask({
+              sourceTaskId: input.forkFrom.taskId,
+              sourceTaskRunId: input.forkFrom.taskRunId,
+              task,
+              repoPath: agentCwd ?? "",
+            });
+          } else {
+            this.deps.sessionService.connectToTask(connectParams);
+          }
           return { taskId: task.id };
         },
         rollback: async ({ taskId }) => {

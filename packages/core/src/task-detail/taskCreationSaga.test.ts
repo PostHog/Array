@@ -45,6 +45,7 @@ const host = mockHost as unknown as ITaskCreationHost;
 
 const sessionService = {
   connectToTask: vi.fn(),
+  forkLocalTask: vi.fn(),
   disconnectFromTask: vi.fn(),
   rememberInitialCloudPrompt: vi.fn(),
   markTaskCreationInFlight: vi.fn(),
@@ -93,6 +94,7 @@ function makeSaga(
       startTaskRun: vi.fn(),
       sendRunCommand: vi.fn(),
       updateTask: vi.fn(),
+      updateTaskRun: vi.fn(),
       ...posthog,
     } as never,
     host,
@@ -195,6 +197,93 @@ describe("TaskCreationSaga", () => {
     expect(startTaskRunMock.mock.invocationCallOrder[0]).toBeLessThan(
       onTaskReady.mock.invocationCallOrder[0],
     );
+  });
+
+  it("forks a cloud run from the backend snapshot without sending a prompt", async () => {
+    const createdTask = createTask();
+    const startedRun = createRun({ id: "fork-run", state: {} });
+    const startedTask = createTask({ latest_run: startedRun });
+    const updateTaskRunMock = vi.fn().mockResolvedValue(
+      createRun({
+        id: "fork-run",
+        state: {
+          forked_from_task_id: "source-task",
+          forked_from_run_id: "source-run",
+        },
+      }),
+    );
+    const createTaskRunMock = vi.fn().mockResolvedValue(startedRun);
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+    const saga = makeSaga({
+      createTask: vi.fn().mockResolvedValue(createdTask),
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+      updateTaskRun: updateTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      adapter: "codex",
+      forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskRunMock).toHaveBeenCalledWith(
+      "task-123",
+      expect.objectContaining({ resumeFromRunId: "source-run" }),
+    );
+    expect(startTaskRunMock).toHaveBeenCalledWith("task-123", "fork-run", {
+      pendingUserMessage: undefined,
+      pendingUserArtifactIds: undefined,
+    });
+    expect(mockHost.getCloudPromptTransport).not.toHaveBeenCalled();
+    expect(updateTaskRunMock).toHaveBeenCalledWith("task-123", "fork-run", {
+      state: {
+        forked_from_task_id: "source-task",
+        forked_from_run_id: "source-run",
+      },
+    });
+  });
+
+  it("forks a local session into the cloned workspace", async () => {
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockResolvedValue({
+      taskId: "task-123",
+      mode: "worktree",
+      worktree: {
+        worktreePath: "/worktrees/fork",
+        worktreeName: "fork",
+        branchName: null,
+        baseBranch: "abc123",
+        createdAt: "2026-07-21T00:00:00Z",
+      },
+      branchName: null,
+      linkedBranch: null,
+    });
+    const task = createTask();
+    const saga = makeSaga({ createTask: vi.fn().mockResolvedValue(task) });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repoPath: "/repo",
+      workspaceMode: "worktree",
+      forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.createWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ forkFromTaskId: "source-task" }),
+    );
+    expect(sessionService.forkLocalTask).toHaveBeenCalledWith({
+      sourceTaskId: "source-task",
+      sourceTaskRunId: "source-run",
+      task,
+      repoPath: "/worktrees/fork",
+    });
+    expect(sessionService.connectToTask).not.toHaveBeenCalled();
   });
 
   it("folds channel CONTEXT.md into the cloud prompt and stashes it for the optimistic placeholder", async () => {
