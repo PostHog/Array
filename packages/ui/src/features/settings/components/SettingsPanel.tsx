@@ -152,7 +152,13 @@ const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
   "updates",
 ]);
 
-type SettingsPageLayout = "contained" | "full-bleed";
+const SETTINGS_PAGE_LAYOUT = {
+  CONTAINED: "contained",
+  FULL_BLEED: "full-bleed",
+} as const;
+
+type SettingsPageLayout =
+  (typeof SETTINGS_PAGE_LAYOUT)[keyof typeof SETTINGS_PAGE_LAYOUT];
 
 interface SettingsPageDefinition {
   title: string;
@@ -163,7 +169,7 @@ interface SettingsPageDefinition {
 function defineSettingsPage(
   title: string,
   component: React.ComponentType,
-  layout: SettingsPageLayout = "contained",
+  layout: SettingsPageLayout = SETTINGS_PAGE_LAYOUT.CONTAINED,
 ): SettingsPageDefinition {
   return { title, component, layout };
 }
@@ -180,11 +186,15 @@ const SETTINGS_PAGES: Record<SettingsCategory, SettingsPageDefinition> = {
     EnvironmentsSettings,
   ),
   agents: defineSettingsPage("Agents", AgentsSettings),
-  skills: defineSettingsPage("Skills", SkillsView, "full-bleed"),
+  skills: defineSettingsPage(
+    "Skills",
+    SkillsView,
+    SETTINGS_PAGE_LAYOUT.FULL_BLEED,
+  ),
   "mcp-servers": defineSettingsPage(
     "MCP servers",
     McpServersView,
-    "full-bleed",
+    SETTINGS_PAGE_LAYOUT.FULL_BLEED,
   ),
   personalization: defineSettingsPage(
     "Personalization",
@@ -203,6 +213,105 @@ const SETTINGS_PAGES: Record<SettingsCategory, SettingsPageDefinition> = {
   )),
   updates: defineSettingsPage("Updates", UpdatesSettings),
   advanced: defineSettingsPage("Advanced", AdvancedSettings),
+};
+
+interface SettingsVisibility {
+  billingEnabled: boolean;
+  spendAnalysisEnabled: boolean;
+  localWorkspaces: boolean;
+}
+
+function getHiddenSettingsCategories({
+  billingEnabled,
+  spendAnalysisEnabled,
+  localWorkspaces,
+}: SettingsVisibility): ReadonlySet<SettingsCategory> {
+  const hiddenCategories = new Set<SettingsCategory>();
+
+  if (!billingEnabled && !spendAnalysisEnabled) {
+    hiddenCategories.add("plan-usage");
+  }
+  if (!localWorkspaces) {
+    for (const category of LOCAL_ONLY_CATEGORIES) {
+      hiddenCategories.add(category);
+    }
+  }
+
+  return hiddenCategories;
+}
+
+interface SettingsPageLayoutProps {
+  children: ReactNode;
+  formMode: boolean;
+  icon?: ReactNode;
+  title: string;
+}
+
+function SettingsPageHeader({
+  formMode,
+  icon,
+  title,
+  bordered = false,
+}: Omit<SettingsPageLayoutProps, "children"> & { bordered?: boolean }) {
+  if (formMode) return null;
+
+  return (
+    <Flex
+      align="center"
+      gap="2"
+      className={
+        bordered ? "shrink-0 border-gray-5 border-b px-6 py-4" : undefined
+      }
+    >
+      {icon && <span className="text-gray-10">{icon}</span>}
+      <Text className="font-medium text-lg leading-6.5">{title}</Text>
+    </Flex>
+  );
+}
+
+function ContainedSettingsPageLayout({
+  children,
+  formMode,
+  icon,
+  title,
+}: SettingsPageLayoutProps) {
+  return (
+    <ScrollArea className="h-full w-full">
+      <Box p="6" mx="auto" className="relative z-[1] max-w-[800px]">
+        <Flex direction="column" gap="4">
+          <SettingsPageHeader formMode={formMode} icon={icon} title={title} />
+          {children}
+        </Flex>
+      </Box>
+    </ScrollArea>
+  );
+}
+
+function FullBleedSettingsPageLayout({
+  children,
+  formMode,
+  icon,
+  title,
+}: SettingsPageLayoutProps) {
+  return (
+    <Flex direction="column" className="relative z-[1] h-full min-h-0 w-full">
+      <SettingsPageHeader
+        bordered
+        formMode={formMode}
+        icon={icon}
+        title={title}
+      />
+      <div className="min-h-0 flex-1">{children}</div>
+    </Flex>
+  );
+}
+
+const SETTINGS_PAGE_LAYOUT_COMPONENTS: Record<
+  SettingsPageLayout,
+  React.ComponentType<SettingsPageLayoutProps>
+> = {
+  [SETTINGS_PAGE_LAYOUT.CONTAINED]: ContainedSettingsPageLayout,
+  [SETTINGS_PAGE_LAYOUT.FULL_BLEED]: FullBleedSettingsPageLayout,
 };
 
 export interface SettingsPanelProps {
@@ -239,24 +348,18 @@ export function SettingsPanel({
   const logoutMutation = useLogoutMutation();
 
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
-  const sidebarGroups = useMemo(
-    () =>
-      SIDEBAR_GROUPS.map((group) => ({
-        ...group,
-        items: group.items.filter((item) => {
-          if (
-            item.id === "plan-usage" &&
-            !billingEnabled &&
-            !spendAnalysisEnabled
-          )
-            return false;
-          if (!localWorkspaces && LOCAL_ONLY_CATEGORIES.has(item.id))
-            return false;
-          return true;
-        }),
-      })).filter((group) => group.items.length > 0),
-    [billingEnabled, spendAnalysisEnabled, localWorkspaces],
-  );
+  const sidebarGroups = useMemo(() => {
+    const hiddenCategories = getHiddenSettingsCategories({
+      billingEnabled,
+      spendAnalysisEnabled,
+      localWorkspaces,
+    });
+
+    return SIDEBAR_GROUPS.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !hiddenCategories.has(item.id)),
+    })).filter((group) => group.items.length > 0);
+  }, [billingEnabled, spendAnalysisEnabled, localWorkspaces]);
 
   // Guard direct navigation (URL, deep link, programmatic openSettings) to a
   // category hidden on this host. Fall back to General so a hidden section is
@@ -279,6 +382,7 @@ export function SettingsPanel({
 
   const activePage = SETTINGS_PAGES[resolvedCategory];
   const ActiveComponent = activePage.component;
+  const ActiveLayout = SETTINGS_PAGE_LAYOUT_COMPONENTS[activePage.layout];
 
   const activeCategoryIcon = SIDEBAR_ITEMS.find(
     (item) => item.id === activeSidebarCategory,
@@ -391,50 +495,13 @@ export function SettingsPanel({
               fill="url(#settings-dot-pattern)"
             />
           </svg>
-          {activePage.layout === "full-bleed" ? (
-            <Flex
-              direction="column"
-              className="relative z-[1] h-full min-h-0 w-full"
-            >
-              {!formMode && (
-                <Flex
-                  align="center"
-                  gap="2"
-                  className="shrink-0 border-gray-5 border-b px-6 py-4"
-                >
-                  {activeCategoryIcon && (
-                    <span className="text-gray-10">{activeCategoryIcon}</span>
-                  )}
-                  <Text className="font-medium text-lg leading-6.5">
-                    {activePage.title}
-                  </Text>
-                </Flex>
-              )}
-              <div className="min-h-0 flex-1">
-                <ActiveComponent />
-              </div>
-            </Flex>
-          ) : (
-            <ScrollArea className="h-full w-full">
-              <Box p="6" mx="auto" className="relative z-[1] max-w-[800px]">
-                <Flex direction="column" gap="4">
-                  {!formMode && (
-                    <Flex align="center" gap="2">
-                      {activeCategoryIcon && (
-                        <span className="text-gray-10">
-                          {activeCategoryIcon}
-                        </span>
-                      )}
-                      <Text className="font-medium text-lg leading-6.5">
-                        {activePage.title}
-                      </Text>
-                    </Flex>
-                  )}
-                  <ActiveComponent />
-                </Flex>
-              </Box>
-            </ScrollArea>
-          )}
+          <ActiveLayout
+            formMode={formMode}
+            icon={activeCategoryIcon}
+            title={activePage.title}
+          >
+            <ActiveComponent />
+          </ActiveLayout>
         </div>
       </div>
     </div>
