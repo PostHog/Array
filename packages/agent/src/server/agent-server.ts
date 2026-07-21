@@ -3299,7 +3299,7 @@ export class AgentServer {
       `You MUST:\n` +
       `1. ${this.buildExistingPrCheckoutInstruction(prUrl)}\n` +
       `2. Make changes, commit, and push to that branch\n` +
-      `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
+      `By default, do not create a new branch, close the existing PR, or create a new PR — continue on the existing PR. If the user explicitly asks you to create a new branch or a separate PR, follow their instruction.`
     );
   }
 
@@ -3417,7 +3417,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
       }
@@ -3437,7 +3437,7 @@ After completing the requested changes:
    List unresolved threads first with \`gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{body}}}}}}}'\` so you can resolve each one you fixed.
 
 Important:
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
