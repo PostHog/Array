@@ -21,6 +21,7 @@ import {
   buildPrOutput,
   getErrorMessage,
   mergePrUrls,
+  parseMcpToolName,
   readMcpToolDescriptor,
   readPrUrls,
 } from "@posthog/shared";
@@ -56,6 +57,13 @@ import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
+import {
+  compilePostHogExecPermissionRegex,
+  DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+  extractPostHogSubTool,
+  isPostHogExecDescriptor,
+  matchesPostHogExecPermission,
+} from "../posthog-exec-permission";
 import {
   findPrUrls,
   wasCreatedByLogin,
@@ -396,8 +404,17 @@ export class AgentServer {
         _meta?: Record<string, unknown>;
       }) => void;
       toolCallId?: string;
+      optionIds: Set<string>;
+      /**
+       * Question responses carry synthetic `option_<idx>`/submit ids built by
+       * the client from the question `_meta`, not from the relayed options, so
+       * the offered-option check must not apply to them.
+       */
+      validateOptionIds: boolean;
     }
   >();
+  private readonly posthogExecPermissionRegex: RegExp;
+  private readonly posthogExecPermissionRegexSource: string;
   private mcpRelayServer: McpRelayServer | null = null;
 
   /**
@@ -459,6 +476,12 @@ export class AgentServer {
 
   constructor(config: AgentServerConfig) {
     this.config = config;
+    this.posthogExecPermissionRegexSource =
+      config.posthogExecPermissionRegex ??
+      DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE;
+    this.posthogExecPermissionRegex = compilePostHogExecPermissionRegex(
+      this.posthogExecPermissionRegexSource,
+    );
     this.logger = new Logger({ debug: true, prefix: "[AgentServer]" });
     this.posthogAPI = new PostHogAPIClient({
       apiUrl: config.apiUrl,
@@ -1319,9 +1342,14 @@ export class AgentServer {
           customInput,
           answers,
         );
-        if (!resolved) {
+        if (resolved === "not_found") {
           throw new Error(
             `No pending permission request found for id: ${requestId}`,
+          );
+        }
+        if (resolved === "invalid_option") {
+          throw new Error(
+            `Option "${optionId}" was not offered for permission request ${requestId}`,
           );
         }
         return { resolved: true };
@@ -1590,6 +1618,7 @@ export class AgentServer {
       allowedDomains: this.config.allowedDomains,
       jsonSchema: preTask?.json_schema ?? null,
       permissionMode: initialPermissionMode,
+      posthogExecPermissionRegex: this.posthogExecPermissionRegexSource,
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
@@ -3736,6 +3765,33 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     );
   }
 
+  private readPermissionMcpDescriptor(
+    params: RequestPermissionRequest,
+  ): { server: string; tool: string } | undefined {
+    const descriptor = readMcpToolDescriptor(params.toolCall?._meta);
+    if (descriptor) return descriptor;
+
+    const rawInput = params.toolCall?.rawInput as
+      | { toolName?: unknown }
+      | undefined;
+    return typeof rawInput?.toolName === "string"
+      ? parseMcpToolName(rawInput.toolName)
+      : undefined;
+  }
+
+  private matchesPostHogExecPermissionRequest(
+    params: RequestPermissionRequest,
+  ): string | null {
+    const descriptor = this.readPermissionMcpDescriptor(params);
+    if (!descriptor || !isPostHogExecDescriptor(descriptor)) return null;
+
+    const subTool = extractPostHogSubTool(params.toolCall?.rawInput);
+    return subTool &&
+      matchesPostHogExecPermission(subTool, this.posthogExecPermissionRegex)
+      ? subTool
+      : null;
+  }
+
   private createCloudClient(payload: JwtPayload) {
     const mode = this.getEffectiveMode(payload);
     const interactionOrigin =
@@ -3784,15 +3840,8 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           // falling back to Claude's `rawInput.toolName`. Keying off only the
           // Claude channel would silently skip this gate for codex and let a
           // relayed tool auto-run in non-asking modes.
-          const rawInput = params.toolCall?.rawInput as
-            | { toolName?: string }
-            | undefined;
           const mcpServerName =
-            readMcpToolDescriptor(params.toolCall?._meta)?.server ??
-            (typeof rawInput?.toolName === "string" &&
-            rawInput.toolName.startsWith("mcp__")
-              ? rawInput.toolName.split("__")[1]
-              : undefined);
+            this.readPermissionMcpDescriptor(params)?.server;
           if (
             mcpServerName &&
             (this.config.relayMcpServers ?? []).includes(mcpServerName)
@@ -3810,6 +3859,27 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
               },
             };
           }
+        }
+
+        const posthogExecSubTool =
+          this.matchesPostHogExecPermissionRequest(params);
+        if (mode !== "background" && posthogExecSubTool) {
+          const isClaudeCodeRequest = Boolean(
+            params.toolCall?._meta?.claudeCode,
+          );
+          const relayParams = {
+            ...params,
+            options: isClaudeCodeRequest
+              ? params.options
+              : params.options.filter(
+                  (option) => option.kind !== "allow_always",
+                ),
+          };
+          this.logger.debug("Relaying configured PostHog exec permission", {
+            subTool: posthogExecSubTool,
+            sessionPermissionMode: this.getSessionPermissionMode(),
+          });
+          return this.relayPermissionToClient(relayParams);
         }
 
         // Relay permission requests to the connected client when:
@@ -4475,8 +4545,16 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       toolCall: params.toolCall,
     });
 
+    const toolCallMeta = params.toolCall?._meta as
+      | { codeToolKind?: unknown }
+      | undefined;
     return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve, toolCallId });
+      this.pendingPermissions.set(requestId, {
+        resolve,
+        toolCallId,
+        optionIds: new Set(params.options.map((option) => option.optionId)),
+        validateOptionIds: toolCallMeta?.codeToolKind !== "question",
+      });
     });
   }
 
@@ -4498,9 +4576,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     optionId: string,
     customInput?: string,
     answers?: Record<string, string>,
-  ): boolean {
+  ): "resolved" | "not_found" | "invalid_option" {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return false;
+    if (!pending) return "not_found";
+    // The request stays parked and resolvable — a corrected response with an
+    // offered option can still settle it.
+    if (pending.validateOptionIds && !pending.optionIds.has(optionId)) {
+      return "invalid_option";
+    }
 
     this.pendingPermissions.delete(requestId);
 
@@ -4518,6 +4601,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       outcome: { outcome: "selected" as const, optionId },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     });
-    return true;
+    return "resolved";
   }
 }

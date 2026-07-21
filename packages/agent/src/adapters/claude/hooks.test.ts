@@ -351,6 +351,8 @@ function buildSettingsManagerStub(
 
 describe("createPreToolUseHook", () => {
   const logger = new Logger({ debug: false });
+  const posthogExecPermissionRegex =
+    /(^|-)(partial-update|update|patch|delete|destroy)(-|$)/i;
 
   test("defers destructive PostHog exec sub-tool to canUseTool via ask", async () => {
     const settingsManager = buildSettingsManagerStub({
@@ -358,7 +360,11 @@ describe("createPreToolUseHook", () => {
       rule: "mcp__posthog__exec",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("mcp__posthog__exec", {
         command: 'call dashboard-update {"id": 1, "name": "x"}',
@@ -382,7 +388,11 @@ describe("createPreToolUseHook", () => {
       rule: "mcp__posthog__exec",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("mcp__posthog__exec", {
         command: 'call experiment-get {"id": 1}',
@@ -408,7 +418,11 @@ describe("createPreToolUseHook", () => {
       rule: "Bash(ls:*)",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("Bash", { command: "ls -la" }),
       undefined,
@@ -426,7 +440,11 @@ describe("createPreToolUseHook", () => {
       rule: "mcp__posthog__exec",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("mcp__posthog__exec", {
         command: 'call cohorts-partial-update {"id": 1}',

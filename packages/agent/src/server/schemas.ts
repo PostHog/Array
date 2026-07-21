@@ -1,5 +1,7 @@
 import { z } from "zod/v4";
 
+export { posthogExecPermissionRegexSchema } from "../posthog-exec-permission";
+
 const httpHeaderSchema = z.object({
   name: z.string(),
   value: z.string(),

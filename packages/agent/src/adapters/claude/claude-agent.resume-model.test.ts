@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentSideConnection } from "@agentclientprotocol/sdk";
+import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_GATEWAY_MODEL } from "../../gateway-models";
 
@@ -38,11 +39,13 @@ function makeQueryHandle(): SdkQueryHandle {
 }
 
 const createdQueries: SdkQueryHandle[] = [];
+const createdQueryOptions: Options[] = [];
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: vi.fn(() => {
+  query: vi.fn(({ options }: { options: Options }) => {
     const handle = makeQueryHandle();
     createdQueries.push(handle);
+    createdQueryOptions.push(options);
     return handle;
   }),
   getSessionMessages: vi.fn().mockResolvedValue([]),
@@ -87,6 +90,14 @@ const cwd = mkdtempSync(path.join(os.tmpdir(), "claude-agent-test-cwd-"));
 const configDir = mkdtempSync(
   path.join(os.tmpdir(), "claude-agent-test-config-"),
 );
+const permissionCwd = mkdtempSync(
+  path.join(os.tmpdir(), "claude-agent-permission-test-cwd-"),
+);
+mkdirSync(path.join(permissionCwd, ".claude"), { recursive: true });
+writeFileSync(
+  path.join(permissionCwd, ".claude", "settings.json"),
+  JSON.stringify({ permissions: { allow: ["mcp__posthog__exec"] } }),
+);
 const savedEnv = {
   ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
@@ -95,6 +106,7 @@ const savedEnv = {
 afterAll(() => {
   rmSync(cwd, { recursive: true, force: true });
   rmSync(configDir, { recursive: true, force: true });
+  rmSync(permissionCwd, { recursive: true, force: true });
   process.env.ANTHROPIC_BASE_URL = savedEnv.ANTHROPIC_BASE_URL;
   process.env.CLAUDE_CONFIG_DIR = savedEnv.CLAUDE_CONFIG_DIR;
   if (savedEnv.ANTHROPIC_BASE_URL === undefined) {
@@ -105,9 +117,10 @@ afterAll(() => {
   }
 });
 
-describe("ClaudeAcpAgent session model on resume", () => {
+describe("ClaudeAcpAgent session creation", () => {
   beforeEach(() => {
     createdQueries.length = 0;
+    createdQueryOptions.length = 0;
     nextInitPromise = Promise.resolve({
       result: "success",
       commands: [],
@@ -118,6 +131,154 @@ describe("ClaudeAcpAgent session model on resume", () => {
     delete process.env.ANTHROPIC_BASE_URL;
     process.env.CLAUDE_CONFIG_DIR = configDir;
   });
+
+  async function runPostHogExecPreToolUse(
+    options: Options,
+    subTool: string,
+  ): Promise<string | undefined> {
+    const input = {
+      session_id: "permission-session",
+      transcript_path: "/tmp/transcript",
+      cwd: permissionCwd,
+      hook_event_name: "PreToolUse",
+      tool_name: "mcp__posthog__exec",
+      tool_use_id: "toolu_permission",
+      tool_input: { command: `call ${subTool} {}` },
+    } as HookInput;
+
+    for (const hook of (options.hooks?.PreToolUse ?? []).flatMap(
+      (entry) => entry.hooks ?? [],
+    )) {
+      const result = await hook(input, undefined, {
+        signal: new AbortController().signal,
+      });
+      const decision = (
+        result as {
+          hookSpecificOutput?: { permissionDecision?: string };
+        }
+      ).hookSpecificOutput?.permissionDecision;
+      if (decision) return decision;
+    }
+
+    return undefined;
+  }
+
+  it.each(["new", "resume", "load"] as const)(
+    "uses the default PostHog exec permission regex for local %s sessions when metadata omits it",
+    async (sessionKind) => {
+      const agent = makeAgent();
+      const sessionIds = {
+        new: "0197a000-0000-7000-8000-000000000101",
+        resume: "0197a000-0000-7000-8000-000000000102",
+        load: "0197a000-0000-7000-8000-000000000103",
+      };
+      const params = {
+        sessionId: sessionIds[sessionKind],
+        cwd: permissionCwd,
+        mcpServers: [],
+        _meta: { taskRunId: `run-permission-${sessionKind}` },
+      };
+
+      if (sessionKind === "new") {
+        await agent.newSession(params);
+      } else if (sessionKind === "resume") {
+        await agent.resumeSession(params);
+      } else {
+        await agent.loadSession(params);
+      }
+
+      expect(createdQueryOptions).toHaveLength(1);
+      await expect(
+        runPostHogExecPreToolUse(
+          createdQueryOptions[0] as Options,
+          "dashboard-update",
+        ),
+      ).resolves.toBe("ask");
+    },
+  );
+
+  it("uses an explicit PostHog exec permission regex instead of the default", async () => {
+    const agent = makeAgent();
+
+    await agent.newSession({
+      cwd: permissionCwd,
+      mcpServers: [],
+      _meta: {
+        taskRunId: "run-permission-custom",
+        posthogExecPermissionRegex: "(^|-)archive(-|$)",
+      },
+    });
+
+    expect(createdQueryOptions).toHaveLength(1);
+    await expect(
+      runPostHogExecPreToolUse(
+        createdQueryOptions[0] as Options,
+        "dashboard-update",
+      ),
+    ).resolves.toBe("allow");
+    await expect(
+      runPostHogExecPreToolUse(
+        createdQueryOptions[0] as Options,
+        "dashboard-archive",
+      ),
+    ).resolves.toBe("ask");
+  });
+
+  it.each(["[", ""])(
+    "warns and falls back to the default regex when metadata carries the invalid regex %j",
+    async (posthogExecPermissionRegex) => {
+      const agent = makeAgent();
+      const warnSpy = vi.spyOn(agent.logger, "warn");
+
+      await agent.newSession({
+        cwd: permissionCwd,
+        mcpServers: [],
+        _meta: {
+          taskRunId: "run-permission-invalid",
+          posthogExecPermissionRegex,
+        },
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid posthogExecPermissionRegex"),
+        expect.anything(),
+      );
+      expect(createdQueryOptions).toHaveLength(1);
+      await expect(
+        runPostHogExecPreToolUse(
+          createdQueryOptions[0] as Options,
+          "dashboard-update",
+        ),
+      ).resolves.toBe("ask");
+      await expect(
+        runPostHogExecPreToolUse(
+          createdQueryOptions[0] as Options,
+          "dashboard-get",
+        ),
+      ).resolves.toBe("allow");
+    },
+  );
+
+  it.each([
+    { environment: "local", expectedCloudMode: false },
+    { environment: "cloud", expectedCloudMode: true },
+  ] as const)(
+    "records $environment sessions as cloudMode=$expectedCloudMode",
+    async ({ environment, expectedCloudMode }) => {
+      const agent = makeAgent();
+
+      await agent.newSession({
+        cwd,
+        mcpServers: [],
+        _meta: { environment, taskRunId: `run-${environment}` },
+      });
+
+      expect(
+        (agent as unknown as { session: { cloudMode: boolean } }).session
+          .cloudMode,
+      ).toBe(expectedCloudMode);
+    },
+  );
 
   // The SDK does not carry the model across resume — without an explicit
   // setModel the resumed session silently runs the SDK default (opus).
