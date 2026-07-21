@@ -11,7 +11,10 @@ import {
   GearSix,
   GithubLogo,
   Keyboard,
+  Lightbulb,
   Palette,
+  Plugs,
+  Robot,
   SignOut,
   SlackLogo,
   Terminal,
@@ -26,8 +29,10 @@ import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { McpServersView } from "@posthog/ui/features/mcp-servers/components/McpServersView";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { AdvancedSettings } from "@posthog/ui/features/settings/sections/AdvancedSettings";
+import { AgentsSettings } from "@posthog/ui/features/settings/sections/AgentsSettings";
 import { ClaudeCodeSettings } from "@posthog/ui/features/settings/sections/ClaudeCodeSettings";
 import { DiscordSettings } from "@posthog/ui/features/settings/sections/DiscordSettings";
 import { EnvironmentsSettings } from "@posthog/ui/features/settings/sections/environments/EnvironmentsSettings";
@@ -45,6 +50,7 @@ import { WorkspacesSettings } from "@posthog/ui/features/settings/sections/Works
 import { WorktreesSettings } from "@posthog/ui/features/settings/sections/worktrees/WorktreesSettings";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
+import { SkillsView } from "@posthog/ui/features/skills/SkillsView";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import * as nav from "@posthog/ui/router/navigationBridge";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
@@ -59,28 +65,80 @@ interface SidebarItem {
   hasChevron?: boolean;
 }
 
-const SIDEBAR_ITEMS: SidebarItem[] = [
-  { id: "general", label: "General", icon: <GearSix size={16} /> },
-  { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
-  { id: "plan-usage", label: "Plan & usage", icon: <CreditCard size={16} /> },
-  { id: "workspaces", label: "Workspaces", icon: <Folder size={16} /> },
-  { id: "worktrees", label: "Worktrees", icon: <TreeStructure size={16} /> },
-  { id: "environments", label: "Environments", icon: <Cube size={16} /> },
+interface SidebarGroup {
+  label: string;
+  items: SidebarItem[];
+}
+
+const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
-    id: "personalization",
-    label: "Personalization",
-    icon: <Palette size={16} />,
+    label: "Account",
+    items: [
+      { id: "general", label: "General", icon: <GearSix size={16} /> },
+      { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
+      {
+        id: "plan-usage",
+        label: "Plan & usage",
+        icon: <CreditCard size={16} />,
+      },
+    ],
   },
-  { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
-  { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
-  { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
-  { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
-  { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
-  { id: "discord", label: "Discord", icon: <DiscordLogo size={16} /> },
-  { id: "signals", label: "Self-driving", icon: <TrafficSignal size={16} /> },
-  { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
-  { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
+  {
+    label: "Workspace",
+    items: [
+      { id: "workspaces", label: "Workspaces", icon: <Folder size={16} /> },
+      {
+        id: "worktrees",
+        label: "Worktrees",
+        icon: <TreeStructure size={16} />,
+      },
+      { id: "environments", label: "Environments", icon: <Cube size={16} /> },
+    ],
+  },
+  {
+    label: "Configure",
+    items: [
+      { id: "agents", label: "Agents", icon: <Robot size={16} /> },
+      { id: "skills", label: "Skills", icon: <Lightbulb size={16} /> },
+      { id: "mcp-servers", label: "MCP servers", icon: <Plugs size={16} /> },
+      {
+        id: "signals",
+        label: "Self-driving",
+        icon: <TrafficSignal size={16} />,
+      },
+    ],
+  },
+  {
+    label: "Experience",
+    items: [
+      {
+        id: "personalization",
+        label: "Personalization",
+        icon: <Palette size={16} />,
+      },
+      { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
+      { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
+      { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
+    ],
+  },
+  {
+    label: "Integrations",
+    items: [
+      { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
+      { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
+      { id: "discord", label: "Discord", icon: <DiscordLogo size={16} /> },
+    ],
+  },
+  {
+    label: "Application",
+    items: [
+      { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
+      { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
+    ],
+  },
 ];
+
+const SIDEBAR_ITEMS = SIDEBAR_GROUPS.flatMap((group) => group.items);
 
 // Settings that only make sense with a local filesystem/host (local worktrees,
 // terminal, the local `claude` CLI, the desktop app itself). Hidden on the
@@ -102,6 +160,9 @@ const CATEGORY_TITLES: Record<SettingsCategory, string> = {
   worktrees: "Worktrees",
   environments: "Environments",
   "cloud-environments": "Environments",
+  agents: "Agents",
+  skills: "Skills",
+  "mcp-servers": "MCP servers",
   personalization: "Personalization",
   terminal: "Terminal",
   "claude-code": "Claude Code",
@@ -122,6 +183,9 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   worktrees: WorktreesSettings,
   environments: EnvironmentsSettings,
   "cloud-environments": EnvironmentsSettings,
+  agents: AgentsSettings,
+  skills: SkillsView,
+  "mcp-servers": McpServersView,
   personalization: PersonalizationSettings,
   terminal: TerminalSettings,
   "claude-code": ClaudeCodeSettings,
@@ -135,6 +199,11 @@ const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
   updates: UpdatesSettings,
   advanced: AdvancedSettings,
 };
+
+const FULL_HEIGHT_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
+  "skills",
+  "mcp-servers",
+]);
 
 export interface SettingsPanelProps {
   /**
@@ -170,19 +239,22 @@ export function SettingsPanel({
   const logoutMutation = useLogoutMutation();
 
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
-  const sidebarItems = useMemo(
+  const sidebarGroups = useMemo(
     () =>
-      SIDEBAR_ITEMS.filter((item) => {
-        if (
-          item.id === "plan-usage" &&
-          !billingEnabled &&
-          !spendAnalysisEnabled
-        )
-          return false;
-        if (!localWorkspaces && LOCAL_ONLY_CATEGORIES.has(item.id))
-          return false;
-        return true;
-      }),
+      SIDEBAR_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          if (
+            item.id === "plan-usage" &&
+            !billingEnabled &&
+            !spendAnalysisEnabled
+          )
+            return false;
+          if (!localWorkspaces && LOCAL_ONLY_CATEGORIES.has(item.id))
+            return false;
+          return true;
+        }),
+      })).filter((group) => group.items.length > 0),
     [billingEnabled, spendAnalysisEnabled, localWorkspaces],
   );
 
@@ -246,21 +318,28 @@ export function SettingsPanel({
         </button>
 
         <ScrollArea className="flex-1">
-          <div className="flex flex-col pt-2">
-            {sidebarItems.map((item) => {
-              const isActive =
-                resolvedCategory === item.id ||
-                (item.id === "environments" &&
-                  resolvedCategory === "cloud-environments");
-              return (
-                <SidebarNavItem
-                  key={item.id}
-                  item={item}
-                  isActive={isActive}
-                  onClick={() => setCategory(item.id)}
-                />
-              );
-            })}
+          <div className="flex flex-col gap-3 py-2">
+            {sidebarGroups.map((group) => (
+              <div key={group.label}>
+                <Text className="px-3 pb-1 font-medium text-[10px] text-gray-9 uppercase tracking-wider">
+                  {group.label}
+                </Text>
+                {group.items.map((item) => {
+                  const isActive =
+                    resolvedCategory === item.id ||
+                    (item.id === "environments" &&
+                      resolvedCategory === "cloud-environments");
+                  return (
+                    <SidebarNavItem
+                      key={item.id}
+                      item={item}
+                      isActive={isActive}
+                      onClick={() => setCategory(item.id)}
+                    />
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </ScrollArea>
 
@@ -312,23 +391,50 @@ export function SettingsPanel({
               fill="url(#settings-dot-pattern)"
             />
           </svg>
-          <ScrollArea className="h-full w-full">
-            <Box p="6" mx="auto" className="relative z-[1] max-w-[800px]">
-              <Flex direction="column" gap="4">
-                {!formMode && (
-                  <Flex align="center" gap="2">
-                    {activeCategoryIcon && (
-                      <span className="text-gray-10">{activeCategoryIcon}</span>
-                    )}
-                    <Text className="font-medium text-lg leading-6.5">
-                      {CATEGORY_TITLES[resolvedCategory]}
-                    </Text>
-                  </Flex>
-                )}
+          {FULL_HEIGHT_CATEGORIES.has(resolvedCategory) ? (
+            <Flex
+              direction="column"
+              className="relative z-[1] h-full min-h-0 w-full"
+            >
+              {!formMode && (
+                <Flex
+                  align="center"
+                  gap="2"
+                  className="shrink-0 border-gray-5 border-b px-6 py-4"
+                >
+                  {activeCategoryIcon && (
+                    <span className="text-gray-10">{activeCategoryIcon}</span>
+                  )}
+                  <Text className="font-medium text-lg leading-6.5">
+                    {CATEGORY_TITLES[resolvedCategory]}
+                  </Text>
+                </Flex>
+              )}
+              <div className="min-h-0 flex-1">
                 <ActiveComponent />
-              </Flex>
-            </Box>
-          </ScrollArea>
+              </div>
+            </Flex>
+          ) : (
+            <ScrollArea className="h-full w-full">
+              <Box p="6" mx="auto" className="relative z-[1] max-w-[800px]">
+                <Flex direction="column" gap="4">
+                  {!formMode && (
+                    <Flex align="center" gap="2">
+                      {activeCategoryIcon && (
+                        <span className="text-gray-10">
+                          {activeCategoryIcon}
+                        </span>
+                      )}
+                      <Text className="font-medium text-lg leading-6.5">
+                        {CATEGORY_TITLES[resolvedCategory]}
+                      </Text>
+                    </Flex>
+                  )}
+                  <ActiveComponent />
+                </Flex>
+              </Box>
+            </ScrollArea>
+          )}
         </div>
       </div>
     </div>
