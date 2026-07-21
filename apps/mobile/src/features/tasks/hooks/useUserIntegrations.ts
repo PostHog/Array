@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
-import type { RepositoryOption } from "../types";
+import type { RepositoryOption, UserGithubIntegration } from "../types";
 
 /**
  * User-scoped sibling of {@link useIntegrations}. Reads the authenticated
@@ -29,10 +29,7 @@ interface UseUserIntegrationsOptions {
   enabled?: boolean;
 }
 
-function integrationLabel(integration: {
-  installation_id: string;
-  account?: { name?: string | null } | null;
-}): string {
+function integrationLabel(integration: UserGithubIntegration): string {
   return integration.account?.name ?? `GitHub ${integration.installation_id}`;
 }
 
@@ -42,7 +39,19 @@ export function useUserIntegrations(options: UseUserIntegrationsOptions = {}) {
 
   const integrationsQuery = useQuery({
     queryKey: userIntegrationKeys.github(),
-    queryFn: () => getPostHogApiClient().getGithubUserIntegrations(),
+    queryFn: async () => {
+      const integrations =
+        await getPostHogApiClient().getGithubUserIntegrations();
+      return integrations.map(({ account, ...integration }) => ({
+        ...integration,
+        account: account
+          ? {
+              name: account.name ?? undefined,
+              type: account.type ?? undefined,
+            }
+          : undefined,
+      }));
+    },
     enabled: enabled && !!oauthAccessToken,
   });
 
@@ -57,9 +66,13 @@ export function useUserIntegrations(options: UseUserIntegrationsOptions = {}) {
       const results = await Promise.allSettled(
         integrations.map(async (integration) => ({
           installationId: integration.installation_id,
-          repositories: await getPostHogApiClient().getGithubUserRepositories(
-            integration.installation_id,
-          ),
+          repositories: (
+            await getPostHogApiClient().getGithubUserRepositories(
+              integration.installation_id,
+            )
+          )
+            .map((repository) => repository.toLowerCase())
+            .filter((repository) => repository.length > 0),
         })),
       );
 

@@ -1,11 +1,12 @@
+import type { TaskActivitySortMode } from "@posthog/core/tasks/taskActivity";
+import type { ExecutionMode, SupportedReasoningEffort } from "@posthog/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { ExecutionMode, ReasoningEffort } from "../composer/options";
 import type { RepositorySelection } from "../types";
 
 export type OrganizeMode = "by-project" | "chronological";
-export type SortMode = "created" | "updated";
+export type SortMode = TaskActivitySortMode;
 
 const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
   integrationId: null,
@@ -17,7 +18,7 @@ const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
 export interface TaskComposerConfig {
   mode?: ExecutionMode;
   model?: string;
-  reasoning?: ReasoningEffort;
+  reasoning?: SupportedReasoningEffort;
 }
 
 interface TaskUIState {

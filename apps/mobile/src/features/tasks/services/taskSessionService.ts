@@ -1,9 +1,14 @@
+import {
+  CloudCommandError,
+  type CloudRunOptions,
+} from "@posthog/api-client/posthog-client";
 import { combineCloudTaskQueuedMessages } from "@posthog/core/sessions/cloudTaskQueue";
 import {
   type CloudTaskSessionNotificationKind,
   CloudTaskSessionService,
   type CloudTaskSessionTask,
 } from "@posthog/core/sessions/cloudTaskSessionService";
+import type { ExecutionMode } from "@posthog/shared";
 import { serializeCloudPrompt, type Task } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { AppState } from "react-native";
@@ -11,12 +16,6 @@ import { presentLocalNotification } from "@/features/notifications/lib/notificat
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
-import {
-  CloudCommandError,
-  cancelRun,
-  runTaskInCloud,
-  sendCloudCommand,
-} from "../api";
 import { buildCloudPromptBlocks } from "../composer/attachments/buildCloudPrompt";
 import type { PendingAttachment } from "../composer/attachments/types";
 import { watchCloudTask } from "../lib/cloudTaskStream";
@@ -131,24 +130,35 @@ export const taskSessionService =
       getTask: async (taskId) =>
         toSessionTask(await getPostHogApiClient().getTask(taskId)),
       runTask: async (taskId, options) => {
-        if (!options) return toSessionTask(await runTaskInCloud(taskId));
+        const client = getPostHogApiClient();
+        if (!options) return toSessionTask(await client.runTaskInCloud(taskId));
+        const cloudOptions: CloudRunOptions & {
+          resumeFromRunId?: string;
+          pendingUserMessage?: string;
+        } = {
+          adapter: "claude",
+          reasoningLevel: options.reasoningEffort,
+          initialPermissionMode: options.initialPermissionMode as
+            | ExecutionMode
+            | undefined,
+          rtkEnabled: options.rtkEnabled,
+          resumeFromRunId: options.resumeFromRunId,
+          pendingUserMessage: options.pendingUserMessage,
+        };
         return toSessionTask(
-          await runTaskInCloud(taskId, {
-            branch: options.branch,
-            runtimeAdapter: "claude",
-            reasoningEffort: options.reasoningEffort,
-            initialPermissionMode: options.initialPermissionMode,
-            rtkEnabled: options.rtkEnabled,
-            resumeFromRunId: options.resumeFromRunId,
-            pendingUserMessage: options.pendingUserMessage,
-          }),
+          await client.runTaskInCloud(taskId, options.branch, cloudOptions),
         );
       },
       sendCommand: async (taskId, runId, command, payload) => {
-        await sendCloudCommand(taskId, runId, command, payload);
+        await getPostHogApiClient().sendCloudRunCommand(
+          taskId,
+          runId,
+          command,
+          payload,
+        );
       },
       cancelRun: async (taskId, runId) => {
-        await cancelRun(taskId, runId);
+        await getPostHogApiClient().cancelTaskRun(taskId, runId);
       },
       classifyCommandError: (error) => {
         if (error instanceof CloudCommandError) {

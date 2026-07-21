@@ -1,12 +1,13 @@
 import { INBOX_PIPELINE_STATUSES } from "@posthog/core/inbox/reportFiltering";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import type { SourceProduct } from "@posthog/shared";
 import type {
   SignalReportOrderingField,
   SignalReportPriority,
   SignalReportStatus,
-} from "../types";
+} from "@posthog/shared/domain-types";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 type SortField = Extract<
   SignalReportOrderingField,
@@ -14,20 +15,6 @@ type SortField = Extract<
 >;
 
 type SortDirection = "asc" | "desc";
-
-export type SourceProduct =
-  | "session_replay"
-  | "error_tracking"
-  | "llm_analytics"
-  | "github"
-  | "linear"
-  | "zendesk"
-  | "conversations"
-  | "signals_scout";
-
-export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
-  ...INBOX_PIPELINE_STATUSES,
-];
 
 interface InboxFilterState {
   sortField: SortField;
@@ -57,7 +44,7 @@ export const useInboxFilterStore = create<InboxFilterStore>()(
     (set) => ({
       sortField: "priority",
       sortDirection: "asc",
-      statusFilter: DEFAULT_STATUS_FILTER,
+      statusFilter: [...INBOX_PIPELINE_STATUSES],
       sourceProductFilter: [],
       suggestedReviewerFilter: [],
       priorityFilter: [],
@@ -105,7 +92,7 @@ export const useInboxFilterStore = create<InboxFilterStore>()(
         set({ priorityFilter: Array.from(new Set(priorities)) }),
       resetFilters: () =>
         set({
-          statusFilter: DEFAULT_STATUS_FILTER,
+          statusFilter: [...INBOX_PIPELINE_STATUSES],
           sourceProductFilter: [],
           suggestedReviewerFilter: [],
           priorityFilter: [],

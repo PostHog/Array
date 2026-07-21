@@ -1,4 +1,8 @@
 import { Text } from "@components/text";
+import type {
+  Signal,
+  SignalFindingContent,
+} from "@posthog/shared/domain-types";
 import {
   ArrowSquareOut,
   Bug,
@@ -20,7 +24,6 @@ import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { formatRelativeTime } from "@/lib/format";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
-import type { Signal, SignalFindingContent } from "../types";
 
 const COLLAPSE_THRESHOLD = 280;
 

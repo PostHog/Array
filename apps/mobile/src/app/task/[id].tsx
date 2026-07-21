@@ -3,12 +3,21 @@ import type {
   CloudTaskQueuedMessage,
   CloudTaskQueueMoveDirection,
 } from "@posthog/core/sessions/cloudTaskQueue";
+import { DEFAULT_CLAUDE_EXECUTION_MODE } from "@posthog/core/sessions/executionModes";
 import {
   countUserMessages,
   getSessionActivityPhase,
 } from "@posthog/core/sessions/sessionActivity";
 import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
-import type { Task } from "@posthog/shared";
+import {
+  DEFAULT_GATEWAY_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  type ExecutionMode,
+  getReasoningEffortOptions,
+  type SupportedReasoningEffort,
+  serializeCloudPrompt,
+  type Task,
+} from "@posthog/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -24,7 +33,6 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { runTaskInCloud } from "@/features/tasks/api";
 import { CustomImageBadge } from "@/features/tasks/components/CustomImageBadge";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
@@ -32,16 +40,7 @@ import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { StopRunButton } from "@/features/tasks/components/StopRunButton";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
-import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
-import {
-  DEFAULT_EXECUTION_MODE,
-  DEFAULT_MODEL,
-  DEFAULT_REASONING,
-  type ExecutionMode,
-  modelSupportsReasoning,
-  type ReasoningEffort,
-} from "@/features/tasks/composer/options";
 import { QueuedMessagesDock } from "@/features/tasks/composer/QueuedMessagesDock";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
 import {
@@ -134,7 +133,13 @@ export default function TaskDetailScreen() {
   // Cleared when the screen unmounts. Matches the desktop super-property.
   useActiveTaskAnalyticsContext(task?.signal_report ?? null);
 
-  const session = taskId ? getTaskSession(taskId) : undefined;
+  const session = useTaskSessionStore((state) =>
+    taskId
+      ? Object.values(state.sessions).find(
+          (candidate) => candidate.taskId === taskId,
+        )
+      : undefined,
+  );
 
   // Optimistic echo set by the new-task screen (or the terminal-resume path
   // below) so the user's prompt appears in the thread immediately, before
@@ -176,14 +181,14 @@ export default function TaskDetailScreen() {
     string | undefined
   >();
   const composerMode: ExecutionMode =
-    composerConfig?.mode ?? DEFAULT_EXECUTION_MODE;
-  const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
-  const composerReasoning: ReasoningEffort =
-    composerConfig?.reasoning ?? DEFAULT_REASONING;
+    composerConfig?.mode ?? DEFAULT_CLAUDE_EXECUTION_MODE;
+  const composerModel = composerConfig?.model ?? DEFAULT_GATEWAY_MODEL;
+  const composerReasoning: SupportedReasoningEffort =
+    composerConfig?.reasoning ?? DEFAULT_REASONING_EFFORT;
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
-  const { editingId: editingQueuedId } = useTaskMessageQueue(taskId);
+  const editingQueuedId = useTaskMessageQueue(taskId ?? "").editingId;
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const analytics = useAnalytics();
 
@@ -317,16 +322,21 @@ export default function TaskDetailScreen() {
               )
             : text;
 
-        const supportsReasoning = modelSupportsReasoning(composerModel);
-        const updatedTask = await runTaskInCloud(taskId, {
-          resumeFromRunId: task.latest_run?.id,
-          pendingUserMessage,
-          runtimeAdapter: "claude",
-          model: composerModel,
-          reasoningEffort: supportsReasoning ? composerReasoning : undefined,
-          initialPermissionMode: composerMode,
-          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
-        });
+        const supportsReasoning =
+          getReasoningEffortOptions("claude", composerModel) !== null;
+        const updatedTask = await getPostHogApiClient().runTaskInCloud(
+          taskId,
+          undefined,
+          {
+            resumeFromRunId: task.latest_run?.id,
+            pendingUserMessage,
+            adapter: "claude",
+            model: composerModel,
+            reasoningLevel: supportsReasoning ? composerReasoning : undefined,
+            initialPermissionMode: composerMode,
+            rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
+          },
+        );
         setTask(updatedTask);
         await connectToTask(updatedTask);
         updateTaskInCache(updatedTask);
@@ -513,7 +523,7 @@ export default function TaskDetailScreen() {
   );
 
   const handleReasoningChange = useCallback(
-    (value: ReasoningEffort) => {
+    (value: SupportedReasoningEffort) => {
       if (!taskId) return;
       setComposerConfig(taskId, { reasoning: value });
       setConfigOption(taskId, "effort", value).catch(() => {});
@@ -566,10 +576,14 @@ export default function TaskDetailScreen() {
       setRetrying(true);
       disconnectFromTask(taskId);
 
-      const updatedTask = await runTaskInCloud(taskId, {
-        resumeFromRunId: task.latest_run?.id,
-        rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
-      });
+      const updatedTask = await getPostHogApiClient().runTaskInCloud(
+        taskId,
+        undefined,
+        {
+          resumeFromRunId: task.latest_run?.id,
+          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
+        },
+      );
       setTask(updatedTask);
       await connectToTask(updatedTask);
       updateTaskInCache(updatedTask);

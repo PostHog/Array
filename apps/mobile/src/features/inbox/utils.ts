@@ -1,37 +1,10 @@
-import { differenceInHours, format, formatDistanceToNow } from "date-fns";
-import type { InboxViewedProperties } from "@/lib/analytics";
-import { DISMISSAL_REASON_OPTIONS } from "./constants";
 import type {
   SignalReport,
   SignalReportPriority,
   SignalReportStatus,
-} from "./types";
-
-const SIGNAL_SUMMARY_SECTION_HEADERS = [
-  "What's happening",
-  "Root cause",
-  "How to resolve",
-] as const;
-
-/**
- * Inserts blank lines around signal report summary section headers so each
- * label and its body render on their own line (agent output often packs them
- * together, e.g. `**What's happening:** text **Root cause:** ...`).
- */
-export function formatSignalReportSummaryMarkdown(content: string): string {
-  let result = content;
-
-  for (const header of SIGNAL_SUMMARY_SECTION_HEADERS) {
-    const boldHeader = `\\*\\*${header}:\\*\\*`;
-    result = result.replace(
-      new RegExp(`([^\\n])\\s*(${boldHeader})`, "gi"),
-      "$1\n\n$2",
-    );
-    result = result.replace(new RegExp(`(${boldHeader})\\s+`, "gi"), "$1\n\n");
-  }
-
-  return result;
-}
+} from "@posthog/shared/domain-types";
+import { differenceInHours, format, formatDistanceToNow } from "date-fns";
+import type { InboxViewedProperties } from "@/lib/analytics";
 
 /** Relative time for the last day, absolute "MMM d" beyond it. */
 export function formatReportTimestamp(date: Date): string {
@@ -50,38 +23,6 @@ export function isRestorableReport(
   return report.status === "suppressed";
 }
 
-/** Human label for a persisted dismissal reason, falling back to the raw code. */
-export function dismissalReasonLabel(value: string): string {
-  return (
-    DISMISSAL_REASON_OPTIONS.find((o) => o.value === value)?.label ?? value
-  );
-}
-
-export function inboxStatusLabel(status: SignalReportStatus): string {
-  switch (status) {
-    case "ready":
-      return "Ready";
-    case "resolved":
-      return "Resolved";
-    case "pending_input":
-      return "Needs input";
-    case "in_progress":
-      return "Researching";
-    case "candidate":
-      return "Queued";
-    case "potential":
-      return "Gathering";
-    case "failed":
-      return "Failed";
-    case "suppressed":
-      return "Suppressed";
-    case "deleted":
-      return "Deleted";
-    default:
-      return status;
-  }
-}
-
 /**
  * Returns only reports that are actionable for the tinder-like card deck:
  * ready, immediately actionable, not already addressed.
@@ -97,11 +38,11 @@ export function getActionableReports(reports: SignalReport[]): SignalReport[] {
 
 interface InboxViewedFilterState {
   sourceProductFilter: string[];
-  statusFilter: SignalReportStatus[];
+  statusFilter: readonly SignalReportStatus[];
   suggestedReviewerFilter: string[];
   priorityFilter: SignalReportPriority[];
   /** Default status filter as defined in the filter store, used to detect whether the user has narrowed it. */
-  defaultStatusFilter: SignalReportStatus[];
+  defaultStatusFilter: readonly SignalReportStatus[];
 }
 
 /**

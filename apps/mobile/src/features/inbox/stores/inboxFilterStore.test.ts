@@ -1,3 +1,4 @@
+import type { SourceProduct } from "@posthog/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
@@ -8,7 +9,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
-import { type SourceProduct, useInboxFilterStore } from "./inboxFilterStore";
+import { useInboxFilterStore } from "./inboxFilterStore";
 
 describe("inboxFilterStore", () => {
   beforeEach(() => {

@@ -1,14 +1,9 @@
-import { authedFetch, getBaseUrl, getProjectId, HttpError } from "@/lib/api";
-import { logger } from "@/lib/logger";
-import type { DismissalReasonOptionValue } from "./constants";
-
-const log = logger.scope("inbox-api");
-
+import type { DismissalReasonOptionValue } from "@posthog/shared";
 import type {
+  AnySignalReportArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
   CommitDiffResponse,
-  ReportArtefact,
   SignalProcessingStateResponse,
   SignalReport,
   SignalReportArtefactsResponse,
@@ -16,7 +11,11 @@ import type {
   SignalReportsQueryParams,
   SignalReportsResponse,
   SuggestedReviewerWriteEntry,
-} from "./types";
+} from "@posthog/shared/domain-types";
+import { authedFetch, getBaseUrl, getProjectId, HttpError } from "@/lib/api";
+import { logger } from "@/lib/logger";
+
+const log = logger.scope("inbox-api");
 
 export async function getSignalReports(
   params?: SignalReportsQueryParams,
@@ -172,7 +171,7 @@ export async function getSignalReportArtefacts(
   }
 
   const data = await response.json();
-  const results: ReportArtefact[] = data.results ?? [];
+  const results: AnySignalReportArtefact[] = data.results ?? [];
   return { results, count: data.count ?? results.length };
 }
 
@@ -245,11 +244,11 @@ export async function getSignalReportSignals(
       reportId,
       status: response.status,
     });
-    return { signals: [] };
+    return { report: null, signals: [] };
   }
 
   const data = await response.json();
-  return { signals: data.signals ?? [] };
+  return { report: data.report ?? null, signals: data.signals ?? [] };
 }
 
 /** Resolve the repository associated with a signal report via its repo_selection artefact. */

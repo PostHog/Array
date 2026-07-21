@@ -1,3 +1,7 @@
+import type {
+  SignalReport,
+  SignalReportsResponse,
+} from "@posthog/shared/domain-types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
@@ -16,7 +20,6 @@ vi.mock("../api", () => ({
     getAvailableSuggestedReviewers(query),
 }));
 
-import type { SignalReport, SignalReportsResponse } from "../types";
 import {
   getReportsNextPageParam,
   useAvailableSuggestedReviewers,
