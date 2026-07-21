@@ -5,7 +5,9 @@ import {
   canvasToHostMessageSchema,
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
+import { isSafeExternalUrl } from "@posthog/shared";
 import { logger } from "@posthog/ui/shell/logger";
+import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import {
   useCallback,
@@ -182,6 +184,10 @@ export function FreeformCanvas({
           // msg.nav is already allowlist-validated by safeParse below.
           latest.current.onNavigate?.(msg.nav);
           break;
+        case "open-external":
+          if (isSafeExternalUrl(msg.url)) openExternalUrl(msg.url);
+          else log.warn("Blocked unsafe canvas external URL");
+          break;
       }
     };
 
@@ -237,8 +243,8 @@ export function FreeformCanvas({
       ref={iframeRef}
       title="Canvas"
       // allow-scripts WITHOUT allow-same-origin = null origin = no access to host
-      // cookies/storage/DOM. Do not add allow-same-origin (it collapses the
-      // isolation boundary).
+      // cookies/storage/DOM. External navigation is brokered over postMessage;
+      // do not add allow-popups or allow-same-origin.
       sandbox="allow-scripts"
       srcDoc={srcDoc}
       // Race-free init: by `load`, the iframe's module bootstrap has executed

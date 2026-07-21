@@ -55,4 +55,10 @@ describe("buildSandboxDocument", () => {
     );
     expect(html).toContain("jsxUnicodeEscapesPlugin");
   });
+
+  it("brokers external links through the host instead of granting popups", () => {
+    const html = buildSandboxDocument("edit");
+    expect(html).toContain('openExternal: (url) => post({ type: "open-external", url })');
+    expect(html).toContain('anchor.getAttribute("target") !== "_blank"');
+  });
 });

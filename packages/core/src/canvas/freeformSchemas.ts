@@ -253,5 +253,12 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("navigate"),
     nav: canvasNavIntentSchema,
   }),
+  // A request to open a URL outside the sandbox. The host applies the shared
+  // http/https/mailto scheme allowlist before invoking its external launcher.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("open-external"),
+    url: z.string(),
+  }),
 ]);
 export type CanvasToHostMessage = z.infer<typeof canvasToHostMessageSchema>;

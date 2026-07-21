@@ -226,6 +226,9 @@ export function buildSandboxDocument(
         }
         return call("capture", { event, properties: properties ?? {}, distinctId });
       },
+      // External navigation is brokered by the host. The iframe has no popup
+      // permission; the host validates the scheme before opening anything.
+      openExternal: (url) => post({ type: "open-external", url }),
       // Navigate the host app. Fire-and-forget: the host validates the intent
       // against its allowlist and routes within the current channel. The canvas
       // cannot pick the channel or an arbitrary path — only these four targets.
@@ -236,6 +239,17 @@ export function buildSandboxDocument(
         toNewCanvas: () => post({ type: "navigate", nav: { target: "new-canvas" } }),
       },
     };
+
+    // Preserve normal anchor ergonomics for generated canvases while keeping
+    // navigation behind the validated host capability. Existing canvases that
+    // render target="_blank" links therefore work without source migrations.
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      const anchor = target instanceof Element ? target.closest("a[href]") : null;
+      if (!anchor || anchor.getAttribute("target") !== "_blank") return;
+      event.preventDefault();
+      window.ph.openExternal(anchor.href);
+    });
 
     // Boot posthog-js with the PUBLIC key the host passed in (never the read
     // token). Enables session replay so the author/viewer can be watched.
