@@ -155,7 +155,7 @@ function summarize(items: ConversationItem[]): GroupSummary {
     if (update.sessionUpdate === "tool_call") {
       // Most recent tool's title — what the chip shows while still running.
       if (update.title) liveLabel = update.title;
-      lastToolStatus = update.status;
+      lastToolStatus = update.status ?? undefined;
       const name = getToolName(update);
       if (name && grouping.subagentToolNames.has(name)) {
         counts.subagents++;

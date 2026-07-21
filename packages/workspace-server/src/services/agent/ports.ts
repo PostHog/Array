@@ -1,3 +1,5 @@
+import type { CloudRegion } from "@posthog/shared";
+
 // Narrow ports inverting AgentService's dependencies on core/host services so it
 // can live in workspace-server without importing @posthog/core or apps/code.
 // The host (apps/code) binds these to the concrete SleepService, McpAppsService,
@@ -55,6 +57,12 @@ type AgentFetchLike = (
 
 export interface AgentAuth {
   getValidAccessToken(): Promise<{ accessToken: string; apiHost: string }>;
+  getOAuthCredentials(): Promise<{
+    access: string;
+    refresh: string;
+    expires: number;
+    region: CloudRegion;
+  } | null>;
   refreshAccessToken(): Promise<{ accessToken: string; apiHost: string }>;
   authenticatedFetch(
     fetchImpl: AgentFetchLike,

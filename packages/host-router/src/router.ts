@@ -36,6 +36,7 @@ import { notificationRouter } from "./routers/notification.router";
 import { oauthRouter } from "./routers/oauth.router";
 import { onboardingImportRouter } from "./routers/onboarding-import.router";
 import { osRouter } from "./routers/os.router";
+import { piSessionRouter } from "./routers/pi-session.router";
 import { processTrackingRouter } from "./routers/process-tracking.router";
 import { provisioningRouter } from "./routers/provisioning.router";
 import { secureStoreRouter } from "./routers/secure-store.router";
@@ -88,6 +89,7 @@ export const hostRouter = router({
   oauth: oauthRouter,
   onboardingImport: onboardingImportRouter,
   os: osRouter,
+  piSession: piSessionRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
   secureStore: secureStoreRouter,

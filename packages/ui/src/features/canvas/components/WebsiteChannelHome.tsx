@@ -69,18 +69,23 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const { tasks, isLoading: isLoadingFeed } = useChannelFeed(
     backendChannel?.id,
   );
-  // Until the backend channel resolves there's no feed to ask for, and the feed
-  // query is disabled — which reports isLoading:false, indistinguishable from
-  // "this channel is empty". useBackendChannel reports loading for the whole
-  // identity-resolution window (settling if the resolve fails), so fold it in:
-  // we can't call a channel empty until we know which channel it is.
-  const isLoading = isLoadingChannels || isResolvingChannel || isLoadingFeed;
   // Marking this channel read lives in ChannelHeader (rendered by every channel
   // surface), so opening Artifacts or CONTEXT.md counts as reading it too.
 
   // Durable "PostHog agent" rows (CONTEXT.md being built, …) live on the
   // backend channel — the same id the feed tasks use, not the folder id.
-  const { messages: feedMessages } = useChannelFeedMessages(backendChannel?.id);
+  const { messages: feedMessages, isLoading: isLoadingMessages } =
+    useChannelFeedMessages(backendChannel?.id);
+  // Until the backend channel resolves there's no feed to ask for, and the feed
+  // query is disabled — which reports isLoading:false, indistinguishable from
+  // "this channel is empty". useBackendChannel reports loading for the whole
+  // identity-resolution window (settling if the resolve fails), so fold it in:
+  // we can't call a channel empty until we know which channel it is.
+  const isLoading =
+    isLoadingChannels ||
+    isResolvingChannel ||
+    isLoadingFeed ||
+    isLoadingMessages;
   // The Slack-style "joined" opener, derived from the channel row so it renders
   // (and sorts first) even where the feed endpoint isn't deployed.
   const systemMessages = useMemo(() => {

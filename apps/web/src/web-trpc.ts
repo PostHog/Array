@@ -5,6 +5,7 @@ import {
   httpSubscriptionLink,
   splitLink,
 } from "@trpc/client";
+import superjson from "superjson";
 
 // The ENTIRE electron->web transport difference. The renderer builds the same
 // client with `links: [ipcLink()]`; web swaps in HTTP: httpBatchLink for
@@ -16,8 +17,8 @@ export const hostTrpcClient = createTRPCClient<HostRouter>({
   links: [
     splitLink({
       condition: (op) => op.type === "subscription",
-      true: httpSubscriptionLink({ url: API_URL }),
-      false: httpBatchLink({ url: API_URL }),
+      true: httpSubscriptionLink({ url: API_URL, transformer: superjson }),
+      false: httpBatchLink({ url: API_URL, transformer: superjson }),
     }),
   ],
 });

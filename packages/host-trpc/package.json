@@ -15,7 +15,8 @@
     "clean": "node ../../scripts/rimraf.mjs .turbo"
   },
   "dependencies": {
-    "@trpc/server": "catalog:"
+    "@trpc/server": "catalog:",
+    "superjson": "catalog:"
   },
   "peerDependencies": {
     "inversify": "catalog:"

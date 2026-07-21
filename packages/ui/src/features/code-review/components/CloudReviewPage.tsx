@@ -7,14 +7,13 @@ import { useMemo } from "react";
 import { useDiffViewerStore } from "../../code-editor/diffViewerStore";
 import { usePrDetails } from "../../git-interaction/usePrDetails";
 import { useCloudChangedFiles } from "../../task-detail/hooks/useCloudChangedFiles";
+import {
+  getCommentedFilePaths,
+  type ReviewListItem,
+} from "../commentFileFilter";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import { PatchedFileDiff } from "./PatchedFileDiff";
-import {
-  buildItemIndex,
-  type ReviewListItem,
-  ReviewShell,
-  useReviewState,
-} from "./ReviewShell";
+import { ReviewShell, useReviewState } from "./ReviewShell";
 import { changedFileSignature } from "./reviewItemBuilders";
 
 interface CloudReviewPageProps {
@@ -36,9 +35,16 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     toolCalls,
     isLoading,
   } = useCloudChangedFiles(taskId, task, isReviewOpen);
-  const { commentThreads } = usePrDetails(prUrl, {
+  const { commentThreads, commentsLoading } = usePrDetails(prUrl, {
     includeComments: isReviewOpen && showReviewComments,
   });
+  const commentedFilePaths = useMemo(
+    () =>
+      prUrl && !commentsLoading
+        ? getCommentedFilePaths(commentThreads)
+        : undefined,
+    [commentThreads, commentsLoading, prUrl],
+  );
 
   const allPaths = useMemo(() => reviewFiles.map((f) => f.path), [reviewFiles]);
 
@@ -83,6 +89,9 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       return {
         key: file.path,
         scrollKey: file.path,
+        filePaths: [file.path, file.originalPath].filter(
+          (path): path is string => !!path,
+        ),
         node: (
           <PatchedFileDiff
             file={file}
@@ -110,8 +119,6 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     toggleFile,
     toolCallFallbacks,
   ]);
-
-  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
 
   if (!prUrl && !effectiveBranch && reviewFiles.length === 0) {
     if (isRunActive) {
@@ -146,7 +153,8 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onUncollapseFile={uncollapseFile}
       onCollapseFiles={collapseFiles}
       items={items}
-      itemIndexByFilePath={itemIndexByFilePath}
+      commentedFilePaths={commentedFilePaths?.all}
+      unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
       currentSignatures={currentSignatures}
       viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}

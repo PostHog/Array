@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Adapter } from "./adapter";
+import type { AgentRuntime } from "./agent-runtime";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
 
@@ -60,6 +61,7 @@ export interface Task {
   json_schema?: Record<string, unknown> | null;
   signal_report?: string | null;
   internal?: boolean;
+  runtime?: AgentRuntime;
   /** Backend channel (tasks product Channel UUID) this task is owned by. */
   channel?: string | null;
   latest_run?: TaskRun;

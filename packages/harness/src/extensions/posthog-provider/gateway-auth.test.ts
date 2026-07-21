@@ -23,6 +23,21 @@ describe("resolveGatewayAuth", () => {
     });
   });
 
+  it("uses an explicit gateway override", async () => {
+    const auth = await resolveGatewayAuth(
+      {
+        region: "us",
+        apiKey: "proxy-key",
+        baseUrl: "http://127.0.0.1:1234",
+      },
+      fakeCtx(undefined),
+    );
+    expect(auth).toEqual({
+      baseUrl: "http://127.0.0.1:1234",
+      apiKey: "proxy-key",
+    });
+  });
+
   it("falls back to the posthog provider's resolved api key", async () => {
     const auth = await resolveGatewayAuth(
       { region: "eu" },

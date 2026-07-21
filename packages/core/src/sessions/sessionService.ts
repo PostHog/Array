@@ -1947,6 +1947,9 @@ export class SessionService {
         // above. Cloud sessions never see that response.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
+          const completedActiveTurn =
+            session.currentPromptId !== null &&
+            session.currentPromptId !== undefined;
           const turnStartedAtTs =
             this.liveTurnContent.get(taskRunId)?.startedAtTs ??
             session.promptStartedAt;
@@ -1957,7 +1960,7 @@ export class SessionService {
           });
           if (isLive) {
             // Queued messages will start a new turn — suppress the "done" notification in that case.
-            if (session.messageQueue.length === 0) {
+            if (completedActiveTurn && session.messageQueue.length === 0) {
               this.d.notifyPromptComplete(
                 session.taskTitle,
                 "end_turn",

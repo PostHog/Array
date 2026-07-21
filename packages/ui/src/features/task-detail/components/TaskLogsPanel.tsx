@@ -162,7 +162,7 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     <BackgroundWrapper>
       <Flex direction="column" height="100%" width="100%">
         <Box className="min-h-0 flex-1">
-          <ErrorBoundary name="SessionView">
+          <ErrorBoundary name="SessionView" resetKey={taskId}>
             <SessionView
               events={events}
               taskId={taskId}

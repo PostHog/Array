@@ -1,6 +1,7 @@
 import type { SessionService } from "@posthog/core/sessions/sessionService";
 import type { RootLogger } from "@posthog/di/logger";
 import { describe, expect, it, vi } from "vitest";
+import type { PiRunner } from "../pi-runtime/piRunner";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import { buildWorktreeAdoptionInput } from "./taskInput";
@@ -45,7 +46,12 @@ function makeService(): TaskService {
     onWorkspaceCreated: vi.fn(),
     onCreateSuccess: vi.fn(),
   } as unknown as TaskCreationEffects;
-  return new TaskService(host, sessionService, effects, rootLogger);
+  const piRunner = {
+    create: vi.fn(),
+    resume: vi.fn(),
+    stop: vi.fn(),
+  } as unknown as PiRunner;
+  return new TaskService(host, sessionService, effects, piRunner, rootLogger);
 }
 
 describe("TaskService.createTask validation", () => {

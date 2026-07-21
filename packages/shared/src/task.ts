@@ -1,4 +1,5 @@
 // PostHog Task model (matches PostHog Code's OpenAPI schema)
+import type { AgentRuntime } from "./agent-runtime";
 import type { UploadableSkillSource } from "./skills";
 
 export interface Task {
@@ -21,6 +22,7 @@ export interface Task {
   repository: string; // Format: "organization/repository" (e.g., "posthog/posthog-js")
   json_schema?: Record<string, unknown> | null; // JSON schema for task output validation
   internal?: boolean;
+  runtime?: AgentRuntime;
   created_at: string;
   updated_at: string;
   created_by?: {

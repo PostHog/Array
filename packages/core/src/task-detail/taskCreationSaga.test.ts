@@ -10,6 +10,8 @@ const mockHost = vi.hoisted(() => ({
   getAuthenticatedClient: vi.fn(),
   getTaskDirectory: vi.fn(),
   ensureScratchDir: vi.fn(),
+  startPiSession: vi.fn(),
+  stopPiSession: vi.fn(),
   getWorkspace: vi.fn(),
   createWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
@@ -35,6 +37,7 @@ const mockHost = vi.hoisted(() => ({
   linkTaskBranch: vi.fn(),
 }));
 
+import { PiTaskCreator } from "./piTaskCreator";
 import { TaskCreationSaga } from "./taskCreationSaga";
 import { buildWorktreeAdoptionInput } from "./taskInput";
 
@@ -337,6 +340,42 @@ describe("TaskCreationSaga", () => {
     expect(sessionService.connectToTask).toHaveBeenCalledWith(
       expect.objectContaining({ repoPath: "/tmp/scratch/task-123" }),
     );
+  });
+
+  it("starts a Pi session without creating an ACP session", async () => {
+    const createdTask = createTask({ repository: undefined });
+    const createTaskRequest = vi.fn().mockResolvedValue(createdTask);
+    const saga = new PiTaskCreator({
+      posthogClient: {
+        createTask: createTaskRequest,
+        deleteTask: vi.fn(),
+      } as never,
+      host,
+      piRunner: {
+        create: mockHost.startPiSession,
+        stop: mockHost.stopPiSession,
+      } as never,
+    });
+
+    const result = await saga.run({
+      content: "Draft a launch email",
+      workspaceMode: "local",
+      runtime: "pi",
+      model: "claude-sonnet",
+      allowNoRepo: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ runtime: "pi" }),
+    );
+    expect(mockHost.startPiSession).toHaveBeenCalledWith({
+      taskId: "task-123",
+      cwd: "/tmp/scratch/task-123",
+      prompt: "Draft a launch email",
+      model: "claude-sonnet",
+    });
+    expect(sessionService.connectToTask).not.toHaveBeenCalled();
   });
 
   it("uploads initial cloud attachments before starting the run", async () => {

@@ -7,10 +7,13 @@ import {
 import { Box } from "@radix-ui/themes";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
+const STORY_NOW = Date.parse("2026-07-01T10:30:00Z");
+const DAY_IN_MS = 86_400_000;
+
 function createArchivedTask(id: string, daysAgo: number): ArchivedTask {
   return {
     taskId: id,
-    archivedAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+    archivedAt: new Date(STORY_NOW - daysAgo * DAY_IN_MS).toISOString(),
     folderId: "folder-1",
     mode: "worktree",
     worktreeName: "feature-wt",
@@ -25,7 +28,7 @@ function createTask(
   daysAgo: number,
   repo: string,
 ): Task {
-  const now = new Date(Date.now() - daysAgo * 86400000).toISOString();
+  const now = new Date(STORY_NOW - daysAgo * DAY_IN_MS).toISOString();
   return {
     id,
     task_number: null,

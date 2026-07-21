@@ -14,6 +14,7 @@ export interface TaskMetadataPatch {
   lastViewedAt?: string | null;
   lastActivityAt?: string | null;
   archivedAt?: string | null;
+  piSessionFile?: string | null;
 }
 
 /**

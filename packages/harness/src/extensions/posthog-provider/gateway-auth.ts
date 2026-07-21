@@ -25,7 +25,7 @@ export async function resolveGatewayAuth(
   ctx: ExtensionContext,
 ): Promise<GatewayAuth> {
   const region = resolveRegion(options.region);
-  const baseUrl = getLlmGatewayUrl(region);
+  const baseUrl = options.baseUrl ?? getLlmGatewayUrl(region);
 
   const apiKey =
     options.apiKey ??

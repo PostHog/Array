@@ -1,4 +1,5 @@
 import type { Adapter } from "./adapter";
+import type { AgentRuntime } from "./agent-runtime";
 import type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 import type { Task } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
@@ -35,6 +36,7 @@ export interface TaskCreationInput {
   githubUserIntegrationId?: string;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string;
@@ -64,6 +66,14 @@ export interface TaskCreationInput {
   channelName?: string;
   /** Backend channel UUID the created task is owned by (its feed home). */
   channelId?: string;
+  /**
+   * Desktop file-system folder id that owns this channel's CONTEXT.md (the
+   * `/website/$channelId` id — distinct from the backend feed `channelId`
+   * above). When set, the injected context tells the agent to publish upkeep
+   * corrections to this exact id via the PostHog MCP, rather than resolving the
+   * channel by display name.
+   */
+  channelContextId?: string;
   /**
    * The user's saved personalization (Settings → Personalization custom
    * instructions). Cloud-only: local tasks already receive these through the
