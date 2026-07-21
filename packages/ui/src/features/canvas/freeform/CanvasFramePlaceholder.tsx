@@ -3,7 +3,6 @@ import type {
   CanvasNavIntent,
 } from "@posthog/core/canvas/freeformSchemas";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { useCanvasRefreshNonce } from "../stores/canvasRefreshStore";
 import { useCanvasFrameStore } from "./canvasFrameStore";
 
 // Stands in for the canvas inside the route tree. It renders nothing visible —
@@ -29,7 +28,6 @@ export function CanvasFramePlaceholder({
   onNavigate?: (intent: CanvasNavIntent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const refreshKey = useCanvasRefreshNonce(`dashboard:${dashboardId}`);
 
   const register = useCanvasFrameStore((s) => s.register);
   const setRect = useCanvasFrameStore((s) => s.setRect);
@@ -40,21 +38,12 @@ export function CanvasFramePlaceholder({
     () => ({
       code,
       analytics,
-      refreshKey,
       onDataRequest,
       onError,
       onRendered,
       onNavigate,
     }),
-    [
-      code,
-      analytics,
-      refreshKey,
-      onDataRequest,
-      onError,
-      onRendered,
-      onNavigate,
-    ],
+    [code, analytics, onDataRequest, onError, onRendered, onNavigate],
   );
 
   // Layout effect (not passive) and declared first, so the slot exists before the

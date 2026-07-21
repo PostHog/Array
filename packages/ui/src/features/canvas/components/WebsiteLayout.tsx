@@ -18,6 +18,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
+import { useCanvasFrameStore } from "@posthog/ui/features/canvas/freeform/canvasFrameStore";
 import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFrameHost";
 import { CANVAS_QUERY_KEY } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -26,7 +27,6 @@ import {
   useDashboard,
   useDashboardMutations,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { useCanvasRefreshStore } from "@posthog/ui/features/canvas/stores/canvasRefreshStore";
 import {
   useDashboardEditStore,
   useIsDashboardEditing,
@@ -111,9 +111,10 @@ function FreeformEditControls({
   const goToLatest = useFreeformChatStore((s) => s.goToLatest);
 
   const queryClient = useQueryClient();
-  const bumpRefresh = useCanvasRefreshStore((s) => s.bump);
-  // Reload the mounted canvas iframe: drop the host-side read cache so queries
-  // re-run, then bump the nonce (folded into the iframe srcDoc → reload).
+  const remountFrame = useCanvasFrameStore((s) => s.remount);
+  // Fully remount the mounted canvas iframe: drop the host-side read cache so
+  // queries re-run, then recreate the iframe element (not just reload its
+  // document) so a refresh also recovers from a wedged frame.
   const onRefresh = () => {
     track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
       action_type: "refresh",
@@ -123,7 +124,7 @@ function FreeformEditControls({
       kind: "freeform",
     });
     void queryClient.invalidateQueries({ queryKey: [CANVAS_QUERY_KEY] });
-    bumpRefresh(threadId);
+    remountFrame(dashboardId);
   };
 
   const hasCode = code.length > 0;
