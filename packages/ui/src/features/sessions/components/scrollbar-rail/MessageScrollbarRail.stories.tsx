@@ -167,14 +167,14 @@ function ScrollableConversationDemo() {
         </span>
       </div>
       <div className="relative min-h-0 flex-1">
-        {/* The scroll viewport. `min-h-0` lets the flex child shrink to the
-            viewport instead of growing with content, so the rail (`h-full`)
-            matches the *visible* height — the real ConversationView pins its
-            list with `absolute inset-0` for the same reason. `scrollbar-gutter:
+        {/* Pin the scroll viewport to this bounded flex child, matching the real
+            ConversationView. Keeping the viewport out of normal flow prevents
+            the long mock transcript from making the rail content-height and
+            spreading most markers below the captured scene. `scrollbar-gutter:
             stable` reserves the gutter the rail sits over. */}
         <div
           ref={scrollRef}
-          className="scroll-mask-8 h-full overflow-y-auto"
+          className="scroll-mask-8 absolute inset-0 overflow-y-auto"
           style={{ scrollbarGutter: "stable" }}
         >
           <div ref={contentRef} className="relative">
