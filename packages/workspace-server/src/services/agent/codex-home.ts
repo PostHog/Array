@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { clonePath } from "@posthog/git/utils";
 import {
   findSkillDirs,
   getUserSkillsDir,
@@ -111,10 +112,6 @@ export async function copyCodexSessionState(options: {
 
   for (const directory of ["sessions", "shell_snapshots"]) {
     const source = path.join(sourceHome, directory);
-    if (!fs.existsSync(source)) continue;
-    await fs.promises.cp(source, path.join(targetHome, directory), {
-      recursive: true,
-      force: true,
-    });
+    await clonePath(source, path.join(targetHome, directory));
   }
 }

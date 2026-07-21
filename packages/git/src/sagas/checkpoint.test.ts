@@ -66,9 +66,14 @@ async function getIndexFileContent(
 async function captureCheckpoint(
   repoPath: string,
   checkpointId: string,
+  maxWorktreeFileBytes?: number | null,
 ): Promise<void> {
   const capture = new CaptureCheckpointSaga();
-  const result = await capture.run({ baseDir: repoPath, checkpointId });
+  const result = await capture.run({
+    baseDir: repoPath,
+    checkpointId,
+    ...(maxWorktreeFileBytes !== undefined && { maxWorktreeFileBytes }),
+  });
   expect(result.success).toBe(true);
 }
 
@@ -504,6 +509,31 @@ describe("checkpoint sagas", () => {
 
       const restored = await readFile(largePath);
       expect(Buffer.compare(restored, original)).toBe(0);
+    });
+  });
+
+  it("preserves large tracked and untracked files when the size cap is disabled", async () => {
+    await withRepo(async (repoPath) => {
+      const largeTracked = "tracked-local\n".repeat(100_000);
+      const largeUntracked = "untracked\n".repeat(120_000);
+      await writeFile(path.join(repoPath, "a.txt"), largeTracked);
+      await writeFile(
+        path.join(repoPath, "large-untracked.txt"),
+        largeUntracked,
+      );
+
+      await captureCheckpoint(repoPath, "lossless-large", null);
+
+      await writeFile(path.join(repoPath, "a.txt"), "after\n");
+      await rm(path.join(repoPath, "large-untracked.txt"));
+      await revertCheckpoint(repoPath, "lossless-large");
+
+      expect(await readFile(path.join(repoPath, "a.txt"), "utf8")).toBe(
+        largeTracked,
+      );
+      expect(
+        await readFile(path.join(repoPath, "large-untracked.txt"), "utf8"),
+      ).toBe(largeUntracked);
     });
   });
 

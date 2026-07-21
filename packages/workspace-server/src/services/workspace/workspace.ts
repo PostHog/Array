@@ -769,7 +769,12 @@ export class WorkspaceService extends TypedEventEmitter<WorkspaceServiceEvents> 
           throw new Error("The source task workspace is unavailable");
         }
         const checkpointId = `fork-${taskId}`;
-        await captureWorktreeCheckpoint(mainRepoPath, sourcePath, checkpointId);
+        await captureWorktreeCheckpoint(
+          mainRepoPath,
+          sourcePath,
+          checkpointId,
+          null,
+        );
         try {
           worktree = await restoreWorktreeFromCheckpoint({
             mainRepoPath,

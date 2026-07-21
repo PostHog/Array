@@ -783,6 +783,8 @@ export class TaskCreationSaga extends Saga<
       name: "task_creation",
       execute: async () => {
         const description = input.taskDescription ?? input.content ?? "";
+        const suppressWarmReuse =
+          !!input.forkFrom || warmPayload?.suppressWarmReuse === true;
         const result = await this.deps.posthogClient.createTask({
           description,
           repository: repository ?? undefined,
@@ -802,7 +804,7 @@ export class TaskCreationSaga extends Saga<
           // The server associates the task with the report and records the implementation
           // task_run artefact — no relationship label is sent (associations are unlabelled).
           branch:
-            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+            input.workspaceMode === "cloud" && !suppressWarmReuse
               ? (input.branch ?? null)
               : undefined,
           runtime_adapter:
@@ -816,11 +818,11 @@ export class TaskCreationSaga extends Saga<
               ? (input.reasoningLevel ?? null)
               : undefined,
           sandbox_environment_id:
-            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+            input.workspaceMode === "cloud" && !suppressWarmReuse
               ? input.sandboxEnvironmentId
               : undefined,
           custom_image_id:
-            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+            input.workspaceMode === "cloud" && !suppressWarmReuse
               ? input.customImageId
               : undefined,
           signal_report: input.signalReportId ?? undefined,

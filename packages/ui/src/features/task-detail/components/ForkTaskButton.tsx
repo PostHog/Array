@@ -21,19 +21,24 @@ export function ForkTaskButton({ task }: { task: Task }) {
   const taskForkService = useService<TaskForkService>(TASK_FORK_SERVICE);
   const { invalidateTasks } = useCreateTask();
   const workspace = useWorkspace(task.id);
-  const { cloudStatus, isPromptPending, sessionStatus } = useSessionSelector(
-    task.id,
-    (session) => ({
-      cloudStatus: session?.cloudStatus,
-      isPromptPending: session?.isPromptPending ?? false,
-      sessionStatus: session?.status,
-    }),
-    shallow,
-  );
+  const { cloudStatus, isPromptPending, sessionStatus, sessionTaskRunId } =
+    useSessionSelector(
+      task.id,
+      (session) => ({
+        cloudStatus: session?.cloudStatus,
+        isPromptPending: session?.isPromptPending ?? false,
+        sessionStatus: session?.status,
+        sessionTaskRunId: session?.taskRunId,
+      }),
+      shallow,
+    );
   const [isForking, setIsForking] = useState(false);
   const run = task.latest_run;
   const isCloud = workspace?.mode === "cloud" || run?.environment === "cloud";
-  const currentCloudStatus = cloudStatus ?? run?.status;
+  const currentCloudStatus =
+    run && sessionTaskRunId === run.id
+      ? (cloudStatus ?? run.status)
+      : run?.status;
 
   let disabledReason: string | null = null;
   if (task.runtime === "pi") {

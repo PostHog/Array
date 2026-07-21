@@ -38,6 +38,7 @@ interface CheckpointMetadata {
 
 export interface CaptureCheckpointInput extends GitSagaInput {
   checkpointId?: string;
+  maxWorktreeFileBytes?: number | null;
 }
 
 export interface CaptureCheckpointOutput extends CheckpointState {}
@@ -76,7 +77,12 @@ export class CaptureCheckpointSaga extends GitSaga<
     );
 
     const worktreeTree = await this.readOnlyStep("write_worktree_tree", () =>
-      createWorktreeTree(this.git, baseDir, headInfo.head),
+      createWorktreeTree(
+        this.git,
+        baseDir,
+        headInfo.head,
+        input.maxWorktreeFileBytes,
+      ),
     );
 
     const metaTree = await this.readOnlyStep("write_meta_tree", () =>
@@ -399,6 +405,7 @@ async function createWorktreeTree(
   git: GitClient,
   baseDir: string,
   head: string | null,
+  maxWorktreeFileBytes: number | null | undefined = MAX_WORKTREE_FILE_BYTES,
 ): Promise<string> {
   const { tempGit, tempIndexPath } = await createTempIndexGit(
     git,
@@ -414,7 +421,13 @@ async function createWorktreeTree(
     }
 
     await tempGit.raw(["add", "-A", "--", "."]);
-    await reconcileLargeBlobs(tempGit, head, MAX_WORKTREE_FILE_BYTES);
+    if (maxWorktreeFileBytes !== null) {
+      await reconcileLargeBlobs(
+        tempGit,
+        head,
+        maxWorktreeFileBytes ?? MAX_WORKTREE_FILE_BYTES,
+      );
+    }
     const treeHash = await tempGit.raw(["write-tree"]);
     return treeHash.trim();
   } finally {

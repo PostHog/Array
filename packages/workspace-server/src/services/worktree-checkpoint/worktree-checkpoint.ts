@@ -106,6 +106,7 @@ export async function captureWorktreeCheckpoint(
   folderPath: string,
   worktreePath: string,
   checkpointId: string,
+  maxWorktreeFileBytes?: number | null,
 ): Promise<void> {
   const git = createGitClient(folderPath);
   try {
@@ -113,7 +114,11 @@ export async function captureWorktreeCheckpoint(
   } catch {}
 
   const saga = new CaptureCheckpointSaga();
-  const result = await saga.run({ baseDir: worktreePath, checkpointId });
+  const result = await saga.run({
+    baseDir: worktreePath,
+    checkpointId,
+    ...(maxWorktreeFileBytes !== undefined && { maxWorktreeFileBytes }),
+  });
   if (!result.success) {
     throw new Error(`Failed to capture checkpoint: ${result.error}`);
   }

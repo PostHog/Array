@@ -1012,8 +1012,15 @@ If a repository IS genuinely required, attach one in this priority order:
       let agentSessionId: string | undefined;
 
       if (forkSource) {
+        const liveForkSource = this.sessions.get(forkSource.taskRunId);
+        if (!liveForkSource) {
+          throw new Error("The source agent session is not connected");
+        }
+        if (liveForkSource.promptPending) {
+          throw new Error("Wait for the source session to become idle");
+        }
         const forkResponse = await connection.unstable_forkSession({
-          sessionId: forkSource.sessionId,
+          sessionId: getAgentSessionId(liveForkSource),
           cwd: repoPath,
           mcpServers: sessionMcpServers,
           _meta: {
@@ -1220,6 +1227,12 @@ If a repository IS genuinely required, attach one in this priority order:
           taskRunId,
         });
       }
+      await cleanupCodexHome(this.storagePaths.appDataPath, taskRunId).catch(
+        () =>
+          this.log.debug("Codex home cleanup failed during error handling", {
+            taskRunId,
+          }),
+      );
 
       if (!isRetry && isAuthError(err)) {
         this.log.warn(

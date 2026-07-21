@@ -795,6 +795,7 @@ describe("WorkspaceService", () => {
         "/repo",
         "/worktrees/source",
         "fork-child-task",
+        null,
       );
       expect(mockRestoreWorktreeFromCheckpoint).toHaveBeenCalledWith(
         expect.objectContaining({

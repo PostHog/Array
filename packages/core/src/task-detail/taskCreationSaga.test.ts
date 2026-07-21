@@ -201,6 +201,7 @@ describe("TaskCreationSaga", () => {
 
   it("forks a cloud run from the backend snapshot without sending a prompt", async () => {
     const createdTask = createTask();
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
     const startedRun = createRun({ id: "fork-run", state: {} });
     const startedTask = createTask({ latest_run: startedRun });
     const updateTaskRunMock = vi.fn().mockResolvedValue(
@@ -215,7 +216,7 @@ describe("TaskCreationSaga", () => {
     const createTaskRunMock = vi.fn().mockResolvedValue(startedRun);
     const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
     const saga = makeSaga({
-      createTask: vi.fn().mockResolvedValue(createdTask),
+      createTask: createTaskMock,
       createTaskRun: createTaskRunMock,
       startTaskRun: startTaskRunMock,
       updateTaskRun: updateTaskRunMock,
@@ -225,11 +226,21 @@ describe("TaskCreationSaga", () => {
       content: "Ship the fix",
       repository: "posthog/posthog",
       workspaceMode: "cloud",
+      branch: "feature/source",
       adapter: "codex",
+      sandboxEnvironmentId: "sandbox-1",
+      customImageId: "image-1",
       forkFrom: { taskId: "source-task", taskRunId: "source-run" },
     });
 
     expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: undefined,
+        sandbox_environment_id: undefined,
+        custom_image_id: undefined,
+      }),
+    );
     expect(createTaskRunMock).toHaveBeenCalledWith(
       "task-123",
       expect.objectContaining({ resumeFromRunId: "source-run" }),

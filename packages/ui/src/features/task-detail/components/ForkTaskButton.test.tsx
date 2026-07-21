@@ -181,7 +181,7 @@ describe("ForkTaskButton", () => {
   });
 
   it("uses the live cloud status before the persisted run status", () => {
-    mocks.session = { cloudStatus: "completed" };
+    mocks.session = { taskRunId: "run-1", cloudStatus: "completed" };
 
     render(
       <Theme>
@@ -197,6 +197,28 @@ describe("ForkTaskButton", () => {
     );
 
     expect(screen.getByRole("button", { name: "Fork task" })).toBeEnabled();
+  });
+
+  it("ignores a terminal cloud status from an older run", () => {
+    mocks.session = { taskRunId: "old-run", cloudStatus: "completed" };
+
+    render(
+      <Theme>
+        <ForkTaskButton
+          task={
+            {
+              ...cloudTask,
+              latest_run: { ...cloudTask.latest_run, status: "in_progress" },
+            } as Task
+          }
+        />
+      </Theme>,
+    );
+
+    expect(screen.getByRole("button", { name: "Fork task" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("disables Pi tasks with the runtime-specific reason", () => {
