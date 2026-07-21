@@ -265,6 +265,10 @@ export function SettingsPanel({
     !localWorkspaces && LOCAL_ONLY_CATEGORIES.has(activeCategory)
       ? "general"
       : activeCategory;
+  const activeSidebarCategory: SettingsCategory =
+    resolvedCategory === "cloud-environments"
+      ? "environments"
+      : resolvedCategory;
 
   useHotkeys("escape", close, {
     enabled: true,
@@ -276,9 +280,7 @@ export function SettingsPanel({
   const ActiveComponent = CATEGORY_COMPONENTS[resolvedCategory];
 
   const activeCategoryIcon = SIDEBAR_ITEMS.find(
-    (item) =>
-      item.id === resolvedCategory ||
-      (item.id === "environments" && resolvedCategory === "cloud-environments"),
+    (item) => item.id === activeSidebarCategory,
   )?.icon;
 
   const initials = getUserInitials(user);
@@ -325,10 +327,7 @@ export function SettingsPanel({
                   {group.label}
                 </Text>
                 {group.items.map((item) => {
-                  const isActive =
-                    resolvedCategory === item.id ||
-                    (item.id === "environments" &&
-                      resolvedCategory === "cloud-environments");
+                  const isActive = activeSidebarCategory === item.id;
                   return (
                     <SidebarNavItem
                       key={item.id}
