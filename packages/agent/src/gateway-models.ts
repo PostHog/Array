@@ -71,6 +71,10 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 // the callers fall through to `return []`.
 const GATEWAY_FETCH_TIMEOUT_MS = 10_000;
 
+const MODEL_CONTEXT_WINDOW_OVERRIDES: Readonly<Record<string, number>> = {
+  "@cf/zai-org/glm-5.2": 1_000_000,
+};
+
 // Restriction marks are identity-scoped (free-tier marks are authed-only and
 // differ per org), so cache entries are keyed on the exact token — an org
 // switch in the same process must never be served the old org's marks. A
@@ -124,7 +128,14 @@ export async function fetchGatewayModels(
     const data = (await response.json()) as GatewayModelsResponse;
     const models = (data.data ?? [])
       .filter((m) => !isBlockedModelId(m.id))
-      .map((m) => ({ ...m, allowed: m.allowed !== false }));
+      .map((m) => ({
+        ...m,
+        context_window: Math.max(
+          m.context_window,
+          MODEL_CONTEXT_WINDOW_OVERRIDES[m.id] ?? 0,
+        ),
+        allowed: m.allowed !== false,
+      }));
     gatewayModelsCache = {
       models,
       expiry: Date.now() + CACHE_TTL,

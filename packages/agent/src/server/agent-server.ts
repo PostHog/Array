@@ -21,6 +21,7 @@ import {
   buildPrOutput,
   getErrorMessage,
   mergePrUrls,
+  parseMcpToolName,
   readMcpToolDescriptor,
   readPrUrls,
 } from "@posthog/shared";
@@ -56,6 +57,13 @@ import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
+import {
+  compilePostHogExecPermissionRegex,
+  DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+  extractPostHogSubTool,
+  isPostHogExecDescriptor,
+  matchesPostHogExecPermission,
+} from "../posthog-exec-permission";
 import {
   findPrUrls,
   wasCreatedByLogin,
@@ -298,6 +306,15 @@ function isManualCompactPrompt(prompt: ContentBlock[]): boolean {
   return /^\/compact(?:\s|$)/.test(promptBlocksToText(prompt).trimStart());
 }
 
+function extractSteeringCapability(result: unknown): string | undefined {
+  const steering = (
+    result as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
+}
+
 interface LocalSkillPromptContext {
   /** Set when the message is a bare `/skill` invocation the adapter should strip. */
   skillName?: string;
@@ -377,6 +394,8 @@ export class AgentServer {
   private preSessionEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
   private pendingCompactContinuationMessageIds = new Set<string>();
+  private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
+  private activeOwnedTurnCount = 0;
   private pendingPermissions = new Map<
     string,
     {
@@ -385,8 +404,17 @@ export class AgentServer {
         _meta?: Record<string, unknown>;
       }) => void;
       toolCallId?: string;
+      optionIds: Set<string>;
+      /**
+       * Question responses carry synthetic `option_<idx>`/submit ids built by
+       * the client from the question `_meta`, not from the relayed options, so
+       * the offered-option check must not apply to them.
+       */
+      validateOptionIds: boolean;
     }
   >();
+  private readonly posthogExecPermissionRegex: RegExp;
+  private readonly posthogExecPermissionRegexSource: string;
   private mcpRelayServer: McpRelayServer | null = null;
 
   /**
@@ -448,6 +476,12 @@ export class AgentServer {
 
   constructor(config: AgentServerConfig) {
     this.config = config;
+    this.posthogExecPermissionRegexSource =
+      config.posthogExecPermissionRegex ??
+      DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE;
+    this.posthogExecPermissionRegex = compilePostHogExecPermissionRegex(
+      this.posthogExecPermissionRegexSource,
+    );
     this.logger = new Logger({ debug: true, prefix: "[AgentServer]" });
     this.posthogAPI = new PostHogAPIClient({
       apiUrl: config.apiUrl,
@@ -937,49 +971,51 @@ export class AgentServer {
     switch (method) {
       case POSTHOG_NOTIFICATIONS.USER_MESSAGE:
       case "user_message": {
-        this.logger.debug("Received user_message command", {
-          hasContent:
-            typeof params.content === "string"
-              ? params.content.trim().length > 0
-              : Array.isArray(params.content) && params.content.length > 0,
-          artifactCount: Array.isArray(params.artifacts)
-            ? params.artifacts.length
-            : 0,
-        });
-        const builtPrompt = await this.buildPromptFromContentAndArtifacts({
-          content: params.content as string | ContentBlock[] | undefined,
-          artifacts: Array.isArray(params.artifacts)
-            ? (params.artifacts as TaskRunArtifact[])
-            : [],
-          taskId: this.session.payload.task_id,
-          runId: this.session.payload.run_id,
-        });
-        const prompt = builtPrompt.prompt;
-        if (prompt.length === 0) {
-          throw new Error("User message cannot be empty");
-        }
-
+        const commandSession = this.session;
         const messageId =
           typeof params.messageId === "string" && params.messageId
             ? params.messageId
             : undefined;
+        const inFlightDelivery = messageId
+          ? this.inFlightMessageDeliveries.get(messageId)
+          : undefined;
+        if (inFlightDelivery) {
+          this.logger.info("Awaiting in-flight user_message delivery", {
+            messageId,
+          });
+          return await inFlightDelivery;
+        }
+
         let retryCompactContinuation = false;
-        if (messageId) {
-          if (this.deliveredMessageIds.has(messageId)) {
-            if (this.pendingCompactContinuationMessageIds.has(messageId)) {
-              retryCompactContinuation = true;
-              this.logger.info("Retrying pending compact continuation", {
-                messageId,
-              });
-            } else {
-              this.logger.info("Duplicate user_message delivery ignored", {
-                messageId,
-              });
-              return { stopReason: "duplicate_delivery", duplicate: true };
-            }
+        if (messageId && this.deliveredMessageIds.has(messageId)) {
+          if (this.pendingCompactContinuationMessageIds.has(messageId)) {
+            retryCompactContinuation = true;
+            this.logger.info("Retrying pending compact continuation", {
+              messageId,
+            });
           } else {
-            this.deliveredMessageIds.add(messageId);
+            this.logger.info("Duplicate user_message delivery ignored", {
+              messageId,
+            });
+            return { stopReason: "duplicate_delivery", duplicate: true };
           }
+        }
+
+        let resolveDelivery: (result: unknown) => void = () => {};
+        let rejectDelivery: (error: unknown) => void = () => {};
+        const deliveryOutcome = new Promise<unknown>((resolve, reject) => {
+          resolveDelivery = resolve;
+          rejectDelivery = reject;
+        });
+        void deliveryOutcome.catch(() => {});
+        if (messageId) {
+          this.inFlightMessageDeliveries.set(messageId, deliveryOutcome);
+        }
+        let deliveryCommitted = retryCompactContinuation;
+        const commitDelivery = (): void => {
+          deliveryCommitted = true;
+          if (!messageId) return;
+          this.deliveredMessageIds.add(messageId);
           if (this.deliveredMessageIds.size > 500) {
             const oldest = this.deliveredMessageIds.values().next().value;
             if (oldest !== undefined) {
@@ -987,137 +1023,213 @@ export class AgentServer {
               this.pendingCompactContinuationMessageIds.delete(oldest);
             }
           }
-        }
-        this.logger.debug("Built user_message prompt", {
-          blockTypes: prompt.map((block) => block.type),
-        });
-        const promptPreview = promptBlocksToText(prompt);
-
-        this.logger.debug(
-          `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
-        );
-
-        this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
-
-        // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
-        // also flips the detected-PR context to its push variant.
-        const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
-        const hostContext = [
-          ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
-          ...(this.detectedPrUrl
-            ? [this.buildDetectedPrContext(this.detectedPrUrl)]
-            : []),
-        ];
-        const promptMeta: Record<string, unknown> = {
-          ...(builtPrompt.meta ?? {}),
-          ...(hostContext.length > 0
-            ? { prContext: hostContext.join("\n\n") }
-            : {}),
         };
 
-        const manualCompactPrompt = isManualCompactPrompt(prompt);
-        const acpSessionId = this.session.acpSessionId;
-        const continueAfterCompaction = (): Promise<PromptResponse> =>
-          this.promptWithUpstreamRetry({
-            sessionId: acpSessionId,
-            prompt: [
-              hiddenTextBlock(
-                "Compaction is complete. Continue working on the task from the compacted context, following the user's instructions from the /compact command.",
-              ),
-            ],
-          });
-
-        let compactCommandCompleted = retryCompactContinuation;
-        let result: PromptResponse;
-        this.suppressAdapterTurnComplete =
-          manualCompactPrompt || retryCompactContinuation;
         try {
-          if (retryCompactContinuation) {
-            result = await continueAfterCompaction();
-            if (messageId) {
-              this.pendingCompactContinuationMessageIds.delete(messageId);
+          this.logger.debug("Received user_message command", {
+            hasContent:
+              typeof params.content === "string"
+                ? params.content.trim().length > 0
+                : Array.isArray(params.content) && params.content.length > 0,
+            artifactCount: Array.isArray(params.artifacts)
+              ? params.artifacts.length
+              : 0,
+          });
+          const builtPrompt = await this.buildPromptFromContentAndArtifacts({
+            content: params.content as string | ContentBlock[] | undefined,
+            artifacts: Array.isArray(params.artifacts)
+              ? (params.artifacts as TaskRunArtifact[])
+              : [],
+            taskId: commandSession.payload.task_id,
+            runId: commandSession.payload.run_id,
+          });
+          const prompt = builtPrompt.prompt;
+          if (prompt.length === 0) {
+            throw new Error("User message cannot be empty");
+          }
+
+          this.logger.debug("Built user_message prompt", {
+            blockTypes: prompt.map((block) => block.type),
+          });
+          const promptPreview = promptBlocksToText(prompt);
+
+          this.logger.debug(
+            `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
+          );
+
+          // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
+          // also flips the detected-PR context to its push variant.
+          const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
+          const hostContext = [
+            ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
+            ...(this.detectedPrUrl
+              ? [this.buildDetectedPrContext(this.detectedPrUrl)]
+              : []),
+          ];
+          const promptMeta: Record<string, unknown> = {
+            ...(builtPrompt.meta ?? {}),
+            ...(hostContext.length > 0
+              ? { prContext: hostContext.join("\n\n") }
+              : {}),
+          };
+
+          if (params.steer === true) {
+            if (this.activeOwnedTurnCount > 0) {
+              const result = await commandSession.clientConnection.prompt({
+                sessionId: commandSession.acpSessionId,
+                prompt,
+                _meta: { ...promptMeta, steer: true },
+              });
+              const accepted =
+                (result._meta as { steer?: unknown } | undefined)?.steer ===
+                true;
+              if (accepted) {
+                commitDelivery();
+                const outcome = { stopReason: "steered", steered: true };
+                resolveDelivery(outcome);
+                return outcome;
+              }
             }
-          } else {
-            result = await this.session.clientConnection.prompt({
-              sessionId: this.session.acpSessionId,
-              prompt,
-              ...(Object.keys(promptMeta).length > 0
-                ? { _meta: promptMeta }
-                : {}),
+            const outcome = {
+              stopReason: "steer_declined",
+              steered: false,
+            };
+            resolveDelivery(outcome);
+            return outcome;
+          }
+
+          commandSession.logWriter.resetTurnMessages(
+            commandSession.payload.run_id,
+          );
+
+          const manualCompactPrompt = isManualCompactPrompt(prompt);
+          const acpSessionId = commandSession.acpSessionId;
+          const continueAfterCompaction = (): Promise<PromptResponse> =>
+            this.promptWithUpstreamRetry({
+              sessionId: acpSessionId,
+              prompt: [
+                hiddenTextBlock(
+                  "Compaction is complete. Continue working on the task from the compacted context, following the user's instructions from the /compact command.",
+                ),
+              ],
             });
 
-            if (result.stopReason === "end_turn" && manualCompactPrompt) {
-              compactCommandCompleted = true;
-              if (messageId) {
-                this.pendingCompactContinuationMessageIds.add(messageId);
-              }
-              // `/compact` is an SDK-local command, so without a follow-up the
-              // cloud run reports completion before the model resumes the task.
-              this.recordTurnUsage(result.usage);
-              result = await continueAfterCompaction();
+          let result: PromptResponse;
+          this.suppressAdapterTurnComplete =
+            manualCompactPrompt || retryCompactContinuation;
+          try {
+            if (retryCompactContinuation) {
+              result = await this.runOwnedTurn(continueAfterCompaction);
               if (messageId) {
                 this.pendingCompactContinuationMessageIds.delete(messageId);
               }
+            } else {
+              result = await this.runOwnedTurn(() => {
+                const promptResult = commandSession.clientConnection.prompt({
+                  sessionId: commandSession.acpSessionId,
+                  prompt,
+                  ...(Object.keys(promptMeta).length > 0
+                    ? { _meta: promptMeta }
+                    : {}),
+                });
+                if (!promptResult) {
+                  throw new Error("Agent connection did not accept the prompt");
+                }
+                return promptResult;
+              });
+
+              if (result.stopReason === "end_turn" && manualCompactPrompt) {
+                commitDelivery();
+                if (messageId) {
+                  this.pendingCompactContinuationMessageIds.add(messageId);
+                }
+                // `/compact` is an SDK-local command, so without a follow-up the
+                // cloud run reports completion before the model resumes the task.
+                this.recordTurnUsage(result.usage);
+                result = await this.runOwnedTurn(continueAfterCompaction);
+                if (messageId) {
+                  this.pendingCompactContinuationMessageIds.delete(messageId);
+                }
+              }
             }
+          } catch (error) {
+            await commandSession.logWriter.flushAll();
+            const { recoverable } = await this.handleTurnFailure(
+              commandSession.payload,
+              "followup",
+              error,
+            );
+            if (!recoverable) {
+              throw error;
+            }
+            commitDelivery();
+            const outcome = { stopReason: "error_recoverable" };
+            resolveDelivery(outcome);
+            return outcome;
+          } finally {
+            this.suppressAdapterTurnComplete = false;
           }
+          commitDelivery();
+
+          this.logger.debug("User message completed", {
+            stopReason: result.stopReason,
+          });
+
+          if (result.stopReason === "end_turn") {
+            void this.syncCloudBranchMetadata(commandSession.payload);
+          }
+
+          this.recordTurnUsage(result.usage);
+          this.broadcastTurnComplete(result.stopReason);
+
+          if (result.stopReason === "end_turn") {
+            // Relay the response to Slack. For follow-ups this is the primary
+            // delivery path — the HTTP caller only handles reactions. Echo the
+            // initiating message's id so the backend can attribute the answer.
+            this.relayAgentResponse(commandSession.payload, messageId).catch(
+              (err) =>
+                this.logger.debug("Failed to relay follow-up response", err),
+            );
+          }
+
+          // Flush logs and include the assistant's response text so callers
+          // (e.g. Slack follow-up forwarding) can extract it without racing
+          // against async log persistence to object storage.
+          let assistantMessage: string | undefined;
+          try {
+            await commandSession.logWriter.flush(
+              commandSession.payload.run_id,
+              {
+                coalesce: true,
+              },
+            );
+            assistantMessage = commandSession.logWriter.getFullAgentResponse(
+              commandSession.payload.run_id,
+            );
+          } catch {
+            this.logger.debug("Failed to extract assistant message from logs");
+          }
+
+          const outcome = {
+            stopReason: result.stopReason,
+            ...(assistantMessage && { assistant_message: assistantMessage }),
+          };
+          resolveDelivery(outcome);
+          return outcome;
         } catch (error) {
-          if (messageId && !compactCommandCompleted) {
+          if (messageId && !deliveryCommitted) {
             this.deliveredMessageIds.delete(messageId);
           }
-          await this.session.logWriter.flushAll();
-          const { recoverable } = await this.handleTurnFailure(
-            this.session.payload,
-            "followup",
-            error,
-          );
-          if (!recoverable) {
-            throw error;
-          }
-          return { stopReason: "error_recoverable" };
+          rejectDelivery(error);
+          throw error;
         } finally {
-          this.suppressAdapterTurnComplete = false;
+          if (
+            messageId &&
+            this.inFlightMessageDeliveries.get(messageId) === deliveryOutcome
+          ) {
+            this.inFlightMessageDeliveries.delete(messageId);
+          }
         }
-
-        this.logger.debug("User message completed", {
-          stopReason: result.stopReason,
-        });
-
-        if (result.stopReason === "end_turn") {
-          void this.syncCloudBranchMetadata(this.session.payload);
-        }
-
-        this.recordTurnUsage(result.usage);
-        this.broadcastTurnComplete(result.stopReason);
-
-        if (result.stopReason === "end_turn") {
-          // Relay the response to Slack. For follow-ups this is the primary
-          // delivery path — the HTTP caller only handles reactions. Echo the
-          // initiating message's id so the backend can attribute the answer.
-          this.relayAgentResponse(this.session.payload, messageId).catch(
-            (err) =>
-              this.logger.debug("Failed to relay follow-up response", err),
-          );
-        }
-
-        // Flush logs and include the assistant's response text so callers
-        // (e.g. Slack follow-up forwarding) can extract it without racing
-        // against async log persistence to object storage.
-        let assistantMessage: string | undefined;
-        try {
-          await this.session.logWriter.flush(this.session.payload.run_id, {
-            coalesce: true,
-          });
-          assistantMessage = this.session.logWriter.getFullAgentResponse(
-            this.session.payload.run_id,
-          );
-        } catch {
-          this.logger.debug("Failed to extract assistant message from logs");
-        }
-
-        return {
-          stopReason: result.stopReason,
-          ...(assistantMessage && { assistant_message: assistantMessage }),
-        };
       }
 
       case POSTHOG_NOTIFICATIONS.CANCEL:
@@ -1230,9 +1342,14 @@ export class AgentServer {
           customInput,
           answers,
         );
-        if (!resolved) {
+        if (resolved === "not_found") {
           throw new Error(
             `No pending permission request found for id: ${requestId}`,
+          );
+        }
+        if (resolved === "invalid_option") {
+          throw new Error(
+            `Option "${optionId}" was not offered for permission request ${requestId}`,
           );
         }
         return { resolved: true };
@@ -1467,10 +1584,11 @@ export class AgentServer {
       clientStream,
     );
 
-    await clientConnection.initialize({
+    const initializeResult = await clientConnection.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
+    const steering = extractSteeringCapability(initializeResult);
 
     const runState = preTaskRun?.state as Record<string, unknown> | undefined;
     // Preserve native Codex modes for cloud runs so they behave the same as
@@ -1500,6 +1618,7 @@ export class AgentServer {
       allowedDomains: this.config.allowedDomains,
       jsonSchema: preTask?.json_schema ?? null,
       permissionMode: initialPermissionMode,
+      posthogExecPermissionRegex: this.posthogExecPermissionRegexSource,
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
@@ -1624,6 +1743,7 @@ export class AgentServer {
         runId: payload.run_id,
         taskId: payload.task_id,
         agentVersion: this.config.version ?? packageJson.version,
+        ...(steering ? { steering } : {}),
       },
     };
     this.broadcastEvent({
@@ -1684,6 +1804,15 @@ export class AgentServer {
     }
 
     return { classification: classifyAgentError(message), message };
+  }
+
+  private async runOwnedTurn<T>(operation: () => Promise<T>): Promise<T> {
+    this.activeOwnedTurnCount += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activeOwnedTurnCount -= 1;
+    }
   }
 
   /**
@@ -1900,12 +2029,18 @@ export class AgentServer {
       });
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: initialPrompt,
-        ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: acpSessionId,
+          prompt: initialPrompt,
+          ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
+        }),
+      );
 
       this.logger.debug("Initial task message completed", {
         stopReason: result.stopReason,
@@ -2112,12 +2247,18 @@ export class AgentServer {
       const builtPrompt = await buildPrompt();
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: builtPrompt.prompt,
-        ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: acpSessionId,
+          prompt: builtPrompt.prompt,
+          ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
+        }),
+      );
 
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
@@ -3624,6 +3765,33 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     );
   }
 
+  private readPermissionMcpDescriptor(
+    params: RequestPermissionRequest,
+  ): { server: string; tool: string } | undefined {
+    const descriptor = readMcpToolDescriptor(params.toolCall?._meta);
+    if (descriptor) return descriptor;
+
+    const rawInput = params.toolCall?.rawInput as
+      | { toolName?: unknown }
+      | undefined;
+    return typeof rawInput?.toolName === "string"
+      ? parseMcpToolName(rawInput.toolName)
+      : undefined;
+  }
+
+  private matchesPostHogExecPermissionRequest(
+    params: RequestPermissionRequest,
+  ): string | null {
+    const descriptor = this.readPermissionMcpDescriptor(params);
+    if (!descriptor || !isPostHogExecDescriptor(descriptor)) return null;
+
+    const subTool = extractPostHogSubTool(params.toolCall?.rawInput);
+    return subTool &&
+      matchesPostHogExecPermission(subTool, this.posthogExecPermissionRegex)
+      ? subTool
+      : null;
+  }
+
   private createCloudClient(payload: JwtPayload) {
     const mode = this.getEffectiveMode(payload);
     const interactionOrigin =
@@ -3672,15 +3840,8 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           // falling back to Claude's `rawInput.toolName`. Keying off only the
           // Claude channel would silently skip this gate for codex and let a
           // relayed tool auto-run in non-asking modes.
-          const rawInput = params.toolCall?.rawInput as
-            | { toolName?: string }
-            | undefined;
           const mcpServerName =
-            readMcpToolDescriptor(params.toolCall?._meta)?.server ??
-            (typeof rawInput?.toolName === "string" &&
-            rawInput.toolName.startsWith("mcp__")
-              ? rawInput.toolName.split("__")[1]
-              : undefined);
+            this.readPermissionMcpDescriptor(params)?.server;
           if (
             mcpServerName &&
             (this.config.relayMcpServers ?? []).includes(mcpServerName)
@@ -3698,6 +3859,27 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
               },
             };
           }
+        }
+
+        const posthogExecSubTool =
+          this.matchesPostHogExecPermissionRequest(params);
+        if (mode !== "background" && posthogExecSubTool) {
+          const isClaudeCodeRequest = Boolean(
+            params.toolCall?._meta?.claudeCode,
+          );
+          const relayParams = {
+            ...params,
+            options: isClaudeCodeRequest
+              ? params.options
+              : params.options.filter(
+                  (option) => option.kind !== "allow_always",
+                ),
+          };
+          this.logger.debug("Relaying configured PostHog exec permission", {
+            subTool: posthogExecSubTool,
+            sessionPermissionMode: this.getSessionPermissionMode(),
+          });
+          return this.relayPermissionToClient(relayParams);
         }
 
         // Relay permission requests to the connected client when:
@@ -4363,8 +4545,16 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       toolCall: params.toolCall,
     });
 
+    const toolCallMeta = params.toolCall?._meta as
+      | { codeToolKind?: unknown }
+      | undefined;
     return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve, toolCallId });
+      this.pendingPermissions.set(requestId, {
+        resolve,
+        toolCallId,
+        optionIds: new Set(params.options.map((option) => option.optionId)),
+        validateOptionIds: toolCallMeta?.codeToolKind !== "question",
+      });
     });
   }
 
@@ -4386,9 +4576,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     optionId: string,
     customInput?: string,
     answers?: Record<string, string>,
-  ): boolean {
+  ): "resolved" | "not_found" | "invalid_option" {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return false;
+    if (!pending) return "not_found";
+    // The request stays parked and resolvable — a corrected response with an
+    // offered option can still settle it.
+    if (pending.validateOptionIds && !pending.optionIds.has(optionId)) {
+      return "invalid_option";
+    }
 
     this.pendingPermissions.delete(requestId);
 
@@ -4406,6 +4601,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       outcome: { outcome: "selected" as const, optionId },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     });
-    return true;
+    return "resolved";
   }
 }

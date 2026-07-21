@@ -18,17 +18,16 @@ import { useCwd } from "../../sidebar/useCwd";
 import { useDiscardAllChanges } from "../../task-detail/hooks/useDiscardAllChanges";
 import { useDiscardFile } from "../../task-detail/hooks/useDiscardFile";
 import { useStageToggle } from "../../task-detail/hooks/useStageToggle";
+import {
+  getCommentedFilePaths,
+  type ReviewListItem,
+} from "../commentFileFilter";
 import { REVIEW_FILE_CACHE_TIME_MS, REVIEW_MAX_FILE_LINES } from "../constants";
 import { useEffectiveDiffSource } from "../hooks/useEffectiveDiffSource";
 import { useReviewDiffs } from "../hooks/useReviewDiffs";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { DiffOptions } from "../types";
-import {
-  buildItemIndex,
-  type ReviewListItem,
-  ReviewShell,
-  useReviewState,
-} from "./ReviewShell";
+import { ReviewShell, useReviewState } from "./ReviewShell";
 import {
   buildPatchReviewItems,
   buildRemoteReviewItems,
@@ -109,12 +108,19 @@ export function ReviewPage({ task }: ReviewPageProps) {
   } = useEffectiveDiffSource(taskId);
 
   const showReviewComments = useDiffViewerStore((s) => s.showReviewComments);
-  const { commentThreads } = usePrDetails(prUrl, {
+  const { commentThreads, commentsLoading } = usePrDetails(prUrl, {
     includeComments: isReviewOpen && showReviewComments,
   });
   const effectiveCommentThreads = showReviewComments
     ? commentThreads
     : undefined;
+  const commentedFilePaths = useMemo(
+    () =>
+      prUrl && !commentsLoading
+        ? getCommentedFilePaths(commentThreads)
+        : undefined,
+    [commentThreads, commentsLoading, prUrl],
+  );
 
   const isLocalActive = isReviewOpen && effectiveSource === "local";
 
@@ -173,6 +179,8 @@ export function ReviewPage({ task }: ReviewPageProps) {
         branchSourceAvailable={branchSourceAvailable}
         prSourceAvailable={prSourceAvailable}
         commentThreads={effectiveCommentThreads}
+        commentedFilePaths={commentedFilePaths?.all}
+        unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
       />
     );
   }
@@ -206,6 +214,8 @@ export function ReviewPage({ task }: ReviewPageProps) {
       untrackedFiles={untrackedFiles}
       stagedPathSet={stagedPathSet}
       commentThreads={effectiveCommentThreads}
+      commentedFilePaths={commentedFilePaths?.all}
+      unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
       effectiveSource={effectiveSource}
       branchSourceAvailable={branchSourceAvailable}
       prSourceAvailable={prSourceAvailable}
@@ -242,6 +252,8 @@ function LocalReviewContent({
   untrackedFiles,
   stagedPathSet,
   commentThreads,
+  commentedFilePaths,
+  unresolvedCommentedFilePaths,
   effectiveSource,
   branchSourceAvailable,
   prSourceAvailable,
@@ -274,6 +286,8 @@ function LocalReviewContent({
   untrackedFiles: ChangedFile[];
   stagedPathSet: Set<string>;
   commentThreads?: Map<number, PrCommentThread>;
+  commentedFilePaths?: ReadonlySet<string>;
+  unresolvedCommentedFilePaths?: ReadonlySet<string>;
   effectiveSource: ResolvedDiffSource;
   branchSourceAvailable: boolean;
   prSourceAvailable: boolean;
@@ -414,8 +428,6 @@ function LocalReviewContent({
     unstagedParsedFiles,
   ]);
 
-  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
-
   return (
     <ReviewShell
       task={task}
@@ -436,7 +448,8 @@ function LocalReviewContent({
       prSourceAvailable={prSourceAvailable}
       defaultBranch={defaultBranch}
       items={items}
-      itemIndexByFilePath={itemIndexByFilePath}
+      commentedFilePaths={commentedFilePaths}
+      unresolvedCommentedFilePaths={unresolvedCommentedFilePaths}
       currentSignatures={currentSignatures}
       viewedRecord={viewedRecord}
       onToggleViewed={toggleViewed}
@@ -455,6 +468,8 @@ function RemoteReviewPage({
   branchSourceAvailable,
   prSourceAvailable,
   commentThreads,
+  commentedFilePaths,
+  unresolvedCommentedFilePaths,
 }: {
   task: Task;
   repoPath: string | null;
@@ -466,6 +481,8 @@ function RemoteReviewPage({
   branchSourceAvailable: boolean;
   prSourceAvailable: boolean;
   commentThreads?: Map<number, PrCommentThread>;
+  commentedFilePaths?: ReadonlySet<string>;
+  unresolvedCommentedFilePaths?: ReadonlySet<string>;
 }) {
   const taskId = task.id;
   const isBranch = effectiveSource === "branch";
@@ -526,8 +543,6 @@ function RemoteReviewPage({
       taskId,
     ],
   );
-  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
-
   return (
     <ReviewShell
       task={task}
@@ -547,7 +562,8 @@ function RemoteReviewPage({
       prSourceAvailable={prSourceAvailable}
       defaultBranch={defaultBranch}
       items={items}
-      itemIndexByFilePath={itemIndexByFilePath}
+      commentedFilePaths={commentedFilePaths}
+      unresolvedCommentedFilePaths={unresolvedCommentedFilePaths}
       currentSignatures={currentSignatures}
       viewedRecord={reviewState.viewedRecord}
       onToggleViewed={reviewState.toggleViewed}

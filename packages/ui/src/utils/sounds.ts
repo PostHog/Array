@@ -11,6 +11,7 @@ import icqUrl from "../assets/sounds/icq.mp3";
 import knockUrl from "../assets/sounds/knock.mp3";
 import meepUrl from "../assets/sounds/meep.mp3";
 import meepSmolUrl from "../assets/sounds/meep-smol.mp3";
+import msnUrl from "../assets/sounds/msn.mp3";
 import reviUrl from "../assets/sounds/revi.mp3";
 import ringUrl from "../assets/sounds/ring.mp3";
 import shootUrl from "../assets/sounds/shoot.mp3";
@@ -35,6 +36,7 @@ const SOUND_URLS: Record<Exclude<BuiltInCompletionSound, "none">, string> = {
   switch: switchUrl,
   wilhelm: wilhelmUrl,
   icq: icqUrl,
+  msn: msnUrl,
 };
 
 const MIN_RATE = 1 / 3;

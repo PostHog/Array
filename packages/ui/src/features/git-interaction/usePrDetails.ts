@@ -85,5 +85,6 @@ export function usePrDetails(
       isLoading: metaQuery.isLoading,
     },
     commentThreads,
+    commentsLoading: commentsQuery.isLoading,
   };
 }

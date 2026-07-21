@@ -199,9 +199,10 @@ jobs:
             echo "OK: $bin"
           done
 
-          # The native codex CLI must ship as a sibling of codex-acp, or the
-          # app-server harness silently falls back to codex-acp in production.
-          for f in codex rg; do
+          # codex resolves codex-code-mode-host and rg as siblings of its own
+          # executable; shipping codex without them breaks command execution
+          # at runtime (code-mode models route all commands through the host).
+          for f in codex codex-code-mode-host rg; do
             if [[ ! -f "$RESOURCES/app.asar.unpacked/.vite/build/codex-acp/$f" ]]; then
               echo "FAIL: codex-acp/$f missing in bundled binaries"
               exit 1
@@ -348,6 +349,18 @@ jobs:
           pnpm exec electron-vite build
           pnpm exec electron-builder build --win --x64 --publish never --config electron-builder.ts
 
+      - name: Verify package
+        shell: pwsh
+        run: |
+          $dir = "apps/code/out/win-unpacked/resources/app.asar.unpacked/.vite/build/codex-acp"
+          foreach ($f in @("codex.exe", "codex-code-mode-host.exe", "rg.exe")) {
+            if (!(Test-Path "$dir/$f")) {
+              Write-Error "FAIL: codex-acp/$f missing in bundled binaries"
+              exit 1
+            }
+            echo "OK: codex-acp/$f"
+          }
+
       - name: Upload release artifacts
         shell: pwsh
         env:
@@ -481,6 +494,23 @@ jobs:
           else
             pnpm exec electron-builder build --linux --x64 --publish never --config electron-builder.ts
           fi
+
+      - name: Verify package
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+        run: |
+          if [[ "$MATRIX_ARCH" == "arm64" ]]; then
+            UNPACKED="apps/code/out/linux-arm64-unpacked"
+          else
+            UNPACKED="apps/code/out/linux-unpacked"
+          fi
+          for f in codex codex-code-mode-host rg; do
+            if [[ ! -f "$UNPACKED/resources/app.asar.unpacked/.vite/build/codex-acp/$f" ]]; then
+              echo "FAIL: codex-acp/$f missing in bundled binaries"
+              exit 1
+            fi
+            echo "OK: codex-acp/$f"
+          done
 
       - name: Upload release artifacts
         env:

@@ -19,40 +19,56 @@ import { extract } from "tar";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEST_DIR = join(__dirname, "..", "resources", "codex-acp");
 
-const BINARIES = [
+const CODEX_VERSION = "0.144.0";
+
+function nativeTarget() {
+  const { platform, arch } = process;
+  const targets = {
+    darwin: { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" },
+    linux: {
+      arm64: "aarch64-unknown-linux-musl",
+      x64: "x86_64-unknown-linux-musl",
+    },
+    win32: {
+      arm64: "aarch64-pc-windows-msvc",
+      x64: "x86_64-pc-windows-msvc",
+    },
+  };
+  const target = targets[platform]?.[arch];
+  if (!target) throw new Error(`Unsupported platform: ${platform}/${arch}`);
+  return target;
+}
+
+function codexReleaseUrl(binary, version, target) {
+  const suffix = target.includes("windows") ? ".exe.zip" : ".tar.gz";
+  return `https://github.com/openai/codex/releases/download/rust-v${version}/${binary}-${target}${suffix}`;
+}
+
+// Codex release archives contain a target-suffixed binary
+// (e.g. `codex-aarch64-apple-darwin`); rename it after extract.
+const codexArchiveBinaryName = (binary) => (target) =>
+  target.includes("windows")
+    ? `${binary}-${target}.exe`
+    : `${binary}-${target}`;
+
+export const BINARIES = [
   {
     name: "codex",
-    version: "0.144.0",
-    getUrl: (version, target) => {
-      if (target.includes("windows")) {
-        return `https://github.com/openai/codex/releases/download/rust-v${version}/codex-${target}.exe.zip`;
-      }
-      return `https://github.com/openai/codex/releases/download/rust-v${version}/codex-${target}.tar.gz`;
-    },
-    getTarget: () => {
-      const { platform, arch } = process;
-      const targets = {
-        darwin: { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" },
-        linux: {
-          arm64: "aarch64-unknown-linux-musl",
-          x64: "x86_64-unknown-linux-musl",
-        },
-        win32: {
-          arm64: "aarch64-pc-windows-msvc",
-          x64: "x86_64-pc-windows-msvc",
-        },
-      };
-      const platformTargets = targets[platform];
-      if (!platformTargets)
-        throw new Error(`Unsupported platform: ${platform}`);
-      const target = platformTargets[arch];
-      if (!target) throw new Error(`Unsupported arch: ${arch}`);
-      return target;
-    },
-    // The codex release archive contains a target-suffixed binary
-    // (e.g. `codex-aarch64-apple-darwin`); rename it to `codex` after extract.
-    archiveBinaryName: (target) =>
-      process.platform === "win32" ? `codex-${target}.exe` : `codex-${target}`,
+    version: CODEX_VERSION,
+    getUrl: (version, target) => codexReleaseUrl("codex", version, target),
+    getTarget: nativeTarget,
+    archiveBinaryName: codexArchiveBinaryName("codex"),
+  },
+  {
+    // codex resolves this host as a sibling of its own executable and routes
+    // all command execution through it for code-mode models (gpt-5.6+). It is
+    // released per codex version, so it must stay in lockstep with `codex`.
+    name: "codex-code-mode-host",
+    version: CODEX_VERSION,
+    getUrl: (version, target) =>
+      codexReleaseUrl("codex-code-mode-host", version, target),
+    getTarget: nativeTarget,
+    archiveBinaryName: codexArchiveBinaryName("codex-code-mode-host"),
   },
   {
     name: "rg",
@@ -61,26 +77,7 @@ const BINARIES = [
       const ext = target.includes("windows") ? "zip" : "tar.gz";
       return `https://github.com/microsoft/ripgrep-prebuilt/releases/download/v${version}/ripgrep-v${version}-${target}.${ext}`;
     },
-    getTarget: () => {
-      const { platform, arch } = process;
-      const targets = {
-        darwin: { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" },
-        linux: {
-          arm64: "aarch64-unknown-linux-musl",
-          x64: "x86_64-unknown-linux-musl",
-        },
-        win32: {
-          arm64: "aarch64-pc-windows-msvc",
-          x64: "x86_64-pc-windows-msvc",
-        },
-      };
-      const platformTargets = targets[platform];
-      if (!platformTargets)
-        throw new Error(`Unsupported platform: ${platform}`);
-      const target = platformTargets[arch];
-      if (!target) throw new Error(`Unsupported arch: ${arch}`);
-      return target;
-    },
+    getTarget: nativeTarget,
   },
 ];
 
@@ -143,10 +140,10 @@ function signForMacOS(binaryPath) {
   execSync(`codesign --force --sign - "${binaryPath}"`, { stdio: "pipe" });
 }
 
-async function downloadBinary(binary) {
+export async function downloadBinary(binary, destDir = DEST_DIR) {
   const binaryName =
     process.platform === "win32" ? `${binary.name}.exe` : binary.name;
-  const binaryPath = join(DEST_DIR, binaryName);
+  const binaryPath = join(destDir, binaryName);
 
   console.log(`\n[${binary.name}] v${binary.version}`);
 
@@ -158,16 +155,16 @@ async function downloadBinary(binary) {
   const target = binary.getTarget();
   const url = binary.getUrl(binary.version, target);
   const archiveName = `${binary.name}-archive${url.endsWith(".zip") ? ".zip" : ".tar.gz"}`;
-  const archivePath = join(DEST_DIR, archiveName);
+  const archivePath = join(destDir, archiveName);
 
   console.log(`  Platform: ${process.platform}/${process.arch} -> ${target}`);
 
   await downloadFile(url, archivePath);
-  await extractArchive(archivePath, DEST_DIR);
+  await extractArchive(archivePath, destDir);
   rmSync(archivePath);
 
   if (binary.archiveBinaryName) {
-    const extractedPath = join(DEST_DIR, binary.archiveBinaryName(target));
+    const extractedPath = join(destDir, binary.archiveBinaryName(target));
     if (extractedPath !== binaryPath && existsSync(extractedPath)) {
       renameSync(extractedPath, binaryPath);
     }

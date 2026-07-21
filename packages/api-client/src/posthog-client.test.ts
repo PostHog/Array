@@ -169,6 +169,38 @@ describe("PostHogAPIClient", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  it.each(["high", "max"] as const)(
+    "forwards supported GLM 5.2 reasoning effort %s",
+    async (reasoningLevel) => {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+
+      const post = vi.fn().mockResolvedValue({ id: "run-123" });
+      (client as unknown as { api: { post: typeof post } }).api = { post };
+
+      await client.runTaskInCloud("task-123", "feature/glm-effort", {
+        adapter: "claude",
+        model: "@cf/zai-org/glm-5.2",
+        reasoningLevel,
+      });
+
+      expect(post).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/tasks/{id}/run/",
+        expect.objectContaining({
+          body: expect.objectContaining({
+            runtime_adapter: "claude",
+            model: "@cf/zai-org/glm-5.2",
+            reasoning_effort: reasoningLevel,
+          }),
+        }),
+      );
+    },
+  );
+
   it("rejects unsupported minimal reasoning effort for cloud runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",
@@ -1443,7 +1475,7 @@ describe("PostHogAPIClient", () => {
       });
     });
 
-    it("returns the entries collected so far when a later page fails", async () => {
+    it("marks entries collected before a failed page as incomplete", async () => {
       const fetch = vi
         .fn()
         .mockResolvedValueOnce(page(makeEntries(50, "a"), true))
@@ -1455,11 +1487,14 @@ describe("PostHogAPIClient", () => {
         });
       const client = makeClient(fetch);
 
-      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
-        limit: 100000,
-      });
+      const result = await client.getTaskRunSessionLogsResult(
+        "task-1",
+        "run-1",
+        { limit: 100000 },
+      );
 
-      expect(result).toHaveLength(50);
+      expect(result).toEqual({ entries: expect.any(Array), complete: false });
+      expect(result.entries).toHaveLength(50);
       expect(fetch).toHaveBeenCalledTimes(2);
     });
 

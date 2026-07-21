@@ -227,7 +227,7 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
 }
 
 /** A model entry from the app-server's `model/list` (loosely typed). */
-interface RawModel {
+export interface RawModel {
   id?: string;
   model?: string;
   displayName?: string;

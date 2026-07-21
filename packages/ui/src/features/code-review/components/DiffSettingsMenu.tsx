@@ -8,8 +8,22 @@ import {
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import { useDiffViewerStore } from "@posthog/ui/features/code-editor/diffViewerStore";
+import type { CommentFileFilter } from "../commentFileFilter";
+import { CommentFilterSubmenu } from "./CommentFilterSubmenu";
 
-export function DiffSettingsMenu() {
+interface DiffSettingsMenuProps {
+  commentedFileCount: number;
+  unresolvedCommentedFileCount: number;
+  commentFilter: CommentFileFilter;
+  onCommentFilterChange?: (filter: CommentFileFilter) => void;
+}
+
+export function DiffSettingsMenu({
+  commentedFileCount,
+  unresolvedCommentedFileCount,
+  commentFilter,
+  onCommentFilterChange,
+}: DiffSettingsMenuProps) {
   const wordWrap = useDiffViewerStore((s) => s.wordWrap);
   const toggleWordWrap = useDiffViewerStore((s) => s.toggleWordWrap);
   const wordDiffs = useDiffViewerStore((s) => s.wordDiffs);
@@ -24,6 +38,12 @@ export function DiffSettingsMenu() {
   const toggleShowReviewComments = useDiffViewerStore(
     (s) => s.toggleShowReviewComments,
   );
+  const handleToggleReviewComments = () => {
+    if (showReviewComments && commentFilter !== "none") {
+      onCommentFilterChange?.("none");
+    }
+    toggleShowReviewComments();
+  };
 
   return (
     <DropdownMenu>
@@ -31,7 +51,12 @@ export function DiffSettingsMenu() {
         render={
           <Button
             size="icon-sm"
-            aria-label="Diff settings"
+            variant={commentFilter === "none" ? "default" : "primary"}
+            aria-label={
+              commentFilter === "none"
+                ? "Diff settings"
+                : `Diff settings, ${commentFilter} comment filter active`
+            }
             className="rounded-xs"
           >
             <DotsThree size={16} weight="bold" />
@@ -54,9 +79,17 @@ export function DiffSettingsMenu() {
           {hideWhitespaceChanges ? "Show whitespace" : "Hide whitespace"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={toggleShowReviewComments}>
+        <DropdownMenuItem onClick={handleToggleReviewComments}>
           {showReviewComments ? "Hide review comments" : "Show review comments"}
         </DropdownMenuItem>
+        {showReviewComments && onCommentFilterChange && (
+          <CommentFilterSubmenu
+            commentedFileCount={commentedFileCount}
+            unresolvedCommentedFileCount={unresolvedCommentedFileCount}
+            commentFilter={commentFilter}
+            onCommentFilterChange={onCommentFilterChange}
+          />
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

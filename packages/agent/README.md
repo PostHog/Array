@@ -74,6 +74,8 @@ Four modes defined in `src/execution-mode.ts`:
 
 In cloud background mode, permissions are always auto-approved. In interactive mode, the permission system is active and configurable per session. Tool categorization lives in `src/adapters/claude/tools.ts` — each tool belongs to a group (read, write, bash, search, web, agent) and modes whitelist groups.
 
+Cloud provisioning can pass `--posthogExecPermissionRegex <regex>` to require one-time client approval for matching PostHog MCP `exec` sub-tools in every interactive cloud Claude and Codex permission mode. Non-matching sub-tools never prompt. Locally, hands-off modes stay hands-off: Claude `auto` and `bypassPermissions`, and Codex `auto` and `full-access`, auto-approve matching sub-tools; other local modes prompt. Matching is case-insensitive against the delegated name in `call [--json] <sub-tool> ...`. These prompts offer Claude users an always-allow choice remembered in local repository settings; Codex approvals remain one-time. An invalid or empty regex is logged and falls back to the default. Background runs keep their existing auto-approval behavior. The default is `(^|-)(partial-update|update|patch|delete|destroy)(-|$)`.
+
 ## ACP connection layer
 
 `createAcpConnection()` in `src/adapters/acp-connection.ts` is the heart of the package. It's a factory that returns a `{ clientStreams, cleanup }` object — a pair of ndJson `ReadableStream`/`WritableStream` that the caller uses to speak ACP.
@@ -142,9 +144,9 @@ JWT validation (`src/server/jwt.ts`) uses RS256 with a configurable public key. 
 
 When `POST /command` receives a `user_message`, it doesn't handle it directly — it calls `clientConnection.prompt()` on the ACP `ClientSideConnection`, which sends a `session/prompt` message through the ACP streams to the agent. Similarly, `cancel` sends `session/cancel`. This means all commands follow the same path as in-process calls from PostHog Code, with the HTTP layer just being a thin translation.
 
-### Auto-approval in cloud mode
+### Permission routing in cloud mode
 
-The `AgentServer` provides a `requestPermission` callback to the `ClientSideConnection` that always selects the "allow" option. In background mode this is necessary (no human to ask). In interactive mode it currently does the same, with a TODO for future per-tool approval via SSE round-trips.
+The `AgentServer` provides the `requestPermission` callback to the `ClientSideConnection`. Background mode selects an allow option automatically. Interactive mode relays approvals that need a person over SSE and parks them until a client responds; other requests follow the selected permission mode.
 
 ### Checkpoint capture
 
@@ -157,6 +159,7 @@ npx agent-server \
   --port 3001 \
   --mode interactive \
   --repositoryPath /path/to/repo \
+  --posthogExecPermissionRegex '(^|-)(partial-update|update|patch|delete|destroy)(-|$)' \
   --taskId task_123 \
   --runId run_456
 ```
