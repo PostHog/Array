@@ -57,17 +57,6 @@ export interface UserGithubIntegration {
   };
 }
 
-export interface RepositoryOption {
-  integrationId: number;
-  integrationLabel: string;
-  repository: string;
-}
-
-export interface RepositorySelection {
-  integrationId: number | null;
-  repository: string | null;
-}
-
 export interface CreateTaskOptions {
   description: string;
   title?: string;

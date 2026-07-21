@@ -1,5 +1,11 @@
 import { Text } from "@components/text";
 import {
+  findRepositoryOption,
+  isRepositorySelectionComplete,
+  type RepositorySelection,
+  toRepositorySelection,
+} from "@posthog/core/integrations/repositories";
+import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
   getAvailableModes,
 } from "@posthog/core/sessions/executionModes";
@@ -73,15 +79,7 @@ import {
   pendingTaskPromptStoreApi,
 } from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import type {
-  CreateTaskOptions,
-  RepositorySelection,
-} from "@/features/tasks/types";
-import {
-  findRepositoryOption,
-  isRepositorySelectionComplete,
-  toRepositorySelection,
-} from "@/features/tasks/utils/repositorySelection";
+import type { CreateTaskOptions } from "@/features/tasks/types";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";

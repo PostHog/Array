@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { RepositoryOption } from "@posthog/core/integrations/repositories";
 import { ArrowsClockwise, Check, MagnifyingGlass } from "phosphor-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -15,7 +16,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { RepositoryOption } from "@/features/tasks/types";
 import { useThemeColors } from "@/lib/theme";
 
 // Tuning for the nested (ScrollView) path's progressive mount. The first

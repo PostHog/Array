@@ -6,6 +6,12 @@ import {
   deriveAutomationName,
   parseCronExpression,
 } from "@posthog/core/automations/automationSchedule";
+import {
+  findRepositoryOption,
+  isRepositorySelectionComplete,
+  type RepositorySelection,
+  toRepositorySelection,
+} from "@posthog/core/integrations/repositories";
 import type { CreateTaskAutomationOptions } from "@posthog/shared";
 import { CaretDown, GithubLogo } from "phosphor-react-native";
 import { type MutableRefObject, useEffect, useMemo, useState } from "react";
@@ -20,12 +26,6 @@ import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { useThemeColors } from "@/lib/theme";
 import { RepositoryPickerInline } from "../composer/RepositoryPickerInline";
 import { useIntegrations } from "../hooks/useIntegrations";
-import type { RepositorySelection } from "../types";
-import {
-  findRepositoryOption,
-  isRepositorySelectionComplete,
-  toRepositorySelection,
-} from "../utils/repositorySelection";
 import { GitHubConnectionPrompt } from "./GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "./GitHubLoadNotice";
 import { ScheduleEditor } from "./ScheduleEditor";

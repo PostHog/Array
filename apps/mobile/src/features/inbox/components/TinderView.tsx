@@ -3,6 +3,7 @@ import {
   formatSignalReportSummaryMarkdown,
   inboxStatusLabel,
 } from "@posthog/core/inbox/reportPresentation";
+import type { RepositoryOption } from "@posthog/core/integrations/repositories";
 import type {
   SignalReport,
   SignalReportPriority,
@@ -28,10 +29,7 @@ import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getModelConfigOption } from "@/features/tasks/composer/options";
 import { useCloudTaskConfigOptions } from "@/features/tasks/hooks/useCloudTaskConfigOptions";
-import type {
-  CreateTaskOptions,
-  RepositoryOption,
-} from "@/features/tasks/types";
+import type { CreateTaskOptions } from "@/features/tasks/types";
 import {
   ANALYTICS_EVENTS,
   computeReportAgeHours,

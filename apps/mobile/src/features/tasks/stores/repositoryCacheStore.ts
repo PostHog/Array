@@ -1,7 +1,7 @@
+import type { RepositoryOption } from "@posthog/core/integrations/repositories";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { RepositoryOption } from "../types";
 
 interface RepositoryCacheState {
   /** Last successfully fetched, sorted list of repository options across all

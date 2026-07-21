@@ -1,9 +1,9 @@
+import type { RepositorySelection } from "@posthog/core/integrations/repositories";
 import type { TaskActivitySortMode } from "@posthog/core/tasks/taskActivity";
 import type { ExecutionMode, SupportedReasoningEffort } from "@posthog/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { RepositorySelection } from "../types";
 
 export type OrganizeMode = "by-project" | "chronological";
 export type SortMode = TaskActivitySortMode;
