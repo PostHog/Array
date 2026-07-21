@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useCanvasFrameStore } from "./canvasFrameStore";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
+import { useCanvasFrameStore } from "./canvasFrameStore";
 
 // The warm-frame host only shows a canvas once its slot has a measured rect
 // (`active = ... && !!slot.rect`). The placeholder must populate that rect from
