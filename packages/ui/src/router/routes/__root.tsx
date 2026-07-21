@@ -275,8 +275,6 @@ function RootLayout() {
     }
   }, [flagsLoaded, homeTabEnabled, view.type]);
 
-  // Settings is a full-page route — drop the app chrome (header/sidebar/
-  // space-switcher) so the panel occupies the full window.
   const isSettingsRoute = useRouterState({
     select: (s) => s.matches.some((m) => m.routeId.startsWith("/settings")),
   });
@@ -311,31 +309,6 @@ function RootLayout() {
   const activeTabBlank = useActiveTabIsBlank();
   const showBlankTab = onChannelsIndex && activeTabBlank;
 
-  if (isSettingsRoute) {
-    return (
-      <Flex direction="column" height="100%">
-        <ConnectivityBanner />
-        <Outlet />
-        <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
-        <GlobalFilePicker />
-        <KeyboardShortcutsSheet
-          open={shortcutsSheetOpen}
-          onOpenChange={(open) => (open ? null : closeShortcutsSheet())}
-        />
-        <GlobalEventHandlers
-          onToggleCommandMenu={toggleCommandMenu}
-          onToggleShortcutsSheet={toggleShortcutsSheet}
-        />
-        {billingEnabled && <UsageLimitModal />}
-        <UsageBillingAnnouncementModal />
-        <UpdateAvailableModal />
-        <WhatsNewModal />
-        <RemoteBranchCheckoutDialog />
-        <ExistingWorktreeDialog />
-      </Flex>
-    );
-  }
-
   return (
     // DnD scope for the tab strip's drag-to-reorder (pill sortables live in
     // the title bar; the provider must sit above them).
@@ -365,12 +338,17 @@ function RootLayout() {
               // over- or under-shoots; the env var fallback covers hosts
               // without Window Controls Overlay.
               paddingLeft: isMac ? "env(titlebar-area-x, 78px)" : "78px",
-              width: sidebarOpen ? channelsSidebarWidth : undefined,
+              width: sidebarOpen
+                ? isSettingsRoute
+                  ? "256px"
+                  : channelsSidebarWidth
+                : undefined,
               // Same curve/duration as ResizableSidebar's SLIDE_EASING so the
               // title bar tracks the sidebar edge.
-              transition: sidebarIsResizing
-                ? "none"
-                : "width 0.2s cubic-bezier(0, 0, 0.2, 1)",
+              transition:
+                isSettingsRoute || sidebarIsResizing
+                  ? "none"
+                  : "width 0.2s cubic-bezier(0, 0, 0.2, 1)",
             }}
           >
             <Flex align="center" gap="2" className="no-drag">
@@ -383,7 +361,7 @@ function RootLayout() {
                 aria-label="Toggle sidebar"
                 onClick={handleToggleSidebar}
                 onMouseEnter={() => {
-                  if (!sidebarOpen) beginSidebarPeek();
+                  if (!isSettingsRoute && !sidebarOpen) beginSidebarPeek();
                 }}
               >
                 {sidebarOpen ? (
@@ -444,42 +422,48 @@ function RootLayout() {
           )}
         </Flex>
         <ConnectivityBanner />
-        <Flex flexGrow="1" overflow="hidden" className="relative">
-          {/* Scrim under the peeked nav: dims the content while the overlay is
-              out. Purely visual (pointer-transparent) and paired with the
-              panel's slide — same 200ms ease-out — so they read as one unit. */}
-          {!sidebarOpen && (
-            <Box
-              aria-hidden
-              // The radix preset replaces Tailwind's palette, so plain
-              // `bg-black/*` doesn't exist — use the radix black-alpha scale
-              // (--black-a2 = 10%, --black-a5 = 30%).
-              className={`pointer-events-none absolute inset-0 z-40 bg-blackA-2 transition-opacity duration-200 ease-out motion-reduce:transition-none dark:bg-blackA-5 ${
-                sidebarPeek ? "opacity-100" : "opacity-0"
-              }`}
-            />
-          )}
-          <ChannelsSidebar />
-          {/* Content sits in a bordered, rounded card inset from the window
-              edges — the framed pane from the design. */}
-          <Box flexGrow="1" className="overflow-hidden">
-            <Box
-              className={`h-full overflow-hidden border-border border-t border-l bg-background ${
-                sidebarOpen ? "rounded-tl-sm" : ""
-              }`}
-            >
-              <Flex direction="column" height="100%">
-                {/* The /website space renders its own header (WebsiteLayout);
-                      everywhere else the shared header carries the view title
-                      and, on a task, its action row. */}
-                {!onWebsitePath && <ContentHeader />}
-                <Box flexGrow="1" overflow="hidden">
-                  {showBlankTab ? <BlankTabView /> : <Outlet />}
-                </Box>
-              </Flex>
-            </Box>
+        {isSettingsRoute ? (
+          <Box flexGrow="1" className="overflow-hidden bg-background">
+            <Outlet />
           </Box>
-        </Flex>
+        ) : (
+          <Flex flexGrow="1" overflow="hidden" className="relative">
+            {/* Scrim under the peeked nav: dims the content while the overlay is
+                out. Purely visual (pointer-transparent) and paired with the
+                panel's slide — same 200ms ease-out — so they read as one unit. */}
+            {!sidebarOpen && (
+              <Box
+                aria-hidden
+                // The radix preset replaces Tailwind's palette, so plain
+                // `bg-black/*` doesn't exist — use the radix black-alpha scale
+                // (--black-a2 = 10%, --black-a5 = 30%).
+                className={`pointer-events-none absolute inset-0 z-40 bg-blackA-2 transition-opacity duration-200 ease-out motion-reduce:transition-none dark:bg-blackA-5 ${
+                  sidebarPeek ? "opacity-100" : "opacity-0"
+                }`}
+              />
+            )}
+            <ChannelsSidebar />
+            {/* Content sits in a bordered, rounded card inset from the window
+                edges — the framed pane from the design. */}
+            <Box flexGrow="1" className="overflow-hidden">
+              <Box
+                className={`h-full overflow-hidden border-border border-t border-l bg-background ${
+                  sidebarOpen ? "rounded-tl-sm" : ""
+                }`}
+              >
+                <Flex direction="column" height="100%">
+                  {/* The /website space renders its own header (WebsiteLayout);
+                        everywhere else the shared header carries the view title
+                        and, on a task, its action row. */}
+                  {!onWebsitePath && <ContentHeader />}
+                  <Box flexGrow="1" overflow="hidden">
+                    {showBlankTab ? <BlankTabView /> : <Outlet />}
+                  </Box>
+                </Flex>
+              </Box>
+            </Box>
+          </Flex>
+        )}
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <GlobalFilePicker />
         <KeyboardShortcutsSheet

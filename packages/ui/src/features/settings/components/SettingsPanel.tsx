@@ -15,7 +15,6 @@ import {
   Palette,
   Plugs,
   Robot,
-  SignOut,
   SlackLogo,
   Terminal,
   TrafficSignal,
@@ -23,20 +22,16 @@ import {
   Wrench,
 } from "@phosphor-icons/react";
 import { BILLING_FLAG } from "@posthog/shared";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
-import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsPageContent } from "@posthog/ui/features/settings/components/SettingsPageContent";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
+import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import * as nav from "@posthog/ui/router/navigationBridge";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
-import { Avatar, Flex, ScrollArea, Text } from "@radix-ui/themes";
+import { Box, ScrollArea, Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
@@ -170,12 +165,15 @@ export interface SettingsPanelProps {
   onClose?: () => void;
   /** Override the category-change handler. Defaults to router navigation. */
   onCategoryChange?: (category: SettingsCategory) => void;
+  /** Whether to show the settings navigation sidebar. */
+  sidebarOpen?: boolean;
 }
 
 export function SettingsPanel({
   activeCategory: activeCategoryProp,
   onClose,
   onCategoryChange,
+  sidebarOpen = true,
 }: SettingsPanelProps = {}) {
   const formMode = useSettingsPageStore((s) => s.formMode);
   const activeCategory = activeCategoryProp ?? "general";
@@ -183,14 +181,8 @@ export function SettingsPanel({
   const setCategory =
     onCategoryChange ??
     ((cat: SettingsCategory) => nav.navigateToSettings(cat, { replace: true }));
-  const isAuthenticated = useAuthStateValue(
-    (state) => state.status === "authenticated",
-  );
-  const client = useOptionalAuthenticatedClient();
-  const { data: user } = useCurrentUser({ client });
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const { localWorkspaces } = useHostCapabilities();
-  const logoutMutation = useLogoutMutation();
 
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
   const hiddenCategories = getHiddenSettingsCategories({
@@ -226,83 +218,52 @@ export function SettingsPanel({
     (item) => item.id === activeSidebarCategory,
   )?.icon;
 
-  const initials = getUserInitials(user);
-
   return (
     <div
       className="flex h-full w-full bg-(--color-background)"
       data-page="settings"
     >
-      <div className="flex h-full w-[256px] shrink-0 flex-col border-gray-6 border-r">
-        <div className="drag h-[36px] shrink-0 border-b border-b-(--gray-6)" />
-
-        {isAuthenticated && user && (
-          <Flex
-            align="center"
-            gap="3"
-            px="3"
-            py="3"
-            className="border-b border-b-(--gray-5)"
-          >
-            <Avatar size="2" fallback={initials} radius="full" color="amber" />
-            <Flex direction="column" className="min-w-0">
-              <Text truncate className="font-medium text-sm">
-                {user.email}
-              </Text>
-            </Flex>
-          </Flex>
-        )}
-
-        <button
-          type="button"
-          className="mt-2 flex cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-2 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
-          onClick={close}
-        >
-          <ArrowLeft size={14} />
-          <span>Back to app</span>
-        </button>
-
-        <ScrollArea className="flex-1">
-          <div className="flex flex-col gap-3 py-2">
-            {sidebarGroups.map((group) => (
-              <div key={group.label}>
-                <Text className="px-3 pb-1 font-medium text-[10px] text-gray-9 uppercase tracking-wider">
-                  {group.label}
-                </Text>
-                {group.items.map((item) => {
-                  const isActive = activeSidebarCategory === item.id;
-                  return (
-                    <SidebarNavItem
-                      key={item.id}
-                      item={item}
-                      isActive={isActive}
-                      onClick={() => setCategory(item.id)}
-                    />
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-
-        {isAuthenticated && (
+      {sidebarOpen && (
+        <div className="flex h-full w-[256px] shrink-0 flex-col border-gray-6 border-r">
           <button
             type="button"
-            disabled={logoutMutation.isPending}
-            className="flex cursor-pointer items-center gap-2 border-0 border-gray-5 border-t bg-transparent px-3 py-2.5 text-left font-mono text-[12px] text-gray-9 transition-colors hover:bg-gray-3 hover:text-gray-11 disabled:pointer-events-none disabled:opacity-50"
-            onClick={() => {
-              close();
-              logoutMutation.mutate();
-            }}
+            className="mt-2 flex cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-2 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
+            onClick={close}
           >
-            <SignOut size={14} />
-            <span>Sign out</span>
+            <ArrowLeft size={14} />
+            <span>Back to app</span>
           </button>
-        )}
-      </div>
+
+          <ScrollArea className="flex-1">
+            <div className="flex flex-col gap-3 py-2">
+              {sidebarGroups.map((group) => (
+                <div key={group.label}>
+                  <Text className="px-3 pb-1 font-medium text-[10px] text-gray-9 uppercase tracking-wider">
+                    {group.label}
+                  </Text>
+                  {group.items.map((item) => {
+                    const isActive = activeSidebarCategory === item.id;
+                    return (
+                      <SidebarNavItem
+                        key={item.id}
+                        item={item}
+                        isActive={isActive}
+                        onClick={() => setCategory(item.id)}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+
+          <Box className="shrink-0 px-2 pb-2">
+            <ProjectSwitcher />
+          </Box>
+        </div>
+      )}
 
       <div className="relative flex flex-1 flex-col overflow-hidden">
-        <div className="drag h-[36px] shrink-0 border-b border-b-(--gray-6)" />
         <div className="relative flex flex-1 justify-center overflow-hidden">
           <svg
             aria-hidden="true"
