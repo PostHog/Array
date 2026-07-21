@@ -1,6 +1,6 @@
 import { BASE_CATEGORY_ENUM } from "@posthog/core/setup/types";
 
-// Appended to every prompt that instruments an integration. Writing env vars to
+// Appended to every prompt that performs the initial PostHog SDK install/init. Writing env vars to
 // .env files does nothing for the deployed app, and no run can read the hosting
 // provider's env, so the checklist is unconditional. Where it gets delivered is
 // not: these prompts run in cloud, worktree and local modes (WorkspaceMode), and
@@ -13,7 +13,7 @@ Adding env vars to \`.env\`, \`.env.local\` or \`.env.example\` only covers loca
 
 Detect the deployment target from repo-root markers: \`vercel.json\` or \`.vercel/\` → Vercel; \`netlify.toml\` → Netlify; \`wrangler.toml\` or \`wrangler.jsonc\` → Cloudflare; \`fly.toml\` → Fly.io. If nothing matches, call it "your hosting provider" and give the generic steps.
 
-Deliver it wherever this run ends:
+Deliver it wherever this run ends, replacing <provider> in the headings below with the detected provider name (or "your hosting provider" if none matched):
 - If you open a pull request, its body must lead with the checklist — above the summary of changes — under the heading "Before you merge: set environment variables in <provider>".
 - If you are working against a local checkout and not opening a pull request, print the same checklist to the user as the final message of the run, under the heading "Before you deploy: set environment variables in <provider>".
 
