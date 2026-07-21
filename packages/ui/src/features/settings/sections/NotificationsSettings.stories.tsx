@@ -66,6 +66,11 @@ function ProducerTagDemo() {
 const meta: Meta<typeof ProducerTagDemo> = {
   title: "Settings/ProducerTag",
   component: ProducerTagDemo,
+  // This story is a manual demo/record surface, not a visual-regression target:
+  // its imported clip and play button don't need a signed baseline. The runner
+  // (apps/code/.storybook/test-runner.ts) skips stories tagged "test-skip", so
+  // it's excluded from snapshot capture and won't add unapproved VR snapshots.
+  tags: ["test-skip"],
   // Match the settings dialog's content column so rows size realistically.
   decorators: [
     (Story) => (
