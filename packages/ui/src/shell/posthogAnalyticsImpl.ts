@@ -3,6 +3,10 @@ import posthog from "posthog-js/dist/module.full.no-external";
 // The module.full.no-external bundle includes rrweb but not the initSessionRecording function
 // posthog-recorder (vs lazy-recorder) ensures recording is ready immediately
 import "posthog-js/dist/posthog-recorder";
+import type {
+  AnalyticsProperties,
+  IAnalytics,
+} from "@posthog/platform/analytics";
 import {
   type EventPropertyMap,
   isInboxAnalyticsEvent,
@@ -396,4 +400,51 @@ export const posthogAnalyticsTracker: AnalyticsTracker = {
 export const posthogFeatureFlags: FeatureFlags = {
   isEnabled: isFeatureFlagEnabled,
   onFlagsLoaded: onFeatureFlagsLoaded,
+};
+
+// ============================================================================
+// Platform ANALYTICS_SERVICE (IAnalytics)
+// ============================================================================
+
+let analyticsCurrentUserId: string | null = null;
+let analyticsSessionId: string | null = null;
+
+/**
+ * posthog-js implementation of the platform ANALYTICS_SERVICE port. Desktop
+ * backs this with posthog-node in the Electron main process; the web host has
+ * no Node process, so it binds this so its core services (e.g. cloud-task)
+ * report through the SAME posthog-js instance the UI tracker and feature-flag
+ * ports use. Every method no-ops safely until initializePostHog has run with a
+ * real project key.
+ */
+export const posthogAnalyticsService: IAnalytics = {
+  initialize: () => initializePostHog(),
+  track: (eventName: string, properties?: AnalyticsProperties) => {
+    if (!isInitialized) return;
+    posthog.capture(eventName, properties);
+  },
+  identify: (userId: string, properties?: AnalyticsProperties) => {
+    analyticsCurrentUserId = userId;
+    if (!isInitialized) return;
+    posthog.identify(userId, properties);
+  },
+  setCurrentUserId: (userId: string | null) => {
+    analyticsCurrentUserId = userId;
+  },
+  getCurrentUserId: () => analyticsCurrentUserId,
+  getOrCreateSessionId: () => {
+    if (!analyticsSessionId) analyticsSessionId = crypto.randomUUID();
+    return analyticsSessionId;
+  },
+  resetUser: () => {
+    analyticsCurrentUserId = null;
+    resetUser();
+  },
+  captureException: (error: unknown, additionalProperties?) =>
+    captureException(
+      error instanceof Error ? error : new Error(String(error)),
+      additionalProperties,
+    ),
+  flush: () => Promise.resolve(),
+  shutdown: () => Promise.resolve(),
 };
