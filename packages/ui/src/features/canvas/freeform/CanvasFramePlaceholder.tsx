@@ -2,7 +2,7 @@ import type {
   CanvasAnalyticsConfig,
   CanvasNavIntent,
 } from "@posthog/core/canvas/freeformSchemas";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useCanvasRefreshNonce } from "../stores/canvasRefreshStore";
 import { useCanvasFrameStore } from "./canvasFrameStore";
 
@@ -57,7 +57,13 @@ export function CanvasFramePlaceholder({
     ],
   );
 
-  useEffect(() => {
+  // Layout effect (not passive) and declared first, so the slot exists before the
+  // rect-measure effect below runs its initial synchronous measure. Otherwise the
+  // slot is created too late (setRect no-ops with no slot) and the frame only
+  // becomes visible once a later scroll/resize re-measures — which never happens
+  // on a settled layout, so a canvas opened while the app has been running a while
+  // (e.g. via a deep link) stays hidden until a hard refresh.
+  useLayoutEffect(() => {
     register(dashboardId, inputs);
   }, [dashboardId, inputs, register]);
 
