@@ -143,6 +143,37 @@ export function useSandboxCustomImages() {
     },
   );
 
+  const updateMutation = useAuthenticatedMutation(
+    (
+      client,
+      {
+        id,
+        ...input
+      }: { id: string } & {
+        name?: string;
+        description?: string;
+      },
+    ) => client.updateSandboxCustomImage(id, input),
+    {
+      onSuccess: (image) => {
+        toast.success("Custom image updated");
+        // Invalidate rather than setQueryData: the PATCH response may not carry
+        // every field a detail view depends on, so force a refetch to repopulate
+        // the full image instead of overwriting the cache with a partial object.
+        queryClient.invalidateQueries({
+          queryKey: sandboxCustomImageKeys.detail(image.id),
+        });
+        queryClient.invalidateQueries({
+          queryKey: sandboxCustomImageKeys.list,
+        });
+        queryClient.invalidateQueries({ queryKey: sandboxEnvKeys.list });
+      },
+      onError: (error: Error) => {
+        toast.error(error.message || "Failed to update custom image");
+      },
+    },
+  );
+
   return {
     images: images ?? [],
     isLoading,
@@ -152,5 +183,6 @@ export function useSandboxCustomImages() {
     buildMutation,
     builderTaskMutation,
     deleteMutation,
+    updateMutation,
   };
 }
