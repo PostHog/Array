@@ -1,4 +1,10 @@
 import {
+  getPermissionOptionMeta,
+  isPermissionRejection,
+  permissionOptionUsesCustomInput,
+} from "@posthog/core/sessions/permissionResponse";
+import { extractPlanText } from "@posthog/core/sessions/planApprovalPresentation";
+import {
   ArrowsClockwise,
   ChatCircle,
   CheckCircle,
@@ -26,22 +32,6 @@ interface PlanApprovalCardProps {
   toolData: ToolData;
   permission?: CloudPendingPermissionRequest;
   onSendPermissionResponse?: (args: PermissionResponseArgs) => void;
-}
-
-function optionMeta(option: CloudPendingPermissionRequest["options"][number]) {
-  return option._meta as
-    | {
-        customInput?: boolean;
-        description?: string;
-      }
-    | undefined;
-}
-
-function isRejectOption(
-  option?: CloudPendingPermissionRequest["options"][number],
-) {
-  if (!option) return false;
-  return option.kind.startsWith("reject") || option.optionId.includes("reject");
 }
 
 export function PlanApprovalCard({
@@ -101,7 +91,9 @@ export function PlanApprovalCard({
     selectedOption?.name ||
     response?.displayText ||
     null;
-  const resolvedAsReject = isRejectOption(selectedOption);
+  const resolvedAsReject = selectedOption
+    ? isPermissionRejection(selectedOption)
+    : false;
 
   return (
     <View className="mx-4 my-1 rounded-lg border border-accent-6 bg-gray-2">
@@ -165,8 +157,8 @@ export function PlanApprovalCard({
       ) : (
         <View className="px-3 pb-3">
           {permission.options.map((option) => {
-            const meta = optionMeta(option);
-            const usesCustomInput = meta?.customInput === true;
+            const meta = getPermissionOptionMeta(option);
+            const usesCustomInput = permissionOptionUsesCustomInput(option);
             const isCustomSelected = selectedCustomOptionId === option.optionId;
 
             return (
@@ -194,7 +186,7 @@ export function PlanApprovalCard({
                   >
                     {option.name}
                   </Text>
-                  {meta?.description && (
+                  {meta.description && (
                     <Text className="mt-1 font-mono text-[11px] text-gray-9 leading-4">
                       {meta.description}
                     </Text>
@@ -239,5 +231,3 @@ export function PlanApprovalCard({
     </View>
   );
 }
-
-import { extractPlanText } from "@posthog/core/sessions/planApprovalPresentation";
