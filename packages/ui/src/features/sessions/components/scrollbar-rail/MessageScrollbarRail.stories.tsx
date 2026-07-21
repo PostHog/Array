@@ -51,33 +51,18 @@ export const Pure: Story = {
             }),
             marker({
               id: "m2",
-              topPct: 0.23,
+              topPct: 0.52,
               label: "Add a marker to the scrollbar for my messages",
-            }),
-            marker({
-              id: "m3",
-              topPct: 0.48,
-              label: "Why did the build break on CI?",
               active: true,
-            }),
-            marker({
-              id: "m4",
-              topPct: 0.71,
-              label: "Can you color the scrollbar based on conversation data?",
-            }),
-            marker({
-              id: "m5",
-              topPct: 0.93,
-              label: "Ship it",
             }),
           ]}
         />
         {/* Caption so the rail (8px, far right) isn't the only thing on screen. */}
         <div className="flex h-full items-center justify-center px-12 text-center">
           <p className="text-(--gray-10) text-[13px] leading-relaxed">
-            Markers sit in the scrollbar gutter on the right. Hover one to see
-            the first few words; click to jump. The accent-colored marker is
-            active.
+            Each human message has one marker in the scrollbar gutter. Hover a
+            marker to preview the message; click to jump. The accent-colored
+            marker is active.
           </p>
         </div>
       </div>
@@ -90,26 +75,22 @@ export const Pure: Story = {
 interface TranscriptEntry {
   id: string;
   prompt: string;
-  reply: string;
+  reply: string[];
 }
 
 function buildTranscript(): TranscriptEntry[] {
   const prompts = [
     "How do I set up the dev environment for this repo?",
     "Add a darker marker to the scrollbar where my messages are",
-    "Why did the build break after the last merge?",
-    "Can you color the scrollbar based on data in the conversation?",
-    "Show the first few words of each message as a tooltip",
-    "Walk me through the DI boot sequence",
-    "What does the host boundary check enforce?",
-    "Refactor the conversation items pipeline",
-    "Generate a changelog entry for the rail",
-    "Ship it once tests are green",
   ];
   return prompts.map((prompt, i) => ({
     id: `user-${i}`,
     prompt,
-    reply: `Here's a thorough answer to "${prompt}". `.repeat(40),
+    reply: Array.from(
+      { length: 10 },
+      (_, paragraph) =>
+        `Response paragraph ${paragraph + 1}. Here's a thorough answer to "${prompt}" with enough detail to make the conversation scroll naturally.`,
+    ),
   }));
 }
 
@@ -190,9 +171,11 @@ function ScrollableConversationDemo() {
                 >
                   {entry.prompt}
                 </div>
-                <p className="mt-2 text-(--gray-11) text-[13px] leading-relaxed">
-                  {entry.reply}
-                </p>
+                <div className="mt-2 space-y-3 text-(--gray-11) text-[13px] leading-relaxed">
+                  {entry.reply.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
