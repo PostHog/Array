@@ -13,6 +13,7 @@ import type { HostTrpcClient } from "@posthog/host-router/client";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
+  type AgentRuntime,
   ANALYTICS_EVENTS,
   PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
@@ -73,6 +74,7 @@ interface UseTaskCreationOptions {
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
@@ -83,6 +85,12 @@ interface UseTaskCreationOptions {
   channelName?: string;
   /** Backend channel UUID the created task is owned by (its feed home). */
   channelId?: string;
+  /**
+   * Desktop file-system folder id that owns the channel's CONTEXT.md (the
+   * `/website/$channelId` id, distinct from the feed `channelId`). Lets the
+   * injected context address CONTEXT.md upkeep writes by a stable id.
+   */
+  channelContextId?: string;
   /**
    * Channels "generic chat box" mode: drop the repo/branch requirement so a
    * task can be submitted without picking a repo. The agent decides at runtime
@@ -168,6 +176,7 @@ export function useTaskCreation({
   editorIsEmpty,
   executionMode,
   adapter,
+  runtime = "acp",
   model,
   reasoningLevel,
   environmentId,
@@ -177,6 +186,7 @@ export function useTaskCreation({
   channelContext,
   channelName,
   channelId,
+  channelContextId,
   allowNoRepo,
   onTaskCreated,
   onTaskCreatedEffect,
@@ -359,6 +369,7 @@ export function useTaskCreation({
           reuseExistingWorktree,
           executionMode,
           adapter,
+          runtime,
           model,
           reasoningLevel,
           environmentId,
@@ -369,6 +380,7 @@ export function useTaskCreation({
           channelContext,
           channelName,
           channelId: channelId ?? defaultedChannelId,
+          channelContextId,
           customInstructions: getEffectiveCustomInstructions(settings),
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
@@ -532,6 +544,7 @@ export function useTaskCreation({
       branch,
       executionMode,
       adapter,
+      runtime,
       model,
       reasoningLevel,
       environmentId,
@@ -542,6 +555,7 @@ export function useTaskCreation({
       channelContext,
       channelName,
       channelId,
+      channelContextId,
       allowNoRepo,
       bluebirdEnabled,
       personalChannel?.id,

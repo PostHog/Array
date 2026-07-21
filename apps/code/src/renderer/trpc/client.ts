@@ -7,14 +7,18 @@ import {
   createTRPCOptionsProxy,
 } from "@trpc/tanstack-react-query";
 import { queryClient } from "@utils/queryClient";
+import superjson from "superjson";
 import type { TrpcRouter } from "../../main/trpc/router";
 
 export const trpcClient = createTRPCClient<TrpcRouter>({
-  links: [ipcInstrumentationLink<TrpcRouter>(), ipcLink()],
+  links: [
+    ipcInstrumentationLink<TrpcRouter>(),
+    ipcLink({ transformer: superjson }),
+  ],
 });
 
 export const hostTrpcClient = createTRPCClient<HostRouter>({
-  links: [ipcLink()],
+  links: [ipcLink({ transformer: superjson })],
 });
 
 const context = createTRPCContext<TrpcRouter>();

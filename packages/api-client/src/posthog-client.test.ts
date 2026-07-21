@@ -1443,7 +1443,7 @@ describe("PostHogAPIClient", () => {
       });
     });
 
-    it("returns the entries collected so far when a later page fails", async () => {
+    it("marks entries collected before a failed page as incomplete", async () => {
       const fetch = vi
         .fn()
         .mockResolvedValueOnce(page(makeEntries(50, "a"), true))
@@ -1455,11 +1455,14 @@ describe("PostHogAPIClient", () => {
         });
       const client = makeClient(fetch);
 
-      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
-        limit: 100000,
-      });
+      const result = await client.getTaskRunSessionLogsResult(
+        "task-1",
+        "run-1",
+        { limit: 100000 },
+      );
 
-      expect(result).toHaveLength(50);
+      expect(result).toEqual({ entries: expect.any(Array), complete: false });
+      expect(result.entries).toHaveLength(50);
       expect(fetch).toHaveBeenCalledTimes(2);
     });
 

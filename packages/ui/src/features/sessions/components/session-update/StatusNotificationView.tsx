@@ -24,6 +24,15 @@ interface StatusNotificationViewProps {
   fromModel?: string;
   /** Refusal fallback: the model that retried the request. */
   toModel?: string;
+  message?: string;
+  attempt?: number;
+  maxAttempts?: number;
+  delayMs?: number;
+}
+
+export function formatCompactionFailure(error?: string): string {
+  const detail = error?.replace(/^compaction failed:\s*/i, "");
+  return detail ? `Compacting failed: ${detail}` : "Compacting failed";
 }
 
 export function StatusNotificationView({
@@ -34,6 +43,10 @@ export function StatusNotificationView({
   explanation,
   fromModel,
   toModel,
+  message,
+  attempt,
+  maxAttempts,
+  delayMs,
 }: StatusNotificationViewProps) {
   // New thread renders status notes as centered separator markers; the legacy thread keeps its
   // bordered rows so ConversationView is unchanged when the chat thread is off.
@@ -91,11 +104,11 @@ export function StatusNotificationView({
   // A failed compaction (e.g. "Not enough messages to compact"). The matching `compacting` spinner
   // is cleared separately; this row reports the outcome.
   if (status === "compacting_failed") {
-    const message = error ? `Compacting failed: ${error}` : "Compacting failed";
+    const failureMessage = formatCompactionFailure(error);
     if (chatChrome) {
       return (
         <ChatMarker variant="separator">
-          <ChatMarkerContent>{message}</ChatMarkerContent>
+          <ChatMarkerContent>{failureMessage}</ChatMarkerContent>
         </ChatMarker>
       );
     }
@@ -103,7 +116,7 @@ export function StatusNotificationView({
       <Box className="my-1 border-gray-6 border-l-2 py-1 pl-3 dark:border-gray-8">
         <Flex align="center" gap="2">
           <XCircle size={14} className="text-gray-9" />
-          <Text className="text-[13px] text-gray-11">{message}</Text>
+          <Text className="text-[13px] text-gray-11">{failureMessage}</Text>
         </Flex>
       </Box>
     );
@@ -116,6 +129,21 @@ export function StatusNotificationView({
     return <CompactingStatusView startedAt={startedAt} />;
   }
 
+  if (status === "retrying") {
+    if (isComplete) {
+      return null;
+    }
+    return (
+      <RetryingStatusView
+        startedAt={startedAt}
+        delayMs={delayMs}
+        attempt={attempt}
+        maxAttempts={maxAttempts}
+        message={message}
+      />
+    );
+  }
+
   // Generic status display for other statuses
   return (
     <Box className="my-1 border-gray-6 border-l-2 py-1 pl-3 dark:border-gray-8">
@@ -123,6 +151,55 @@ export function StatusNotificationView({
         <Text className="text-[13px] text-gray-11">Status: {status}</Text>
       </Flex>
     </Box>
+  );
+}
+
+function RetryingStatusView({
+  startedAt,
+  delayMs = 0,
+  attempt,
+  maxAttempts,
+  message,
+}: {
+  startedAt?: number;
+  delayMs?: number;
+  attempt?: number;
+  maxAttempts?: number;
+  message?: string;
+}) {
+  const [remainingMs, setRemainingMs] = useState(delayMs);
+
+  useEffect(() => {
+    const start = startedAt ?? Date.now();
+    const tick = () => {
+      setRemainingMs(Math.max(0, delayMs - (Date.now() - start)));
+    };
+    tick();
+    const interval = setInterval(tick, 100);
+    return () => clearInterval(interval);
+  }, [delayMs, startedAt]);
+
+  const attemptLabel =
+    attempt && maxAttempts
+      ? `Attempt ${attempt} of ${maxAttempts}`
+      : "Retrying";
+  const retryLabel =
+    remainingMs > 0
+      ? `${attemptLabel} in ${formatDuration(remainingMs, 1)}`
+      : `${attemptLabel} now`;
+
+  return (
+    <ChatMarker variant="separator">
+      <ChatMarkerContent>
+        <Flex align="center" gap="2">
+          <ArrowsClockwise size={13} className="animate-spin text-amber-9" />
+          <Text className="text-[13px] text-gray-11">{retryLabel}</Text>
+          {message && (
+            <Text className="truncate text-[13px] text-gray-10">{message}</Text>
+          )}
+        </Flex>
+      </ChatMarkerContent>
+    </ChatMarker>
   );
 }
 

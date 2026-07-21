@@ -10,6 +10,7 @@ import type {
   AppServerClientHandlers,
   AppServerRpc,
 } from "./app-server-client";
+import { AppServerRequestError } from "./app-server-client";
 import { CodexAppServerAgent } from "./codex-app-server-agent";
 import { sandboxPolicyFor } from "./session-config";
 
@@ -48,6 +49,9 @@ function makeStubRpc(responses: Record<string, unknown>) {
         };
       }
       const response = responses[method];
+      if (response instanceof Error) {
+        throw response;
+      }
       return (
         typeof response === "function"
           ? await response(params)
@@ -143,7 +147,7 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
-  it("isolates subagent output, usage, compaction, and completion", async () => {
+  it("surfaces subagent activity while isolating its lifecycle state", async () => {
     const stub = makeStubRpc({
       initialize: {},
       "thread/start": { thread: { id: "thr_1" } },
@@ -191,7 +195,6 @@ describe("CodexAppServerAgent", () => {
         prompt: "Review the implementation",
       },
     });
-    const sessionUpdateCount = sessionUpdates.length;
     const extNotificationCount = extNotifications.length;
 
     stub.emit("item/agentMessage/delta", {
@@ -213,6 +216,16 @@ describe("CodexAppServerAgent", () => {
         type: "agentMessage",
         id: "subagent_message_1",
         text: '{"source":"child"}',
+      },
+    });
+    stub.emit("item/started", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      item: {
+        type: "commandExecution",
+        id: "shared_command_id",
+        command: "echo child",
+        status: "inProgress",
       },
     });
     stub.emit("item/commandExecution/outputDelta", {
@@ -251,11 +264,9 @@ describe("CodexAppServerAgent", () => {
     expect({
       extNotifications: extNotifications.length,
       promptSettled,
-      sessionUpdates: sessionUpdates.length,
     }).toEqual({
       extNotifications: extNotificationCount,
       promptSettled: false,
-      sessionUpdates: sessionUpdateCount,
     });
 
     stub.emit("item/agentMessage/delta", {
@@ -292,16 +303,156 @@ describe("CodexAppServerAgent", () => {
     await expect(promptDone).resolves.toMatchObject({ stopReason: "end_turn" });
     const serializedUpdates = JSON.stringify(sessionUpdates);
     expect(serializedUpdates).toContain("spawn_agent");
+    expect(serializedUpdates).toContain("subagent prose");
+    expect(serializedUpdates).toContain("subagent reasoning");
+    expect(serializedUpdates).toContain("child command output");
+    expect(serializedUpdates).toContain(
+      "subagent:subagent_1:shared_command_id",
+    );
+    expect(serializedUpdates).toContain('"parentToolCallId":"spawn_1"');
     expect(serializedUpdates).toContain("parent response");
-    expect(serializedUpdates).not.toContain("subagent prose");
-    expect(serializedUpdates).not.toContain("subagent reasoning");
-    expect(serializedUpdates).not.toContain("child command output");
     expect(structuredOutputs).toEqual([{ source: "parent" }]);
     expect(
       extNotifications.filter(
         (notification) => notification.method === "_posthog/turn_complete",
       ),
     ).toHaveLength(1);
+  });
+
+  it.each(["resumeAgent", "sendInput"])(
+    "attaches child activity to the current %s call",
+    async (collaborationTool) => {
+      let turnNumber = 0;
+      const stub = makeStubRpc({
+        initialize: {},
+        "thread/start": { thread: { id: "thr_1" } },
+        "turn/start": () => ({
+          turn: {
+            id: `turn_${++turnNumber}`,
+            status: "inProgress",
+          },
+        }),
+      });
+      const { client, sessionUpdates } = makeFakeClient();
+      const agent = new CodexAppServerAgent(client, {
+        processOptions: { binaryPath: "/bundle/codex" },
+        model: "gpt-5.5",
+        rpcFactory: stub.factory,
+      });
+
+      await agent.initialize(init);
+      await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+
+      const firstPrompt = agent.prompt({
+        sessionId: "thr_1",
+        prompt: [{ type: "text", text: "spawn" }],
+      } as unknown as PromptRequest);
+      stub.emit("item/started", {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        item: {
+          type: "collabAgentToolCall",
+          id: "spawn_1",
+          tool: "spawnAgent",
+          receiverThreadIds: ["subagent_1"],
+          status: "inProgress",
+        },
+      });
+      stub.emit("turn/completed", {
+        threadId: "thr_1",
+        turn: { id: "turn_1", status: "completed" },
+      });
+      await firstPrompt;
+
+      const secondPrompt = agent.prompt({
+        sessionId: "thr_1",
+        prompt: [{ type: "text", text: "continue" }],
+      } as unknown as PromptRequest);
+      const currentCallId = `${collaborationTool}_1`;
+      stub.emit("item/started", {
+        threadId: "thr_1",
+        turnId: "turn_2",
+        item: {
+          type: "collabAgentToolCall",
+          id: currentCallId,
+          tool: collaborationTool,
+          receiverThreadIds: ["subagent_1"],
+          status: "inProgress",
+        },
+      });
+      stub.emit("item/agentMessage/delta", {
+        threadId: "subagent_1",
+        turnId: "subagent_turn_2",
+        itemId: "message_2",
+        delta: "continued work",
+      });
+
+      expect(JSON.stringify(sessionUpdates)).toContain(
+        `"parentToolCallId":"${currentCallId}"`,
+      );
+
+      stub.emit("turn/completed", {
+        threadId: "thr_1",
+        turn: { id: "turn_2", status: "completed" },
+      });
+      await secondPrompt;
+    },
+  );
+
+  it("buffers child activity until its parent tool call arrives", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+      "turn/start": { turn: { id: "turn_1", status: "inProgress" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+
+    await agent.initialize(init);
+    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    const promptDone = agent.prompt({
+      sessionId: "thr_1",
+      prompt: [{ type: "text", text: "delegate" }],
+    } as unknown as PromptRequest);
+
+    stub.emit("item/agentMessage/delta", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      itemId: "message_1",
+      delta: "early child activity",
+    });
+    expect(JSON.stringify(sessionUpdates)).not.toContain(
+      "early child activity",
+    );
+
+    stub.emit("item/started", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn_1",
+        tool: "spawnAgent",
+        receiverThreadIds: ["subagent_1"],
+        status: "inProgress",
+      },
+    });
+
+    const serializedUpdates = JSON.stringify(sessionUpdates);
+    expect(serializedUpdates).toContain("early child activity");
+    expect(serializedUpdates).toContain('"parentToolCallId":"spawn_1"');
+    expect(serializedUpdates.indexOf("spawn_agent")).toBeLessThan(
+      serializedUpdates.indexOf("early child activity"),
+    );
+
+    stub.emit("turn/completed", {
+      threadId: "thr_1",
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await promptDone;
   });
 
   it.each([
@@ -1636,6 +1787,32 @@ describe("CodexAppServerAgent", () => {
     );
   });
 
+  it("rejects the prompt with guidance when the gateway request is too large", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const done = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "continue" }],
+    } as unknown as PromptRequest);
+    stub.emit("error", {
+      willRetry: false,
+      error: {
+        message:
+          "unexpected status 413 Payload Too Large: Request body too large",
+      },
+    });
+
+    await expect(done).rejects.toThrow(
+      "This conversation is too large to continue",
+    );
+  });
+
   it("ends the turn without turn/start when no prompt block is usable", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();
@@ -1960,7 +2137,12 @@ describe("CodexAppServerAgent", () => {
       prompt: [{ type: "text", text: "more context" }],
     } as unknown as PromptRequest);
 
-    // The single turn/completed resolves both the original and the folded prompt.
+    await expect(second).resolves.toMatchObject({
+      stopReason: "end_turn",
+      _meta: { steer: true },
+    });
+
+    // The original prompt remains the sole owner of turn completion.
     stub.emit("thread/tokenUsage/updated", {
       tokenUsage: {
         last: {
@@ -1972,12 +2154,11 @@ describe("CodexAppServerAgent", () => {
       },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const firstResult = await first;
     expect(firstResult).toMatchObject({
       stopReason: "end_turn",
       usage: { totalTokens: 45 },
     });
-    expect(secondResult).toEqual({ stopReason: "end_turn" });
 
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect(steer?.params).toMatchObject({
@@ -1988,6 +2169,118 @@ describe("CodexAppServerAgent", () => {
     // Only one turn/start — the second prompt steered rather than starting anew.
     expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
       1,
+    );
+  });
+
+  it("rejects a failed turn/steer without echoing or acknowledging it", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new Error("steer transport failed"),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "lost steer" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).rejects.toThrow("steer transport failed");
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "lost steer" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines a stale turn/steer so the caller can queue it normally", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new AppServerRequestError(
+        -32600,
+        "expected active turn id `turn_1` but found `turn_2`",
+      ),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "queue me" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "queue me" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines an explicit steer after the active turn has ended", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "too late" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(
+      stub.requests.filter((request) => request.method === "turn/start"),
+    ).toHaveLength(0);
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "too late" },
+        }),
+      }),
     );
   });
 
@@ -2466,6 +2759,53 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("restores subagent relationships from resumed thread history", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/resume": {
+        thread: {
+          id: "t1",
+          turns: [
+            {
+              items: [
+                {
+                  type: "collabAgentToolCall",
+                  id: "spawn_1",
+                  tool: "spawnAgent",
+                  receiverThreadIds: ["subagent_1"],
+                  status: "completed",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.initialize(init);
+    await agent.resumeSession({
+      sessionId: "t1",
+      cwd: "/r",
+      mcpServers: [],
+    } as unknown as Parameters<typeof agent.resumeSession>[0]);
+
+    stub.emit("item/agentMessage/delta", {
+      threadId: "subagent_1",
+      turnId: "subagent_turn_1",
+      itemId: "message_1",
+      delta: "still working",
+    });
+
+    expect(JSON.stringify(sessionUpdates)).toContain(
+      '"parentToolCallId":"spawn_1"',
+    );
+  });
+
   it("forwards additionalDirectories to thread/start as writable_roots", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
     const { client } = makeFakeClient();
@@ -2757,7 +3097,13 @@ describe("CodexAppServerAgent", () => {
   }
 
   // permissionOutcome may be a value or a function (per-call, e.g. a pending promise).
-  function makePlanAgent(permissionOutcome: unknown) {
+  function makePlanAgent(
+    permissionOutcome: unknown,
+    options: {
+      rejectPlanToolUpdates?: boolean;
+      stallPlanToolUpdates?: boolean;
+    } = {},
+  ) {
     const stub = makeStubRpc({
       "thread/start": { thread: { id: "t" } },
       "turn/start": { turn: { id: "turn_1" } },
@@ -2770,7 +3116,19 @@ describe("CodexAppServerAgent", () => {
     }> = [];
     const client = {
       sessionUpdate: async (n: unknown) => {
-        sessionUpdates.push(n as { update?: Record<string, unknown> });
+        const notification = n as { update?: Record<string, unknown> };
+        if (
+          notification.update?.sessionUpdate === "tool_call" ||
+          notification.update?.sessionUpdate === "tool_call_update"
+        ) {
+          if (options.rejectPlanToolUpdates) {
+            throw new Error("renderer disconnected");
+          }
+          if (options.stallPlanToolUpdates) {
+            return new Promise(() => {});
+          }
+        }
+        sessionUpdates.push(notification);
       },
       requestPermission: async (params: {
         toolCall: Record<string, unknown>;
@@ -2898,6 +3256,57 @@ describe("CodexAppServerAgent", () => {
     expect(permissionRequests[0].options.map((o) => o.optionId)).toContain(
       "auto",
     );
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "p1:implement",
+        title: "Ready to code?",
+        kind: "switch_mode",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "# The plan\n\n" },
+          },
+        ],
+        rawInput: { plan: "# The plan\n\n" },
+        status: "in_progress",
+      },
+    });
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1:implement",
+        status: "in_progress",
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "# The plan\n\n1. do it" },
+          },
+        ],
+        rawInput: { plan: "# The plan\n\n1. do it" },
+      },
+    });
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1:implement",
+        status: "completed",
+      },
+    });
+    expect(
+      sessionUpdates.some((notification) => {
+        if (notification.update?.sessionUpdate !== "agent_message_chunk") {
+          return false;
+        }
+        const content = notification.update.content as
+          | { type?: string; text?: string }
+          | undefined;
+        return content?.text?.includes("# The plan") === true;
+      }),
+    ).toBe(false);
 
     // Mode flipped to auto and the host was told.
     expect(sessionUpdates).toContainEqual(
@@ -2923,8 +3332,66 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("coalesces streamed plan snapshots in notification history", async () => {
+    const { agent, stub } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "first" });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: " second" });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: " third" });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await done;
+
+    const session = (
+      agent as unknown as {
+        session: {
+          notificationHistory: Array<{ update?: Record<string, unknown> }>;
+        };
+      }
+    ).session;
+    const streamedUpdates = session.notificationHistory.filter(
+      (notification) =>
+        notification.update?.sessionUpdate === "tool_call_update" &&
+        notification.update.status === "in_progress",
+    );
+    expect(streamedUpdates).toHaveLength(1);
+    expect(streamedUpdates[0].update?.rawInput).toEqual({
+      plan: "first second third",
+    });
+  });
+
+  it("caps streamed plans before rendering or storing them", async () => {
+    const { agent, stub, permissionRequests, sessionUpdates } = makePlanAgent({
+      outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+    });
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "a".repeat(75_000) });
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "b".repeat(75_000) });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+    await done;
+
+    const renderedPlans = sessionUpdates.flatMap((notification) => {
+      const rawInput = notification.update?.rawInput as
+        | { plan?: unknown }
+        | undefined;
+      return typeof rawInput?.plan === "string" ? [rawInput.plan] : [];
+    });
+    const approvalPlan = permissionRequests[0].toolCall.rawInput as {
+      plan: string;
+    };
+    expect(renderedPlans.every((plan) => plan.length <= 100_000)).toBe(true);
+    expect(approvalPlan.plan).toHaveLength(100_000);
+  });
+
   it("stays in plan mode when the handoff is rejected without feedback", async () => {
-    const { agent, stub, permissionRequests } = makePlanAgent({
+    const { agent, stub, sessionUpdates, permissionRequests } = makePlanAgent({
       outcome: { outcome: "selected", optionId: "reject_with_feedback" },
     });
     const { done } = await startPlanTurn(agent, stub);
@@ -2938,7 +3405,59 @@ describe("CodexAppServerAgent", () => {
 
     expect((await done).stopReason).toBe("end_turn");
     expect(permissionRequests).toHaveLength(1);
+    expect(sessionUpdates).toContainEqual({
+      sessionId: "t",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1:implement",
+        status: "failed",
+      },
+    });
     // No implementation turn started; the picker stays on plan.
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+  });
+
+  it("settles the handoff when plan tool-call updates cannot be delivered", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent(
+      {
+        outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+      },
+      { rejectPlanToolUpdates: true },
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/completed", {
+      item: { type: "plan", id: "p1", text: "# The plan" },
+    });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(1);
+    expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not block the handoff when plan tool-call updates never settle", async () => {
+    const { agent, stub, permissionRequests } = makePlanAgent(
+      {
+        outcome: { outcome: "selected", optionId: "reject_with_feedback" },
+      },
+      { stallPlanToolUpdates: true },
+    );
+    const { done } = await startPlanTurn(agent, stub);
+
+    stub.emit("item/plan/delta", { itemId: "p1", delta: "# The plan" });
+    stub.emit("turn/completed", {
+      turn: { id: "turn_1", status: "completed" },
+    });
+
+    expect((await done).stopReason).toBe("end_turn");
+    expect(permissionRequests).toHaveLength(1);
     expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
       1,
     );

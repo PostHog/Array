@@ -1,9 +1,17 @@
-import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { devNull, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createGitClient } from "./client";
 import {
+  addToLocalExclude,
   anyBranchRefExists,
   type ChangedFileInfo,
   computeDiffStatsFromFiles,
@@ -646,5 +654,31 @@ describe("listAllFiles", () => {
     const files = await listAllFiles(repoDir, { timeoutMs: 0 });
 
     expect(files).toContain("file.txt");
+  });
+});
+
+describe("addToLocalExclude", () => {
+  let repoDir: string;
+
+  afterEach(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not confuse a nested pattern with an exact pattern", async () => {
+    repoDir = await setupRepo();
+    const git = createGitClient(repoDir);
+    const excludePath = path.resolve(
+      repoDir,
+      await git.revparse(["--git-path", "info/exclude"]),
+    );
+    await writeFile(excludePath, "**/.claude/worktrees/\n");
+
+    await addToLocalExclude(repoDir, ".claude");
+
+    expect(await readFile(excludePath, "utf-8")).toBe(
+      "**/.claude/worktrees/\n.claude\n",
+    );
   });
 });

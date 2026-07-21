@@ -155,6 +155,12 @@ describe("McpProxyService", () => {
       expect(Buffer.from(options.body).toString("utf8")).toBe(
         '{"hello":"world"}',
       );
+
+      const forwardedHeaderKeys = Object.keys(options.headers).map((key) =>
+        key.toLowerCase(),
+      );
+      expect(forwardedHeaderKeys).not.toContain("content-length");
+      expect(forwardedHeaderKeys).not.toContain("transfer-encoding");
     });
 
     it("strips Authorization and Host headers before forwarding", async () => {

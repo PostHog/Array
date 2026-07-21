@@ -63,7 +63,7 @@ export function ChannelIntro({
       </div>
       <div className="flex gap-2">
         {contextMdState === "created" && (
-          <Item tone="success" className="w-full">
+          <Item className="w-full border-green-6 bg-green-2">
             <ItemMedia variant="icon">
               <FileCheckCorner size={18} />
             </ItemMedia>
@@ -76,7 +76,7 @@ export function ChannelIntro({
           </Item>
         )}
         {contextMdState === "building" && (
-          <Item tone="info" className="w-full">
+          <Item className="w-full border-blue-6 bg-blue-2">
             <ItemMedia variant="icon">
               <Spinner className="size-4" />
             </ItemMedia>

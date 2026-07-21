@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createHarnessRuntime, runRpcMode } from "@posthog/harness";
 import type { PosthogProviderOptions } from "@posthog/harness/extensions/posthog-provider/provider";
 import { sanitizePiHostEnvironment } from "./rpc-environment";
@@ -13,10 +14,21 @@ function argumentValue(name: string): string | undefined {
 }
 
 const bootstrap = JSON.parse(readFileSync(3, "utf8")) as PiRpcBootstrap;
+const providerOptions = bootstrap.providerOptions;
+if (!providerOptions?.apiKey) {
+  throw new Error("Pi RPC host requires PostHog provider credentials");
+}
 sanitizePiHostEnvironment();
+
+const cwd = process.cwd();
+const sessionFile = argumentValue("--session-file");
+const sessionManager = sessionFile
+  ? SessionManager.open(sessionFile, undefined, cwd)
+  : undefined;
 const runtime = await createHarnessRuntime({
-  cwd: process.cwd(),
-  ...bootstrap.providerOptions,
+  cwd,
+  sessionManager,
+  ...providerOptions,
 });
 
 const requestedModel = argumentValue("--model")?.replace(/^posthog\//, "");

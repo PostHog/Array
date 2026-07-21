@@ -24,6 +24,7 @@ import { Tooltip } from "../../primitives/Tooltip";
 import { useThemeStore } from "../../shell/themeStore";
 import { useDiffViewerStore } from "../code-editor/diffViewerStore";
 import { computeDiffStats } from "../git-interaction/utils/diffStats";
+import type { ReviewListItem } from "./commentFileFilter";
 import { useReviewViewedContext } from "./reviewViewedContext";
 import { useReviewViewedStore } from "./reviewViewedStore";
 
@@ -32,6 +33,7 @@ export {
   buildItemIndex,
   splitFilePath,
 } from "@posthog/core/code-review/reviewShellGeometry";
+export type { ReviewListItem } from "./commentFileFilter";
 
 const STICKY_HEADER_CSS = `[data-diffs-header] { position: sticky; top: 0; z-index: 1; background: var(--gray-2); }`;
 const SCROLL_ANCHOR_SELECTOR = "[data-scroll-key]";
@@ -207,7 +209,8 @@ export interface ReviewShellProps {
   isLoading: boolean;
   isEmpty: boolean;
   items: ReviewListItem[];
-  itemIndexByFilePath: Map<string, number>;
+  commentedFilePaths?: ReadonlySet<string>;
+  unresolvedCommentedFilePaths?: ReadonlySet<string>;
   currentSignatures: Map<string, string>;
   viewedRecord: Record<string, string>;
   onToggleViewed: (key: string, sig: string | null) => void;
@@ -222,12 +225,6 @@ export interface ReviewShellProps {
   branchSourceAvailable?: boolean;
   prSourceAvailable?: boolean;
   defaultBranch?: string | null;
-}
-
-export interface ReviewListItem {
-  key: string;
-  scrollKey?: string;
-  node: ReactNode;
 }
 
 export function FileHeaderRow({

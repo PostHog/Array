@@ -281,6 +281,7 @@ function CanvasBreadcrumb({
         className: "",
       })}
       leafLabel={name}
+      editScopeKey={dashboardId}
       onRename={(next) => void renameDashboard(dashboardId, next)}
       trailing={trailing}
     />

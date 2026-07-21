@@ -1,6 +1,7 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
 import type {
   Adapter,
+  AgentRuntime,
   CloudMcpServerImport,
   CloudMcpServerRelayDesignation,
   TaskCreationInput,
@@ -19,6 +20,7 @@ export interface PrepareTaskInputOptions {
   reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
@@ -29,6 +31,7 @@ export interface PrepareTaskInputOptions {
   channelContext?: string;
   channelName?: string;
   channelId?: string;
+  channelContextId?: string;
   customInstructions?: string;
   autoPublishCloudRuns?: boolean;
   rtkEnabledCloud?: boolean;
@@ -59,6 +62,7 @@ export function prepareTaskInput(
     reuseExistingWorktree: options.reuseExistingWorktree,
     executionMode: options.executionMode,
     adapter: options.adapter,
+    runtime: options.runtime ?? "acp",
     model: options.model,
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,
@@ -75,6 +79,7 @@ export function prepareTaskInput(
     channelContext: options.channelContext,
     channelName: options.channelName,
     channelId: options.channelId,
+    channelContextId: options.channelContextId,
     customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
     importedMcpServers: isCloud ? options.importedMcpServers : undefined,

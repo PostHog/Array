@@ -3,13 +3,36 @@ import type { Writable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import {
+  type Api,
+  getSupportedThinkingLevels,
+  type Model,
+} from "@earendil-works/pi-ai";
+import {
   RpcClient,
   type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
 import type { PosthogProviderOptions } from "@posthog/harness/extensions/posthog-provider/provider";
 import { safePiEnvironment } from "./rpc-environment";
+import type { PiModelOption, PiThinkingLevel } from "./types";
 
 export type PiRpcClient = RpcClient;
+
+export async function getAvailableModelsWithThinkingLevels(
+  client: PiRpcClient,
+): Promise<PiModelOption[]> {
+  const models = await client.getAvailableModels();
+
+  return models.map((model) => ({
+    ...model,
+    thinkingLevels: getSupportedThinkingLevels(
+      model as unknown as Model<Api>,
+    ) as PiThinkingLevel[],
+  }));
+}
+
+type RpcClientProcessAccess = {
+  process?: ChildProcess;
+};
 
 interface RpcClientInternals {
   process?: ChildProcess;
@@ -47,7 +70,7 @@ function attachJsonlReader(
 class SecurePiRpcClient extends RpcClient {
   constructor(
     private readonly secureOptions: RpcClientOptions,
-    private readonly providerOptions?: PosthogProviderOptions,
+    private readonly providerOptions: PosthogProviderOptions,
   ) {
     super(secureOptions);
   }
@@ -133,17 +156,24 @@ class SecurePiRpcClient extends RpcClient {
   }
 }
 
+export function getPiRpcClientProcess(
+  client: PiRpcClient,
+): ChildProcess | null {
+  return (client as unknown as RpcClientProcessAccess).process ?? null;
+}
+
 export type PiRpcClientOptions = Pick<RpcClientOptions, "cwd" | "model"> & {
-  providerOptions?: PosthogProviderOptions;
+  sessionFile?: string;
+  providerOptions: PosthogProviderOptions & { apiKey: string };
 };
 
-export function createPiRpcClient(
-  options: PiRpcClientOptions = {},
-): PiRpcClient {
-  const { providerOptions, ...rpcOptions } = options;
+export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {
+  const { sessionFile, providerOptions, ...rpcOptions } = options;
+  const args = sessionFile ? ["--session-file", sessionFile] : [];
   return new SecurePiRpcClient(
     {
       ...rpcOptions,
+      args,
       cliPath: fileURLToPath(new URL("./rpc-host.js", import.meta.url)),
       provider: "posthog",
     },

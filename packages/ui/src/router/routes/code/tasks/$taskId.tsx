@@ -64,5 +64,5 @@ function TaskDetailRoute() {
     return <TaskDetailSkeleton />;
   }
 
-  return <TaskDetail key={task.id} task={task} />;
+  return <TaskDetail task={task} />;
 }

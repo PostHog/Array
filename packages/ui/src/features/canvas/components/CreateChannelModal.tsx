@@ -196,6 +196,7 @@ export function CreateChannelModal({
         id="context-description"
         autoFocus
         rows={4}
+        className="max-h-[40vh] overflow-y-auto"
         value={description}
         placeholder={DESCRIPTION_PLACEHOLDER}
         disabled={busy}
@@ -271,7 +272,7 @@ export function CreateChannelModal({
           <DialogTitle>Create a channel</DialogTitle>
         </DialogHeader>
 
-        <DialogBody viewportClassName="flex flex-col gap-4">
+        <DialogBody className="flex flex-col gap-4">
           <Field>
             <FieldLabel htmlFor="context-name">Name</FieldLabel>
             <Input

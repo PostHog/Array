@@ -403,16 +403,16 @@ export class WorktreeManager {
   }
 
   /**
-   * Runs the post-create steps shared by every worktree: symlink the Claude
-   * config, then process the worktree link/include files and the post-checkout
-   * hook.
+   * Runs the post-create steps shared by every worktree: link local Claude
+   * instructions, then process the worktree link/include files and the
+   * post-checkout hook.
    */
   private async finalizeWorktree(
     worktreePath: string,
     onOutput?: (data: string) => void,
   ): Promise<void> {
     this.log.info("Finalizing worktree", { worktreePath });
-    await this.symlinkClaudeConfig(worktreePath);
+    await this.symlinkClaudeLocalInstructions(worktreePath);
     const linkWarnings = await processWorktreeLink(
       this.mainRepoPath,
       worktreePath,
@@ -815,19 +815,9 @@ export class WorktreeManager {
     }
   }
 
-  private async symlinkClaudeConfig(worktreePath: string): Promise<void> {
-    const sourceClaudeDir = path.join(this.mainRepoPath, ".claude");
-    const targetClaudeDir = path.join(worktreePath, ".claude");
-
-    const linkedDir = await safeSymlink(
-      sourceClaudeDir,
-      targetClaudeDir,
-      "dir",
-    );
-    if (linkedDir) {
-      await addToLocalExclude(worktreePath, ".claude");
-    }
-
+  private async symlinkClaudeLocalInstructions(
+    worktreePath: string,
+  ): Promise<void> {
     const sourceClaudeLocalMd = path.join(this.mainRepoPath, "CLAUDE.local.md");
     const targetClaudeLocalMd = path.join(worktreePath, "CLAUDE.local.md");
 

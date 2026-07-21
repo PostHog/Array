@@ -20,9 +20,20 @@ vi.mock("./utils/store", () => ({
 import { adjustWindowZoom, restoreWindowZoom, setupWindowZoom } from "./zoom";
 
 class FakeWebContents extends EventEmitter {
+  public destroyed = false;
+  public readonly setZoomLevelCalls: number[] = [];
   public zoomLevel = 0;
 
+  public isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
+  public getZoomLevel(): number {
+    return this.zoomLevel;
+  }
+
   public setZoomLevel(level: number): void {
+    this.setZoomLevelCalls.push(level);
     this.zoomLevel = level;
   }
 }
@@ -85,6 +96,30 @@ describe("window zoom", () => {
     expect(window.webContents.zoomLevel).toBe(0.5);
   });
 
+  it("restores the current level after an external window resize", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+
+    window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
+    vi.runAllTimers();
+    window.webContents.zoomLevel = 0;
+
+    window.emit("resize");
+    vi.runAllTimers();
+    const restoredZoomLevel = window.webContents.zoomLevel;
+    adjustWindowZoom(window, 0.5);
+
+    expect({
+      restoredZoomLevel,
+      zoomLevel: window.webContents.zoomLevel,
+      saved: store.save.mock.calls,
+    }).toEqual({
+      restoredZoomLevel: 1,
+      zoomLevel: 1.5,
+      saved: [[1], [1.5]],
+    });
+  });
+
   it.each([
     ["in", 1],
     ["out", 0],
@@ -110,20 +145,70 @@ describe("window zoom", () => {
     },
   );
 
-  it("keeps wheel zoom after resizing", () => {
+  it.each(["resize", "resized"] as const)(
+    "keeps wheel zoom after %s",
+    (resizeEvent) => {
+      const window = createWindow();
+      setupWindowZoom(window);
+
+      window.webContents.emit(
+        "zoom-changed",
+        { preventDefault: vi.fn() },
+        "in",
+      );
+      window.emit(resizeEvent);
+      vi.runAllTimers();
+
+      expect({
+        zoomLevel: window.webContents.zoomLevel,
+        saved: store.save.mock.calls,
+      }).toEqual({
+        zoomLevel: 1,
+        saved: [[1]],
+      });
+    },
+  );
+
+  it("skips redundant restoration during a resize storm", () => {
+    const window = createWindow();
+    setupWindowZoom(window);
+    window.webContents.zoomLevel = 0.5;
+
+    window.emit("resize");
+    vi.runAllTimers();
+    vi.advanceTimersByTime(16);
+    window.emit("resize");
+    vi.runAllTimers();
+    const callsBeforeReset = [...window.webContents.setZoomLevelCalls];
+
+    window.webContents.zoomLevel = 0;
+    window.emit("resize");
+    vi.runAllTimers();
+
+    expect({
+      callsBeforeReset,
+      callsAfterReset: window.webContents.setZoomLevelCalls,
+    }).toEqual({
+      callsBeforeReset: [],
+      callsAfterReset: [0.5],
+    });
+  });
+
+  it("ignores queued zoom work after the window is destroyed", () => {
     const window = createWindow();
     setupWindowZoom(window);
 
     window.webContents.emit("zoom-changed", { preventDefault: vi.fn() }, "in");
-    window.emit("resized");
+    window.emit("resize");
+    window.webContents.destroyed = true;
     vi.runAllTimers();
 
     expect({
-      zoomLevel: window.webContents.zoomLevel,
+      zoomLevelCalls: window.webContents.setZoomLevelCalls,
       saved: store.save.mock.calls,
     }).toEqual({
-      zoomLevel: 1,
-      saved: [[1]],
+      zoomLevelCalls: [],
+      saved: [],
     });
   });
 

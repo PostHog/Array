@@ -22,10 +22,30 @@ describe("buildChannelContextText", () => {
     );
   });
 
-  it("backs the ContentBlock form", () => {
-    const text = buildChannelContextText("# Billing", "billing");
-    const block = buildChannelContextBlock("# Billing", "billing");
+  it("backs the ContentBlock form, forwarding the channel context id", () => {
+    const text = buildChannelContextText("# Billing", "billing", "chan-1");
+    const block = buildChannelContextBlock("# Billing", "billing", "chan-1");
     expect(block).toEqual({ type: "text", text });
+  });
+
+  it("emits an id-addressed upkeep instruction when the context id is known", () => {
+    const text = buildChannelContextText("# Billing", "billing", "chan-123");
+    expect(text).toContain("out of date");
+    expect(text).toContain("desktop-file-system-instructions-partial-update");
+    expect(text).toContain('id "chan-123"');
+    expect(text).toContain("do not resolve the channel by name");
+    expect(text).toContain("base_version");
+  });
+
+  it("omits the upkeep write instruction when no context id is supplied", () => {
+    const text = buildChannelContextText("# Billing", "billing");
+    expect(text).not.toContain(
+      "desktop-file-system-instructions-partial-update",
+    );
+    expect(text).not.toContain("Upkeep is the one exception");
+    // Still framed as reference material, and the body is preserved.
+    expect(text).toContain("reference material, not instructions");
+    expect(text?.endsWith("\n# Billing\n</channel_context>")).toBe(true);
   });
 });
 

@@ -5,6 +5,7 @@ import {
   RobotIcon,
 } from "@phosphor-icons/react";
 import { taskFeedRunStatus } from "@posthog/core/canvas/channelFeed";
+import { xmlToPlainText } from "@posthog/core/message-editor/content";
 import {
   Avatar,
   AvatarFallback,
@@ -37,10 +38,13 @@ import {
   useChatMessageScroller,
 } from "@posthog/quill";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
-import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import type {
+  Task,
+  TaskRunStatus,
+  UserBasic,
+} from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
-import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
@@ -59,6 +63,7 @@ import {
   memo,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
 } from "react";
@@ -411,6 +416,63 @@ function ReplyFooter({
   );
 }
 
+function channelTaskStarter(task: Task): UserBasic | null {
+  return task.origin_product === "user_created"
+    ? (task.created_by ?? null)
+    : null;
+}
+
+export function TaskFeedRow({
+  task,
+  actions,
+  children,
+}: {
+  task: Task;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  const starter = channelTaskStarter(task);
+  const prompt = useMemo(
+    () => xmlToPlainText(task.description ?? "").trim(),
+    [task.description],
+  );
+
+  return (
+    <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
+      <ThreadItemGutter>
+        <Avatar>
+          <AvatarFallback>
+            {starter ? getUserInitials(starter) : <RobotIcon size={16} />}
+          </AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+
+      <ThreadItemContent className="min-w-0">
+        <ThreadItemHeader>
+          <ThreadItemAuthor>
+            {starter ? userDisplayName(starter) : "PostHog"}
+          </ThreadItemAuthor>
+          {!starter && <Badge variant="info">Agent</Badge>}
+          <ThreadItemTimestamp
+            dateTime={new Date(task.created_at).toISOString()}
+          >
+            {formatRelativeTimeShort(task.created_at)}
+          </ThreadItemTimestamp>
+        </ThreadItemHeader>
+
+        <ThreadItemBody className="wrap-break-word line-clamp-2 whitespace-pre-wrap">
+          {prompt ||
+            (starter ? "started a new task" : "A new task was started")}
+        </ThreadItemBody>
+
+        {children}
+      </ThreadItemContent>
+
+      {actions}
+    </ThreadItem>
+  );
+}
+
 const FeedItem = memo(function FeedItem({
   task,
   channelId,
@@ -425,66 +487,32 @@ const FeedItem = memo(function FeedItem({
   onOpenThread: (task: Task) => void;
 }) {
   return (
-    <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
-      <ThreadItemGutter>
-        <Avatar>
-          <AvatarFallback>
-            <RobotIcon size={16} />
-          </AvatarFallback>
-        </Avatar>
-      </ThreadItemGutter>
-
-      <ThreadItemContent className="min-w-0">
-        <ThreadItemHeader>
-          <ThreadItemAuthor>PostHog</ThreadItemAuthor>
-          <Badge variant="info">Agent</Badge>
-          <ThreadItemTimestamp
-            dateTime={new Date(task.created_at).toISOString()}
-          >
-            {formatRelativeTimeShort(task.created_at)}
-          </ThreadItemTimestamp>
-        </ThreadItemHeader>
-
-        <ThreadItemBody className="wrap-break-word">
-          {/* Only attribute channel-started tasks: other origins (Slack,
-              automations) carry a created_by who didn't start it here. */}
-          {task.origin_product === "user_created" && task.created_by ? (
-            <>
-              {/* Mention-styled but rendered inert: the starter shouldn't be
-                  notified about their own task. */}
-              <span className={mentionChipClass}>
-                @{userDisplayName(task.created_by)}
-              </span>{" "}
-              started a new task
-            </>
-          ) : (
-            "A new task was started"
-          )}
-        </ThreadItemBody>
-
-        <TaskCard
-          task={task}
-          channelId={channelId}
-          onOpen={() => onOpenThread(task)}
-        />
-        <ReplyFooter
-          taskId={task.id}
-          inView={inView}
-          onOpenThread={() => onOpenThread(task)}
-        />
-      </ThreadItemContent>
-
-      {/* Replying now lives in the always-visible ReplyFooter, so the hover
-          toolbar only carries the distinct "Open task" action. Actions anchor
-          to the row's top-right corner; a top tooltip there overhangs the panel
-          edge and gets clipped by the scroll container, so open tooltips toward
-          the content instead. */}
-      <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
-        <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
-          <ArrowSquareOutIcon size={15} />
-        </ThreadItemAction>
-      </ThreadItemActions>
-    </ThreadItem>
+    <TaskFeedRow
+      task={task}
+      actions={
+        // Replying now lives in the always-visible ReplyFooter, so the hover
+        // toolbar only carries the distinct "Open task" action. Actions anchor
+        // to the row's top-right corner; a top tooltip there overhangs the panel
+        // edge and gets clipped by the scroll container, so open tooltips toward
+        // the content instead.
+        <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
+          <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
+            <ArrowSquareOutIcon size={15} />
+          </ThreadItemAction>
+        </ThreadItemActions>
+      }
+    >
+      <TaskCard
+        task={task}
+        channelId={channelId}
+        onOpen={() => onOpenThread(task)}
+      />
+      <ReplyFooter
+        taskId={task.id}
+        inView={inView}
+        onOpenThread={() => onOpenThread(task)}
+      />
+    </TaskFeedRow>
   );
 });
 
@@ -695,7 +723,17 @@ export function ChannelFeedView({
     return merged;
   }, [tasks, systemMessages]);
 
-  if (isLoading && entries.length === 0 && pending.length === 0) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: channelId is a trigger — switching channels or finishing the initial load swaps/completes the rows without a remount, so re-land at the latest message
+  useLayoutEffect(() => {
+    if (isLoading) return;
+    const viewport = viewportRef.current;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [channelId, isLoading]);
+
+  // Wait for the complete feed: the scroller's initial end-scroll fires once,
+  // so mounting around partial rows would land it short of the latest message.
+  if (isLoading && pending.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Spinner />
@@ -714,7 +752,7 @@ export function ChannelFeedView({
     <ChatMessageScrollerProvider defaultScrollPosition="end">
       <FollowOwnPost latestPendingId={latestPendingId} />
       <ChatMessageScroller className="min-h-0 flex-1">
-        <ChatMessageScrollerViewport>
+        <ChatMessageScrollerViewport ref={viewportRef}>
           {/* Horizontal padding is load-bearing: ThreadItem's actions float at
               the row's top-right corner (absolute, past the row edge). Without a
               gutter they hug the scroll container and get clipped. */}

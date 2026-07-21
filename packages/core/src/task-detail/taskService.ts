@@ -11,7 +11,10 @@ import type {
 } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
+import { PI_RUNNER } from "../pi-runtime/identifiers";
+import type { PiRunner } from "../pi-runtime/piRunner";
 import { TASK_CREATION_EFFECTS, TASK_CREATION_HOST } from "./identifiers";
+import { PiTaskCreator } from "./piTaskCreator";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import { TaskCreationSaga } from "./taskCreationSaga";
@@ -42,6 +45,8 @@ export class TaskService {
     private readonly sessionService: SessionService,
     @inject(TASK_CREATION_EFFECTS)
     private readonly effects: TaskCreationEffects,
+    @inject(PI_RUNNER)
+    private readonly piRunner: PiRunner,
     @inject(ROOT_LOGGER)
     rootLogger: RootLogger,
   ) {
@@ -103,30 +108,35 @@ export class TaskService {
       }
     }
 
-    const saga = new TaskCreationSaga(
-      {
-        posthogClient,
-        host: this.host,
-        sessionService: this.sessionService,
-        track: (event, props) => this.host.track(event, props),
-        onTaskReady: onTaskReady
-          ? (output) => {
-              this.effects.onWorkspaceCreated(output);
-              this.effects.onCreateSuccess(output, input);
-              onTaskReady(output);
-            }
-          : undefined,
-      },
-      this.log,
-    );
-
-    const result = await saga.run(input);
+    let result: CreateTaskResult;
+    if (input.runtime === "pi") {
+      const creator = new PiTaskCreator(
+        {
+          posthogClient,
+          host: this.host,
+          piRunner: this.piRunner,
+          onTaskReady,
+        },
+        this.log,
+      );
+      result = await creator.run(input);
+    } else {
+      const creator = new TaskCreationSaga(
+        {
+          posthogClient,
+          host: this.host,
+          sessionService: this.sessionService,
+          track: (event, props) => this.host.track(event, props),
+          onTaskReady,
+        },
+        this.log,
+      );
+      result = await creator.run(input);
+    }
 
     if (result.success) {
       this.effects.onWorkspaceCreated(result.data);
-      if (!onTaskReady) {
-        this.effects.onCreateSuccess(result.data, input);
-      }
+      this.effects.onCreateSuccess(result.data, input);
     }
 
     return result;
@@ -147,31 +157,63 @@ export class TaskService {
       };
     }
 
+    let task: Task;
+    try {
+      task = await posthogClient.getTask(taskId);
+      if (taskRunId) {
+        this.log.info("Fetching specific task run", { taskId, taskRunId });
+        task.latest_run = await posthogClient.getTaskRun(taskId, taskRunId);
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to fetch task",
+        failedStep: "fetch_task",
+      };
+    }
+
+    const runtime = task.runtime === "pi" ? "pi" : "acp";
     const existingWorkspace = await this.host.getWorkspace(taskId);
     if (existingWorkspace) {
       this.log.info("Workspace already exists, fetching task only", { taskId });
       try {
-        const task = await posthogClient.getTask(taskId);
-
-        if (taskRunId) {
-          this.log.info("Fetching specific task run", { taskId, taskRunId });
-          const run = await posthogClient.getTaskRun(taskId, taskRunId);
-          task.latest_run = run;
+        if (runtime === "pi") {
+          await this.piRunner.resume({
+            taskId,
+            cwd: existingWorkspace.worktreePath ?? existingWorkspace.folderPath,
+          });
         }
 
         return {
           success: true,
-          data: {
-            task: task as unknown as Task,
-            workspace: existingWorkspace,
-          },
+          data: { task, workspace: existingWorkspace },
         };
       } catch (error) {
         return {
           success: false,
           error:
-            error instanceof Error ? error.message : "Failed to fetch task",
-          failedStep: "fetch_task",
+            error instanceof Error ? error.message : "Failed to resume task",
+          failedStep: runtime === "pi" ? "pi_session" : "fetch_task",
+        };
+      }
+    }
+
+    if (runtime === "pi") {
+      try {
+        const cwd = await this.host.ensureScratchDir(taskId);
+        await this.piRunner.resume({ taskId, cwd });
+        return {
+          success: true,
+          data: { task, workspace: null },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to resume Pi session",
+          failedStep: "pi_session",
         };
       }
     }

@@ -86,6 +86,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
   return (
     <TabbedPanel
       panelId={node.id}
+      mountScopeKey={taskId}
       content={contentWithComponents}
       onActiveTabChange={onActiveTabChange}
       onCloseOtherTabs={closeOtherTabs}

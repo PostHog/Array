@@ -9,7 +9,7 @@ export interface PreviewConfigChoice {
 /** Minimal shape of a preview-config option we scan for the default model. */
 export interface PreviewConfigOption {
   id?: string;
-  category?: string;
+  category?: string | null;
   type?: string;
   currentValue?: string | boolean | null;
   options?: PreviewConfigChoice[];

@@ -6,6 +6,7 @@ import {
   type TRPCLink,
   unstable_localLink,
 } from "@trpc/client";
+import superjson from "superjson";
 import { webHostRouter } from "./web-host-router";
 
 // The ENTIRE electron->web transport difference. The renderer builds the same
@@ -19,6 +20,7 @@ import { webHostRouter } from "./web-host-router";
 // container is registered (setRootContainer) before any procedure runs.
 const localLink = unstable_localLink({
   router: webHostRouter,
+  transformer: superjson,
   createContext: async (): Promise<HostContext> => ({
     container: { get: (id) => resolveService(id) },
   }),
