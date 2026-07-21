@@ -1,7 +1,7 @@
 {
   "name": "@posthog/code",
   "version": "0.0.0-dev",
-  "description": "PostHog - desktop task manager",
+  "description": "PostHog - the agentic workspace for product builders",
   "homepage": "https://posthog.com",
   "main": ".vite/build/bootstrap.js",
   "versionHash": "dynamic",
