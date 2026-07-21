@@ -399,9 +399,9 @@ function SourceField({
 /**
  * Renders an `oauth` config field: a connect button that launches the provider's
  * OAuth flow, polls for the resulting integration, and writes its id into the
- * form. Mirrors the previous bespoke Linear setup. Only providers with a wired
- * flow starter (currently `linear`) can be connected here; others surface a
- * message.
+ * form. The flow is started generically by the field's `kind` (PostHog's
+ * `…/integrations/authorize/?kind=…` endpoint is generic), so any OAuth source
+ * PostHog supports works here without provider-specific code.
  */
 function OAuthSourceField({
   field,
@@ -418,8 +418,8 @@ function OAuthSourceField({
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
   const trpc = useHostTRPC();
-  const startLinearFlow = useMutation(
-    trpc.linearIntegration.startFlow.mutationOptions(),
+  const startIntegrationFlow = useMutation(
+    trpc.integration.startFlow.mutationOptions(),
   );
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -441,13 +441,16 @@ function OAuthSourceField({
   const connected = value !== undefined && value !== "";
 
   const startFlow = useCallback(async () => {
-    if (field.kind === "linear") {
-      if (!region || !projectId) throw new Error("Missing project context");
-      await startLinearFlow.mutateAsync({ region, projectId });
-      return;
+    if (!region || !projectId) throw new Error("Missing project context");
+    const result = await startIntegrationFlow.mutateAsync({
+      kind: field.kind,
+      region,
+      projectId,
+    });
+    if (!result.success) {
+      throw new Error(result.error ?? `Failed to connect ${providerName}`);
     }
-    throw new Error(`Connecting ${providerName} isn't supported here yet.`);
-  }, [field.kind, region, projectId, startLinearFlow, providerName]);
+  }, [field.kind, region, projectId, startIntegrationFlow, providerName]);
 
   const handleConnect = useCallback(async () => {
     if (!projectId || !client) return;
