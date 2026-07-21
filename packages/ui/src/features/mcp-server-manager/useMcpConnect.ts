@@ -18,6 +18,8 @@ import { useCallback, useMemo } from "react";
 export const mcpKeys = {
   servers: ["mcp", "servers"] as const,
   installations: ["mcp", "installations"] as const,
+  icon: (domain: string, theme: "light" | "dark") =>
+    ["mcp", "icon", domain, theme] as const,
   tools: (installationId: string) =>
     ["mcp", "installations", installationId, "tools"] as const,
 };

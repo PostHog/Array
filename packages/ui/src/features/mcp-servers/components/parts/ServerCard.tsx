@@ -33,7 +33,11 @@ export function ServerCard({
         className="flex w-full flex-col gap-3 rounded-md p-4 text-left"
       >
         <Flex align="start" gap="3" width="100%">
-          <ServerIcon iconKey={server.icon_key} size={40} />
+          <ServerIcon
+            iconDomain={server.icon_domain}
+            serverUrl={server.url}
+            size={40}
+          />
           <Flex direction="column" gap="1" className="min-w-0 flex-1">
             <Flex align="center" gap="2">
               <Text truncate className="font-medium text-base">

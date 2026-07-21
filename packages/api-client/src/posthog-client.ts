@@ -96,7 +96,7 @@ import {
   type HogQLGrid,
   shapeAgentAnalytics,
 } from "./agent-analytics";
-import { buildApiFetcher } from "./fetcher";
+import { buildApiFetcher, requestErrorStatus } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
 export interface ApiClientLogger {
@@ -4198,6 +4198,40 @@ export class PostHogAPIClient {
       results?: McpRecommendedServer[];
     };
     return data.results ?? [];
+  }
+
+  /**
+   * Object URL for an MCP server's brand icon, proxied from logo.dev by the
+   * authenticated `mcp_servers/icon/` endpoint. Returns null when no brand
+   * icon exists for the domain (the endpoint 404s so callers render their own
+   * fallback glyph, e.g. on self-hosted instances without a logo.dev token).
+   */
+  async getMcpServerIconUrl(
+    domain: string,
+    theme?: "light" | "dark",
+  ): Promise<string | null> {
+    const teamId = await this.getTeamId();
+    const path = `/api/environments/${teamId}/mcp_servers/icon/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("domain", domain);
+    if (theme) {
+      url.searchParams.set("theme", theme);
+    }
+    let response: Response;
+    try {
+      response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+    } catch (error) {
+      // 404 is the endpoint's definitive "no icon for this domain" answer,
+      // not a failure; anything else propagates so callers can retry.
+      if (requestErrorStatus(error) === 404) return null;
+      throw error;
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
   }
 
   async getMcpServerInstallations(): Promise<McpServerInstallation[]> {

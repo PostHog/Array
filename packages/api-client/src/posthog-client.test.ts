@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "./fetcher";
 import { PostHogAPIClient } from "./posthog-client";
 
 describe("PostHogAPIClient", () => {
@@ -1761,6 +1762,72 @@ describe("PostHogAPIClient", () => {
           mock_secrets: { API_KEY: "placeholder" },
         });
       });
+    });
+  });
+
+  describe("getMcpServerIconUrl", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("requests the icon proxy and returns an object URL for the bytes", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(new Blob(["png"], { type: "image/png" })),
+        );
+      const client = makeClient(fetch);
+
+      const url = await client.getMcpServerIconUrl("linear.app", "dark");
+
+      expect(url).toMatch(/^blob:/);
+      expect(fetch.mock.calls[0][0].url.toString()).toBe(
+        "http://localhost:8000/api/environments/123/mcp_servers/icon/?domain=linear.app&theme=dark",
+      );
+    });
+
+    it("omits the theme param when none is given", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(new Blob(["png"], { type: "image/png" })),
+        );
+      const client = makeClient(fetch);
+
+      await client.getMcpServerIconUrl("linear.app");
+
+      expect(fetch.mock.calls[0][0].url.toString()).toBe(
+        "http://localhost:8000/api/environments/123/mcp_servers/icon/?domain=linear.app",
+      );
+    });
+
+    it("treats the proxy's 404 as a definitive no-icon null, not a failure", async () => {
+      const fetch = vi.fn().mockRejectedValue(new ApiRequestError(404, "{}"));
+      const client = makeClient(fetch);
+
+      await expect(
+        client.getMcpServerIconUrl("no-logo.example"),
+      ).resolves.toBeNull();
+    });
+
+    it("propagates non-404 failures so callers can retry", async () => {
+      const fetch = vi.fn().mockRejectedValue(new ApiRequestError(500, "{}"));
+      const client = makeClient(fetch);
+
+      await expect(client.getMcpServerIconUrl("linear.app")).rejects.toThrow(
+        "Failed request: [500]",
+      );
     });
   });
 });

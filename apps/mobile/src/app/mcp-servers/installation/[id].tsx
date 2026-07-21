@@ -158,7 +158,11 @@ export default function McpInstallationDetailScreen() {
       >
         {/* Header */}
         <View className="mb-4 flex-row items-center gap-3">
-          <ServerIcon iconKey={installation.icon_key} size={48} />
+          <ServerIcon
+            iconDomain={installation.icon_domain}
+            serverUrl={installation.url}
+            size={48}
+          />
           <View className="min-w-0 flex-1">
             <Text className="font-semibold text-[18px] text-gray-12">
               {installation.display_name || installation.name}
