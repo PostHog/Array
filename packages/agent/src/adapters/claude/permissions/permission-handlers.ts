@@ -7,6 +7,11 @@ import type {
   PermissionRuleValue,
   PermissionUpdate,
 } from "@anthropic-ai/claude-agent-sdk";
+import {
+  extractPostHogSubTool,
+  isPostHogExecTool,
+  matchesPostHogExecPermission,
+} from "../../../posthog-exec-permission";
 import { text } from "../../../utils/acp-content";
 import type { Logger } from "../../../utils/logger";
 import { qualifiedLocalToolName } from "../../local-tools";
@@ -34,11 +39,6 @@ import {
   buildExitPlanModePermissionOptions,
   buildPermissionOptions,
 } from "./permission-options";
-import {
-  extractPostHogSubTool,
-  isPostHogDestructiveSubTool,
-  isPostHogExecTool,
-} from "./posthog-exec-gate";
 
 const SPEAK_TOOL_ID = qualifiedLocalToolName(SPEAK_TOOL_NAME);
 
@@ -771,23 +771,37 @@ export async function canUseTool(
       };
     }
 
+    // An explicit needs_approval setting always prompts — it must precede the
+    // PostHog exec gate so a remembered sub-tool approval or a local hands-off
+    // mode cannot silently allow a tool the user asked to be asked about.
     if (approvalState === "needs_approval") {
       return handleMcpApprovalFlow(context);
     }
 
-    if (isPostHogExecTool(toolName)) {
+    if (session.posthogExecPermissionRegex && isPostHogExecTool(toolName)) {
       const subTool = extractPostHogSubTool(toolInput);
-      if (subTool && isPostHogDestructiveSubTool(subTool)) {
-        if (
-          session.permissionMode === "auto" ||
-          session.permissionMode === "bypassPermissions"
-        ) {
+      if (
+        subTool &&
+        matchesPostHogExecPermission(
+          subTool,
+          session.posthogExecPermissionRegex,
+        )
+      ) {
+        if (session.settingsManager.hasPostHogExecApproval(subTool)) {
           return {
             behavior: "allow",
             updatedInput: toolInput as Record<string, unknown>,
           };
         }
-        if (session.settingsManager.hasPostHogExecApproval(subTool)) {
+        // Local hands-off modes retain their normal no-prompt behavior. Cloud
+        // sessions must send the request to AgentServer, which uses the run's
+        // effective mode to relay interactive approvals and auto-approve
+        // background runs.
+        if (
+          !session.cloudMode &&
+          (session.permissionMode === "auto" ||
+            session.permissionMode === "bypassPermissions")
+        ) {
           return {
             behavior: "allow",
             updatedInput: toolInput as Record<string, unknown>,

@@ -42,6 +42,7 @@ export type BackgroundTerminal =
 /** One in-flight `prompt()` call, settled by the session's consumer. */
 export type Turn = {
   promptUuid: string;
+  pendingSteerUuids: Set<string>;
   isLocalOnlyCommand: boolean;
   commandName?: string;
   /** Invoked once at activation, matching the pre-consumer broadcast timing. */
@@ -67,6 +68,9 @@ export type Session = BaseSession & {
   input: Pushable<SDKUserMessage>;
   settingsManager: SettingsManager;
   permissionMode: CodeExecutionMode;
+  /** Whether permission decisions are delegated to the cloud AgentServer. */
+  cloudMode: boolean;
+  posthogExecPermissionRegex?: RegExp;
   modeBeforePlan?: CodeExecutionMode;
   modelId?: string;
   cwd: string;
@@ -202,6 +206,7 @@ export type NewSessionMeta = {
   spokenNarration?: boolean;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
+  posthogExecPermissionRegex?: string;
   claudeCode?: {
     options?: Options;
     emitRawSDKMessages?: boolean | SDKMessageFilter[];

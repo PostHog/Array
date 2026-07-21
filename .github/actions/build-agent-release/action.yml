@@ -1,0 +1,13 @@
+name: Build agent release
+description: Build and test the agent package with all workspace dependencies
+runs:
+  using: composite
+  steps:
+    - name: Build agent and workspace dependencies
+      shell: bash
+      run: pnpm --filter @posthog/agent... run build
+
+    - name: Run agent tests
+      shell: bash
+      run: pnpm --filter @posthog/agent run test
+

@@ -2,10 +2,12 @@
 import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
+import { DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE } from "../posthog-exec-permission";
 import { AgentServer } from "./agent-server";
 import {
   claudeCodeConfigSchema,
   mcpServersSchema,
+  posthogExecPermissionRegexSchema,
   relayMcpServerNamesSchema,
 } from "./schemas";
 
@@ -90,6 +92,23 @@ function parseJsonOption<S extends z.ZodType>(
   return result.data;
 }
 
+function parseStringOption(
+  raw: string | undefined,
+  schema: z.ZodType<string>,
+  flag: string,
+): string | undefined {
+  if (raw === undefined) return undefined;
+
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    const errors = result.error.issues
+      .map((issue) => `  - ${issue.message}`)
+      .join("\n");
+    program.error(`${flag} validation failed:\n${errors}`);
+  }
+  return result.data;
+}
+
 program
   .name("agent-server")
   .description("PostHog cloud agent server - runs in sandbox environments")
@@ -113,6 +132,11 @@ program
   .option(
     "--relayMcpServers <json>",
     "Desktop-relayed MCP server names as JSON array (docs/cloud-mcp-relay.md)",
+  )
+  .option(
+    "--posthogExecPermissionRegex <regex>",
+    "Case-insensitive regex for PostHog exec sub-tools that require client approval",
+    DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
   )
   .option("--createPr <boolean>", "Whether this run may publish changes")
   .option(
@@ -157,6 +181,11 @@ program
       options.relayMcpServers,
       relayMcpServerNamesSchema,
       "--relayMcpServers",
+    );
+    const posthogExecPermissionRegex = parseStringOption(
+      options.posthogExecPermissionRegex,
+      posthogExecPermissionRegexSchema,
+      "--posthogExecPermissionRegex",
     );
     const claudeCode = parseJsonOption(
       options.claudeCodeConfig,
@@ -208,6 +237,7 @@ program
       autoPublish,
       mcpServers,
       relayMcpServers,
+      posthogExecPermissionRegex,
       baseBranch: options.baseBranch,
       claudeCode,
       allowedDomains,
