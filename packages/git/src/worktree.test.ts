@@ -229,6 +229,30 @@ describe("WorktreeManager lifecycle (add / exists / list / remove / prune)", () 
     expect(await dirExists(info.worktreePath)).toBe(false);
     expect(await manager.listWorktrees()).toEqual([]);
   });
+
+  it("throws a clean occupied-branch error when the branch is already checked out", async () => {
+    await createGitClient(localDir).branch(["feature"]);
+
+    const manager = new WorktreeManager({
+      mainRepoPath: localDir,
+      worktreeBasePath: worktreeBaseDir,
+    });
+
+    // First checkout succeeds and claims the branch.
+    const first = await manager.createWorktreeForExistingBranch("feature");
+    expect(await dirExists(first.worktreePath)).toBe(true);
+
+    // Second checkout must fail with a clean, actionable message rather than the
+    // raw "git worktree add exited with code 128" error. The message keeps the
+    // "is already used by worktree" substring the workspace and restore paths
+    // match on.
+    await expect(
+      manager.createWorktreeForExistingBranch("feature"),
+    ).rejects.toThrow(/is already used by worktree/);
+    await expect(
+      manager.createWorktreeForExistingBranch("feature"),
+    ).rejects.not.toThrow(/exited with code 128/);
+  });
 });
 
 describe("WorktreeManager worktree link/include processing", () => {

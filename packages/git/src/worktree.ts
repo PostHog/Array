@@ -250,6 +250,19 @@ export class WorktreeManager {
       throw new Error(`Branch '${branch}' does not exist`);
     }
 
+    // Git refuses to check a branch out in a second worktree, failing with an
+    // opaque "git worktree add exited with code 128" error. Detect that up
+    // front and throw a clean, actionable message. The wording mirrors git's
+    // own ("is already used by worktree at ...") so callers that key on that
+    // substring — the workspace creation path and the restore toast — keep
+    // recognising the occupied-branch case.
+    const occupyingWorktreePath = await this.findWorktreePathForBranch(branch);
+    if (occupyingWorktreePath) {
+      throw new Error(
+        `Branch '${branch}' is already used by worktree at '${occupyingWorktreePath}'`,
+      );
+    }
+
     const worktreeName = await this.resolveAvailableWorktreeName(preferredName);
     const { worktreePath, targetPath } =
       await this.prepareWorktreePath(worktreeName);
@@ -343,6 +356,30 @@ export class WorktreeManager {
       createdAt: new Date().toISOString(),
       output: output.trim() || undefined,
     };
+  }
+
+  /**
+   * Returns the path of an existing worktree that already has `branch` checked
+   * out (including the main checkout), or null when the branch is free. Uses
+   * git's own worktree list, so it covers worktrees anywhere on disk, not just
+   * managed ones under the base path.
+   */
+  private async findWorktreePathForBranch(
+    branch: string,
+  ): Promise<string | null> {
+    try {
+      const worktrees = await listWorktreesRaw(this.mainRepoPath);
+      const match = worktrees.find((wt) => wt.branch === branch);
+      return match ? match.path : null;
+    } catch (error) {
+      // Degrade to the prior behaviour: if the check can't run, let the git
+      // command proceed rather than blocking creation on a listing failure.
+      this.log.warn("Failed to check for existing worktree on branch", {
+        branch,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /**
