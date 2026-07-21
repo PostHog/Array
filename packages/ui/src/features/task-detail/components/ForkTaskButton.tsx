@@ -1,7 +1,10 @@
 import { GitBranch, Spinner } from "@phosphor-icons/react";
 import { TASK_FORK_SERVICE } from "@posthog/core/task-detail/identifiers";
 import { getErrorTitle } from "@posthog/core/task-detail/taskInput";
-import type { TaskForkService } from "@posthog/core/task-detail/taskForkService";
+import type {
+  ForkTaskOptions,
+  TaskForkService,
+} from "@posthog/core/task-detail/taskForkService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
@@ -26,31 +29,52 @@ export function ForkTaskButton({ task }: { task: Task }) {
   const queryClient = useQueryClient();
   const { invalidateTasks } = useCreateTask();
   const workspace = useWorkspace(task.id);
-  const { cloudStatus, isPromptPending, sessionStatus, sessionTaskRunId } =
-    useSessionSelector(
-      task.id,
-      (session) => ({
-        cloudStatus: session?.cloudStatus,
-        isPromptPending: session?.isPromptPending ?? false,
-        sessionStatus: session?.status,
-        sessionTaskRunId: session?.taskRunId,
-      }),
-      shallow,
-    );
+  const {
+    cloudStatus,
+    isPromptPending,
+    sessionIsCloud,
+    sessionStatus,
+    sessionTaskRunId,
+  } = useSessionSelector(
+    task.id,
+    (session) => ({
+      cloudStatus: session?.cloudStatus,
+      isPromptPending: session?.isPromptPending ?? false,
+      sessionIsCloud: session?.isCloud,
+      sessionStatus: session?.status,
+      sessionTaskRunId: session?.taskRunId,
+    }),
+    shallow,
+  );
   const [isForking, setIsForking] = useState(false);
   const run = task.latest_run;
-  const isCloud = workspace?.mode === "cloud" || run?.environment === "cloud";
+  const hasLiveSession =
+    sessionStatus === "connected" || sessionStatus === "connecting";
+  const isCloud =
+    hasLiveSession && sessionIsCloud !== undefined
+      ? sessionIsCloud
+      : workspace
+        ? workspace.mode === "cloud"
+        : run?.environment === "cloud";
+  const cloudTaskRunId = isCloud
+    ? hasLiveSession && sessionIsCloud
+      ? sessionTaskRunId
+      : run?.id
+    : undefined;
   const currentCloudStatus =
-    run && sessionTaskRunId === run.id
-      ? (cloudStatus ?? run.status)
+    cloudTaskRunId === sessionTaskRunId
+      ? (cloudStatus ?? (run?.id === cloudTaskRunId ? run?.status : undefined))
       : run?.status;
 
   let disabledReason: string | null = null;
   if (task.runtime === "pi") {
     disabledReason = "Pi tasks cannot be forked yet";
-  } else if (!run) {
+  } else if (isCloud && !cloudTaskRunId) {
     disabledReason = "This task has no run to fork";
-  } else if (isCloud && !isTerminalStatus(currentCloudStatus)) {
+  } else if (
+    isCloud &&
+    (!currentCloudStatus || !isTerminalStatus(currentCloudStatus))
+  ) {
     disabledReason = "Wait for the cloud run to finish before forking it";
   } else if (!isCloud && (!workspace || workspace.isScratch)) {
     disabledReason = "Only repository-backed local tasks can be forked";
@@ -67,10 +91,22 @@ export function ForkTaskButton({ task }: { task: Task }) {
   const tooltip = disabledReason ?? "Fork task";
 
   const handleFork = async () => {
+    let source: ForkTaskOptions["source"];
+    if (isCloud) {
+      if (!cloudTaskRunId || !currentCloudStatus) return;
+      source = {
+        kind: "cloud",
+        taskRunId: cloudTaskRunId,
+        status: currentCloudStatus,
+      };
+    } else {
+      source = { kind: "local" };
+    }
+
     setIsForking(true);
     try {
       const result = await taskForkService.forkTask(task, {
-        sourceRunStatus: currentCloudStatus,
+        source,
       });
       if (!result.success) {
         toast.error("Could not fork task", { description: result.error });

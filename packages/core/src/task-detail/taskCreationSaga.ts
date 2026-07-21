@@ -418,7 +418,7 @@ export class TaskCreationSaga extends Saga<
             homeQuickAction: input.homeQuickActionLabel,
             importedMcpServers: input.importedMcpServers,
             relayedMcpServers: input.relayedMcpServers,
-            ...(input.forkFrom && {
+            ...(input.forkFrom?.kind === "cloud" && {
               resumeFromRunId: input.forkFrom.taskRunId,
             }),
             initialPermissionMode:
@@ -462,7 +462,7 @@ export class TaskCreationSaga extends Saga<
             },
           );
 
-          if (input.forkFrom && startedRun.latest_run) {
+          if (input.forkFrom?.kind === "cloud" && startedRun.latest_run) {
             startedRun.latest_run = await this.deps.posthogClient.updateTaskRun(
               task.id,
               startedRun.latest_run.id,
@@ -551,13 +551,14 @@ export class TaskCreationSaga extends Saga<
             connectParams.adapter = "claude";
           }
 
-          if (input.forkFrom) {
+          if (input.forkFrom?.kind === "local") {
             await this.deps.sessionService.forkLocalTask({
               sourceTaskId: input.forkFrom.taskId,
-              sourceTaskRunId: input.forkFrom.taskRunId,
               task,
               repoPath: agentCwd ?? "",
             });
+          } else if (input.forkFrom) {
+            throw new Error("Cloud forks require a cloud workspace");
           } else {
             this.deps.sessionService.connectToTask(connectParams);
           }

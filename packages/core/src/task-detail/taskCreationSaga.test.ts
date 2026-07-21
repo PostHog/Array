@@ -230,7 +230,11 @@ describe("TaskCreationSaga", () => {
       adapter: "codex",
       sandboxEnvironmentId: "sandbox-1",
       customImageId: "image-1",
-      forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+      forkFrom: {
+        kind: "cloud",
+        taskId: "source-task",
+        taskRunId: "source-run",
+      },
     });
 
     expect(result.success).toBe(true);
@@ -281,7 +285,7 @@ describe("TaskCreationSaga", () => {
       content: "Ship the fix",
       repoPath: "/repo",
       workspaceMode: "worktree",
-      forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+      forkFrom: { kind: "local", taskId: "source-task" },
     });
 
     expect(result.success).toBe(true);
@@ -290,7 +294,6 @@ describe("TaskCreationSaga", () => {
     );
     expect(sessionService.forkLocalTask).toHaveBeenCalledWith({
       sourceTaskId: "source-task",
-      sourceTaskRunId: "source-run",
       task,
       repoPath: "/worktrees/fork",
     });
@@ -1330,7 +1333,7 @@ describe("TaskCreationSaga", () => {
       content: "Fork the task",
       repoPath: "/repo",
       workspaceMode: "worktree",
-      forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+      forkFrom: { kind: "local", taskId: "source-task" },
     });
 
     expect(result.success).toBe(false);

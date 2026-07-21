@@ -140,7 +140,6 @@ describe("SessionService.forkLocalTask", () => {
 
     await service.forkLocalTask({
       sourceTaskId: "source-task",
-      sourceTaskRunId: "source-run",
       task: { ...childTask },
       repoPath: "/repos/code",
     });
@@ -194,7 +193,6 @@ describe("SessionService.forkLocalTask", () => {
     await expect(
       service.forkLocalTask({
         sourceTaskId: "source-task",
-        sourceTaskRunId: "source-run",
         task: { ...childTask },
         repoPath: "/repos/code",
       }),

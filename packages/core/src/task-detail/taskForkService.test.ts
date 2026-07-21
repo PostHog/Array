@@ -51,7 +51,9 @@ const createWorkspace = (overrides: Partial<Workspace> = {}): Workspace => ({
 });
 
 describe("TaskForkService", () => {
+  const getTaskRun = vi.fn();
   const host = {
+    getAuthenticatedClient: vi.fn(() => ({ getTaskRun })),
     getWorkspace: vi.fn(),
     getAdditionalDirectories: vi.fn(),
   } as unknown as ITaskCreationHost;
@@ -62,6 +64,7 @@ describe("TaskForkService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getTaskRun.mockResolvedValue(createRun());
     vi.mocked(host.getWorkspace).mockResolvedValue(createWorkspace());
     vi.mocked(host.getAdditionalDirectories).mockResolvedValue([]);
     vi.mocked(taskService.createTask).mockResolvedValue({
@@ -75,7 +78,13 @@ describe("TaskForkService", () => {
       latest_run: createRun({ environment: "cloud", status: "in_progress" }),
     });
 
-    const result = await service.forkTask(task);
+    const result = await service.forkTask(task, {
+      source: {
+        kind: "cloud",
+        taskRunId: "source-run",
+        status: "in_progress",
+      },
+    });
 
     expect(result).toEqual({
       success: false,
@@ -93,7 +102,11 @@ describe("TaskForkService", () => {
     });
 
     const result = await service.forkTask(task, {
-      sourceRunStatus: "completed",
+      source: {
+        kind: "cloud",
+        taskRunId: "source-run",
+        status: "completed",
+      },
     });
 
     expect(result.success).toBe(true);
@@ -104,16 +117,9 @@ describe("TaskForkService", () => {
     vi.mocked(host.getAdditionalDirectories).mockResolvedValue([
       "/repos/shared",
     ]);
-    const task = createTask({
-      latest_run: createRun({
-        runtime_adapter: "codex",
-        model: "gpt-5.4",
-        reasoning_effort: "high",
-        state: { initial_permission_mode: "full-access" },
-      }),
-    });
+    const task = createTask({ latest_run: undefined });
 
-    await service.forkTask(task);
+    await service.forkTask(task, { source: { kind: "local" } });
 
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -122,15 +128,48 @@ describe("TaskForkService", () => {
         repository: "PostHog/code",
         workspaceMode: "worktree",
         branch: null,
-        adapter: "codex",
-        model: "gpt-5.4",
-        reasoningLevel: "high",
-        executionMode: "full-access",
         additionalDirectories: ["/repos/shared"],
-        forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+        forkFrom: { kind: "local", taskId: "source-task" },
       }),
       undefined,
     );
+    expect(getTaskRun).not.toHaveBeenCalled();
+  });
+
+  it("uses the live cloud run instead of a stale local latest run", async () => {
+    getTaskRun.mockResolvedValue(
+      createRun({
+        id: "live-cloud-run",
+        environment: "cloud",
+        status: "completed",
+      }),
+    );
+    const task = createTask({
+      latest_run: createRun({ id: "stale-local-run", environment: "local" }),
+    });
+
+    const result = await service.forkTask(task, {
+      source: {
+        kind: "cloud",
+        taskRunId: "live-cloud-run",
+        status: "completed",
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceMode: "cloud",
+        repoPath: undefined,
+        forkFrom: {
+          kind: "cloud",
+          taskId: "source-task",
+          taskRunId: "live-cloud-run",
+        },
+      }),
+      undefined,
+    );
+    expect(host.getAdditionalDirectories).not.toHaveBeenCalled();
   });
 
   it("preserves cloud runtime and sandbox options", async () => {
@@ -158,7 +197,13 @@ describe("TaskForkService", () => {
       }),
     });
 
-    await service.forkTask(task);
+    await service.forkTask(task, {
+      source: {
+        kind: "cloud",
+        taskRunId: "source-run",
+        status: "completed",
+      },
+    });
 
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -176,7 +221,11 @@ describe("TaskForkService", () => {
         cloudRtkEnabled: false,
         cloudRunSource: "signal_report",
         cloudPrAuthorshipMode: "bot",
-        forkFrom: { taskId: "source-task", taskRunId: "source-run" },
+        forkFrom: {
+          kind: "cloud",
+          taskId: "source-task",
+          taskRunId: "source-run",
+        },
       }),
       undefined,
     );
@@ -193,7 +242,13 @@ describe("TaskForkService", () => {
       }),
     });
 
-    await service.forkTask(task);
+    await service.forkTask(task, {
+      source: {
+        kind: "cloud",
+        taskRunId: "source-run",
+        status: "completed",
+      },
+    });
 
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({

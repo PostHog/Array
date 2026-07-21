@@ -1509,12 +1509,11 @@ export class SessionService {
 
   async forkLocalTask(params: {
     sourceTaskId: string;
-    sourceTaskRunId: string;
     task: Task;
     repoPath: string;
   }): Promise<void> {
     const source = this.d.store.getSessionByTaskId(params.sourceTaskId);
-    if (!source || source.taskRunId !== params.sourceTaskRunId) {
+    if (!source || source.isCloud) {
       throw new Error("The source task session is not available");
     }
     if (source.isPromptPending) {
@@ -1531,12 +1530,13 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
     params.task.latest_run = taskRun;
+    const sourceTaskRunId = source.taskRunId;
 
     await this.d.trpc.agent.flushLogs.mutate({
-      taskRunId: params.sourceTaskRunId,
+      taskRunId: sourceTaskRunId,
     });
     await this.d.trpc.logs.cloneLocalLogs.mutate({
-      sourceTaskRunId: params.sourceTaskRunId,
+      sourceTaskRunId,
       targetTaskRunId: taskRun.id,
     });
 
@@ -1547,7 +1547,7 @@ export class SessionService {
         state: {
           ...taskRun.state,
           forked_from_task_id: params.sourceTaskId,
-          forked_from_run_id: params.sourceTaskRunId,
+          forked_from_run_id: sourceTaskRunId,
         },
       },
     );
@@ -1555,7 +1555,7 @@ export class SessionService {
     const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
       this.d.settings;
     const result = await this.d.trpc.agent.fork.mutate({
-      sourceTaskRunId: params.sourceTaskRunId,
+      sourceTaskRunId,
       taskId: params.task.id,
       taskRunId: taskRun.id,
       repoPath: params.repoPath,

@@ -104,7 +104,11 @@ describe("ForkTaskButton", () => {
       expect(mocks.forkTask).toHaveBeenCalledWith(
         cloudTask,
         expect.objectContaining({
-          sourceRunStatus: "completed",
+          source: {
+            kind: "cloud",
+            taskRunId: "run-1",
+            status: "completed",
+          },
         }),
       ),
     );
@@ -121,7 +125,11 @@ describe("ForkTaskButton", () => {
     const child = { id: "task-2" } as Task;
     const workspace = { taskId: "task-2", mode: "worktree" };
     mocks.useWorkspace.mockReturnValue({ mode: "worktree" });
-    mocks.session = { status: "connected", taskRunId: "run-1" };
+    mocks.session = {
+      status: "connected",
+      taskRunId: "run-1",
+      isCloud: false,
+    };
     mocks.forkTask.mockResolvedValue({
       success: true,
       data: { task: child, workspace },
@@ -223,7 +231,12 @@ describe("ForkTaskButton", () => {
   });
 
   it("uses the live cloud status before the persisted run status", () => {
-    mocks.session = { taskRunId: "run-1", cloudStatus: "completed" };
+    mocks.session = {
+      status: "connected",
+      taskRunId: "run-1",
+      isCloud: true,
+      cloudStatus: "completed",
+    };
 
     render(
       <Theme>
@@ -242,7 +255,12 @@ describe("ForkTaskButton", () => {
   });
 
   it("ignores a terminal cloud status from an older run", () => {
-    mocks.session = { taskRunId: "old-run", cloudStatus: "completed" };
+    mocks.session = {
+      status: "disconnected",
+      taskRunId: "old-run",
+      isCloud: true,
+      cloudStatus: "completed",
+    };
 
     render(
       <Theme>
@@ -280,7 +298,11 @@ describe("ForkTaskButton", () => {
 
   it("disables scratch tasks as ineligible for local forking", () => {
     mocks.useWorkspace.mockReturnValue({ mode: "local", isScratch: true });
-    mocks.session = { status: "connected", isPromptPending: false };
+    mocks.session = {
+      status: "connected",
+      isCloud: false,
+      isPromptPending: false,
+    };
 
     render(
       <Theme>
@@ -305,11 +327,19 @@ describe("ForkTaskButton", () => {
 
   it.each([
     {
-      session: { status: "disconnected", isPromptPending: false },
+      session: {
+        status: "disconnected",
+        isCloud: false,
+        isPromptPending: false,
+      },
       reason: "Reconnect the local task before forking it",
     },
     {
-      session: { status: "connected", isPromptPending: true },
+      session: {
+        status: "connected",
+        isCloud: false,
+        isPromptPending: true,
+      },
       reason: "Wait for the local task to finish before forking it",
     },
   ])("explains unavailable local state: $reason", ({ session, reason }) => {
@@ -334,6 +364,80 @@ describe("ForkTaskButton", () => {
     expect(button.closest("[data-tooltip]")).toHaveAttribute(
       "data-tooltip",
       reason,
+    );
+  });
+
+  it("forks a connected local task without a latest run", async () => {
+    const child = { id: "task-2" } as Task;
+    mocks.useWorkspace.mockReturnValue({ mode: "worktree", isScratch: false });
+    mocks.session = {
+      status: "connected",
+      taskRunId: "live-local-run",
+      isCloud: false,
+      isPromptPending: false,
+    };
+    mocks.forkTask.mockResolvedValue({
+      success: true,
+      data: { task: child, workspace: null },
+    });
+
+    const task = { ...cloudTask, latest_run: undefined } as Task;
+    render(
+      <Theme>
+        <ForkTaskButton task={task} />
+      </Theme>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fork task" }));
+
+    await waitFor(() =>
+      expect(mocks.forkTask).toHaveBeenCalledWith(
+        task,
+        expect.objectContaining({ source: { kind: "local" } }),
+      ),
+    );
+  });
+
+  it("uses the connected cloud session instead of a stale local latest run", async () => {
+    const child = { id: "task-2" } as Task;
+    mocks.useWorkspace.mockReturnValue({ mode: "worktree", isScratch: false });
+    mocks.session = {
+      status: "connected",
+      taskRunId: "live-cloud-run",
+      isCloud: true,
+      cloudStatus: "completed",
+      isPromptPending: false,
+    };
+    mocks.forkTask.mockResolvedValue({
+      success: true,
+      data: { task: child, workspace: null },
+    });
+    const task = {
+      ...cloudTask,
+      latest_run: {
+        ...cloudTask.latest_run,
+        id: "stale-local-run",
+        environment: "local",
+      },
+    } as Task;
+
+    render(
+      <Theme>
+        <ForkTaskButton task={task} />
+      </Theme>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fork task" }));
+
+    await waitFor(() =>
+      expect(mocks.forkTask).toHaveBeenCalledWith(
+        task,
+        expect.objectContaining({
+          source: {
+            kind: "cloud",
+            taskRunId: "live-cloud-run",
+            status: "completed",
+          },
+        }),
+      ),
     );
   });
 

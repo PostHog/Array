@@ -15,7 +15,13 @@ import type { ITaskCreationHost } from "./taskCreationHost";
 import type { CreateTaskResult, TaskService } from "./taskService";
 
 export interface ForkTaskOptions {
-  sourceRunStatus?: TaskRun["status"];
+  source:
+    | { kind: "local" }
+    | {
+        kind: "cloud";
+        taskRunId: string;
+        status: TaskRun["status"];
+      };
   onTaskReady?: (output: TaskCreationOutput) => void;
 }
 
@@ -30,35 +36,75 @@ export class TaskForkService {
 
   async forkTask(
     sourceTask: Task,
-    options: ForkTaskOptions = {},
+    options: ForkTaskOptions,
   ): Promise<CreateTaskResult> {
-    const sourceRun = sourceTask.latest_run;
-    if (!sourceRun) {
-      return this.validationError("The source task has no run to fork");
-    }
     if (sourceTask.runtime === "pi") {
       return this.validationError("Pi tasks cannot be forked yet");
     }
 
     const sourceWorkspace = await this.host.getWorkspace(sourceTask.id);
-    const isCloud =
-      sourceWorkspace?.mode === "cloud" || sourceRun.environment === "cloud";
-    if (
-      isCloud &&
-      !isTerminalStatus(options.sourceRunStatus ?? sourceRun.status)
-    ) {
+    if (options.source.kind === "local") {
+      if (
+        !sourceWorkspace ||
+        sourceWorkspace.mode === "cloud" ||
+        sourceWorkspace.isScratch
+      ) {
+        return this.validationError(
+          "Only repository-backed local tasks can be forked",
+        );
+      }
+      const additionalDirectories = await this.host.getAdditionalDirectories(
+        sourceTask.id,
+      );
+
+      return this.taskService.createTask(
+        {
+          content: sourceTask.description || sourceTask.title,
+          taskDescription: sourceTask.description || sourceTask.title,
+          repoPath: sourceWorkspace.folderPath,
+          repository: sourceTask.repository,
+          workspaceMode: "worktree",
+          branch: null,
+          additionalDirectories,
+          forkFrom: {
+            kind: "local",
+            taskId: sourceTask.id,
+          },
+        },
+        options.onTaskReady,
+      );
+    }
+
+    let sourceRun = sourceTask.latest_run;
+    if (!sourceRun || sourceRun.id !== options.source.taskRunId) {
+      const client = await this.host.getAuthenticatedClient();
+      if (!client) {
+        return this.validationError("Not authenticated");
+      }
+      try {
+        sourceRun = await client.getTaskRun(
+          sourceTask.id,
+          options.source.taskRunId,
+        );
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch the source task run",
+          failedStep: "fetch_task",
+        };
+      }
+    }
+    if (sourceRun.environment !== "cloud") {
+      return this.validationError("The source run is not a cloud run");
+    }
+    if (!isTerminalStatus(options.source.status)) {
       return this.validationError(
         "Wait for the cloud run to finish before forking it",
       );
     }
-    if (!isCloud && (!sourceWorkspace || sourceWorkspace.isScratch)) {
-      return this.validationError(
-        "Only repository-backed local tasks can be forked",
-      );
-    }
-    const additionalDirectories = isCloud
-      ? undefined
-      : await this.host.getAdditionalDirectories(sourceTask.id);
 
     const output = sourceRun.output ?? {};
     const state = sourceRun.state ?? {};
@@ -71,10 +117,10 @@ export class TaskForkService {
       {
         content: sourceTask.description || sourceTask.title,
         taskDescription: sourceTask.description || sourceTask.title,
-        repoPath: isCloud ? undefined : sourceWorkspace?.folderPath,
+        repoPath: undefined,
         repository: sourceTask.repository,
-        workspaceMode: isCloud ? "cloud" : "worktree",
-        branch: isCloud ? cloudBranch : null,
+        workspaceMode: "cloud",
+        branch: cloudBranch,
         githubIntegrationId: sourceTask.github_integration ?? undefined,
         githubUserIntegrationId:
           sourceTask.github_user_integration ?? undefined,
@@ -84,7 +130,6 @@ export class TaskForkService {
         adapter: sourceRun.runtime_adapter ?? undefined,
         model: sourceRun.model ?? undefined,
         reasoningLevel: sourceRun.reasoning_effort ?? undefined,
-        additionalDirectories,
         sandboxEnvironmentId:
           typeof state.sandbox_environment_id === "string"
             ? state.sandbox_environment_id
@@ -98,6 +143,7 @@ export class TaskForkService {
         cloudRunSource: getCloudRunSource(state),
         cloudPrAuthorshipMode: getCloudPrAuthorshipMode(state),
         forkFrom: {
+          kind: "cloud",
           taskId: sourceTask.id,
           taskRunId: sourceRun.id,
         },

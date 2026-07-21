@@ -109,15 +109,17 @@ export interface TaskCreationInput {
    * session last worked on, linked so the branch-mismatch prompt can fire.
    */
   importedClaudeSession?: { sourceSessionId: string; branch?: string | null };
-  /**
-   * Create an independent task from the source run's current conversation and
-   * workspace state. Local runs use the native agent fork API; cloud runs use
-   * the backend's persisted run snapshot.
-   */
-  forkFrom?: {
-    taskId: string;
-    taskRunId: string;
-  };
+  /** Create an independent task from a local session or cloud run snapshot. */
+  forkFrom?:
+    | {
+        kind: "local";
+        taskId: string;
+      }
+    | {
+        kind: "cloud";
+        taskId: string;
+        taskRunId: string;
+      };
 }
 
 export interface TaskCreationOutput {
