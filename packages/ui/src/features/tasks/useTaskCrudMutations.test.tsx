@@ -255,3 +255,24 @@ describe("useCreateTask.invalidateTasks", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: taskKeys.lists() });
   });
 });
+
+describe("useCreateTask.seedTask", () => {
+  it("retains a newly created task without immediately refetching the list", () => {
+    const queryClient = new QueryClient();
+    const key = taskKeys.list();
+    queryClient.setQueryData<Task[]>(key, []);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const localWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useCreateTask(), {
+      wrapper: localWrapper,
+    });
+
+    result.current.seedTask(createTask());
+
+    expect(queryClient.getQueryData<Task[]>(key)).toHaveLength(1);
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});

@@ -1608,6 +1608,10 @@ export class SessionService {
     });
   }
 
+  getSessionByTaskId(taskId: string): AgentSession | undefined {
+    return this.d.store.getSessionByTaskId(taskId);
+  }
+
   async loadLogsOnly(params: {
     taskId: string;
     taskRunId: string;

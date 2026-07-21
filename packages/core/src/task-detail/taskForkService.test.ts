@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import { TaskForkService } from "./taskForkService";
 import type { TaskService } from "./taskService";
+import type { SessionService } from "../sessions/sessionService";
 
 const createTask = (overrides: Partial<Task> = {}): Task => ({
   id: "source-task",
@@ -60,20 +61,24 @@ describe("TaskForkService", () => {
   const taskService = {
     createTask: vi.fn(),
   } as unknown as TaskService;
-  const service = new TaskForkService(host, taskService);
+  const sessionService = {
+    getSessionByTaskId: vi.fn(),
+  } as unknown as SessionService;
+  const service = new TaskForkService(host, taskService, sessionService);
 
   beforeEach(() => {
     vi.clearAllMocks();
     getTaskRun.mockResolvedValue(createRun());
     vi.mocked(host.getWorkspace).mockResolvedValue(createWorkspace());
     vi.mocked(host.getAdditionalDirectories).mockResolvedValue([]);
+    vi.mocked(sessionService.getSessionByTaskId).mockReturnValue(undefined);
     vi.mocked(taskService.createTask).mockResolvedValue({
       success: true,
       data: {} as never,
     });
   });
 
-  it("rejects an active cloud run", async () => {
+  it("rejects a cloud run while its current turn is active", async () => {
     const task = createTask({
       latest_run: createRun({ environment: "cloud", status: "in_progress" }),
     });
@@ -82,21 +87,27 @@ describe("TaskForkService", () => {
       source: {
         kind: "cloud",
         taskRunId: "source-run",
-        status: "in_progress",
       },
     });
 
     expect(result).toEqual({
       success: false,
-      error: "Wait for the cloud run to finish before forking it",
+      error: "Wait for the current cloud turn to finish before forking it",
       failedStep: "validation",
     });
   });
 
-  it("uses the effective cloud status when the persisted run is stale", async () => {
+  it("forks a live cloud run after its current turn completes", async () => {
     vi.mocked(host.getWorkspace).mockResolvedValue(
       createWorkspace({ mode: "cloud", folderPath: "" }),
     );
+    vi.mocked(sessionService.getSessionByTaskId).mockReturnValue({
+      taskRunId: "source-run",
+      isCloud: true,
+      cloudStatus: "in_progress",
+      isPromptPending: false,
+      agentIdleForRunId: "source-run",
+    } as never);
     const task = createTask({
       latest_run: createRun({ environment: "cloud", status: "in_progress" }),
     });
@@ -105,7 +116,6 @@ describe("TaskForkService", () => {
       source: {
         kind: "cloud",
         taskRunId: "source-run",
-        status: "completed",
       },
     });
 
@@ -141,7 +151,6 @@ describe("TaskForkService", () => {
       createRun({
         id: "live-cloud-run",
         environment: "cloud",
-        status: "completed",
       }),
     );
     const task = createTask({
@@ -152,7 +161,6 @@ describe("TaskForkService", () => {
       source: {
         kind: "cloud",
         taskRunId: "live-cloud-run",
-        status: "completed",
       },
     });
 
@@ -201,7 +209,6 @@ describe("TaskForkService", () => {
       source: {
         kind: "cloud",
         taskRunId: "source-run",
-        status: "completed",
       },
     });
 
@@ -246,7 +253,6 @@ describe("TaskForkService", () => {
       source: {
         kind: "cloud",
         taskRunId: "source-run",
-        status: "completed",
       },
     });
 

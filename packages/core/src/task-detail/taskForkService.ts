@@ -1,15 +1,19 @@
-import type { TaskCreationOutput } from "@posthog/shared";
+import type { AgentSession, TaskCreationOutput } from "@posthog/shared";
 import {
   executionModeSchema,
   isTerminalStatus,
   type Task,
-  type TaskRun,
+  type TaskRunStatus,
 } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
 import {
   getCloudPrAuthorshipMode,
   getCloudRunSource,
 } from "../sessions/cloudRunOptions";
+import {
+  SESSION_SERVICE,
+  type SessionService,
+} from "../sessions/sessionService";
 import { TASK_CREATION_HOST, TASK_SERVICE } from "./identifiers";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import type { CreateTaskResult, TaskService } from "./taskService";
@@ -20,9 +24,35 @@ export interface ForkTaskOptions {
     | {
         kind: "cloud";
         taskRunId: string;
-        status: TaskRun["status"];
       };
   onTaskReady?: (output: TaskCreationOutput) => void;
+}
+
+type CloudForkSession = Pick<
+  AgentSession,
+  | "agentIdleForRunId"
+  | "cloudStatus"
+  | "isCloud"
+  | "isPromptPending"
+  | "taskRunId"
+>;
+
+export function canForkCloudRun(
+  taskRunId: string,
+  persistedStatus: TaskRunStatus | null | undefined,
+  session: CloudForkSession | null | undefined,
+): boolean {
+  const matchingSession =
+    session?.isCloud === true && session.taskRunId === taskRunId
+      ? session
+      : undefined;
+
+  return (
+    isTerminalStatus(persistedStatus) ||
+    isTerminalStatus(matchingSession?.cloudStatus) ||
+    (matchingSession?.agentIdleForRunId === taskRunId &&
+      !matchingSession.isPromptPending)
+  );
 }
 
 @injectable()
@@ -32,6 +62,8 @@ export class TaskForkService {
     private readonly host: ITaskCreationHost,
     @inject(TASK_SERVICE)
     private readonly taskService: TaskService,
+    @inject(SESSION_SERVICE)
+    private readonly sessionService: SessionService,
   ) {}
 
   async forkTask(
@@ -100,9 +132,15 @@ export class TaskForkService {
     if (sourceRun.environment !== "cloud") {
       return this.validationError("The source run is not a cloud run");
     }
-    if (!isTerminalStatus(options.source.status)) {
+    if (
+      !canForkCloudRun(
+        sourceRun.id,
+        sourceRun.status,
+        this.sessionService.getSessionByTaskId(sourceTask.id),
+      )
+    ) {
       return this.validationError(
-        "Wait for the cloud run to finish before forking it",
+        "Wait for the current cloud turn to finish before forking it",
       );
     }
 

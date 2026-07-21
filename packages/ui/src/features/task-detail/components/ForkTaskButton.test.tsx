@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   forkTask: vi.fn(),
-  invalidateTasks: vi.fn(),
+  seedTask: vi.fn(),
   navigateToTaskDetail: vi.fn(),
   openTask: vi.fn(),
   setQueryData: vi.fn(),
@@ -43,7 +43,7 @@ vi.mock("@posthog/ui/router/useOpenTask", () => ({
   openTask: mocks.openTask,
 }));
 vi.mock("@posthog/ui/features/tasks/useTaskCrudMutations", () => ({
-  useCreateTask: () => ({ invalidateTasks: mocks.invalidateTasks }),
+  useCreateTask: () => ({ seedTask: mocks.seedTask }),
 }));
 vi.mock("@posthog/ui/features/provisioning/store", () => ({
   useProvisioningStore: {
@@ -107,12 +107,11 @@ describe("ForkTaskButton", () => {
           source: {
             kind: "cloud",
             taskRunId: "run-1",
-            status: "completed",
           },
         }),
       ),
     );
-    expect(mocks.invalidateTasks).toHaveBeenCalledWith(
+    expect(mocks.seedTask).toHaveBeenCalledWith(
       expect.objectContaining({ id: "task-2" }),
     );
     expect(mocks.openTask).toHaveBeenCalledWith(
@@ -230,12 +229,14 @@ describe("ForkTaskButton", () => {
     expect(mocks.openTask).not.toHaveBeenCalled();
   });
 
-  it("uses the live cloud status before the persisted run status", () => {
+  it("enables a live cloud run after its current turn completes", () => {
     mocks.session = {
       status: "connected",
       taskRunId: "run-1",
       isCloud: true,
-      cloudStatus: "completed",
+      cloudStatus: "in_progress",
+      isPromptPending: false,
+      agentIdleForRunId: "run-1",
     };
 
     render(
@@ -254,12 +255,14 @@ describe("ForkTaskButton", () => {
     expect(screen.getByRole("button", { name: "Fork task" })).toBeEnabled();
   });
 
-  it("ignores a terminal cloud status from an older run", () => {
+  it("ignores idle evidence from an older cloud run", () => {
     mocks.session = {
       status: "disconnected",
       taskRunId: "old-run",
       isCloud: true,
-      cloudStatus: "completed",
+      cloudStatus: "in_progress",
+      isPromptPending: false,
+      agentIdleForRunId: "old-run",
     };
 
     render(
@@ -434,7 +437,6 @@ describe("ForkTaskButton", () => {
           source: {
             kind: "cloud",
             taskRunId: "live-cloud-run",
-            status: "completed",
           },
         }),
       ),

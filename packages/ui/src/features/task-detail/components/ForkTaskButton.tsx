@@ -5,11 +5,12 @@ import type {
   ForkTaskOptions,
   TaskForkService,
 } from "@posthog/core/task-detail/taskForkService";
+import { canForkCloudRun } from "@posthog/core/task-detail/taskForkService";
 import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
 import type { Workspace } from "@posthog/shared";
-import { isTerminalStatus, type Task } from "@posthog/shared/domain-types";
+import type { Task } from "@posthog/shared/domain-types";
 import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
 import { toastError } from "@posthog/ui/features/notifications/errorDetails";
 import { useProvisioningStore } from "@posthog/ui/features/provisioning/store";
@@ -27,9 +28,10 @@ export function ForkTaskButton({ task }: { task: Task }) {
   const taskForkService = useService<TaskForkService>(TASK_FORK_SERVICE);
   const trpc = useHostTRPC();
   const queryClient = useQueryClient();
-  const { invalidateTasks } = useCreateTask();
+  const { seedTask } = useCreateTask();
   const workspace = useWorkspace(task.id);
   const {
+    agentIdleForRunId,
     cloudStatus,
     isPromptPending,
     sessionIsCloud,
@@ -39,6 +41,7 @@ export function ForkTaskButton({ task }: { task: Task }) {
     task.id,
     (session) => ({
       cloudStatus: session?.cloudStatus,
+      agentIdleForRunId: session?.agentIdleForRunId,
       isPromptPending: session?.isPromptPending ?? false,
       sessionIsCloud: session?.isCloud,
       sessionStatus: session?.status,
@@ -65,17 +68,24 @@ export function ForkTaskButton({ task }: { task: Task }) {
     cloudTaskRunId === sessionTaskRunId
       ? (cloudStatus ?? (run?.id === cloudTaskRunId ? run?.status : undefined))
       : run?.status;
+  const canForkCurrentCloudRun = cloudTaskRunId
+    ? canForkCloudRun(cloudTaskRunId, currentCloudStatus, {
+        agentIdleForRunId,
+        cloudStatus,
+        isCloud: sessionIsCloud,
+        isPromptPending,
+        taskRunId: sessionTaskRunId ?? "",
+      })
+    : false;
 
   let disabledReason: string | null = null;
   if (task.runtime === "pi") {
     disabledReason = "Pi tasks cannot be forked yet";
   } else if (isCloud && !cloudTaskRunId) {
     disabledReason = "This task has no run to fork";
-  } else if (
-    isCloud &&
-    (!currentCloudStatus || !isTerminalStatus(currentCloudStatus))
-  ) {
-    disabledReason = "Wait for the cloud run to finish before forking it";
+  } else if (isCloud && !canForkCurrentCloudRun) {
+    disabledReason =
+      "Wait for the current cloud turn to finish before forking it";
   } else if (!isCloud && (!workspace || workspace.isScratch)) {
     disabledReason = "Only repository-backed local tasks can be forked";
   } else if (!isCloud && sessionStatus !== "connected") {
@@ -93,11 +103,10 @@ export function ForkTaskButton({ task }: { task: Task }) {
   const handleFork = async () => {
     let source: ForkTaskOptions["source"];
     if (isCloud) {
-      if (!cloudTaskRunId || !currentCloudStatus) return;
+      if (!cloudTaskRunId || !canForkCurrentCloudRun) return;
       source = {
         kind: "cloud",
         taskRunId: cloudTaskRunId,
-        status: currentCloudStatus,
       };
     } else {
       source = { kind: "local" };
@@ -128,7 +137,7 @@ export function ForkTaskButton({ task }: { task: Task }) {
           }),
         );
       }
-      invalidateTasks(result.data.task);
+      seedTask(result.data.task);
       void openTask(result.data.task);
       if (result.data.provisioningError) {
         toastError(
