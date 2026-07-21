@@ -7,6 +7,7 @@ import {
   INBOX_DISMISSED_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@posthog/core/inbox/reportFiltering";
+import type { DismissalReasonOptionValue } from "@posthog/shared";
 import type {
   AvailableSuggestedReviewersResponse,
   CommitDiffResponse,
@@ -28,19 +29,7 @@ import {
 } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
-import {
-  type DismissSignalReportInput,
-  dismissSignalReport,
-  getAvailableSuggestedReviewers,
-  getCommitDiff,
-  getSignalProcessingState,
-  getSignalReport,
-  getSignalReportArtefacts,
-  getSignalReportSignals,
-  getSignalReports,
-  restoreSignalReport,
-  updateSignalReportArtefact,
-} from "../api";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
 import { isRestorableReport } from "../utils";
 
@@ -98,7 +87,7 @@ export function useInboxReports(options?: { enabled?: boolean }) {
   const query = useInfiniteQuery({
     queryKey: inboxKeys.list(params),
     queryFn: ({ pageParam }) =>
-      getSignalReports({
+      getPostHogApiClient().getSignalReports({
         ...params,
         limit: REPORTS_PAGE_SIZE,
         offset: pageParam,
@@ -137,7 +126,7 @@ export function useArchivedReports(options?: { enabled?: boolean }) {
 
   const query = useQuery<SignalReportsResponse>({
     queryKey: inboxKeys.archived(params),
-    queryFn: () => getSignalReports(params),
+    queryFn: () => getPostHogApiClient().getSignalReports(params),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
   });
 
@@ -158,7 +147,7 @@ export function useInboxReport(reportId: string | null) {
     queryKey: inboxKeys.detail(reportId ?? ""),
     queryFn: () => {
       if (!reportId) throw new Error("reportId is required");
-      return getSignalReport(reportId);
+      return getPostHogApiClient().getSignalReport(reportId);
     },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
   });
@@ -169,7 +158,7 @@ export function useSignalProcessingState(options?: { enabled?: boolean }) {
 
   return useQuery<SignalProcessingStateResponse>({
     queryKey: inboxKeys.processingState,
-    queryFn: () => getSignalProcessingState(),
+    queryFn: () => getPostHogApiClient().getSignalProcessingState(),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     refetchInterval: INBOX_REFETCH_INTERVAL_MS,
   });
@@ -184,7 +173,8 @@ export function useAvailableSuggestedReviewers(options?: {
 
   return useQuery<AvailableSuggestedReviewersResponse>({
     queryKey: [...inboxKeys.all, "available-reviewers", query] as const,
-    queryFn: () => getAvailableSuggestedReviewers(query || undefined),
+    queryFn: () =>
+      getPostHogApiClient().getAvailableSuggestedReviewers(query || undefined),
     enabled: !!projectId && !!oauthAccessToken && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
     // Only poll the unfiltered list; search terms are transient and each one
@@ -200,7 +190,7 @@ export function useInboxReportArtefacts(reportId: string | null) {
     queryKey: inboxKeys.artefacts(reportId ?? ""),
     queryFn: () => {
       if (!reportId) throw new Error("reportId is required");
-      return getSignalReportArtefacts(reportId);
+      return getPostHogApiClient().getSignalReportArtefacts(reportId);
     },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
     // The log is a live work record — agents append artefacts while a report
@@ -219,7 +209,7 @@ export function useCommitDiff(
 
   return useQuery<CommitDiffResponse>({
     queryKey: inboxKeys.commitDiff(reportId, artefactId),
-    queryFn: () => getCommitDiff(reportId, artefactId),
+    queryFn: () => getPostHogApiClient().getCommitDiff(reportId, artefactId),
     // A commit's diff is immutable, so only fetch once expanded and never retry.
     enabled: enabled && !!projectId && !!oauthAccessToken,
     staleTime: 5 * 60_000,
@@ -234,7 +224,7 @@ export function useInboxReportSignals(reportId: string | null) {
     queryKey: inboxKeys.signals(reportId ?? ""),
     queryFn: () => {
       if (!reportId) throw new Error("reportId is required");
-      return getSignalReportSignals(reportId);
+      return getPostHogApiClient().getSignalReportSignals(reportId);
     },
     enabled: !!projectId && !!oauthAccessToken && !!reportId,
   });
@@ -257,7 +247,9 @@ export function useUpdateSuggestedReviewers(reportId: string) {
     { previous: SignalReportArtefactsResponse | undefined }
   >({
     mutationFn: ({ artefactId, content }) =>
-      updateSignalReportArtefact(reportId, artefactId, content),
+      getPostHogApiClient()
+        .updateSignalReportArtefact(reportId, artefactId, content)
+        .then(() => undefined),
     onMutate: async ({ artefactId, optimisticReviewers }) => {
       await queryClient.cancelQueries({ queryKey });
       const previous =
@@ -297,8 +289,17 @@ export function useUpdateSuggestedReviewers(reportId: string) {
 export function useDismissReport(reportId: string) {
   const queryClient = useQueryClient();
 
-  return useMutation<SignalReport, Error, DismissSignalReportInput>({
-    mutationFn: (input) => dismissSignalReport(reportId, input),
+  return useMutation<
+    SignalReport,
+    Error,
+    { reason: DismissalReasonOptionValue; note?: string }
+  >({
+    mutationFn: (input) =>
+      getPostHogApiClient().updateSignalReportState(reportId, {
+        state: "suppressed",
+        dismissal_reason: input.reason,
+        ...(input.note?.trim() ? { dismissal_note: input.note.trim() } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inboxKeys.detail(reportId) });
       queryClient.invalidateQueries({ queryKey: inboxKeys.all });
@@ -314,11 +315,12 @@ export function useRestoreReport() {
   // report.
   return useMutation<boolean, Error, string>({
     mutationFn: async (reportId) => {
-      const current = await getSignalReport(reportId);
+      const client = getPostHogApiClient();
+      const current = await client.getSignalReport(reportId);
       if (current && !isRestorableReport(current)) {
         return false;
       }
-      await restoreSignalReport(reportId);
+      await client.updateSignalReportState(reportId, { state: "potential" });
       return true;
     },
     onSuccess: () => {

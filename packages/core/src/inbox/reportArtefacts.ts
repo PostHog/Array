@@ -81,3 +81,25 @@ export function selectPriorityExplanation(
       ?.content.explanation || null
   );
 }
+
+export function selectReportRepository(
+  artefacts: ReportArtefact[],
+): string | null {
+  const artefact = artefacts.find((item) => item.type === "repo_selection");
+  if (!artefact) return null;
+
+  let content: unknown = artefact.content;
+  if (typeof content === "string") {
+    const serialized = content;
+    try {
+      content = JSON.parse(serialized);
+    } catch {
+      return serialized.toLowerCase();
+    }
+  }
+
+  if (typeof content !== "object" || content === null) return null;
+  const record = content as Record<string, unknown>;
+  const repository = record.repository ?? record.repo;
+  return typeof repository === "string" ? repository.toLowerCase() : null;
+}

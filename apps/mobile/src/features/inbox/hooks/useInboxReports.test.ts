@@ -15,9 +15,11 @@ const getAvailableSuggestedReviewers = vi.fn(async (_query?: string) => ({
   results: [],
   count: 0,
 }));
-vi.mock("../api", () => ({
-  getAvailableSuggestedReviewers: (query?: string) =>
-    getAvailableSuggestedReviewers(query),
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({
+    getAvailableSuggestedReviewers: (query?: string) =>
+      getAvailableSuggestedReviewers(query),
+  }),
 }));
 
 import {
