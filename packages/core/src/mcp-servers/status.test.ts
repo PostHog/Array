@@ -10,6 +10,7 @@ function makeInstallation(
     template_id: null,
     name: "Test",
     icon_key: "",
+    icon_domain: "",
     proxy_url: "https://proxy.example.com/inst-1",
     tool_count: 0,
     created_at: "2026-01-01T00:00:00Z",

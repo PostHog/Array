@@ -11,7 +11,10 @@ import {
   GearSix,
   GithubLogo,
   Keyboard,
+  Lightbulb,
   Palette,
+  Plugs,
+  Robot,
   SignOut,
   SlackLogo,
   Terminal,
@@ -19,6 +22,7 @@ import {
   TreeStructure,
   Wrench,
 } from "@phosphor-icons/react";
+import { MenuLabel } from "@posthog/quill";
 import { BILLING_FLAG } from "@posthog/shared";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
@@ -26,30 +30,16 @@ import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { SettingsPageContent } from "@posthog/ui/features/settings/components/SettingsPageContent";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
-import { AdvancedSettings } from "@posthog/ui/features/settings/sections/AdvancedSettings";
-import { ClaudeCodeSettings } from "@posthog/ui/features/settings/sections/ClaudeCodeSettings";
-import { DiscordSettings } from "@posthog/ui/features/settings/sections/DiscordSettings";
-import { EnvironmentsSettings } from "@posthog/ui/features/settings/sections/environments/EnvironmentsSettings";
-import { GeneralSettings } from "@posthog/ui/features/settings/sections/GeneralSettings";
-import { GitHubSettings } from "@posthog/ui/features/settings/sections/GitHubSettings";
-import { NotificationsSettings } from "@posthog/ui/features/settings/sections/NotificationsSettings";
-import { PersonalizationSettings } from "@posthog/ui/features/settings/sections/PersonalizationSettings";
-import { PlanUsageSettings } from "@posthog/ui/features/settings/sections/PlanUsageSettings";
-import { ShortcutsSettings } from "@posthog/ui/features/settings/sections/ShortcutsSettings";
-import { SignalSourcesSettings } from "@posthog/ui/features/settings/sections/SignalSourcesSettings";
-import { SlackSettings } from "@posthog/ui/features/settings/sections/SlackSettings";
-import { TerminalSettings } from "@posthog/ui/features/settings/sections/TerminalSettings";
-import { UpdatesSettings } from "@posthog/ui/features/settings/sections/UpdatesSettings";
-import { WorkspacesSettings } from "@posthog/ui/features/settings/sections/WorkspacesSettings";
-import { WorktreesSettings } from "@posthog/ui/features/settings/sections/worktrees/WorktreesSettings";
+import { getHiddenSettingsCategories } from "@posthog/ui/features/settings/settingsVisibility";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
 import { useSpendAnalysisEnabled } from "@posthog/ui/features/usage/useSpendAnalysisEnabled";
 import * as nav from "@posthog/ui/router/navigationBridge";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
-import { Avatar, Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
-import { type ReactNode, useMemo } from "react";
+import { Avatar, Flex, ScrollArea, Text } from "@radix-ui/themes";
+import type { ReactNode } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 interface SidebarItem {
@@ -59,82 +49,80 @@ interface SidebarItem {
   hasChevron?: boolean;
 }
 
-const SIDEBAR_ITEMS: SidebarItem[] = [
-  { id: "general", label: "General", icon: <GearSix size={16} /> },
-  { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
-  { id: "plan-usage", label: "Plan & usage", icon: <CreditCard size={16} /> },
-  { id: "workspaces", label: "Workspaces", icon: <Folder size={16} /> },
-  { id: "worktrees", label: "Worktrees", icon: <TreeStructure size={16} /> },
-  { id: "environments", label: "Environments", icon: <Cube size={16} /> },
+interface SidebarGroup {
+  label: string;
+  items: SidebarItem[];
+}
+
+const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
-    id: "personalization",
-    label: "Personalization",
-    icon: <Palette size={16} />,
+    label: "Account",
+    items: [
+      { id: "general", label: "General", icon: <GearSix size={16} /> },
+      { id: "notifications", label: "Notifications", icon: <Bell size={16} /> },
+      {
+        id: "plan-usage",
+        label: "Plan & usage",
+        icon: <CreditCard size={16} />,
+      },
+    ],
   },
-  { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
-  { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
-  { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
-  { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
-  { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
-  { id: "discord", label: "Discord", icon: <DiscordLogo size={16} /> },
-  { id: "signals", label: "Self-driving", icon: <TrafficSignal size={16} /> },
-  { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
-  { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
+  {
+    label: "Workspace",
+    items: [
+      { id: "workspaces", label: "Workspaces", icon: <Folder size={16} /> },
+      {
+        id: "worktrees",
+        label: "Worktrees",
+        icon: <TreeStructure size={16} />,
+      },
+      { id: "environments", label: "Environments", icon: <Cube size={16} /> },
+    ],
+  },
+  {
+    label: "Configure",
+    items: [
+      { id: "agents", label: "Agents", icon: <Robot size={16} /> },
+      { id: "skills", label: "Skills", icon: <Lightbulb size={16} /> },
+      { id: "mcp-servers", label: "MCP servers", icon: <Plugs size={16} /> },
+      { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
+      {
+        id: "signals",
+        label: "Self-driving",
+        icon: <TrafficSignal size={16} />,
+      },
+    ],
+  },
+  {
+    label: "Experience",
+    items: [
+      {
+        id: "personalization",
+        label: "Personalization",
+        icon: <Palette size={16} />,
+      },
+      { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
+      { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
+    ],
+  },
+  {
+    label: "Integrations",
+    items: [
+      { id: "github", label: "GitHub", icon: <GithubLogo size={16} /> },
+      { id: "slack", label: "Slack", icon: <SlackLogo size={16} /> },
+      { id: "discord", label: "Discord", icon: <DiscordLogo size={16} /> },
+    ],
+  },
+  {
+    label: "Application",
+    items: [
+      { id: "updates", label: "Updates", icon: <ArrowsClockwise size={16} /> },
+      { id: "advanced", label: "Advanced", icon: <Wrench size={16} /> },
+    ],
+  },
 ];
 
-// Settings that only make sense with a local filesystem/host (local worktrees,
-// terminal, the local `claude` CLI, the desktop app itself). Hidden on the
-// cloud-only web host.
-const LOCAL_ONLY_CATEGORIES: ReadonlySet<SettingsCategory> = new Set([
-  "workspaces",
-  "worktrees",
-  "terminal",
-  "claude-code",
-  "discord",
-  "updates",
-]);
-
-const CATEGORY_TITLES: Record<SettingsCategory, string> = {
-  general: "General",
-  notifications: "Notifications",
-  "plan-usage": "Plan & usage",
-  workspaces: "Workspaces",
-  worktrees: "Worktrees",
-  environments: "Environments",
-  "cloud-environments": "Environments",
-  personalization: "Personalization",
-  terminal: "Terminal",
-  "claude-code": "Claude Code",
-  shortcuts: "Shortcuts",
-  github: "GitHub",
-  slack: "Slack integration",
-  discord: "Discord",
-  signals: "Self-driving",
-  updates: "Updates",
-  advanced: "Advanced",
-};
-
-const CATEGORY_COMPONENTS: Record<SettingsCategory, React.ComponentType> = {
-  general: GeneralSettings,
-  notifications: NotificationsSettings,
-  "plan-usage": PlanUsageSettings,
-  workspaces: WorkspacesSettings,
-  worktrees: WorktreesSettings,
-  environments: EnvironmentsSettings,
-  "cloud-environments": EnvironmentsSettings,
-  personalization: PersonalizationSettings,
-  terminal: TerminalSettings,
-  "claude-code": ClaudeCodeSettings,
-  shortcuts: ShortcutsSettings,
-  github: GitHubSettings,
-  slack: SlackSettings,
-  discord: DiscordSettings,
-  // Slack notification config lives in the dedicated Slack section; the Signals
-  // section links out to it rather than duplicating the controls.
-  signals: () => <SignalSourcesSettings showSlackNotifications={false} />,
-  updates: UpdatesSettings,
-  advanced: AdvancedSettings,
-};
+const SIDEBAR_ITEMS = SIDEBAR_GROUPS.flatMap((group) => group.items);
 
 export interface SettingsPanelProps {
   /**
@@ -170,29 +158,28 @@ export function SettingsPanel({
   const logoutMutation = useLogoutMutation();
 
   const spendAnalysisEnabled = useSpendAnalysisEnabled();
-  const sidebarItems = useMemo(
-    () =>
-      SIDEBAR_ITEMS.filter((item) => {
-        if (
-          item.id === "plan-usage" &&
-          !billingEnabled &&
-          !spendAnalysisEnabled
-        )
-          return false;
-        if (!localWorkspaces && LOCAL_ONLY_CATEGORIES.has(item.id))
-          return false;
-        return true;
-      }),
-    [billingEnabled, spendAnalysisEnabled, localWorkspaces],
-  );
+  const hiddenCategories = getHiddenSettingsCategories({
+    billingEnabled,
+    spendAnalysisEnabled,
+    localWorkspaces,
+  });
+  const sidebarGroups = SIDEBAR_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !hiddenCategories.has(item.id)),
+  })).filter((group) => group.items.length > 0);
 
   // Guard direct navigation (URL, deep link, programmatic openSettings) to a
   // category hidden on this host. Fall back to General so a hidden section is
   // never rendered.
-  const resolvedCategory: SettingsCategory =
-    !localWorkspaces && LOCAL_ONLY_CATEGORIES.has(activeCategory)
-      ? "general"
-      : activeCategory;
+  const resolvedCategory: SettingsCategory = hiddenCategories.has(
+    activeCategory,
+  )
+    ? "general"
+    : activeCategory;
+  const activeSidebarCategory: SettingsCategory =
+    resolvedCategory === "cloud-environments"
+      ? "environments"
+      : resolvedCategory;
 
   useHotkeys("escape", close, {
     enabled: true,
@@ -201,12 +188,8 @@ export function SettingsPanel({
     preventDefault: true,
   });
 
-  const ActiveComponent = CATEGORY_COMPONENTS[resolvedCategory];
-
   const activeCategoryIcon = SIDEBAR_ITEMS.find(
-    (item) =>
-      item.id === resolvedCategory ||
-      (item.id === "environments" && resolvedCategory === "cloud-environments"),
+    (item) => item.id === activeSidebarCategory,
   )?.icon;
 
   const initials = getUserInitials(user);
@@ -246,21 +229,25 @@ export function SettingsPanel({
         </button>
 
         <ScrollArea className="flex-1">
-          <div className="flex flex-col pt-2">
-            {sidebarItems.map((item) => {
-              const isActive =
-                resolvedCategory === item.id ||
-                (item.id === "environments" &&
-                  resolvedCategory === "cloud-environments");
-              return (
-                <SidebarNavItem
-                  key={item.id}
-                  item={item}
-                  isActive={isActive}
-                  onClick={() => setCategory(item.id)}
-                />
-              );
-            })}
+          <div className="flex flex-col gap-3 py-2">
+            {sidebarGroups.map((group) => (
+              <div key={group.label}>
+                <MenuLabel className="px-3 pb-1 text-gray-9">
+                  {group.label}
+                </MenuLabel>
+                {group.items.map((item) => {
+                  const isActive = activeSidebarCategory === item.id;
+                  return (
+                    <SidebarNavItem
+                      key={item.id}
+                      item={item}
+                      isActive={isActive}
+                      onClick={() => setCategory(item.id)}
+                    />
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </ScrollArea>
 
@@ -312,23 +299,11 @@ export function SettingsPanel({
               fill="url(#settings-dot-pattern)"
             />
           </svg>
-          <ScrollArea className="h-full w-full">
-            <Box p="6" mx="auto" className="relative z-[1] max-w-[800px]">
-              <Flex direction="column" gap="4">
-                {!formMode && (
-                  <Flex align="center" gap="2">
-                    {activeCategoryIcon && (
-                      <span className="text-gray-10">{activeCategoryIcon}</span>
-                    )}
-                    <Text className="font-medium text-lg leading-6.5">
-                      {CATEGORY_TITLES[resolvedCategory]}
-                    </Text>
-                  </Flex>
-                )}
-                <ActiveComponent />
-              </Flex>
-            </Box>
-          </ScrollArea>
+          <SettingsPageContent
+            category={resolvedCategory}
+            formMode={formMode}
+            icon={activeCategoryIcon}
+          />
         </div>
       </div>
     </div>

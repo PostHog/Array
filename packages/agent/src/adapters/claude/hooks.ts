@@ -3,17 +3,17 @@ import {
   enrichFileForAgent,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
+import {
+  extractPostHogSubTool,
+  isPostHogExecTool,
+  matchesPostHogExecPermission,
+} from "../../posthog-exec-permission";
 import type { Logger } from "../../utils/logger";
 import { SIGNED_COMMIT_QUALIFIED_TOOL_NAME } from "../signed-commit-shared";
 import { stripCatLineNumbers } from "./conversion/sdk-to-acp";
 import type { TaskState } from "./conversion/task-state";
 import { gitSubcommand } from "./git-command";
 import { neutralizeUnprocessableImages } from "./image-sanitization";
-import {
-  extractPostHogSubTool,
-  isPostHogDestructiveSubTool,
-  isPostHogExecTool,
-} from "./permissions/posthog-exec-gate";
 import type { SettingsManager } from "./session/settings";
 import type { CodeExecutionMode } from "./tools";
 
@@ -381,7 +381,11 @@ export const createSignedCommitGuardHook =
   };
 
 export const createPreToolUseHook =
-  (settingsManager: SettingsManager, logger: Logger): HookCallback =>
+  (
+    settingsManager: SettingsManager,
+    logger: Logger,
+    posthogExecPermissionRegex?: RegExp,
+  ): HookCallback =>
   async (input: HookInput, _toolUseID: string | undefined) => {
     if (input.hook_event_name !== "PreToolUse") {
       return { continue: true };
@@ -405,15 +409,22 @@ export const createPreToolUseHook =
     // not enough — the SDK then falls back to its default permission
     // flow which re-checks the same allow rule. We must force "ask"
     // so the SDK invokes canUseTool.
-    if (permissionCheck.decision === "allow" && isPostHogExecTool(toolName)) {
+    if (
+      posthogExecPermissionRegex &&
+      permissionCheck.decision === "allow" &&
+      isPostHogExecTool(toolName)
+    ) {
       const subTool = extractPostHogSubTool(toolInput);
-      if (subTool && isPostHogDestructiveSubTool(subTool)) {
+      if (
+        subTool &&
+        matchesPostHogExecPermission(subTool, posthogExecPermissionRegex)
+      ) {
         return {
           continue: true,
           hookSpecificOutput: {
             hookEventName: "PreToolUse" as const,
             permissionDecision: "ask" as const,
-            permissionDecisionReason: `Destructive PostHog sub-tool '${subTool}' requires explicit approval`,
+            permissionDecisionReason: `PostHog sub-tool '${subTool}' matches the configured permission regex`,
           },
         };
       }

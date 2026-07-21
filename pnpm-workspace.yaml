@@ -119,3 +119,4 @@ onlyBuiltDependencies:
 
 patchedDependencies:
   node-pty: patches/node-pty.patch
+  react-hotkeys-hook: patches/react-hotkeys-hook.patch

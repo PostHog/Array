@@ -212,7 +212,8 @@ export function ConfigureAgentsSection() {
         description="External tools responders can read from. PostHog data is always available; this is everything else."
       >
         <Link
-          to="/mcp-servers"
+          to="/settings/$category"
+          params={{ category: "mcp-servers" }}
           onClick={() =>
             track(ANALYTICS_EVENTS.AGENTS_ACTION, {
               action_type: "open_mcp_servers",

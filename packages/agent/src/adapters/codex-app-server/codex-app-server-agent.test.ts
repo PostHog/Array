@@ -5,11 +5,12 @@ import type {
   PromptRequest,
 } from "@agentclientprotocol/sdk";
 import { RequestError } from "@agentclientprotocol/sdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   AppServerClientHandlers,
   AppServerRpc,
 } from "./app-server-client";
+import { AppServerRequestError } from "./app-server-client";
 import { CodexAppServerAgent } from "./codex-app-server-agent";
 import { sandboxPolicyFor } from "./session-config";
 
@@ -48,6 +49,9 @@ function makeStubRpc(responses: Record<string, unknown>) {
         };
       }
       const response = responses[method];
+      if (response instanceof Error) {
+        throw response;
+      }
       return (
         typeof response === "function"
           ? await response(params)
@@ -792,7 +796,12 @@ describe("CodexAppServerAgent", () => {
       rpcFactory: stub.factory,
     });
     await agent.initialize(init);
-    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    // Cloud session with a gated sub-tool — the local hands-off and
+    // non-matching auto-accepts would otherwise skip the prompt entirely.
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { environment: "cloud" },
+    } as unknown as NewSessionRequest);
 
     // The MCP tool call item arrives first, then codex approves it via a command-execution request.
     stub.emit("item/started", {
@@ -801,7 +810,7 @@ describe("CodexAppServerAgent", () => {
         id: "m1",
         server: "posthog",
         tool: "exec",
-        arguments: { command: "call execute-sql {}" },
+        arguments: { command: "call dashboard-delete {}" },
       },
     });
     const decision = await stub.invokeRequest(
@@ -817,7 +826,7 @@ describe("CodexAppServerAgent", () => {
     expect(permissionToolCalls[0]).toMatchObject({
       toolCallId: "m1",
       kind: "other",
-      rawInput: { command: "call execute-sql {}" },
+      rawInput: { command: "call dashboard-delete {}" },
       _meta: {
         posthog: {
           toolName: "mcp__posthog__exec",
@@ -825,6 +834,104 @@ describe("CodexAppServerAgent", () => {
         },
       },
     });
+  });
+
+  it("auto-accepts a PostHog exec approval for a sub-tool the permission regex does not gate", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+    });
+    const requestPermission = vi.fn();
+    const client = {
+      sessionUpdate: async () => {},
+      requestPermission,
+      extNotification: async () => {},
+    } as unknown as AgentSideConnection;
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.initialize(init);
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { environment: "cloud" },
+    } as unknown as NewSessionRequest);
+
+    stub.emit("item/started", {
+      item: {
+        type: "mcpToolCall",
+        id: "m1",
+        server: "posthog",
+        tool: "exec",
+        arguments: { command: "call execute-sql {}" },
+      },
+    });
+    const commandDecision = await stub.invokeRequest(
+      "item/commandExecution/requestApproval",
+      {
+        itemId: "m1",
+        command: 'Allow the posthog MCP server to run tool "exec"?',
+      },
+    );
+    const elicitationDecision = await stub.invokeRequest(
+      "mcpServer/elicitation/request",
+      {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        serverName: "posthog",
+        mode: "form",
+        message: 'Allow the posthog MCP server to run tool "exec"?',
+      },
+    );
+
+    expect(commandDecision).toEqual({ decision: "accept" });
+    expect(elicitationDecision).toMatchObject({ action: "accept" });
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
+  it("auto-accepts a gated PostHog exec sub-tool in local hands-off modes", async () => {
+    const stub = makeStubRpc({
+      initialize: {},
+      "thread/start": { thread: { id: "thr_1" } },
+    });
+    const requestPermission = vi.fn();
+    const client = {
+      sessionUpdate: async () => {},
+      requestPermission,
+      extNotification: async () => {},
+    } as unknown as AgentSideConnection;
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/bundle/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.initialize(init);
+    // Local session in codex's default hands-off "auto" mode.
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { environment: "local" },
+    } as unknown as NewSessionRequest);
+
+    stub.emit("item/started", {
+      item: {
+        type: "mcpToolCall",
+        id: "m1",
+        server: "posthog",
+        tool: "exec",
+        arguments: { command: "call dashboard-delete {}" },
+      },
+    });
+    const decision = await stub.invokeRequest(
+      "item/commandExecution/requestApproval",
+      {
+        itemId: "m1",
+        command: 'Allow the posthog MCP server to run tool "exec"?',
+      },
+    );
+
+    expect(decision).toEqual({ decision: "accept" });
+    expect(requestPermission).not.toHaveBeenCalled();
   });
 
   it("enriches the MCP elicitation approval (posthog exec) from the in-flight tool call", async () => {
@@ -851,7 +958,10 @@ describe("CodexAppServerAgent", () => {
       rpcFactory: stub.factory,
     });
     await agent.initialize(init);
-    await agent.newSession({ cwd: "/repo" } as unknown as NewSessionRequest);
+    await agent.newSession({
+      cwd: "/repo",
+      _meta: { environment: "cloud" },
+    } as unknown as NewSessionRequest);
 
     stub.emit("item/started", {
       item: {
@@ -859,7 +969,7 @@ describe("CodexAppServerAgent", () => {
         id: "m1",
         server: "posthog",
         tool: "exec",
-        arguments: { command: "call execute-sql {}" },
+        arguments: { command: "call dashboard-delete {}" },
       },
     });
     const decision = await stub.invokeRequest("mcpServer/elicitation/request", {
@@ -873,7 +983,7 @@ describe("CodexAppServerAgent", () => {
     expect(decision).toMatchObject({ action: "accept" });
     expect(permissionToolCalls[0]).toMatchObject({
       toolCallId: "posthog:elicitation",
-      rawInput: { command: "call execute-sql {}" },
+      rawInput: { command: "call dashboard-delete {}" },
       _meta: {
         posthog: {
           toolName: "mcp__posthog__exec",
@@ -1186,7 +1296,11 @@ describe("CodexAppServerAgent", () => {
 
     await agent.newSession({
       cwd: "/r",
-      _meta: { systemPrompt: "You are a repo selector." },
+      _meta: {
+        systemPrompt: "You are a repo selector.",
+        permissionMode: "bypassPermissions",
+        posthogExecPermissionRegex: "delete|destroy",
+      },
       mcpServers: [
         {
           name: "posthog",
@@ -1206,11 +1320,104 @@ describe("CodexAppServerAgent", () => {
             command: "node",
             args: ["server.js"],
             env: { TOKEN: "abc" },
+            tools: { exec: { approval_mode: "prompt" } },
           },
         },
       },
     });
   });
+
+  it("uses the default PostHog exec prompt policy when session metadata omits the regex", async () => {
+    const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({
+      cwd: "/r",
+      mcpServers: [
+        {
+          name: "posthog",
+          command: "node",
+          args: ["server.js"],
+        },
+      ],
+    } as unknown as NewSessionRequest);
+
+    const threadStart = stub.requests.find((r) => r.method === "thread/start");
+    expect(threadStart?.params).toMatchObject({
+      config: {
+        mcp_servers: {
+          posthog: {
+            tools: { exec: { approval_mode: "prompt" } },
+          },
+        },
+      },
+    });
+  });
+
+  it.each(["[", ""])(
+    "falls back to the default regex when session metadata carries the invalid regex %j",
+    async (posthogExecPermissionRegex) => {
+      const stub = makeStubRpc({
+        initialize: {},
+        "thread/start": { thread: { id: "thr_1" } },
+      });
+      const requestPermission = vi.fn().mockResolvedValue({
+        outcome: { outcome: "selected", optionId: "allow" },
+      });
+      const client = {
+        sessionUpdate: async () => {},
+        requestPermission,
+        extNotification: async () => {},
+      } as unknown as AgentSideConnection;
+      const agent = new CodexAppServerAgent(client, {
+        processOptions: { binaryPath: "/bundle/codex" },
+        model: "gpt-5.5",
+        rpcFactory: stub.factory,
+      });
+      await agent.initialize(init);
+      await agent.newSession({
+        cwd: "/repo",
+        _meta: { environment: "cloud", posthogExecPermissionRegex },
+      } as unknown as NewSessionRequest);
+
+      stub.emit("item/started", {
+        item: {
+          type: "mcpToolCall",
+          id: "m1",
+          server: "posthog",
+          tool: "exec",
+          arguments: { command: "call execute-sql {}" },
+        },
+      });
+      const nonMatching = await stub.invokeRequest(
+        "item/commandExecution/requestApproval",
+        { itemId: "m1", command: "exec" },
+      );
+      stub.emit("item/started", {
+        item: {
+          type: "mcpToolCall",
+          id: "m2",
+          server: "posthog",
+          tool: "exec",
+          arguments: { command: "call dashboard-delete {}" },
+        },
+      });
+      const matching = await stub.invokeRequest(
+        "item/commandExecution/requestApproval",
+        { itemId: "m2", command: "exec" },
+      );
+
+      // The default destructive-verbs regex applies: execute-sql auto-accepts
+      // without a prompt, dashboard-delete relays for approval.
+      expect(nonMatching).toEqual({ decision: "accept" });
+      expect(matching).toEqual({ decision: "accept" });
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("flattens the host's {append} systemPrompt and dedupes it against developerInstructions", async () => {
     const stub = makeStubRpc({ "thread/start": { thread: { id: "t" } } });
@@ -2133,7 +2340,12 @@ describe("CodexAppServerAgent", () => {
       prompt: [{ type: "text", text: "more context" }],
     } as unknown as PromptRequest);
 
-    // The single turn/completed resolves both the original and the folded prompt.
+    await expect(second).resolves.toMatchObject({
+      stopReason: "end_turn",
+      _meta: { steer: true },
+    });
+
+    // The original prompt remains the sole owner of turn completion.
     stub.emit("thread/tokenUsage/updated", {
       tokenUsage: {
         last: {
@@ -2145,12 +2357,11 @@ describe("CodexAppServerAgent", () => {
       },
     });
     stub.emit("turn/completed", { turn: { status: "completed" } });
-    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const firstResult = await first;
     expect(firstResult).toMatchObject({
       stopReason: "end_turn",
       usage: { totalTokens: 45 },
     });
-    expect(secondResult).toEqual({ stopReason: "end_turn" });
 
     const steer = stub.requests.find((r) => r.method === "turn/steer");
     expect(steer?.params).toMatchObject({
@@ -2161,6 +2372,118 @@ describe("CodexAppServerAgent", () => {
     // Only one turn/start — the second prompt steered rather than starting anew.
     expect(stub.requests.filter((r) => r.method === "turn/start")).toHaveLength(
       1,
+    );
+  });
+
+  it("rejects a failed turn/steer without echoing or acknowledging it", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new Error("steer transport failed"),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "lost steer" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).rejects.toThrow("steer transport failed");
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "lost steer" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines a stale turn/steer so the caller can queue it normally", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+      "turn/start": { turn: { id: "turn_1" } },
+      "turn/steer": new AppServerRequestError(
+        -32600,
+        "expected active turn id `turn_1` but found `turn_2`",
+      ),
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    const first = agent.prompt({
+      sessionId: "t",
+      prompt: [{ type: "text", text: "one" }],
+    } as unknown as PromptRequest);
+    stub.emit("turn/started", { threadId: "t", turn: { id: "turn_1" } });
+
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "queue me" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "queue me" },
+        }),
+      }),
+    );
+
+    stub.emit("turn/completed", { turn: { status: "completed" } });
+    await first;
+  });
+
+  it("declines an explicit steer after the active turn has ended", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t" } },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      rpcFactory: stub.factory,
+    });
+
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+    await expect(
+      agent.prompt({
+        sessionId: "t",
+        prompt: [{ type: "text", text: "too late" }],
+        _meta: { steer: true },
+      } as unknown as PromptRequest),
+    ).resolves.toMatchObject({ _meta: { steer: false } });
+    expect(
+      stub.requests.filter((request) => request.method === "turn/start"),
+    ).toHaveLength(0);
+    expect(sessionUpdates).not.toContainEqual(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "too late" },
+        }),
+      }),
     );
   });
 

@@ -67,6 +67,7 @@ export interface BuildOptionsParams {
   cwd: string;
   mcpServers: Record<string, McpServerConfig>;
   permissionMode: CodeExecutionMode;
+  posthogExecPermissionRegex?: RegExp;
   canUseTool: CanUseTool;
   logger: Logger;
   systemPrompt?: Options["systemPrompt"];
@@ -218,6 +219,7 @@ function buildHooks(
     | ((subTool: string, commandText?: string) => void)
     | undefined,
   settingsManager: SettingsManager,
+  posthogExecPermissionRegex: RegExp | undefined,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
   enrichedReadCache: EnrichedReadCache | undefined,
@@ -242,7 +244,7 @@ function buildHooks(
   }
 
   const preToolUseHooks = [
-    createPreToolUseHook(settingsManager, logger),
+    createPreToolUseHook(settingsManager, logger, posthogExecPermissionRegex),
     createSubagentRewriteHook(logger, registeredAgents),
   ];
   if (cloudMode) {
@@ -471,6 +473,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.onModeChange,
       params.onPostHogResourceUsed,
       params.settingsManager,
+      params.posthogExecPermissionRegex,
       params.logger,
       params.enrichmentDeps,
       params.enrichedReadCache,

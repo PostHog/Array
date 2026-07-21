@@ -592,10 +592,12 @@ export function copyCodexAcpBinaries(): Plugin {
       const sourceDir = join(__dirname, "resources/codex-acp");
       const binaries = [
         { name: "codex", winName: "codex.exe" },
-        // The native codex CLI must ship next to codex-acp: the app-server
-        // sub-adapter resolves it as a sibling and silently falls back to
-        // codex-acp when it's missing.
-        { name: "codex", winName: "codex.exe" },
+        // codex resolves the code-mode host as a sibling of its own executable;
+        // code-mode models (gpt-5.6+) cannot run commands without it.
+        {
+          name: "codex-code-mode-host",
+          winName: "codex-code-mode-host.exe",
+        },
         { name: "rg", winName: "rg.exe" },
       ];
 

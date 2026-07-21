@@ -235,6 +235,7 @@ export {
   flattenSelectOptions,
   getConfigOptionByCategory,
   getCurrentModeFromConfigOptions,
+  isPersistedOptionSupported,
   isSelectGroup,
   mergeConfigOptions,
   type OptimisticItem,

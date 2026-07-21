@@ -96,7 +96,7 @@ import {
   type HogQLGrid,
   shapeAgentAnalytics,
 } from "./agent-analytics";
-import { buildApiFetcher } from "./fetcher";
+import { buildApiFetcher, requestErrorStatus } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
 export interface ApiClientLogger {
@@ -130,6 +130,11 @@ export type UsageLimitType = "burst" | "sustained" | null;
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
 
 export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
+
+export interface TaskRunSessionLogsResult {
+  entries: StoredLogEntry[];
+  complete: boolean;
+}
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
@@ -3157,6 +3162,15 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    return (await this.getTaskRunSessionLogsResult(taskId, runId, options))
+      .entries;
+  }
+
+  async getTaskRunSessionLogsResult(
+    taskId: string,
+    runId: string,
+    options?: { limit?: number; after?: string },
+  ): Promise<TaskRunSessionLogsResult> {
     const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
     const entries: StoredLogEntry[] = [];
     try {
@@ -3187,21 +3201,21 @@ export class PostHogAPIClient {
           log.warn(
             `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
           );
-          break;
+          return { entries, complete: false };
         }
 
         const page = (await response.json()) as StoredLogEntry[];
         entries.push(...page);
         const hasMore = response.headers.get("X-Has-More") === "true";
         if (!hasMore || page.length === 0) {
-          break;
+          return { entries, complete: true };
         }
         offset += page.length;
       }
-      return entries;
+      return { entries, complete: false };
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return entries;
+      return { entries, complete: false };
     }
   }
 
@@ -4186,6 +4200,40 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
+  /**
+   * Object URL for an MCP server's brand icon, proxied from logo.dev by the
+   * authenticated `mcp_servers/icon/` endpoint. Returns null when no brand
+   * icon exists for the domain (the endpoint 404s so callers render their own
+   * fallback glyph, e.g. on self-hosted instances without a logo.dev token).
+   */
+  async getMcpServerIconUrl(
+    domain: string,
+    theme?: "light" | "dark",
+  ): Promise<string | null> {
+    const teamId = await this.getTeamId();
+    const path = `/api/environments/${teamId}/mcp_servers/icon/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("domain", domain);
+    if (theme) {
+      url.searchParams.set("theme", theme);
+    }
+    let response: Response;
+    try {
+      response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+    } catch (error) {
+      // 404 is the endpoint's definitive "no icon for this domain" answer,
+      // not a failure; anything else propagates so callers can retry.
+      if (requestErrorStatus(error) === 404) return null;
+      throw error;
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  }
+
   async getMcpServerInstallations(): Promise<McpServerInstallation[]> {
     const teamId = await this.getTeamId();
     const url = new URL(
@@ -4678,6 +4726,34 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(
         `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async updateSandboxCustomImage(
+    id: string,
+    input: { name?: string; description?: string },
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update sandbox custom image: ${response.statusText}`,
       );
     }
     return (await response.json()) as SandboxCustomImage;
