@@ -39,6 +39,15 @@ export const RESPONDER_AGENT_GROUPS: ResponderAgentGroup[] = [
         docsLabel: "Support",
       },
       {
+        source: "health_checks",
+        sourceProduct: "health_checks",
+        label: "Health checks",
+        description:
+          "Instrumentation problems — missing events, proxy gaps, outdated SDKs.",
+        docsUrl: "https://posthog.com/docs/sdk-health",
+        docsLabel: "Health checks",
+      },
+      {
         source: "session_replay",
         sourceProduct: "session_replay",
         label: "Session Replay",

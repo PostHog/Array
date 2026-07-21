@@ -34,8 +34,9 @@ type SourceType = SignalSourceConfig["source_type"];
 // Non-warehouse toggles are hard-wired; warehouse sources are derived from the shared
 // EXTERNAL_INBOX_SOURCES registry (kept in sync with the UI hook).
 const SOURCE_TYPE_MAP: Partial<Record<SignalSourceProduct, SourceType>> = {
-  session_replay: "session_analysis_cluster",
   conversations: "ticket",
+  health_checks: "health_issue",
+  session_replay: "session_analysis_cluster",
   ...Object.fromEntries(
     EXTERNAL_INBOX_SOURCES.map((s) => [s.product, s.recordKind]),
   ),
@@ -62,10 +63,11 @@ const DATA_WAREHOUSE_SOURCES: Record<
 );
 
 const ALL_SOURCE_PRODUCTS: SignalSourceProduct[] = [
-  "session_replay",
-  "error_tracking",
   "conversations",
-  ...EXTERNAL_INBOX_SOURCES.map((s) => s.product as SignalSourceProduct),
+  "error_tracking",
+  "health_checks",
+  "session_replay",
+  ...EXTERNAL_INBOX_SOURCES.map((s) => s.product),
 ];
 
 function isWarehouseSource(product: SignalSourceProduct): boolean {

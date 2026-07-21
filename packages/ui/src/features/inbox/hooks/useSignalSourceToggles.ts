@@ -21,8 +21,9 @@ type SourceKey = keyof SignalSourceValues;
 // Non-warehouse toggles are hard-wired; every warehouse source is derived from the shared
 // EXTERNAL_INBOX_SOURCES registry so adding a source is a one-line change there.
 const SOURCE_TYPE_MAP: Partial<Record<SourceKey, SourceType>> = {
-  session_replay: "session_analysis_cluster",
   conversations: "ticket",
+  health_checks: "health_issue",
+  session_replay: "session_analysis_cluster",
   ...Object.fromEntries(
     EXTERNAL_INBOX_SOURCES.map((s) => [s.product, s.recordKind]),
   ),
@@ -35,9 +36,10 @@ const ERROR_TRACKING_SOURCE_TYPES: SourceType[] = [
 ];
 
 const SOURCE_LABELS: Partial<Record<SourceKey, string>> = {
-  session_replay: "Session replay",
-  error_tracking: "Error tracking",
   conversations: "PostHog Support",
+  error_tracking: "Error tracking",
+  health_checks: "Health checks",
+  session_replay: "Session replay",
   ...Object.fromEntries(
     EXTERNAL_INBOX_SOURCES.map((s) => [s.product, s.label]),
   ),
@@ -58,10 +60,11 @@ const DATA_WAREHOUSE_SOURCES: Record<
 );
 
 const ALL_SOURCE_PRODUCTS: SourceKey[] = [
-  "session_replay",
-  "error_tracking",
   "conversations",
-  ...EXTERNAL_INBOX_SOURCES.map((s) => s.product as SourceKey),
+  "error_tracking",
+  "health_checks",
+  "session_replay",
+  ...EXTERNAL_INBOX_SOURCES.map((s) => s.product),
 ];
 
 function isSetupSourceProduct(product: SourceKey): boolean {

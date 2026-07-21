@@ -4,6 +4,7 @@ import {
   BugIcon,
   ChatsIcon,
   CompassIcon,
+  FirstAidIcon,
   GitBranchIcon,
   GithubLogoIcon,
   KanbanIcon,
@@ -106,6 +107,11 @@ export const SOURCE_PRODUCT_META: Partial<
     Icon: CompassIcon,
     color: "var(--iris-9)",
     label: "Scout",
+  },
+  health_checks: {
+    Icon: FirstAidIcon,
+    color: "var(--crimson-9)",
+    label: "Health checks",
   },
   // Warehouse-backed inbox sources
   freshdesk: {

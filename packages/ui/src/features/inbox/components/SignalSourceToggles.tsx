@@ -4,6 +4,7 @@ import {
   BugIcon,
   ChatsIcon,
   CircleNotchIcon,
+  FirstAidIcon,
   PlugIcon,
   VideoIcon,
 } from "@phosphor-icons/react";
@@ -325,6 +326,10 @@ export function SignalSourceToggles({
     (checked: boolean) => onToggle("conversations", checked),
     [onToggle],
   );
+  const toggleHealthChecks = useCallback(
+    (checked: boolean) => onToggle("health_checks", checked),
+    [onToggle],
+  );
 
   return (
     <Flex gap="4">
@@ -344,6 +349,17 @@ export function SignalSourceToggles({
             syncStatus={sourceStates?.error_tracking?.syncStatus}
             docsUrl="https://posthog.com/docs/error-tracking"
             docsLabel="Error Tracking"
+          />
+          <SignalSourceToggleCard
+            icon={<FirstAidIcon size={20} />}
+            label="Health checks"
+            description="Surface instrumentation problems — missing events, proxy gaps, outdated SDKs"
+            checked={value.health_checks}
+            onCheckedChange={toggleHealthChecks}
+            disabled={disabled}
+            syncStatus={sourceStates?.health_checks?.syncStatus}
+            docsUrl="https://posthog.com/docs/sdk-health"
+            docsLabel="Health checks"
           />
           <SignalSourceToggleCard
             icon={<ChatsIcon size={20} />}
@@ -387,7 +403,7 @@ export function SignalSourceToggles({
         </Text>
         <Flex direction="column" gap="3">
           {EXTERNAL_INBOX_SOURCES.map((source) => {
-            const product = source.product as ToggleableSourceProduct;
+            const product = source.product;
             return (
               <ExternalSourceCard
                 key={source.product}

@@ -15,14 +15,15 @@ type SortField = Extract<
 type SortDirection = "asc" | "desc";
 
 export type SourceProduct =
-  | "session_replay"
-  | "error_tracking"
-  | "llm_analytics"
-  | "github"
-  | "linear"
-  | "zendesk"
   | "conversations"
-  | "signals_scout";
+  | "error_tracking"
+  | "github"
+  | "health_checks"
+  | "linear"
+  | "llm_analytics"
+  | "session_replay"
+  | "signals_scout"
+  | "zendesk";
 
 export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",

@@ -148,8 +148,10 @@ export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type {
   AvailableSuggestedReviewer,
   ExternalInboxSource,
+  ExternalInboxSourceProduct,
   SignalRecordKind,
   SourceProduct,
+  SourceType,
   ToggleableSourceProduct,
 } from "./inbox-types";
 export {

@@ -4,6 +4,7 @@ import {
   CalendarPlus,
   Clock,
   CompassIcon,
+  FirstAidIcon,
   LifebuoyIcon,
   ListNumbers,
   PlugIcon,
@@ -96,6 +97,11 @@ export const INBOX_SOURCE_OPTIONS: {
     icon: <LifebuoyIcon size={14} />,
   },
   { value: "signals_scout", label: "Scouts", icon: <CompassIcon size={14} /> },
+  {
+    value: "health_checks",
+    label: "Health checks",
+    icon: <FirstAidIcon size={14} />,
+  },
   // Warehouse-backed sources, derived from the shared registry.
   ...EXTERNAL_INBOX_SOURCES.map((source) => {
     const meta = getSourceProductMeta(source.product);

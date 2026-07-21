@@ -22,7 +22,7 @@ import { useCallback, useEffect, useState } from "react";
 /** PostHog DWH: full table replication (non-incremental); API enum value `full_refresh`. */
 const FULL_TABLE_REPLICATION = "full_refresh" as const;
 
-function schemasPayload(tables: string[]) {
+function schemasPayload(tables: readonly string[]) {
   return tables.map((name) => ({
     name,
     should_sync: true,

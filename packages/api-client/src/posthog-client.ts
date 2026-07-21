@@ -7,6 +7,8 @@ import type {
   CloudRunSource,
   ExecutionMode,
   PrAuthorshipMode,
+  SourceProduct,
+  SourceType,
   StoredLogEntry,
   TaskRunArtifactMetadata,
 } from "@posthog/shared";
@@ -244,59 +246,8 @@ export interface LlmSkillFileInput {
 
 export interface SignalSourceConfig {
   id: string;
-  source_product:
-    | "session_replay"
-    | "llm_analytics"
-    | "github"
-    | "linear"
-    | "jira"
-    | "zendesk"
-    | "conversations"
-    | "error_tracking"
-    | "pganalyze"
-    | "signals_scout"
-    | "freshdesk"
-    | "freshservice"
-    | "front"
-    | "gorgias"
-    | "kustomer"
-    | "dixa"
-    | "plain"
-    | "gitlab"
-    | "gitea"
-    | "shortcut"
-    | "sentry"
-    | "rollbar"
-    | "bugsnag"
-    | "honeybadger"
-    | "raygun"
-    | "snyk"
-    | "sonarqube"
-    | "semgrep"
-    | "rapid7_insightvm"
-    | "featurebase"
-    | "frill"
-    | "aha"
-    | "uservoice"
-    | "productboard"
-    | "canny"
-    | "asknicely"
-    | "retently"
-    | "appfigures"
-    | "appfollow"
-    | "judgeme_reviews";
-  source_type:
-    | "session_analysis_cluster"
-    | "evaluation"
-    | "issue"
-    | "ticket"
-    | "issue_created"
-    | "issue_reopened"
-    | "issue_spiking"
-    | "cross_source_issue"
-    | "scanner_finding"
-    | "feedback"
-    | "review";
+  source_product: SourceProduct;
+  source_type: SourceType;
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;

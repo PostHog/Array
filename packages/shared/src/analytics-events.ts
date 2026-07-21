@@ -1,6 +1,7 @@
 // Analytics event types and properties
 
 import type { Adapter } from "./adapter";
+import type { SourceProduct } from "./inbox-types";
 
 export interface PromptHistoryOpenedProperties {
   entry_count: number;
@@ -793,47 +794,7 @@ export interface ScoutActionProperties {
 }
 
 export interface SignalSourceConnectedProperties {
-  source_product:
-    | "session_replay"
-    | "error_tracking"
-    | "signals_scout"
-    | "github"
-    | "linear"
-    | "jira"
-    | "zendesk"
-    | "conversations"
-    | "pganalyze"
-    | "llm_analytics"
-    | "freshdesk"
-    | "freshservice"
-    | "front"
-    | "gorgias"
-    | "kustomer"
-    | "dixa"
-    | "plain"
-    | "gitlab"
-    | "gitea"
-    | "shortcut"
-    | "sentry"
-    | "rollbar"
-    | "bugsnag"
-    | "honeybadger"
-    | "raygun"
-    | "snyk"
-    | "sonarqube"
-    | "semgrep"
-    | "rapid7_insightvm"
-    | "featurebase"
-    | "frill"
-    | "aha"
-    | "uservoice"
-    | "productboard"
-    | "canny"
-    | "asknicely"
-    | "retently"
-    | "appfigures"
-    | "appfollow"
-    | "judgeme_reviews";
+  source_product: SourceProduct;
   /** True when this is a brand-new createSignalSourceConfig, false for re-enable of an existing config. */
   is_first_connection: boolean;
   /** True when the connection went through the DataSourceSetup wizard (warehouse OAuth path). */
