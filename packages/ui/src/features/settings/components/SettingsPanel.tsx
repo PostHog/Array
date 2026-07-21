@@ -84,7 +84,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     ],
   },
   {
-    label: "Agents",
+    label: "Configure",
     items: [
       { id: "agents", label: "Agents", icon: <Robot size={16} /> },
       { id: "skills", label: "Skills", icon: <Lightbulb size={16} /> },
