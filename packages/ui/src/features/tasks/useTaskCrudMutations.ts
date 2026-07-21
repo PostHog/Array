@@ -17,6 +17,7 @@ import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMuta
 import { logger } from "@posthog/ui/shell/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { releaseRetainedTask, retainTask } from "./retainedTasks";
 import { taskKeys } from "./taskKeys";
 
 const log = logger.scope("tasks");
@@ -43,6 +44,7 @@ export function useCreateTask() {
   const queryClient = useQueryClient();
 
   const seedTask = (newTask: Task) => {
+    retainTask(newTask);
     // Only seed list caches that aren't scoped to a specific origin_product.
     // An origin-scoped list (e.g. the slack-origin list behind useSlackTasks)
     // is read by the sidebar to brand a task's icon by id membership, so
@@ -68,6 +70,13 @@ export function useCreateTask() {
     queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
   };
 
+  const removeSeededTask = (taskId: string) => {
+    releaseRetainedTask(taskId);
+    queryClient.setQueriesData<Task[]>({ queryKey: taskKeys.lists() }, (old) =>
+      removeTaskFromList(old, taskId),
+    );
+  };
+
   const mutation = useAuthenticatedMutation(
     (
       client,
@@ -89,7 +98,7 @@ export function useCreateTask() {
       }) as unknown as Promise<Task>,
   );
 
-  return { ...mutation, invalidateTasks, seedTask };
+  return { ...mutation, invalidateTasks, removeSeededTask, seedTask };
 }
 
 interface DeleteTaskOptions {

@@ -7,6 +7,8 @@ export const taskContextMenuInput = z.object({
   isPinned: z.boolean().optional(),
   isSuspended: z.boolean().optional(),
   canStop: z.boolean().optional(),
+  canFork: z.boolean().optional(),
+  hasSourceTask: z.boolean().optional(),
   isInCommandCenter: z.boolean().optional(),
   hasEmptyCommandCenterCell: z.boolean().optional(),
   // Top-level desktop_file_system channels available as "File to…" targets.
@@ -47,6 +49,8 @@ const taskAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("pin") }),
   z.object({ type: z.literal("suspend") }),
   z.object({ type: z.literal("stop") }),
+  z.object({ type: z.literal("fork") }),
+  z.object({ type: z.literal("open-source") }),
   z.object({ type: z.literal("archive") }),
   z.object({ type: z.literal("archive-prior") }),
   z.object({ type: z.literal("delete") }),

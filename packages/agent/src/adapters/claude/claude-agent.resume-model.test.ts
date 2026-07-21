@@ -38,6 +38,9 @@ function makeQueryHandle(): SdkQueryHandle {
 }
 
 const createdQueries: SdkQueryHandle[] = [];
+const forkSession = vi.fn().mockResolvedValue({
+  sessionId: "0197a000-0000-7000-8000-0000000000f0",
+});
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(() => {
@@ -46,6 +49,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
     return handle;
   }),
   getSessionMessages: vi.fn().mockResolvedValue([]),
+  forkSession,
   listSessions: vi.fn().mockResolvedValue([]),
   createSdkMcpServer: vi.fn(() => ({
     type: "sdk",
@@ -234,5 +238,20 @@ describe("ClaudeAcpAgent session model on resume", () => {
     ).rejects.toThrow(/resume boom/);
 
     expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies the complete transcript before resuming the fork", async () => {
+    const agent = makeAgent();
+    const sourceSessionId = "0197a000-0000-7000-8000-0000000000aa";
+
+    const response = await agent.unstable_forkSession({
+      sessionId: sourceSessionId,
+      cwd,
+      mcpServers: [],
+      _meta: { taskRunId: "run-fork" },
+    });
+
+    expect(forkSession).toHaveBeenCalledWith(sourceSessionId);
+    expect(response.sessionId).toBe("0197a000-0000-7000-8000-0000000000f0");
   });
 });

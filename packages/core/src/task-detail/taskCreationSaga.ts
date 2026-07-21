@@ -131,7 +131,7 @@ export class TaskCreationSaga extends Saga<
 
     if (hasProvisioning) {
       this.deps.host.setProvisioningActive(task.id);
-      if (!input.forkFrom && this.deps.onTaskReady) {
+      if (this.deps.onTaskReady) {
         this.deps.onTaskReady({ task, workspace });
       }
     }

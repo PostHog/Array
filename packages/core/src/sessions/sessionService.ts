@@ -1571,6 +1571,7 @@ export class SessionService {
         : undefined,
       model: source.model ?? this.d.DEFAULT_GATEWAY_MODEL,
     });
+    const { rawEntries } = await this.fetchSessionLogs(undefined, taskRun.id);
 
     const session = createBaseSession(
       taskRun.id,
@@ -1579,7 +1580,10 @@ export class SessionService {
     );
     session.channel = result.channel;
     session.status = "connected";
-    session.events = [...source.events];
+    session.events =
+      rawEntries.length > 0
+        ? convertStoredEntriesToEvents(rawEntries)
+        : [...source.events];
     session.adapter = source.adapter;
     session.model = source.model;
     session.executionMode = source.executionMode;

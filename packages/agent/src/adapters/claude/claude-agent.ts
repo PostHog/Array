@@ -33,6 +33,7 @@ import {
 import {
   type CanUseTool,
   type FastModeState,
+  forkSession as forkClaudeSession,
   getSessionInfo,
   getSessionMessages,
   listSessions,
@@ -360,6 +361,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
   async unstable_forkSession(
     params: ForkSessionRequest,
   ): Promise<ForkSessionResponse> {
+    const forked = await forkClaudeSession(params.sessionId);
     return this.createSession(
       {
         cwd: params.cwd,
@@ -367,7 +369,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         additionalDirectories: params.additionalDirectories,
         _meta: params._meta,
       },
-      { resume: params.sessionId, forkSession: true },
+      { resume: forked.sessionId },
     );
   }
 

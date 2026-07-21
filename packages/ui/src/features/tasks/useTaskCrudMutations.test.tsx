@@ -275,4 +275,22 @@ describe("useCreateTask.seedTask", () => {
     expect(queryClient.getQueryData<Task[]>(key)).toHaveLength(1);
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
+
+  it("removes a seeded task when its creation rolls back", () => {
+    const queryClient = new QueryClient();
+    const key = taskKeys.list();
+    const task = createTask();
+    queryClient.setQueryData<Task[]>(key, [task]);
+
+    const localWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useCreateTask(), {
+      wrapper: localWrapper,
+    });
+
+    result.current.removeSeededTask(task.id);
+
+    expect(queryClient.getQueryData<Task[]>(key)).toEqual([]);
+  });
 });

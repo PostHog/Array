@@ -1,10 +1,10 @@
 import type { Workspace } from "@posthog/shared";
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SessionService } from "../sessions/sessionService";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import { TaskForkService } from "./taskForkService";
 import type { TaskService } from "./taskService";
-import type { SessionService } from "../sessions/sessionService";
 
 const createTask = (overrides: Partial<Task> = {}): Task => ({
   id: "source-task",
@@ -79,16 +79,14 @@ describe("TaskForkService", () => {
   });
 
   it("rejects a cloud run while its current turn is active", async () => {
+    vi.mocked(host.getWorkspace).mockResolvedValue(
+      createWorkspace({ mode: "cloud", folderPath: "" }),
+    );
     const task = createTask({
       latest_run: createRun({ environment: "cloud", status: "in_progress" }),
     });
 
-    const result = await service.forkTask(task, {
-      source: {
-        kind: "cloud",
-        taskRunId: "source-run",
-      },
-    });
+    const result = await service.forkTask(task);
 
     expect(result).toEqual({
       success: false,
@@ -112,12 +110,7 @@ describe("TaskForkService", () => {
       latest_run: createRun({ environment: "cloud", status: "in_progress" }),
     });
 
-    const result = await service.forkTask(task, {
-      source: {
-        kind: "cloud",
-        taskRunId: "source-run",
-      },
-    });
+    const result = await service.forkTask(task);
 
     expect(result.success).toBe(true);
     expect(taskService.createTask).toHaveBeenCalledOnce();
@@ -129,7 +122,7 @@ describe("TaskForkService", () => {
     ]);
     const task = createTask({ latest_run: undefined });
 
-    await service.forkTask(task, { source: { kind: "local" } });
+    await service.forkTask(task);
 
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -156,13 +149,14 @@ describe("TaskForkService", () => {
     const task = createTask({
       latest_run: createRun({ id: "stale-local-run", environment: "local" }),
     });
+    vi.mocked(sessionService.getSessionByTaskId).mockReturnValue({
+      taskRunId: "live-cloud-run",
+      isCloud: true,
+      cloudStatus: "completed",
+      isPromptPending: false,
+    } as never);
 
-    const result = await service.forkTask(task, {
-      source: {
-        kind: "cloud",
-        taskRunId: "live-cloud-run",
-      },
-    });
+    const result = await service.forkTask(task);
 
     expect(result.success).toBe(true);
     expect(taskService.createTask).toHaveBeenCalledWith(
@@ -205,12 +199,7 @@ describe("TaskForkService", () => {
       }),
     });
 
-    await service.forkTask(task, {
-      source: {
-        kind: "cloud",
-        taskRunId: "source-run",
-      },
-    });
+    await service.forkTask(task);
 
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -249,12 +238,7 @@ describe("TaskForkService", () => {
       }),
     });
 
-    await service.forkTask(task, {
-      source: {
-        kind: "cloud",
-        taskRunId: "source-run",
-      },
-    });
+    await service.forkTask(task);
 
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -8,6 +8,8 @@ export type TaskContextMenuIntent =
   | { type: "pin" }
   | { type: "suspend" }
   | { type: "stop" }
+  | { type: "fork" }
+  | { type: "open-source" }
   | { type: "restore" }
   | { type: "archive" }
   | { type: "archive-prior" }
@@ -29,6 +31,10 @@ export function resolveTaskContextMenuIntent(
       return flags.isSuspended ? { type: "restore" } : { type: "suspend" };
     case "stop":
       return { type: "stop" };
+    case "fork":
+      return { type: "fork" };
+    case "open-source":
+      return { type: "open-source" };
     case "archive":
       return { type: "archive" };
     case "archive-prior":

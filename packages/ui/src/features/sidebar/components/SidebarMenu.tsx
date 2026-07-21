@@ -1,5 +1,6 @@
 import { findGroupFolder } from "@posthog/core/sidebar/groupTasks";
 import { isTaskActivelyRunning } from "@posthog/core/sidebar/taskRunning";
+import { getForkSourceTaskId } from "@posthog/core/task-detail/taskForkService";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import type { Task } from "@posthog/shared/types";
 import {
@@ -18,6 +19,7 @@ import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
+import { useTaskFork } from "@posthog/ui/features/tasks/useTaskFork";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
@@ -67,6 +69,7 @@ function SidebarMenuComponent() {
 
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
+  const { forkTask } = useTaskFork();
   const { archiveTask } = useArchiveTask();
   const { renameTask } = useRenameTask();
   const { togglePin } = usePinnedTasks();
@@ -302,9 +305,11 @@ function SidebarMenuComponent() {
     }
 
     const taskData = allSidebarTasks.find((t) => t.id === taskId);
-    const task = taskMap.get(taskId) ?? taskData;
+    const fullTask = taskMap.get(taskId);
+    const task = fullTask ?? taskData;
     if (task) {
-      const runId = taskMap.get(taskId)?.latest_run?.id;
+      const runId = fullTask?.latest_run?.id;
+      const sourceTaskId = fullTask ? getForkSourceTaskId(fullTask) : null;
       const workspace = workspaces[taskId];
       const isInCommandCenter = commandCenterCells.some(
         (id) => id === taskId && taskMap.has(id),
@@ -321,6 +326,8 @@ function SidebarMenuComponent() {
         canStop:
           taskData?.taskRunEnvironment === "cloud" &&
           isTaskActivelyRunning(taskData),
+        canFork: !!fullTask && fullTask.runtime !== "pi",
+        hasSourceTask: !!sourceTaskId,
         runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
@@ -331,6 +338,12 @@ function SidebarMenuComponent() {
             taskTitle,
             runId: stopRunId,
           }),
+        onFork: () => {
+          if (fullTask) void forkTask(fullTask);
+        },
+        onOpenSource: () => {
+          if (sourceTaskId) navigateToTaskDetail(sourceTaskId);
+        },
         onArchive: handleTaskArchive,
         onArchivePrior: handleArchivePrior,
         onAddToCommandCenter: () => {

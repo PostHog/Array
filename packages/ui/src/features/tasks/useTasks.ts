@@ -3,6 +3,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useAuthenticatedQuery } from "../../hooks/useAuthenticatedQuery";
 import { useMeQuery } from "../auth/useMeQuery";
+import { mergeRetainedTasks } from "./retainedTasks";
 import { taskKeys } from "./taskKeys";
 
 // Full-task polls are heavy (~630KB per response at 100 tasks — descriptions
@@ -33,12 +34,14 @@ export function useTasks(
 
   return useAuthenticatedQuery(
     taskKeys.list({ repository: filters?.repository, createdBy, internal }),
-    (client) =>
-      client.getTasks({
-        repository: filters?.repository,
-        createdBy,
-        internal,
-      }) as unknown as Promise<Task[]>,
+    async (client) =>
+      mergeRetainedTasks(
+        (await client.getTasks({
+          repository: filters?.repository,
+          createdBy,
+          internal,
+        })) as unknown as Task[],
+      ),
     {
       enabled: (options?.enabled ?? true) && !!currentUser?.id,
       refetchInterval: TASK_LIST_POLL_INTERVAL_MS,

@@ -46,11 +46,15 @@ export function useTaskContextMenu() {
         isPinned?: boolean;
         isSuspended?: boolean;
         canStop?: boolean;
+        canFork?: boolean;
+        hasSourceTask?: boolean;
         runId?: string;
         isInCommandCenter?: boolean;
         hasEmptyCommandCenterCell?: boolean;
         onTogglePin?: () => void;
         onStop?: (taskId: string, taskTitle: string, runId?: string) => void;
+        onFork?: () => void;
+        onOpenSource?: () => void;
         onArchive?: (taskId: string) => void;
         onArchivePrior?: (taskId: string) => void;
         onAddToCommandCenter?: () => void;
@@ -65,11 +69,15 @@ export function useTaskContextMenu() {
         isPinned,
         isSuspended,
         canStop,
+        canFork,
+        hasSourceTask,
         runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
         onTogglePin,
         onStop,
+        onFork,
+        onOpenSource,
         onArchive,
         onArchivePrior,
         onAddToCommandCenter,
@@ -83,6 +91,8 @@ export function useTaskContextMenu() {
           isPinned,
           isSuspended,
           canStop,
+          canFork,
+          hasSourceTask,
           isInCommandCenter,
           hasEmptyCommandCenterCell,
           channels: channels.map(({ id, name }) => ({ id, name })),
@@ -111,6 +121,12 @@ export function useTaskContextMenu() {
             onStop?.(task.id, task.title, runId);
             break;
           }
+          case "fork":
+            onFork?.();
+            break;
+          case "open-source":
+            onOpenSource?.();
+            break;
           case "archive":
             if (onArchive) {
               onArchive(task.id);

@@ -119,6 +119,30 @@ describe("ContextMenuService.showTaskContextMenu", () => {
     expect(labels(idle.lastItems)).not.toContain("Stop task");
   });
 
+  it("offers fork and source navigation when available", async () => {
+    const forkMenu = new FakeContextMenu();
+    const forkResult = makeService(forkMenu).showTaskContextMenu({
+      ...baseTask,
+      canFork: true,
+      hasSourceTask: true,
+    });
+    await forkMenu.shown;
+
+    expect(labels(forkMenu.lastItems)).toContain("Fork task");
+    expect(labels(forkMenu.lastItems)).toContain("Open source task");
+    findItem(forkMenu.lastItems, "Fork task").click();
+    expect(await forkResult).toEqual({ action: { type: "fork" } });
+
+    const sourceMenu = new FakeContextMenu();
+    const sourceResult = makeService(sourceMenu).showTaskContextMenu({
+      ...baseTask,
+      hasSourceTask: true,
+    });
+    await sourceMenu.shown;
+    findItem(sourceMenu.lastItems, "Open source task").click();
+    expect(await sourceResult).toEqual({ action: { type: "open-source" } });
+  });
+
   it("hides Add to Command Center when already in it", async () => {
     const inCc = new FakeContextMenu();
     makeService(inCc).showTaskContextMenu({

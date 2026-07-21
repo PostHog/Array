@@ -1339,7 +1339,10 @@ describe("TaskCreationSaga", () => {
     expect(result.success).toBe(false);
     expect(deleteTaskMock).toHaveBeenCalledWith(createdTask.id);
     expect(mockHost.clearProvisioning).toHaveBeenCalledWith(createdTask.id);
-    expect(onTaskReady).not.toHaveBeenCalled();
+    expect(onTaskReady).toHaveBeenCalledWith({
+      task: createdTask,
+      workspace: null,
+    });
   });
 
   it("still rolls back a worktree task when a later (non-provisioning) step fails", async () => {

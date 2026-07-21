@@ -61,6 +61,7 @@ function createHarness(updateTaskRun: ReturnType<typeof vi.fn>) {
   const track = vi.fn();
   const flushLogs = vi.fn().mockResolvedValue(undefined);
   const cloneLocalLogs = vi.fn().mockResolvedValue(undefined);
+  const readLocalLogs = vi.fn().mockResolvedValue("");
   const fork = vi.fn().mockResolvedValue({
     channel: "child-channel",
     configOptions: [{ id: "model", type: "select" }],
@@ -80,6 +81,7 @@ function createHarness(updateTaskRun: ReturnType<typeof vi.fn>) {
       },
       logs: {
         cloneLocalLogs: { mutate: cloneLocalLogs },
+        readLocalLogs: { query: readLocalLogs },
       },
     },
     fetchAuthState: vi.fn().mockResolvedValue({
@@ -114,6 +116,7 @@ function createHarness(updateTaskRun: ReturnType<typeof vi.fn>) {
     track,
     flushLogs,
     cloneLocalLogs,
+    readLocalLogs,
     fork,
   };
 }
@@ -204,5 +207,48 @@ describe("SessionService.forkLocalTask", () => {
     expect(fork).not.toHaveBeenCalled();
     expect(subscribe).toHaveBeenCalledTimes(1);
     expect(track).not.toHaveBeenCalled();
+  });
+
+  it("hydrates the child transcript from the flushed cloned log", async () => {
+    const updateTaskRun = vi.fn().mockResolvedValue(childRun);
+    const { service, readLocalLogs, setSession } = createHarness(updateTaskRun);
+    readLocalLogs.mockResolvedValue(
+      JSON.stringify({
+        type: "notification",
+        notification: {
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            update: {
+              sessionUpdate: "assistant_message_chunk",
+              content: { type: "text", text: "The completed answer" },
+            },
+          },
+        },
+      }),
+    );
+
+    await service.forkLocalTask({
+      sourceTaskId: "source-task",
+      task: { ...childTask },
+      repoPath: "/repos/code",
+    });
+
+    expect(setSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        events: [
+          expect.objectContaining({
+            message: expect.objectContaining({
+              method: "session/update",
+              params: expect.objectContaining({
+                update: expect.objectContaining({
+                  content: { type: "text", text: "The completed answer" },
+                }),
+              }),
+            }),
+          }),
+        ],
+      }),
+    );
   });
 });

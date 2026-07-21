@@ -19,12 +19,6 @@ import type { ITaskCreationHost } from "./taskCreationHost";
 import type { CreateTaskResult, TaskService } from "./taskService";
 
 export interface ForkTaskOptions {
-  source:
-    | { kind: "local" }
-    | {
-        kind: "cloud";
-        taskRunId: string;
-      };
   onTaskReady?: (output: TaskCreationOutput) => void;
 }
 
@@ -55,6 +49,11 @@ export function canForkCloudRun(
   );
 }
 
+export function getForkSourceTaskId(task: Task): string | null {
+  const sourceTaskId = task.latest_run?.state?.forked_from_task_id;
+  return typeof sourceTaskId === "string" ? sourceTaskId : null;
+}
+
 @injectable()
 export class TaskForkService {
   constructor(
@@ -68,14 +67,22 @@ export class TaskForkService {
 
   async forkTask(
     sourceTask: Task,
-    options: ForkTaskOptions,
+    options: ForkTaskOptions = {},
   ): Promise<CreateTaskResult> {
     if (sourceTask.runtime === "pi") {
       return this.validationError("Pi tasks cannot be forked yet");
     }
 
     const sourceWorkspace = await this.host.getWorkspace(sourceTask.id);
-    if (options.source.kind === "local") {
+    const sourceSession = this.sessionService.getSessionByTaskId(sourceTask.id);
+    const isCloud =
+      sourceSession?.isCloud !== undefined
+        ? sourceSession.isCloud
+        : sourceWorkspace
+          ? sourceWorkspace.mode === "cloud"
+          : sourceTask.latest_run?.environment === "cloud";
+
+    if (!isCloud) {
       if (
         !sourceWorkspace ||
         sourceWorkspace.mode === "cloud" ||
@@ -107,17 +114,21 @@ export class TaskForkService {
       );
     }
 
+    const sourceTaskRunId = sourceSession?.isCloud
+      ? sourceSession.taskRunId
+      : sourceTask.latest_run?.id;
+    if (!sourceTaskRunId) {
+      return this.validationError("This task has no cloud run to fork");
+    }
+
     let sourceRun = sourceTask.latest_run;
-    if (!sourceRun || sourceRun.id !== options.source.taskRunId) {
+    if (!sourceRun || sourceRun.id !== sourceTaskRunId) {
       const client = await this.host.getAuthenticatedClient();
       if (!client) {
         return this.validationError("Not authenticated");
       }
       try {
-        sourceRun = await client.getTaskRun(
-          sourceTask.id,
-          options.source.taskRunId,
-        );
+        sourceRun = await client.getTaskRun(sourceTask.id, sourceTaskRunId);
       } catch (error) {
         return {
           success: false,
@@ -132,13 +143,7 @@ export class TaskForkService {
     if (sourceRun.environment !== "cloud") {
       return this.validationError("The source run is not a cloud run");
     }
-    if (
-      !canForkCloudRun(
-        sourceRun.id,
-        sourceRun.status,
-        this.sessionService.getSessionByTaskId(sourceTask.id),
-      )
-    ) {
+    if (!canForkCloudRun(sourceRun.id, sourceRun.status, sourceSession)) {
       return this.validationError(
         "Wait for the current cloud turn to finish before forking it",
       );

@@ -115,6 +115,8 @@ export class ContextMenuService {
       isPinned,
       isSuspended,
       canStop,
+      canFork,
+      hasSourceTask,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
       channels,
@@ -142,6 +144,21 @@ export class ContextMenuService {
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
       this.item("Rename", { type: "rename" }),
+      ...(canFork || hasSourceTask
+        ? [
+            this.separator(),
+            ...(canFork
+              ? [this.item("Fork task", { type: "fork" as const })]
+              : []),
+            ...(hasSourceTask
+              ? [
+                  this.item("Open source task", {
+                    type: "open-source" as const,
+                  }),
+                ]
+              : []),
+          ]
+        : []),
       ...(canStop
         ? [this.separator(), this.item("Stop task", { type: "stop" as const })]
         : []),

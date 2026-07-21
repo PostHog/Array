@@ -24,6 +24,12 @@ describe("resolveTaskContextMenuIntent", () => {
     expect(resolveTaskContextMenuIntent({ type: "stop" }, {})).toEqual({
       type: "stop",
     });
+    expect(resolveTaskContextMenuIntent({ type: "fork" }, {})).toEqual({
+      type: "fork",
+    });
+    expect(resolveTaskContextMenuIntent({ type: "open-source" }, {})).toEqual({
+      type: "open-source",
+    });
     expect(resolveTaskContextMenuIntent({ type: "delete" }, {})).toEqual({
       type: "delete",
     });
