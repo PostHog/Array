@@ -101,6 +101,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
       { id: "agents", label: "Agents", icon: <Robot size={16} /> },
       { id: "skills", label: "Skills", icon: <Lightbulb size={16} /> },
       { id: "mcp-servers", label: "MCP servers", icon: <Plugs size={16} /> },
+      { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
       {
         id: "signals",
         label: "Self-driving",
@@ -117,7 +118,6 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
         icon: <Palette size={16} />,
       },
       { id: "terminal", label: "Terminal", icon: <Terminal size={16} /> },
-      { id: "claude-code", label: "Claude Code", icon: <Code size={16} /> },
       { id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
     ],
   },
