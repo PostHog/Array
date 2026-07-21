@@ -110,6 +110,10 @@ export type Session = BaseSession & {
   queryGeneration: number;
   /** The query iterator ended and can't be revived; new prompts reject. */
   queryClosed?: boolean;
+  /** Set while a /clear is swapping the SDK query; resolves when it settles
+   * (success or failure). Prompts await it, cancel/refresh refuse during it,
+   * and a second /clear is rejected — the swap must never be raced. */
+  clearing?: Promise<void>;
   cancelController?: AbortController;
   forceCancelTimer?: ReturnType<typeof setTimeout>;
   emitRawSDKMessages: boolean | SDKMessageFilter[];

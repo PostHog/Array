@@ -485,6 +485,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       return this.clearConversation(params);
     }
 
+    if (this.session.clearing) {
+      // A /clear is swapping the SDK query underneath. Wait for it to settle
+      // so this prompt lands on the fresh input stream, not the retired one
+      // (a failed clear sets queryClosed, which the check below rejects).
+      await this.session.clearing;
+    }
+
     if (commandMatch && !isLocalOnlyCommand) {
       await this.refreshSlashCommandsForPrompt(commandMatch[1]);
     }
@@ -1442,6 +1449,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     if (session.queryClosed) {
       return;
     }
+    if (session.clearing) {
+      // A /clear is swapping the SDK query: there is no turn to cancel, and
+      // interrupting the half-initialized replacement would corrupt the swap.
+      // A wedged clear self-limits via SESSION_VALIDATION_TIMEOUT_MS.
+      this.logger.debug("Ignoring cancel while a /clear is in progress", {
+        sessionId: this.sessionId,
+      });
+      return;
+    }
     session.cancelled = true;
 
     // Settle not-yet-echoed turns immediately; the SDK still runs their
@@ -1574,6 +1590,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     if (session.queryClosed) {
       throw RequestError.internalError(undefined, SESSION_ENDED_MESSAGE);
     }
+    if (session.clearing) {
+      // A second /clear while one is mid-swap would race the same session
+      // fields (query/input/abortController) and orphan a live SDK query.
+      await this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: "A conversation clear is already in progress.",
+          },
+        },
+      });
+      return { stopReason: "end_turn" };
+    }
     if (session.activeTurn !== null || session.turnQueue.length > 0) {
       await this.client.sessionUpdate({
         sessionId: params.sessionId,
@@ -1588,6 +1619,26 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       return { stopReason: "end_turn" };
     }
 
+    // Claim the session synchronously, before the first await: ACP handlers
+    // are not serialized, so a prompt/cancel/second clear can arrive at any
+    // await point below. They key off this flag (see Session.clearing).
+    let settleClearing!: () => void;
+    session.clearing = new Promise<void>((resolve) => {
+      settleClearing = resolve;
+    });
+    try {
+      return await this.performClear(params, session);
+    } finally {
+      settleClearing();
+      session.clearing = undefined;
+    }
+  }
+
+  /** Body of {@link clearConversation}; only runs holding `session.clearing`. */
+  private async performClear(
+    params: PromptRequest,
+    session: Session,
+  ): Promise<PromptResponse> {
     this.logger.info("Clearing conversation", { sessionId: params.sessionId });
 
     // Signal the in-progress state immediately (mirrors the "compacting"
@@ -1599,68 +1650,97 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       status: "clearing",
     });
 
-    await this.retireQuery(session);
+    let newQuery: Query | undefined;
+    let newAbortController: AbortController | undefined;
+    try {
+      await this.retireQuery(session);
 
-    const newSdkSessionId = uuidv7();
-    const newAbortController = new AbortController();
-    const {
-      resume: _dropResume,
-      forkSession: _dropFork,
-      ...rest
-    } = session.queryOptions;
+      const newSdkSessionId = uuidv7();
+      newAbortController = new AbortController();
+      const {
+        resume: _dropResume,
+        forkSession: _dropFork,
+        ...rest
+      } = session.queryOptions;
 
-    // Rebuild the in-process ("sdk") server fresh; reusing the prior instance
-    // throws "Already connected to a transport".
-    const freshInProcess = session.buildInProcessMcpServers();
+      // Rebuild the in-process ("sdk") server fresh; reusing the prior instance
+      // throws "Already connected to a transport".
+      const freshInProcess = session.buildInProcessMcpServers();
 
-    const newOptions: Options = {
-      ...rest,
-      mcpServers: {
-        ...externalMcpServers(rest.mcpServers),
-        ...freshInProcess,
-      },
-      sessionId: newSdkSessionId,
-      abortController: newAbortController,
-      // `rest.model` is the creation-time value; the user may have switched
-      // models since, so re-root the new Query on the live session model.
-      ...(session.modelId && { model: toSdkModelId(session.modelId) }),
-    };
+      const newOptions: Options = {
+        ...rest,
+        mcpServers: {
+          ...externalMcpServers(rest.mcpServers),
+          ...freshInProcess,
+        },
+        sessionId: newSdkSessionId,
+        abortController: newAbortController,
+        // `rest.model` is the creation-time value; the user may have switched
+        // models since, so re-root the new Query on the live session model.
+        ...(session.modelId && { model: toSdkModelId(session.modelId) }),
+      };
 
-    const newInput = new Pushable<SDKUserMessage>();
-    const newQuery = query({ prompt: newInput, options: newOptions });
+      const newInput = new Pushable<SDKUserMessage>();
+      newQuery = query({ prompt: newInput, options: newOptions });
 
-    session.query = newQuery;
-    session.input = newInput;
-    session.queryOptions = newOptions;
-    session.abortController = newAbortController;
+      session.query = newQuery;
+      session.input = newInput;
+      session.queryOptions = newOptions;
+      session.abortController = newAbortController;
 
-    const result = await withTimeout(
-      newQuery.initializationResult(),
-      SESSION_VALIDATION_TIMEOUT_MS,
-    );
-    if (result.result === "timeout") {
-      // Nothing has been broadcast or logged yet at this point, so a timeout
-      // here leaves no orphaned "/clear" turn behind: the log is untouched.
-      this.terminateQuery(newQuery, newAbortController);
+      const result = await withTimeout(
+        newQuery.initializationResult(),
+        SESSION_VALIDATION_TIMEOUT_MS,
+      );
+      if (result.result === "timeout") {
+        throw new Error(
+          `Conversation clear timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
+        );
+      }
+      return await this.finishClear(params, session, newQuery, {
+        newSdkSessionId,
+        initResult: result.value,
+      });
+    } catch (error) {
+      // The old query is already retired and the new one is unproven, so any
+      // failure here — timeout, SDK init rejection, a consumer that died while
+      // being retired — leaves the session unusable. Close it out and report
+      // the outcome (same as a failed compaction) rather than leaving the
+      // "Clearing…" spinner unresolved and the session half-swapped.
+      if (newQuery && newAbortController) {
+        this.terminateQuery(newQuery, newAbortController);
+      }
       session.queryClosed = true;
-      const timeoutMessage = `Conversation clear timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`;
-      // Clear the "Clearing…" spinner and report the outcome as its own row,
-      // same as a failed compaction.
-      await this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
-        sessionId: params.sessionId,
-        status: "clearing_failed",
-        error: timeoutMessage,
-      });
-      throw new RequestError(-32603, timeoutMessage, {
-        sessionId: params.sessionId,
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      try {
+        await this.client.extNotification(POSTHOG_NOTIFICATIONS.STATUS, {
+          sessionId: params.sessionId,
+          status: "clearing_failed",
+          error: message,
+        });
+      } catch {
+        // The client transport itself is failing; don't mask the cause.
+      }
+      throw new RequestError(-32603, message, { sessionId: params.sessionId });
     }
-    session.knownSlashCommands = collectKnownSlashCommands(
-      result.value.commands,
-    );
-    session.fastModeEnabled = fastModeStateEnabled(
-      result.value.fast_mode_state,
-    );
+  }
+
+  /** Post-swap bookkeeping and notifications once the fresh SDK session is
+   *  confirmed live. Failures still propagate to performClear's catch: the
+   *  log may already show the /clear, but the session state is authoritative
+   *  only once everything (marker included) has been persisted. */
+  private async finishClear(
+    params: PromptRequest,
+    session: Session,
+    newQuery: Query,
+    swap: {
+      newSdkSessionId: string;
+      initResult: Awaited<ReturnType<Query["initializationResult"]>>;
+    },
+  ): Promise<PromptResponse> {
+    const { newSdkSessionId, initResult } = swap;
+    session.knownSlashCommands = collectKnownSlashCommands(initResult.commands);
+    session.fastModeEnabled = fastModeStateEnabled(initResult.fast_mode_state);
 
     // Future resumes (refreshSession, desktop reconnect, cloud rehydration)
     // must target the fresh SDK session. `this.sessionId` (the ACP-visible
@@ -1754,6 +1834,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     mcpServers: Record<string, McpServerConfig>,
   ): Promise<void> {
     const prev = this.session;
+    if (prev.clearing) {
+      throw new RequestError(
+        -32002,
+        "Cannot refresh session while a conversation clear is in progress",
+      );
+    }
     if (prev.activeTurn !== null || prev.turnQueue.length > 0) {
       throw new RequestError(
         -32002,

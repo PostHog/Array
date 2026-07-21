@@ -21,6 +21,9 @@ interface SessionFooterProps {
   hasPendingPermission?: boolean;
   pausedDurationMs?: number;
   isCompacting?: boolean;
+  /** A /clear is in flight; its dedicated "Clearing…" row replaces the
+   *  generic generating indicator, same as compaction. */
+  isClearing?: boolean;
   usage?: ContextUsage | null;
   /** Number of tool calls finished so far; the generating indicator advances
    *  its status word each time this changes. */
@@ -37,6 +40,7 @@ export function SessionFooter({
   hasPendingPermission = false,
   pausedDurationMs,
   isCompacting = false,
+  isClearing = false,
   usage,
   completedToolCallCount,
 }: SessionFooterProps) {
@@ -49,7 +53,7 @@ export function SessionFooter({
       <ContextUsageIndicator usage={usage ?? null} />
     </Flex>
   );
-  if (isPromptPending && !isCompacting) {
+  if (isPromptPending && !isCompacting && !isClearing) {
     if (hasPendingPermission) {
       return (
         <Box className="pt-3 pb-1 opacity-50 transition-opacity group-hover/thread:opacity-100">

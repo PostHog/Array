@@ -322,8 +322,21 @@ describe("buildConversationItems", () => {
     expect((statusItems[0].update as { isComplete?: boolean }).isComplete).toBe(
       true,
     );
-    // /clear can't start mid-turn, so unlike compacting it never touches the
-    // isCompacting flag that gates the generating indicator.
+    // The completion resets the flag that suppressed the generic
+    // "Generating…" footer while the clear ran.
+    expect(result.isClearing).toBe(false);
+    expect(result.isCompacting).toBe(false);
+  });
+
+  it("flags isClearing while a clear is in flight so the generic generating footer is suppressed", () => {
+    // The /clear prompt RPC keeps isPromptPending true for the entire swap,
+    // so the footer needs this flag to avoid rendering "Generating…" next to
+    // the dedicated "Clearing…" row (mirrors isCompacting).
+    const result = buildConversationItems(
+      [userPromptMsg(1, 1, "/clear"), statusMsg(2, "clearing")],
+      true,
+    );
+    expect(result.isClearing).toBe(true);
     expect(result.isCompacting).toBe(false);
   });
 
@@ -358,6 +371,8 @@ describe("buildConversationItems", () => {
         error: "Timed out after 30000ms.",
       },
     ]);
+    // The failure also releases the generating-footer suppression.
+    expect(result.isClearing).toBe(false);
   });
 
   it("renders a conversation_cleared divider after a /clear", () => {

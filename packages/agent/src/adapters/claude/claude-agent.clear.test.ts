@@ -361,6 +361,152 @@ describe("ClaudeAcpAgent /clear", () => {
     ).toBeUndefined();
   });
 
+  it("refuses a second /clear while one is already in progress", async () => {
+    // ACP handlers are not serialized, so a second /clear can arrive at any
+    // await point of the first. Racing two swaps against the same session
+    // would orphan a live SDK query; the second must be refused.
+    const { agent, client } = makeAgent();
+    installFakeSession(agent, "s-concurrent");
+    let releaseInit!: (result: InitResult) => void;
+    nextInitPromise = new Promise<InitResult>((resolve) => {
+      releaseInit = resolve;
+    });
+
+    const first = agent.prompt({
+      sessionId: "s-concurrent",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+    // Let the first clear reach its init await (one replacement query live).
+    await vi.waitFor(() => expect(createdQueries).toHaveLength(1));
+
+    const second = await agent.prompt({
+      sessionId: "s-concurrent",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+
+    expect(second.stopReason).toBe("end_turn");
+    const chunk = findUpdate(client, "agent_message_chunk");
+    expect((chunk?.content as { text?: string })?.text).toMatch(
+      /already in progress/,
+    );
+    // The refused clear started no second swap.
+    expect(createdQueries).toHaveLength(1);
+
+    releaseInit({ result: "success", commands: [], models: [] });
+    await expect(first).resolves.toMatchObject({ stopReason: "end_turn" });
+    expect(
+      findAllExtNotifications(
+        client,
+        POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("ignores a cancel that arrives while a clear is in progress", async () => {
+    // cancel() → interrupt() targets session.query, which mid-clear is the
+    // half-initialized replacement; interrupting it would corrupt the swap.
+    const { agent, client } = makeAgent();
+    installFakeSession(agent, "s-cancel-mid-clear");
+    let releaseInit!: (result: InitResult) => void;
+    nextInitPromise = new Promise<InitResult>((resolve) => {
+      releaseInit = resolve;
+    });
+
+    const clearPromise = agent.prompt({
+      sessionId: "s-cancel-mid-clear",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+    await vi.waitFor(() => expect(createdQueries).toHaveLength(1));
+
+    await agent.cancel({ sessionId: "s-cancel-mid-clear" });
+    expect(createdQueries[0].interrupt).not.toHaveBeenCalled();
+
+    releaseInit({ result: "success", commands: [], models: [] });
+    await expect(clearPromise).resolves.toMatchObject({
+      stopReason: "end_turn",
+    });
+    expect(
+      findExtNotification(client, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED),
+    ).toBeDefined();
+  });
+
+  it("closes the session and reports clearing_failed when the fresh session fails to initialize", async () => {
+    // A non-timeout failure (SDK subprocess crash) must get the same
+    // treatment as a timeout: terminate the unproven replacement, close the
+    // session, and resolve the "Clearing…" spinner as failed — never leave
+    // it spinning with the session half-swapped.
+    const { agent, client } = makeAgent();
+    const { session } = installFakeSession(agent, "s-init-crash");
+    const initFailure = Promise.reject<InitResult>(
+      new Error("SDK subprocess crashed"),
+    );
+    initFailure.catch(() => {
+      // Handled when clearConversation awaits it; silence the early tick.
+    });
+    nextInitPromise = initFailure;
+
+    await expect(
+      agent.prompt({
+        sessionId: "s-init-crash",
+        prompt: [{ type: "text", text: "/clear" }],
+      }),
+    ).rejects.toThrow(/SDK subprocess crashed/);
+
+    expect((session as unknown as { queryClosed: boolean }).queryClosed).toBe(
+      true,
+    );
+    // The failed replacement query is torn down, not leaked.
+    expect(createdQueries).toHaveLength(1);
+    expect(createdQueries[0].close).toHaveBeenCalled();
+    // No trace of the /clear in the log, and the spinner resolves as failed.
+    expect(findUpdate(client, "user_message_chunk")).toBeUndefined();
+    expect(
+      findExtNotification(client, POSTHOG_NOTIFICATIONS.CONVERSATION_CLEARED),
+    ).toBeUndefined();
+    expect(
+      findAllExtNotifications(client, POSTHOG_NOTIFICATIONS.STATUS),
+    ).toEqual([
+      { sessionId: "s-init-crash", status: "clearing" },
+      {
+        sessionId: "s-init-crash",
+        status: "clearing_failed",
+        error: "SDK subprocess crashed",
+      },
+    ]);
+  });
+
+  it("rejects a prompt that arrives mid-clear once the clear fails", async () => {
+    // A prompt racing the swap waits for the clear to settle instead of
+    // pushing into the retired input stream; a failed clear then surfaces
+    // as the usual session-ended rejection.
+    const { agent } = makeAgent();
+    installFakeSession(agent, "s-prompt-mid-clear");
+    let failInit!: (error: Error) => void;
+    nextInitPromise = new Promise<InitResult>((_, reject) => {
+      failInit = reject;
+    });
+
+    const clearPromise = agent.prompt({
+      sessionId: "s-prompt-mid-clear",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+    await vi.waitFor(() => expect(createdQueries).toHaveLength(1));
+
+    const followUp = agent.prompt({
+      sessionId: "s-prompt-mid-clear",
+      prompt: [{ type: "text", text: "hello" }],
+    });
+
+    const clearRejection = expect(clearPromise).rejects.toThrow(
+      /SDK subprocess crashed/,
+    );
+    const followUpRejection =
+      expect(followUp).rejects.toThrow(/session has ended/);
+    failInit(new Error("SDK subprocess crashed"));
+    await clearRejection;
+    await followUpRejection;
+  });
+
   it("rejects /clear after the session has ended", async () => {
     const { agent } = makeAgent();
     const { session } = installFakeSession(agent, "s-ended");
