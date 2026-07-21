@@ -1,10 +1,4 @@
-import { isTerminalStatus, type Task } from "@posthog/shared";
 import { Alert } from "react-native";
-
-export function isTaskRunning(task: Task): boolean {
-  const status = task.latest_run?.status;
-  return status !== undefined && !isTerminalStatus(status);
-}
 
 export function confirmArchiveRunningTask(
   taskTitle: string,

@@ -1,4 +1,9 @@
 import { Text } from "@components/text";
+import {
+  countUserMessages,
+  getSessionActivityPhase,
+} from "@posthog/core/sessions/sessionActivity";
+import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
 import type { Task } from "@posthog/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -52,14 +57,7 @@ import {
 } from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import {
-  confirmStopRun,
-  isTaskRunning,
-} from "@/features/tasks/utils/archiveGuard";
-import {
-  countUserMessages,
-  getSessionActivityPhase,
-} from "@/features/tasks/utils/sessionActivity";
+import { confirmStopRun } from "@/features/tasks/utils/archiveGuard";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
   ANALYTICS_EVENTS,

@@ -1,10 +1,11 @@
+import { filterAndSortTasks } from "@posthog/core/tasks/taskActivity";
 import type { Task } from "@posthog/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useUserQuery } from "@/features/auth";
 import { logger } from "@/lib/logger";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { runTaskInCloud } from "../api";
-import { filterAndSortTasks, useTaskStore } from "../stores/taskStore";
+import { useTaskStore } from "../stores/taskStore";
 import type { CreateTaskOptions } from "../types";
 
 const log = logger.scope("tasks-mutations");

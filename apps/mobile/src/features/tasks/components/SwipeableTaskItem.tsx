@@ -1,3 +1,4 @@
+import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
 import type { Task } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { Archive, ArrowCounterClockwise } from "phosphor-react-native";
@@ -11,10 +12,7 @@ import {
   View,
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import {
-  confirmArchiveRunningTask,
-  isTaskRunning,
-} from "../utils/archiveGuard";
+import { confirmArchiveRunningTask } from "../utils/archiveGuard";
 import { TaskItem } from "./TaskItem";
 
 const SWIPE_THRESHOLD = 60;

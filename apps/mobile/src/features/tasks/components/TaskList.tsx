@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import { taskActivityTimestamp } from "@posthog/core/tasks/taskActivity";
 import type { Task } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { Archive, GitBranch, Plus, Sparkle, X } from "phosphor-react-native";
@@ -14,7 +15,7 @@ import { useThemeColors } from "@/lib/theme";
 import { useTasks } from "../hooks/useTasks";
 import { useUserIntegrations } from "../hooks/useUserIntegrations";
 import { useArchivedTasksStore } from "../stores/archivedTasksStore";
-import { taskActivityTimestamp, useTaskStore } from "../stores/taskStore";
+import { useTaskStore } from "../stores/taskStore";
 import { GitHubConnectionPrompt } from "./GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "./GitHubLoadNotice";
 import { SwipeableTaskItem } from "./SwipeableTaskItem";

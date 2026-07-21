@@ -27,7 +27,6 @@ export * from "./types";
 
 // Utils
 export {
-  convertRawEntriesToEvents,
   convertStoredEntriesToEvents,
   parseSessionLogs,
 } from "./utils/parseSessionLogs";

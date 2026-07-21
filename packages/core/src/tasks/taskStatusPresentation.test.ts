@@ -66,4 +66,16 @@ describe("getTaskStatusPresentationKind", () => {
   it("falls back to chat when a task has no run", () => {
     expect(getTaskStatusPresentationKind(makeTask())).toBe("chat");
   });
+
+  it("preserves the legacy started presentation", () => {
+    expect(
+      getTaskStatusPresentationKind({
+        latest_run: {
+          environment: "local",
+          status: "started",
+          output: null,
+        },
+      }),
+    ).toBe("started");
+  });
 });

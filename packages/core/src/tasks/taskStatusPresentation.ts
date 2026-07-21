@@ -1,5 +1,4 @@
 import { readPrUrls } from "@posthog/shared";
-import type { Task } from "@posthog/shared/domain-types";
 
 export type TaskStatusPresentationKind =
   | "pr"
@@ -9,9 +8,13 @@ export type TaskStatusPresentationKind =
   | "started"
   | "chat";
 
-export function getTaskStatusPresentationKind(
-  task: Pick<Task, "latest_run">,
-): TaskStatusPresentationKind {
+export function getTaskStatusPresentationKind(task: {
+  latest_run?: {
+    environment?: "local" | "cloud";
+    status: string;
+    output: Record<string, unknown> | null;
+  };
+}): TaskStatusPresentationKind {
   const latestRun = task.latest_run;
 
   if (readPrUrls(latestRun?.output)[0]) {
@@ -30,6 +33,7 @@ export function getTaskStatusPresentationKind(
     case "in_progress":
       return "running";
     case "queued":
+    case "started":
       return "started";
     default:
       return "chat";
