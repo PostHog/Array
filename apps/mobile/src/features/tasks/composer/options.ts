@@ -70,7 +70,7 @@ export const MODELS: ModelOption[] = [
 ];
 
 export const DEFAULT_EXECUTION_MODE: ExecutionMode =
-  DEFAULT_CLAUDE_EXECUTION_MODE;
+  DEFAULT_CLAUDE_EXECUTION_MODE as ExecutionMode;
 export const DEFAULT_MODEL =
   defaultEligibleModel(DEFAULT_GATEWAY_MODEL) ??
   MODELS.find((model) => defaultEligibleModel(model.value))?.value ??
