@@ -5,15 +5,13 @@ import {
   DotsSixVertical,
   EnvelopeSimple,
   HashIcon,
-  Lightbulb,
   Lightning,
-  MagnifyingGlass,
-  Plugs,
   RepeatIcon,
-  Robot,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
+import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import {
   CUSTOMIZABLE_NAV_ITEMS,
   type CustomizableNavItem,
@@ -24,18 +22,14 @@ import {
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { track } from "@posthog/ui/shell/analytics";
-import { Button, Checkbox, Dialog, Flex, Text } from "@radix-ui/themes";
+import { Button, Checkbox, Flex, Text } from "@radix-ui/themes";
 import { type RefCallback, useRef, useState } from "react";
 
 const ITEM_ICONS: Record<
   CustomizableNavItemId,
   React.ComponentType<{ size?: number | string }>
 > = {
-  search: MagnifyingGlass,
   inbox: EnvelopeSimple,
-  agents: Robot,
-  skills: Lightbulb,
-  "mcp-servers": Plugs,
   "command-center": Lightning,
   contexts: HashIcon,
   activity: Bell,
@@ -50,19 +44,13 @@ function sameOrder(
   return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
-interface CustomizeSidebarDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  // Items gated off by feature flags stay out of the dialog too, so it never
-  // offers a checkbox for a nav row the user can't have.
-  available?: Record<CustomizableNavItemId, boolean>;
-}
-
-export function CustomizeSidebarDialog({
-  open,
-  onOpenChange,
-  available,
-}: CustomizeSidebarDialogProps) {
+export function CustomizeSidebarSettings() {
+  const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled = useSidebarStore((s) => s.channelsEnabled);
   const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
   const navItemOrder = useSidebarStore((s) => s.navItemOrder);
   const setNavItemVisible = useSidebarStore((s) => s.setNavItemVisible);
@@ -85,7 +73,12 @@ export function CustomizeSidebarDialog({
   const lastMove = useRef<string | null>(null);
 
   const items = orderedNavItems(previewOrder ?? navItemOrder).filter(
-    ({ id }) => available?.[id] !== false,
+    ({ id }) => {
+      if (id === "loops") return loopsEnabled;
+      if (id === "contexts") return bluebirdEnabled;
+      if (id === "activity") return bluebirdEnabled && channelsEnabled;
+      return true;
+    },
   );
 
   const handleDragStart: DragDropEvents["dragstart"] = () => {
@@ -131,57 +124,48 @@ export function CustomizeSidebarDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content maxWidth="360px">
-        <Dialog.Title>Customize sidebar</Dialog.Title>
-        <Dialog.Description className="text-gray-10 text-sm">
-          Choose which items appear in your sidebar and drag to reorder.
-          Unchecked items live under More.
-        </Dialog.Description>
+    <Flex direction="column" className="max-w-[360px]">
+      <Text className="text-gray-10 text-sm">
+        Choose which items appear in your sidebar and drag to reorder.
+      </Text>
 
-        {/* Default pointer activation starts a mouse drag from the handle
+      {/* Default pointer activation starts a mouse drag from the handle
             immediately; a distance constraint here would delay pickup. */}
-        <DragDropProvider
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-        >
-          <Flex direction="column" gap="3" mt="4">
-            {items.map((item, index) => (
-              <SortableNavItemRow
-                key={item.id}
-                item={item}
-                index={index}
-                visible={isNavItemVisible(navItemOverrides, item.id)}
-                onVisibleChange={(nextVisible) => {
-                  setNavItemVisible(item.id, nextVisible);
-                  track(ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED, {
-                    item: item.analyticsId,
-                    visible: nextVisible,
-                  });
-                }}
-              />
-            ))}
-          </Flex>
-        </DragDropProvider>
-
-        <Flex mt="4" justify="between" align="center">
-          <Button
-            size="1"
-            variant="ghost"
-            color="gray"
-            onClick={() => setNavItemOrder([])}
-          >
-            Reset
-          </Button>
-          <Dialog.Close>
-            <Button size="1" variant="solid">
-              Done
-            </Button>
-          </Dialog.Close>
+      <DragDropProvider
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <Flex direction="column" gap="3" mt="4">
+          {items.map((item, index) => (
+            <SortableNavItemRow
+              key={item.id}
+              item={item}
+              index={index}
+              visible={isNavItemVisible(navItemOverrides, item.id)}
+              onVisibleChange={(nextVisible) => {
+                setNavItemVisible(item.id, nextVisible);
+                track(ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED, {
+                  item: item.analyticsId,
+                  visible: nextVisible,
+                });
+              }}
+            />
+          ))}
         </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+      </DragDropProvider>
+
+      <Flex mt="4" justify="start" align="center">
+        <Button
+          size="1"
+          variant="ghost"
+          color="gray"
+          onClick={() => setNavItemOrder([])}
+        >
+          Reset
+        </Button>
+      </Flex>
+    </Flex>
   );
 }
 

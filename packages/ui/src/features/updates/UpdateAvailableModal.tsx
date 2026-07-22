@@ -66,7 +66,7 @@ export function UpdateAvailableModal() {
   const prefetchForActiveUpdate = useHasActiveUpdate();
   const targetVersion = version ?? availableVersion;
   const { data: releasesData, isPending: isPendingReleases } = useQuery({
-    ...hostTRPC.githubReleases.list.queryOptions(
+    ...hostTRPC.releaseFeed.list.queryOptions(
       targetVersion ? { expectVersion: targetVersion } : undefined,
     ),
     enabled: isOpen || prefetchForActiveUpdate,

@@ -17,11 +17,7 @@ export interface PromptHistorySelectedProperties {
 
 type ExecutionType = "cloud" | "local";
 export type RepositoryProvider = "github" | "gitlab" | "local" | "none";
-type TaskCreatedFrom =
-  | "cli"
-  | "command-menu"
-  | "home-quick-action"
-  | "sidebar-worktree";
+type TaskCreatedFrom = "cli" | "command-menu" | "sidebar-worktree";
 type RepositorySelectSource = "task-creation" | "task-detail";
 type GitActionType =
   | "push"
@@ -60,6 +56,7 @@ export type CommandMenuAction =
   | "open-channel"
   | "open-command-center"
   | "open-inbox"
+  | "open-loops"
   | "open-usage"
   | "search-files"
   | "open-file"
@@ -244,7 +241,6 @@ export interface CommandMenuActionProperties {
 
 export type SidebarNavItem =
   | "new_task"
-  | "home"
   | "search"
   | "inbox"
   | "agents"
@@ -1254,6 +1250,11 @@ export const ANALYTICS_EVENTS = {
   // Autoresearch events
   AUTORESEARCH_ARMED: "Autoresearch armed",
   AUTORESEARCH_RUN_STARTED: "Autoresearch run started",
+
+  // Loops promo events
+  LOOPS_PROMO_OPENED: "Loops promo opened",
+  LOOPS_PROMO_DISMISSED: "Loops promo dismissed",
+  LOOPS_PROMO_LEARN_MORE_CLICKED: "Loops promo learn more clicked",
 } as const;
 
 // Event property mapping
@@ -1414,6 +1415,11 @@ export type EventPropertyMap = {
   // Autoresearch events
   [ANALYTICS_EVENTS.AUTORESEARCH_ARMED]: AutoresearchArmedProperties;
   [ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED]: AutoresearchRunStartedProperties;
+
+  // Loops promo events
+  [ANALYTICS_EVENTS.LOOPS_PROMO_OPENED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_DISMISSED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_LEARN_MORE_CLICKED]: never;
 };
 
 /**

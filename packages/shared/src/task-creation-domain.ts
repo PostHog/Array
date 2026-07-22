@@ -100,9 +100,6 @@ export interface TaskCreationInput {
    * working directory, so non-code tasks (analysis, email) can run repo-less.
    */
   allowNoRepo?: boolean;
-  // Label of the Home-tab quick action that started this run (e.g. "Fix CI"), so the
-  // workstream can show which quick actions have been run against it.
-  homeQuickActionLabel?: string;
   /**
    * Continue a Claude Code CLI session by importing its transcript and resuming
    * with replay. Local mode only; forces the claude adapter. `branch` is what the

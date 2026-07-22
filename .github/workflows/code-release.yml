@@ -237,6 +237,25 @@ jobs:
             apps/code/out/*-mac.zip \
             apps/code/out/*.blockmap
 
+      - name: Configure AWS credentials for the update feed
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ secrets.AWS_DESKTOP_APP_RELEASES_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      # Binaries carry the version in their filename, so they are immutable.
+      # Channel files are uploaded last by finalize-release; updaters only see
+      # this release once those land.
+      - name: Upload artifacts to the S3 update feed
+        working-directory: apps/code/out
+        run: |
+          for f in *.dmg *-mac.zip *.blockmap; do
+            aws s3 cp "$f" "s3://posthog-desktop-app-releases-prod-us/stable/$f" \
+              --cache-control "public, max-age=31536000, immutable"
+          done
+
       # Hash the same files uploaded above; finalize-release turns these into
       # the download tables in the release notes.
       - name: Compute artifact checksums
@@ -375,6 +394,35 @@ jobs:
           $items += Get-ChildItem $out -File -Filter "*.blockmap"
           $files = $items | Select-Object -ExpandProperty FullName
           gh release upload "v$env:APP_VERSION" --repo PostHog/code --clobber @files
+
+      - name: Configure AWS credentials for the update feed
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ secrets.AWS_DESKTOP_APP_RELEASES_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      # latest.yml is NOT uploaded here: finalize-release injects release notes
+      # and publishes it last, which is what flips the S3 feed to this version.
+      - name: Upload artifacts to the S3 update feed
+        shell: pwsh
+        run: |
+          $out = "apps/code/out"
+          $items = @()
+          $items += Get-ChildItem $out -File -Filter "*.exe"
+          $items += Get-ChildItem $out -File -Filter "*.blockmap"
+          foreach ($f in $items) {
+            aws s3 cp $f.FullName "s3://posthog-desktop-app-releases-prod-us/stable/$($f.Name)" --cache-control "public, max-age=31536000, immutable"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Upload windows manifest artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-manifest
+          path: apps/code/out/latest.yml
+          retention-days: 1
 
       # Hash the same files uploaded above (minus latest.yml); finalize-release
       # turns these into the download tables in the release notes.
@@ -522,6 +570,30 @@ jobs:
             apps/code/out/*.deb \
             apps/code/out/*.rpm
 
+      - name: Configure AWS credentials for the update feed
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ secrets.AWS_DESKTOP_APP_RELEASES_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      # No Linux auto-updater consumes latest-linux*.yml today (updates are
+      # macOS and Windows only), so the manifests can ship with the binaries
+      # instead of waiting for the finalize flip.
+      - name: Upload artifacts to the S3 update feed
+        working-directory: apps/code/out
+        run: |
+          for f in *.AppImage *.deb *.rpm; do
+            aws s3 cp "$f" "s3://posthog-desktop-app-releases-prod-us/stable/$f" \
+              --cache-control "public, max-age=31536000, immutable"
+          done
+          for f in latest-linux*.yml; do
+            [ -e "$f" ] || continue
+            aws s3 cp "$f" "s3://posthog-desktop-app-releases-prod-us/stable/$f" \
+              --cache-control "no-cache"
+          done
+
       # Hash the same files uploaded above; finalize-release turns these into
       # the download tables in the release notes.
       - name: Compute artifact checksums
@@ -545,6 +617,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Get app token
         id: app-token
@@ -559,12 +632,14 @@ jobs:
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout merge script
+      - name: Checkout release scripts
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           sparse-checkout: |
             apps/code/scripts/merge-mac-manifests.mjs
             apps/code/scripts/generate-release-download-tables.mjs
+            apps/code/scripts/build-releases-feed.mjs
+            apps/code/scripts/inject-release-notes.mjs
           sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
@@ -618,3 +693,86 @@ jobs:
           printf '\n' >> /tmp/release-notes.md
           node apps/code/scripts/generate-release-download-tables.mjs "$APP_VERSION" /tmp/checksums >> /tmp/release-notes.md
           gh release edit "v$APP_VERSION" --repo PostHog/code --draft=false --notes-file /tmp/release-notes.md
+
+      - name: Download windows manifest
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: win-manifest
+          path: /tmp/win-manifest
+
+      # Built after the GitHub release is published so the new release (and its
+      # generated notes) is included; the in-app release notes read this file.
+      - name: Build releases feed manifest
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node apps/code/scripts/build-releases-feed.mjs /tmp/releases.json
+
+      # The generic provider fetches nothing from GitHub, so the channel files
+      # must carry the notes for electron-updater's UpdateInfo.releaseNotes.
+      - name: Inject release notes into channel files
+        run: |
+          node apps/code/scripts/inject-release-notes.mjs /tmp/release-notes.md \
+            /tmp/latest-mac.yml /tmp/win-manifest/latest.yml
+
+      - name: Configure AWS credentials for the update feed
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ secrets.AWS_DESKTOP_APP_RELEASES_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      # The channel-file upload is the S3 publish flip: updaters only see the
+      # new version once these land, after every platform's binaries are up.
+      # Stage all files first, then flip with server-side copies, so a failed
+      # runner upload can never leave the feed advertising a mixed release
+      # (e.g. macOS on the new version while Windows still serves the old one).
+      # Copies preserve the staged objects' cache-control metadata.
+      - name: Publish channel files to the S3 update feed
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          FEED="s3://posthog-desktop-app-releases-prod-us/stable"
+          STAGING="$FEED/.staging/v$APP_VERSION"
+
+          aws s3 cp /tmp/latest-mac.yml "$STAGING/latest-mac.yml" --cache-control "no-cache"
+          aws s3 cp /tmp/win-manifest/latest.yml "$STAGING/latest.yml" --cache-control "no-cache"
+          aws s3 cp /tmp/releases.json "$STAGING/releases.json" --cache-control "no-cache"
+
+          aws s3 cp "$STAGING/latest-mac.yml" "$FEED/latest-mac.yml"
+          aws s3 cp "$STAGING/latest.yml" "$FEED/latest.yml"
+          aws s3 cp "$STAGING/releases.json" "$FEED/releases.json"
+
+          aws s3 rm --recursive "$STAGING/" || echo "staging cleanup failed; harmless"
+
+      # The little markdown table in the run summary: public CloudFront URLs for
+      # everything this release published to the feed.
+      - name: Write release summary
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          BASE="https://desktop-releases.posthog.com/stable"
+          V="$APP_VERSION"
+          {
+            echo "## v$V on the update feed"
+            echo ""
+            echo "| Artifact | URL |"
+            echo "| --- | --- |"
+            for f in \
+              "PostHog-Code-$V-arm64-mac.dmg" \
+              "PostHog-Code-$V-arm64-mac.zip" \
+              "PostHog-Code-$V-x64-mac.dmg" \
+              "PostHog-Code-$V-x64-mac.zip" \
+              "PostHog-Code-$V-x64-win.exe" \
+              "PostHog-Code-$V-arm64-linux.AppImage" \
+              "PostHog-Code-$V-arm64-linux.deb" \
+              "PostHog-Code-$V-arm64-linux.rpm" \
+              "PostHog-Code-$V-x64-linux.AppImage" \
+              "PostHog-Code-$V-x64-linux.deb" \
+              "PostHog-Code-$V-x64-linux.rpm" \
+              "latest-mac.yml" \
+              "latest.yml" \
+              "releases.json"; do
+              echo "| \`$f\` | $BASE/$f |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

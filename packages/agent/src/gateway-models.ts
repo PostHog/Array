@@ -279,8 +279,11 @@ export function getClaudeModelRecency(modelId: string): number {
   return major * 1000 + minor;
 }
 
-// Families ordered most-capable first; unknown families sort last.
-const MODEL_FAMILY_ORDER = ["fable", "opus", "sonnet", "haiku"];
+// Families ordered least-capable first. The picker opens upward (side="top")
+// from the composer, so items later in this list render nearer the trigger and
+// read as the top of the menu — this puts the most-capable family (Fable) on
+// top. Unknown families sort after all known ones.
+const MODEL_FAMILY_ORDER = ["haiku", "sonnet", "opus", "fable"];
 
 function getModelFamilyRank(modelId: string): number {
   const id = modelId.toLowerCase();

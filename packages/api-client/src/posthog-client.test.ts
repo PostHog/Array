@@ -451,6 +451,50 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("presigns a task run artifact for preview", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        url: "https://s3.example.com/screenshot.png?signature=abc",
+        expires_in: 3600,
+      }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.presignTaskRunArtifact(
+        "task-123",
+        "run-123",
+        "tasks/run-123/artifacts/screenshot.png",
+      ),
+    ).resolves.toBe("https://s3.example.com/screenshot.png?signature=abc");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "post",
+        path: "/api/projects/123/tasks/task-123/runs/run-123/artifacts/presign/",
+        overrides: {
+          body: JSON.stringify({
+            storage_path: "tasks/run-123/artifacts/screenshot.png",
+          }),
+        },
+      }),
+    );
+  });
+
   it("returns the redirect URL when authorizing an MCP installation", async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,

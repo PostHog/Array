@@ -45,7 +45,7 @@ export interface LoopFormValues {
 }
 
 export function emptyLoopScheduleTriggerConfig(): LoopSchemas.LoopScheduleTriggerConfig {
-  return { cron_expression: "0 9 * * *", timezone: "UTC" };
+  return { cron_expression: "0 9 * * 1", timezone: "UTC" };
 }
 
 export function emptyLoopGithubTriggerConfig(): LoopSchemas.LoopGithubTriggerConfig {
@@ -98,6 +98,15 @@ export function nextDraftTriggerKey(): string {
   return `draft-trigger-${draftKeySeq}`;
 }
 
+export function defaultLoopScheduleTrigger(): LoopTriggerDraft {
+  return {
+    key: nextDraftTriggerKey(),
+    type: "schedule",
+    enabled: true,
+    config: emptyLoopScheduleTriggerConfig(),
+  };
+}
+
 export function emptyLoopFormValues(): LoopFormValues {
   return {
     name: "",
@@ -108,7 +117,7 @@ export function emptyLoopFormValues(): LoopFormValues {
     model: "",
     reasoningEffort: null,
     repositories: [],
-    triggers: [],
+    triggers: [defaultLoopScheduleTrigger()],
     behaviors: defaultLoopBehaviors(),
     notifications: defaultLoopNotifications(),
     contextTarget: null,

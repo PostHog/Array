@@ -109,7 +109,7 @@
     "@posthog/electron-trpc": "workspace:*",
     "@posthog/enricher": "workspace:*",
     "@posthog/git": "workspace:*",
-    "@posthog/hedgehog-mode": "^0.0.48",
+    "@posthog/hedgehog-mode": "^0.0.53",
     "@posthog/host-router": "workspace:*",
     "@posthog/host-trpc": "workspace:*",
     "@posthog/platform": "workspace:*",

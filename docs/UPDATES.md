@@ -13,15 +13,17 @@ The version in `apps/code/package.json` is set to `0.0.0-dev` - this is intentio
 
 ## Auto-Update Mechanism
 
-PostHog uses [electron-updater](https://www.electron.build/auto-update) (the npm package, not the built-in Electron autoUpdater). On startup the app checks for updates against the GitHub Release for PostHog/code.
+PostHog uses [electron-updater](https://www.electron.build/auto-update) (the npm package, not the built-in Electron autoUpdater) with the generic provider. On startup the app checks for updates against the update feed at `https://desktop-releases.posthog.com/stable`, baked into `app-update.yml` inside the app bundle at package time.
 
-electron-builder generates and uploads a `latest-mac.yml` (macOS) or `latest.yml` (Windows) manifest to the GitHub Release during CI. The path to these manifests is baked into `app-update.yml` inside the app bundle at package time.
+Release CI uploads the binaries and blockmaps to the feed from each platform job, then the finalize job uploads the channel files (`latest-mac.yml`, `latest.yml`) last. Updaters only see a release once the channel files change, so that upload is the publish step. The finalize job also injects the generated release notes into the channel files (the generic provider fetches nothing from GitHub, so `UpdateInfo.releaseNotes` comes from the manifest) and publishes `releases.json`, which powers the in-app release notes and What's New history.
+
+**Dual publish**: installs built before the feed moved to S3 poll GitHub Releases on PostHog/code, so CI keeps uploading the same artifacts and manifests there until that fleet drains. The GitHub release also remains the human-facing changelog and download page.
 
 **macOS**: DMG + zip artifacts are uploaded; the merged `latest-mac.yml` covers both arm64 and x64 so the correct build is selected per architecture.
 
 **Windows**: A single NSIS installer is shipped and updated through electron-updater via `latest.yml`. The legacy Squirrel.Windows installer is no longer built; anyone still on an old Squirrel install must reinstall once via the NSIS installer to keep receiving updates.
 
-**Linux**: No auto-update. AppImage, deb and rpm packages are manual downloads from the GitHub Release.
+**Linux**: No auto-update. AppImage, deb and rpm packages are manual downloads from the GitHub Release, also mirrored to the S3 feed.
 
 ## How It Works
 

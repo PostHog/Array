@@ -814,8 +814,9 @@ container.bind(REPORT_MODEL_RESOLVER).toConstantValue({
 
 // Fail loudly at composition time if a capability the shared app resolves via
 // service location is unbound, instead of limping to the first navigation that
-// needs it (how the missing reportModelResolver first surfaced). CI locks this
-// in via web-container.test.ts.
+// needs it (how the missing reportModelResolver first surfaced). This runs at
+// module load, so any boot — including the e2e smoke run — trips an unbound
+// required capability immediately.
 assertHostCapabilities(container, REQUIRED_HOST_CAPABILITIES);
 
 setRootContainer(container);

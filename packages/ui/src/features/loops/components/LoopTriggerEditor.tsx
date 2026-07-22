@@ -18,12 +18,12 @@ import {
   type RecurringFrequency,
 } from "../loopCron";
 import {
+  defaultLoopScheduleTrigger,
   emptyLoopApiTriggerConfig,
   emptyLoopGithubTriggerConfig,
   emptyLoopScheduleTriggerConfig,
   isTriggerDraftValid,
   type LoopTriggerDraft,
-  nextDraftTriggerKey,
 } from "../loopFormTypes";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
 
@@ -97,15 +97,7 @@ export function LoopTriggerEditor({
   };
 
   const addTrigger = () => {
-    onChange([
-      ...triggers,
-      {
-        key: nextDraftTriggerKey(),
-        type: "schedule",
-        enabled: true,
-        config: emptyLoopScheduleTriggerConfig(),
-      },
-    ]);
+    onChange([...triggers, defaultLoopScheduleTrigger()]);
   };
 
   return (

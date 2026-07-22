@@ -3,29 +3,11 @@ import type { SidebarNavItem } from "@posthog/shared/analytics-events";
 export const SIDEBAR_MIN_WIDTH = 240;
 
 export const CUSTOMIZABLE_NAV_ITEMS = [
-  {
-    id: "search",
-    label: "Search",
-    analyticsId: "search",
-    defaultVisible: false,
-  },
   { id: "inbox", label: "Inbox", analyticsId: "inbox", defaultVisible: true },
   {
-    id: "agents",
-    label: "Agents",
-    analyticsId: "agents",
-    defaultVisible: true,
-  },
-  {
-    id: "skills",
-    label: "Skills",
-    analyticsId: "skills",
-    defaultVisible: true,
-  },
-  {
-    id: "mcp-servers",
-    label: "MCP servers",
-    analyticsId: "mcp_servers",
+    id: "loops",
+    label: "Loops",
+    analyticsId: "loops",
     defaultVisible: true,
   },
   {
@@ -50,12 +32,6 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
     id: "configure",
     label: "Configure",
     analyticsId: "configure",
-    defaultVisible: true,
-  },
-  {
-    id: "loops",
-    label: "Loops",
-    analyticsId: "loops",
     defaultVisible: true,
   },
 ] as const satisfies readonly {

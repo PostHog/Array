@@ -3,7 +3,6 @@ import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
-import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
@@ -18,17 +17,10 @@ import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
   navigateToActivity,
-  navigateToAgents,
   navigateToCommandCenter,
-  navigateToHome,
   navigateToInbox,
   navigateToLoops,
-  navigateToMcpServers,
-  navigateToSkills,
   navigateToWebsiteCommandCenter,
-  navigateToWebsiteHome,
-  navigateToWebsiteMcpServers,
-  navigateToWebsiteSkills,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -36,22 +28,15 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
-import { Fragment, type ReactNode, useState } from "react";
-import { CustomizeSidebarDialog } from "./CustomizeSidebarDialog";
+import type { ReactNode } from "react";
 import { ActivityItem } from "./items/ActivityItem";
-import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
 import { ContextsItem } from "./items/ContextsItem";
-import { CustomizeSidebarItem } from "./items/CustomizeSidebarItem";
-import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
 import { LoopsItem } from "./items/LoopsItem";
-import { McpServersItem } from "./items/McpServersItem";
-import { MoreItem } from "./items/MoreItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
-import { SkillsItem } from "./items/SkillsItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -68,8 +53,8 @@ interface SidebarNavSectionProps {
 // and the Channels pane. It is fully self-contained — every item's active
 // state, badge count, and click handler is wired here — so it can be dropped
 // into either layout. In the Channels space, destinations with a /website
-// mirror (Home, Skills, MCP servers, Command Center) stay in that space;
-// Inbox, Agents and New task have no mirror yet and jump back to Code.
+// mirror (Command Center) stay in that space; Inbox and New task have
+// no mirror yet and jump back to Code.
 // Configure opens the shared settings UI. Search opens the command menu in
 // place and defaults to the collapsible More row; the Customize sidebar
 // dialog controls which items show at the top level.
@@ -77,7 +62,6 @@ export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
-  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
   // Loops stays behind the loops flag; default on in dev so local builds
   // keep the nav item. Also gates the per-channel Loops tab (see ChannelTabs).
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
@@ -100,11 +84,6 @@ export function SidebarNavSection({
   });
   const goNewTask = () =>
     openTaskInput(inChannels ? { space: "website" } : undefined);
-  const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
-  const goSkills = inChannels ? navigateToWebsiteSkills : navigateToSkills;
-  const goMcpServers = inChannels
-    ? navigateToWebsiteMcpServers
-    : navigateToMcpServers;
   const goCommandCenter = inChannels
     ? navigateToWebsiteCommandCenter
     : navigateToCommandCenter;
@@ -113,14 +92,10 @@ export function SidebarNavSection({
   // useSidebarData derives, without pulling in its task-loading.
   const isHomeActive =
     view.type === "task-input" || view.type === "task-pending";
-  const isHomeViewActive = view.type === "home";
   const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
-  const isAgentsActive = view.type === "agents";
   const isLoopsActive = view.type === "loops";
   const isCommandCenterActive = view.type === "command-center";
-  const isSkillsActive = view.type === "skills";
-  const isMcpServersActive = view.type === "mcp-servers";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
   // Pull requests tab shows, so the badge and the tab always agree.
@@ -174,31 +149,8 @@ export function SidebarNavSection({
       (id) => !isNavItemVisible(navItemOverrides, id),
     ),
   );
-  const [moreExpanded, setMoreExpanded] = useState(false);
-  const [customizeOpen, setCustomizeOpen] = useState(false);
-
-  // While More is collapsed, an active item hidden under it takes over the
-  // More row so the current page stays visible. Search, Contexts and Configure
-  // never do: none of them is a routed page.
-  const moreItemActive: Record<CustomizableNavItemId, boolean> = {
-    search: false,
-    inbox: isInboxActive,
-    agents: isAgentsActive,
-    skills: isSkillsActive,
-    "mcp-servers": isMcpServersActive,
-    "command-center": isCommandCenterActive,
-    contexts: false,
-    activity: isActivityActive,
-    configure: false,
-    loops: isLoopsActive,
-  };
-
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
-    search: true,
     inbox: true,
-    agents: true,
-    skills: true,
-    "mcp-servers": true,
     "command-center": true,
     contexts: bluebirdEnabled,
     // Activity (the mentions feed) is a channels surface, so it only appears
@@ -207,12 +159,6 @@ export function SidebarNavSection({
     configure: true,
     loops: loopsEnabled,
   };
-
-  const activeHiddenItem = orderedItems.find(
-    ({ id }) => navItemAvailable[id] && hidden.has(id) && moreItemActive[id],
-  );
-  const takeoverLabel =
-    !moreExpanded && activeHiddenItem ? activeHiddenItem.label : null;
 
   const handleChannelsToggle = (depth: 0 | 1) => (checked: boolean) => {
     setChannelsEnabled(checked);
@@ -238,39 +184,12 @@ export function SidebarNavSection({
     CustomizableNavItemId,
     (depth: 0 | 1) => ReactNode
   > = {
-    search: (depth) => (
-      <SearchItem
-        depth={depth}
-        onClick={withNavTrack("search", openCommandMenu, depth)}
-      />
-    ),
     inbox: (depth) => (
       <InboxItem
         depth={depth}
         isActive={isInboxActive}
         onClick={withNavTrack("inbox", navigateToInbox, depth)}
         pullRequestCount={inboxPullRequestCount}
-      />
-    ),
-    agents: (depth) => (
-      <AgentsItem
-        depth={depth}
-        isActive={isAgentsActive}
-        onClick={withNavTrack("agents", navigateToAgents, depth)}
-      />
-    ),
-    skills: (depth) => (
-      <SkillsItem
-        depth={depth}
-        isActive={isSkillsActive}
-        onClick={withNavTrack("skills", goSkills, depth)}
-      />
-    ),
-    "mcp-servers": (depth) => (
-      <McpServersItem
-        depth={depth}
-        isActive={isMcpServersActive}
-        onClick={withNavTrack("mcp_servers", goMcpServers, depth)}
       />
     ),
     "command-center": (depth) => (
@@ -313,10 +232,6 @@ export function SidebarNavSection({
   const topLevelItems = orderedItems.filter(
     ({ id }) => navItemAvailable[id] && !hidden.has(id),
   );
-  const moreItems = orderedItems.filter(
-    ({ id }) => navItemAvailable[id] && hidden.has(id),
-  );
-
   return (
     <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
       <Box mb="2">
@@ -326,50 +241,13 @@ export function SidebarNavSection({
         />
       </Box>
 
-      {homeTabEnabled && (
-        <Box>
-          <HomeItem
-            isActive={isHomeViewActive}
-            onClick={withNavTrack("home", goHome)}
-          />
-        </Box>
-      )}
+      <Box>
+        <SearchItem onClick={withNavTrack("search", openCommandMenu)} />
+      </Box>
 
       {topLevelItems.map(({ id }) => (
         <Box key={id}>{renderNavItem[id](0)}</Box>
       ))}
-
-      {/* Hidden items plus the Customize entry live under More, always the
-          last row, like the app switcher pattern this mirrors. */}
-      <Flex direction="column" className="gap-px">
-        <MoreItem
-          expanded={moreExpanded}
-          activeItemLabel={takeoverLabel}
-          onClick={withNavTrack("more", () => setMoreExpanded((e) => !e))}
-        />
-
-        {moreExpanded && (
-          <>
-            {moreItems.map(({ id }) => (
-              <Fragment key={id}>{renderNavItem[id](1)}</Fragment>
-            ))}
-            <CustomizeSidebarItem
-              depth={1}
-              onClick={withNavTrack(
-                "customize_sidebar",
-                () => setCustomizeOpen(true),
-                1,
-              )}
-            />
-          </>
-        )}
-      </Flex>
-
-      <CustomizeSidebarDialog
-        open={customizeOpen}
-        onOpenChange={setCustomizeOpen}
-        available={navItemAvailable}
-      />
     </Flex>
   );
 }
