@@ -62,7 +62,7 @@ export function getOriginProductMeta(
 // clickable NestedButton that opens the originating thread externally.
 // SidebarItem renders the row as a `<button>`, so a real `<a>` or a nested
 // `<button>` here would be invalid HTML.
-function renderIconSpan({
+function IconSpan({
   icon,
   link,
   ariaLabel,
@@ -112,11 +112,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} className="ph-pulse" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} className="ph-pulse" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -128,11 +128,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} weight="fill" color="var(--accent-11)" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--accent-11)" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -144,11 +144,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} weight="fill" color="var(--green-11)" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--green-11)" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -160,11 +160,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} weight="fill" color="var(--green-11)" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--green-11)" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -176,11 +176,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} weight="fill" color="var(--red-11)" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--red-11)" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -189,11 +189,7 @@ function CloudStatusIcon({
       content={link ? `Open ${sourceLabel} thread` : sourceLabel}
       side="right"
     >
-      {renderIconSpan({
-        icon: <Icon size={size} />,
-        link,
-        ariaLabel,
-      })}
+      <IconSpan icon={<Icon size={size} />} link={link} ariaLabel={ariaLabel} />
     </Tooltip>
   );
 }
@@ -365,11 +361,11 @@ export function TaskIcon({
         content={link ? `Open ${label} thread` : `From ${label}`}
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} color="var(--gray-10)" />,
-          link,
-          ariaLabel: `Open ${label} thread`,
-        })}
+        <IconSpan
+          icon={<Icon size={size} color="var(--gray-10)" />}
+          link={link}
+          ariaLabel={`Open ${label} thread`}
+        />
       </Tooltip>
     );
   }
