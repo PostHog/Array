@@ -62,3 +62,13 @@ export type ConfigOptionUpdate = Extract<
   SessionUpdate,
   { sessionUpdate: "config_option_update" }
 >;
+
+export interface CompactBoundaryMetadata {
+  trigger?: "manual" | "auto";
+  preTokens?: number;
+  contextSize?: number;
+}
+
+export interface CompactBoundaryUpdate extends CompactBoundaryMetadata {
+  sessionUpdate: "compact_boundary";
+}
