@@ -462,7 +462,7 @@ function useChannelRows(kind: "dashboard" | "task") {
 
 // A fixed-height, scrollable section card. A sentinel at the bottom (observed
 // against THIS box, not the page) fires onLoadMore as the user scrolls near the
-// end. Styled to match the PostHog Code app: greenish-gray neutrals, soft
+// end. Styled to match the PostHog app: greenish-gray neutrals, soft
 // shadow, ~16px radius, a per-section accent dot.
 function Section(props: {
   title: string;

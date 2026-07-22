@@ -22,9 +22,9 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
 // While a sidebar-spawned menu is open the peek is "held": endSidebarPeek is a
 // no-op so a pointer that leaves the panel (e.g. toward a submenu flyout) can't
-// collapse it and strand the open menu's portal anchor. Module-level to match
-// hideTimer.
-let held = false;
+// collapse it and strand the open menu's portal anchor. Counted, not boolean,
+// so one menu's release can't drop a hold another menu still needs.
+let holdCount = 0;
 
 const clearHideTimer = (): void => {
   if (hideTimer) {
@@ -43,16 +43,16 @@ export function beginSidebarPeek(): void {
 // releasing hands control back to the hover logic, which collapses the peek on
 // the next pointer move outside the panel.
 export function holdSidebarPeek(): void {
-  held = true;
+  holdCount += 1;
   clearHideTimer();
 }
 
 export function releaseSidebarPeek(): void {
-  held = false;
+  holdCount = Math.max(0, holdCount - 1);
 }
 
 export function endSidebarPeek(delayMs = 0): void {
-  if (held) return;
+  if (holdCount > 0) return;
   clearHideTimer();
   hideTimer = setTimeout(() => {
     hideTimer = null;
@@ -61,7 +61,7 @@ export function endSidebarPeek(delayMs = 0): void {
 }
 
 export function cancelSidebarPeek(): void {
-  held = false;
+  holdCount = 0;
   clearHideTimer();
   useSidebarPeekStore.getState().setPeek(false);
 }

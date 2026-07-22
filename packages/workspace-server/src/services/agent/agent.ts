@@ -440,6 +440,17 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     this.log = loggerFactory.scope("agent-service");
     this.onAgentLog = makeOnAgentLog(loggerFactory);
 
+    // Cloud runs never start a local session (the agent lives in the sandbox), so
+    // getOrCreateSession never registers their MCP servers with the mcp-apps
+    // service. Resolve them on demand from the current auth state the first time a
+    // cloud-run UI-app resource is fetched, so the review card loads.
+    this.mcpAppsService.setConfigResolver(async () => {
+      const credentials = await this.agentAuthAdapter.getCurrentCredentials();
+      if (credentials) {
+        await this.ensureMcpAppsServerConfigs(credentials);
+      }
+    });
+
     powerManager.onResume(() => this.checkIdleDeadlines());
   }
 
@@ -696,6 +707,28 @@ If a repository IS genuinely required, attach one in this priority order:
     const config = this.toSessionConfig(params);
     const session = await this.getOrCreateSession(config, false);
     return this.toSessionResponse(session);
+  }
+
+  /**
+   * Register the MCP server configs (posthog + installations) with the mcp-apps
+   * service without starting an agent session. A cloud run's agent lives in the
+   * sandbox, so getOrCreateSession never runs on the desktop and the mcp-apps
+   * service has no config to fetch a UI-app resource through — the review card
+   * then fails with "No server config for: posthog" and renders as text.
+   * Invoked via the config resolver registered in the constructor.
+   */
+  private async ensureMcpAppsServerConfigs(
+    credentials: Credentials,
+  ): Promise<void> {
+    const { servers } =
+      await this.agentAuthAdapter.buildMcpServers(credentials);
+    this.mcpAppsService.addServerConfigs(
+      servers.map((s) => ({
+        name: s.name,
+        url: s.url,
+        headers: Object.fromEntries(s.headers.map((h) => [h.name, h.value])),
+      })),
+    );
   }
 
   async reconnectSession(

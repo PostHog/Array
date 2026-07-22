@@ -10,7 +10,7 @@ set -euo pipefail
 
 # ─── EDIT THIS ─────────────────────────────────────────────────────────────
 TOKEN="ExponentPushToken[PASTE_YOUR_TOKEN_HERE]"
-TITLE="PostHog Code"
+TITLE="PostHog"
 BODY="Test push — tap me"
 # These two fields are required by the app to navigate when the user taps
 # the notification (see notifications.ts:111). Use a real taskId + taskRunId

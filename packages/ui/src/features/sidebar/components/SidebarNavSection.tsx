@@ -1,12 +1,19 @@
-import { HashIcon } from "@phosphor-icons/react";
-import { Badge, Switch } from "@posthog/quill";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import {
+  ANALYTICS_EVENTS,
+  type SidebarNavItem,
+} from "@posthog/shared/analytics-events";
 import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import {
+  CUSTOMIZABLE_NAV_ITEM_IDS,
+  type CustomizableNavItemId,
+  isNavItemVisible,
+  orderedNavItems,
+} from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
@@ -14,6 +21,7 @@ import {
   navigateToCommandCenter,
   navigateToHome,
   navigateToInbox,
+  navigateToLoops,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
 } from "@posthog/ui/router/navigationBridge";
@@ -23,11 +31,14 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { ActivityItem } from "./items/ActivityItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
+import { ContextsItem } from "./items/ContextsItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
+import { LoopsItem } from "./items/LoopsItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 
@@ -47,13 +58,18 @@ interface SidebarNavSectionProps {
 // state, badge count, and click handler is wired here — so it can be dropped
 // into either layout. In the Channels space, destinations with a /website
 // mirror (Home and Command Center) stay in that space; Inbox and New task have
-// no mirror yet and jump back to Code. Configure opens the shared settings UI.
-// Search opens the command menu in place.
+// no mirror yet and jump back to Code.
+// Configure opens the shared settings UI. Search opens the command menu in
+// place and defaults to the collapsible More row; the Customize sidebar
+// dialog controls which items show at the top level.
 export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
   const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
+  // Loops stays behind the loops flag; default on in dev so local builds
+  // keep the nav item. Also gates the per-channel Loops tab (see ChannelTabs).
+  const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
   // Channels stay behind project-bluebird: the "Enable channels" nav row (and
   // the Canvas row it reveals) only appear where the canvas backend is wired.
   const bluebirdEnabled = useFeatureFlag(
@@ -85,6 +101,7 @@ export function SidebarNavSection({
   const isHomeViewActive = view.type === "home";
   const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
+  const isLoopsActive = view.type === "loops";
   const isCommandCenterActive = view.type === "command-center";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
@@ -120,91 +137,133 @@ export function SidebarNavSection({
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
 
+  // depth 1 means the row was clicked inside the expanded More section.
+  const withNavTrack =
+    (item: SidebarNavItem, action: () => void, depth: 0 | 1 = 0) =>
+    () => {
+      track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
+        item,
+        in_more: depth === 1,
+      });
+      action();
+    };
+
+  const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
+  const navItemOrder = useSidebarStore((s) => s.navItemOrder);
+  const orderedItems = orderedNavItems(navItemOrder);
+  const hidden = new Set<CustomizableNavItemId>(
+    CUSTOMIZABLE_NAV_ITEM_IDS.filter(
+      (id) => !isNavItemVisible(navItemOverrides, id),
+    ),
+  );
+  const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
+    inbox: true,
+    "command-center": true,
+    contexts: bluebirdEnabled,
+    // Activity (the mentions feed) is a channels surface, so it only appears
+    // once channels are enabled.
+    activity: channelsEnabled,
+    configure: true,
+    loops: loopsEnabled,
+  };
+
+  const handleChannelsToggle = (depth: 0 | 1) => (checked: boolean) => {
+    setChannelsEnabled(checked);
+    track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
+      item: "contexts",
+      in_more: depth === 1,
+    });
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "toggle_channels",
+      surface: "nav",
+    });
+    // This toggle replaced the old Code/Channels space boundary; keep firing
+    // the legacy enter/leave events so space-adoption dashboards stay continuous.
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: checked ? "enter_space" : "leave_space",
+      surface: "nav",
+    });
+  };
+
+  // One renderer per customizable item, used for both the top level (depth 0)
+  // and the expanded More section (depth 1) so the two never drift apart.
+  const renderNavItem: Record<
+    CustomizableNavItemId,
+    (depth: 0 | 1) => ReactNode
+  > = {
+    inbox: (depth) => (
+      <InboxItem
+        depth={depth}
+        isActive={isInboxActive}
+        onClick={withNavTrack("inbox", navigateToInbox, depth)}
+        pullRequestCount={inboxPullRequestCount}
+      />
+    ),
+    "command-center": (depth) => (
+      <CommandCenterItem
+        depth={depth}
+        isActive={isCommandCenterActive}
+        onClick={withNavTrack("command_center", goCommandCenter, depth)}
+        activeCount={commandCenterActiveCount}
+      />
+    ),
+    contexts: (depth) => (
+      <ContextsItem
+        depth={depth}
+        checked={channelsEnabled}
+        onCheckedChange={handleChannelsToggle(depth)}
+      />
+    ),
+    activity: (depth) => (
+      <ActivityItem
+        depth={depth}
+        isActive={isActivityActive}
+        onClick={withNavTrack("activity", navigateToActivity, depth)}
+      />
+    ),
+    configure: (depth) => (
+      <ConfigureItem
+        depth={depth}
+        onClick={withNavTrack("configure", () => openSettings("agents"), depth)}
+      />
+    ),
+    loops: (depth) => (
+      <LoopsItem
+        depth={depth}
+        isActive={isLoopsActive}
+        onClick={withNavTrack("loops", navigateToLoops, depth)}
+      />
+    ),
+  };
+
+  const topLevelItems = orderedItems.filter(
+    ({ id }) => navItemAvailable[id] && !hidden.has(id),
+  );
   return (
     <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
       <Box mb="2">
-        <NewTaskItem isActive={isHomeActive} onClick={goNewTask} />
+        <NewTaskItem
+          isActive={isHomeActive}
+          onClick={withNavTrack("new_task", goNewTask)}
+        />
       </Box>
 
       {homeTabEnabled && (
         <Box>
-          <HomeItem isActive={isHomeViewActive} onClick={goHome} />
-        </Box>
-      )}
-
-      <Box>
-        <SearchItem onClick={openCommandMenu} />
-      </Box>
-
-      <Box>
-        <InboxItem
-          isActive={isInboxActive}
-          onClick={navigateToInbox}
-          pullRequestCount={inboxPullRequestCount}
-        />
-      </Box>
-
-      <Box>
-        <ConfigureItem onClick={() => openSettings("agents")} />
-      </Box>
-
-      <Box mb={bluebirdEnabled ? undefined : "2"}>
-        <CommandCenterItem
-          isActive={isCommandCenterActive}
-          onClick={goCommandCenter}
-          activeCount={commandCenterActiveCount}
-        />
-      </Box>
-
-      {/* "Channels" is a toggle laid out as a nav row: the # label and Alpha
-          badge on the left, a Switch on the right. It flips the channels
-          feature rather than routing — enabling it reveals the Canvas row
-          below and swaps the sidebar body to the channel tree. A <label> (not a
-          nav Button) so the Switch can live inside it without nesting buttons. */}
-      {bluebirdEnabled && (
-        <label
-          htmlFor="channels-toggle"
-          className="group flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-[13px] leading-snug transition-colors hover:bg-fill-secondary"
-        >
-          <span className="flex shrink-0 items-center opacity-80">
-            <HashIcon size={14} />
-          </span>
-          <span className="min-w-0 truncate font-medium">Channels</span>
-          <Badge variant="info">Alpha</Badge>
-          <Switch
-            id="channels-toggle"
-            size="sm"
-            className="ml-auto"
-            checked={channelsEnabled}
-            onCheckedChange={(checked) => {
-              setChannelsEnabled(checked);
-              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                action_type: "toggle_channels",
-                surface: "nav",
-              });
-              // The unified sidebar removed the Code↔Channels space boundary;
-              // this toggle is its successor. Keep firing the legacy
-              // enter/leave events so space-adoption dashboards stay continuous.
-              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                action_type: checked ? "enter_space" : "leave_space",
-                surface: "nav",
-              });
-            }}
-          />
-        </label>
-      )}
-
-      {/* Activity (the mentions feed) is a channels surface, so it only appears
-          once channels are enabled — sitting directly under the toggle that
-          reveals it. */}
-      {channelsEnabled && (
-        <Box>
-          <ActivityItem
-            isActive={isActivityActive}
-            onClick={navigateToActivity}
+          <HomeItem
+            isActive={isHomeViewActive}
+            onClick={withNavTrack("home", goHome)}
           />
         </Box>
       )}
+
+      <Box>
+        <SearchItem onClick={withNavTrack("search", openCommandMenu)} />
+      </Box>
+
+      {topLevelItems.map(({ id }) => (
+        <Box key={id}>{renderNavItem[id](0)}</Box>
+      ))}
     </Flex>
   );
 }

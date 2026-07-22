@@ -1,30 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { shouldOpenTaskCardInline } from "./taskCardNavigation";
+import { taskCardNavigation } from "./taskCardNavigation";
 
-const PRIMARY_CLICK = {
-  defaultPrevented: false,
-  button: 0,
-  metaKey: false,
-  ctrlKey: false,
-  shiftKey: false,
-  altKey: false,
-};
-
-describe("shouldOpenTaskCardInline", () => {
-  it("opens an unmodified primary click in the thread dock", () => {
-    expect(shouldOpenTaskCardInline(PRIMARY_CLICK)).toBe(true);
-  });
-
-  it.each([
-    { defaultPrevented: true },
-    { button: 1 },
-    { metaKey: true },
-    { ctrlKey: true },
-    { shiftKey: true },
-    { altKey: true },
-  ])("leaves browser navigation intact for %o", (override) => {
-    expect(shouldOpenTaskCardInline({ ...PRIMARY_CLICK, ...override })).toBe(
-      false,
-    );
+describe("taskCardNavigation", () => {
+  it("opens the channel task view", () => {
+    expect(taskCardNavigation("channel-1", "task-1")).toEqual({
+      to: "/website/$channelId/tasks/$taskId",
+      params: { channelId: "channel-1", taskId: "task-1" },
+    });
   });
 });

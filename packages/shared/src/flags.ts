@@ -15,6 +15,8 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 // Gates the entire canvas feature: the app rail's Channels space, the /website
 // routes, channels and dashboards.
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
+// Gates the Loops feature: the sidebar Loops space and the per-channel Loops tab.
+export const LOOPS_FLAG = "loops";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
 /** Spoken narration (agent speaks via the `speak` tool). Gated for a staged rollout. */

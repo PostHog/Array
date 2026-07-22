@@ -137,7 +137,13 @@ function ComposerSlot({
   children: React.ReactNode;
 }) {
   return (
-    <Box className="min-h-0 shrink-0 overflow-y-auto">
+    <Box
+      className={
+        compact
+          ? "max-h-[50%] min-h-0 overflow-y-auto"
+          : "min-h-0 shrink-0 overflow-y-auto"
+      }
+    >
       <ComposerWidth compact={compact}>{children}</ComposerWidth>
     </Box>
   );

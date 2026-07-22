@@ -314,6 +314,8 @@ export async function warmTask(options: {
   runtime_adapter?: string | null;
   model?: string | null;
   reasoning_effort?: string | null;
+  sandbox_environment_id?: string | null;
+  custom_image_id?: string | null;
 }): Promise<{ task_id: string; run_id: string } | null> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
@@ -329,6 +331,12 @@ export async function warmTask(options: {
         runtime_adapter: options.runtime_adapter ?? null,
         model: options.model ?? null,
         reasoning_effort: options.reasoning_effort ?? null,
+        ...(options.sandbox_environment_id
+          ? { sandbox_environment_id: options.sandbox_environment_id }
+          : {}),
+        ...(options.custom_image_id
+          ? { custom_image_id: options.custom_image_id }
+          : {}),
       }),
     },
   );
@@ -431,6 +439,10 @@ export interface RunTaskInCloudOptions {
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
   reasoningEffort?: string;
+  /** Sandbox environment / custom base image to run on. Sent so a reused warm
+   *  sandbox matches the selection instead of a mismatched default. */
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
   /** Permission mode: "default" | "acceptEdits" | "plan" | "auto". */
   initialPermissionMode?: string;
   /** Source that triggered this run. */
@@ -463,6 +475,8 @@ export async function runTaskInCloud(
       options.runtimeAdapter !== undefined ||
       options.model !== undefined ||
       options.reasoningEffort !== undefined ||
+      options.sandboxEnvironmentId !== undefined ||
+      options.customImageId !== undefined ||
       options.initialPermissionMode !== undefined ||
       options.runSource !== undefined ||
       options.signalReportId !== undefined ||
@@ -487,6 +501,12 @@ export async function runTaskInCloud(
       if (options?.reasoningEffort) {
         payload.reasoning_effort = options.reasoningEffort;
       }
+    }
+    if (options?.sandboxEnvironmentId) {
+      payload.sandbox_environment_id = options.sandboxEnvironmentId;
+    }
+    if (options?.customImageId) {
+      payload.custom_image_id = options.customImageId;
     }
     if (options?.initialPermissionMode) {
       payload.initial_permission_mode = options.initialPermissionMode;

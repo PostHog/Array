@@ -26,8 +26,8 @@ describe("applyAvailableModelsAllowlist", () => {
         "claude-opus-4-8",
       ]).options,
     ).toEqual([
-      { value: "claude-opus-4-8", name: "Claude Opus 4.8" },
       { value: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+      { value: "claude-opus-4-8", name: "Claude Opus 4.8" },
     ]);
   });
 

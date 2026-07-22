@@ -1,6 +1,6 @@
-# PostHog Code
+# PostHog
 
-The PostHog desktop task manager
+The agentic workspace for product builders
 
 ## The Goal
 
@@ -56,8 +56,8 @@ pnpm make
 
 Output will be in:
 
-- `out/PostHog Code-darwin-arm64/PostHog Code.app` - Packaged app
-- `out/make/PostHog Code-*.dmg` - macOS installer
+- `out/mac-arm64/PostHog.app` - Packaged app
+- `out/PostHog-Code-*.dmg` - macOS installer
 - `out/make/zip/` - ZIP archives
 
 **Note:** Native modules for the DMG maker are automatically compiled via the `prePackage` hook. If you need to manually rebuild them, run:
@@ -68,13 +68,13 @@ pnpm build-native
 
 ### Auto Updates & Releases
 
-PostHog Code auto-updates on macOS and Windows. Current builds use `electron-updater`, which reads the `latest-mac.yml` and `latest.yml` manifests published with each non-draft GitHub release and downloads the matching archive. Builds made by the old Electron Forge toolchain (`v0.55.x` and earlier) take a single bridge update through the public `update.electronjs.org` service, which serves the same GitHub releases to their built-in Squirrel client, and become `electron-updater` clients from the next launch. See [docs/UPDATES.md](../../docs/UPDATES.md) and [docs/AUTO-UPDATE-TESTING.md](../../docs/AUTO-UPDATE-TESTING.md).
+PostHog auto-updates on macOS and Windows. Current builds use `electron-updater`, which reads the `latest-mac.yml` and `latest.yml` manifests published with each non-draft GitHub release and downloads the matching archive. Builds made by the old Electron Forge toolchain (`v0.55.x` and earlier) take a single bridge update through the public `update.electronjs.org` service, which serves the same GitHub releases to their built-in Squirrel client, and become `electron-updater` clients from the next launch. See [docs/UPDATES.md](../../docs/UPDATES.md) and [docs/AUTO-UPDATE-TESTING.md](../../docs/AUTO-UPDATE-TESTING.md).
 
 There are three ways a release can fire:
 
 1. **Scheduled (default)** — automatic at 17:00 and 01:00 UTC.
 2. **Hotfix** — add the `Create release` label to a PR before it merges. On merge, the tag workflow runs immediately and ships whatever is on `main`.
-3. **Manual** — run `Tag PostHog Code Release` via `workflow_dispatch` from the Actions tab.
+3. **Manual** — run `Tag PostHog Release` via `workflow_dispatch` from the Actions tab.
 
 Local prep (only needed for one-off manual builds):
 
@@ -123,11 +123,11 @@ SKIP_NOTARIZE=1 pnpm run make
 
 ## Workspace Configuration (posthog-code.json)
 
-PostHog Code supports per-repository configuration through a `posthog-code.json` file. This lets you define scripts that run automatically when workspaces are created or destroyed.
+PostHog supports per-repository configuration through a `posthog-code.json` file. This lets you define scripts that run automatically when workspaces are created or destroyed.
 
 ### File Locations
 
-PostHog Code searches for configuration in this order (first match wins):
+PostHog searches for configuration in this order (first match wins):
 
 1. `.posthog-code/{workspace-name}/posthog-code.json` - Workspace-specific config
 2. `posthog-code.json` - Repository root config
@@ -184,7 +184,7 @@ Clean up Docker containers:
 
 ## Workspace Environment Variables
 
-PostHog Code automatically sets environment variables in all workspace terminals and scripts. These are available in `init`, `start`, and `destroy` scripts, as well as any terminal sessions opened within a workspace.
+PostHog automatically sets environment variables in all workspace terminals and scripts. These are available in `init`, `start`, and `destroy` scripts, as well as any terminal sessions opened within a workspace.
 
 | Variable | Description | Example |
 |----------|-------------|---------|

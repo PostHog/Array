@@ -1,14 +1,14 @@
 import { injectable } from "inversify";
-import { githubReleasesApiResponse, type ListReleasesOutput } from "./schemas";
+import { type ListReleasesOutput, listReleasesOutput } from "./schemas";
 
-const RELEASES_URL =
-  "https://api.github.com/repos/PostHog/code/releases?per_page=30";
+const RELEASES_FEED_URL =
+  "https://desktop-releases.posthog.com/stable/releases.json";
 const CACHE_TTL_MS = 10 * 60_000;
 const MISSING_VERSION_RETRY_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 @injectable()
-export class GitHubReleasesService {
+export class ReleaseFeedService {
   private cache: { fetchedAt: number; data: ListReleasesOutput } | null = null;
   private missingVersionRefetchNotBefore = 0;
   private inFlight: Promise<ListReleasesOutput> | null = null;
@@ -45,30 +45,15 @@ export class GitHubReleasesService {
   }
 
   private async fetchAndCacheReleases(): Promise<ListReleasesOutput> {
-    const response = await fetch(RELEASES_URL, {
-      headers: { Accept: "application/vnd.github+json" },
+    const response = await fetch(RELEASES_FEED_URL, {
+      headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new Error(`GitHub releases fetch failed: ${response.status}`);
+      throw new Error(`Release feed fetch failed: ${response.status}`);
     }
 
-    const parsed = githubReleasesApiResponse.parse(await response.json());
-    const releases = parsed
-      .filter((release) => !release.draft)
-      .map((release) => ({
-        version: release.tag_name.replace(/^v/, ""),
-        name:
-          release.name && release.name.length > 0
-            ? release.name
-            : release.tag_name,
-        notes: release.body ?? "",
-        date: release.published_at,
-        isPrerelease: release.prerelease,
-        htmlUrl: release.html_url,
-      }));
-
-    const data: ListReleasesOutput = { releases };
+    const data = listReleasesOutput.parse(await response.json());
     this.cache = { fetchedAt: Date.now(), data };
     return data;
   }

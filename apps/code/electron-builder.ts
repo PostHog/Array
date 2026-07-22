@@ -11,8 +11,8 @@ const skipNotarize =
 const config: Configuration = {
   // Original release bundle id; changing it breaks existing installs' data dir and Keychain entries.
   appId: "com.posthog.array",
-  productName: "PostHog Code",
-  executableName: "PostHog Code",
+  productName: "PostHog",
+  executableName: "PostHog",
 
   directories: {
     output: "out",
@@ -61,7 +61,7 @@ const config: Configuration = {
 
   protocols: [
     {
-      name: "PostHog Code",
+      name: "PostHog",
       schemes: ["posthog-code"],
     },
   ],
@@ -81,7 +81,7 @@ const config: Configuration = {
       // Shown in the macOS microphone-permission prompt when a user records a
       // custom notification sound.
       NSMicrophoneUsageDescription:
-        "PostHog Code uses the microphone to record custom notification sounds.",
+        "PostHog uses the microphone to record custom notification sounds.",
     },
     notarize: !skipNotarize,
   },
@@ -132,11 +132,13 @@ const config: Configuration = {
     packageName: "posthog-code",
   },
 
+  // Installs built from this config poll the CloudFront-fronted update feed
+  // (the S3 bucket is private; reads go through the CDN). Installs built before
+  // the feed moved poll GitHub Releases on PostHog/code, so CI dual-publishes
+  // there until that fleet drains.
   publish: {
-    provider: "github",
-    owner: "PostHog",
-    repo: "code",
-    releaseType: "draft",
+    provider: "generic",
+    url: "https://desktop-releases.posthog.com/stable",
   },
 };
 

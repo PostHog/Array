@@ -1,17 +1,5 @@
 import { z } from "zod";
 
-export const githubReleaseApiItem = z.object({
-  tag_name: z.string(),
-  name: z.string().nullable(),
-  body: z.string().nullable(),
-  draft: z.boolean(),
-  prerelease: z.boolean(),
-  published_at: z.string().nullable(),
-  html_url: z.string(),
-});
-
-export const githubReleasesApiResponse = z.array(githubReleaseApiItem);
-
 export const releaseItem = z.object({
   version: z.string(),
   name: z.string(),

@@ -164,6 +164,7 @@ function createMockDependencies() {
       getPluginPath: vi.fn(() => "/mock/plugin"),
     },
     agentAuthAdapter: {
+      getCurrentCredentials: vi.fn().mockResolvedValue(null),
       ensureGatewayProxy: vi.fn().mockResolvedValue("http://127.0.0.1:9999"),
       configureProcessEnv: vi.fn().mockResolvedValue(undefined),
       createPosthogConfig: vi.fn((credentials) => ({
@@ -187,6 +188,8 @@ function createMockDependencies() {
     },
     mcpAppsService: {
       setServerConfigs: vi.fn(),
+      addServerConfigs: vi.fn(),
+      setConfigResolver: vi.fn(),
       handleDiscovery: vi.fn().mockResolvedValue(undefined),
       cleanup: vi.fn().mockResolvedValue(undefined),
       notifyToolInput: vi.fn(),
@@ -273,6 +276,62 @@ describe("AgentService", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  describe("mcp-apps config resolver", () => {
+    function registeredResolver(): (serverName: string) => Promise<void> {
+      const call = deps.mcpAppsService.setConfigResolver.mock.calls[0];
+      expect(call).toBeDefined();
+      return call[0];
+    }
+
+    it("registers server configs from the current credentials", async () => {
+      deps.agentAuthAdapter.getCurrentCredentials.mockResolvedValue({
+        apiHost: "https://app.posthog.com",
+        projectId: 1,
+      });
+      deps.agentAuthAdapter.buildMcpServers.mockResolvedValue({
+        servers: [
+          {
+            name: "posthog",
+            type: "http",
+            url: "https://mcp.posthog.com/mcp",
+            headers: [
+              { name: "Authorization", value: "Bearer token" },
+              { name: "x-posthog-mcp-consumer", value: "posthog-code" },
+            ],
+          },
+        ],
+        toolApprovals: {},
+        toolInstallations: {},
+      });
+
+      await registeredResolver()("posthog");
+
+      expect(deps.agentAuthAdapter.buildMcpServers).toHaveBeenCalledWith({
+        apiHost: "https://app.posthog.com",
+        projectId: 1,
+      });
+      expect(deps.mcpAppsService.addServerConfigs).toHaveBeenCalledWith([
+        {
+          name: "posthog",
+          url: "https://mcp.posthog.com/mcp",
+          headers: {
+            Authorization: "Bearer token",
+            "x-posthog-mcp-consumer": "posthog-code",
+          },
+        },
+      ]);
+    });
+
+    it("no-ops when there are no current credentials", async () => {
+      deps.agentAuthAdapter.getCurrentCredentials.mockResolvedValue(null);
+
+      await registeredResolver()("posthog");
+
+      expect(deps.agentAuthAdapter.buildMcpServers).not.toHaveBeenCalled();
+      expect(deps.mcpAppsService.addServerConfigs).not.toHaveBeenCalled();
+    });
   });
 
   describe("MCP servers", () => {

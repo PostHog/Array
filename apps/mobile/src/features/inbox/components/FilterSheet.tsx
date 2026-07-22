@@ -77,6 +77,7 @@ const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] = [
   { value: "zendesk", label: "Zendesk" },
   { value: "conversations", label: "Conversations" },
   { value: "signals_scout", label: "Scout" },
+  { value: "health_checks", label: "Health checks" },
 ];
 
 function SectionHeader({ title }: { title: string }) {
@@ -126,8 +127,12 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
   const toggleStatus = useInboxFilterStore((s) => s.toggleStatus);
   const sourceProductFilter = useInboxFilterStore((s) => s.sourceProductFilter);
   const toggleSourceProduct = useInboxFilterStore((s) => s.toggleSourceProduct);
+  const clearSourceProductFilter = useInboxFilterStore(
+    (s) => s.clearSourceProductFilter,
+  );
   const priorityFilter = useInboxFilterStore((s) => s.priorityFilter);
   const togglePriority = useInboxFilterStore((s) => s.togglePriority);
+  const setPriorityFilter = useInboxFilterStore((s) => s.setPriorityFilter);
   const resetFilters = useInboxFilterStore((s) => s.resetFilters);
 
   const hasActiveFilters =
@@ -213,6 +218,11 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
           {/* Priority */}
           <SectionHeader title="Priority" />
           <View className="mb-5">
+            <OptionRow
+              label="Any"
+              selected={priorityFilter.length === 0}
+              onPress={() => setPriorityFilter([])}
+            />
             {FILTERABLE_PRIORITIES.map((priority) => (
               <OptionRow
                 key={priority}
@@ -232,6 +242,11 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
           {/* Source */}
           <SectionHeader title="Source" />
           <View className="mb-5">
+            <OptionRow
+              label="Any"
+              selected={sourceProductFilter.length === 0}
+              onPress={clearSourceProductFilter}
+            />
             {SOURCE_PRODUCT_OPTIONS.map((option) => (
               <OptionRow
                 key={option.value}

@@ -10,6 +10,7 @@ export type SettingsCategory =
   | "skills"
   | "mcp-servers"
   | "personalization"
+  | "sidebar"
   | "terminal"
   | "claude-code"
   | "shortcuts"
@@ -32,6 +33,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   "skills",
   "mcp-servers",
   "personalization",
+  "sidebar",
   "terminal",
   "claude-code",
   "shortcuts",

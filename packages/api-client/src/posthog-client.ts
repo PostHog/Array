@@ -7,6 +7,8 @@ import type {
   CloudRunSource,
   ExecutionMode,
   PrAuthorshipMode,
+  SourceProduct,
+  SourceType,
   StoredLogEntry,
   TaskRunArtifactMetadata,
 } from "@posthog/shared";
@@ -115,6 +117,10 @@ let clientAppVersion = "unknown";
 
 export function setPosthogApiClientAppVersion(version: string): void {
   clientAppVersion = version;
+}
+
+export function getPosthogApiClientAppVersion(): string {
+  return clientAppVersion;
 }
 
 export class SandboxCustomImagesDisabledError extends Error {
@@ -244,26 +250,8 @@ export interface LlmSkillFileInput {
 
 export interface SignalSourceConfig {
   id: string;
-  source_product:
-    | "session_replay"
-    | "llm_analytics"
-    | "github"
-    | "linear"
-    | "jira"
-    | "zendesk"
-    | "conversations"
-    | "error_tracking"
-    | "pganalyze"
-    | "signals_scout";
-  source_type:
-    | "session_analysis_cluster"
-    | "evaluation"
-    | "issue"
-    | "ticket"
-    | "issue_created"
-    | "issue_reopened"
-    | "issue_spiking"
-    | "cross_source_issue";
+  source_product: SourceProduct;
+  source_type: SourceType;
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;

@@ -52,8 +52,8 @@ import type {
 } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import {
@@ -114,17 +114,19 @@ export function ThreadMessageRow({
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>
-            {isAgent ? (
-              <RobotIcon size={14} />
-            ) : isSystem ? (
-              "S"
-            ) : (
-              getUserInitials(message.author)
-            )}
-          </AvatarFallback>
-        </Avatar>
+        {isAgent || isSystem ? (
+          <Avatar size="lg" className="sticky top-2">
+            <AvatarFallback>
+              {isAgent ? <RobotIcon size={14} /> : "S"}
+            </AvatarFallback>
+          </Avatar>
+        ) : (
+          <UserAvatar
+            user={message.author}
+            size="lg"
+            className="sticky top-2"
+          />
+        )}
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
@@ -266,9 +268,7 @@ export function UserPromptRow({
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
-        </Avatar>
+        <UserAvatar user={author} size="lg" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>

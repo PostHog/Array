@@ -69,7 +69,7 @@ describe("canUseTool MCP approval enforcement", () => {
     expect(result.behavior).toBe("deny");
     if (result.behavior === "deny") {
       expect(result.message).toContain("Settings > MCP Servers");
-      expect(result.message).toContain("PostHog Code");
+      expect(result.message).toContain("PostHog");
       expect(result.interrupt).toBe(false);
     }
   });

@@ -8,6 +8,7 @@ import {
   CheckCircle,
   Code,
   Compass,
+  FirstAid,
   GithubLogo,
   LinkSimple,
   Question,
@@ -53,6 +54,8 @@ function sourceLine(signal: Signal): string {
   )
     return "Scout · Cross-source issue";
   if (source_product === "signals_scout") return "Scout";
+  if (source_product === "health_checks" && source_type === "health_issue")
+    return "Health checks · Issue";
   const product = source_product.replace(/_/g, " ");
   const type = source_type.replace(/_/g, " ");
   return `${product} · ${type}`;
@@ -82,6 +85,8 @@ function SourceIcon({
       return <LinkSimple size={size} color={color} />;
     case "signals_scout":
       return <Compass size={size} color={color} />;
+    case "health_checks":
+      return <FirstAid size={size} color={color} />;
     default:
       return <WarningCircle size={size} color={color} />;
   }

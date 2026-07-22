@@ -1,6 +1,7 @@
 // Analytics event types and properties
 
 import type { Adapter } from "./adapter";
+import type { SourceProduct } from "./inbox-types";
 
 export interface PromptHistoryOpenedProperties {
   entry_count: number;
@@ -239,6 +240,40 @@ export interface CommandMenuActionProperties {
   action_type: CommandMenuAction;
   /** Channel acted on for the bluebird `open-channel` / `open-task` actions. */
   channel_id?: string;
+}
+
+export type SidebarNavItem =
+  | "new_task"
+  | "home"
+  | "search"
+  | "inbox"
+  | "agents"
+  | "skills"
+  | "mcp_servers"
+  | "command_center"
+  | "contexts"
+  | "activity"
+  | "configure"
+  | "loops"
+  | "more"
+  | "customize_sidebar";
+
+export interface SidebarNavItemClickedProperties {
+  item: SidebarNavItem;
+  /** True when the row was clicked inside the expanded More section. */
+  in_more: boolean;
+}
+
+export interface SidebarCustomizedProperties {
+  item: SidebarNavItem;
+  /** True when the item was promoted to the top level, false when moved under More. */
+  visible: boolean;
+}
+
+export interface SidebarReorderedProperties {
+  item: SidebarNavItem;
+  /** Zero-based position of the item in the nav after the drag. */
+  to_index: number;
 }
 
 export interface BrainrotActivatedProperties {
@@ -655,7 +690,7 @@ export interface UsageViewedProperties {
 export interface SpendAnalysisTaskOpenedProperties {
   /** Total LLM spend in USD across all products for the analysed window. */
   total_cost_usd: number;
-  /** PostHog Code spend in USD for the analysed window (subset of total). */
+  /** Desktop app spend in USD for the analysed window (subset of total). */
   scoped_cost_usd: number;
   /** Number of `$ai_generation` events in the analysed window. */
   scoped_event_count: number;
@@ -793,17 +828,7 @@ export interface ScoutActionProperties {
 }
 
 export interface SignalSourceConnectedProperties {
-  source_product:
-    | "session_replay"
-    | "error_tracking"
-    | "signals_scout"
-    | "github"
-    | "linear"
-    | "jira"
-    | "zendesk"
-    | "conversations"
-    | "pganalyze"
-    | "llm_analytics";
+  source_product: SourceProduct;
   /** True when this is a brand-new createSignalSourceConfig, false for re-enable of an existing config. */
   is_first_connection: boolean;
   /** True when the connection went through the DataSourceSetup wizard (warehouse OAuth path). */
@@ -1119,6 +1144,9 @@ export const ANALYTICS_EVENTS = {
   BRAINROT_ACTIVATED: "Brainrot activated",
   SKILL_BUTTON_TRIGGERED: "Skill button triggered",
   POSTHOG_WEB_OPENED: "PostHog web opened",
+  SIDEBAR_NAV_ITEM_CLICKED: "Sidebar nav item clicked",
+  SIDEBAR_CUSTOMIZED: "Sidebar customized",
+  SIDEBAR_REORDERED: "Sidebar reordered",
 
   // Permission events
   PERMISSION_RESPONDED: "Permission responded",
@@ -1226,6 +1254,11 @@ export const ANALYTICS_EVENTS = {
   // Autoresearch events
   AUTORESEARCH_ARMED: "Autoresearch armed",
   AUTORESEARCH_RUN_STARTED: "Autoresearch run started",
+
+  // Loops promo events
+  LOOPS_PROMO_OPENED: "Loops promo opened",
+  LOOPS_PROMO_DISMISSED: "Loops promo dismissed",
+  LOOPS_PROMO_LEARN_MORE_CLICKED: "Loops promo learn more clicked",
 } as const;
 
 // Event property mapping
@@ -1277,6 +1310,9 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
   [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
+  [ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED]: SidebarNavItemClickedProperties;
+  [ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED]: SidebarCustomizedProperties;
+  [ANALYTICS_EVENTS.SIDEBAR_REORDERED]: SidebarReorderedProperties;
 
   // Permission events
   [ANALYTICS_EVENTS.PERMISSION_RESPONDED]: PermissionRespondedProperties;
@@ -1383,6 +1419,11 @@ export type EventPropertyMap = {
   // Autoresearch events
   [ANALYTICS_EVENTS.AUTORESEARCH_ARMED]: AutoresearchArmedProperties;
   [ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED]: AutoresearchRunStartedProperties;
+
+  // Loops promo events
+  [ANALYTICS_EVENTS.LOOPS_PROMO_OPENED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_DISMISSED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_LEARN_MORE_CLICKED]: never;
 };
 
 /**

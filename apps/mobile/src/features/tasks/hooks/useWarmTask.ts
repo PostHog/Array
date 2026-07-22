@@ -16,6 +16,8 @@ interface UseWarmTaskOptions {
   runtimeAdapter?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
 }
 
 export function useWarmTask({
@@ -26,6 +28,8 @@ export function useWarmTask({
   runtimeAdapter,
   model,
   reasoningEffort,
+  sandboxEnvironmentId,
+  customImageId,
 }: UseWarmTaskOptions): void {
   const enabled = useFeatureFlag(TASKS_PREWARM_SANDBOX_FLAG);
 
@@ -36,6 +40,8 @@ export function useWarmTask({
   const normalizedRuntimeAdapter = runtimeAdapter ?? null;
   const normalizedModel = model ?? null;
   const normalizedReasoningEffort = reasoningEffort ?? null;
+  const normalizedSandboxEnvironmentId = sandboxEnvironmentId ?? null;
+  const normalizedCustomImageId = customImageId ?? null;
   const eligible =
     !!enabled &&
     !!repository &&
@@ -43,7 +49,7 @@ export function useWarmTask({
     !composerIsEmpty;
   const key =
     repository && githubIntegrationId != null
-      ? `${githubIntegrationId}:${repository}:${normalizedBranch ?? ""}:${normalizedRuntimeAdapter ?? ""}:${normalizedModel ?? ""}:${normalizedReasoningEffort ?? ""}`
+      ? `${githubIntegrationId}:${repository}:${normalizedBranch ?? ""}:${normalizedRuntimeAdapter ?? ""}:${normalizedModel ?? ""}:${normalizedReasoningEffort ?? ""}:${normalizedSandboxEnvironmentId ?? ""}:${normalizedCustomImageId ?? ""}`
       : null;
 
   useEffect(() => {
@@ -68,6 +74,8 @@ export function useWarmTask({
     const warmRuntimeAdapter = normalizedRuntimeAdapter;
     const warmModel = normalizedModel;
     const warmReasoningEffort = normalizedReasoningEffort;
+    const warmSandboxEnvironmentId = normalizedSandboxEnvironmentId;
+    const warmCustomImageId = normalizedCustomImageId;
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
       lastWarmedKeyRef.current = key;
@@ -78,6 +86,10 @@ export function useWarmTask({
         runtime_adapter: warmRuntimeAdapter,
         model: warmModel,
         reasoning_effort: warmReasoningEffort,
+        ...(warmSandboxEnvironmentId
+          ? { sandbox_environment_id: warmSandboxEnvironmentId }
+          : {}),
+        ...(warmCustomImageId ? { custom_image_id: warmCustomImageId } : {}),
       }).catch((error) => {
         lastWarmedKeyRef.current = null;
         log.warn("Failed to warm task", error);
@@ -94,5 +106,7 @@ export function useWarmTask({
     normalizedRuntimeAdapter,
     normalizedModel,
     normalizedReasoningEffort,
+    normalizedSandboxEnvironmentId,
+    normalizedCustomImageId,
   ]);
 }

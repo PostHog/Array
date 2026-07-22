@@ -48,23 +48,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared (agent dependency)
-        run: pnpm --filter @posthog/shared run build
-
-      - name: Build git (agent dependency)
-        run: pnpm --filter @posthog/git run build
-
-      - name: Build enricher (agent dependency)
-        run: pnpm --filter @posthog/enricher run build
-
-      - name: Build harness (agent dependency)
-        run: pnpm --filter @posthog/harness run build
-
-      - name: Build the package
-        run: pnpm --filter agent run build
-
-      - name: Run tests
-        run: pnpm --filter agent run test
+      - name: Build and test agent release
+        uses: ./.github/actions/build-agent-release
 
       - name: Publish the package to npm registry
         working-directory: packages/agent

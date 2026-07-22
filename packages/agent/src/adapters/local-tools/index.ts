@@ -1,5 +1,6 @@
 import type { LocalTool, LocalToolCtx, LocalToolGateMeta } from "./registry";
 import { cloneRepoTool } from "./tools/clone-repo";
+import { finishTool } from "./tools/finish";
 import { listReposTool } from "./tools/list-repos";
 import { signedCommitTool } from "./tools/signed-commit";
 import { signedMergeTool } from "./tools/signed-merge";
@@ -23,6 +24,7 @@ export const LOCAL_TOOLS: LocalTool[] = [
   listReposTool,
   cloneRepoTool,
   speakTool,
+  finishTool,
 ];
 
 /** Tools whose gate passes for the given context — the set to actually expose. */

@@ -13,7 +13,7 @@ const isPeeked = (): boolean => useSidebarPeekStore.getState().peek;
 describe("sidebarPeekStore", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    // Reset shared module-level state (hold flag + hide timer + peek) so each
+    // Reset shared module-level state (hold count + hide timer + peek) so each
     // case starts clean.
     cancelSidebarPeek();
   });
@@ -46,6 +46,32 @@ describe("sidebarPeekStore", () => {
     endSidebarPeek(0);
     vi.runAllTimers();
     expect(isPeeked()).toBe(false);
+  });
+
+  it("keeps the peek held until every holder has released", () => {
+    beginSidebarPeek();
+    holdSidebarPeek();
+    holdSidebarPeek();
+
+    releaseSidebarPeek();
+    endSidebarPeek(0);
+    vi.runAllTimers();
+    expect(isPeeked()).toBe(true);
+
+    releaseSidebarPeek();
+    endSidebarPeek(0);
+    vi.runAllTimers();
+    expect(isPeeked()).toBe(false);
+  });
+
+  it("releaseSidebarPeek without a hold does not break a later hold", () => {
+    releaseSidebarPeek();
+
+    beginSidebarPeek();
+    holdSidebarPeek();
+    endSidebarPeek(0);
+    vi.runAllTimers();
+    expect(isPeeked()).toBe(true);
   });
 
   it("holdSidebarPeek cancels a hide that is already pending", () => {

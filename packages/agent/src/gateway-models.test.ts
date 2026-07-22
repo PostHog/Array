@@ -132,7 +132,9 @@ describe("getClaudeModelRecency", () => {
 });
 
 describe("compareModelsForPicker", () => {
-  it("groups models by family, most capable first, newest version first", () => {
+  it("groups models by family least capable first, newest version first", () => {
+    // The picker opens upward, so least-capable-first DOM order puts the most
+    // capable family (Fable) nearest the trigger — the visual top of the menu.
     // Models as the gateway might return them — arbitrary order.
     const gatewayOrder = [
       "claude-fable-5",
@@ -145,12 +147,12 @@ describe("compareModelsForPicker", () => {
     ];
     const displayed = [...gatewayOrder].sort(compareModelsForPicker);
     expect(displayed).toEqual([
-      "claude-fable-5",
-      "claude-opus-4-8",
-      "claude-opus-4-7",
+      "claude-haiku-4-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
-      "claude-haiku-4-5",
+      "claude-opus-4-8",
+      "claude-opus-4-7",
+      "claude-fable-5",
       "claude-mystery",
     ]);
   });
