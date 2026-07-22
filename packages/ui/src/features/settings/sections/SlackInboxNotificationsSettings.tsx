@@ -1,11 +1,7 @@
 import { SlackLogoIcon } from "@phosphor-icons/react";
-import {
-  deriveEffectiveIntegrationId,
-  getSlackIntegrationLabel,
-} from "@posthog/core/settings/slackNotificationTarget";
+import { deriveEffectiveIntegrationId } from "@posthog/core/settings/slackNotificationTarget";
 import { useSignalSourceManager } from "@posthog/ui/features/inbox/hooks/useSignalSourceManager";
 import { useIntegrationSelectors } from "@posthog/ui/features/integrations/store";
-import { SlackWorkspaceSelect } from "@posthog/ui/features/settings/components/SlackWorkspaceSelect";
 import { SignalDefaultChannelSettings } from "@posthog/ui/features/settings/sections/SignalDefaultChannelSettings";
 import { SignalSlackNotificationsSettings } from "@posthog/ui/features/settings/sections/SignalSlackNotificationsSettings";
 import {
@@ -13,8 +9,6 @@ import {
   SlackWorkspaceConnectionCallouts,
 } from "@posthog/ui/features/settings/sections/SlackWorkspaceConnection";
 import { Box, Flex, Text } from "@radix-ui/themes";
-
-const WORKSPACE_CONTROL_CLASS = "min-w-[160px] max-w-[240px]";
 
 interface SlackInboxNotificationsSettingsProps {
   channelComboboxModal?: boolean;
@@ -31,9 +25,8 @@ export function SlackInboxNotificationsSettings({
   showHeader = true,
   showTopBorder = true,
 }: SlackInboxNotificationsSettingsProps) {
-  const { slackIntegrations, hasSlackIntegration } = useIntegrationSelectors();
-  const { userAutonomyConfig, handleUpdateSlackNotifications } =
-    useSignalSourceManager();
+  const { slackIntegrations } = useIntegrationSelectors();
+  const { userAutonomyConfig } = useSignalSourceManager();
 
   // Personal notifications default to the only workspace when there's a single
   // one; otherwise the user picks and persists their notification integration.
@@ -43,12 +36,6 @@ export function SlackInboxNotificationsSettings({
     selectedIntegrationId,
     slackIntegrations,
   );
-
-  const onIntegrationChange = (integrationId: number) => {
-    // Switching workspaces clears the personal channel — the previously picked
-    // channel won't exist in the new workspace.
-    void handleUpdateSlackNotifications({ integrationId, channel: null });
-  };
 
   const topBorderClass = showTopBorder
     ? "border-(--gray-5) border-t border-dashed pt-3"
@@ -83,25 +70,6 @@ export function SlackInboxNotificationsSettings({
         isLoading={isLoading}
       />
 
-      {!isLoading && hasSlackIntegration ? (
-        <Flex align="center" gap="2" pt="2" className="min-w-0">
-          <Text className="shrink-0 text-(--gray-11) text-[12px]">
-            Personal workspace
-          </Text>
-          {slackIntegrations.length > 1 ? (
-            <SlackWorkspaceSelect
-              integrations={slackIntegrations}
-              value={effectiveIntegrationId}
-              className={WORKSPACE_CONTROL_CLASS}
-              onValueChange={onIntegrationChange}
-            />
-          ) : slackIntegrations[0] ? (
-            <Text className="truncate font-medium text-(--gray-12) text-[13px]">
-              {getSlackIntegrationLabel(slackIntegrations[0])}
-            </Text>
-          ) : null}
-        </Flex>
-      ) : null}
       <SignalSlackNotificationsSettings
         integrationId={effectiveIntegrationId}
         channelComboboxModal={channelComboboxModal}
