@@ -30,11 +30,9 @@ export function LoopRow({
       : `${loop.triggers.length} ${triggerLabel}`;
 
   let creatorLabel: string | null = null;
-  if (loop.visibility === "personal") {
-    creatorLabel = "Created by you";
-  } else if (creatorError) {
+  if (loop.visibility === "team" && creatorError) {
     creatorLabel = "Creator unavailable";
-  } else if (!creatorLoading) {
+  } else if (loop.visibility === "team" && !creatorLoading) {
     creatorLabel = creator
       ? `Created by ${userDisplayName(creator)}`
       : "Created by a former organization member";

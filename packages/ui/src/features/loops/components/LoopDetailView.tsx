@@ -269,7 +269,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
     isError: membersError,
   } = useOrgMembers({ enabled: loop.visibility === "team" });
   const creator = members.find((member) => member.id === loop.created_by_id);
-  let creatorContent: React.ReactNode = "You";
+  let creatorContent: React.ReactNode = null;
   if (loop.visibility === "team" && membersError) {
     creatorContent = "Creator unavailable";
   } else if (loop.visibility === "team" && membersLoading) {
@@ -315,7 +315,9 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             : "None (connector-only loop)"}
         </SummaryRow>
 
-        <SummaryRow label="Created by">{creatorContent}</SummaryRow>
+        {loop.visibility === "team" ? (
+          <SummaryRow label="Created by">{creatorContent}</SummaryRow>
+        ) : null}
 
         <SummaryRow label="Triggers">
           {loop.triggers.length === 0 ? (
