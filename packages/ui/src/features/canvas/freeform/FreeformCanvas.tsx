@@ -5,7 +5,7 @@ import {
   canvasToHostMessageSchema,
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
-import { isSafeExternalUrl } from "@posthog/shared";
+import { isSafePostHogUrl } from "@posthog/shared";
 import { logger } from "@posthog/ui/shell/logger";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
@@ -19,6 +19,10 @@ import {
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
+
+// Canvas code is untrusted and can post open-external without a user gesture,
+// so successful opens are rate-limited host-side.
+const EXTERNAL_OPEN_MIN_INTERVAL_MS = 1_000;
 
 export interface FreeformCanvasProps {
   /** The single-file React source to render. */
@@ -76,6 +80,8 @@ export function FreeformCanvas({
   // only gates an imperative postMessage and is never shown on screen, so it
   // shouldn't trigger re-renders.
   const readyRef = useRef(false);
+  // Timestamp of the last brokered external open, for the rate limit.
+  const lastExternalOpenRef = useRef(0);
 
   // The document is keyed on mode + the analytics host (which the CSP must open
   // for posthog-js), not on code: code is injected via `init`, so changing it
@@ -185,8 +191,21 @@ export function FreeformCanvas({
           latest.current.onNavigate?.(msg.nav);
           break;
         case "open-external":
-          if (isSafeExternalUrl(msg.url)) openExternalUrl(msg.url);
-          else log.warn("Blocked unsafe canvas external URL");
+          // The schema already refines on the PostHog-only allowlist; the
+          // re-check keeps the invariant local if the schema ever drifts.
+          if (!isSafePostHogUrl(msg.url)) {
+            log.warn("Blocked non-PostHog canvas external URL", {
+              url: msg.url,
+            });
+          } else if (
+            Date.now() - lastExternalOpenRef.current <
+            EXTERNAL_OPEN_MIN_INTERVAL_MS
+          ) {
+            log.warn("Throttled canvas external URL open", { url: msg.url });
+          } else {
+            lastExternalOpenRef.current = Date.now();
+            openExternalUrl(msg.url);
+          }
           break;
       }
     };

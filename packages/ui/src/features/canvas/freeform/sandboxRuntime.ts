@@ -143,6 +143,29 @@ export function decodeJsxUnicodeEscapes(value: string): string {
   );
 }
 
+// Resolves a click target to the absolute URL of an enclosing target="_blank"
+// anchor, or null when the click must not be brokered to the host. Exported for
+// tests; its source is interpolated into the sandbox bootstrap below so the
+// iframe runs this exact implementation.
+export function resolveExternalAnchorUrl(target: unknown): string | null {
+  const anchor = target instanceof Element ? target.closest("a[href]") : null;
+  if (!anchor) return null;
+  // HTML matches the _blank keyword ASCII-case-insensitively.
+  if ((anchor.getAttribute("target") ?? "").toLowerCase() !== "_blank") {
+    return null;
+  }
+  // Read the attribute, not the .href IDL property: SVG anchors expose an
+  // SVGAnimatedString there, and the property resolves relative hrefs against
+  // the srcdoc's inherited base URL (the host app's own URL). Only absolute
+  // URLs are brokered; the host then enforces its PostHog-only allowlist.
+  const href = anchor.getAttribute("href") ?? "";
+  try {
+    return new URL(href).href;
+  } catch {
+    return null;
+  }
+}
+
 export function buildSandboxDocument(
   mode: SandboxMode,
   // The PostHog host, when in-iframe analytics/replay is enabled. Opens CSP for
@@ -227,7 +250,8 @@ export function buildSandboxDocument(
         return call("capture", { event, properties: properties ?? {}, distinctId });
       },
       // External navigation is brokered by the host. The iframe has no popup
-      // permission; the host validates the scheme before opening anything.
+      // permission; the host only opens https://posthog.com (or subdomain)
+      // URLs and rate-limits opens, since canvas code is untrusted.
       openExternal: (url) => post({ type: "open-external", url }),
       // Navigate the host app. Fire-and-forget: the host validates the intent
       // against its allowlist and routes within the current channel. The canvas
@@ -243,13 +267,22 @@ export function buildSandboxDocument(
     // Preserve normal anchor ergonomics for generated canvases while keeping
     // navigation behind the validated host capability. Existing canvases that
     // render target="_blank" links therefore work without source migrations.
-    document.addEventListener("click", (event) => {
-      const target = event.target;
-      const anchor = target instanceof Element ? target.closest("a[href]") : null;
-      if (!anchor || anchor.getAttribute("target") !== "_blank") return;
-      event.preventDefault();
-      window.ph.openExternal(anchor.href);
-    });
+    // Capture phase so a canvas stopPropagation() can't swallow the click; the
+    // open decision is deferred a tick so a canvas preventDefault() is still
+    // honored. No preventDefault here — the native popup attempt is blocked by
+    // the sandbox (no allow-popups) regardless.
+    const resolveExternalAnchorUrl = ${resolveExternalAnchorUrl.toString()};
+    document.addEventListener(
+      "click",
+      (event) => {
+        const url = resolveExternalAnchorUrl(event.target);
+        if (!url) return;
+        setTimeout(() => {
+          if (!event.defaultPrevented) window.ph.openExternal(url);
+        }, 0);
+      },
+      true,
+    );
 
     // Boot posthog-js with the PUBLIC key the host passed in (never the read
     // token). Enables session replay so the author/viewer can be watched.
