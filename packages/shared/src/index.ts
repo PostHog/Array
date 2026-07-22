@@ -290,6 +290,7 @@ export type {
   TaskCreationOutput,
 } from "./task-creation-domain";
 export {
+  formatClockTime,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
   getLocalDayDiff,
