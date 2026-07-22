@@ -313,7 +313,7 @@ export function ProjectSwitcher() {
                   onClick={() => handleOpenExternal(EXTERNAL_LINKS.website)}
                 >
                   <ArrowSquareOut size={14} className="text-gray-11" />
-                  PostHog Code Website
+                  Website
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

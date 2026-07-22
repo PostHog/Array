@@ -8,7 +8,7 @@ Provides the PostHog plugin to agent sessions (Claude Code and Codex). The plugi
 
 Skills are the main content of the plugin. Each skill is a directory containing a `SKILL.md` and optional `references/` folder with supporting docs. For example, the `query-data` skill teaches agents how to write HogQL queries against PostHog's API.
 
-Skills are published independently from PostHog Code at a stable GitHub releases URL (`skills.zip`). This service ensures agents always have the latest skills without requiring a PostHog Code update.
+Skills are published independently from the desktop app at a stable GitHub releases URL (`skills.zip`). This service ensures agents always have the latest skills without requiring an app update.
 
 ### Skill Sources
 
@@ -58,7 +58,7 @@ Vite watches `plugins/posthog/` (and `local-skills/` in dev) for hot-reload.
 
 ### Cross-harness skills (no global writes)
 
-`$HOME/.agents/skills/` is a shared, cross-agent skills directory that other tools (e.g. standalone Codex) also read. PostHog Code **never writes skills there.** It only reads it, to surface the user's own Codex skills in the Skills tab. The "use your skills in any harness" merge happens per-session, scoped to the process PostHog Code spawns:
+`$HOME/.agents/skills/` is a shared, cross-agent skills directory that other tools (e.g. standalone Codex) also read. The app **never writes skills there.** It only reads it, to surface the user's own Codex skills in the Skills tab. The "use your skills in any harness" merge happens per-session, scoped to the process the app spawns:
 
 - **Claude sessions** load the user's Codex skills (`$HOME/.agents/skills`) as an extra synthetic plugin — see `discover-plugins.ts` (`discoverCodexSkills`), deduped against the bundled catalog and `$HOME/.claude/skills`.
 - **Codex sessions** get a private `CODEX_HOME` (`{userData}/codex-home`) whose `skills/` holds the bundled catalog + the user's `$HOME/.claude/skills` — see `codex-home.ts` (`prepareCodexHome`). codex-acp scans `$CODEX_HOME/skills` plus `$HOME/.agents/skills`, so the user's own Codex skills still load while ours stay app-private.

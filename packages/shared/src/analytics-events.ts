@@ -656,7 +656,7 @@ export interface UsageViewedProperties {
 export interface SpendAnalysisTaskOpenedProperties {
   /** Total LLM spend in USD across all products for the analysed window. */
   total_cost_usd: number;
-  /** PostHog Code spend in USD for the analysed window (subset of total). */
+  /** Desktop app spend in USD for the analysed window (subset of total). */
   scoped_cost_usd: number;
   /** Number of `$ai_generation` events in the analysed window. */
   scoped_event_count: number;

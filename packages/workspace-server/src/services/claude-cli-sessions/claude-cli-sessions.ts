@@ -188,7 +188,7 @@ export class ClaudeCliSessionsServiceImpl implements ClaudeCliSessionsService {
         }
         // Mirror the listing filter: only a non-cli entrypoint disqualifies
         // (older CLI versions omit the field). Guards the public import
-        // mutation against pulling in PostHog Code's own sdk-ts sessions.
+        // mutation against pulling in PostHog's own sdk-ts sessions.
         if (
           typeof entry.entrypoint === "string" &&
           entry.entrypoint !== "cli"
@@ -316,7 +316,7 @@ export class ClaudeCliSessionsServiceImpl implements ClaudeCliSessionsService {
 
     const firstWithCwd = head.find((e) => typeof e.cwd === "string");
     if (!firstWithCwd?.cwd || !acceptedCwds.has(firstWithCwd.cwd)) return null;
-    // PostHog Code's own sessions write entrypoint "sdk-ts"; older CLI
+    // PostHog's own sessions write entrypoint "sdk-ts"; older CLI
     // versions omit the field, so only a non-cli value disqualifies.
     if (firstWithCwd.entrypoint && firstWithCwd.entrypoint !== "cli") {
       return null;

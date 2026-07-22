@@ -101,7 +101,7 @@ describe("buildAppImageDesktopEntry", () => {
     expect(entry).toContain(
       "MimeType=x-scheme-handler/posthog-code;x-scheme-handler/twig;x-scheme-handler/array;",
     );
-    expect(entry).toContain("Name=PostHog Code");
+    expect(entry).toContain("Name=PostHog");
     expect(entry.startsWith("[Desktop Entry]")).toBe(true);
   });
 

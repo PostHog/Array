@@ -975,7 +975,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                     sessionUpdate: "agent_message_chunk",
                     content: {
                       type: "text",
-                      text: `Unsupported slash command: \`${cmd}\`. PostHog Code does not implement this command.`,
+                      text: `Unsupported slash command: \`${cmd}\`. PostHog does not implement this command.`,
                     },
                   },
                 });

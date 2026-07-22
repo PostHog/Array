@@ -13,27 +13,27 @@ describe("isMacosAppTranslocationPath", () => {
     {
       case: "appPath is translocated",
       appPath:
-        "/private/var/folders/yf/xx/AppTranslocation/C6283C3C-9D6E-4D81-A7D5-8BA2567ED486/d/PostHog Code.app/Contents/Resources/app.asar",
-      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+        "/private/var/folders/yf/xx/AppTranslocation/C6283C3C-9D6E-4D81-A7D5-8BA2567ED486/d/PostHog.app/Contents/Resources/app.asar",
+      exePath: "/Applications/PostHog.app/Contents/MacOS/PostHog",
       expected: true,
     },
     {
       case: "exePath is translocated",
-      appPath: "/Applications/PostHog Code.app/Contents/Resources/app.asar",
+      appPath: "/Applications/PostHog.app/Contents/Resources/app.asar",
       exePath:
-        "/private/var/folders/yf/xx/AppTranslocation/C6283C3C/d/PostHog Code.app/Contents/MacOS/PostHog Code",
+        "/private/var/folders/yf/xx/AppTranslocation/C6283C3C/d/PostHog.app/Contents/MacOS/PostHog",
       expected: true,
     },
     {
       case: "neither path is translocated (/Applications)",
-      appPath: "/Applications/PostHog Code.app/Contents/Resources/app.asar",
-      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      appPath: "/Applications/PostHog.app/Contents/Resources/app.asar",
+      exePath: "/Applications/PostHog.app/Contents/MacOS/PostHog",
       expected: false,
     },
     {
       case: "neither path is translocated (/Users)",
-      appPath: "/Users/dev/PostHog Code.app/Contents/Resources/app.asar",
-      exePath: "/Users/dev/PostHog Code.app/Contents/MacOS/PostHog Code",
+      appPath: "/Users/dev/PostHog.app/Contents/Resources/app.asar",
+      exePath: "/Users/dev/PostHog.app/Contents/MacOS/PostHog",
       expected: false,
     },
   ])("$case → $expected", ({ appPath, exePath, expected }) => {
@@ -107,13 +107,13 @@ describe("isMacosPathOnReadOnlyNonRootMountFromTable", () => {
     {
       case: "read-only non-root volume",
       table: baseTable,
-      path: "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/MacOS/PostHog Code",
+      path: "/Volumes/ReadOnlyVol/PostHog.app/Contents/MacOS/PostHog",
       expected: true,
     },
     {
       case: "writable non-root volume",
       table: baseTable,
-      path: "/Volumes/Writable/out/PostHog Code.app/Contents/MacOS/PostHog Code",
+      path: "/Volumes/Writable/out/PostHog.app/Contents/MacOS/PostHog",
       expected: false,
     },
     {
@@ -154,33 +154,29 @@ describe("isMacosPackagedUnsafeBundleLocation", () => {
     {
       case: "translocated bundle",
       appPath:
-        "/private/var/.../AppTranslocation/UUID/d/PostHog Code.app/Contents/Resources/app.asar",
-      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+        "/private/var/.../AppTranslocation/UUID/d/PostHog.app/Contents/Resources/app.asar",
+      exePath: "/Applications/PostHog.app/Contents/MacOS/PostHog",
       readMountTable: () => writableMountTable,
       expected: true,
     },
     {
       case: "ordinary non-translocated path on a writable mount",
-      appPath:
-        "/Volumes/build/out/PostHog Code.app/Contents/Resources/app.asar",
-      exePath:
-        "/Volumes/build/out/PostHog Code.app/Contents/MacOS/PostHog Code",
+      appPath: "/Volumes/build/out/PostHog.app/Contents/Resources/app.asar",
+      exePath: "/Volumes/build/out/PostHog.app/Contents/MacOS/PostHog",
       readMountTable: () => writableMountTable,
       expected: false,
     },
     {
       case: "bundle on a read-only non-root volume",
-      appPath:
-        "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/Resources/app.asar",
-      exePath:
-        "/Volumes/ReadOnlyVol/PostHog Code.app/Contents/MacOS/PostHog Code",
+      appPath: "/Volumes/ReadOnlyVol/PostHog.app/Contents/Resources/app.asar",
+      exePath: "/Volumes/ReadOnlyVol/PostHog.app/Contents/MacOS/PostHog",
       readMountTable: () => readOnlyMountTable,
       expected: true,
     },
     {
       case: "mount table cannot be read (degrade to non-blocking)",
-      appPath: "/Applications/PostHog Code.app/Contents/Resources/app.asar",
-      exePath: "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      appPath: "/Applications/PostHog.app/Contents/Resources/app.asar",
+      exePath: "/Applications/PostHog.app/Contents/MacOS/PostHog",
       readMountTable: () => null,
       expected: false,
     },
@@ -193,8 +189,8 @@ describe("isMacosPackagedUnsafeBundleLocation", () => {
   it("short-circuits on translocation without reading the mount table", () => {
     const readMountTable = vi.fn(() => writableMountTable);
     isMacosPackagedUnsafeBundleLocation(
-      "/private/var/.../AppTranslocation/UUID/d/PostHog Code.app/Contents/Resources/app.asar",
-      "/Applications/PostHog Code.app/Contents/MacOS/PostHog Code",
+      "/private/var/.../AppTranslocation/UUID/d/PostHog.app/Contents/Resources/app.asar",
+      "/Applications/PostHog.app/Contents/MacOS/PostHog",
       readMountTable,
     );
     expect(readMountTable).not.toHaveBeenCalled();

@@ -6,7 +6,7 @@ The core runtime for PostHog cloud runs. Provides two things: an **Agent SDK** f
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│  Client (PostHog Code IDE or local CLI)                                  │
+│  Client (PostHog desktop app or local CLI)                                  │
 │    connects via SSE/JSON-RPC (cloud) or in-process streams (local)│
 └────────────────────┬─────────────────────────────────────────────┘
                      │
@@ -57,7 +57,7 @@ The same ACP agent runs in both contexts. The difference is how it's connected:
 
 **Cloud (AgentServer):** The agent runs inside a sandbox. `AgentServer` is an HTTP server (Hono) that wraps the ACP connection. Clients connect via `GET /events` (SSE) and `POST /command` (JSON-RPC). Authentication uses JWT tokens (RS256) — the sandbox holds a public key, PostHog Django holds the private key. In background mode, the server auto-starts, prompts the agent with the task description, and signals completion via the PostHog API. In interactive mode, it stays open for conversation.
 
-**Local (PostHog Code desktop):** The agent runs in-process. PostHog Code calls `createAcpConnection()` directly — no HTTP server, no JWT. The bidirectional ACP streams connect client ↔ agent within the same process.
+**Local (desktop):** The agent runs in-process. The desktop app calls `createAcpConnection()` directly — no HTTP server, no JWT. The bidirectional ACP streams connect client ↔ agent within the same process.
 
 **HandoffCheckpointTracker** handles the bridge between these contexts: it captures git checkpoint state plus the object pack/index needed to restore the worktree across cloud and local. This enables the "hand off" flow — start locally, continue in cloud, or vice versa.
 
@@ -142,7 +142,7 @@ JWT validation (`src/server/jwt.ts`) uses RS256 with a configurable public key. 
 
 ### Commands flow through ACP
 
-When `POST /command` receives a `user_message`, it doesn't handle it directly — it calls `clientConnection.prompt()` on the ACP `ClientSideConnection`, which sends a `session/prompt` message through the ACP streams to the agent. Similarly, `cancel` sends `session/cancel`. This means all commands follow the same path as in-process calls from PostHog Code, with the HTTP layer just being a thin translation.
+When `POST /command` receives a `user_message`, it doesn't handle it directly — it calls `clientConnection.prompt()` on the ACP `ClientSideConnection`, which sends a `session/prompt` message through the ACP streams to the agent. Similarly, `cancel` sends `session/cancel`. This means all commands follow the same path as in-process calls from the desktop app, with the HTTP layer just being a thin translation.
 
 ### Permission routing in cloud mode
 
@@ -199,7 +199,7 @@ await agent.attachPullRequestToTask(taskId, prUrl)
 await agent.cleanup()
 ```
 
-Key difference from `AgentServer`: the SDK returns raw ACP streams for the caller to manage. There's no HTTP layer, no SSE broadcasting, and no auto-prompting. The caller is responsible for creating a `ClientSideConnection`, running the ACP handshake, and sending prompts. This is what PostHog Code does when running agents locally.
+Key difference from `AgentServer`: the SDK returns raw ACP streams for the caller to manage. There's no HTTP layer, no SSE broadcasting, and no auto-prompting. The caller is responsible for creating a `ClientSideConnection`, running the ACP handshake, and sending prompts. This is what the desktop app does when running agents locally.
 
 For Codex adapters, `agent.run()` also fetches available models from the PostHog gateway and filters to OpenAI-compatible models, passing the allowed set to the ACP connection for model list filtering.
 

@@ -1,4 +1,4 @@
-name: Tag PostHog Code Release
+name: Tag PostHog Release
 
 on:
   schedule:
@@ -58,7 +58,7 @@ jobs:
             echo "$1 Skipping auto-release; the next scheduled release will pick this up."
             echo "authorized=false" >> "$GITHUB_OUTPUT"
             GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
-              --body "$1 Auto-release is limited to Team PostHog Code members, so this will ship with the next scheduled release instead." || true
+              --body "$1 Auto-release is limited to members of the team-posthog-code GitHub team, so this will ship with the next scheduled release instead." || true
           }
 
           LABELER=$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/events" --paginate \

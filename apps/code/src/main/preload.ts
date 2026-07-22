@@ -27,10 +27,10 @@ contextBridge.exposeInMainWorld("__posthogBootstrap", {
   sessionId: parseSessionIdArg(process.argv),
 });
 
-contextBridge.exposeInMainWorld("__posthogCodeDevFlags", devFlags);
+contextBridge.exposeInMainWorld("__posthogDevFlags", devFlags);
 
 if (process.argv.includes("--posthog-code-dev")) {
-  contextBridge.exposeInMainWorld("__posthogCodeTest", {
+  contextBridge.exposeInMainWorld("__posthogTest", {
     crash: () => {
       process.crash();
     },
