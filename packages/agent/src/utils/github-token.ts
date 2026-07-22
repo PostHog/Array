@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
 import { readGithubTokenFromEnv } from "@posthog/git/signed-commit";
 
 // helpers for resolving the in-sandbox GitHub token
-// agentsh env file (NUL-delimited `key=value` pairs) that the PostHog backend
-// rewrites in place when it refreshes the sandbox's GitHub credentials
+// Dedicated agentsh credential file (NUL-delimited `key=value` pairs) that the
+// PostHog backend rewrites in place when it refreshes GitHub credentials
 // mid-session. The agent-server process env is frozen at launch, so reading
 // this live file is how in-process tools pick up a refreshed token without a
 // process restart.
-export const SANDBOX_ENV_FILE = "/tmp/agent-env";
+const SANDBOX_GITHUB_ENV_FILE = "/tmp/agent-github-env";
 
 export function readGithubTokenFromSandboxEnvFile(
-  envFilePath: string = SANDBOX_ENV_FILE,
+  envFilePath: string = SANDBOX_GITHUB_ENV_FILE,
 ): string | undefined {
   try {
     const raw = readFileSync(envFilePath, "utf8");
@@ -36,7 +36,7 @@ export function readGithubTokenFromSandboxEnvFile(
  * signed-commit tool — pick up a refreshed token without a restart.
  */
 export function resolveGithubToken(
-  envFilePath: string = SANDBOX_ENV_FILE,
+  envFilePath: string = SANDBOX_GITHUB_ENV_FILE,
 ): string | undefined {
   return (
     readGithubTokenFromSandboxEnvFile(envFilePath) ?? readGithubTokenFromEnv()

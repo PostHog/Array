@@ -1,6 +1,6 @@
-# Contributing to PostHog Code
+# Contributing to PostHog
 
-We love contributions big and small. PostHog Code is the IDE for understanding how users interact with your product -- and we want the community involved in shaping it.
+We love contributions big and small. The PostHog desktop app is the IDE for understanding how users interact with your product -- and we want the community involved in shaping it.
 
 ## Getting started
 

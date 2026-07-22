@@ -30,6 +30,12 @@ import {
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import type { LlmMessage } from "@posthog/core/llm-gateway/schemas";
+import { LOCAL_MCP_WORKSPACE_CLIENT } from "@posthog/core/local-mcp/identifiers";
+import type { LocalMcpWorkspaceClient } from "@posthog/core/local-mcp/localMcpImport";
+import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
+import { piRuntimeModule } from "@posthog/core/pi-runtime/pi-runtime.module";
+import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
+import { PI_SESSION_CLIENT } from "@posthog/core/pi-runtime/piSessionController";
 import {
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
@@ -83,6 +89,7 @@ import {
 import { WorkspaceSetupService } from "@posthog/core/workspace/WorkspaceSetupService";
 import { setRootContainer } from "@posthog/di/container";
 import { HOST_TRPC_CLIENT } from "@posthog/host-router/client";
+import { TrpcPiSessionClient } from "@posthog/host-router/pi-session-client";
 import {
   BROWSER_TABS_CLIENT,
   type BrowserTabsClient,
@@ -149,6 +156,7 @@ import { trpcClient } from "@renderer/trpc";
 import { hostTrpcClient } from "@renderer/trpc/client";
 import type { TRPCClient } from "@trpc/client";
 import { hostLog, logger } from "@utils/logger";
+import { TrpcPiRunner } from "../platform-adapters/trpc-pi-runner";
 import type { RendererBindings } from "./bindings";
 import { TASK_SERVICE as RENDERER_TASK_SERVICE, TRPC_CLIENT } from "./tokens";
 
@@ -288,6 +296,9 @@ container
 
 // Bind services
 container.bind<ITaskCreationHost>(TASK_CREATION_HOST).to(TrpcTaskCreationHost);
+container.bind<PiRunner>(PI_RUNNER).to(TrpcPiRunner);
+container.bind(PI_SESSION_CLIENT).to(TrpcPiSessionClient);
+container.load(piRuntimeModule);
 container.bind(TASK_CREATION_EFFECTS).toConstantValue(taskCreationEffects);
 container.bind<TaskService>(RENDERER_TASK_SERVICE).to(TaskService);
 container.bind<TaskService>(TASK_SERVICE).toService(RENDERER_TASK_SERVICE);
@@ -387,6 +398,12 @@ container.bind(CODE_REVIEW_WORKSPACE_CLIENT).toConstantValue({
   },
 } satisfies CodeReviewWorkspaceClient);
 container.bind(REVERT_HUNK_SERVICE).to(RevertHunkService).inSingletonScope();
+
+// local MCP servers (~/.claude.json), read for cloud-import classification
+container.bind(LOCAL_MCP_WORKSPACE_CLIENT).toConstantValue({
+  listLocalMcpServers: (cwd?: string) =>
+    trpcClient.localMcp.list.query({ cwd }),
+} satisfies LocalMcpWorkspaceClient);
 
 // skills (team publish/install reach workspace-server through this slice)
 container.bind(SKILLS_WORKSPACE_CLIENT).toConstantValue({

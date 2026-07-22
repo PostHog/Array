@@ -1,11 +1,13 @@
 import { agentChatCoreModule } from "@posthog/core/agent-chat/agentChat.module";
 import { autoresearchCoreModule } from "@posthog/core/autoresearch/autoresearch.module";
-import { billingCoreModule } from "@posthog/core/billing/billing.module";
+import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
 import { inboxCoreModule } from "@posthog/core/inbox/inbox.module";
 import { githubConnectModule } from "@posthog/core/integrations/githubConnect.module";
+import { localMcpCoreModule } from "@posthog/core/local-mcp/local-mcp.module";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import { skillsCoreModule } from "@posthog/core/skills/skills.module";
+import { speechCoreModule } from "@posthog/core/speech/speech.module";
 import { CONTRIBUTION } from "@posthog/di/contribution";
 import { agentUiModule } from "@posthog/ui/features/agent/agent.module";
 import { authUiModule } from "@posthog/ui/features/auth/auth.module";
@@ -34,7 +36,7 @@ export function registerDesktopContributions(): void {
     authUiModule,
     autoresearchCoreModule,
     billingUiModule,
-    billingCoreModule,
+    taskThreadCoreModule,
     browserTabsUiModule,
     cloneUiModule,
     connectivityUiModule,
@@ -43,6 +45,7 @@ export function registerDesktopContributions(): void {
     focusUiModule,
     githubConnectModule,
     inboxCoreModule,
+    localMcpCoreModule,
     notificationsUiModule,
     onboardingModule,
     provisioningUiModule,
@@ -50,6 +53,7 @@ export function registerDesktopContributions(): void {
     setupCoreModule,
     setupUiModule,
     skillsCoreModule,
+    speechCoreModule,
     workspaceUiModule,
   ]) {
     container.load(module);

@@ -73,8 +73,8 @@ export function MarketplaceView({
         <Flex direction="column" gap="1" className="min-w-0">
           <Heading className="font-bold text-2xl">Marketplace</Heading>
           <Text color="gray" className="text-sm">
-            Browse and connect MCP servers that extend your agent with tools,
-            data and integrations.
+            Connect MCP servers to make them available to in PostHog on desktop
+            and in the cloud.
           </Text>
         </Flex>
         <Button variant="solid" size="2" onClick={onAddCustom}>

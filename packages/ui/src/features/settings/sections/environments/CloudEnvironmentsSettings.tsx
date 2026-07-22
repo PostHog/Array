@@ -296,6 +296,7 @@ export function CloudEnvironmentsSettings() {
     buildMutation,
     builderTaskMutation,
     deleteMutation: deleteImageMutation,
+    updateMutation: updateImageMutation,
   } = useSandboxCustomImages();
   const handleOpenTask = useHandleOpenTask();
   const repoPickerProps = useCloudRepoPicker();
@@ -313,6 +314,10 @@ export function CloudEnvironmentsSettings() {
   const [specDraft, setSpecDraft] = useState("");
   const [deleteConfirmImage, setDeleteConfirmImage] =
     useState<SandboxCustomImage | null>(null);
+  const [renameImage, setRenameImage] = useState<SandboxCustomImage | null>(
+    null,
+  );
+  const [renameName, setRenameName] = useState("");
   const [viewingLogImageId, setViewingLogImageId] = useState<string | null>(
     null,
   );
@@ -455,6 +460,30 @@ export function CloudEnvironmentsSettings() {
     deleteImageMutation.mutate(deleteConfirmImage.id);
     setDeleteConfirmImage(null);
   }, [deleteConfirmImage, deleteImageMutation]);
+
+  const openRenameImage = useCallback((image: SandboxCustomImage) => {
+    setRenameImage(image);
+    setRenameName(image.name);
+  }, []);
+
+  const handleRenameImage = useCallback(async () => {
+    if (!renameImage) return;
+    const name = renameName.trim();
+    if (!name) {
+      toast.error("Name cannot be blank");
+      return;
+    }
+    if (name === renameImage.name) {
+      setRenameImage(null);
+      return;
+    }
+    try {
+      await updateImageMutation.mutateAsync({ id: renameImage.id, name });
+      setRenameImage(null);
+    } catch {
+      // The mutation's onError callback displays the failure toast.
+    }
+  }, [renameImage, renameName, updateImageMutation]);
 
   if (isFormOpen) {
     return (
@@ -1003,6 +1032,18 @@ export function CloudEnvironmentsSettings() {
                         <Button
                           size="1"
                           variant="ghost"
+                          color="gray"
+                          onClick={() => openRenameImage(image)}
+                          disabled={
+                            deleteImageMutation.isPending ||
+                            updateImageMutation.isPending
+                          }
+                        >
+                          <PencilSimple size={14} />
+                        </Button>
+                        <Button
+                          size="1"
+                          variant="ghost"
                           color="red"
                           onClick={() => setDeleteConfirmImage(image)}
                           disabled={deleteImageMutation.isPending}
@@ -1086,6 +1127,59 @@ export function CloudEnvironmentsSettings() {
                   onClick={confirmDeleteImage}
                 >
                   Delete
+                </Button>
+              </Flex>
+            </AlertDialog.Content>
+          </AlertDialog.Root>
+          <AlertDialog.Root
+            open={renameImage !== null}
+            onOpenChange={(open) => {
+              if (!open) setRenameImage(null);
+            }}
+          >
+            <AlertDialog.Content maxWidth="420px" size="1">
+              <AlertDialog.Title className="text-sm">
+                Rename custom image
+              </AlertDialog.Title>
+              <AlertDialog.Description>
+                <Text color="gray" className="text-[13px]">
+                  Updates the display name. The build spec and status are
+                  unchanged.
+                </Text>
+              </AlertDialog.Description>
+              <Flex direction="column" gap="1" mt="3">
+                <Text className="font-medium text-[13px]">Name</Text>
+                <TextField.Root
+                  size="2"
+                  value={renameName}
+                  onChange={(e) => setRenameName(e.target.value)}
+                  placeholder="Image name"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !updateImageMutation.isPending) {
+                      e.preventDefault();
+                      void handleRenameImage();
+                    }
+                  }}
+                />
+              </Flex>
+              <Flex justify="end" gap="3" mt="3">
+                <AlertDialog.Cancel>
+                  <Button variant="soft" color="gray" size="1">
+                    Cancel
+                  </Button>
+                </AlertDialog.Cancel>
+                <Button
+                  variant="solid"
+                  size="1"
+                  onClick={() => void handleRenameImage()}
+                  loading={updateImageMutation.isPending}
+                  disabled={
+                    !renameName.trim() ||
+                    renameName.trim() === renameImage?.name
+                  }
+                >
+                  Save
                 </Button>
               </Flex>
             </AlertDialog.Content>

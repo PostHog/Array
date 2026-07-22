@@ -33,10 +33,9 @@
  * before `@earendil-works/pi-coding-agent` is evaluated, because
  * `APP_NAME`/`APP_TITLE`/`CONFIG_DIR_NAME` are read from `PI_PACKAGE_DIR` at
  * module-evaluation time, not lazily. `cli.ts`, `bin/hog.ts`, and
- * `session.ts` each call it as their first statement, then `await
- * import("@earendil-works/pi-coding-agent")` (and any local module that
- * transitively imports it, e.g. `./spawn`) dynamically rather than via a
- * static top-level `import`.
+ * `runtime.ts` call it before dynamically importing
+ * `@earendil-works/pi-coding-agent` or any local module that transitively
+ * imports the SDK.
  *
  * That dynamic-import requirement is not optional styling: once bundled,
  * a static `import "./brand-env"` followed by a static
@@ -49,9 +48,9 @@
  * contrast, is never hoisted ahead of preceding synchronous statements, so
  * it reliably runs after `installHogBrandEnv()` regardless of bundling.
  *
- * `spawn.ts`/`pi-cli.ts` use `withHogBrandEnv()` instead, to pass
- * `PI_PACKAGE_DIR` into a spawned pi subprocess's environment — no ordering
- * concerns there, since it only builds a plain object for a child process.
+ * The subagent's `pi-subprocess.ts` uses `withHogBrandEnv()` when it spawns
+ * Pi subprocesses — no ordering concerns there, since it only builds a
+ * plain environment object for a child process.
  *
  * Deliberately keeps `configDir: ".pi"` (not `.hog`) so existing pi
  * credentials, sessions, and MCP auth on disk keep working unchanged for
@@ -60,8 +59,8 @@
  * Best-effort: inside the standalone `bun build --compile` binary (see
  * `bin/hog.ts`) there is no real `node_modules` tree to resolve
  * `@earendil-works/pi-coding-agent`'s package root against — the same
- * limitation that excludes the `subagent` extension from that binary (see
- * `pi-cli.ts`) — so failures here are swallowed and pi falls back to its
+ * limitation that excludes the `subagent` extension from that binary — so
+ * failures here are swallowed and Pi falls back to its
  * own "pi"/"π" naming rather than crashing startup.
  */
 import {
@@ -150,9 +149,8 @@ export function hogBrandManifestDir(): string | null {
 }
 
 /**
- * Merges `PI_PACKAGE_DIR` into `env` for spawning a pi subprocess (see
- * `spawn.ts`/`pi-cli.ts`), unless the caller already set one or the
- * manifest directory couldn't be prepared.
+ * Merges `PI_PACKAGE_DIR` into `env` for spawning a Pi subprocess, unless the
+ * caller already set one or the manifest directory couldn't be prepared.
  */
 export function withHogBrandEnv(
   env: NodeJS.ProcessEnv = process.env,

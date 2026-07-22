@@ -16,7 +16,8 @@ interface McpServerRowProps {
   isStdio?: boolean;
   needsReauth?: boolean;
   installed?: boolean;
-  iconKey?: string | null;
+  iconDomain?: string | null;
+  serverUrl?: string | null;
   onPress: () => void;
 }
 
@@ -35,7 +36,8 @@ export function McpServerRow({
   isStdio,
   needsReauth,
   installed,
-  iconKey,
+  iconDomain,
+  serverUrl,
   onPress,
 }: McpServerRowProps) {
   const themeColors = useThemeColors();
@@ -46,7 +48,7 @@ export function McpServerRow({
       onPress={onPress}
       className="flex-row items-center gap-3 border-gray-5 border-b bg-card px-4 py-3 active:bg-gray-2"
     >
-      <ServerIcon iconKey={iconKey} size={36} />
+      <ServerIcon iconDomain={iconDomain} serverUrl={serverUrl} size={36} />
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-2">
           <Text
@@ -121,7 +123,8 @@ export function recommendedToRowProps(
     authType: template.auth_type,
     isStdio: isStdioServer(template),
     installed: installedNames.has(template.name),
-    iconKey: template.icon_key,
+    iconDomain: template.icon_domain,
+    serverUrl: template.url,
     onPress: () => onPress(template),
   };
 }
@@ -137,7 +140,8 @@ export function installationToRowProps(
     isStdio: isStdioServer(installation),
     needsReauth: installation.needs_reauth,
     installed: true,
-    iconKey: installation.icon_key,
+    iconDomain: installation.icon_domain,
+    serverUrl: installation.url,
     onPress: () => onPress(installation),
   };
 }

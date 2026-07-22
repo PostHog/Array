@@ -2,9 +2,11 @@ import { ArchiveIcon } from "@phosphor-icons/react";
 import { Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
@@ -110,8 +112,13 @@ export function ChannelsSidebar() {
         {bodyChannelsEnabled ? (
           <>
             <Separator />
-            <Box className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto">
-              <ChannelsList />
+            {/* The fab is a sibling of the scroll region, not a child, so it
+                stays pinned to the bottom-right instead of scrolling away. */}
+            <Box className="relative min-h-0 flex-1">
+              <Box className="scroll-mask-4 h-full overflow-y-auto">
+                <ChannelsList />
+              </Box>
+              <ChannelsFab />
             </Box>
           </>
         ) : (
@@ -138,6 +145,8 @@ export function ChannelsSidebar() {
             </button>
           </Box>
         )}
+
+        <LoopsPromoCard />
 
         {/* Workspace switcher pinned to the bottom. Its dropdown carries the
             Settings entry, so there's no separate Settings row. */}

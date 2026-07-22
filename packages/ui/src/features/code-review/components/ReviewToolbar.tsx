@@ -16,12 +16,18 @@ import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { Flex, Separator, Text } from "@radix-ui/themes";
 import { FoldVertical, Maximize, Minimize, UnfoldVertical } from "lucide-react";
 import { memo } from "react";
+import type { CommentFileFilter } from "../commentFileFilter";
 import { DiffSettingsMenu } from "./DiffSettingsMenu";
 import { DiffSourceSelector } from "./DiffSourceSelector";
 
 interface ReviewToolbarProps {
   taskId: string;
   fileCount: number;
+  viewedCount: number;
+  commentedFileCount: number;
+  unresolvedCommentedFileCount: number;
+  commentFilter: CommentFileFilter;
+  onCommentFilterChange?: (filter: CommentFileFilter) => void;
   linesAdded: number;
   linesRemoved: number;
   allExpanded: boolean;
@@ -35,9 +41,47 @@ interface ReviewToolbarProps {
   defaultBranch?: string | null;
 }
 
+function formatFileCount(count: number, suffix: string): string {
+  const noun = count === 1 ? "file" : "files";
+  return `${count} ${noun} ${suffix}`;
+}
+
+function getVisibleFileSummary(
+  commentFilter: CommentFileFilter,
+  fileCount: number,
+  commentedFileCount: number,
+  unresolvedCommentedFileCount: number,
+): { count: number; label: string } {
+  switch (commentFilter) {
+    case "commented":
+      return {
+        count: commentedFileCount,
+        label: formatFileCount(commentedFileCount, "with comments"),
+      };
+    case "unresolved":
+      return {
+        count: unresolvedCommentedFileCount,
+        label: formatFileCount(
+          unresolvedCommentedFileCount,
+          "with unresolved comments",
+        ),
+      };
+    case "none":
+      return {
+        count: fileCount,
+        label: formatFileCount(fileCount, "changed"),
+      };
+  }
+}
+
 export const ReviewToolbar = memo(function ReviewToolbar({
   taskId,
   fileCount,
+  viewedCount,
+  commentedFileCount,
+  unresolvedCommentedFileCount,
+  commentFilter,
+  onCommentFilterChange,
   allExpanded,
   onExpandAll,
   onCollapseAll,
@@ -64,6 +108,14 @@ export const ReviewToolbar = memo(function ReviewToolbar({
     setReviewMode(taskId, "closed");
   };
 
+  const { count: visibleFileCount, label: fileCountLabel } =
+    getVisibleFileSummary(
+      commentFilter,
+      fileCount,
+      commentedFileCount,
+      unresolvedCommentedFileCount,
+    );
+
   return (
     <Flex
       id="review-toolbar"
@@ -76,9 +128,12 @@ export const ReviewToolbar = memo(function ReviewToolbar({
       className="sticky top-0 h-[32px] shrink-0 border-b border-b-(--gray-6) bg-(--color-background)"
     >
       <Flex align="center" gap="2">
-        <Text className="font-medium text-[13px]">
-          {fileCount} file{fileCount !== 1 ? "s" : ""} changed
-        </Text>
+        <Text className="font-medium text-[13px]">{fileCountLabel}</Text>
+        {visibleFileCount > 0 && (
+          <Text className="text-(--gray-10) text-[13px]">
+            {viewedCount}/{visibleFileCount} viewed
+          </Text>
+        )}
         {effectiveSource && (
           <DiffSourceSelector
             taskId={taskId}
@@ -156,7 +211,12 @@ export const ReviewToolbar = memo(function ReviewToolbar({
 
         <Separator orientation="vertical" size="1" />
 
-        <DiffSettingsMenu />
+        <DiffSettingsMenu
+          commentedFileCount={commentedFileCount}
+          unresolvedCommentedFileCount={unresolvedCommentedFileCount}
+          commentFilter={commentFilter}
+          onCommentFilterChange={onCommentFilterChange}
+        />
 
         <Tooltip content="Close review">
           <Button size="icon-sm" onClick={handleClose} className="rounded-xs">

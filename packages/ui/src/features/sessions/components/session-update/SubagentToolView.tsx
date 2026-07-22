@@ -86,7 +86,8 @@ export function SubagentToolView({
               </TooltipContent>
             </Tooltip>
             <Text className="text-[13px] text-gray-10">
-              {title || "Subagent"}
+              <span className="font-medium text-gray-12">Subagent</span>
+              {title && title !== "Subagent" ? ` · ${title}` : ""}
             </Text>
             <StatusIndicators isFailed={isFailed} wasCancelled={wasCancelled} />
           </Flex>
@@ -135,7 +136,10 @@ export function SubagentToolView({
         wasCancelled={wasCancelled}
         content={childContent}
       >
-        {title || "Subagent"}
+        <span>
+          <span className="font-medium text-gray-12">Subagent</span>
+          {title && title !== "Subagent" ? ` · ${title}` : ""}
+        </span>
       </ToolRow>
     </div>
   );

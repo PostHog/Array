@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyGatewayLimitError,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,
@@ -84,6 +85,62 @@ describe("isRateLimitError", () => {
   });
 });
 
+describe("classifyGatewayLimitError", () => {
+  it.each([
+    [
+      // The gate 403 as the ACP layer surfaces it (full body embedded).
+      `Internal error: API Error: 403 {"error":{"message":"Model 'claude-opus-4-8' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. Add a payment method to your organization to unlock all models. (rate_limit)","type":"permission_error","code":"model_gate"}}`,
+      "model_gate",
+    ],
+    [
+      // SDK surfaces that reduce the body to its message string.
+      "API Error: 403 Model 'gpt-5.5' needs a paid PostHog plan. (rate_limit)",
+      "model_gate",
+    ],
+    [
+      // Bare FastAPI detail from gateways predating the error envelope.
+      `Internal error: API Error: 403 {"detail":"Model 'claude-opus-4-8' needs a paid PostHog plan."}`,
+      "model_gate",
+    ],
+    [
+      "Rate limit exceeded: Your team has reached its PostHog Code usage limit for this billing period. See https://app.posthog.com/organization/billing for your usage and limits.",
+      "org_limit",
+    ],
+    [
+      // Gateway fallback wording for a credit bucket without a mapped message.
+      "Your team has reached its usage limit for this billing period.",
+      "org_limit",
+    ],
+    [
+      // Per-user free valves fire only for unsubscribed orgs; the modal's
+      // subscribed bit picks the free-tier copy.
+      "Rate limit exceeded: User burst rate limit exceeded",
+      "org_limit",
+    ],
+    ["Rate limit exceeded: User sustained rate limit exceeded", "org_limit"],
+  ])("classifies %j as %s", (message, expected) => {
+    expect(classifyGatewayLimitError(message)).toBe(expected);
+  });
+
+  it("matches against the details when the message is generic", () => {
+    expect(
+      classifyGatewayLimitError(
+        "Internal error",
+        "API Error: 403 Model 'gpt-5.5' needs a paid PostHog plan.",
+      ),
+    ).toBe("model_gate");
+  });
+
+  it.each([
+    "Rate limit exceeded",
+    "Rate limit exceeded: Product rate limit exceeded",
+    "Your team has used its monthly PostHog AI credits.",
+    "network down",
+  ])("returns null for %j", (message) => {
+    expect(classifyGatewayLimitError(message)).toBeNull();
+  });
+});
+
 describe("isFatalSessionError", () => {
   it.each([
     "internal error",
@@ -120,6 +177,16 @@ describe("isFatalSessionError", () => {
       isFatalSessionError(
         "internal error",
         "API Error: the operation timed out",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat a free-tier model-gate 403 as fatal despite the Internal error wrapper", () => {
+    // Shim-less body (no "(rate_limit)" suffix), so this exercises the
+    // model-gate exclusion rather than the rate-limit one.
+    expect(
+      isFatalSessionError(
+        `Internal error: API Error: 403 {"detail":"Model 'claude-opus-4-8' needs a paid PostHog plan."}`,
       ),
     ).toBe(false);
   });

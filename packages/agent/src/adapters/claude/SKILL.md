@@ -36,7 +36,7 @@ divergences**. Read it first, update it last.
 ### 0. Orient (read, don't write)
 
 - Read `UPSTREAM.md`. Note **Last sync** (commit + version), the pinned **SDK** versions, the
-  **File Mapping**, **PostHog Code-Only Code (Do Not Sync)**, and **Intentional Divergences**.
+  **File Mapping**, **PostHog-Only Code (Do Not Sync)**, and **Intentional Divergences**.
 - In the upstream checkout, list the change set since the last sync and skim the changelog:
   - `git -C <upstream> log --oneline <last-sync-sha>..HEAD`
   - `git -C <upstream> show <upstream>/CHANGELOG.md:CHANGELOG.md` (or just read `CHANGELOG.md`)

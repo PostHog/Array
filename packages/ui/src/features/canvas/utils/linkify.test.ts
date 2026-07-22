@@ -54,6 +54,33 @@ describe("splitLinkSegments", () => {
     ],
     ["not a url scheme", "ftp://example.com", [text("ftp://example.com")]],
     ["empty string", "", []],
+    [
+      "markdown link uses its label",
+      "[Signups](https://us.posthog.com/code/canvas/c/d) has been created",
+      [
+        {
+          type: "link",
+          text: "Signups",
+          href: "https://us.posthog.com/code/canvas/c/d",
+        },
+        text(" has been created"),
+      ],
+    ],
+    [
+      "markdown link alongside a bare url",
+      "see [docs](https://a.com) or https://b.com",
+      [
+        text("see "),
+        { type: "link", text: "docs", href: "https://a.com" },
+        text(" or "),
+        link("https://b.com"),
+      ],
+    ],
+    [
+      "markdown label without a url stays prose",
+      "[not a link](just text)",
+      [text("[not a link](just text)")],
+    ],
   ])("%s", (_label, input, expected) => {
     expect(splitLinkSegments(input)).toEqual(expected);
   });

@@ -389,14 +389,14 @@ describe("UpdatesService", () => {
       );
 
       const resultPromise = service.installUpdate();
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(20_000);
 
       await expect(resultPromise).resolves.toEqual({ installed: true });
       expect(mockUpdater.quitAndInstall).toHaveBeenCalled();
       expect(mockLog.warn).toHaveBeenCalledWith(
         "Partial shutdown timed out before update install",
         expect.objectContaining({
-          timeoutMs: 15_000,
+          timeoutMs: 20_000,
           downloadedVersion: "v2.0.0",
         }),
       );

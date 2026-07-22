@@ -100,6 +100,19 @@ const config: StorybookConfig = {
             find: "@posthog/electron-trpc/renderer",
             replacement: path.resolve(__dirname, "./mocks/electron-trpc.ts"),
           },
+          // The agent dist bundles are Node-targeted: tsup opens every file
+          // with a createRequire(import.meta.url) shim, and tool-use-to-acp
+          // imports fs/path. Shim those builtins so the bundles load in the
+          // browser (see mocks/node-module.ts).
+          {
+            find: /^(node:)?module$/,
+            replacement: path.resolve(__dirname, "./mocks/node-module.ts"),
+          },
+          {
+            find: /^(node:)?fs$/,
+            replacement: path.resolve(__dirname, "./mocks/node-fs.ts"),
+          },
+          { find: /^(node:)?path$/, replacement: "pathe" },
           // Resolve the remaining @posthog/* workspace packages to source, exactly
           // like the renderer (vite.shared.mts). Without this, Storybook resolves
           // them through each package's "./*" exports map, which only falls

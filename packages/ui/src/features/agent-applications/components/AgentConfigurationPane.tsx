@@ -39,7 +39,7 @@ import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
 import { toast } from "@posthog/ui/primitives/toast";
-import { Flex, Select, Switch, Text } from "@radix-ui/themes";
+import { Flex, Select, Switch, Text, TextField } from "@radix-ui/themes";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { AGENT_PLATFORM_FLAG } from "../featureFlag";
 import { useAgentApplication } from "../hooks/useAgentApplication";
@@ -170,6 +170,21 @@ function mcpProvider(m: unknown): string | undefined {
   return str(rec(rec(m).auth).provider);
 }
 
+// `spec.authoritative_provider` = the one identity_providers[] id that gates
+// admission. It can only be authoritative if it proves a subject (kind posthog,
+// or oauth2 + userinfo_url) — mirrors AgentSpecSchema.superRefine.
+// The leading NUL byte makes this sentinel structurally impossible as a
+// user-typed provider id, so it can't collide with a real Select.Item value.
+const NONE_PROVIDER = "\0none";
+function authoritativeProviderId(spec: AgentSpec): string | undefined {
+  return str(spec.authoritative_provider);
+}
+function establishesIdentity(p: unknown): boolean {
+  const r = rec(p);
+  const kind = str(r.kind);
+  return kind === "posthog" || (kind === "oauth2" && !!str(r.userinfo_url));
+}
+
 // --- Per-agent MCP tool permissions (agent-level shared connection) ---
 // The spec carries allow/approve/deny; the shared ToolPermissionList speaks the
 // mcp_store vocabulary (approved/needs_approval/do_not_use). Map at the boundary
@@ -246,6 +261,32 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
       icon: <SparkleIcon {...ICON} />,
     },
   ];
+
+  // Above triggers: admission gates whether any trigger can start a session.
+  const identities = identityProviders(spec);
+  const authProviderId = authoritativeProviderId(spec);
+  children.push({
+    type: "folder",
+    name: "auth & identity",
+    path: "cfg:identities",
+    icon: <FingerprintIcon {...ICON} />,
+    children: identities.map((p) => {
+      const id = providerId(p);
+      const used = consumerCount(identityConsumers(spec, id));
+      return {
+        type: "file" as const,
+        name: id,
+        path: `cfg:identity/${id}`,
+        icon: <FingerprintIcon {...ICON} />,
+        trailing:
+          id === authProviderId ? (
+            <Badge color="iris">auth</Badge>
+          ) : used === 0 ? (
+            <Badge color="amber">unused</Badge>
+          ) : undefined,
+      };
+    }),
+  });
 
   const triggers = arr(spec.triggers);
   children.push({
@@ -354,25 +395,6 @@ function buildTree(spec: AgentSpec, setKeys: string[]): FileTreeNode {
     }),
   });
 
-  const identities = identityProviders(spec);
-  children.push({
-    type: "folder",
-    name: "identities",
-    path: "cfg:identities",
-    icon: <FingerprintIcon {...ICON} />,
-    children: identities.map((p) => {
-      const id = providerId(p);
-      const used = consumerCount(identityConsumers(spec, id));
-      return {
-        type: "file" as const,
-        name: id,
-        path: `cfg:identity/${id}`,
-        icon: <FingerprintIcon {...ICON} />,
-        trailing: used === 0 ? <Badge color="amber">unused</Badge> : undefined,
-      };
-    }),
-  });
-
   children.push({
     type: "file",
     name: "limits",
@@ -454,7 +476,12 @@ export function AgentConfigurationPane({
     ) : null;
 
   return (
-    <AgentDetailLayout idOrSlug={idOrSlug} activeTab="configuration" fill>
+    <AgentDetailLayout
+      idOrSlug={idOrSlug}
+      activeTab="configuration"
+      fill
+      configRevision={revisionId}
+    >
       {!revisionId ? (
         <div className="p-6">
           <AgentDetailEmptyState
@@ -506,7 +533,7 @@ const SECTION_INFO: Record<string, string> = {
     "Markdown playbooks the agent loads on demand. Only the description is in the prompt until loaded.",
   "cfg:mcps": "Remote MCP servers the agent connects to at session start.",
   "cfg:identities":
-    "Identity providers an asker links against, so the agent can act AS them when a tool or MCP call needs it. Per-asker (binding: principal) by default.",
+    "Identity providers an asker links against, so the agent can act AS them when a tool or MCP call needs it (per-asker, binding: principal). Admission: pick ONE as the authoritative provider to gate every session — a verified identity from it is required before any session runs (Slack, HTTP, …).",
   "cfg:secrets": "Env keys this agent reads. Values are never shown.",
   "cfg:limits": "Hard caps on a single run.",
 };
@@ -576,7 +603,7 @@ function nodeHeader(
     case "mcp":
       return { icon: <HardDrivesIcon {...ICON} />, title: id };
     case "identities":
-      return { icon: <FingerprintIcon {...ICON} />, title: "Identities" };
+      return { icon: <FingerprintIcon {...ICON} />, title: "Auth & identity" };
     case "identity":
       return { icon: <FingerprintIcon {...ICON} />, title: id };
     case "secrets":
@@ -2035,35 +2062,307 @@ function providerSummary(p: unknown, used: number): string {
   return parts.join(" · ");
 }
 
+// Both identity components apply a full-spec PATCH the same way — same mutation,
+// same success (auto-jump to a newly branched draft) and error handling — so
+// share the wiring. The default error string is the only thing that differs.
+function useSaveIdentitySpec(ctx: Ctx, defaultError: string) {
+  const applySpec = useApplyAgentSpec(ctx.idOrSlug, ctx.applicationId);
+  const saveSpec = (next: AgentSpec, onDone?: () => void) => {
+    if (!ctx.revisionState) return;
+    applySpec.mutate(
+      {
+        revision: { id: ctx.revisionId, state: ctx.revisionState },
+        spec: next,
+      },
+      {
+        onSuccess: (rev) => {
+          if (rev.id !== ctx.revisionId) ctx.onSelectRevision?.(rev.id);
+          onDone?.();
+        },
+        onError: (e) => toast.error(e.message || defaultError),
+      },
+    );
+  };
+  return { saveSpec, saving: applySpec.isPending };
+}
+
 function IdentitiesOverview({ spec, ctx }: { spec: AgentSpec; ctx: Ctx }) {
   const providers = identityProviders(spec);
-  if (providers.length === 0)
-    return <Muted>No identity providers declared.</Muted>;
+  const { saveSpec, saving } = useSaveIdentitySpec(
+    ctx,
+    "Failed to save identity providers",
+  );
+  const canEdit = !!ctx.revisionState;
+  const authoritative = authoritativeProviderId(spec);
+  const [showOauth, setShowOauth] = useState(false);
+  const hasPosthog = providers.some((p) => str(rec(p).kind) === "posthog");
+
+  // The PATCH replaces `spec` wholesale, so omit the key to clear it.
+  const setAuthoritative = (value: string) => {
+    const next: AgentSpec = { ...spec };
+    if (value && value !== NONE_PROVIDER) next.authoritative_provider = value;
+    else delete next.authoritative_provider;
+    saveSpec(next);
+  };
+
+  const addPosthog = () => {
+    if (hasPosthog) return;
+    saveSpec(
+      {
+        ...spec,
+        identity_providers: [
+          ...providers,
+          { kind: "posthog", id: "posthog", binding: "principal", scopes: [] },
+        ],
+      },
+      () => ctx.onSelect("cfg:identity/posthog"),
+    );
+  };
+
+  const addOauth2 = (entry: Record<string, unknown>) => {
+    saveSpec({ ...spec, identity_providers: [...providers, entry] }, () => {
+      setShowOauth(false);
+      ctx.onSelect(`cfg:identity/${providerId(entry)}`);
+    });
+  };
+
+  const authEntry = authoritative
+    ? providers.find((p) => providerId(p) === authoritative)
+    : undefined;
+  const authInvalid =
+    !!authoritative && (!authEntry || !establishesIdentity(authEntry));
+
   return (
-    <Flex direction="column" gap="3">
-      <Muted>
-        Credentials the agent acts as, per asker — {providers.length}{" "}
-        configured. Custom tools and MCP servers link to a provider; jump in to
-        see which.
-      </Muted>
-      <Flex direction="column" gap="2">
-        {providers.map((p) => {
-          const id = providerId(p);
-          const used = consumerCount(identityConsumers(spec, id));
-          return (
-            <JumpRow
-              key={id}
-              icon={<FingerprintIcon {...ICON} />}
-              title={id}
-              mono
-              subtitle={providerSummary(p, used)}
-              trailing={
-                used === 0 ? <Badge color="amber">unused</Badge> : undefined
-              }
-              onClick={() => ctx.onSelect(`cfg:identity/${id}`)}
-            />
-          );
-        })}
+    <Flex direction="column" gap="4">
+      <div>
+        <Subhead>Admission</Subhead>
+        <Text className="mt-1 mb-2 block text-[12px] text-gray-10 leading-snug">
+          Gate every session on a verified identity from one provider. When set,
+          an unauthenticated Slack/HTTP request is handed an authorize link and
+          no session runs until it resolves. Unset = the transport claim is the
+          identity (passthrough / public).
+        </Text>
+        {canEdit ? (
+          <Select.Root
+            value={authoritative ?? NONE_PROVIDER}
+            onValueChange={setAuthoritative}
+            disabled={saving}
+          >
+            <Select.Trigger className="min-w-[260px]" />
+            <Select.Content>
+              <Select.Item value={NONE_PROVIDER}>
+                None — transport identity
+              </Select.Item>
+              {providers.map((p) => {
+                const id = providerId(p);
+                const ok = establishesIdentity(p);
+                return (
+                  <Select.Item key={id} value={id} disabled={!ok}>
+                    {id}
+                    {ok ? "" : " — can't prove a subject"}
+                  </Select.Item>
+                );
+              })}
+            </Select.Content>
+          </Select.Root>
+        ) : (
+          <Row
+            label="authoritative"
+            value={authoritative ?? "none (transport identity)"}
+            mono
+          />
+        )}
+        {authInvalid ? (
+          <Attention tone="warn">
+            <Text className="text-[12px] text-gray-12">
+              Authoritative provider{" "}
+              <code className="[font-family:var(--font-mono)]">
+                {authoritative}
+              </code>{" "}
+              {authEntry
+                ? "can't prove a subject — use kind posthog, or oauth2 with a userinfo_url."
+                : "isn't declared in identity_providers."}{" "}
+              Admission will fail at runtime.
+            </Text>
+          </Attention>
+        ) : null}
+      </div>
+
+      <div>
+        <Subhead>Providers · {providers.length}</Subhead>
+        {providers.length === 0 ? (
+          <Muted>No identity providers declared.</Muted>
+        ) : (
+          <Flex direction="column" gap="2" className="mt-1.5">
+            {providers.map((p) => {
+              const id = providerId(p);
+              const used = consumerCount(identityConsumers(spec, id));
+              const isAuth = id === authoritative;
+              return (
+                <JumpRow
+                  key={id}
+                  icon={<FingerprintIcon {...ICON} />}
+                  title={id}
+                  mono
+                  subtitle={providerSummary(p, used)}
+                  trailing={
+                    isAuth ? (
+                      <Badge color="iris">authoritative</Badge>
+                    ) : used === 0 ? (
+                      <Badge color="amber">unused</Badge>
+                    ) : undefined
+                  }
+                  onClick={() => ctx.onSelect(`cfg:identity/${id}`)}
+                />
+              );
+            })}
+          </Flex>
+        )}
+      </div>
+
+      {canEdit ? (
+        <Flex align="center" gap="2" wrap="wrap">
+          {!hasPosthog ? (
+            <Button
+              size="1"
+              variant="soft"
+              onClick={addPosthog}
+              disabled={saving}
+            >
+              Add PostHog identity
+            </Button>
+          ) : null}
+          <Button
+            size="1"
+            variant="soft"
+            onClick={() => setShowOauth((v) => !v)}
+            disabled={saving}
+          >
+            {showOauth ? "Cancel" : "Add OAuth2 provider"}
+          </Button>
+        </Flex>
+      ) : null}
+
+      {showOauth && canEdit ? (
+        <AddOauth2ProviderForm
+          existingIds={providers.map((p) => providerId(p))}
+          pending={saving}
+          onAdd={addOauth2}
+        />
+      ) : null}
+    </Flex>
+  );
+}
+
+// userinfo_url is what lets an oauth2 provider be picked as authoritative.
+// The form intentionally omits `client_secret`: it's a secret, so it lives in
+// the agent's secret store (referenced by env-key via the top-level `secrets`
+// list, not inlined on the provider entry) and is looked up server-side at
+// token-exchange time. See posthog PR #66050 for the admission spec.
+function AddOauth2ProviderForm({
+  existingIds,
+  pending,
+  onAdd,
+}: {
+  existingIds: string[];
+  pending: boolean;
+  onAdd: (entry: Record<string, unknown>) => void;
+}) {
+  const [id, setId] = useState("");
+  const [authorizeUrl, setAuthorizeUrl] = useState("");
+  const [tokenUrl, setTokenUrl] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [userinfoUrl, setUserinfoUrl] = useState("");
+  const [scopes, setScopes] = useState("");
+
+  const trimmedId = id.trim();
+  const duplicate = existingIds.includes(trimmedId);
+  const valid =
+    !!trimmedId &&
+    !duplicate &&
+    !!authorizeUrl.trim() &&
+    !!tokenUrl.trim() &&
+    !!clientId.trim();
+
+  const submit = () => {
+    if (!valid) return;
+    const entry: Record<string, unknown> = {
+      kind: "oauth2",
+      id: trimmedId,
+      binding: "principal",
+      authorize_url: authorizeUrl.trim(),
+      token_url: tokenUrl.trim(),
+      client_id: clientId.trim(),
+      scopes: scopes
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+    const ui = userinfoUrl.trim();
+    if (ui) entry.userinfo_url = ui;
+    onAdd(entry);
+  };
+
+  const field = (
+    label: string,
+    value: string,
+    set: (v: string) => void,
+    placeholder: string,
+  ) => (
+    <div className="flex flex-col gap-1">
+      <Text className="text-[11px] text-gray-10 uppercase tracking-wide">
+        {label}
+      </Text>
+      <TextField.Root
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        placeholder={placeholder}
+        size="1"
+      />
+    </div>
+  );
+
+  return (
+    <Flex
+      direction="column"
+      gap="2.5"
+      className="rounded-(--radius-2) border border-border bg-(--gray-2) px-3 py-3"
+    >
+      {field("id", id, setId, "e.g. google")}
+      {duplicate ? (
+        <Text className="text-[11px] text-amber-11">
+          A provider with this id already exists.
+        </Text>
+      ) : null}
+      {field(
+        "authorize url",
+        authorizeUrl,
+        setAuthorizeUrl,
+        "https://accounts.google.com/o/oauth2/v2/auth",
+      )}
+      {field(
+        "token url",
+        tokenUrl,
+        setTokenUrl,
+        "https://oauth2.googleapis.com/token",
+      )}
+      {field("client id", clientId, setClientId, "the OAuth app client id")}
+      {field(
+        "userinfo url (required to be authoritative)",
+        userinfoUrl,
+        setUserinfoUrl,
+        "https://openidconnect.googleapis.com/v1/userinfo",
+      )}
+      {field("scopes", scopes, setScopes, "space or comma separated")}
+      <Flex justify="end">
+        <Button
+          size="1"
+          variant="solid"
+          onClick={submit}
+          disabled={!valid || pending}
+        >
+          Add provider
+        </Button>
       </Flex>
     </Flex>
   );
@@ -2089,6 +2388,32 @@ function IdentityBody({
   );
   const consumers = identityConsumers(spec, id);
   const used = consumerCount(consumers);
+  const authoritative = authoritativeProviderId(spec);
+  const isAuth = declared && id === authoritative;
+  const establishes = establishesIdentity(provider);
+  const { saveSpec, saving } = useSaveIdentitySpec(
+    ctx,
+    "Failed to save identity provider",
+  );
+  const canEdit = !!ctx.revisionState;
+
+  const setAuthoritative = (on: boolean) => {
+    const next: AgentSpec = { ...spec };
+    if (on) next.authoritative_provider = id;
+    else delete next.authoritative_provider;
+    saveSpec(next);
+  };
+  const removeProvider = () => {
+    const next: AgentSpec = {
+      ...spec,
+      identity_providers: identityProviders(spec).filter(
+        (p) => providerId(p) !== id,
+      ),
+    };
+    if (authoritative === id) delete next.authoritative_provider;
+    saveSpec(next, () => ctx.onSelect("cfg:identities"));
+  };
+
   return (
     <Flex direction="column" gap="3">
       {!declared ? (
@@ -2124,6 +2449,49 @@ function IdentityBody({
           <Row label="client id" value={str(r.client_id) as string} mono />
         ) : null}
       </Flex>
+
+      {declared ? (
+        <div>
+          <Subhead>Admission</Subhead>
+          {isAuth ? (
+            <Attention>
+              <Text className="text-[12px] text-gray-12">
+                Authoritative provider — every session must resolve a verified
+                identity here before it runs.
+              </Text>
+            </Attention>
+          ) : (
+            <Muted>
+              {establishes
+                ? "Make this the authoritative provider to gate every session on it."
+                : "Can't be authoritative — it doesn't prove a subject (needs kind posthog, or oauth2 with a userinfo_url)."}
+            </Muted>
+          )}
+          {canEdit ? (
+            <Flex gap="2" className="mt-2" wrap="wrap">
+              {isAuth ? (
+                <Button
+                  size="1"
+                  variant="soft"
+                  onClick={() => setAuthoritative(false)}
+                  disabled={saving}
+                >
+                  Clear authoritative
+                </Button>
+              ) : (
+                <Button
+                  size="1"
+                  variant="soft"
+                  onClick={() => setAuthoritative(true)}
+                  disabled={saving || !establishes}
+                >
+                  Make authoritative
+                </Button>
+              )}
+            </Flex>
+          ) : null}
+        </div>
+      ) : null}
 
       {scopes.length > 0 ? (
         <div>
@@ -2170,6 +2538,19 @@ function IdentityBody({
           tools declare their provider intrinsically and aren't listed here.
         </Text>
       </div>
+
+      {canEdit && declared ? (
+        <Flex justify="end">
+          <Button
+            size="1"
+            variant="soft"
+            onClick={removeProvider}
+            disabled={saving}
+          >
+            <TrashIcon size={13} /> Remove provider
+          </Button>
+        </Flex>
+      ) : null}
     </Flex>
   );
 }

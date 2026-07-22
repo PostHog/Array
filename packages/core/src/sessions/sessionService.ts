@@ -5,6 +5,8 @@ import type {
   ContentBlock,
   RequestPermissionRequest,
   SessionConfigOption,
+  SessionConfigSelectGroup,
+  SessionConfigSelectOption,
   SessionUpdate,
 } from "@agentclientprotocol/sdk";
 import {
@@ -12,6 +14,7 @@ import {
   type Adapter,
   type AgentSession,
   type CloudRegion,
+  classifyGatewayLimitError,
   type ExecutionMode,
   flattenSelectOptions,
   getBackoffDelay,
@@ -21,6 +24,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  isPersistedOptionSupported,
   isRateLimitError,
   isTransientUpstreamError,
   mergeConfigOptions,
@@ -29,6 +33,7 @@ import {
   type QueuedMessage,
   resolveBypassRevertMode,
   type StoredLogEntry,
+  sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
   type TaskRunStatus,
 } from "@posthog/shared";
@@ -41,7 +46,12 @@ import {
   isTerminalStatus,
   type Task,
 } from "@posthog/shared/domain-types";
-import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
+import type { SpeechKind, SpeechSource } from "../speech/identifiers";
+import {
+  isNotification,
+  POSTHOG_NOTIFICATIONS,
+  SPEAK_TOOL_QUALIFIED_NAME,
+} from "./acpNotifications";
 import { createAppendOnlyTracker } from "./appendOnlyTracker";
 import type {
   CloudArtifactClient,
@@ -57,6 +67,7 @@ import {
   getCloudRuntimeOptions,
 } from "./cloudRunOptions";
 import {
+  addMissingCloudRuntimeConfigOptions,
   buildCloudDefaultConfigOptions,
   extractLatestConfigOptionsFromEntries,
 } from "./cloudSessionConfig";
@@ -74,6 +85,7 @@ import {
   convertStoredEntriesToEvents,
   createUserShellExecuteEvent,
   extractPromptText,
+  getStoredLogEventPosition,
   getUserShellExecutesSinceLastPrompt,
   hasSessionPromptEvent,
   isTurnCompleteEvent,
@@ -141,6 +153,26 @@ type TrpcSubscription = {
   ) => { unsubscribe: () => void };
 };
 
+interface CloudHydrationResult {
+  historyEntryCount: number;
+  liveStreamLineCount: number;
+}
+
+interface CloudTaskWatcher {
+  runId: string;
+  apiHost: string;
+  teamId: number;
+  startToken: number;
+  resumeFromEntryCount?: number;
+  resumeHistoryCountOffset?: number;
+  resumeHydrationToken: number;
+  bufferResumeUpdates: boolean;
+  bufferedResumeUpdates: CloudTaskUpdatePayload[];
+  processCloudUpdate: (update: CloudTaskUpdatePayload) => void;
+  subscription: { unsubscribe: () => void };
+  onStatusChange?: () => void;
+}
+
 export interface SessionTrpc {
   agent: {
     start: TrpcMutation;
@@ -164,6 +196,8 @@ export interface SessionTrpc {
     unwatch: TrpcMutation;
     retry: TrpcMutation;
     sendCommand: TrpcMutation;
+    stop: TrpcMutation;
+    designateRelayedMcpServers: TrpcMutation;
     onUpdate: TrpcSubscription;
   };
   handoff: {
@@ -224,9 +258,22 @@ export interface ISessionStore {
     rawPrompt?: string | ContentBlock[],
   ): void;
   removeQueuedMessage(taskId: string, messageId: string): void;
+  updateQueuedMessage(
+    taskId: string,
+    messageId: string,
+    patch: { content: string; rawPrompt?: string | ContentBlock[] },
+  ): void;
+  setEditingQueuedMessage(taskId: string, messageId: string): void;
+  clearEditingQueuedMessage(taskId: string): void;
   clearMessageQueue(taskId: string): void;
-  dequeueMessagesAsText(taskId: string): string | null;
-  dequeueMessages(taskId: string): QueuedMessage[];
+  dequeueMessagesAsText(
+    taskId: string,
+    options?: { stopAtEdited?: boolean; max?: number },
+  ): string | null;
+  dequeueMessages(
+    taskId: string,
+    options?: { stopAtEdited?: boolean; max?: number },
+  ): QueuedMessage[];
   prependQueuedMessages(taskId: string, messages: QueuedMessage[]): void;
   appendOptimisticItem(
     taskRunId: string,
@@ -281,6 +328,14 @@ export interface SessionServiceDeps {
   buildPermissionToolMetadata: (...args: any[]) => any;
   notifyPermissionRequest: (...args: any[]) => any;
   notifyPromptComplete: (...args: any[]) => any;
+  enqueueSpeech: (request: {
+    text: string;
+    taskTitle: string;
+    taskId?: string;
+    kind: SpeechKind;
+    source: SpeechSource;
+    addressByName?: boolean;
+  }) => void;
   getIsOnline: () => boolean;
   fetchAuthState: () => Promise<any>;
   getAuthenticatedClient: () => Promise<any>;
@@ -293,7 +348,6 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
-  updatePersistedConfigOptionValue: (...args: any[]) => any;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -303,6 +357,8 @@ export interface SessionServiceDeps {
     customInstructions?: string | null;
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
+    spokenNotifications?: boolean;
+    spokenNarrationEnabled?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -494,6 +550,906 @@ function entriesScopedToTaskRun(
   });
 }
 
+function suffixPrefixOverlap(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) return 0;
+
+  const separator = Symbol("resume-chain-separator");
+  const patternAndTail: (string | symbol)[] = [
+    ...right,
+    separator,
+    ...left.slice(-right.length),
+  ];
+  const prefixLengths = new Array<number>(patternAndTail.length).fill(0);
+  for (let index = 1; index < patternAndTail.length; index += 1) {
+    let prefixLength = prefixLengths[index - 1];
+    while (
+      prefixLength > 0 &&
+      patternAndTail[index] !== patternAndTail[prefixLength]
+    ) {
+      prefixLength = prefixLengths[prefixLength - 1];
+    }
+    if (patternAndTail[index] === patternAndTail[prefixLength]) {
+      prefixLength += 1;
+    }
+    prefixLengths[index] = prefixLength;
+  }
+  return prefixLengths[prefixLengths.length - 1];
+}
+
+function appendHydrationHash(hash: number, value: string): number {
+  let nextHash = hash;
+  for (let index = 0; index < value.length; index += 1) {
+    nextHash ^= value.charCodeAt(index);
+    nextHash = Math.imul(nextHash, 16_777_619);
+  }
+  return nextHash >>> 0;
+}
+
+function hashHydrationValue(value: unknown, hash = 2_166_136_261): number {
+  if (value === null) return appendHydrationHash(hash, "null");
+  if (Array.isArray(value)) {
+    let nextHash = appendHydrationHash(hash, "[");
+    for (const item of value) {
+      nextHash = hashHydrationValue(item, nextHash);
+      nextHash = appendHydrationHash(nextHash, ",");
+    }
+    return appendHydrationHash(nextHash, "]");
+  }
+  switch (typeof value) {
+    case "boolean":
+      return appendHydrationHash(hash, value ? "true" : "false");
+    case "number":
+      return appendHydrationHash(hash, `number:${value}`);
+    case "string":
+      return appendHydrationHash(hash, `string:${value}`);
+    case "undefined":
+      return appendHydrationHash(hash, "undefined");
+    case "object": {
+      let nextHash = appendHydrationHash(hash, "{");
+      const record = value as Record<string, unknown>;
+      for (const key of Object.keys(record).sort()) {
+        nextHash = appendHydrationHash(nextHash, key);
+        nextHash = hashHydrationValue(record[key], nextHash);
+      }
+      return appendHydrationHash(nextHash, "}");
+    }
+    default:
+      return appendHydrationHash(hash, typeof value);
+  }
+}
+
+function hydrationValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== typeof right) {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    return (
+      left.length === right.length &&
+      left.every((value, index) => hydrationValuesEqual(value, right[index]))
+    );
+  }
+  if (typeof left !== "object" || typeof right !== "object") return false;
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(rightRecord, key) &&
+        hydrationValuesEqual(leftRecord[key], rightRecord[key]),
+    )
+  );
+}
+
+function cloudHydrationMessageHash(event: AcpMessage): number {
+  return hashHydrationValue(event.message);
+}
+
+function cloudHydrationMessagesEqual(
+  left: AcpMessage,
+  right: AcpMessage,
+): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  if (leftPosition && rightPosition) {
+    return (
+      leftPosition.taskRunId === rightPosition.taskRunId &&
+      leftPosition.entryIndex === rightPosition.entryIndex
+    );
+  }
+  return hydrationValuesEqual(left.message, right.message);
+}
+
+function cloudHydrationPositionsEqual(
+  left: AcpMessage,
+  right: AcpMessage,
+): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  return (
+    leftPosition !== undefined &&
+    rightPosition !== undefined &&
+    leftPosition.taskRunId === rightPosition.taskRunId &&
+    leftPosition.entryIndex === rightPosition.entryIndex
+  );
+}
+
+interface HydrationTurn {
+  events: AcpMessage[];
+  eventHashes: number[];
+  promptEvent?: AcpMessage;
+  promptHash?: number;
+  taskRunId?: string;
+}
+
+interface HydrationPromptPositions {
+  all: number[];
+  unscoped: number[];
+  byTaskRunId: Map<string, number[]>;
+}
+
+function sessionEventTaskRunMarker(event: AcpMessage): string | undefined {
+  if (!isJsonRpcNotification(event.message)) return undefined;
+  const params = (event.message.params ?? {}) as {
+    runId?: unknown;
+    taskRunId?: unknown;
+  };
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.SDK_SESSION) &&
+    typeof params.taskRunId === "string"
+  ) {
+    return params.taskRunId;
+  }
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.RUN_STARTED) &&
+    typeof params.runId === "string"
+  ) {
+    return params.runId;
+  }
+  return undefined;
+}
+
+function splitHydrationTurns(events: AcpMessage[]): HydrationTurn[] {
+  const turns: HydrationTurn[] = [];
+  let taskRunId: string | undefined;
+  let currentEvents: AcpMessage[] = [];
+  let currentPromptEvent: AcpMessage | undefined;
+  const finishCurrent = (): void => {
+    if (currentEvents.length === 0) return;
+    turns.push({
+      events: currentEvents,
+      eventHashes: currentEvents.map(cloudHydrationMessageHash),
+      promptEvent: currentPromptEvent,
+      promptHash: currentPromptEvent
+        ? cloudHydrationMessageHash(currentPromptEvent)
+        : undefined,
+      taskRunId,
+    });
+  };
+
+  for (const event of events) {
+    const marker = sessionEventTaskRunMarker(event);
+    if (marker) {
+      finishCurrent();
+      taskRunId = marker;
+      currentEvents = [event];
+      currentPromptEvent = undefined;
+      continue;
+    }
+
+    if (isSessionPromptEvent(event)) {
+      finishCurrent();
+      currentEvents = [event];
+      currentPromptEvent = event;
+      continue;
+    }
+    currentEvents.push(event);
+  }
+  finishCurrent();
+  return turns;
+}
+
+function hydrationTurnScopesMatch(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  return (
+    liveTurn.taskRunId === undefined ||
+    hydratedTurn.taskRunId === undefined ||
+    liveTurn.taskRunId === hydratedTurn.taskRunId
+  );
+}
+
+function indexHydratedPromptTurns(
+  hydratedTurns: HydrationTurn[],
+): Map<number, HydrationPromptPositions> {
+  const positionsByPrompt = new Map<number, HydrationPromptPositions>();
+  for (let index = 0; index < hydratedTurns.length; index += 1) {
+    const turn = hydratedTurns[index];
+    if (turn.promptHash === undefined) continue;
+    let positions = positionsByPrompt.get(turn.promptHash);
+    if (!positions) {
+      positions = {
+        all: [],
+        unscoped: [],
+        byTaskRunId: new Map(),
+      };
+      positionsByPrompt.set(turn.promptHash, positions);
+    }
+    positions.all.push(index);
+    if (turn.taskRunId === undefined) {
+      positions.unscoped.push(index);
+      continue;
+    }
+    const scopedPositions = positions.byTaskRunId.get(turn.taskRunId) ?? [];
+    scopedPositions.push(index);
+    positions.byTaskRunId.set(turn.taskRunId, scopedPositions);
+  }
+  return positionsByPrompt;
+}
+
+function latestPositionIndexAtOrBefore(
+  positions: number[] | undefined,
+  maximum: number,
+): number {
+  if (!positions || positions.length === 0) return -1;
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle] <= maximum) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findPromptHydrationTurn(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  positionsByPrompt: Map<number, HydrationPromptPositions>,
+  maximum: number,
+): number {
+  const livePrompt = liveTurn.promptEvent;
+  if (livePrompt === undefined || liveTurn.promptHash === undefined) {
+    return -1;
+  }
+  const positions = positionsByPrompt.get(liveTurn.promptHash);
+  if (!positions) return -1;
+  const matchingPosition = (
+    candidatePositions: number[] | undefined,
+  ): number => {
+    if (!candidatePositions) return -1;
+    let candidateIndex = latestPositionIndexAtOrBefore(
+      candidatePositions,
+      maximum,
+    );
+    while (candidateIndex >= 0) {
+      const position = candidatePositions[candidateIndex];
+      const hydratedPrompt = hydratedTurns[position].promptEvent;
+      if (
+        hydratedPrompt &&
+        cloudHydrationMessagesEqual(livePrompt, hydratedPrompt)
+      ) {
+        return position;
+      }
+      candidateIndex -= 1;
+    }
+    return -1;
+  };
+  if (liveTurn.taskRunId === undefined) {
+    return matchingPosition(positions.all);
+  }
+  return Math.max(
+    matchingPosition(positions.byTaskRunId.get(liveTurn.taskRunId)),
+    matchingPosition(positions.unscoped),
+  );
+}
+
+interface PromptlessHydrationMatch {
+  hydratedTurnIndex: number;
+  liveMessageIndexOffset: number;
+}
+
+interface HydrationEventOverlap {
+  hydratedEventIndex: number;
+  liveEventIndex: number;
+}
+
+interface HydrationEventPosition {
+  turnIndex: number;
+  eventIndex: number;
+}
+
+type HydrationEventIndex = Map<number, HydrationEventPosition[]>;
+
+function indexHydratedTurnEvents(
+  hydratedTurns: HydrationTurn[],
+): HydrationEventIndex {
+  const positionsByHash: HydrationEventIndex = new Map();
+  for (let turnIndex = 0; turnIndex < hydratedTurns.length; turnIndex += 1) {
+    const turn = hydratedTurns[turnIndex];
+    for (let eventIndex = 0; eventIndex < turn.events.length; eventIndex += 1) {
+      if (!isStrongPromptlessOverlapEvent(turn.events[eventIndex])) continue;
+      const hash = turn.eventHashes[eventIndex];
+      const positions = positionsByHash.get(hash) ?? [];
+      positions.push({ turnIndex, eventIndex });
+      positionsByHash.set(hash, positions);
+    }
+  }
+  return positionsByHash;
+}
+
+function isStrongPromptlessOverlapEvent(event: AcpMessage): boolean {
+  if (!isJsonRpcNotification(event.message)) return false;
+  if (event.message.method !== "session/update") return false;
+  const update = (
+    event.message.params as { update?: { sessionUpdate?: unknown } } | undefined
+  )?.update;
+  return (
+    typeof update?.sessionUpdate === "string" &&
+    agentMessageUpdateKind(event) !== "ignored"
+  );
+}
+
+function findHydrationEventOverlap(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  allowWeakOverlap: boolean,
+): HydrationEventOverlap | undefined {
+  if (!hydrationTurnScopesMatch(liveTurn, hydratedTurn)) return undefined;
+  const hydratedPositions = new Map<number, number[]>();
+  for (
+    let hydratedIndex = 0;
+    hydratedIndex < hydratedTurn.events.length;
+    hydratedIndex += 1
+  ) {
+    const event = hydratedTurn.events[hydratedIndex];
+    if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(event)) {
+      continue;
+    }
+    const hash = hydratedTurn.eventHashes[hydratedIndex];
+    const positions = hydratedPositions.get(hash) ?? [];
+    positions.push(hydratedIndex);
+    hydratedPositions.set(hash, positions);
+  }
+  const findMatch = (
+    kind: "stable" | "boundary" | "any",
+  ): HydrationEventOverlap | undefined => {
+    for (
+      let liveIndex = liveTurn.events.length - 1;
+      liveIndex >= 0;
+      liveIndex -= 1
+    ) {
+      const liveEvent = liveTurn.events[liveIndex];
+      if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(liveEvent)) {
+        continue;
+      }
+      if (
+        kind === "boundary" &&
+        (!isStrongPromptlessOverlapEvent(liveEvent) ||
+          agentMessageUpdateKind(liveEvent) != null)
+      ) {
+        continue;
+      }
+      const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
+      if (!positions) continue;
+      for (
+        let positionIndex = positions.length - 1;
+        positionIndex >= 0;
+        positionIndex -= 1
+      ) {
+        const hydratedEventIndex = positions[positionIndex];
+        const hydratedEvent = hydratedTurn.events[hydratedEventIndex];
+        if (
+          kind === "stable" &&
+          !cloudHydrationPositionsEqual(liveEvent, hydratedEvent)
+        ) {
+          continue;
+        }
+        if (cloudHydrationMessagesEqual(liveEvent, hydratedEvent)) {
+          return { hydratedEventIndex, liveEventIndex: liveIndex };
+        }
+      }
+    }
+    return undefined;
+  };
+  return findMatch("stable") ?? findMatch("boundary") ?? findMatch("any");
+}
+
+function agentMessageIndexBeforeEvent(
+  events: AcpMessage[],
+  eventIndex: number,
+): number {
+  const position: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
+  for (let index = 0; index < eventIndex; index += 1) {
+    const updateKind = agentMessageUpdateKind(events[index]);
+    if (updateKind === "ignored") continue;
+    if (updateKind === "chunk") {
+      position.chunkRunActive = true;
+    } else if (updateKind === "final") {
+      position.messageIndex += 1;
+      position.chunkRunActive = false;
+    } else {
+      finishAgentMessageChunkRun(position);
+    }
+  }
+  return position.messageIndex;
+}
+
+function indexAgentMessagePositions(
+  events: AcpMessage[],
+  startingIndex: number,
+): WeakMap<AcpMessage, number> {
+  const positions = new WeakMap<AcpMessage, number>();
+  const position: AgentMessagePosition = {
+    messageIndex: startingIndex,
+    chunkRunActive: false,
+  };
+  for (const event of events) {
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "chunk") {
+      positions.set(event, position.messageIndex);
+      position.chunkRunActive = true;
+    } else if (updateKind === "final") {
+      positions.set(event, position.messageIndex);
+      position.messageIndex += 1;
+      position.chunkRunActive = false;
+    } else if (updateKind !== "ignored") {
+      finishAgentMessageChunkRun(position);
+    }
+  }
+  return positions;
+}
+
+function promptlessTailStrictlyPredatesPrompt(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  const promptTimestamp = hydratedTurn.promptEvent?.ts;
+  return (
+    promptTimestamp === undefined ||
+    liveTurn.events.every((event) => event.ts < promptTimestamp)
+  );
+}
+
+function hasLaterUnmatchedAssistantBoundary(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  overlap: HydrationEventOverlap,
+): boolean {
+  if (agentMessageUpdateKind(liveTurn.events[overlap.liveEventIndex]) == null) {
+    return false;
+  }
+  return hydratedTurn.events
+    .slice(overlap.hydratedEventIndex + 1)
+    .some(
+      (event) =>
+        isStrongPromptlessOverlapEvent(event) &&
+        agentMessageUpdateKind(event) == null,
+    );
+}
+
+interface IndexedHydrationEventOverlap extends HydrationEventOverlap {
+  hydratedTurnIndex: number;
+}
+
+function latestEventPositionAtOrBeforeTurn(
+  positions: HydrationEventPosition[],
+  maximumTurnIndex: number,
+): number {
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle].turnIndex <= maximumTurnIndex) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findIndexedPromptlessOverlap(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
+  minimumTurnIndex: number,
+  maximumTurnIndex: number,
+): IndexedHydrationEventOverlap | undefined {
+  let latestMatch: IndexedHydrationEventOverlap | undefined;
+  for (
+    let liveEventIndex = liveTurn.events.length - 1;
+    liveEventIndex >= 0;
+    liveEventIndex -= 1
+  ) {
+    const liveEvent = liveTurn.events[liveEventIndex];
+    if (!isStrongPromptlessOverlapEvent(liveEvent)) continue;
+    const positions = hydratedEventIndex.get(
+      liveTurn.eventHashes[liveEventIndex],
+    );
+    if (!positions) continue;
+    for (
+      let positionIndex = latestEventPositionAtOrBeforeTurn(
+        positions,
+        maximumTurnIndex,
+      );
+      positionIndex >= 0;
+      positionIndex -= 1
+    ) {
+      const position = positions[positionIndex];
+      if (position.turnIndex < minimumTurnIndex) break;
+      if (latestMatch && position.turnIndex < latestMatch.hydratedTurnIndex) {
+        break;
+      }
+      const hydratedTurn = hydratedTurns[position.turnIndex];
+      const hydratedEvent = hydratedTurn.events[position.eventIndex];
+      if (
+        !isStrongPromptlessOverlapEvent(hydratedEvent) ||
+        !hydrationTurnScopesMatch(liveTurn, hydratedTurn) ||
+        !cloudHydrationMessagesEqual(liveEvent, hydratedEvent)
+      ) {
+        continue;
+      }
+      latestMatch = {
+        hydratedTurnIndex: position.turnIndex,
+        hydratedEventIndex: position.eventIndex,
+        liveEventIndex,
+      };
+      break;
+    }
+  }
+  return latestMatch;
+}
+
+function findPromptlessHydrationTurn(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
+  maximum: number,
+): PromptlessHydrationMatch | undefined {
+  if (maximum < 0) return undefined;
+  const leafTaskRunId = hydratedTurns[maximum]?.taskRunId;
+  let minimum = 0;
+  if (leafTaskRunId !== undefined) {
+    minimum = maximum;
+    while (
+      minimum > 0 &&
+      hydratedTurns[minimum - 1].taskRunId === leafTaskRunId
+    ) {
+      minimum -= 1;
+    }
+  }
+  const newestHydratedTurn = hydratedTurns[maximum];
+  const newestOverlap = findHydrationEventOverlap(
+    liveTurn,
+    newestHydratedTurn,
+    true,
+  );
+  if (newestOverlap) {
+    if (
+      !cloudHydrationPositionsEqual(
+        liveTurn.events[newestOverlap.liveEventIndex],
+        newestHydratedTurn.events[newestOverlap.hydratedEventIndex],
+      ) &&
+      hasLaterUnmatchedAssistantBoundary(
+        liveTurn,
+        newestHydratedTurn,
+        newestOverlap,
+      )
+    ) {
+      return undefined;
+    }
+    return {
+      hydratedTurnIndex: maximum,
+      liveMessageIndexOffset:
+        agentMessageIndexBeforeEvent(
+          newestHydratedTurn.events,
+          newestOverlap.hydratedEventIndex,
+        ) -
+        agentMessageIndexBeforeEvent(
+          liveTurn.events,
+          newestOverlap.liveEventIndex,
+        ),
+    };
+  }
+  if (maximum === minimum) {
+    return undefined;
+  }
+  const olderOverlap = findIndexedPromptlessOverlap(
+    liveTurn,
+    hydratedTurns,
+    hydratedEventIndex,
+    minimum,
+    maximum - 1,
+  );
+  if (!olderOverlap) return undefined;
+  const hydratedTurn = hydratedTurns[olderOverlap.hydratedTurnIndex];
+  const hasStableOverlap = cloudHydrationPositionsEqual(
+    liveTurn.events[olderOverlap.liveEventIndex],
+    hydratedTurn.events[olderOverlap.hydratedEventIndex],
+  );
+  if (
+    !hasStableOverlap &&
+    !promptlessTailStrictlyPredatesPrompt(liveTurn, newestHydratedTurn)
+  ) {
+    return undefined;
+  }
+  return {
+    hydratedTurnIndex: olderOverlap.hydratedTurnIndex,
+    liveMessageIndexOffset:
+      agentMessageIndexBeforeEvent(
+        hydratedTurn.events,
+        olderOverlap.hydratedEventIndex,
+      ) -
+      agentMessageIndexBeforeEvent(
+        liveTurn.events,
+        olderOverlap.liveEventIndex,
+      ),
+  };
+}
+
+function discardExactHydratedEvents(
+  liveTurn: Pick<HydrationTurn, "events" | "eventHashes">,
+  hydratedTurn: Pick<HydrationTurn, "events" | "eventHashes">,
+  liveMessagePositions: WeakMap<AcpMessage, number>,
+  hydratedMessagePositions: WeakMap<AcpMessage, number>,
+): AcpMessage[] {
+  const keep = new Array<boolean>(liveTurn.events.length).fill(true);
+  const hydratedPositions = new Map<number, number[]>();
+  for (let index = 0; index < hydratedTurn.eventHashes.length; index += 1) {
+    const eventHash = hydratedTurn.eventHashes[index];
+    const positions = hydratedPositions.get(eventHash) ?? [];
+    positions.push(index);
+    hydratedPositions.set(eventHash, positions);
+  }
+  let hydratedIndex = hydratedTurn.eventHashes.length - 1;
+  for (
+    let liveIndex = liveTurn.eventHashes.length - 1;
+    liveIndex >= 0;
+    liveIndex -= 1
+  ) {
+    const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
+    if (!positions) continue;
+    let positionIndex = latestPositionIndexAtOrBefore(positions, hydratedIndex);
+    while (positionIndex >= 0) {
+      const matchedIndex = positions[positionIndex];
+      const liveMessagePosition = liveMessagePositions.get(
+        liveTurn.events[liveIndex],
+      );
+      const hydratedMessagePosition = hydratedMessagePositions.get(
+        hydratedTurn.events[matchedIndex],
+      );
+      if (
+        (liveMessagePosition !== undefined ||
+          hydratedMessagePosition !== undefined) &&
+        liveMessagePosition !== hydratedMessagePosition
+      ) {
+        positionIndex -= 1;
+        continue;
+      }
+      if (
+        cloudHydrationMessagesEqual(
+          liveTurn.events[liveIndex],
+          hydratedTurn.events[matchedIndex],
+        )
+      ) {
+        keep[liveIndex] = false;
+        hydratedIndex = matchedIndex - 1;
+        break;
+      }
+      positionIndex -= 1;
+    }
+  }
+  return liveTurn.events.filter((_event, index) => keep[index]);
+}
+
+function agentMessageUpdateKind(
+  event: AcpMessage,
+): "final" | "chunk" | "ignored" | undefined {
+  const message = event.message;
+  if (!isJsonRpcNotification(message) || message.method !== "session/update") {
+    return undefined;
+  }
+  const update = (
+    message.params as
+      | {
+          update?: {
+            sessionUpdate?: string;
+            content?: unknown;
+          };
+        }
+      | undefined
+  )?.update;
+  if (update?.sessionUpdate === "agent_message") return "final";
+  if (update?.sessionUpdate === "agent_message_chunk") return "chunk";
+  if (update?.sessionUpdate === "agent_thought_chunk") {
+    const content = update.content as
+      | { type?: string; text?: string; thinking?: string }
+      | null
+      | undefined;
+    if (
+      (content?.type === "text" && !content.text) ||
+      (content?.type === "thinking" && !content.thinking)
+    ) {
+      return "ignored";
+    }
+  }
+  return undefined;
+}
+
+interface AgentMessagePosition {
+  messageIndex: number;
+  chunkRunActive: boolean;
+}
+
+function isSessionPromptEvent(event: AcpMessage): boolean {
+  return (
+    isJsonRpcRequest(event.message) && event.message.method === "session/prompt"
+  );
+}
+
+function finishAgentMessageChunkRun(position: AgentMessagePosition): void {
+  if (!position.chunkRunActive) return;
+  position.messageIndex += 1;
+  position.chunkRunActive = false;
+}
+
+function discardChunksSupersededByHydratedMessages(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  liveMessageIndexOffset: number,
+): Pick<HydrationTurn, "events" | "eventHashes"> {
+  const hydratedMessagePositions = new Set<number>();
+  const hydratedPosition: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
+  for (const event of hydratedTurn.events) {
+    if (isSessionPromptEvent(event)) continue;
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "ignored") continue;
+    if (updateKind === "chunk") {
+      hydratedPosition.chunkRunActive = true;
+      continue;
+    }
+    if (updateKind === "final") {
+      hydratedMessagePositions.add(hydratedPosition.messageIndex);
+      hydratedPosition.messageIndex += 1;
+      hydratedPosition.chunkRunActive = false;
+      continue;
+    }
+    finishAgentMessageChunkRun(hydratedPosition);
+  }
+
+  // SessionLogWriter treats consecutive chunks as one assistant message. A
+  // direct agent_message replaces that buffered message, while a later chunk
+  // run after a tool/update boundary is a separate message. Match those
+  // turn-local message positions instead of timestamps so direct finals and
+  // same-millisecond events reconcile correctly.
+  const livePosition: AgentMessagePosition = {
+    messageIndex: Math.max(0, liveMessageIndexOffset),
+    chunkRunActive: false,
+  };
+  let discardChunkRun = false;
+  const events: AcpMessage[] = [];
+  const eventHashes: number[] = [];
+  for (
+    let eventIndex = 0;
+    eventIndex < liveTurn.events.length;
+    eventIndex += 1
+  ) {
+    const event = liveTurn.events[eventIndex];
+    let keep = true;
+    if (isSessionPromptEvent(event)) {
+      discardChunkRun = false;
+    } else {
+      const updateKind = agentMessageUpdateKind(event);
+      if (updateKind === "chunk") {
+        if (!livePosition.chunkRunActive) {
+          livePosition.chunkRunActive = true;
+          discardChunkRun = hydratedMessagePositions.has(
+            livePosition.messageIndex,
+          );
+        }
+        keep = !discardChunkRun;
+      } else if (updateKind === "final") {
+        livePosition.messageIndex += 1;
+        livePosition.chunkRunActive = false;
+        discardChunkRun = false;
+      } else if (updateKind !== "ignored") {
+        finishAgentMessageChunkRun(livePosition);
+        discardChunkRun = false;
+      }
+    }
+    if (keep) {
+      events.push(event);
+      eventHashes.push(liveTurn.eventHashes[eventIndex]);
+    }
+  }
+  return { events, eventHashes };
+}
+
+export function reconcileLiveEventsWithHydratedEvents(
+  liveEvents: AcpMessage[],
+  hydratedEvents: AcpMessage[],
+): AcpMessage[] {
+  const liveTurns = splitHydrationTurns(liveEvents);
+  const hydratedTurns = splitHydrationTurns(hydratedEvents);
+  const promptPositions = indexHydratedPromptTurns(hydratedTurns);
+  const hydratedEventIndex = indexHydratedTurnEvents(hydratedTurns);
+  const reconciledTurns = new Array<AcpMessage[]>(liveTurns.length);
+  let hydratedTurnIndex = hydratedTurns.length - 1;
+
+  for (
+    let liveTurnIndex = liveTurns.length - 1;
+    liveTurnIndex >= 0;
+    liveTurnIndex -= 1
+  ) {
+    const liveTurn = liveTurns[liveTurnIndex];
+    let liveMessageIndexOffset = 0;
+    let matchedHydratedTurnIndex = findPromptHydrationTurn(
+      liveTurn,
+      hydratedTurns,
+      promptPositions,
+      hydratedTurnIndex,
+    );
+    if (liveTurn.promptEvent === undefined) {
+      const promptlessMatch = findPromptlessHydrationTurn(
+        liveTurn,
+        hydratedTurns,
+        hydratedEventIndex,
+        hydratedTurnIndex,
+      );
+      if (promptlessMatch) {
+        matchedHydratedTurnIndex = promptlessMatch.hydratedTurnIndex;
+        liveMessageIndexOffset = promptlessMatch.liveMessageIndexOffset;
+      }
+    }
+    if (matchedHydratedTurnIndex === -1) {
+      reconciledTurns[liveTurnIndex] = liveTurn.events;
+      continue;
+    }
+
+    const hydratedTurn = hydratedTurns[matchedHydratedTurnIndex];
+    const liveMessagePositions = indexAgentMessagePositions(
+      liveTurn.events,
+      Math.max(0, liveMessageIndexOffset),
+    );
+    const hydratedMessagePositions = indexAgentMessagePositions(
+      hydratedTurn.events,
+      0,
+    );
+    reconciledTurns[liveTurnIndex] = discardExactHydratedEvents(
+      discardChunksSupersededByHydratedMessages(
+        liveTurn,
+        hydratedTurn,
+        liveMessageIndexOffset,
+      ),
+      hydratedTurn,
+      liveMessagePositions,
+      hydratedMessagePositions,
+    );
+    hydratedTurnIndex = matchedHydratedTurnIndex - 1;
+  }
+
+  return reconciledTurns.flat();
+}
+
 export function derivePendingPermissionRequests(
   entries: StoredLogEntry[],
   options?: { taskRunId?: string },
@@ -591,6 +1547,26 @@ export class SessionService {
   private cloudRunIdleTracker: CloudRunIdleTracker;
   private nextCloudTaskWatchToken = 0;
   private supersededRunIds = new Set<string>();
+  // Spoken narration: the `speak` tool's { text, kind } args stream in across
+  // multiple tool_call_updates (partial input_json_delta), so early events carry
+  // a truncated text like "The quick b". Track speak tool calls by id and
+  // accumulate their latest args; enqueue once the call reaches a terminal
+  // status (full text), then delete the entry — which also dedupes re-fires.
+  // A `null` value means "identified as speak, args not streamed in yet".
+  // Keyed by taskRunId first so a session teardown can drop any of its
+  // still-streaming speak calls (see unsubscribeFromChannel); the inner map is
+  // keyed by toolCallId.
+  private speakCalls = new Map<
+    string,
+    Map<string, { text: string; kind: SpeechKind } | null>
+  >();
+  // When the agent last narrated `done`/`needs_input` per task run (event ts).
+  // The deterministic completion/needs-input backstops compare this against the
+  // turn's start so they don't double up on a moment the agent already voiced.
+  private agentSpokeAt = new Map<
+    string,
+    { needs_input: number; done: number }
+  >();
   private subscriptions = new Map<
     string,
     {
@@ -599,17 +1575,7 @@ export class SessionService {
     }
   >();
   /** Active cloud task watchers, keyed by taskId */
-  private cloudTaskWatchers = new Map<
-    string,
-    {
-      runId: string;
-      apiHost: string;
-      teamId: number;
-      startToken: number;
-      subscription: { unsubscribe: () => void };
-      onStatusChange?: () => void;
-    }
-  >();
+  private cloudTaskWatchers = new Map<string, CloudTaskWatcher>();
   private cloudLogGapReconciler: CloudLogGapReconciler;
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
@@ -625,6 +1591,10 @@ export class SessionService {
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
   private pendingPermissionHydratedRuns = new Set<string>();
+  private cloudHydrationPromises = new Map<
+    string,
+    Promise<CloudHydrationResult | undefined>
+  >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -989,6 +1959,9 @@ export class SessionService {
     if (previous) {
       session.optimisticItems = previous.optimisticItems;
       session.messageQueue = previous.messageQueue;
+      // Keep the in-place edit hold with the queue it guards: dropping it here
+      // would let the edited message auto-send in its stale, pre-edit form.
+      session.editingQueuedId = previous.editingQueuedId;
       session.isPromptPending = previous.isPromptPending;
       session.promptStartedAt = previous.promptStartedAt;
       session.pausedDurationMs = previous.pausedDurationMs;
@@ -1031,12 +2004,14 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions, rtkEnabledLocal } = this.d.settings;
+      const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
+        this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
+        spokenNarration: spokenNarrationEnabled === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1048,18 +2023,33 @@ export class SessionService {
       });
 
       if (result) {
-        // Cast and merge live configOptions with persisted values.
-        // Fall back to persisted options if the agent doesn't return any
-        // (e.g. after session compaction).
-        let configOptions = result.configOptions as
+        const liveConfigOptions = result.configOptions as
           | SessionConfigOption[]
           | undefined;
-        if (configOptions && persistedConfigOptions) {
-          configOptions = mergeConfigOptions(
-            configOptions,
-            persistedConfigOptions,
-          );
-        } else if (!configOptions) {
+
+        // Only restore persisted options the resumed session still supports:
+        // it must advertise an option with the same id and still offer the
+        // persisted value (see isPersistedOptionSupported). Without live
+        // options (e.g. after session compaction) we can't confirm support, so
+        // we restore nothing rather than push a value the agent may reject —
+        // the same failure this guard exists to prevent.
+        const restorableConfigOptions =
+          liveConfigOptions && persistedConfigOptions
+            ? persistedConfigOptions.filter((persistedOption) =>
+                isPersistedOptionSupported(persistedOption, liveConfigOptions),
+              )
+            : [];
+
+        // Merge only the restorable persisted values into the live options so
+        // the stored and displayed config never shows a setting the resumed
+        // agent rejected. Fall back to persisted options for display when the
+        // agent returns none (nothing is pushed to the server in that case).
+        let configOptions: SessionConfigOption[] | undefined;
+        if (liveConfigOptions) {
+          configOptions = restorableConfigOptions.length
+            ? mergeConfigOptions(liveConfigOptions, restorableConfigOptions)
+            : liveConfigOptions;
+        } else {
           configOptions = persistedConfigOptions ?? undefined;
         }
 
@@ -1074,10 +2064,10 @@ export class SessionService {
           this.d.setPersistedConfigOptions(taskRunId, configOptions);
         }
 
-        // Restore persisted config options to server in parallel
-        if (persistedConfigOptions) {
+        // Restore supported persisted config options to server in parallel
+        if (restorableConfigOptions.length) {
           await Promise.all(
-            persistedConfigOptions.map((opt) =>
+            restorableConfigOptions.map((opt) =>
               this.d.trpc.agent.setConfigOption
                 .mutate({
                   sessionId: taskRunId,
@@ -1356,7 +2346,11 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
-    const { customInstructions: startCustomInstructions } = this.d.settings;
+    const {
+      customInstructions: startCustomInstructions,
+      rtkEnabledLocal,
+      spokenNarrationEnabled,
+    } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
@@ -1367,7 +2361,8 @@ export class SessionService {
       permissionMode: executionMode,
       adapter,
       customInstructions: startCustomInstructions || undefined,
-      rtkEnabled: this.d.settings.rtkEnabledLocal,
+      rtkEnabled: rtkEnabledLocal,
+      spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
@@ -1716,6 +2711,10 @@ export class SessionService {
     subscription?.permission?.unsubscribe();
     this.subscriptions.delete(taskRunId);
     this.liveTurnContent.delete(taskRunId);
+    this.agentSpokeAt.delete(taskRunId);
+    // Drop any speak calls still mid-stream for this run (never reached a
+    // terminal status, so they were never enqueued or deleted above).
+    this.speakCalls.delete(taskRunId);
   }
 
   /**
@@ -1755,6 +2754,8 @@ export class SessionService {
     this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
+    this.speakCalls.clear();
+    this.agentSpokeAt.clear();
     this.cloudLogGapReconciler.clear();
     this.dispatchingCloudQueues.clear();
     this.scheduledCloudQueueFlushes.clear();
@@ -1862,6 +2863,16 @@ export class SessionService {
         if (session && session.currentPromptId !== msg.id) {
           continue;
         }
+        if (session?.isCloud) {
+          // Cloud logs carry both this response and `_posthog/turn_complete`,
+          // in either order (they race in the agent's log stream). Only
+          // turn_complete may disarm the turn; disarming here would make the
+          // completion notification fire or vanish based on log line order.
+          this.d.store.updateSession(taskRunId, {
+            isPromptPending: false,
+          });
+          continue;
+        }
         this.d.store.updateSession(taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
@@ -1873,10 +2884,15 @@ export class SessionService {
       }
       if (isTurnCompleteEvent(acpMsg)) {
         // Local sessions use the JSON-RPC response as the canonical turn-done
-        // signal; clearing currentPromptId here would race the id-match guard
-        // above. Cloud sessions never see that response.
+        // signal; turn_complete is the cloud one, so only cloud disarms here.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
+          const completedActiveTurn =
+            session.currentPromptId !== null &&
+            session.currentPromptId !== undefined;
+          const stopReason =
+            (msg as { params?: { stopReason?: string } }).params?.stopReason ??
+            "end_turn";
           const turnStartedAtTs =
             this.liveTurnContent.get(taskRunId)?.startedAtTs ??
             session.promptStartedAt;
@@ -1887,13 +2903,18 @@ export class SessionService {
           });
           if (isLive) {
             // Queued messages will start a new turn — suppress the "done" notification in that case.
-            if (session.messageQueue.length === 0) {
+            if (
+              completedActiveTurn &&
+              stopReason === "end_turn" &&
+              session.messageQueue.length === 0
+            ) {
               this.d.notifyPromptComplete(
                 session.taskTitle,
-                "end_turn",
+                stopReason,
                 session.taskId,
                 turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
+              this.speakDeterministic(taskRunId, session, "done");
             }
             this.d.taskViewedApi.markActivity(session.taskId);
             this.finalizeTurnContent(taskRunId, "turn_complete", acpMsg.ts);
@@ -1915,7 +2936,11 @@ export class SessionService {
         isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
       ) {
         const session = this.d.store.getSessions()[taskRunId];
-        const params = (msg as { params?: { agentVersion?: unknown } }).params;
+        const params = (
+          msg as {
+            params?: { agentVersion?: unknown; steering?: unknown };
+          }
+        ).params;
         const agentVersion =
           typeof params?.agentVersion === "string"
             ? params.agentVersion
@@ -1923,6 +2948,12 @@ export class SessionService {
         const updates: Partial<AgentSession> = {};
         if (agentVersion && session?.agentVersion !== agentVersion) {
           updates.agentVersion = agentVersion;
+        }
+        if (
+          typeof params?.steering === "string" &&
+          session?.steering !== params.steering
+        ) {
+          updates.steering = params.steering;
         }
         if (session?.isCloud && session.status !== "connected") {
           updates.status = "connected";
@@ -1960,6 +2991,36 @@ export class SessionService {
         }
       }
     }
+  }
+
+  /**
+   * Deterministic backstop for the two moments the user must not miss. Fired
+   * from the turn-complete and permission events (which happen every time),
+   * unless the agent already narrated that same moment this turn via the speak
+   * tool — in which case its expressive line stands. Routes through the same
+   * speech channel (focus + settings gating + serialized queue).
+   */
+  private speakDeterministic(
+    taskRunId: string,
+    session: {
+      taskTitle: string;
+      taskId: string;
+      promptStartedAt: number | null;
+    },
+    kind: "done" | "needs_input",
+  ): void {
+    const turnStart = session.promptStartedAt ?? 0;
+    const spokeAt = this.agentSpokeAt.get(taskRunId)?.[kind] ?? 0;
+    if (turnStart > 0 && spokeAt >= turnStart) return; // agent already voiced it
+    // Deterministic backstop stays plain — no "Hey <name>," greeting.
+    this.d.enqueueSpeech({
+      text: kind === "done" ? "finished" : "needs your input",
+      taskTitle: session.taskTitle,
+      taskId: session.taskId,
+      kind,
+      source: "backstop",
+      addressByName: false,
+    });
   }
 
   private handleSessionEvent(taskRunId: string, acpMsg: AcpMessage): void {
@@ -2009,16 +3070,24 @@ export class SessionService {
       }
 
       const stopReason = (msg.result as { stopReason?: string }).stopReason;
-      const hasQueuedMessages = this.drainQueuedMessages(taskRunId, session);
+      // A cancelled turn is an explicit stop: auto-firing queued messages
+      // right after would restart the agent the user just halted.
+      const hasSendableMessages =
+        stopReason === "cancelled"
+          ? false
+          : this.drainQueuedMessages(taskRunId, session);
 
-      // Only notify when queue is empty - queued messages will start a new turn
-      if (stopReason && !hasQueuedMessages) {
+      // Only notify when nothing is sendable - queued messages start a new turn
+      if (stopReason && !hasSendableMessages) {
         this.d.notifyPromptComplete(
           session.taskTitle,
           stopReason,
           session.taskId,
           turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
         );
+        if (stopReason === "end_turn") {
+          this.speakDeterministic(taskRunId, session, "done");
+        }
       }
 
       this.d.taskViewedApi.markActivity(session.taskId);
@@ -2044,6 +3113,80 @@ export class SessionService {
         // Persist the updated config options
         this.d.setPersistedConfigOptions(taskRunId, configOptions);
         this.d.log.info("Session config options updated", { taskRunId });
+      }
+
+      // Spoken narration: the agent's `speak` tool call surfaces here. The
+      // initial tool_call names the tool but arrives with empty args; the
+      // assembled { text, kind } stream in on later tool_call_updates with the
+      // same toolCallId. So we remember speak toolCallIds, accumulate the latest
+      // args, and enqueue once the call completes (with the full text).
+      if (
+        params?.update?.sessionUpdate === "tool_call" ||
+        params?.update?.sessionUpdate === "tool_call_update"
+      ) {
+        const update = params.update as {
+          toolCallId?: string;
+          status?: string;
+          _meta?: {
+            claudeCode?: { toolName?: string; parentToolCallId?: string };
+          };
+          rawInput?: { text?: unknown; kind?: unknown };
+        };
+        const id = update.toolCallId;
+        if (id) {
+          const speakCalls = this.speakCalls.get(taskRunId);
+          // Only the top-level agent narrates. A `speak` from a sub-agent
+          // (spawned via the Task tool) carries a parentToolCallId; ignoring
+          // those prevents several sub-agents talking over each other.
+          if (
+            update._meta?.claudeCode?.toolName === SPEAK_TOOL_QUALIFIED_NAME &&
+            !update._meta.claudeCode.parentToolCallId &&
+            !speakCalls?.has(id)
+          ) {
+            const calls = speakCalls ?? new Map();
+            calls.set(id, null);
+            this.speakCalls.set(taskRunId, calls);
+          }
+          const calls = this.speakCalls.get(taskRunId);
+          if (calls?.has(id)) {
+            // Accumulate the latest args — text grows across streamed updates.
+            const text = update.rawInput?.text;
+            if (typeof text === "string" && text.trim().length > 0) {
+              const rawKind = update.rawInput?.kind;
+              const kind: SpeechKind =
+                rawKind === "needs_input" ||
+                rawKind === "done" ||
+                rawKind === "progress"
+                  ? rawKind
+                  : "progress";
+              calls.set(id, { text, kind });
+            }
+            // Speak only once the call is complete (full text). Deleting the
+            // entry both frees it and dedupes any later terminal event.
+            const pending = calls.get(id);
+            if (isTerminalStatus(update.status) && pending) {
+              calls.delete(id);
+              if (calls.size === 0) this.speakCalls.delete(taskRunId);
+              if (pending.kind !== "progress") {
+                const spoke = this.agentSpokeAt.get(taskRunId) ?? {
+                  needs_input: 0,
+                  done: 0,
+                };
+                spoke[pending.kind] = acpMsg.ts;
+                this.agentSpokeAt.set(taskRunId, spoke);
+              }
+              this.d.enqueueSpeech({
+                text: pending.text,
+                taskTitle: session.taskTitle,
+                taskId: session.taskId,
+                kind: pending.kind,
+                source: "agent",
+                // Agent-authored line: allowed to address the user by name.
+                addressByName: true,
+              });
+            }
+          }
+        }
       }
 
       // Handle context usage updates
@@ -2111,13 +3254,30 @@ export class SessionService {
     session: AgentSession,
   ): boolean {
     const freshSession = this.d.store.getSessions()[taskRunId];
-    const hasQueuedMessages =
-      freshSession &&
-      freshSession.messageQueue.length > 0 &&
-      freshSession.status === "connected";
+    // A message being edited in place holds back itself and everything after
+    // it, so only the sendable prefix counts. When the whole queue is held,
+    // this returns false and the caller fires the "turn complete" notification
+    // (the agent is idle, waiting for the edit to be saved).
+    const hasSendableMessages =
+      !!freshSession &&
+      freshSession.status === "connected" &&
+      sendableQueuePrefixLength(freshSession) > 0;
 
-    if (hasQueuedMessages) {
+    if (hasSendableMessages) {
       setTimeout(() => {
+        // Re-check at fire time: the turn-end drain and the edit-release flush
+        // can each schedule a timer, and whichever fires second must not start
+        // a concurrent prompt (the first send flips isPromptPending before it
+        // awaits, so this check observes it).
+        const latest = this.d.store.getSessionByTaskId(session.taskId);
+        if (
+          !latest ||
+          latest.status !== "connected" ||
+          latest.isPromptPending ||
+          latest.isCompacting
+        ) {
+          return;
+        }
         this.sendQueuedMessages(session.taskId).catch((err) => {
           this.d.log.error("Failed to send queued messages", {
             taskId: session.taskId,
@@ -2127,7 +3287,7 @@ export class SessionService {
       }, 0);
     }
 
-    return hasQueuedMessages;
+    return hasSendableMessages;
   }
 
   private handlePermissionRequest(
@@ -2165,6 +3325,7 @@ export class SessionService {
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
     this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+    this.speakDeterministic(taskRunId, session, "needs_input");
   }
 
   private handleCloudPermissionRequest(
@@ -2222,6 +3383,7 @@ export class SessionService {
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
     this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+    this.speakDeterministic(taskRunId, session, "needs_input");
   }
 
   private surfacePersistedPendingPermissions(
@@ -2267,22 +3429,27 @@ export class SessionService {
     // Steer: the user sent a message mid-turn and asked to fold it into the
     // running turn rather than queue it. Adapters that negotiated
     // `steering: "native"` (Claude, codex) inject at the next tool boundary;
-    // unknown adapters cancel and resend. Cloud has no real mid-turn steer
-    // (the backend only delivers messages between turns), so it falls through
-    // to the queue; compaction too.
-    if (
-      options?.steer &&
-      !session.isCloud &&
-      session.isPromptPending &&
-      !session.isCompacting
-    ) {
+    // unknown local adapters cancel and resend. Cloud sessions only enter this
+    // path after the sandbox advertises native steering; compaction still queues.
+    if (options?.steer && session.isPromptPending && !session.isCompacting) {
       if (sessionSupportsNativeSteer(session)) {
-        return this.sendSteerPrompt(session, prompt);
+        if (session.isCloud) {
+          if (session.status === "connected") {
+            return this.sendCloudPrompt(session, prompt, {
+              skipQueueGuard: true,
+              steer: true,
+            });
+          }
+        } else {
+          return this.sendSteerPrompt(session, prompt);
+        }
       }
-      await this.cancelPrompt(taskId);
-      const refreshed = this.d.store.getSessionByTaskId(taskId);
-      if (refreshed) {
-        session = refreshed;
+      if (!session.isCloud) {
+        await this.cancelPrompt(taskId);
+        const refreshed = this.d.store.getSessionByTaskId(taskId);
+        if (refreshed) {
+          session = refreshed;
+        }
       }
     }
 
@@ -2399,15 +3566,20 @@ export class SessionService {
   }
 
   /**
-   * Send all queued messages as a single prompt.
+   * Send the next queued message as its own prompt.
    * Called internally when a turn completes and there are queued messages.
-   * Queue is cleared atomically before sending - if sending fails, messages are lost
-   * (this is acceptable since the user can re-type; avoiding complex retry logic).
+   * Only the head message is dequeued (`max: 1`) so a queue drains one turn at
+   * a time — when this turn completes, the drain fires again for the next one.
+   * The message is removed from the queue before sending; if sending fails it
+   * is lost (acceptable since the user can re-type; avoids complex retry logic).
    */
   private async sendQueuedMessages(
     taskId: string,
   ): Promise<{ stopReason: string }> {
-    const combinedText = this.d.store.dequeueMessagesAsText(taskId);
+    const combinedText = this.d.store.dequeueMessagesAsText(taskId, {
+      stopAtEdited: true,
+      max: 1,
+    });
     if (!combinedText) {
       return { stopReason: "skipped" };
     }
@@ -2421,7 +3593,7 @@ export class SessionService {
       return { stopReason: "no_session" };
     }
 
-    this.d.log.info("Sending queued messages as single prompt", {
+    this.d.log.info("Sending next queued message as prompt", {
       taskId,
       promptLength: combinedText.length,
     });
@@ -2508,15 +3680,18 @@ export class SessionService {
 
       this.d.store.clearOptimisticItems(session.taskRunId);
 
-      if (isRateLimitError(errorMessage, errorDetails)) {
-        this.d.log.warn("Rate limit exceeded, showing usage limit modal", {
+      const limitCause = classifyGatewayLimitError(errorMessage, errorDetails);
+
+      if (limitCause !== null || isRateLimitError(errorMessage, errorDetails)) {
+        this.d.log.warn("Gateway limit reached, showing usage limit modal", {
           taskRunId: session.taskRunId,
+          cause: limitCause,
         });
         this.d.store.updateSession(session.taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
         });
-        this.d.usageLimit.show();
+        this.d.usageLimit.show(limitCause ? { cause: limitCause } : undefined);
         return { stopReason: "rate_limited" };
       }
 
@@ -2663,6 +3838,104 @@ export class SessionService {
   }
 
   /**
+   * Begin an in-place edit of a queued message: mark it as the edit target so
+   * that, until the edit is saved or cancelled, it and everything queued after
+   * it are held back when the turn ends (only the messages before it may send).
+   */
+  setEditingQueuedMessage(taskId: string, messageId: string): void {
+    this.d.store.setEditingQueuedMessage(taskId, messageId);
+  }
+
+  /**
+   * Release an in-place edit hold — the edit was cancelled, or the edited
+   * message left the queue. Drops the hold and, if the agent is now idle, sends
+   * the messages the hold was blocking (the turn may have ended while the user
+   * was still editing, so nothing else would trigger the drain).
+   */
+  clearEditingQueuedMessage(taskId: string): void {
+    this.d.store.clearEditingQueuedMessage(taskId);
+    this.flushQueuedMessagesIfIdle(taskId);
+  }
+
+  /**
+   * Update a queued message in place from an edited composer prompt, keeping it
+   * in the queue at its current position. Mirrors the enqueue normalization so
+   * the stored `content`/`rawPrompt` match what a freshly-queued prompt would
+   * hold (cloud recomputes the transport display + raw payload; local stores
+   * the serialized text). Returns false when the target is no longer queued so
+   * the caller can fall back to sending it as a new message.
+   *
+   * Saving is also what releases the edit hold: the hold is cleared and, if the
+   * agent finished its turn while the user was editing, the now-unblocked queue
+   * is drained.
+   */
+  async updateQueuedMessage(
+    taskId: string,
+    messageId: string,
+    prompt: string | ContentBlock[],
+  ): Promise<boolean> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) return false;
+    if (!session.messageQueue.some((m) => m.id === messageId)) return false;
+
+    if (session.isCloud) {
+      const normalizedPrompt = await this.resolveCloudPrompt(prompt);
+      // Cloud normalization awaits, during which the message may have drained
+      // (a turn completed and sent it). Re-check against fresh state: without
+      // this, the store update below is a silent no-op yet we'd still report a
+      // successful save, so the caller wouldn't fall back to sending the edit
+      // as a fresh message and the edit would be lost.
+      const fresh = this.d.store.getSessionByTaskId(taskId);
+      if (!fresh?.messageQueue.some((m) => m.id === messageId)) return false;
+      const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
+      this.d.store.updateQueuedMessage(taskId, messageId, {
+        content: transport.promptText,
+        rawPrompt: normalizedPrompt,
+      });
+    } else {
+      this.d.store.updateQueuedMessage(taskId, messageId, {
+        content: extractPromptText(prompt),
+      });
+    }
+
+    // Read fresh: the cloud path awaited above, so the pre-await `session`
+    // snapshot may be stale for the edit-hold decision.
+    const latest = this.d.store.getSessionByTaskId(taskId);
+    if (latest?.editingQueuedId === messageId) {
+      this.d.store.clearEditingQueuedMessage(taskId);
+    }
+    this.flushQueuedMessagesIfIdle(taskId);
+    return true;
+  }
+
+  /**
+   * Nudge the queue after an in-place edit is saved or cancelled. The turn may
+   * have finished while the user was editing — in that case nothing else would
+   * trigger the normal turn-end drain, so the now-unblocked messages would sit
+   * stranded until the next turn. Only sends when the agent is actually idle;
+   * a mid-turn edit is left for the turn-end drain to pick up.
+   */
+  private flushQueuedMessagesIfIdle(taskId: string): void {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session || session.messageQueue.length === 0) return;
+
+    if (session.isCloud) {
+      // The cloud flush re-checks run readiness itself, so scheduling while the
+      // run is still busy is a safe no-op.
+      this.scheduleCloudQueueFlush(taskId, "edit_released");
+      return;
+    }
+
+    if (
+      session.status === "connected" &&
+      !session.isPromptPending &&
+      !session.isCompacting
+    ) {
+      this.drainQueuedMessages(session.taskRunId, session);
+    }
+  }
+
+  /**
    * Cancel the current prompt.
    */
   async cancelPrompt(taskId: string): Promise<boolean> {
@@ -2708,7 +3981,7 @@ export class SessionService {
   private async sendCloudPrompt(
     session: AgentSession,
     prompt: string | ContentBlock[],
-    options?: { skipQueueGuard?: boolean },
+    options?: { skipQueueGuard?: boolean; steer?: boolean },
   ): Promise<{ stopReason: string }> {
     const normalizedPrompt = await this.resolveCloudPrompt(prompt);
     const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
@@ -2840,19 +4113,24 @@ export class SessionService {
     if (artifactIds.length > 0) {
       params.artifact_ids = artifactIds;
     }
+    if (options?.steer) {
+      params.steer = true;
+    }
 
     const currentSessionBeforeSend =
       this.getSessionByRunId(session.taskRunId) ?? session;
     const idleEvidenceBeforeSend = this.cloudRunIdleTracker.capture(
       currentSessionBeforeSend,
     );
-    this.d.store.updateSession(session.taskRunId, {
-      isPromptPending: true,
-      promptStartedAt: Date.now(),
-      pausedDurationMs: 0,
-      agentIdleForRunId: undefined,
-    });
-    this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
+    if (!options?.steer) {
+      this.d.store.updateSession(session.taskRunId, {
+        isPromptPending: true,
+        promptStartedAt: Date.now(),
+        pausedDurationMs: 0,
+        agentIdleForRunId: undefined,
+      });
+      this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
+    }
     this.d.store.appendOptimisticItem(session.taskRunId, {
       type: "user_message",
       content: transport.promptText,
@@ -2865,6 +4143,7 @@ export class SessionService {
       is_initial: session.events.length === 0,
       execution_type: "cloud",
       prompt_length_chars: transport.promptText.length,
+      ...(options?.steer ? { is_steer: true } : {}),
     });
 
     try {
@@ -2882,7 +4161,7 @@ export class SessionService {
       }
 
       const commandResult = result.result as
-        | { queued?: boolean; stopReason?: string }
+        | { queued?: boolean; steered?: boolean; stopReason?: string }
         | undefined;
       const stopReason = commandResult?.queued
         ? "queued"
@@ -2890,15 +4169,17 @@ export class SessionService {
 
       return { stopReason };
     } catch (error) {
-      this.d.store.updateSession(session.taskRunId, {
-        isPromptPending: false,
-        promptStartedAt: null,
-      });
+      if (!options?.steer) {
+        this.d.store.updateSession(session.taskRunId, {
+          isPromptPending: false,
+          promptStartedAt: null,
+        });
+      }
       this.d.store.clearTailOptimisticItems(session.taskRunId);
       const currentSessionAfterFailure = this.getSessionByRunId(
         session.taskRunId,
       );
-      if (currentSessionAfterFailure) {
+      if (currentSessionAfterFailure && !options?.steer) {
         const restoreResult = this.cloudRunIdleTracker.restoreAfterFailedSend(
           idleEvidenceBeforeSend,
           currentSessionAfterFailure,
@@ -2962,11 +4243,17 @@ export class SessionService {
       const authStatus = await this.getAuthCredentialsStatus();
       if (authStatus.kind === "restoring") return;
 
-      const drained = this.d.store.dequeueMessages(taskId);
+      // Drain one message per turn (`max: 1`) so a queue sends sequentially:
+      // the next turn_complete flushes the next message. A later flush after
+      // this send finishes picks up the rest.
+      const drained = this.d.store.dequeueMessages(taskId, {
+        stopAtEdited: true,
+        max: 1,
+      });
       const combined = this.d.h.combineQueuedCloudPrompts(drained);
       if (!combined) return;
 
-      this.d.log.info("Sending queued cloud messages", {
+      this.d.log.info("Sending next queued cloud message", {
         taskId,
         drainedCount: drained.length,
       });
@@ -3132,8 +4419,10 @@ export class SessionService {
     newSession.optimisticItems = (
       this.getSessionByRunId(session.taskRunId)?.optimisticItems ?? []
     ).filter((item) => item.type === "user_message" && item.pinToTop === false);
-    const resumeFromEntryCount = session.processedLineCount ?? 0;
-    newSession.processedLineCount = resumeFromEntryCount;
+    const resumeFromEntryCount =
+      session.cloudTranscriptEntryCount ?? session.processedLineCount ?? 0;
+    newSession.cloudTranscriptEntryCount = resumeFromEntryCount;
+    newSession.processedLineCount = 0;
     this.d.store.setSession(newSession);
 
     // Start the watcher immediately so we don't miss status updates.
@@ -3223,6 +4512,105 @@ export class SessionService {
       return true;
     } catch (error) {
       this.d.log.error("Failed to cancel cloud prompt", error);
+      return false;
+    }
+  }
+
+  async stopCloudRun(taskId: string, runId?: string): Promise<boolean> {
+    const session = this.d.store.getSessionByTaskId(taskId);
+    let taskRunId: string;
+    try {
+      const client = await this.d.getAuthenticatedClient();
+      if (!client) return false;
+      const task = (await client.getTask(taskId)) as Task;
+      const latestRun = task.latest_run;
+      if (!latestRun || latestRun.environment !== "cloud") {
+        return true;
+      }
+      if (isTerminalStatus(latestRun.status)) {
+        const rendererStillExpectsCompletion =
+          session?.isCloud === true &&
+          session.taskRunId === latestRun.id &&
+          !isTerminalStatus(session.cloudStatus);
+        if (!rendererStillExpectsCompletion) {
+          return true;
+        }
+      }
+      taskRunId = latestRun.id;
+      if (runId && runId !== taskRunId) {
+        this.d.log.warn("Refusing to stop a newer cloud run", {
+          taskId,
+          requestedRunId: runId,
+          taskRunId,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.d.log.error("Failed to resolve current cloud run", error);
+      return false;
+    }
+
+    const matchingSession =
+      session?.isCloud && session.taskRunId === taskRunId ? session : undefined;
+    const previousPromptState = matchingSession
+      ? {
+          isPromptPending: matchingSession.isPromptPending,
+          promptStartedAt: matchingSession.promptStartedAt,
+        }
+      : undefined;
+    if (matchingSession) {
+      this.d.store.updateSession(matchingSession.taskRunId, {
+        stopRequested: true,
+        isPromptPending: false,
+        promptStartedAt: null,
+      });
+    }
+
+    try {
+      const result = await this.d.trpc.cloudTask.stop.mutate({
+        taskId,
+        runId: taskRunId,
+      });
+
+      if (!result.success) {
+        if (matchingSession) {
+          this.d.store.updateSession(matchingSession.taskRunId, {
+            stopRequested: false,
+            ...previousPromptState,
+          });
+        }
+        this.d.log.warn("Cloud run stop failed", {
+          taskId,
+          error: result.error,
+          retryable: result.retryable,
+        });
+        return false;
+      }
+
+      const durationSeconds = matchingSession
+        ? Math.round((Date.now() - matchingSession.startedAt) / 1000)
+        : undefined;
+      const promptCount = matchingSession?.events.filter(
+        (e) => "method" in e.message && e.message.method === "session/prompt",
+      ).length;
+      this.d.track(ANALYTICS_EVENTS.TASK_RUN_STOPPED, {
+        task_id: taskId,
+        execution_type: "cloud",
+        ...(durationSeconds === undefined
+          ? {}
+          : { duration_seconds: durationSeconds }),
+        ...(promptCount === undefined ? {} : { prompts_sent: promptCount }),
+      });
+
+      return true;
+    } catch (error) {
+      if (matchingSession) {
+        this.d.store.updateSession(matchingSession.taskRunId, {
+          stopRequested: false,
+          ...previousPromptState,
+        });
+      }
+      this.d.log.error("Failed to stop cloud run", error);
       return false;
     }
   }
@@ -3621,7 +5009,7 @@ export class SessionService {
     this.d.store.updateSession(session.taskRunId, {
       configOptions: updatedOptions,
     });
-    this.d.updatePersistedConfigOptionValue(session.taskRunId, configId, value);
+    this.d.setPersistedConfigOptions(session.taskRunId, updatedOptions);
 
     if (
       !session.isCloud &&
@@ -3646,20 +5034,25 @@ export class SessionService {
         });
       }
     } catch (error) {
-      // Rollback on error
-      const rolledBackOptions = configOptions.map((opt) =>
-        opt.id === configId
-          ? ({ ...opt, currentValue: previousValue } as SessionConfigOption)
-          : opt,
+      const latestConfigOptions =
+        this.d.store.getSessionByTaskId(taskId)?.configOptions ?? [];
+      const latestOption = latestConfigOptions.find(
+        (option) => option.id === configId,
       );
-      this.d.store.updateSession(session.taskRunId, {
-        configOptions: rolledBackOptions,
-      });
-      this.d.updatePersistedConfigOptionValue(
-        session.taskRunId,
-        configId,
-        String(previousValue),
-      );
+      if (latestOption?.currentValue === value) {
+        const rolledBackOptions = latestConfigOptions.map((option) =>
+          option.id === configId
+            ? ({
+                ...option,
+                currentValue: previousValue,
+              } as SessionConfigOption)
+            : option,
+        );
+        this.d.store.updateSession(session.taskRunId, {
+          configOptions: rolledBackOptions,
+        });
+        this.d.setPersistedConfigOptions(session.taskRunId, rolledBackOptions);
+      }
       this.d.log.error("Failed to set session config option", {
         taskId,
         configId,
@@ -3940,44 +5333,112 @@ export class SessionService {
     }
 
     const previewOptions = await entry.promise;
+    const session = this.d.store.getSessions()[taskRunId];
+    if (!session || session.adapter !== adapter) return;
+
+    const existingOptions = session.configOptions ?? [];
+    const existingModelOption = getConfigOptionByCategory(
+      existingOptions,
+      "model",
+    );
+    const existingReasoningOption = getConfigOptionByCategory(
+      existingOptions,
+      "thought_level",
+    );
+    const existingModel = existingModelOption?.currentValue;
+    const existingReasoningEffort = existingReasoningOption?.currentValue;
+    const preferredModel =
+      typeof existingModel === "string" ? existingModel : initialModel;
+    const preferredReasoningEffort =
+      typeof existingReasoningEffort === "string"
+        ? existingReasoningEffort
+        : initialReasoningEffort;
+    const applyPreferredValue = (
+      option: SessionConfigOption,
+      preferredValue: string | undefined,
+      existingOption: SessionConfigOption | undefined,
+    ): SessionConfigOption => {
+      if (option.type !== "select" || !preferredValue) return option;
+
+      const previewValues = flattenSelectOptions(option.options);
+      if (previewValues.some((value) => value.value === preferredValue)) {
+        return { ...option, currentValue: preferredValue };
+      }
+
+      const existingValues =
+        existingOption?.type === "select"
+          ? flattenSelectOptions(existingOption.options)
+          : [];
+      const reasoningLabels: Record<string, string> = {
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+        xhigh: "Extra High",
+        max: "Max",
+      };
+      const selectedValue = existingValues.find(
+        (value) => value.value === preferredValue,
+      ) ?? {
+        value: preferredValue,
+        name:
+          option.category === "thought_level"
+            ? (reasoningLabels[preferredValue] ?? preferredValue)
+            : preferredValue,
+      };
+
+      if (option.options.length > 0 && "group" in option.options[0]) {
+        return {
+          ...option,
+          currentValue: preferredValue,
+          options: [
+            ...(option.options as SessionConfigSelectGroup[]),
+            {
+              group: "selected",
+              name: "Selected",
+              options: [selectedValue],
+            },
+          ],
+        };
+      }
+
+      return {
+        ...option,
+        currentValue: preferredValue,
+        options: [
+          ...(option.options as SessionConfigSelectOption[]),
+          selectedValue,
+        ],
+      };
+    };
     const extras = previewOptions
       .filter(
         (opt) => opt.category === "model" || opt.category === "thought_level",
       )
       .map((opt) => {
-        if (
-          opt.category === "model" &&
-          opt.type === "select" &&
-          typeof initialModel === "string"
-        ) {
-          const flat = flattenSelectOptions(opt.options);
-          if (flat.some((o) => o.value === initialModel)) {
-            return { ...opt, currentValue: initialModel };
-          }
+        if (opt.category === "model") {
+          return applyPreferredValue(opt, preferredModel, existingModelOption);
         }
-        if (
-          opt.category === "thought_level" &&
-          opt.type === "select" &&
-          typeof initialReasoningEffort === "string"
-        ) {
-          const flat = flattenSelectOptions(opt.options);
-          if (flat.some((o) => o.value === initialReasoningEffort)) {
-            return { ...opt, currentValue: initialReasoningEffort };
-          }
+        if (opt.category === "thought_level") {
+          return applyPreferredValue(
+            opt,
+            preferredReasoningEffort,
+            existingReasoningOption,
+          );
         }
         return opt;
       });
 
     if (extras.length === 0) return;
 
-    const session = this.d.store.getSessions()[taskRunId];
-    if (!session) return;
+    const previewCategories = new Set(extras.map((option) => option.category));
+    const merged = [
+      ...existingOptions.filter(
+        (option) => !previewCategories.has(option.category),
+      ),
+      ...extras,
+    ];
 
-    const existingOptions = session.configOptions ?? [];
-    const existingIds = new Set(existingOptions.map((o) => o.id));
-    const newExtras = extras.filter((o) => !existingIds.has(o.id));
-    if (newExtras.length === 0) return;
-    const merged = [...existingOptions, ...newExtras];
+    if (JSON.stringify(existingOptions) === JSON.stringify(merged)) return;
 
     this.d.store.updateSession(taskRunId, { configOptions: merged });
   }
@@ -3990,6 +5451,22 @@ export class SessionService {
    * status triggers full teardown from within handleCloudTaskUpdate via
    * stopCloudTaskWatch().
    */
+  /**
+   * Register this client as the relay executor for a run's desktop-only MCP
+   * servers (docs/cloud-mcp-relay.md). Called by the creation saga — only the
+   * creating client may execute relay requests.
+   */
+  async designateRelayedMcpServers(
+    runId: string,
+    servers: string[],
+  ): Promise<void> {
+    if (servers.length === 0) return;
+    await this.d.trpc.cloudTask.designateRelayedMcpServers.mutate({
+      runId,
+      servers,
+    });
+  }
+
   watchCloudTask(
     taskId: string,
     runId: string,
@@ -4007,8 +5484,33 @@ export class SessionService {
     runState?: Record<string, unknown>,
   ): () => void {
     const taskRunId = runId;
+    const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
+    const persistedAdapter = this.d.adapterStore.getAdapter(taskRunId);
+    const buildInitialConfigOptions = (
+      mode: string | undefined,
+      configAdapter: Adapter | undefined = persistedAdapter,
+    ): SessionConfigOption[] => {
+      const defaults = addMissingCloudRuntimeConfigOptions(
+        buildCloudDefaultConfigOptions(mode, adapter),
+        adapter,
+        initialModel,
+        initialReasoningEffort,
+      );
+      if (!persistedConfigOptions?.length) return defaults;
+      if (configAdapter && configAdapter !== adapter) return defaults;
+
+      const defaultIds = new Set(defaults.map((option) => option.id));
+      const completeOptions = [
+        ...defaults,
+        ...persistedConfigOptions.filter(
+          (option) => !defaultIds.has(option.id),
+        ),
+      ];
+      return mergeConfigOptions(completeOptions, persistedConfigOptions);
+    };
 
     if (this.supersededRunIds.has(runId)) return () => {};
+    this.d.adapterStore.setAdapter(taskRunId, adapter);
 
     const existingWatcher = this.cloudTaskWatchers.get(taskId);
 
@@ -4036,8 +5538,21 @@ export class SessionService {
         if (shouldRefreshConfigOptions) {
           this.d.store.updateSession(existing.taskRunId, {
             adapter,
-            configOptions: buildCloudDefaultConfigOptions(currentMode, adapter),
+            configOptions: buildInitialConfigOptions(
+              currentMode,
+              existing.adapter,
+            ),
           });
+        } else {
+          const configOptions = addMissingCloudRuntimeConfigOptions(
+            existing.configOptions ?? [],
+            adapter,
+            initialModel,
+            initialReasoningEffort,
+          );
+          if (configOptions !== existing.configOptions) {
+            this.d.store.updateSession(existing.taskRunId, { configOptions });
+          }
         }
         void this.fetchAndApplyCloudPreviewOptions(
           existing.taskRunId,
@@ -4045,6 +5560,19 @@ export class SessionService {
           adapter,
           initialModel,
           initialReasoningEffort,
+        );
+      }
+      if (
+        typeof runState?.resume_from_run_id === "string" &&
+        !this.pendingPermissionHydratedRuns.has(taskRunId)
+      ) {
+        void this.hydrateResumeCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
         );
       }
       return () => {};
@@ -4105,12 +5633,16 @@ export class SessionService {
       !this.pendingPermissionHydratedRuns.has(taskRunId) &&
       (isTerminalStatus(existing.cloudStatus) ||
         (runStatus !== undefined && isTerminalStatus(runStatus)));
+    const shouldHydrateResumeChain =
+      Boolean(runState?.resume_from_run_id) &&
+      !this.pendingPermissionHydratedRuns.has(taskRunId);
     const shouldHydrateSession =
       !existing ||
       existing.taskRunId !== taskRunId ||
       shouldResetExistingSession ||
       existing.events.length === 0 ||
-      shouldHydratePersistedPermissions;
+      shouldHydratePersistedPermissions ||
+      shouldHydrateResumeChain;
 
     if (
       !existing ||
@@ -4122,9 +5654,9 @@ export class SessionService {
       session.status = "disconnected";
       session.isCloud = true;
       session.adapter = adapter;
-      session.configOptions = buildCloudDefaultConfigOptions(
+      session.configOptions = buildInitialConfigOptions(
         initialMode,
-        adapter,
+        existing?.taskRunId === taskRunId ? existing.adapter : persistedAdapter,
       );
       this.d.store.setSession(session);
       // Optimistic seeding for the initial task description is deferred
@@ -4143,10 +5675,20 @@ export class SessionService {
         )?.currentValue;
         const currentMode =
           typeof existingMode === "string" ? existingMode : initialMode;
-        updates.configOptions = buildCloudDefaultConfigOptions(
+        updates.configOptions = buildInitialConfigOptions(
           currentMode,
-          adapter,
+          existing.adapter,
         );
+      } else {
+        const configOptions = addMissingCloudRuntimeConfigOptions(
+          existing.configOptions,
+          adapter,
+          initialModel,
+          initialReasoningEffort,
+        );
+        if (configOptions !== existing.configOptions) {
+          updates.configOptions = configOptions;
+        }
       }
       if (Object.keys(updates).length > 0) {
         this.d.store.updateSession(existing.taskRunId, updates);
@@ -4161,47 +5703,97 @@ export class SessionService {
       initialReasoningEffort,
     );
 
-    if (shouldHydrateSession) {
-      this.hydrateCloudTaskSessionFromLogs(
-        taskId,
-        taskRunId,
-        logUrl,
-        taskDescription,
-        runStatus,
-        runState,
-      );
-    }
+    const processCloudUpdate = (update: CloudTaskUpdatePayload): void => {
+      if (update.kind === "logs" || update.kind === "snapshot") {
+        this.d.store.updateSession(taskRunId, {
+          cloudTranscriptEntryCount: update.totalEntryCount,
+        });
+      }
+      const watcher = this.cloudTaskWatchers.get(taskId);
+      const resumeHistoryCountOffset =
+        watcher?.runId === runId ? (watcher.resumeHistoryCountOffset ?? 0) : 0;
+      const normalizedUpdate: CloudTaskUpdatePayload =
+        resumeHistoryCountOffset > 0 &&
+        (update.kind === "logs" || update.kind === "snapshot")
+          ? {
+              ...update,
+              totalEntryCount: Math.max(
+                0,
+                update.totalEntryCount - resumeHistoryCountOffset,
+              ),
+            }
+          : update;
+      this.handleCloudTaskUpdate(taskRunId, normalizedUpdate);
+      if (
+        (update.kind === "status" ||
+          update.kind === "snapshot" ||
+          update.kind === "error") &&
+        watcher?.onStatusChange
+      ) {
+        watcher.onStatusChange();
+      }
+    };
+
+    const watcher: CloudTaskWatcher = {
+      runId,
+      apiHost,
+      teamId,
+      startToken,
+      resumeFromEntryCount,
+      resumeHistoryCountOffset: shouldHydrateResumeChain
+        ? resumeFromEntryCount
+        : 0,
+      resumeHydrationToken: 0,
+      bufferResumeUpdates: false,
+      bufferedResumeUpdates: [],
+      processCloudUpdate,
+      subscription: { unsubscribe: () => undefined },
+      onStatusChange,
+    };
+    this.cloudTaskWatchers.set(taskId, watcher);
 
     // Subscribe before starting the main-process watcher so the first replayed
     // SSE/log burst cannot race ahead of the renderer subscription.
-    const subscription = this.d.trpc.cloudTask.onUpdate.subscribe(
+    watcher.subscription = this.d.trpc.cloudTask.onUpdate.subscribe(
       { taskId, runId },
       {
         onData: (update: CloudTaskUpdatePayload) => {
-          this.handleCloudTaskUpdate(taskRunId, update);
-          const watcher = this.cloudTaskWatchers.get(taskId);
-          if (
-            (update.kind === "status" ||
-              update.kind === "snapshot" ||
-              update.kind === "error") &&
-            watcher?.onStatusChange
-          ) {
-            watcher.onStatusChange();
+          const activeWatcher = this.cloudTaskWatchers.get(taskId);
+          if (!activeWatcher || activeWatcher.runId !== runId) {
+            return;
           }
+          if (activeWatcher.bufferResumeUpdates) {
+            activeWatcher.bufferedResumeUpdates.push(update);
+            return;
+          }
+          activeWatcher.processCloudUpdate(update);
         },
         onError: (err: unknown) =>
           this.d.log.error("Cloud task subscription error", { taskId, err }),
       },
     );
 
-    this.cloudTaskWatchers.set(taskId, {
-      runId,
-      apiHost,
-      teamId,
-      startToken,
-      subscription,
-      onStatusChange,
-    });
+    if (shouldHydrateSession) {
+      if (shouldHydrateResumeChain) {
+        void this.hydrateResumeCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        );
+      } else {
+        void this.hydrateCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        );
+      }
+    }
 
     // Start main-process watcher after the subscription is attached.
     void (async () => {
@@ -4255,108 +5847,277 @@ export class SessionService {
     taskDescription?: string,
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
-  ): void {
-    void (async () => {
-      let rawEntries: StoredLogEntry[];
-      let totalLineCount: number;
-      const isResumeRun = Boolean(runState?.resume_from_run_id);
-      if (isTerminalStatus(runStatus) || isResumeRun) {
-        // Resume chains need the full history even while the leaf run is still
-        // active; otherwise a renderer restart hydrates only the final run.
-        // Non-resume in-progress runs keep using the single-run log so hydrate
-        // cannot race the live stream and double the active turn.
-        const authStatus = await this.getAuthCredentialsStatus();
-        if (authStatus.kind !== "ready") {
-          return;
-        }
-        try {
-          rawEntries = await authStatus.auth.client.getTaskRunSessionLogs(
-            taskId,
-            taskRunId,
-            { limit: 100000 },
-          );
-        } catch (err) {
-          this.d.log.warn("Failed to fetch session-log chain for hydrate", {
-            taskId,
-            taskRunId,
-            err,
-          });
-          return;
-        }
-        totalLineCount = rawEntries.length;
-      } else {
-        const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
-        rawEntries = parsed.rawEntries;
-        totalLineCount = parsed.totalLineCount;
-      }
-
-      const session = this.d.store.getSessionByTaskId(taskId);
-      if (!session || session.taskRunId !== taskRunId) {
-        return;
-      }
-
-      const events = convertStoredEntriesToEvents(rawEntries);
-      const hasUserPrompt = events.some(
-        (e: AcpMessage) =>
-          isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
-      );
-
-      // Seed the optimistic user-message bubble whenever the agent has
-      // not yet recorded an initial `session/prompt` request — covers the
-      // brand-new task case as well as "agent has emitted lifecycle
-      // notifications but hasn't received its first prompt yet". Prefer the
-      // stashed initial prompt (which carries the channel CONTEXT.md block, so
-      // its chip renders right away) over the bare task description.
-      const seedContent =
-        this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
-      if (!hasUserPrompt && seedContent?.trim()) {
-        this.d.store.appendOptimisticItem(taskRunId, {
-          type: "user_message",
-          content: seedContent,
-          timestamp: Date.now(),
-        });
-      }
-      if (hasUserPrompt) {
-        // The real prompt has landed; the stash is no longer needed.
-        this.initialCloudOptimisticPrompt.delete(taskId);
-        this.d.store.clearTailOptimisticItems(taskRunId);
-      }
-
-      if (rawEntries.length === 0) {
-        this.pendingPermissionHydratedRuns.add(taskRunId);
-        return;
-      }
-
-      // If live updates already populated a processed count, don't overwrite
-      // that newer state with the persisted baseline fetched during startup.
-      if (
-        session.processedLineCount !== undefined &&
-        session.processedLineCount > 0
-      ) {
-        this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
-        this.pendingPermissionHydratedRuns.add(taskRunId);
-        return;
-      }
-
-      this.d.store.updateSession(taskRunId, {
-        events,
-        isCloud: true,
-        logUrl: logUrl ?? session.logUrl,
-        processedLineCount: totalLineCount,
-      });
-      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
-      this.pendingPermissionHydratedRuns.add(taskRunId);
-      // Without this the "Galumphing…" indicator stays hidden when the hydrated
-      // baseline already contains an in-flight session/prompt — the live delta
-      // path otherwise sees delta <= 0 and never re-evaluates the tail.
-      this.updatePromptStateFromEvents(taskRunId, events);
-    })().catch((err: unknown) => {
+  ): Promise<CloudHydrationResult | undefined> {
+    const existing = this.cloudHydrationPromises.get(taskRunId);
+    if (existing) {
+      return existing;
+    }
+    const hydration = this.performCloudTaskSessionHydration(
+      taskId,
+      taskRunId,
+      logUrl,
+      taskDescription,
+      runStatus,
+      runState,
+    ).catch((err: unknown) => {
       this.d.log.warn("Failed to hydrate cloud task session from logs", {
         taskId,
         taskRunId,
         err,
       });
+      return undefined;
     });
+    this.cloudHydrationPromises.set(taskRunId, hydration);
+    void hydration.finally(() => {
+      if (this.cloudHydrationPromises.get(taskRunId) === hydration) {
+        this.cloudHydrationPromises.delete(taskRunId);
+      }
+    });
+    return hydration;
+  }
+
+  private async hydrateResumeCloudTaskSessionFromLogs(
+    taskId: string,
+    taskRunId: string,
+    logUrl?: string,
+    taskDescription?: string,
+    runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
+  ): Promise<void> {
+    const watcher = this.cloudTaskWatchers.get(taskId);
+    if (!watcher || watcher.runId !== taskRunId) return;
+    const hydrationToken = ++watcher.resumeHydrationToken;
+    watcher.bufferResumeUpdates = true;
+
+    const result = await this.hydrateCloudTaskSessionFromLogs(
+      taskId,
+      taskRunId,
+      logUrl,
+      taskDescription,
+      runStatus,
+      runState,
+    );
+    const activeWatcher = this.cloudTaskWatchers.get(taskId);
+    if (
+      !activeWatcher ||
+      activeWatcher.runId !== taskRunId ||
+      activeWatcher.resumeHydrationToken !== hydrationToken
+    ) {
+      return;
+    }
+
+    this.applyResumeHydrationOffset(taskId, taskRunId, result);
+    activeWatcher.bufferResumeUpdates = false;
+    const bufferedUpdates = activeWatcher.bufferedResumeUpdates.splice(0);
+    for (const update of bufferedUpdates) {
+      activeWatcher.processCloudUpdate(update);
+    }
+  }
+
+  private applyResumeHydrationOffset(
+    taskId: string,
+    taskRunId: string,
+    result: CloudHydrationResult | undefined,
+  ): void {
+    if (!result) return;
+    const watcher = this.cloudTaskWatchers.get(taskId);
+    if (!watcher || watcher.runId !== taskRunId) return;
+    watcher.resumeHistoryCountOffset = Math.max(
+      0,
+      result.historyEntryCount - result.liveStreamLineCount,
+    );
+  }
+
+  private async performCloudTaskSessionHydration(
+    taskId: string,
+    taskRunId: string,
+    logUrl?: string,
+    taskDescription?: string,
+    runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
+  ): Promise<CloudHydrationResult | undefined> {
+    let rawEntries: StoredLogEntry[];
+    let liveStreamLineCount: number;
+    let resumeLeafEntryStartIndex: number | undefined;
+    const resumeFromRunId =
+      typeof runState?.resume_from_run_id === "string"
+        ? runState.resume_from_run_id
+        : undefined;
+    const isResumeRun = Boolean(resumeFromRunId);
+    if (isTerminalStatus(runStatus) || isResumeRun) {
+      // Resume chains need the full history even while the leaf run is still
+      // active; otherwise a renderer restart hydrates only the final run.
+      // Non-resume in-progress runs keep using the single-run log so hydrate
+      // cannot race the live stream and double the active turn.
+      const authStatus = await this.getAuthCredentialsStatus();
+      if (authStatus.kind !== "ready") {
+        return;
+      }
+      if (resumeFromRunId) {
+        const [ancestorResult, currentRunResult] = await Promise.all([
+          authStatus.auth.client.getTaskRunSessionLogsResult(
+            taskId,
+            resumeFromRunId,
+            { limit: 100000 },
+          ),
+          authStatus.auth.client.getTaskRunSessionLogsResult(
+            taskId,
+            taskRunId,
+            { limit: 100000 },
+          ),
+        ]);
+        if (!ancestorResult.complete || !currentRunResult.complete) {
+          this.d.log.warn("Resume session log hydration was incomplete", {
+            taskId,
+            taskRunId,
+            resumeFromRunId,
+            ancestorComplete: ancestorResult.complete,
+            currentRunComplete: currentRunResult.complete,
+          });
+          return;
+        }
+        const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
+        const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
+
+        const ancestorKeys = ancestorEntries.map((entry) =>
+          JSON.stringify(entry),
+        );
+        const currentKeys = currentRunEntries.map((entry) =>
+          JSON.stringify(entry),
+        );
+        const overlap = suffixPrefixOverlap(ancestorKeys, currentKeys);
+        const persistedLeafEntries = currentRunEntries.slice(overlap);
+        const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
+        const leafKeys = new Set(
+          persistedLeafEntries.map((entry) => JSON.stringify(entry)),
+        );
+        rawEntries = [
+          ...ancestorEntries,
+          ...persistedLeafEntries,
+          ...leafLogs.rawEntries.filter(
+            (entry) => !leafKeys.has(JSON.stringify(entry)),
+          ),
+        ];
+        resumeLeafEntryStartIndex = ancestorEntries.length;
+        liveStreamLineCount = Math.max(
+          leafLogs.totalLineCount,
+          persistedLeafEntries.length,
+        );
+      } else {
+        const result = await authStatus.auth.client.getTaskRunSessionLogsResult(
+          taskId,
+          taskRunId,
+          { limit: 100000 },
+        );
+        if (!result.complete) {
+          this.d.log.warn("Session log hydration was incomplete", {
+            taskId,
+            taskRunId,
+          });
+          return;
+        }
+        rawEntries = result.entries;
+        liveStreamLineCount = rawEntries.length;
+      }
+    } else {
+      const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+      rawEntries = parsed.rawEntries;
+      liveStreamLineCount = parsed.totalLineCount;
+    }
+
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session || session.taskRunId !== taskRunId) {
+      return;
+    }
+
+    let events = convertStoredEntriesToEvents(rawEntries, undefined, {
+      taskRunId,
+      startEntryIndex: 0,
+      firstPositionedEntryIndex: resumeLeafEntryStartIndex,
+    });
+    if (isResumeRun && session.events.length > 0) {
+      const inheritedEvents = reconcileLiveEventsWithHydratedEvents(
+        session.events,
+        events,
+      );
+      events = [...events, ...inheritedEvents];
+      const watcher = this.cloudTaskWatchers.get(taskId);
+      const hasLeafLocalWatcherCursor =
+        watcher?.runId === taskRunId &&
+        watcher.resumeHistoryCountOffset !== undefined;
+      if (hasLeafLocalWatcherCursor) {
+        liveStreamLineCount = Math.max(
+          liveStreamLineCount,
+          session.processedLineCount ?? 0,
+        );
+      }
+    }
+    const hasUserPrompt = events.some(
+      (e: AcpMessage) =>
+        isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
+    );
+
+    // Seed the optimistic user-message bubble whenever the agent has
+    // not yet recorded an initial `session/prompt` request — covers the
+    // brand-new task case as well as "agent has emitted lifecycle
+    // notifications but hasn't received its first prompt yet". Prefer the
+    // stashed initial prompt (which carries the channel CONTEXT.md block, so
+    // its chip renders right away) over the bare task description.
+    const seedContent =
+      this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
+    if (!hasUserPrompt && seedContent?.trim()) {
+      this.d.store.appendOptimisticItem(taskRunId, {
+        type: "user_message",
+        content: seedContent,
+        timestamp: Date.now(),
+      });
+    }
+    if (hasUserPrompt) {
+      // The real prompt has landed; the stash is no longer needed.
+      this.initialCloudOptimisticPrompt.delete(taskId);
+      this.d.store.clearTailOptimisticItems(taskRunId);
+    }
+
+    if (rawEntries.length === 0) {
+      this.pendingPermissionHydratedRuns.add(taskRunId);
+      return {
+        historyEntryCount: 0,
+        liveStreamLineCount,
+      };
+    }
+
+    // If live updates already populated a processed count, don't overwrite
+    // that newer state with the persisted baseline fetched during startup.
+    if (
+      session.processedLineCount !== undefined &&
+      session.processedLineCount > 0 &&
+      !isResumeRun
+    ) {
+      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+      this.pendingPermissionHydratedRuns.add(taskRunId);
+      return {
+        historyEntryCount: rawEntries.length,
+        liveStreamLineCount: session.processedLineCount,
+      };
+    }
+
+    this.d.store.updateSession(taskRunId, {
+      events,
+      isCloud: true,
+      logUrl: logUrl ?? session.logUrl,
+      cloudTranscriptEntryCount: rawEntries.length,
+      processedLineCount: liveStreamLineCount,
+    });
+    this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+    this.pendingPermissionHydratedRuns.add(taskRunId);
+    // Without this the "Galumphing…" indicator stays hidden when the hydrated
+    // baseline already contains an in-flight session/prompt — the live delta
+    // path otherwise sees delta <= 0 and never re-evaluates the tail.
+    this.updatePromptStateFromEvents(taskRunId, events);
+    return {
+      historyEntryCount: rawEntries.length,
+      liveStreamLineCount,
+    };
   }
 
   private isCurrentCloudTaskWatcher(
@@ -5255,7 +7016,14 @@ export class SessionService {
         // Already caught up — skip duplicate entries
       } else if (plan.kind === "append-tail") {
         const entriesToAppend = update.newEntries.slice(-plan.tailCount);
-        const newEvents = convertStoredEntriesToEvents(entriesToAppend);
+        const newEvents = convertStoredEntriesToEvents(
+          entriesToAppend,
+          undefined,
+          {
+            taskRunId,
+            startEntryIndex: expectedCount - entriesToAppend.length,
+          },
+        );
         if (hasSessionPromptEvent(newEvents)) {
           this.d.store.clearTailOptimisticItems(taskRunId);
         }
@@ -5534,7 +7302,10 @@ export class SessionService {
     logUrl: string | undefined,
     processedLineCount: number,
   ): void {
-    const events = convertStoredEntriesToEvents(rawEntries);
+    const events = convertStoredEntriesToEvents(rawEntries, undefined, {
+      taskRunId,
+      startEntryIndex: 0,
+    });
     if (hasSessionPromptEvent(events)) {
       this.d.store.clearTailOptimisticItems(taskRunId);
     }

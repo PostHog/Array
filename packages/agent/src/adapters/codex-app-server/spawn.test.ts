@@ -29,6 +29,9 @@ describe("buildAppServerArgs", () => {
     });
 
     expect(args[0]).toBe("app-server");
+    // Pin codex's guardian reviewer to the host default so it never calls the
+    // gateway-blocked `codex-auto-review` model.
+    expect(args).toContain('approvals_reviewer="user"');
     expect(args).toContain('model_provider="posthog"');
     expect(args).toContain(
       'model_providers.posthog.base_url="https://gateway.example/v1"',
@@ -121,6 +124,30 @@ describe("buildAppServerArgs", () => {
 
     expect(args).toContain("auto_compact_token_limit=16000");
     expect(args).toContain('model_verbosity="low"');
+  });
+
+  it("pins the cloud BASH_ENV into tool shells for secondary checkouts", () => {
+    const args = buildAppServerArgs(
+      { binaryPath: "/bundle/codex" },
+      { IS_SANDBOX: "1", BASH_ENV: "/tmp/agentsh-bash-env.sh" },
+    );
+
+    expect(args).toContain(
+      'shell_environment_policy.set.BASH_ENV="/tmp/agentsh-bash-env.sh"',
+    );
+  });
+
+  it("does not override BASH_ENV outside a managed sandbox", () => {
+    const args = buildAppServerArgs(
+      { binaryPath: "/bundle/codex" },
+      { BASH_ENV: "/Users/example/.bash-env" },
+    );
+
+    expect(
+      args.some((arg) =>
+        arg.startsWith("shell_environment_policy.set.BASH_ENV="),
+      ),
+    ).toBe(false);
   });
 
   it("does not set instructions at spawn (developer_instructions are per-thread)", () => {

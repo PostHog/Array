@@ -1,6 +1,6 @@
 import {
   BrainIcon,
-  HouseIcon,
+  HashIcon,
   PlugsConnectedIcon,
   RobotIcon,
   SquaresFourIcon,
@@ -24,8 +24,8 @@ import {
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
-  type Channel,
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -33,7 +33,6 @@ import {
   useDashboard,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
@@ -50,7 +49,6 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { SquircleDashed } from "lucide-react";
 import { type ReactNode, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
@@ -86,13 +84,6 @@ declare module "@tanstack/history" {
  */
 const canvasInfo = new Map<string, { name: string; templateId: string }>();
 const taskInfo = new Map<string, string>();
-
-// Dedupe concurrent #me provisioning. The folder-creation endpoint isn't
-// server-side idempotent, and the new-tab path is on Cmd+T (trivially
-// double-fired/held) — so two landings racing before the first create's cache
-// update lands could each create a "me" folder. One in-flight create is shared
-// across callers until it settles.
-let personalChannelInFlight: Promise<Channel> | null = null;
 
 /** Bounded insert (most-recent kept) so the caches don't grow unbounded over a
  * long session. */
@@ -133,16 +124,9 @@ type TabRef = {
 // The top-level app pages that can be a tab. Keyed by useAppView's view.type;
 // each maps to its canonical route (a task/canvas/channel tab has its own
 // route, these don't) plus the strip's label + icon.
-type AppView =
-  | "home"
-  | "inbox"
-  | "agents"
-  | "skills"
-  | "mcp-servers"
-  | "command-center";
+type AppView = "inbox" | "agents" | "skills" | "mcp-servers" | "command-center";
 
 const APP_VIEW_META: Record<AppView, { label: string; icon: ReactNode }> = {
-  home: { label: "Home", icon: <HouseIcon size={14} /> },
   inbox: { label: "Inbox", icon: <TrayIcon size={14} /> },
   agents: { label: "Agents", icon: <RobotIcon size={14} /> },
   skills: { label: "Skills", icon: <BrainIcon size={14} /> },
@@ -179,8 +163,8 @@ export function BrowserTabStrip() {
   // plain task tab (no channel) belongs to the Code experience. The space
   // decides where a task/blank tab navigates.
   const inChannels = pathname.startsWith("/website");
-  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center,
-  // Home) are tab targets too. useAppView normalizes both the /code routes and
+  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center)
+  // are tab targets too. useAppView normalizes both the /code routes and
   // their /website mirrors to the same view.type, so a tab survives either space.
   const view = useAppView();
   const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
@@ -525,8 +509,8 @@ export function BrowserTabStrip() {
           const meta = channelSectionFor(section);
           return {
             id: t.id,
-            label: meta?.label ?? channel ?? "Context",
-            icon: <SquircleDashed size={14} />,
+            label: meta?.label ?? channel ?? "Channel",
+            icon: <HashIcon size={14} />,
             channelName: channel,
             // No section meta → the channel's index page.
             isChannelHome: !meta,
@@ -605,9 +589,6 @@ export function BrowserTabStrip() {
       // A top-level app page — back to its canonical route (literal `to` per
       // case so the router types stay checked).
       switch (tab.appView) {
-        case "home":
-          navigate({ to: "/code/home", state });
-          break;
         case "inbox":
           navigate({ to: "/code/inbox", state });
           break;
@@ -739,16 +720,7 @@ export function BrowserTabStrip() {
     // row uses); fall back to the new-task screen if it can't be created.
     void (async () => {
       try {
-        const existing = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
-        if (!existing && !personalChannelInFlight) {
-          personalChannelInFlight = createChannel(
-            PERSONAL_CHANNEL_NAME,
-          ).finally(() => {
-            personalChannelInFlight = null;
-          });
-        }
-        const folder = existing ?? (await personalChannelInFlight);
-        if (!folder) return;
+        const folder = await ensurePersonalChannel(channels, createChannel);
         navigate({
           to: "/website/$channelId",
           params: { channelId: folder.id },

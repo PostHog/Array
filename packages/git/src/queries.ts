@@ -1181,15 +1181,37 @@ export async function listUntrackedFiles(
   );
 }
 
+export interface ListAllFilesOptions {
+  maxFiles?: number;
+  timeoutMs?: number;
+}
+
 export async function listAllFiles(
   baseDir: string,
-  options?: CreateGitClientOptions,
+  options?: ListAllFilesOptions,
 ): Promise<string[]> {
-  const [tracked, untracked] = await Promise.all([
-    listFiles(baseDir, options),
-    listUntrackedFiles(baseDir, options),
-  ]);
-  return [...tracked, ...untracked];
+  const { maxFiles, timeoutMs } = options ?? {};
+  const controller =
+    timeoutMs !== undefined ? new AbortController() : undefined;
+  const timer =
+    controller && timeoutMs !== undefined
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+  try {
+    const [tracked, untracked] = await Promise.all([
+      listFiles(baseDir).catch((): string[] => []),
+      listUntrackedFiles(baseDir, { abortSignal: controller?.signal }).catch(
+        (): string[] => [],
+      ),
+    ]);
+    const combined = tracked.concat(untracked);
+    if (maxFiles !== undefined && combined.length > maxFiles) {
+      combined.splice(maxFiles);
+    }
+    return combined;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // Tracked + untracked files containing `pattern` (literal, case-insensitive).
@@ -1357,12 +1379,14 @@ export async function addToLocalExclude(
     content = await fs.readFile(excludePath, "utf-8");
   } catch {}
 
-  const normalizedPattern = pattern.startsWith("/") ? pattern : `/${pattern}`;
-  const patternWithoutSlash = pattern.replace(/^\//, "");
-  if (
-    content.includes(normalizedPattern) ||
-    content.includes(patternWithoutSlash)
-  ) {
+  const normalizePattern = (value: string): string =>
+    value.startsWith("/") ? value.slice(1) : value;
+  const normalizedPattern = normalizePattern(pattern);
+  const existingPatterns = content
+    .split(/\r?\n/)
+    .filter((line) => line && !line.startsWith("#"))
+    .map(normalizePattern);
+  if (existingPatterns.includes(normalizedPattern)) {
     return;
   }
 

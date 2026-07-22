@@ -9,6 +9,7 @@ import {
   DEFAULT_GATEWAY_MODEL,
   fetchModelsList,
   isBlockedModelId,
+  type ModelInfo,
 } from "./gateway-models";
 import { PostHogAPIClient, type TaskRunUpdate } from "./posthog-api";
 import { SessionLogWriter } from "./session-log-writer";
@@ -78,7 +79,7 @@ export class Agent {
     const gatewayConfig = await this._resolveGatewayConfig(options.gatewayUrl);
     this.taskRunId = taskRunId;
 
-    let allowedModelIds: Set<string> | undefined;
+    let codexModels: ModelInfo[] | undefined;
     let sanitizedModel =
       options.model && !isBlockedModelId(options.model)
         ? options.model
@@ -86,25 +87,27 @@ export class Agent {
     if (options.adapter === "codex" && gatewayConfig) {
       const models = await fetchModelsList({
         gatewayUrl: gatewayConfig.gatewayUrl,
+        authToken: gatewayConfig.apiKey,
       });
-      const codexModelIds = models
-        .filter((model) => {
-          if (isBlockedModelId(model.id)) return false;
-          if (model.owned_by) {
-            return model.owned_by === "openai";
-          }
-          return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
-        })
+      const gatewayCodexModels = models.filter((model) => {
+        if (isBlockedModelId(model.id)) return false;
+        if (model.owned_by) {
+          return model.owned_by === "openai";
+        }
+        return model.id.startsWith("gpt-") || model.id.startsWith("openai/");
+      });
+      const allowedModelIds = gatewayCodexModels
+        .filter((model) => model.allowed)
         .map((model) => model.id);
 
-      if (codexModelIds.length > 0) {
-        allowedModelIds = new Set(codexModelIds);
+      if (gatewayCodexModels.length > 0) {
+        codexModels = gatewayCodexModels;
       }
 
-      if (!sanitizedModel || !allowedModelIds?.has(sanitizedModel)) {
-        sanitizedModel = codexModelIds.includes(DEFAULT_CODEX_MODEL)
+      if (!sanitizedModel || !allowedModelIds.includes(sanitizedModel)) {
+        sanitizedModel = allowedModelIds.includes(DEFAULT_CODEX_MODEL)
           ? DEFAULT_CODEX_MODEL
-          : codexModelIds[0];
+          : (allowedModelIds[0] ?? sanitizedModel);
       }
     }
     if (!sanitizedModel && options.adapter !== "codex") {
@@ -130,7 +133,7 @@ export class Agent {
       logger: this.logger,
       processCallbacks: options.processCallbacks,
       onStructuredOutput: options.onStructuredOutput,
-      allowedModelIds,
+      codexModels,
       posthogApiConfig: this.posthogApiConfig,
       enricherEnabled: this.enricherEnabled,
       claudeGatewayEnv,

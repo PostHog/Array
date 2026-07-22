@@ -15,6 +15,9 @@ export const APP_SERVER_METHODS = {
   TURN_INTERRUPT: "turn/interrupt",
   MODEL_LIST: "model/list",
   SKILLS_LIST: "skills/list",
+  THREAD_GOAL_SET: "thread/goal/set",
+  THREAD_GOAL_GET: "thread/goal/get",
+  THREAD_GOAL_CLEAR: "thread/goal/clear",
   THREAD_LIST: "thread/list",
 } as const;
 
@@ -29,8 +32,8 @@ export const APP_SERVER_NOTIFICATIONS = {
   REASONING_TEXT_DELTA: "item/reasoning/textDelta",
   // Default reasoning stream for gpt-5 models; raw textDelta is off by default, so without this the host sees no reasoning.
   REASONING_SUMMARY_TEXT_DELTA: "item/reasoning/summaryTextDelta",
-  // Plan-mode <proposed_plan> stream. codex strips the plan from agentMessage deltas,
-  // so without this the host sees nothing while the plan is written.
+  // Plan-mode <proposed_plan> stream. The adapter buffers it for the structured
+  // plan approval UI because codex strips it from agentMessage deltas.
   PLAN_DELTA: "item/plan/delta",
   TURN_PLAN_UPDATED: "turn/plan/updated",
   TURN_COMPLETED: "turn/completed",

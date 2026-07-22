@@ -36,8 +36,10 @@ export interface ArchiveOrchestrationDeps {
   ): void;
   getFocusedWorktreePath(): string | null | undefined;
   disableFocus(): Promise<void>;
+  stopCloudRun(taskId: string, runId?: string): Promise<boolean>;
   disconnectFromTask(taskId: string): Promise<void>;
   archive(taskId: string): Promise<void>;
+  clearViewedState(taskId: string): void;
   logError(message: string, error: unknown): void;
   cache: ArchiveCacheWriter;
 }
@@ -58,8 +60,13 @@ export async function archiveTask(
   deps: ArchiveOrchestrationDeps,
   options?: ArchiveTaskOptions,
 ): Promise<void> {
-  const optimistic = options?.optimistic ?? true;
   const workspace = await deps.getWorkspace(taskId);
+  const stopped = await deps.stopCloudRun(taskId);
+  if (!stopped) {
+    throw new Error("Couldn't stop the task. Try again in a moment.");
+  }
+
+  const optimistic = options?.optimistic ?? true;
   const pinnedTaskIds = await deps.getPinnedTaskIds();
   const wasPinned = pinnedTaskIds.includes(taskId);
 
@@ -97,9 +104,8 @@ export async function archiveTask(
   try {
     await deps.disconnectFromTask(taskId);
     await deps.archive(taskId);
-    // Destroying terminals is irreversible, so it waits for the archive to
-    // commit; a failed archive keeps its live terminals.
     deps.clearTerminalStates(taskId);
+    deps.clearViewedState(taskId);
     // Non-optimistic flows keep the row visible during the request, then remove
     // it the moment the archive succeeds.
     if (!optimistic) {

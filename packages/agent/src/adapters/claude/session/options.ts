@@ -19,6 +19,7 @@ import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
+  createReadImageGuardHook,
   createSignedCommitGuardHook,
   createSubagentRewriteHook,
   createTaskHook,
@@ -27,7 +28,7 @@ import {
 } from "../hooks";
 import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
-import { APPENDED_INSTRUCTIONS } from "./instructions";
+import { buildAppendedInstructions } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
 import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
@@ -66,6 +67,7 @@ export interface BuildOptionsParams {
   cwd: string;
   mcpServers: Record<string, McpServerConfig>;
   permissionMode: CodeExecutionMode;
+  posthogExecPermissionRegex?: RegExp;
   canUseTool: CanUseTool;
   logger: Logger;
   systemPrompt?: Options["systemPrompt"];
@@ -101,11 +103,15 @@ export interface BuildOptionsParams {
 
 export function buildSystemPrompt(
   customPrompt?: unknown,
+  opts?: { spokenNarration?: boolean },
 ): Options["systemPrompt"] {
+  const appendedInstructions = buildAppendedInstructions({
+    spokenNarration: opts?.spokenNarration === true,
+  });
   const defaultPrompt: Options["systemPrompt"] = {
     type: "preset",
     preset: "claude_code",
-    append: APPENDED_INSTRUCTIONS,
+    append: appendedInstructions,
   };
 
   if (!customPrompt) {
@@ -113,7 +119,7 @@ export function buildSystemPrompt(
   }
 
   if (typeof customPrompt === "string") {
-    return customPrompt + APPENDED_INSTRUCTIONS;
+    return customPrompt + appendedInstructions;
   }
 
   if (
@@ -124,7 +130,7 @@ export function buildSystemPrompt(
   ) {
     return {
       ...defaultPrompt,
-      append: customPrompt.append + APPENDED_INSTRUCTIONS,
+      append: customPrompt.append + appendedInstructions,
     };
   }
 
@@ -213,6 +219,7 @@ function buildHooks(
     | ((subTool: string, commandText?: string) => void)
     | undefined,
   settingsManager: SettingsManager,
+  posthogExecPermissionRegex: RegExp | undefined,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
   enrichedReadCache: EnrichedReadCache | undefined,
@@ -224,6 +231,7 @@ function buildHooks(
   rtkPrefix: string | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
+    createReadImageGuardHook(),
     createPostToolUseHook({
       onModeChange,
       onPostHogResourceUsed,
@@ -236,7 +244,7 @@ function buildHooks(
   }
 
   const preToolUseHooks = [
-    createPreToolUseHook(settingsManager, logger),
+    createPreToolUseHook(settingsManager, logger, posthogExecPermissionRegex),
     createSubagentRewriteHook(logger, registeredAgents),
   ];
   if (cloudMode) {
@@ -465,6 +473,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.onModeChange,
       params.onPostHogResourceUsed,
       params.settingsManager,
+      params.posthogExecPermissionRegex,
       params.logger,
       params.enrichmentDeps,
       params.enrichedReadCache,

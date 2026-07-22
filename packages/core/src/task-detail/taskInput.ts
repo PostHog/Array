@@ -1,6 +1,9 @@
 import { buildCloudTaskDescription } from "@posthog/core/editor/cloud-prompt";
 import type {
   Adapter,
+  AgentRuntime,
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   TaskCreationInput,
   WorkspaceMode,
 } from "@posthog/shared";
@@ -17,6 +20,7 @@ export interface PrepareTaskInputOptions {
   reuseExistingWorktree?: boolean;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
@@ -27,10 +31,13 @@ export interface PrepareTaskInputOptions {
   channelContext?: string;
   channelName?: string;
   channelId?: string;
+  channelContextId?: string;
   customInstructions?: string;
   autoPublishCloudRuns?: boolean;
   rtkEnabledCloud?: boolean;
   allowNoRepo?: boolean;
+  importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 export function prepareTaskInput(
@@ -55,6 +62,7 @@ export function prepareTaskInput(
     reuseExistingWorktree: options.reuseExistingWorktree,
     executionMode: options.executionMode,
     adapter: options.adapter,
+    runtime: options.runtime ?? "acp",
     model: options.model,
     reasoningLevel: options.reasoningLevel,
     environmentId: options.environmentId ?? undefined,
@@ -71,8 +79,30 @@ export function prepareTaskInput(
     channelContext: options.channelContext,
     channelName: options.channelName,
     channelId: options.channelId,
+    channelContextId: options.channelContextId,
     customInstructions: isCloud ? options.customInstructions : undefined,
     allowNoRepo: options.allowNoRepo,
+    importedMcpServers: isCloud ? options.importedMcpServers : undefined,
+    relayedMcpServers: isCloud ? options.relayedMcpServers : undefined,
+  };
+}
+
+/**
+ * Input for starting a task from an existing task-less worktree (the sidebar's
+ * one-click adoption). No content: the agent session starts idle and the user
+ * types the first message in the opened chat. The branch doubles as the task
+ * description so the task is named after it.
+ */
+export function buildWorktreeAdoptionInput(options: {
+  repoPath: string;
+  branch: string;
+}): TaskCreationInput {
+  return {
+    taskDescription: options.branch,
+    repoPath: options.repoPath,
+    workspaceMode: "worktree",
+    branch: options.branch,
+    reuseExistingWorktree: true,
   };
 }
 

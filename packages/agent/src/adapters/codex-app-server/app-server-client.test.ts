@@ -4,7 +4,7 @@ import {
   createBidirectionalStreams,
   type StreamPair,
 } from "../../utils/streams";
-import { AppServerClient } from "./app-server-client";
+import { AppServerClient, AppServerRequestError } from "./app-server-client";
 
 interface RpcMessage {
   id?: number | string;
@@ -86,7 +86,12 @@ describe("AppServerClient", () => {
       error: { code: -32001, message: "Server overloaded; retry later." },
     });
 
-    await expect(pending).rejects.toThrow("Server overloaded; retry later.");
+    const error = await pending.catch((requestError: unknown) => requestError);
+    expect(error).toBeInstanceOf(AppServerRequestError);
+    expect(error).toMatchObject({
+      code: -32001,
+      message: "Server overloaded; retry later.",
+    });
     await client.close();
   });
 

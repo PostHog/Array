@@ -11,10 +11,10 @@ export type AppViewType =
   | "task-pending"
   | "task-input"
   | "folder-settings"
-  | "home"
   | "activity"
   | "inbox"
   | "agents"
+  | "loops"
   | "archived"
   | "command-center"
   | "skills"
@@ -61,17 +61,14 @@ function deriveFromMatches(matches: Match[]): AppView {
       return { type: "task-input" };
     case "/folders/$folderId":
       return { type: "folder-settings", folderId: last.params.folderId };
-    case "/code/home":
-    // Channels-space mirrors share the same view type so the sidebar's
-    // active-state highlighting works identically in either space.
-    case "/website/home":
-      return { type: "home" };
     case "/website/activity":
       return { type: "activity" };
     case "/code/inbox":
       return { type: "inbox" };
     case "/code/agents":
       return { type: "agents" };
+    case "/code/loops":
+      return { type: "loops" };
     case "/code/archived":
       return { type: "archived" };
     case "/command-center":
@@ -95,6 +92,11 @@ function deriveFromMatches(matches: Match[]): AppView {
       // the whole subtree rather than only the bare layout route.
       if (last.routeId.startsWith("/code/agents")) {
         return { type: "agents" };
+      }
+      // /code/loops covers the list, create form, and the per-loop detail /
+      // edit subtree ($loopId is an Outlet layout), so match the prefix.
+      if (last.routeId.startsWith("/code/loops")) {
+        return { type: "loops" };
       }
       return { type: "task-input" };
   }

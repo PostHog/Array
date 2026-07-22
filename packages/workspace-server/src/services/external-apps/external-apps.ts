@@ -380,6 +380,10 @@ export class ExternalAppsService {
       type: "terminal",
       darwin: { path: "/Applications/Ghostty.app" },
     },
+    cmux: {
+      type: "terminal",
+      darwin: { path: "/Applications/cmux.app" },
+    },
     kitty: {
       type: "terminal",
       darwin: { path: "/Applications/kitty.app" },
@@ -477,6 +481,7 @@ export class ExternalAppsService {
     alacritty: "Alacritty",
     kitty: "Kitty",
     ghostty: "Ghostty",
+    cmux: "cmux",
     hyper: "Hyper",
     tabby: "Tabby",
     rio: "Rio",

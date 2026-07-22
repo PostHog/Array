@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Adapter } from "./adapter";
+import type { AgentRuntime } from "./agent-runtime";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
 
@@ -60,6 +61,7 @@ export interface Task {
   json_schema?: Record<string, unknown> | null;
   signal_report?: string | null;
   internal?: boolean;
+  runtime?: AgentRuntime;
   /** Backend channel (tasks product Channel UUID) this task is owned by. */
   channel?: string | null;
   latest_run?: TaskRun;
@@ -79,6 +81,27 @@ export interface TaskChannel {
   created_by?: UserBasic | null;
 }
 
+/** Lifecycle events a client may post into a channel's feed. */
+export type ChannelFeedMessageEvent = "context_md_building";
+
+/**
+ * A durable, team-visible "PostHog agent" announcement in a channel's feed —
+ * rendered alongside task cards (e.g. "Adam created this context"). `author` is
+ * the user whose action produced the row; `author_kind` says who authored it.
+ * `payload` carries structured event data (e.g. `{ context_name }`) so rendering
+ * survives renames.
+ */
+export interface ChannelFeedMessage {
+  id: string;
+  channel: string;
+  author?: UserBasic | null;
+  author_kind: "human" | "system" | "agent";
+  event: ChannelFeedMessageEvent | string;
+  payload: Record<string, unknown>;
+  content: string;
+  created_at: string;
+}
+
 /**
  * One human message in a task's thread. Thread messages never reach the agent
  * unless the task author forwards one, which stamps the forwarded_* fields.
@@ -86,6 +109,12 @@ export interface TaskChannel {
 export interface TaskThreadMessage {
   id: string;
   task: string;
+  /** Who authored the row; agent rows are server-emitted announcements. Absent on older backends. */
+  author_kind?: "human" | "system" | "agent";
+  /** Stable event key for non-human rows (e.g. "canvas_created", "turn_complete"). */
+  event?: string;
+  /** Structured event payload; turn_complete carries `{ run_id }` so a client rendering a run's live agent turns can dedupe the durable row. */
+  payload?: Record<string, unknown>;
   content: string;
   created_at: string;
   author?: UserBasic | null;
@@ -343,6 +372,7 @@ export interface ChangedFile {
   linesRemoved?: number;
   staged?: boolean;
   patch?: string; // Unified diff patch from GitHub API
+  sha?: string;
 }
 
 // External apps detection types

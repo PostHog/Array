@@ -2,10 +2,13 @@ import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
 import { CLOUD_TASK_SERVICE } from "@posthog/core/cloud-task/identifiers";
 import {
   CloudTaskEvent,
+  designateRelayedMcpServersInput,
   onUpdateInput,
   retryInput,
   sendCommandInput,
   sendCommandOutput,
+  stopInput,
+  stopOutput,
   unwatchInput,
   watchInput,
 } from "@posthog/core/cloud-task/schemas";
@@ -34,6 +37,14 @@ export const cloudTaskRouter = router({
         .retry(input.taskId, input.runId),
     ),
 
+  designateRelayedMcpServers: publicProcedure
+    .input(designateRelayedMcpServersInput)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<CloudTaskService>(CLOUD_TASK_SERVICE)
+        .designateRelayedMcpServers(input.runId, input.servers),
+    ),
+
   sendCommand: publicProcedure
     .input(sendCommandInput)
     .output(sendCommandOutput)
@@ -41,6 +52,13 @@ export const cloudTaskRouter = router({
       ctx.container
         .get<CloudTaskService>(CLOUD_TASK_SERVICE)
         .sendCommand(input),
+    ),
+
+  stop: publicProcedure
+    .input(stopInput)
+    .output(stopOutput)
+    .mutation(({ ctx, input }) =>
+      ctx.container.get<CloudTaskService>(CLOUD_TASK_SERVICE).stop(input),
     ),
 
   onUpdate: publicProcedure

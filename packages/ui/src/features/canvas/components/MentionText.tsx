@@ -1,18 +1,19 @@
 import { splitMentionSegments } from "@posthog/shared";
 import { splitLinkSegments } from "@posthog/ui/features/canvas/utils/linkify";
-import { Text } from "@radix-ui/themes";
+import { handleShareLinkClick } from "@posthog/ui/utils/shareLinks";
 import { Fragment, useMemo } from "react";
+import "./mention-chip.css";
 
 type RenderSegment =
   | { type: "text"; text: string }
   | { type: "link"; text: string; href: string }
+  | { type: "agent"; text: string }
   | { type: "mention"; name: string; email: string };
 
 // The plain (not-the-viewer) mention chip look, also used by surfaces that
 // render a mention-styled name without real mention semantics (e.g. the
 // channel feed's "started a new task" row).
-export const mentionChipClass =
-  "rounded px-0.5 font-medium text-[var(--accent-11)]";
+export const mentionChipClass = "mention-chip";
 
 /**
  * Thread message content with inline mention tokens rendered as highlighted
@@ -36,31 +37,62 @@ export function MentionText({
       entries.push({ segment, key: `${offset}` });
       offset += length;
     };
-    for (const segment of splitMentionSegments(content)) {
-      if (segment.type === "mention") {
-        push(
-          { type: "mention", name: segment.name, email: segment.email },
-          segment.text.length,
-        );
-      } else {
-        for (const part of splitLinkSegments(segment.text)) {
-          push(part, part.text.length);
+    const pushAgentMentions = (text: string) => {
+      let cursor = 0;
+      for (const match of text.matchAll(/(^|\s)(@agent)\b/gi)) {
+        const mentionStart = (match.index ?? 0) + match[1].length;
+        if (mentionStart > cursor) {
+          push(
+            { type: "text", text: text.slice(cursor, mentionStart) },
+            mentionStart - cursor,
+          );
         }
+        push({ type: "agent", text: match[2] }, match[2].length);
+        cursor = mentionStart + match[2].length;
+      }
+      if (cursor < text.length) {
+        push({ type: "text", text: text.slice(cursor) }, text.length - cursor);
+      }
+    };
+    const pushMentions = (text: string) => {
+      for (const segment of splitMentionSegments(text)) {
+        if (segment.type === "mention") {
+          push(
+            { type: "mention", name: segment.name, email: segment.email },
+            segment.text.length,
+          );
+        } else {
+          pushAgentMentions(segment.text);
+        }
+      }
+    };
+    for (const segment of splitLinkSegments(content)) {
+      if (segment.type === "link") {
+        push(segment, segment.text.length);
+      } else {
+        pushMentions(segment.text);
       }
     }
     return entries;
   }, [content]);
   const selfEmail = currentUserEmail?.toLowerCase();
   return (
-    <Text size="1" className={className}>
+    <span className={className}>
       {segments.map(({ segment, key }) => {
+        if (segment.type === "agent") {
+          return (
+            <span key={key} className={mentionChipClass}>
+              {segment.text}
+            </span>
+          );
+        }
         if (segment.type === "mention") {
           return (
             <span
               key={key}
               className={
                 selfEmail && segment.email.toLowerCase() === selfEmail
-                  ? "rounded bg-[var(--accent-a4)] px-0.5 font-medium text-[var(--accent-12)]"
+                  ? `${mentionChipClass} mention-chip--self`
                   : mentionChipClass
               }
               title={segment.email}
@@ -74,6 +106,7 @@ export function MentionText({
             <a
               key={key}
               href={segment.href}
+              onClick={(event) => handleShareLinkClick(segment.href, event)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[var(--accent-11)] underline underline-offset-2 hover:text-[var(--accent-12)]"
@@ -84,6 +117,6 @@ export function MentionText({
         }
         return <Fragment key={key}>{segment.text}</Fragment>;
       })}
-    </Text>
+    </span>
   );
 }

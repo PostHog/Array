@@ -16,7 +16,7 @@ export function PlanApprovalView({
   turnComplete,
 }: ToolViewProps) {
   const { content } = toolCall;
-  const { isComplete, wasCancelled } = useToolCallStatus(
+  const { isComplete, isFailed, wasCancelled } = useToolCallStatus(
     toolCall.status,
     turnCancelled,
     turnComplete,
@@ -27,39 +27,44 @@ export function PlanApprovalView({
   const hasModelSelector =
     modelOption?.type === "select" &&
     flattenSelectOptions(modelOption.options).length > 0;
+  const rawInput = toolCall.rawInput as
+    | { historical?: boolean; plan?: string }
+    | undefined;
+  const isHistoricalPlan = rawInput?.historical === true;
 
   const planText = useMemo(() => {
-    const rawPlan = (toolCall.rawInput as { plan?: string } | undefined)?.plan;
-    if (rawPlan) return rawPlan;
-
-    if (!content || content.length === 0) return null;
-    const textContent = content.find((c) => c.type === "content");
-    if (textContent && "content" in textContent) {
-      const inner = textContent.content as
-        | { type?: string; text?: string }
-        | undefined;
-      if (inner?.type === "text" && inner.text) {
-        return inner.text;
+    if (content?.length) {
+      const textContent = content.find((c) => c.type === "content");
+      if (textContent && "content" in textContent) {
+        const inner = textContent.content as
+          | { type?: string; text?: string }
+          | undefined;
+        if (inner?.type === "text" && inner.text) {
+          return inner.text;
+        }
       }
     }
-    return null;
-  }, [content, toolCall.rawInput]);
+    return rawInput?.plan ?? null;
+  }, [content, rawInput?.plan]);
 
-  const showResult = isComplete || wasCancelled;
+  const wasNotApproved = isFailed || wasCancelled;
+  const showResult = isHistoricalPlan || isComplete || wasNotApproved;
   const canTogglePlan = showResult && !!planText;
   const planContentId = `plan-content-${toolCall.toolCallId}`;
 
   if (!planText && !showResult) return null;
 
-  const statusContent = isComplete ? (
+  const statusContent = isHistoricalPlan ? (
+    <Text className="text-[13px] text-gray-11">Plan</Text>
+  ) : isComplete ? (
     <>
       <CheckCircle size={14} weight="fill" className="text-green-9" />
       <Text className="text-[13px] text-green-11">
         Plan approved — proceeding with implementation
       </Text>
     </>
-  ) : wasCancelled ? (
-    <Text className="text-[13px] text-gray-10">(Plan rejected)</Text>
+  ) : wasNotApproved ? (
+    <Text className="text-[13px] text-gray-10">(Plan not approved)</Text>
   ) : null;
 
   return (

@@ -9,6 +9,26 @@ import type {
   AutoresearchRun,
 } from "./schemas";
 
+export function getAutoresearchElapsedMs(
+  run: AutoresearchRun,
+  now: number,
+): number {
+  const effectiveEnd = run.endedAt ?? run.pausedAt ?? now;
+  const trackedPausedDurationMs = (run.pauseIntervals ?? []).reduce(
+    (total, interval) => {
+      const overlapStart = Math.max(run.startedAt, interval.startedAt);
+      const overlapEnd = Math.min(effectiveEnd, interval.endedAt);
+      return total + Math.max(0, overlapEnd - overlapStart);
+    },
+    0,
+  );
+  const pausedDurationMs = Math.max(
+    trackedPausedDurationMs,
+    run.pausedDurationMs ?? 0,
+  );
+  return Math.max(0, effectiveEnd - run.startedAt - pausedDurationMs);
+}
+
 export function isImprovement(
   candidate: number,
   reference: number | null,

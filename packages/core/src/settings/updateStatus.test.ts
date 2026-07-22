@@ -45,6 +45,41 @@ describe("deriveUpdateStatus", () => {
     });
   });
 
+  it("reports an available update with a version", () => {
+    expect(
+      deriveUpdateStatus({
+        checking: false,
+        available: true,
+        availableVersion: "1.2.3",
+      }),
+    ).toEqual({
+      message: "Update 1.2.3 available",
+      type: "success",
+      checking: false,
+    });
+  });
+
+  it("reports an available update without a version", () => {
+    expect(deriveUpdateStatus({ checking: false, available: true })).toEqual({
+      message: "Update available",
+      type: "success",
+      checking: false,
+    });
+  });
+
+  it("reports a check error", () => {
+    expect(
+      deriveUpdateStatus({
+        checking: false,
+        error: "Update check timed out. Please try again.",
+      }),
+    ).toEqual({
+      message: "Update check timed out. Please try again.",
+      type: "error",
+      checking: false,
+    });
+  });
+
   it("clears checking when finished with no other signal", () => {
     expect(deriveUpdateStatus({ checking: false })).toEqual({
       checking: false,

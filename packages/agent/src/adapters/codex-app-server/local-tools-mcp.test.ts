@@ -105,7 +105,25 @@ describe("buildLocalToolsServer", () => {
     ).toBeNull();
   });
 
-  it("returns null when no tool's gate passes (desktop run)", () => {
+  it("exposes speak on a desktop run with narration on (no cloud-only tools)", () => {
+    process.env.GH_TOKEN = "ghs_test";
+
+    const server = buildLocalToolsServer(
+      { cwd: "/repo" },
+      { environment: "local", spokenNarration: true },
+    );
+
+    expect(server).not.toBeNull();
+    const enabled =
+      server?.env.find((e) => e.name === "POSTHOG_LOCAL_TOOLS_ENABLED")
+        ?.value ?? "";
+    const names = enabled.split(",");
+    expect(names).toContain("speak");
+    // Signed-git tools are cloud-only and must not leak into a desktop run.
+    expect(names).not.toContain("git_signed_commit");
+  });
+
+  it("returns null on a desktop run with narration off (no tools pass their gate)", () => {
     process.env.GH_TOKEN = "ghs_test";
 
     expect(

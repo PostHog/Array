@@ -21,6 +21,8 @@ import {
   buildPrOutput,
   getErrorMessage,
   mergePrUrls,
+  parseMcpToolName,
+  readMcpToolDescriptor,
   readPrUrls,
 } from "@posthog/shared";
 import { unzipSync } from "fflate";
@@ -32,6 +34,7 @@ import {
   createAcpConnection,
   type InProcessAcpConnection,
 } from "../adapters/acp-connection";
+import { setAlwaysAskMcpServers } from "../adapters/claude/mcp/tool-metadata";
 import {
   getSessionJsonlPath,
   hydrateSessionJsonl,
@@ -43,6 +46,7 @@ import {
   classifyAgentError,
   isPromptTooLongError,
 } from "../adapters/error-classification";
+import { appendRtkGuidanceForCodex } from "../adapters/rtk-guidance";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
   SIGNED_MERGE_QUALIFIED_TOOL_NAME,
@@ -53,6 +57,13 @@ import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
 import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
+import {
+  compilePostHogExecPermissionRegex,
+  DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+  extractPostHogSubTool,
+  isPostHogExecDescriptor,
+  matchesPostHogExecPermission,
+} from "../posthog-exec-permission";
 import {
   findPrUrls,
   wasCreatedByLogin,
@@ -90,11 +101,17 @@ import {
 } from "./cloud-prompt";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
+import { type McpRelayResponse, McpRelayServer } from "./mcp-relay-server";
+import {
+  checkoutExistingPullRequest,
+  type ExistingPrCheckoutResult,
+} from "./pr-checkout";
 import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
   handoffLocalGitStateSchema,
   jsonRpcRequestSchema,
+  type RemoteMcpServer,
   validateCommandParams,
 } from "./schemas";
 import type { AgentServerConfig } from "./types";
@@ -131,6 +148,12 @@ export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 // cut once, without letting a hard upstream outage loop forever.
 const MAX_UPSTREAM_TURN_RETRIES = 2;
 const UPSTREAM_TURN_RETRY_DELAY_MS = 5_000;
+const PENDING_ARTIFACT_MAX_ATTEMPTS = 4;
+const PENDING_ARTIFACT_RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 class NdJsonTap {
   private decoder = new TextDecoder();
@@ -283,8 +306,22 @@ function hiddenTextBlock(text: string): ContentBlock {
   } as ContentBlock;
 }
 
+function isManualCompactPrompt(prompt: ContentBlock[]): boolean {
+  return /^\/compact(?:\s|$)/.test(promptBlocksToText(prompt).trimStart());
+}
+
+function extractSteeringCapability(result: unknown): string | undefined {
+  const steering = (
+    result as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
+}
+
 interface LocalSkillPromptContext {
-  skillName: string;
+  /** Set when the message is a bare `/skill` invocation the adapter should strip. */
+  skillName?: string;
   context: string;
 }
 
@@ -332,6 +369,7 @@ export class AgentServer {
   private rtkSavingsAttempted = false;
   private questionRelayedToSlack = false;
   private adapterEmittedTurnComplete = false;
+  private suppressAdapterTurnComplete = false;
   private runUsage = new RunUsageAccumulator();
   private detectedPrUrl: string | null = null;
   // Reset per session. `evaluatedPrUrls` dedupes per URL; `prAttributionChain` serializes
@@ -356,7 +394,12 @@ export class AgentServer {
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
   private pendingEvents: Record<string, unknown>[] = [];
+  /** ACP notifications emitted by newSession/resumeSession before this.session is assigned. */
+  private preSessionEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
+  private pendingCompactContinuationMessageIds = new Set<string>();
+  private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
+  private activeOwnedTurnCount = 0;
   private pendingPermissions = new Map<
     string,
     {
@@ -365,8 +408,40 @@ export class AgentServer {
         _meta?: Record<string, unknown>;
       }) => void;
       toolCallId?: string;
+      optionIds: Set<string>;
+      /**
+       * Question responses carry synthetic `option_<idx>`/submit ids built by
+       * the client from the question `_meta`, not from the relayed options, so
+       * the offered-option check must not apply to them.
+       */
+      validateOptionIds: boolean;
     }
   >();
+  private readonly posthogExecPermissionRegex: RegExp;
+  private readonly posthogExecPermissionRegexSource: string;
+  private mcpRelayServer: McpRelayServer | null = null;
+
+  /**
+   * Start loopback relay endpoints for the run's designated desktop-only MCP
+   * servers and return their session mcpServers entries. No designations →
+   * no relay server, no entries.
+   */
+  private async startMcpRelayServer(): Promise<RemoteMcpServer[]> {
+    const names = this.config.relayMcpServers ?? [];
+    if (names.length === 0) return [];
+    if (!this.mcpRelayServer) {
+      this.mcpRelayServer = new McpRelayServer({
+        servers: names,
+        emitEvent: (event) => this.broadcastEvent(event),
+        hasReachableClient: () => this.hasReachableClient(),
+        logger: this.logger,
+      });
+      await this.mcpRelayServer.start();
+      // Relayed tools execute on the user's machine — always ask.
+      setAlwaysAskMcpServers(names);
+    }
+    return this.mcpRelayServer.mcpServers;
+  }
 
   private detachSseController(controller: SseController): void {
     if (this.session?.sseController === controller) {
@@ -405,6 +480,12 @@ export class AgentServer {
 
   constructor(config: AgentServerConfig) {
     this.config = config;
+    this.posthogExecPermissionRegexSource =
+      config.posthogExecPermissionRegex ??
+      DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE;
+    this.posthogExecPermissionRegex = compilePostHogExecPermissionRegex(
+      this.posthogExecPermissionRegexSource,
+    );
     this.logger = new Logger({ debug: true, prefix: "[AgentServer]" });
     this.posthogAPI = new PostHogAPIClient({
       apiUrl: config.apiUrl,
@@ -442,6 +523,17 @@ export class AgentServer {
     }
 
     return this.getRuntimeAdapter() === "codex" ? "auto" : "default";
+  }
+
+  // A direct SSE viewer or an active durable event stream both count: the
+  // desktop reads the durable stream through the agent-proxy without ever
+  // connecting to the sandbox, so requiring hasDesktopConnected alone would
+  // 503/auto-deny every relayed request and permission prompt.
+  private hasReachableClient(): boolean {
+    return (
+      Boolean(this.session?.hasDesktopConnected) ||
+      this.eventStreamSender !== null
+    );
   }
 
   private shouldRelayPermissionToClient(mode: PermissionMode): boolean {
@@ -787,6 +879,13 @@ export class AgentServer {
     return { sessionId: priorSessionId, warm };
   }
 
+  private getNativeGoalForFreshSession(
+    runtimeAdapter: Adapter,
+  ): ResumeState["nativeGoal"] {
+    if (runtimeAdapter !== "codex") return undefined;
+    return this.resumeState?.nativeGoal;
+  }
+
   async stop(): Promise<void> {
     this.logger.debug("Stopping agent server...");
 
@@ -876,137 +975,265 @@ export class AgentServer {
     switch (method) {
       case POSTHOG_NOTIFICATIONS.USER_MESSAGE:
       case "user_message": {
-        this.logger.debug("Received user_message command", {
-          hasContent:
-            typeof params.content === "string"
-              ? params.content.trim().length > 0
-              : Array.isArray(params.content) && params.content.length > 0,
-          artifactCount: Array.isArray(params.artifacts)
-            ? params.artifacts.length
-            : 0,
-        });
-        const builtPrompt = await this.buildPromptFromContentAndArtifacts({
-          content: params.content as string | ContentBlock[] | undefined,
-          artifacts: Array.isArray(params.artifacts)
-            ? (params.artifacts as TaskRunArtifact[])
-            : [],
-          taskId: this.session.payload.task_id,
-          runId: this.session.payload.run_id,
-        });
-        const prompt = builtPrompt.prompt;
-        if (prompt.length === 0) {
-          throw new Error("User message cannot be empty");
-        }
-
+        const commandSession = this.session;
         const messageId =
           typeof params.messageId === "string" && params.messageId
             ? params.messageId
             : undefined;
-        if (messageId) {
-          if (this.deliveredMessageIds.has(messageId)) {
+        const inFlightDelivery = messageId
+          ? this.inFlightMessageDeliveries.get(messageId)
+          : undefined;
+        if (inFlightDelivery) {
+          this.logger.info("Awaiting in-flight user_message delivery", {
+            messageId,
+          });
+          return await inFlightDelivery;
+        }
+
+        let retryCompactContinuation = false;
+        if (messageId && this.deliveredMessageIds.has(messageId)) {
+          if (this.pendingCompactContinuationMessageIds.has(messageId)) {
+            retryCompactContinuation = true;
+            this.logger.info("Retrying pending compact continuation", {
+              messageId,
+            });
+          } else {
             this.logger.info("Duplicate user_message delivery ignored", {
               messageId,
             });
             return { stopReason: "duplicate_delivery", duplicate: true };
           }
+        }
+
+        let resolveDelivery: (result: unknown) => void = () => {};
+        let rejectDelivery: (error: unknown) => void = () => {};
+        const deliveryOutcome = new Promise<unknown>((resolve, reject) => {
+          resolveDelivery = resolve;
+          rejectDelivery = reject;
+        });
+        void deliveryOutcome.catch(() => {});
+        if (messageId) {
+          this.inFlightMessageDeliveries.set(messageId, deliveryOutcome);
+        }
+        let deliveryCommitted = retryCompactContinuation;
+        const commitDelivery = (): void => {
+          deliveryCommitted = true;
+          if (!messageId) return;
           this.deliveredMessageIds.add(messageId);
           if (this.deliveredMessageIds.size > 500) {
             const oldest = this.deliveredMessageIds.values().next().value;
             if (oldest !== undefined) {
               this.deliveredMessageIds.delete(oldest);
+              this.pendingCompactContinuationMessageIds.delete(oldest);
             }
           }
-        }
-        this.logger.debug("Built user_message prompt", {
-          blockTypes: prompt.map((block) => block.type),
-        });
-        const promptPreview = promptBlocksToText(prompt);
-
-        this.logger.debug(
-          `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
-        );
-
-        this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
-
-        // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
-        // also flips the detected-PR context to its push variant.
-        const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
-        const hostContext = [
-          ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
-          ...(this.detectedPrUrl
-            ? [this.buildDetectedPrContext(this.detectedPrUrl)]
-            : []),
-        ];
-        const promptMeta: Record<string, unknown> = {
-          ...(builtPrompt.meta ?? {}),
-          ...(hostContext.length > 0
-            ? { prContext: hostContext.join("\n\n") }
-            : {}),
         };
 
-        let result: PromptResponse;
         try {
-          result = await this.session.clientConnection.prompt({
-            sessionId: this.session.acpSessionId,
-            prompt,
-            ...(Object.keys(promptMeta).length > 0
-              ? { _meta: promptMeta }
-              : {}),
+          this.logger.debug("Received user_message command", {
+            hasContent:
+              typeof params.content === "string"
+                ? params.content.trim().length > 0
+                : Array.isArray(params.content) && params.content.length > 0,
+            artifactCount: Array.isArray(params.artifacts)
+              ? params.artifacts.length
+              : 0,
           });
+          const builtPrompt = await this.buildPromptFromContentAndArtifacts({
+            content: params.content as string | ContentBlock[] | undefined,
+            artifacts: Array.isArray(params.artifacts)
+              ? (params.artifacts as TaskRunArtifact[])
+              : [],
+            taskId: commandSession.payload.task_id,
+            runId: commandSession.payload.run_id,
+          });
+          const prompt = builtPrompt.prompt;
+          if (prompt.length === 0) {
+            throw new Error("User message cannot be empty");
+          }
+
+          this.logger.debug("Built user_message prompt", {
+            blockTypes: prompt.map((block) => block.type),
+          });
+          const promptPreview = promptBlocksToText(prompt);
+
+          this.logger.debug(
+            `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
+          );
+
+          // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
+          // also flips the detected-PR context to its push variant.
+          const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
+          const hostContext = [
+            ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
+            ...(this.detectedPrUrl
+              ? [this.buildDetectedPrContext(this.detectedPrUrl)]
+              : []),
+          ];
+          const promptMeta: Record<string, unknown> = {
+            ...(builtPrompt.meta ?? {}),
+            ...(hostContext.length > 0
+              ? { prContext: hostContext.join("\n\n") }
+              : {}),
+          };
+
+          if (params.steer === true) {
+            if (this.activeOwnedTurnCount > 0) {
+              const result = await commandSession.clientConnection.prompt({
+                sessionId: commandSession.acpSessionId,
+                prompt,
+                _meta: { ...promptMeta, steer: true },
+              });
+              const accepted =
+                (result._meta as { steer?: unknown } | undefined)?.steer ===
+                true;
+              if (accepted) {
+                commitDelivery();
+                const outcome = { stopReason: "steered", steered: true };
+                resolveDelivery(outcome);
+                return outcome;
+              }
+            }
+            const outcome = {
+              stopReason: "steer_declined",
+              steered: false,
+            };
+            resolveDelivery(outcome);
+            return outcome;
+          }
+
+          commandSession.logWriter.resetTurnMessages(
+            commandSession.payload.run_id,
+          );
+
+          const manualCompactPrompt = isManualCompactPrompt(prompt);
+          const acpSessionId = commandSession.acpSessionId;
+          const continueAfterCompaction = (): Promise<PromptResponse> =>
+            this.promptWithUpstreamRetry({
+              sessionId: acpSessionId,
+              prompt: [
+                hiddenTextBlock(
+                  "Compaction is complete. Continue working on the task from the compacted context, following the user's instructions from the /compact command.",
+                ),
+              ],
+            });
+
+          let result: PromptResponse;
+          this.suppressAdapterTurnComplete =
+            manualCompactPrompt || retryCompactContinuation;
+          try {
+            if (retryCompactContinuation) {
+              result = await this.runOwnedTurn(continueAfterCompaction);
+              if (messageId) {
+                this.pendingCompactContinuationMessageIds.delete(messageId);
+              }
+            } else {
+              result = await this.runOwnedTurn(() => {
+                const promptResult = commandSession.clientConnection.prompt({
+                  sessionId: commandSession.acpSessionId,
+                  prompt,
+                  ...(Object.keys(promptMeta).length > 0
+                    ? { _meta: promptMeta }
+                    : {}),
+                });
+                if (!promptResult) {
+                  throw new Error("Agent connection did not accept the prompt");
+                }
+                return promptResult;
+              });
+
+              if (result.stopReason === "end_turn" && manualCompactPrompt) {
+                commitDelivery();
+                if (messageId) {
+                  this.pendingCompactContinuationMessageIds.add(messageId);
+                }
+                // `/compact` is an SDK-local command, so without a follow-up the
+                // cloud run reports completion before the model resumes the task.
+                this.recordTurnUsage(result.usage);
+                result = await this.runOwnedTurn(continueAfterCompaction);
+                if (messageId) {
+                  this.pendingCompactContinuationMessageIds.delete(messageId);
+                }
+              }
+            }
+          } catch (error) {
+            await commandSession.logWriter.flushAll();
+            const { recoverable } = await this.handleTurnFailure(
+              commandSession.payload,
+              "followup",
+              error,
+            );
+            if (!recoverable) {
+              throw error;
+            }
+            commitDelivery();
+            const outcome = { stopReason: "error_recoverable" };
+            resolveDelivery(outcome);
+            return outcome;
+          } finally {
+            this.suppressAdapterTurnComplete = false;
+          }
+          commitDelivery();
+
+          this.logger.debug("User message completed", {
+            stopReason: result.stopReason,
+          });
+
+          if (result.stopReason === "end_turn") {
+            void this.syncCloudBranchMetadata(commandSession.payload);
+          }
+
+          this.recordTurnUsage(result.usage);
+          this.broadcastTurnComplete(result.stopReason);
+
+          if (result.stopReason === "end_turn") {
+            // Relay the response to Slack. For follow-ups this is the primary
+            // delivery path — the HTTP caller only handles reactions. Echo the
+            // initiating message's id so the backend can attribute the answer.
+            this.relayAgentResponse(commandSession.payload, messageId).catch(
+              (err) =>
+                this.logger.debug("Failed to relay follow-up response", err),
+            );
+          }
+
+          // Flush logs and include the assistant's response text so callers
+          // (e.g. Slack follow-up forwarding) can extract it without racing
+          // against async log persistence to object storage.
+          let assistantMessage: string | undefined;
+          try {
+            await commandSession.logWriter.flush(
+              commandSession.payload.run_id,
+              {
+                coalesce: true,
+              },
+            );
+            assistantMessage = commandSession.logWriter.getFullAgentResponse(
+              commandSession.payload.run_id,
+            );
+          } catch {
+            this.logger.debug("Failed to extract assistant message from logs");
+          }
+
+          const outcome = {
+            stopReason: result.stopReason,
+            ...(assistantMessage && { assistant_message: assistantMessage }),
+          };
+          resolveDelivery(outcome);
+          return outcome;
         } catch (error) {
-          if (messageId) {
+          if (messageId && !deliveryCommitted) {
             this.deliveredMessageIds.delete(messageId);
           }
-          await this.session.logWriter.flushAll();
-          const { recoverable } = await this.handleTurnFailure(
-            this.session.payload,
-            "followup",
-            error,
-          );
-          if (!recoverable) {
-            throw error;
+          rejectDelivery(error);
+          throw error;
+        } finally {
+          if (
+            messageId &&
+            this.inFlightMessageDeliveries.get(messageId) === deliveryOutcome
+          ) {
+            this.inFlightMessageDeliveries.delete(messageId);
           }
-          return { stopReason: "error_recoverable" };
         }
-
-        this.logger.debug("User message completed", {
-          stopReason: result.stopReason,
-        });
-
-        if (result.stopReason === "end_turn") {
-          void this.syncCloudBranchMetadata(this.session.payload);
-        }
-
-        this.recordTurnUsage(result.usage);
-        this.broadcastTurnComplete(result.stopReason);
-
-        if (result.stopReason === "end_turn") {
-          // Relay the response to Slack. For follow-ups this is the primary
-          // delivery path — the HTTP caller only handles reactions.
-          this.relayAgentResponse(this.session.payload).catch((err) =>
-            this.logger.debug("Failed to relay follow-up response", err),
-          );
-        }
-
-        // Flush logs and include the assistant's response text so callers
-        // (e.g. Slack follow-up forwarding) can extract it without racing
-        // against async log persistence to object storage.
-        let assistantMessage: string | undefined;
-        try {
-          await this.session.logWriter.flush(this.session.payload.run_id, {
-            coalesce: true,
-          });
-          assistantMessage = this.session.logWriter.getFullAgentResponse(
-            this.session.payload.run_id,
-          );
-        } catch {
-          this.logger.debug("Failed to extract assistant message from logs");
-        }
-
-        return {
-          stopReason: result.stopReason,
-          ...(assistantMessage && { assistant_message: assistantMessage }),
-        };
       }
 
       case POSTHOG_NOTIFICATIONS.CANCEL:
@@ -1073,13 +1300,31 @@ export class AgentServer {
           return { refreshed: true };
         }
 
+        // refresh_session replaces the session's MCP server list wholesale, and
+        // Django's refresh rebuilds it from posthog + user + imported configs —
+        // it can't include the relay loopback entries, whose URL and per-run
+        // bearer live only here. Re-append them so a mid-run refresh (token
+        // rotation, follow-up past the refresh window) doesn't silently drop
+        // every relayed server from the session.
+        const relayServers = this.mcpRelayServer?.mcpServers ?? [];
+        const refreshedMcpServers = [
+          ...mcpServers,
+          ...relayServers.filter(
+            (relay) =>
+              !mcpServers.some(
+                (s: { name?: unknown }) => s?.name === relay.name,
+              ),
+          ),
+        ];
+
         this.logger.debug("Refresh session requested", {
-          serverCount: mcpServers.length,
+          serverCount: refreshedMcpServers.length,
+          relayServerCount: relayServers.length,
         });
 
         return await this.session.clientConnection.extMethod(
           POSTHOG_METHODS.REFRESH_SESSION,
-          { mcpServers },
+          { mcpServers: refreshedMcpServers },
         );
       }
 
@@ -1101,9 +1346,34 @@ export class AgentServer {
           customInput,
           answers,
         );
-        if (!resolved) {
+        if (resolved === "not_found") {
           throw new Error(
             `No pending permission request found for id: ${requestId}`,
+          );
+        }
+        if (resolved === "invalid_option") {
+          throw new Error(
+            `Option "${optionId}" was not offered for permission request ${requestId}`,
+          );
+        }
+        return { resolved: true };
+      }
+
+      case POSTHOG_NOTIFICATIONS.MCP_RESPONSE:
+      case "mcp_response": {
+        const resolved = this.mcpRelayServer?.resolveResponse(
+          params as unknown as McpRelayResponse,
+        );
+        // Logged so the desktop's response behavior is visible from the
+        // readable sandbox side, not just the (often invisible) desktop logs.
+        this.logger.debug("MCP relay response received", {
+          requestId: String(params.requestId),
+          server: String(params.server),
+          resolved,
+        });
+        if (!resolved) {
+          throw new Error(
+            `No pending MCP relay request found for id: ${String(params.requestId)}`,
           );
         }
         return { resolved: true };
@@ -1159,6 +1429,7 @@ export class AgentServer {
 
     this.resumeState = null;
     this.nativeResume = null;
+    this.preSessionEvents = [];
     this.prewarmedRun = false;
     this.warmAutoPublishResolved = false;
 
@@ -1208,8 +1479,11 @@ export class AgentServer {
     });
 
     if (this.config.repoReadyFile && gatewayEnv.anthropicBaseUrl) {
+      // Authed so this cache-warm matches the session's own authed fetch
+      // (the models cache is keyed on auth presence).
       void fetchGatewayModels({
         gatewayUrl: gatewayEnv.anthropicBaseUrl,
+        authToken: gatewayEnv.anthropicAuthToken,
       }).catch(() => {});
     }
 
@@ -1292,16 +1566,8 @@ export class AgentServer {
 
     // Tap both streams to broadcast all ACP messages via SSE (mimics local transport)
     this.adapterEmittedTurnComplete = false;
-    const onAcpMessage = (message: unknown) => {
-      if (isTurnCompleteNotification(message)) {
-        this.adapterEmittedTurnComplete = true;
-      }
-      this.broadcastEvent({
-        type: "notification",
-        timestamp: new Date().toISOString(),
-        notification: message,
-      });
-    };
+    const onAcpMessage = (message: unknown) =>
+      this.handleAcpTransportMessage(message);
 
     const tappedReadable = createTappedReadableStream(
       acpConnection.clientStreams.readable as ReadableStream<Uint8Array>,
@@ -1322,10 +1588,11 @@ export class AgentServer {
       clientStream,
     );
 
-    await clientConnection.initialize({
+    const initializeResult = await clientConnection.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
+    const steering = extractSteeringCapability(initializeResult);
 
     const runState = preTaskRun?.state as Record<string, unknown> | undefined;
     // Preserve native Codex modes for cloud runs so they behave the same as
@@ -1350,30 +1617,67 @@ export class AgentServer {
       taskRunId: payload.run_id,
       taskId: payload.task_id,
       environment: "cloud",
+      mode: this.getEffectiveMode(payload),
       systemPrompt: sessionSystemPrompt,
       ...(this.config.model && { model: this.config.model }),
       allowedDomains: this.config.allowedDomains,
       jsonSchema: preTask?.json_schema ?? null,
       permissionMode: initialPermissionMode,
+      posthogExecPermissionRegex: this.posthogExecPermissionRegexSource,
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
 
     await this.waitForRepoReady();
-    await this.installSkillBundleArtifacts(
-      payload.task_id,
-      payload.run_id,
-      this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
-    );
+    const existingPrCheckoutPromise =
+      this.buildExistingPrCheckoutPromise(prUrl);
+    // Overlap the best-effort PR checkout with the rest of session setup. The
+    // checkout promise is always awaited in `finally` so a throw from
+    // installSkillBundleArtifacts / prepareNativeResume / startMcpRelayServer
+    // can never abandon an in-flight `gh pr checkout` that would keep mutating
+    // the working tree after session start has been abandoned — the awaited
+    // settle (plus the checkout's own abort-on-return) cancels it. The overlap
+    // is safe despite both touching repositoryPath: skill bundles install under
+    // `.posthog/skills/<runId>/...`, which is gitignored (untracked) in target
+    // repos, so `git checkout` — which only updates tracked files — cannot
+    // conflict with those writes or leave them associated with the wrong branch.
+    let nativeResume: { sessionId: string; warm: boolean } | null;
+    let effectiveSessionMeta: typeof sessionMeta & {
+      nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
+    } = sessionMeta;
+    let sessionMcpServers: RemoteMcpServer[];
+    try {
+      await this.installSkillBundleArtifacts(
+        payload.task_id,
+        payload.run_id,
+        this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
+      );
 
-    const nativeResume = await this.prepareNativeResume(
-      payload,
-      posthogAPI,
-      preTaskRun,
-      runtimeAdapter,
-      sessionCwd,
-      initialPermissionMode,
-    );
+      nativeResume = await this.prepareNativeResume(
+        payload,
+        posthogAPI,
+        preTaskRun,
+        runtimeAdapter,
+        sessionCwd,
+        initialPermissionMode,
+      );
+
+      sessionMcpServers = [
+        ...(this.config.mcpServers ?? []),
+        ...(await this.startMcpRelayServer()),
+      ];
+    } finally {
+      // Always consume the checkout result — on the success path this is the
+      // intended await; on a throw it ensures the in-flight checkout settles
+      // (and aborts its children) instead of mutating the tree in the
+      // background. checkoutExistingPullRequest never rejects.
+      if (existingPrCheckoutPromise) {
+        this.logExistingPrCheckoutResult(
+          prUrl,
+          await existingPrCheckoutPromise,
+        );
+      }
+    }
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
@@ -1381,8 +1685,8 @@ export class AgentServer {
         await clientConnection.resumeSession({
           sessionId: nativeResume.sessionId,
           cwd: sessionCwd,
-          mcpServers: this.config.mcpServers ?? [],
-          _meta: { ...sessionMeta, sessionId: nativeResume.sessionId },
+          mcpServers: sessionMcpServers,
+          _meta: { ...effectiveSessionMeta, sessionId: nativeResume.sessionId },
         });
         acpSessionId = nativeResume.sessionId;
         this.nativeResume = nativeResume;
@@ -1401,10 +1705,15 @@ export class AgentServer {
       }
     }
     if (!acpSessionId) {
+      const restoredNativeGoal =
+        this.getNativeGoalForFreshSession(runtimeAdapter);
+      effectiveSessionMeta = restoredNativeGoal
+        ? { ...sessionMeta, nativeGoal: restoredNativeGoal }
+        : sessionMeta;
       const sessionResponse = await clientConnection.newSession({
         cwd: sessionCwd,
-        mcpServers: this.config.mcpServers ?? [],
-        _meta: sessionMeta,
+        mcpServers: sessionMcpServers,
+        _meta: effectiveSessionMeta,
       });
       acpSessionId = sessionResponse.sessionId;
       this.logger.debug("ACP session created", {
@@ -1427,8 +1736,9 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
-      sessionMeta,
+      sessionMeta: effectiveSessionMeta,
     };
+    this.flushPreSessionEvents();
 
     this.logger = new Logger({
       debug: true,
@@ -1465,6 +1775,7 @@ export class AgentServer {
         runId: payload.run_id,
         taskId: payload.task_id,
         agentVersion: this.config.version ?? packageJson.version,
+        ...(steering ? { steering } : {}),
       },
     };
     this.broadcastEvent({
@@ -1525,6 +1836,15 @@ export class AgentServer {
     }
 
     return { classification: classifyAgentError(message), message };
+  }
+
+  private async runOwnedTurn<T>(operation: () => Promise<T>): Promise<T> {
+    this.activeOwnedTurnCount += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activeOwnedTurnCount -= 1;
+    }
   }
 
   /**
@@ -1741,12 +2061,18 @@ export class AgentServer {
       });
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: initialPrompt,
-        ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: acpSessionId,
+          prompt: initialPrompt,
+          ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
+        }),
+      );
 
       this.logger.debug("Initial task message completed", {
         stopReason: result.stopReason,
@@ -1953,12 +2279,18 @@ export class AgentServer {
       const builtPrompt = await buildPrompt();
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: builtPrompt.prompt,
-        ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: acpSessionId,
+          prompt: builtPrompt.prompt,
+          ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
+        }),
+      );
 
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
@@ -2060,9 +2392,10 @@ export class AgentServer {
 
     // The run's artifact manifest can momentarily lag the pending-artifact ids
     // when a run starts right after the attachments were uploaded. If we were
-    // asked for artifacts the manifest doesn't list yet, refetch the run once so
-    // a transient gap doesn't drop the attachment and send the agent the bare
-    // "Attached files: …" description instead of the file it was promised.
+    // asked for artifacts the manifest doesn't list yet, poll the run with a
+    // short backoff so a transient gap doesn't drop the attachment and send the
+    // agent the bare "Attached files: …" description instead of the file it was
+    // promised.
     let manifest = taskRun.artifacts ?? [];
     let resolvedArtifacts = this.getArtifactsById(manifest, artifactIds, {
       warnOnMissing: false,
@@ -2071,11 +2404,13 @@ export class AgentServer {
       artifactIds.length > 0 &&
       resolvedArtifacts.length < artifactIds.length
     ) {
-      const refreshed = await this.refetchRunArtifacts(taskRun);
-      if (refreshed) {
-        manifest = refreshed;
-        resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
-      }
+      manifest =
+        (await this.resolvePendingArtifactManifest(
+          taskRun,
+          artifactIds,
+          manifest,
+        )) ?? manifest;
+      resolvedArtifacts = this.getArtifactsById(manifest, artifactIds);
     }
 
     const prompt = await this.buildPromptFromContentAndArtifacts({
@@ -2123,6 +2458,49 @@ export class AgentServer {
       blockTypes: prompt.prompt.map((block) => block.type),
     });
     return prompt.prompt.length > 0 ? prompt : null;
+  }
+
+  private async resolvePendingArtifactManifest(
+    taskRun: TaskRun,
+    artifactIds: string[],
+    initialManifest: TaskRunArtifact[],
+  ): Promise<TaskRunArtifact[] | null> {
+    let latestManifest = initialManifest;
+
+    for (let attempt = 1; attempt <= PENDING_ARTIFACT_MAX_ATTEMPTS; attempt++) {
+      const refreshed = await this.refetchRunArtifacts(taskRun);
+      if (refreshed) {
+        const mergedManifest = [...latestManifest];
+        for (const artifact of refreshed) {
+          const existingIndex = mergedManifest.findIndex(
+            (existing) =>
+              (artifact.id && existing.id === artifact.id) ||
+              (artifact.storage_path &&
+                existing.storage_path === artifact.storage_path),
+          );
+          if (existingIndex >= 0) {
+            mergedManifest[existingIndex] = artifact;
+          } else {
+            mergedManifest.push(artifact);
+          }
+        }
+        latestManifest = mergedManifest;
+        const resolvedArtifacts = this.getArtifactsById(
+          latestManifest,
+          artifactIds,
+          { warnOnMissing: false },
+        );
+        if (resolvedArtifacts.length === artifactIds.length) {
+          return latestManifest;
+        }
+      }
+
+      if (attempt < PENDING_ARTIFACT_MAX_ATTEMPTS) {
+        await sleep(PENDING_ARTIFACT_RETRY_DELAY_MS * attempt);
+      }
+    }
+
+    return latestManifest.length > 0 ? latestManifest : null;
   }
 
   // Best-effort refetch of a run's artifact manifest. Returns null on any error
@@ -2208,7 +2586,9 @@ export class AgentServer {
         ? {
             meta: {
               localSkillContext: localSkillContext.context,
-              localSkillName: localSkillContext.skillName,
+              ...(localSkillContext.skillName
+                ? { localSkillName: localSkillContext.skillName }
+                : {}),
             } satisfies Record<string, unknown>,
           }
         : {}),
@@ -2313,40 +2693,121 @@ export class AgentServer {
       (block): block is Extract<ContentBlock, { type: "text" }> =>
         block.type === "text" && block.text.trim().length > 0,
     );
-    if (textBlockIndex === -1) {
+    const textBlock =
+      textBlockIndex === -1 ? null : contentBlocks[textBlockIndex];
+    const invocation =
+      textBlock?.type === "text"
+        ? this.parseLocalSkillInvocation(textBlock.text)
+        : null;
+
+    if (invocation) {
+      const hasMatchingArtifact = artifacts.some(
+        (artifact) =>
+          artifact.type === "skill_bundle" &&
+          artifact.metadata?.skill_name === invocation.skillName,
+      );
+      const installedSkill = hasMatchingArtifact
+        ? this.installedSkillBundleInfo.get(
+            this.getInstalledSkillBundleInfoKey(runId, invocation.skillName),
+          )
+        : undefined;
+      if (installedSkill) {
+        return {
+          skillName: invocation.skillName,
+          context: this.buildInstalledSkillPrompt(
+            installedSkill,
+            invocation.args,
+            this.getCoInstalledSkillBundles(runId, invocation.skillName),
+          ),
+        };
+      }
+    }
+
+    const messageText = contentBlocks
+      .filter(
+        (block): block is Extract<ContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("\n");
+    return this.buildAttachedSkillsPromptContext(runId, artifacts, messageText);
+  }
+
+  /**
+   * Fallback for messages that install skill bundles without being a bare
+   * `/skill` invocation: a running session can't discover mid-session
+   * installs, so skills named in the message get their definition inlined
+   * and the rest are listed with their paths.
+   */
+  private buildAttachedSkillsPromptContext(
+    runId: string,
+    artifacts: TaskRunArtifact[],
+    messageText: string,
+  ): LocalSkillPromptContext | null {
+    const installed = artifacts
+      .filter((artifact) => artifact.type === "skill_bundle")
+      .map((artifact) => artifact.metadata?.skill_name)
+      .filter((name): name is string => typeof name === "string")
+      .map((name) =>
+        this.installedSkillBundleInfo.get(
+          this.getInstalledSkillBundleInfoKey(runId, name),
+        ),
+      )
+      .filter((skill): skill is InstalledSkillBundle => !!skill);
+    if (installed.length === 0) {
       return null;
     }
 
-    const textBlock = contentBlocks[textBlockIndex];
-    if (textBlock.type !== "text") {
-      return null;
-    }
+    const mentioned = installed.filter((skill) => {
+      // token-boundary match so "/foo" never matches inside "/foobar"
+      const escaped = skill.skillName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(
+        `(^|[\\s(\`"'\\[])/${escaped}(?![A-Za-z0-9_/-])`,
+        "m",
+      ).test(messageText);
+    });
+    const unmentioned = installed.filter((skill) => !mentioned.includes(skill));
 
-    const invocation = this.parseLocalSkillInvocation(textBlock.text);
-    if (!invocation) {
-      return null;
+    const sections: string[] = [
+      "The user's message references local skills that are now installed for this run. Apply a skill's instructions when the message calls for it.",
+    ];
+    for (const skill of mentioned) {
+      sections.push(
+        "",
+        `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
+        skill.skillDefinition.trim(),
+        `--- END LOCAL SKILL ${skill.skillName} ---`,
+        `Installed skill path: ${skill.skillRoot}`,
+      );
     }
-
-    const hasMatchingArtifact = artifacts.some(
-      (artifact) =>
-        artifact.type === "skill_bundle" &&
-        artifact.metadata?.skill_name === invocation.skillName,
-    );
-    if (!hasMatchingArtifact) {
-      return null;
+    if (unmentioned.length > 0) {
+      sections.push(
+        "",
+        "Other local skills installed for this run (read a skill's SKILL.md from its path when referenced):",
+        ...unmentioned.map(
+          (skill) => `- /${skill.skillName}: ${skill.skillRoot}`,
+        ),
+      );
     }
+    return { context: sections.join("\n") };
+  }
 
-    const installedSkill = this.installedSkillBundleInfo.get(
-      this.getInstalledSkillBundleInfoKey(runId, invocation.skillName),
-    );
-    if (!installedSkill) {
-      return null;
-    }
-
-    return {
-      skillName: invocation.skillName,
-      context: this.buildInstalledSkillPrompt(installedSkill, invocation.args),
-    };
+  /**
+   * Other skills already installed for this run (auto-bundled dependencies,
+   * skills from earlier messages), listed so the model can find them by path.
+   */
+  private getCoInstalledSkillBundles(
+    runId: string,
+    invokedSkillName: string,
+  ): InstalledSkillBundle[] {
+    const prefix = `${runId}:`;
+    return [...this.installedSkillBundleInfo.entries()]
+      .filter(
+        ([key, skill]) =>
+          key.startsWith(prefix) && skill.skillName !== invokedSkillName,
+      )
+      .map(([, skill]) => skill)
+      .sort((a, b) => a.skillName.localeCompare(b.skillName));
   }
 
   private parseLocalSkillInvocation(
@@ -2367,6 +2828,7 @@ export class AgentServer {
   private buildInstalledSkillPrompt(
     skill: InstalledSkillBundle,
     args: string | undefined,
+    coInstalledSkills: InstalledSkillBundle[] = [],
   ): string {
     return [
       `The user invoked the local skill "/${skill.skillName}". Apply these skill instructions for this turn.`,
@@ -2376,6 +2838,16 @@ export class AgentServer {
       `--- END LOCAL SKILL ${skill.skillName} ---`,
       "",
       `Installed skill path: ${skill.skillRoot}`,
+      ...(coInstalledSkills.length > 0
+        ? [
+            "",
+            "Other local skills installed for this run (when the skill above references one of these, read its SKILL.md from the listed path):",
+            ...coInstalledSkills.map(
+              (coInstalled) =>
+                `- /${coInstalled.skillName}: ${coInstalled.skillRoot}`,
+            ),
+          ]
+        : []),
       "",
       "User request:",
       args?.trim() || `Run /${skill.skillName}.`,
@@ -2726,9 +3198,11 @@ export class AgentServer {
   private buildCodexInstructions(
     systemPrompt: string | { append: string },
   ): string {
-    return typeof systemPrompt === "string"
-      ? systemPrompt
-      : systemPrompt.append;
+    const instructions =
+      typeof systemPrompt === "string" ? systemPrompt : systemPrompt.append;
+    // Codex has no command-rewrite hook (see rtk-guidance.ts), so RTK is
+    // adopted through the developer instructions instead.
+    return appendRtkGuidanceForCodex(instructions);
   }
 
   /**
@@ -2838,6 +3312,58 @@ export class AgentServer {
     ].join("\n");
   }
 
+  private buildExistingPrCheckoutInstruction(prUrl: string): string {
+    return `Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.`;
+  }
+
+  /**
+   * Fire-and-overlap: starts the best-effort PR-branch checkout so it runs
+   * concurrently with the rest of session setup, returning the promise (or
+   * null when there is nothing to check out). Only runs when auto-publishing,
+   * matching the system-prompt fallback's gate: a review-first run must not
+   * silently check out a branch the prompt told the agent to leave alone.
+   */
+  private buildExistingPrCheckoutPromise(
+    prUrl: string | null,
+  ): Promise<ExistingPrCheckoutResult> | null {
+    if (!prUrl || !this.config.repositoryPath) {
+      return null;
+    }
+    if (!this.shouldAutoPublishCloudChanges()) {
+      return null;
+    }
+    return checkoutExistingPullRequest({
+      repositoryPath: this.config.repositoryPath,
+      prUrl,
+    });
+  }
+
+  /**
+   * Consume a pre-checkout result without throwing — a transient `gh` failure
+   * must fall back to the agent's own checkout (via the system-prompt
+   * instruction), never abort session start.
+   */
+  private logExistingPrCheckoutResult(
+    prUrl: string | null,
+    result: ExistingPrCheckoutResult,
+  ): void {
+    if (result.status === "failed") {
+      this.logger.warn(
+        "Existing PR pre-checkout failed; agent will retry if needed",
+        {
+          prUrl,
+          error: result.error,
+        },
+      );
+    } else {
+      this.logger.debug("Existing PR branch prepared before session start", {
+        prUrl,
+        branch: result.branch,
+        alreadyActive: result.status === "already_active",
+      });
+    }
+  }
+
   private buildDetectedPrContext(prUrl: string): string {
     if (!this.shouldAutoPublishCloudChanges()) {
       return (
@@ -2850,10 +3376,10 @@ export class AgentServer {
     return (
       `IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.\n` +
       `You already have an open pull request: ${prUrl}\n` +
-      `You MUST:\n` +
-      `1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`\n` +
+      `Unless the user explicitly asks for a new branch or separate PR, you MUST:\n` +
+      `1. ${this.buildExistingPrCheckoutInstruction(prUrl)}\n` +
       `2. Make changes, commit, and push to that branch\n` +
-      `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
+      `By default, do not create a new branch, close the existing PR, or create a new PR — continue on the existing PR. If the user explicitly asks you to create a new branch or a separate PR, follow their instruction instead.`
     );
   }
 
@@ -2971,7 +3497,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
       }
@@ -2982,7 +3508,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 This task already has an open pull request: ${prUrl}
 
 After completing the requested changes:
-1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
+1. ${this.buildExistingPrCheckoutInstruction(prUrl)}
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
    - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
@@ -2991,7 +3517,7 @@ After completing the requested changes:
    List unresolved threads first with \`gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{body}}}}}}}'\` so you can resolve each one you fixed.
 
 Important:
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
@@ -3319,6 +3845,33 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     );
   }
 
+  private readPermissionMcpDescriptor(
+    params: RequestPermissionRequest,
+  ): { server: string; tool: string } | undefined {
+    const descriptor = readMcpToolDescriptor(params.toolCall?._meta);
+    if (descriptor) return descriptor;
+
+    const rawInput = params.toolCall?.rawInput as
+      | { toolName?: unknown }
+      | undefined;
+    return typeof rawInput?.toolName === "string"
+      ? parseMcpToolName(rawInput.toolName)
+      : undefined;
+  }
+
+  private matchesPostHogExecPermissionRequest(
+    params: RequestPermissionRequest,
+  ): string | null {
+    const descriptor = this.readPermissionMcpDescriptor(params);
+    if (!descriptor || !isPostHogExecDescriptor(descriptor)) return null;
+
+    const subTool = extractPostHogSubTool(params.toolCall?.rawInput);
+    return subTool &&
+      matchesPostHogExecPermission(subTool, this.posthogExecPermissionRegex)
+      ? subTool
+      : null;
+  }
+
   private createCloudClient(payload: JwtPayload) {
     const mode = this.getEffectiveMode(payload);
     const interactionOrigin =
@@ -3356,6 +3909,59 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           }
         }
 
+        // Tools on relayed MCP servers execute on the user's machine with
+        // their local privileges: always ask, regardless of permission mode
+        // (docs/cloud-mcp-relay.md). Without a reachable client, deny rather
+        // than auto-approve.
+        {
+          // Read the MCP server through the adapter-neutral `_meta.posthog`
+          // channel (codex writes `_meta.posthog.mcp`, Claude writes the legacy
+          // `_meta.claudeCode.toolName`; readMcpToolDescriptor handles both),
+          // falling back to Claude's `rawInput.toolName`. Keying off only the
+          // Claude channel would silently skip this gate for codex and let a
+          // relayed tool auto-run in non-asking modes.
+          const mcpServerName =
+            this.readPermissionMcpDescriptor(params)?.server;
+          if (
+            mcpServerName &&
+            (this.config.relayMcpServers ?? []).includes(mcpServerName)
+          ) {
+            if (mode !== "background" && this.hasReachableClient()) {
+              return this.relayPermissionToClient(params);
+            }
+            return {
+              outcome: { outcome: "cancelled" as const },
+              _meta: {
+                message:
+                  "This tool runs on the user's machine via the MCP relay and " +
+                  "requires their explicit approval, but no client is available " +
+                  "to approve it. Do NOT retry; tell the user what you wanted to do.",
+              },
+            };
+          }
+        }
+
+        const posthogExecSubTool =
+          this.matchesPostHogExecPermissionRequest(params);
+        if (mode !== "background" && posthogExecSubTool) {
+          const isClaudeCodeRequest = Boolean(
+            params.toolCall?._meta?.claudeCode,
+          );
+          const relayParams = {
+            ...params,
+            options: isClaudeCodeRequest
+              ? params.options
+              : params.options.filter(
+                  (option) => option.kind !== "allow_always",
+                ),
+          };
+          this.logger.debug("Relaying configured PostHog exec permission", {
+            subTool: posthogExecSubTool,
+            sessionPermissionMode: this.getSessionPermissionMode(),
+          });
+          return this.relayPermissionToClient(relayParams);
+        }
+
         // Relay permission requests to the connected client when:
         // - Plan approvals: always relay because they gate autonomy changes
         //   that require human confirmation (buffered until desktop connects)
@@ -3371,15 +3977,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
             sessionPermissionMode,
           );
 
-          // With durable event ingest nothing connects to GET /events, so
-          // hasDesktopConnected stays false even while the web/desktop task
-          // views follow the run through the agent-proxy stream. Those views
-          // render permission_request frames and answer via
-          // permission_response, so an active event stream counts as a
-          // reachable client for questions.
-          const hasReachableClient =
-            Boolean(this.session?.hasDesktopConnected) ||
-            this.eventStreamSender !== null;
+          const hasReachableClient = this.hasReachableClient();
 
           // A background run has no human to answer a relayed approval
           // (hasDesktopConnected is true from the event-relay reader), so
@@ -3488,7 +4086,10 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     };
   }
 
-  private async relayAgentResponse(payload: JwtPayload): Promise<void> {
+  private async relayAgentResponse(
+    payload: JwtPayload,
+    messageId?: string,
+  ): Promise<void> {
     if (!this.session) {
       return;
     }
@@ -3532,6 +4133,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
         payload.run_id,
         message,
         messageParts,
+        messageId,
       );
     } catch (error) {
       this.logger.debug("Failed to relay initial agent response to Slack", {
@@ -3758,6 +4360,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       this.logger.error("Failed to flush session logs", error);
     }
 
+    if (this.mcpRelayServer) {
+      await this.mcpRelayServer.stop();
+      this.mcpRelayServer = null;
+    }
+
     // Drain pending permissions before ACP cleanup to avoid deadlocks —
     // cleanup may await operations that are blocked on a permission response.
     for (const [, pending] of this.pendingPermissions) {
@@ -3784,6 +4391,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
 
     this.pendingEvents = [];
+    this.preSessionEvents = [];
     this.lastReportedBranch = null;
     // Run usage is per run: a later session on this instance (e.g. a resume
     // with a different run_id) must not inherit the previous run's totals.
@@ -3898,6 +4506,25 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       });
   }
 
+  private handleAcpTransportMessage(message: unknown): void {
+    if (isTurnCompleteNotification(message)) {
+      if (this.suppressAdapterTurnComplete) {
+        return;
+      }
+      this.adapterEmittedTurnComplete = true;
+    }
+    const event = {
+      type: "notification",
+      timestamp: new Date().toISOString(),
+      notification: message,
+    };
+    if (!this.session) {
+      this.preSessionEvents.push(event);
+      return;
+    }
+    this.broadcastEvent(event);
+  }
+
   private broadcastTurnComplete(stopReason: string): void {
     if (!this.session) return;
     if (this.adapterEmittedTurnComplete) {
@@ -3926,15 +4553,24 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   }
 
   private broadcastEvent(event: Record<string, unknown>): void {
-    if (!this.session) return;
-
     this.eventStreamSender?.enqueue(event);
 
     if (this.session?.sseController) {
       this.sendSseEvent(this.session.sseController, event);
     } else {
-      // Buffer events during initialization (sseController not yet attached)
+      // Buffers events raised before a session exists yet (e.g. an MCP relay
+      // request fired the instant the client subprocess starts, ahead of
+      // `this.session` assignment) or before its SSE controller attaches.
       this.pendingEvents.push(event);
+    }
+  }
+
+  private flushPreSessionEvents(): void {
+    if (!this.session || this.preSessionEvents.length === 0) return;
+    const events = this.preSessionEvents;
+    this.preSessionEvents = [];
+    for (const event of events) {
+      this.broadcastEvent(event);
     }
   }
 
@@ -3989,8 +4625,16 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       toolCall: params.toolCall,
     });
 
+    const toolCallMeta = params.toolCall?._meta as
+      | { codeToolKind?: unknown }
+      | undefined;
     return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve, toolCallId });
+      this.pendingPermissions.set(requestId, {
+        resolve,
+        toolCallId,
+        optionIds: new Set(params.options.map((option) => option.optionId)),
+        validateOptionIds: toolCallMeta?.codeToolKind !== "question",
+      });
     });
   }
 
@@ -4012,9 +4656,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     optionId: string,
     customInput?: string,
     answers?: Record<string, string>,
-  ): boolean {
+  ): "resolved" | "not_found" | "invalid_option" {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return false;
+    if (!pending) return "not_found";
+    // The request stays parked and resolvable — a corrected response with an
+    // offered option can still settle it.
+    if (pending.validateOptionIds && !pending.optionIds.has(optionId)) {
+      return "invalid_option";
+    }
 
     this.pendingPermissions.delete(requestId);
 
@@ -4032,6 +4681,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       outcome: { outcome: "selected" as const, optionId },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     });
-    return true;
+    return "resolved";
   }
 }

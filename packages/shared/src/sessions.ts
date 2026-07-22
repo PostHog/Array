@@ -62,6 +62,9 @@ export interface AgentSession {
   promptStartedAt: number | null;
   currentPromptId?: number | null;
   logUrl?: string;
+  /** Full cloud transcript entry count across the resume chain. */
+  cloudTranscriptEntryCount?: number;
+  /** Leaf-run cursor used to reconcile live cloud log updates. */
   processedLineCount?: number;
   framework?: "claude";
   adapter?: Adapter;
@@ -79,6 +82,14 @@ export interface AgentSession {
   pendingPermissions: Map<string, PermissionRequest>;
   pausedDurationMs: number;
   messageQueue: QueuedMessage[];
+  /**
+   * Id of the queued message the user currently has open in the composer for an
+   * in-place edit, if any. While set it acts as a drain boundary: when the turn
+   * ends, everything queued *before* this message auto-sends, but this message
+   * and everything after it stay queued until the edit is saved or cancelled.
+   * See {@link sendableQueuePrefixLength}.
+   */
+  editingQueuedId?: string;
   isCloud?: boolean;
   cloudStatus?: TaskRunStatus;
   cloudStage?: string | null;
@@ -87,6 +98,7 @@ export interface AgentSession {
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;
   handoffInProgress?: boolean;
+  stopRequested?: boolean;
   optimisticItems: OptimisticItem[];
   contextUsed?: number;
   contextSize?: number;
@@ -94,6 +106,23 @@ export interface AgentSession {
   idleKilled?: boolean;
   agentVersion?: string;
   agentIdleForRunId?: string;
+}
+
+/**
+ * How many messages at the head of the queue are eligible to auto-send when the
+ * turn ends. A message being edited in place ({@link AgentSession.editingQueuedId})
+ * is a hard boundary: the messages queued before it may send, but it and
+ * everything after it stay put until the edit is saved or cancelled. Returns the
+ * full queue length when nothing is being edited, or when the edited message has
+ * already left the queue (e.g. it was discarded).
+ */
+export function sendableQueuePrefixLength(
+  session: Pick<AgentSession, "messageQueue" | "editingQueuedId">,
+): number {
+  const { messageQueue, editingQueuedId } = session;
+  if (!editingQueuedId) return messageQueue.length;
+  const editIndex = messageQueue.findIndex((m) => m.id === editingQueuedId);
+  return editIndex === -1 ? messageQueue.length : editIndex;
 }
 
 export function isSelectGroup(
@@ -132,6 +161,28 @@ export function mergeConfigOptions(
     }
     return liveOpt;
   });
+}
+
+/**
+ * Whether a persisted config option can be restored into a resumed session's
+ * live options. The live session must still advertise an option with the same
+ * id and type, and — for selects — must still offer the persisted value.
+ * Matching by id alone would restore a value the resumed agent dropped (e.g. a
+ * reasoning level the resumed model no longer supports), which the server
+ * rejects and which leaves the UI showing a setting that never took effect.
+ */
+export function isPersistedOptionSupported(
+  persisted: SessionConfigOption,
+  liveOptions: SessionConfigOption[],
+): boolean {
+  const live = liveOptions.find((opt) => opt.id === persisted.id);
+  if (!live || live.type !== persisted.type) return false;
+  if (live.type === "select") {
+    return flattenSelectOptions(live.options).some(
+      (opt) => opt.value === persisted.currentValue,
+    );
+  }
+  return true;
 }
 
 export function getConfigOptionByCategory(
@@ -196,7 +247,7 @@ export function resolveBypassRevertMode(
  * Whether a mid-turn message can be folded into the running turn (steered)
  * rather than interrupt-and-resent. Decided by the adapter's negotiated
  * `steering` capability: "native" folds (claude, codex app-server);
- * "interrupt-resend" (legacy) does not. Cloud runs never steer locally.
+ * "interrupt-resend" (legacy) does not.
  *
  * Fallback: if `steering` is unset (a start path that predates capability
  * plumbing), Claude is still treated as native — it has always steered — so the
@@ -205,7 +256,7 @@ export function resolveBypassRevertMode(
 export function sessionSupportsNativeSteer(
   session: Pick<AgentSession, "isCloud" | "steering" | "adapter">,
 ): boolean {
-  if (session.isCloud) return false;
   if (session.steering === "native") return true;
+  if (session.isCloud) return false;
   return session.steering == null && session.adapter === "claude";
 }

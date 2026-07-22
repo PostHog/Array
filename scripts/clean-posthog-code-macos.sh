@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Clean PostHog Code app data from macOS
+# Clean PostHog app data from macOS
 #
 # Usage:
 #   ./scripts/clean-posthog-code-macos.sh           # Clean dev data only
@@ -28,7 +28,7 @@ for arg in "$@"; do
       echo ""
       echo "Options:"
       echo "  --all    Clean all data (dev + production + legacy). Without this, only dev data is cleaned."
-      echo "  --app    Clean all data and delete PostHog Code.app from /Applications"
+      echo "  --app    Clean all data and delete PostHog.app from /Applications"
       echo ""
       echo "By default (no flags), only dev data is cleaned:"
       echo "  - ~/Library/Application Support/@posthog/posthog-code-dev"
@@ -41,7 +41,8 @@ for arg in "$@"; do
       echo "  - ~/Library/Preferences/com.posthog.array.plist"
       echo "  - ~/Library/Caches/com.posthog.array"
       echo "  - ~/.posthog-code (logs and cache)"
-      echo "  - ~/Library/Logs/PostHog Code"
+      echo "  - ~/Library/Logs/PostHog"
+      echo "  - ~/Library/Logs/PostHog Code (legacy)"
       echo "  - ~/Library/Saved Application State/com.posthog.array.savedState"
       exit 0
       ;;
@@ -49,9 +50,9 @@ for arg in "$@"; do
 done
 
 if [ "$CLEAN_ALL" = true ]; then
-  echo "Cleaning all PostHog Code data from macOS..."
+  echo "Cleaning all PostHog data from macOS..."
 else
-  echo "Cleaning PostHog Code dev data from macOS..."
+  echo "Cleaning PostHog dev data from macOS..."
 fi
 echo ""
 
@@ -133,6 +134,11 @@ if [ "$CLEAN_ALL" = true ]; then
   fi
 
   # Logs
+  if [ -d "$HOME/Library/Logs/PostHog" ]; then
+    echo "Removing ~/Library/Logs/PostHog"
+    rm -rf "$HOME/Library/Logs/PostHog"
+  fi
+
   if [ -d "$HOME/Library/Logs/PostHog Code" ]; then
     echo "Removing ~/Library/Logs/PostHog Code"
     rm -rf "$HOME/Library/Logs/PostHog Code"
@@ -167,6 +173,10 @@ fi
 
 # App (optional, implies --all)
 if [ "$DELETE_APP" = true ]; then
+  if [ -d "/Applications/PostHog.app" ]; then
+    echo "Removing /Applications/PostHog.app"
+    rm -rf "/Applications/PostHog.app"
+  fi
   if [ -d "/Applications/PostHog Code.app" ]; then
     echo "Removing /Applications/PostHog Code.app"
     rm -rf "/Applications/PostHog Code.app"

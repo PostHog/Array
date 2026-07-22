@@ -16,10 +16,4 @@ export const llmGatewayRouter = router({
           model: input.model,
         }),
     ),
-
-  invalidatePlanCache: publicProcedure.mutation(({ ctx }) =>
-    ctx.container
-      .get<LlmGatewayService>(LLM_GATEWAY_SERVICE)
-      .invalidatePlanCache(),
-  ),
 });

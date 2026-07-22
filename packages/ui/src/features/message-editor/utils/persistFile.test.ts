@@ -1,19 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockDownscaleImageFile = vi.hoisted(() => vi.fn());
+const mockSaveClipboardImage = vi.hoisted(() => vi.fn());
+const mockSaveClipboardFile = vi.hoisted(() => vi.fn());
 const mockGetFilePath = vi.hoisted(() => vi.fn());
+const mockToastWarning = vi.hoisted(() => vi.fn());
 
-vi.mock("@posthog/di/container", () => ({
-  resolveService: () => ({
+vi.mock("../hostApi", () => ({
+  filePersistHost: {
+    saveClipboardImage: mockSaveClipboardImage,
+    saveClipboardText: vi.fn(),
+    saveClipboardFile: mockSaveClipboardFile,
     downscaleImageFile: mockDownscaleImageFile,
-  }),
+  },
 }));
 
 vi.mock("@posthog/ui/utils/getFilePath", () => ({
   getFilePath: mockGetFilePath,
 }));
 
-const mockToastWarning = vi.hoisted(() => vi.fn());
 vi.mock("@posthog/ui/primitives/toast", () => ({
   toast: { warning: mockToastWarning },
 }));
@@ -22,6 +27,15 @@ import {
   resolveAndAttachDroppedFiles,
   resolveDroppedFile,
 } from "./persistFile";
+
+// A dropped File whose bytes can be read (browsers never expose an OS path).
+function browserFile(name: string, type = ""): File {
+  return {
+    name,
+    type,
+    arrayBuffer: async () => new ArrayBuffer(0),
+  } as unknown as File;
+}
 
 describe("resolveDroppedFile (UI glue)", () => {
   beforeEach(() => {
@@ -66,18 +80,16 @@ describe("resolveAndAttachDroppedFiles", () => {
     vi.clearAllMocks();
   });
 
-  it("calls addAttachment for each resolved file", async () => {
+  it("attaches path-resolved files directly", async () => {
     mockGetFilePath
       .mockReturnValueOnce("/Users/me/a.txt")
-      .mockReturnValueOnce("")
       .mockReturnValueOnce("/Users/me/b.txt");
 
     const files = [
-      { name: "a.txt" },
-      { name: "skip.txt" },
-      { name: "b.txt" },
+      browserFile("a.txt"),
+      browserFile("b.txt"),
     ] as unknown as FileList;
-    Object.defineProperty(files, "length", { value: 3 });
+    Object.defineProperty(files, "length", { value: 2 });
 
     const addAttachment = vi.fn();
     await resolveAndAttachDroppedFiles(files, addAttachment);
@@ -90,6 +102,50 @@ describe("resolveAndAttachDroppedFiles", () => {
     expect(addAttachment).toHaveBeenCalledWith({
       id: "/Users/me/b.txt",
       label: "b.txt",
+    });
+    expect(mockSaveClipboardFile).not.toHaveBeenCalled();
+  });
+
+  it("falls back to reading bytes when the file has no path (browser drop)", async () => {
+    // Browsers never expose an OS path, so getFilePath returns "" for every
+    // dropped file; the helper must persist the bytes instead of skipping.
+    mockGetFilePath.mockReturnValue("");
+    mockSaveClipboardFile.mockResolvedValue({
+      path: "/web-attachment/generated-id",
+      name: "notes.txt",
+    });
+
+    const files = [browserFile("notes.txt")] as unknown as FileList;
+    Object.defineProperty(files, "length", { value: 1 });
+
+    const addAttachment = vi.fn();
+    await resolveAndAttachDroppedFiles(files, addAttachment);
+
+    expect(mockSaveClipboardFile).toHaveBeenCalledTimes(1);
+    expect(addAttachment).toHaveBeenCalledWith({
+      id: "/web-attachment/generated-id",
+      label: "notes.txt",
+    });
+  });
+
+  it("persists dropped images through saveClipboardImage when there is no path", async () => {
+    mockGetFilePath.mockReturnValue("");
+    mockSaveClipboardImage.mockResolvedValue({
+      path: "/web-attachment/image-id",
+      name: "shot.png",
+      mimeType: "image/png",
+    });
+
+    const files = [browserFile("shot.png", "image/png")] as unknown as FileList;
+    Object.defineProperty(files, "length", { value: 1 });
+
+    const addAttachment = vi.fn();
+    await resolveAndAttachDroppedFiles(files, addAttachment);
+
+    expect(mockSaveClipboardImage).toHaveBeenCalledTimes(1);
+    expect(addAttachment).toHaveBeenCalledWith({
+      id: "/web-attachment/image-id",
+      label: "shot.png",
     });
   });
 });

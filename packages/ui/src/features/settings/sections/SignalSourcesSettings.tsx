@@ -47,8 +47,8 @@ export function SignalSourcesSettings({
   return (
     <Flex direction="column" gap="4">
       <Text className="text-(--gray-11) text-sm">
-        Connect GitHub and pick which sources to monitor. PostHog Code will
-        analyze activity around the clock and surface ready-to-merge fixes and
+        Connect GitHub and pick which sources to monitor. PostHog will analyze
+        activity around the clock and surface ready-to-merge fixes and
         improvements.
       </Text>
 

@@ -1,6 +1,7 @@
 import { Cloud, HardDrives } from "@phosphor-icons/react";
 import { useSettingsPageStore } from "@posthog/ui/features/settings/stores/settingsPageStore";
 import { navigateToSettings } from "@posthog/ui/router/navigationBridge";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Flex, SegmentedControl, Text } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
 import { CloudEnvironmentsSettings } from "./CloudEnvironmentsSettings";
@@ -10,6 +11,9 @@ type Segment = "local" | "cloud";
 
 export function EnvironmentsSettings() {
   const formMode = useSettingsPageStore((s) => s.formMode);
+  // Cloud-only hosts (web) have no local project environments (only sandboxes),
+  // so drop the local/cloud toggle and show cloud environments only.
+  const { localWorkspaces } = useHostCapabilities();
   const activeCategory = useRouterState({
     select: (s) => {
       const match = s.matches.find((m) => m.routeId === "/settings/$category");
@@ -19,7 +23,9 @@ export function EnvironmentsSettings() {
   });
 
   const segment: Segment =
-    activeCategory === "cloud-environments" ? "cloud" : "local";
+    !localWorkspaces || activeCategory === "cloud-environments"
+      ? "cloud"
+      : "local";
 
   const handleSegmentChange = (value: string) => {
     // Replace rather than push so switching tabs doesn't pile up history
@@ -32,7 +38,13 @@ export function EnvironmentsSettings() {
 
   return (
     <Flex direction="column" gap="4">
-      {!formMode && (
+      {!formMode && !localWorkspaces && (
+        <Text color="gray" className="text-[13px]">
+          A cloud environment configures the remote sandbox the agent works
+          inside when you start a task.
+        </Text>
+      )}
+      {!formMode && localWorkspaces && (
         <>
           <Text color="gray" className="text-[13px]">
             An environment defines what the agent works inside when you start a

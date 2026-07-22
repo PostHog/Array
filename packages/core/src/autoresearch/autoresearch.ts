@@ -162,6 +162,9 @@ export class AutoresearchService {
       researchFindings: [],
       iterations: [],
       startedAt: Date.now(),
+      pausedAt: null,
+      pausedDurationMs: 0,
+      pauseIntervals: [],
       endedAt: null,
       endReason: null,
       interruptedReason: null,
@@ -213,6 +216,7 @@ export class AutoresearchService {
     this.clearPendingReaction(runId);
     this.clearRecoveryTimer(runId);
     this.remindersSent.delete(runId);
+    this.pauseClock(runId);
     autoresearchStoreActions.setRunStatus(runId, "paused");
     this.persist(runId);
     this.restoreOriginalStage(run);
@@ -231,6 +235,7 @@ export class AutoresearchService {
       return;
     }
 
+    this.settlePausedClock(runId);
     this.clearRecoveryTimer(runId);
     const session = getSessionForTask(
       sessionStore.getState(),
@@ -257,6 +262,7 @@ export class AutoresearchService {
       autoresearchStoreActions.setRunStatus(runId, "interrupted", {
         interruptedReason: run.interruptedReason ?? "session-error",
       });
+      this.pauseClock(runId);
       this.persist(runId);
       void this.attemptRecovery(runId);
       return;
@@ -765,6 +771,7 @@ export class AutoresearchService {
         if (run?.status === "running") {
           this.clearPendingReaction(runId);
           this.remindersSent.delete(runId);
+          this.pauseClock(runId);
           autoresearchStoreActions.setRunStatus(runId, "paused");
           this.persist(runId);
           this.restoreOriginalStage(run);
@@ -806,6 +813,7 @@ export class AutoresearchService {
     this.clearPendingReaction(runId);
     // A fresh interruption gets its own reminder budget on resume.
     this.remindersSent.delete(runId);
+    this.pauseClock(runId);
     autoresearchStoreActions.setRunStatus(runId, "interrupted", {
       interruptedReason: reason,
       lastError,
@@ -885,6 +893,7 @@ export class AutoresearchService {
       return;
     }
 
+    this.settlePausedClock(runId);
     this.clearRecoveryTimer(runId);
     const session = getSessionForTask(
       sessionStore.getState(),
@@ -915,6 +924,7 @@ export class AutoresearchService {
     status: "completed" | "stopped" | "failed",
     options: { endReason: AutoresearchEndReason; lastError?: string },
   ): void {
+    this.settlePausedClock(runId);
     const run = autoresearchStore.getState().runs[runId];
     autoresearchStoreActions.setRunStatus(runId, status, options);
     this.persist(runId);
@@ -926,6 +936,29 @@ export class AutoresearchService {
     this.streamedReportCursor.delete(runId);
     this.liveRunIds.delete(runId);
     if (run) this.restoreOriginalStage(run);
+  }
+
+  private pauseClock(runId: string): void {
+    const run = autoresearchStore.getState().runs[runId];
+    if (!run || run.pausedAt != null) return;
+    autoresearchStoreActions.setPauseTiming(
+      runId,
+      Date.now(),
+      run.pausedDurationMs ?? 0,
+      run.pauseIntervals ?? [],
+    );
+  }
+
+  private settlePausedClock(runId: string): void {
+    const run = autoresearchStore.getState().runs[runId];
+    if (!run || run.pausedAt == null) return;
+    const endedAt = Date.now();
+    autoresearchStoreActions.setPauseTiming(
+      runId,
+      null,
+      (run.pausedDurationMs ?? 0) + Math.max(0, endedAt - run.pausedAt),
+      [...(run.pauseIntervals ?? []), { startedAt: run.pausedAt, endedAt }],
+    );
   }
 
   private clearPendingReaction(runId: string): void {

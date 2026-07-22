@@ -90,6 +90,58 @@ describe("warmTask", () => {
     );
   });
 
+  it("forwards the selected sandbox environment and custom image", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ task_id: "task-1", run_id: "run-1" }), {
+        status: 200,
+      }),
+    );
+
+    await warmTask({
+      repository: "posthog/posthog",
+      github_integration: 7,
+      branch: "main",
+      sandbox_environment_id: "environment-123",
+      custom_image_id: "image-123",
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://app.posthog.test/api/projects/42/tasks/warm/",
+      expect.objectContaining({
+        body: JSON.stringify({
+          repository: "posthog/posthog",
+          github_integration: 7,
+          branch: "main",
+          runtime_adapter: null,
+          model: null,
+          reasoning_effort: null,
+          sandbox_environment_id: "environment-123",
+          custom_image_id: "image-123",
+        }),
+      }),
+    );
+  });
+
+  it("omits the sandbox environment and custom image when unset", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ task_id: "task-1", run_id: "run-1" }), {
+        status: 200,
+      }),
+    );
+
+    await warmTask({
+      repository: "posthog/posthog",
+      github_integration: 7,
+      sandbox_environment_id: null,
+      custom_image_id: null,
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body).not.toHaveProperty("sandbox_environment_id");
+    expect(body).not.toHaveProperty("custom_image_id");
+  });
+
   it("serializes a missing branch as null", async () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ task_id: "task-1", run_id: "run-1" }), {

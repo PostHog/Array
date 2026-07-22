@@ -4,6 +4,14 @@ import { logger } from "./logger";
 
 const log = logger.scope("store");
 
+/** Structurally matches Electron's Rectangle (not imported here — utils stay electron-free). */
+export interface DisplayBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface FocusSession {
   mainRepoPath: string;
   worktreePath: string;
@@ -29,6 +37,7 @@ export interface WindowStateSchema {
   isMaximized: boolean;
   zoomLevel: number;
   isFullScreen: boolean;
+  fullScreenDisplayBounds: DisplayBounds | undefined;
   restoreFullScreenOnNextLaunch: boolean;
 }
 
@@ -58,6 +67,7 @@ export const windowStateStore = new Store<WindowStateSchema>({
     isMaximized: true,
     zoomLevel: 0,
     isFullScreen: false,
+    fullScreenDisplayBounds: undefined,
     restoreFullScreenOnNextLaunch: false,
   },
 });
@@ -89,6 +99,18 @@ export function saveFullScreenState(isFullScreen: boolean): void {
 
 export function getFullScreenState(): boolean {
   return windowStateStore.get("isFullScreen", false);
+}
+
+/**
+ * The bounds of the display the window was last fullscreened on, so the
+ * post-update relaunch can restore fullscreen on the same monitor.
+ */
+export function saveFullScreenDisplayBounds(bounds: DisplayBounds): void {
+  windowStateStore.set("fullScreenDisplayBounds", bounds);
+}
+
+export function getFullScreenDisplayBounds(): DisplayBounds | undefined {
+  return windowStateStore.get("fullScreenDisplayBounds", undefined);
 }
 
 /**

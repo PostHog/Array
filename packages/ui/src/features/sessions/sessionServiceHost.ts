@@ -15,20 +15,25 @@ import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
+import { SPOKEN_NARRATION_FLAG } from "@posthog/shared";
 import {
   createAuthenticatedClient,
   getAuthenticatedClient,
 } from "@posthog/ui/features/auth/authClientImperative";
 import { fetchAuthState } from "@posthog/ui/features/auth/authQueries";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
+import {
+  FEATURE_FLAGS,
+  type FeatureFlags,
+} from "@posthog/ui/features/feature-flags/identifiers";
 import { useAddDirectoryDialogStore } from "@posthog/ui/features/folder-picker/addDirectoryDialogStore";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
+import { SpeechNotifier } from "@posthog/ui/features/notifications/speechNotifier";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
   getPersistedConfigOptions,
   removePersistedConfigOptions,
   setPersistedConfigOptions,
-  updatePersistedConfigOptionValue,
 } from "@posthog/ui/features/sessions/sessionConfigStore";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
 import {
@@ -52,6 +57,14 @@ import { resolveLocalSkillPrompt } from "../message-editor/commands";
 export { SessionService };
 
 const log = logger.scope("session-service");
+
+export function shouldEnableSpokenNarration(
+  userOptedIn: boolean,
+  flagEnabled: boolean,
+  isDevelopment: boolean,
+): boolean {
+  return userOptedIn && (flagEnabled || isDevelopment);
+}
 
 function hostClient(): HostTrpcClient {
   return resolveService<HostTrpcClient>(HOST_TRPC_CLIENT);
@@ -95,6 +108,7 @@ function buildSessionServiceDeps(): SessionServiceDeps {
         taskId,
         durationMs,
       ),
+    enqueueSpeech: (request) => resolveService(SpeechNotifier).speak(request),
     getIsOnline,
     fetchAuthState,
     getAuthenticatedClient,
@@ -103,7 +117,6 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       getPersistedConfigOptions(taskRunId) ?? undefined,
     setPersistedConfigOptions,
     removePersistedConfigOptions,
-    updatePersistedConfigOptionValue,
     adapterStore: {
       getAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().getAdapter(taskRunId),
@@ -117,6 +130,13 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       return {
         ...state,
         customInstructions: getEffectiveCustomInstructions(state),
+        spokenNarrationEnabled: shouldEnableSpokenNarration(
+          state.spokenNotifications,
+          resolveService<FeatureFlags>(FEATURE_FLAGS).isEnabled(
+            SPOKEN_NARRATION_FLAG,
+          ),
+          import.meta.env.DEV,
+        ),
       };
     },
     usageLimit: {

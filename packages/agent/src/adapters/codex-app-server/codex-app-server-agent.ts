@@ -15,13 +15,29 @@ import type {
   RequestPermissionResponse,
   ResumeSessionRequest,
   ResumeSessionResponse,
+  SessionNotification,
   SetSessionConfigOptionRequest,
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
-import { mcpToolKey, posthogToolMeta } from "@posthog/shared";
-import { POSTHOG_NOTIFICATIONS } from "../../acp-extensions";
+import { RequestError } from "@agentclientprotocol/sdk";
+import {
+  classifyGatewayLimitError,
+  mcpToolKey,
+  posthogToolMeta,
+} from "@posthog/shared";
+import {
+  type NativeGoalState,
+  POSTHOG_NOTIFICATIONS,
+} from "../../acp-extensions";
+import type { ModelInfo } from "../../gateway-models";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
+import {
+  extractPostHogSubTool,
+  isPostHogExecDescriptor,
+  matchesPostHogExecPermission,
+  resolvePostHogExecPermissionRegex,
+} from "../../posthog-exec-permission";
 import type { ProcessSpawnedCallback } from "../../types";
 import { ALLOW_BYPASS } from "../../utils/common";
 import { Logger } from "../../utils/logger";
@@ -35,14 +51,16 @@ import {
   emptyBaseline,
   estimateTokens,
 } from "../claude/context-breakdown";
+import { isLocalSkillCommandChunk } from "../local-skill";
+import { resolveSpokenNarration } from "../session-meta";
 import {
   AppServerClient,
   type AppServerClientHandlers,
+  AppServerRequestError,
   type AppServerRpc,
 } from "./app-server-client";
 import { handleServerRequest } from "./approvals";
 import {
-  type AccumulatedUsage,
   buildSdkSessionParams,
   buildTurnCompleteParams,
   buildUsageBreakdownParams,
@@ -63,7 +81,11 @@ import {
   APP_SERVER_NOTIFICATIONS,
   APP_SERVER_REQUESTS,
 } from "./protocol";
-import { type CodexSandboxPolicy, SessionConfigState } from "./session-config";
+import {
+  type CodexSandboxPolicy,
+  type RawModel,
+  SessionConfigState,
+} from "./session-config";
 import {
   type CodexAppServerProcess,
   type CodexAppServerProcessOptions,
@@ -72,6 +94,16 @@ import {
 import { parseStructuredOutput } from "./structured-output";
 import { TurnController } from "./turn-controller";
 import { UsageTracker } from "./usage-tracker";
+
+function isStaleTurnSteerError(error: unknown): boolean {
+  if (!(error instanceof AppServerRequestError) || error.code !== -32600) {
+    return false;
+  }
+  return (
+    error.message === "no active turn to steer" ||
+    /^expected active turn id `.*` but found `.*`$/.test(error.message)
+  );
+}
 
 type AppServerSessionMeta = {
   // The host sends either a plain string or the Claude-style `{ append }` form.
@@ -83,7 +115,10 @@ type AppServerSessionMeta = {
   persistence?: { taskId?: string };
   environment?: "local" | "cloud";
   channelMode?: boolean;
+  spokenNarration?: boolean;
   baseBranch?: string;
+  posthogExecPermissionRegex?: string;
+  nativeGoal?: NativeGoalState;
 };
 
 /** The subset of codex's `Thread` the adapter reads: id + persisted `turns` for history replay. */
@@ -91,6 +126,91 @@ type AppServerThread = {
   id?: string;
   turns?: Array<{ items?: Parameters<typeof mapHistoryItem>[1][] }>;
 };
+
+type ThreadGoal = {
+  objective: string;
+  status: NativeGoalState["status"];
+};
+
+type GoalCommand =
+  | { kind: "get" }
+  | { kind: "clear" }
+  | { kind: "pause" }
+  | { kind: "resume" }
+  | { kind: "set"; objective: string };
+
+const MAX_PLAN_PROPOSAL_CHARS = 100_000;
+
+type CodexSkill = {
+  name?: string;
+  description?: string;
+  enabled?: boolean;
+};
+
+const GOAL_COMMAND = {
+  name: "goal",
+  description: "Set or view the goal for a long-running task",
+  input: { hint: "[<objective>|clear|pause|resume]" },
+};
+
+function isHiddenPromptBlock(block: PromptRequest["prompt"][number]): boolean {
+  const meta = block._meta as { ui?: { hidden?: boolean } } | undefined;
+  return meta?.ui?.hidden === true;
+}
+
+function visiblePromptBlocks(
+  prompt: PromptRequest["prompt"],
+): PromptRequest["prompt"] {
+  return prompt.filter((block) => !isHiddenPromptBlock(block));
+}
+
+function parseGoalCommand(prompt: PromptRequest["prompt"]): GoalCommand | null {
+  const visible = visiblePromptBlocks(prompt);
+  if (visible.some((block) => block.type !== "text")) return null;
+  const text = visible
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("\n")
+    .trim();
+  const match = text.match(/^\/goal(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  const argument = match[1]?.trim();
+  if (!argument) return { kind: "get" };
+  switch (argument.toLowerCase()) {
+    case "clear":
+      return { kind: "clear" };
+    case "pause":
+      return { kind: "pause" };
+    case "resume":
+      return { kind: "resume" };
+    default:
+      return { kind: "set", objective: argument };
+  }
+}
+
+function mergePromptUsage(
+  left: PromptResponse["usage"],
+  right: PromptResponse["usage"],
+): PromptResponse["usage"] {
+  if (!left) return right;
+  if (!right) return left;
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    cachedReadTokens:
+      (left.cachedReadTokens ?? 0) + (right.cachedReadTokens ?? 0),
+    cachedWriteTokens:
+      (left.cachedWriteTokens ?? 0) + (right.cachedWriteTokens ?? 0),
+    thoughtTokens: (left.thoughtTokens ?? 0) + (right.thoughtTokens ?? 0),
+    totalTokens: left.totalTokens + right.totalTokens,
+  };
+}
+
+function mergePromptResponses(
+  left: PromptResponse,
+  right: PromptResponse,
+): PromptResponse {
+  return { ...right, usage: mergePromptUsage(left.usage, right.usage) };
+}
 
 // The native app-server owns its config; BaseAcpAgent only calls dispose() on this.
 class NoopSettingsManager implements BaseSettingsManager {
@@ -109,6 +229,7 @@ export interface CodexAppServerAgentOptions {
   processOptions: CodexAppServerProcessOptions;
   model?: string;
   reasoningEffort?: string;
+  gatewayModels?: ReadonlyArray<ModelInfo>;
   processCallbacks?: ProcessSpawnedCallback;
   logger?: Logger;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
@@ -118,7 +239,7 @@ export interface CodexAppServerAgentOptions {
 
 /**
  * ACP Agent backed by the native Codex `app-server` JSON-RPC protocol,
- * presenting the ACP surface PostHog Code expects.
+ * presenting the ACP surface PostHog expects.
  */
 export class CodexAppServerAgent extends BaseAcpAgent {
   readonly adapterName = "codex";
@@ -141,20 +262,34 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private taskRunId?: string;
   /** Deployment environment; on "cloud" a non-danger sandbox would panic, so we skip the override. */
   private environment?: "local" | "cloud";
+  /** Gates PostHog exec sub-tools; set per session, defaults to the destructive-verbs regex. */
+  private posthogExecPermissionRegex =
+    resolvePostHogExecPermissionRegex(undefined);
   private readonly commandOutputs = new Map<string, string>();
+  private readonly subagentParents = new Map<string, string>();
+  private readonly pendingSubagentNotifications = new Map<
+    string,
+    SessionNotification[]
+  >();
   /** Extra writable roots for this session, folded into workspaceWrite sandbox turns. */
   private additionalDirectories?: string[];
   /** The session workspace stays writable when extra roots are applied per turn. */
   private workspaceDirectory?: string;
   /** The in-flight turn's <proposed_plan>, streamed or completed (drives the implement handoff). */
   private planProposal?: { itemId: string; text: string };
+  /** Structured plan tool call already emitted while the proposal streams. */
+  private streamedPlanToolCallId?: string;
   /** Idle signal deferred while the plan handoff keeps this prompt busy. */
-  private deferredTurnComplete?: { usage: AccumulatedUsage };
+  private deferredTurnComplete?: { usage: PromptResponse["usage"] };
   /** Settles the pending plan-approval race on cancel/close/preempting prompt. */
   private planHandoffCancel?: () => void;
   private readonly mcp = new McpManager();
   private readonly turns = new TurnController();
   private readonly usage = new UsageTracker();
+  /** Pause/clear can race a goal continuation already queued by app-server. */
+  private cancelNextGoalTurn = false;
+  /** Native goal ticks start outside prompt(), so TurnController does not own them. */
+  private nativeGoalTurnId?: string;
 
   constructor(
     client: AgentSideConnection,
@@ -167,6 +302,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.config = new SessionConfigState(
       options.model ?? DEFAULT_CODEX_MODEL,
       options.reasoningEffort,
+      options.gatewayModels,
     );
     this.onStructuredOutput = options.onStructuredOutput;
     this.developerInstructions = options.processOptions.developerInstructions;
@@ -210,7 +346,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     await this.rpc.request(APP_SERVER_METHODS.INITIALIZE, {
       clientInfo: {
         name: "posthog-code",
-        title: "PostHog Code",
+        title: "PostHog",
         version: "0.1.0",
       },
       // Opt into codex's experimental API so experimental turn/start fields are honored.
@@ -360,6 +496,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       additionalDirectories?: string[];
     },
   ): Promise<{ threadId: string; thread: AppServerThread | undefined }> {
+    this.cancelNextGoalTurn = false;
+    this.nativeGoalTurnId = undefined;
+    this.subagentParents.clear();
+    this.pendingSubagentNotifications.clear();
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
@@ -392,10 +532,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         { error: String(err) },
       );
     }
-    const mcpServers = toCodexMcpServers([
-      ...(params.mcpServers ?? []),
-      ...(localTools ? [localTools] : []),
-    ]);
+    this.posthogExecPermissionRegex = resolvePostHogExecPermissionRegex(
+      params.meta?.posthogExecPermissionRegex,
+      (message) =>
+        this.logger.warn(
+          "Invalid posthogExecPermissionRegex in session metadata; using default",
+          { message },
+        ),
+    );
+    const mcpServers = toCodexMcpServers(
+      [...(params.mcpServers ?? []), ...(localTools ? [localTools] : [])],
+      { gatePosthogExec: true },
+    );
     const config = buildThreadConfig(mcpServers, params.additionalDirectories);
 
     const result = await this.rpc.request<{ thread?: AppServerThread }>(
@@ -415,6 +563,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     this.threadId = threadId;
     this.sessionId = threadId;
+    this.restoreSubagentRelationships(thread);
+    if (method === APP_SERVER_METHODS.THREAD_START && params.meta?.nativeGoal) {
+      await this.restoreGoal(params.meta.nativeGoal);
+    }
     await this.loadModelConfig();
     this.emitConfigOptions();
     await this.emitAvailableCommands();
@@ -436,6 +588,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     return {
       environment: meta.environment,
       channelMode: meta.channelMode,
+      spokenNarration: resolveSpokenNarration(meta),
       taskId: meta.taskId,
       taskRunId: meta.taskRunId,
       persistence: meta.persistence,
@@ -486,7 +639,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   private async loadModelConfig(): Promise<void> {
     try {
-      const res = await this.rpc.request<{ data?: any[] }>(
+      const res = await this.rpc.request<{ data?: RawModel[] }>(
         APP_SERVER_METHODS.MODEL_LIST,
         {},
       );
@@ -515,17 +668,29 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** skills/list → available_commands_update so the slash-command menu fills. */
   private async emitAvailableCommands(): Promise<void> {
     if (!this.sessionId) return;
-    let commands: Array<{ name: string; description: string }> = [];
+    let commands: Array<{
+      name: string;
+      description: string;
+      input?: { hint: string };
+    }> = [GOAL_COMMAND];
     try {
-      const res = await this.rpc.request<{ data?: Array<{ skills?: any[] }> }>(
-        APP_SERVER_METHODS.SKILLS_LIST,
-        {},
-      );
-      commands = (res?.data ?? [])
+      const res = await this.rpc.request<{
+        data?: Array<{ skills?: CodexSkill[] }>;
+      }>(APP_SERVER_METHODS.SKILLS_LIST, {});
+      const skills = (res?.data ?? [])
         .flatMap((entry) => entry?.skills ?? [])
         // Drop explicitly-disabled skills; lenient `!== false` so a malformed payload still shows.
-        .filter((s) => s?.name && s?.enabled !== false)
-        .map((s: any) => ({ name: s.name, description: s.description ?? "" }));
+        .filter(
+          (skill): skill is CodexSkill & { name: string } =>
+            !!skill.name &&
+            skill.name !== GOAL_COMMAND.name &&
+            skill.enabled !== false,
+        )
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description ?? "",
+        }));
+      commands = [GOAL_COMMAND, ...skills];
     } catch (err) {
       this.logger.warn("skills/list failed", { error: String(err) });
     }
@@ -544,6 +709,13 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (!this.threadId) {
       throw new Error("prompt() called before newSession()");
     }
+    const goalCommand = parseGoalCommand(params.prompt);
+    if (goalCommand) {
+      this.broadcastUserInput(visiblePromptBlocks(params.prompt));
+      await this.handleGoalCommand(goalCommand);
+      return { stopReason: "end_turn" };
+    }
+    this.cancelNextGoalTurn = false;
     // Reopen the notification gate (a prior interrupt may have left session.cancelled set).
     this.session.cancelled = false;
     // A new prompt while the plan handoff awaits approval implicitly declines it:
@@ -551,12 +723,48 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.planHandoffCancel?.();
     // Prepend _meta.prContext (host PR-follow-up / Slack runs) to the FORWARDED prompt,
     // else codex cloud follow-ups lose the PR-review context. The echo omits it.
-    const prContext = (params._meta as { prContext?: unknown } | undefined)
-      ?.prContext;
+    const meta = params._meta as
+      | {
+          prContext?: unknown;
+          localSkillContext?: unknown;
+          localSkillName?: unknown;
+        }
+      | undefined;
+    const prContext = meta?.prContext;
+    // Inline installed local skill definitions (mirrors the Claude adapter):
+    // codex's skill catalog is fixed at thread start, so mid-session installs
+    // are invisible without this. A bare `/name` command chunk is dropped —
+    // the injected context already carries the user's args.
+    const localSkillContext =
+      typeof meta?.localSkillContext === "string"
+        ? meta.localSkillContext
+        : null;
+    const localSkillName =
+      typeof meta?.localSkillName === "string" ? meta.localSkillName : null;
+    let forwarded = params.prompt;
+    if (localSkillContext) {
+      if (localSkillName) {
+        let skippedLocalSkillCommand = false;
+        forwarded = forwarded.filter((chunk) => {
+          if (
+            !skippedLocalSkillCommand &&
+            isLocalSkillCommandChunk(chunk, localSkillName)
+          ) {
+            skippedLocalSkillCommand = true;
+            return false;
+          }
+          return true;
+        });
+      }
+      forwarded = [
+        { type: "text" as const, text: localSkillContext },
+        ...forwarded,
+      ];
+    }
     const promptBlocks =
       typeof prContext === "string" && prContext.length > 0
-        ? [{ type: "text" as const, text: prContext }, ...params.prompt]
-        : params.prompt;
+        ? [{ type: "text" as const, text: prContext }, ...forwarded]
+        : forwarded;
     const input = toCodexInput(promptBlocks);
     if (input.length === 0) {
       // turn/start rejects empty input, so end the turn cleanly.
@@ -574,40 +782,164 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (dropped > 0) {
       this.logger.warn("Dropped non-text/non-image prompt blocks", { dropped });
     }
-    // Echo the user prompt (codex emits none), for fresh turns and steering alike.
-    this.broadcastUserInput(params.prompt);
-
     if (this.turns.isRunning) {
       // A turn is already running: fold the message in via turn/steer (precondition: the
       // active turnId). Refresh from the response's rotated turnId so a later steer/interrupt
       // still targets the live turn (no turn/started is re-emitted for a steer).
-      const steerRes = await this.rpc
-        .request<{ turnId?: string }>(APP_SERVER_METHODS.TURN_STEER, {
-          threadId: this.threadId,
-          input,
-          expectedTurnId: this.turns.activeTurnId,
-        })
-        .catch((err) => {
-          this.logger.warn("turn/steer failed", err);
-          return undefined;
-        });
+      let steerRes: { turnId?: string };
+      try {
+        steerRes = await this.rpc.request<{ turnId?: string }>(
+          APP_SERVER_METHODS.TURN_STEER,
+          {
+            threadId: this.threadId,
+            input,
+            expectedTurnId: this.turns.activeTurnId,
+          },
+        );
+      } catch (error) {
+        if (
+          (params._meta as { steer?: unknown } | undefined)?.steer === true &&
+          isStaleTurnSteerError(error)
+        ) {
+          return { stopReason: "end_turn", _meta: { steer: false } };
+        }
+        throw error;
+      }
       this.turns.onSteered(steerRes?.turnId);
-      return { stopReason: await this.turns.awaitCompletion() };
+      this.broadcastUserInput(params.prompt);
+      return { stopReason: "end_turn", _meta: { steer: true } };
+    }
+    if ((params._meta as { steer?: unknown } | undefined)?.steer === true) {
+      return { stopReason: "end_turn", _meta: { steer: false } };
     }
     if (this.turns.isPending) {
       // A turn is pending but has no turnId yet, so we can't steer; fail fast.
       throw new Error("prompt() called while a turn is already in progress");
     }
 
-    const stopReason = await this.runTurn(input);
-    return { stopReason: await this.maybeOfferPlanImplementation(stopReason) };
+    // Codex does not echo user input, so emit it only once delivery can proceed.
+    this.broadcastUserInput(params.prompt);
+    const response = await this.runTurn(input);
+    return this.maybeOfferPlanImplementation(response);
+  }
+
+  private async handleGoalCommand(command: GoalCommand): Promise<void> {
+    if (!this.threadId) return;
+    if (command.kind === "clear") {
+      this.cancelNextGoalTurn = true;
+      const result = await this.rpc.request<{ cleared?: boolean }>(
+        APP_SERVER_METHODS.THREAD_GOAL_CLEAR,
+        { threadId: this.threadId },
+      );
+      await this.emitGoalState(null);
+      await this.cancelRunningGoalTurn();
+      this.broadcastAgentText(
+        result.cleared ? "Goal cleared." : "No goal was set.",
+      );
+      return;
+    }
+
+    if (command.kind === "get") {
+      const result = await this.rpc.request<{ goal?: ThreadGoal | null }>(
+        APP_SERVER_METHODS.THREAD_GOAL_GET,
+        { threadId: this.threadId },
+      );
+      this.broadcastAgentText(
+        result.goal
+          ? `Goal ${result.goal.status}: ${result.goal.objective}`
+          : "No goal set. Usage: `/goal <objective>`",
+      );
+      return;
+    }
+
+    if (command.kind === "pause") {
+      this.cancelNextGoalTurn = true;
+    }
+    const params =
+      command.kind === "set"
+        ? { threadId: this.threadId, objective: command.objective }
+        : {
+            threadId: this.threadId,
+            status: command.kind === "pause" ? "paused" : "active",
+          };
+    const result = await this.rpc.request<{ goal: ThreadGoal }>(
+      APP_SERVER_METHODS.THREAD_GOAL_SET,
+      params,
+    );
+    await this.emitGoalState(result.goal);
+    if (command.kind === "pause") {
+      await this.cancelRunningGoalTurn();
+    }
+    const prefix =
+      command.kind === "set"
+        ? "Goal set"
+        : command.kind === "pause"
+          ? "Goal paused"
+          : "Goal resumed";
+    this.broadcastAgentText(`${prefix}: ${result.goal.objective}`);
+  }
+
+  private async restoreGoal(goal: NativeGoalState): Promise<void> {
+    if (!this.threadId) return;
+    const result = await this.rpc.request<{ goal: ThreadGoal }>(
+      APP_SERVER_METHODS.THREAD_GOAL_SET,
+      {
+        threadId: this.threadId,
+        objective: goal.objective,
+        status: goal.status,
+      },
+    );
+    await this.emitGoalState(result.goal);
+  }
+
+  private async emitGoalState(goal: NativeGoalState | null): Promise<void> {
+    await this.client
+      .extNotification(POSTHOG_NOTIFICATIONS.CODEX_GOAL, { goal })
+      .catch((error) =>
+        this.logger.warn("Failed to persist Codex goal state", error),
+      );
+  }
+
+  private async cancelRunningGoalTurn(): Promise<void> {
+    if (this.turns.isRunning) {
+      this.cancelNextGoalTurn = false;
+      await this.interrupt();
+      return;
+    }
+    if (this.nativeGoalTurnId) {
+      await this.interruptNativeGoalTurn(this.nativeGoalTurnId);
+    }
+  }
+
+  private interruptQueuedGoalTurn(turnId: string | undefined): void {
+    if (!this.cancelNextGoalTurn || !this.threadId || !turnId) return;
+    void this.interruptNativeGoalTurn(turnId);
+  }
+
+  private async interruptNativeGoalTurn(turnId: string): Promise<void> {
+    if (!this.threadId) return;
+    await this.rpc
+      .request(APP_SERVER_METHODS.TURN_INTERRUPT, {
+        threadId: this.threadId,
+        turnId,
+      })
+      .then(() => {
+        this.cancelNextGoalTurn = false;
+        if (this.nativeGoalTurnId === turnId) {
+          this.nativeGoalTurnId = undefined;
+        }
+      })
+      .catch((error) =>
+        this.logger.warn("Native goal turn interrupt failed", error),
+      );
   }
 
   /** Start one codex turn and await its completion. */
-  private async runTurn(input: CodexUserInput[]): Promise<StopReason> {
+  private async runTurn(input: CodexUserInput[]): Promise<PromptResponse> {
     this.lastAgentMessage = "";
     this.resetUsage();
     this.planProposal = undefined;
+    this.streamedPlanToolCallId = undefined;
     // A new turn owns the idle boundary; its own completion emits the signal.
     this.deferredTurnComplete = undefined;
     const { completion, turn } = this.turns.begin();
@@ -649,12 +981,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
    * back into another plan turn, whose revised plan prompts again.
    */
   private async maybeOfferPlanImplementation(
-    stopReason: StopReason,
-  ): Promise<StopReason> {
-    let reason = stopReason;
+    response: PromptResponse,
+  ): Promise<PromptResponse> {
+    let result = response;
     try {
       while (
-        reason === "end_turn" &&
+        result.stopReason === "end_turn" &&
         this.config.mode === "plan" &&
         this.planProposal &&
         !this.session.cancelled
@@ -665,29 +997,44 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         // Re-check after the await: a cancel that raced the response wins, so a
         // late accept can never start implementation on a cancelled prompt.
         if (this.session.cancelled) {
-          reason = "cancelled";
+          if (outcome.kind === "implement") {
+            this.completePlanApprovalToolCall(outcome.toolCallId, "failed");
+          }
+          result = { ...result, stopReason: "cancelled" };
           break;
         }
         // A picker change while approval was open owns the mode. Never let a
         // stale approval overwrite it with a broader implementation mode.
-        if (this.config.mode !== "plan") break;
+        if (this.config.mode !== "plan") {
+          if (outcome.kind === "implement") {
+            this.completePlanApprovalToolCall(outcome.toolCallId, "failed");
+          }
+          break;
+        }
         if (outcome.kind === "implement") {
+          this.completePlanApprovalToolCall(outcome.toolCallId, "completed");
           this.config.setOption("mode", outcome.mode);
           this.emitCurrentMode(outcome.mode);
           this.emitConfigOptions();
-          reason = await this.runFollowUpTurn(IMPLEMENT_PLAN_MESSAGE);
+          result = mergePromptResponses(
+            result,
+            await this.runFollowUpTurn(IMPLEMENT_PLAN_MESSAGE),
+          );
           break;
         }
         if (outcome.kind === "feedback") {
-          reason = await this.runFollowUpTurn(outcome.feedback);
+          result = mergePromptResponses(
+            result,
+            await this.runFollowUpTurn(outcome.feedback),
+          );
           continue;
         }
         break;
       }
     } finally {
-      await this.flushDeferredTurnComplete(reason);
+      await this.flushDeferredTurnComplete(result.stopReason);
     }
-    return reason;
+    return result;
   }
 
   /**
@@ -703,7 +1050,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   /** Run an adapter-initiated turn, echoed as a user message like a host prompt. */
-  private async runFollowUpTurn(text: string): Promise<StopReason> {
+  private async runFollowUpTurn(text: string): Promise<PromptResponse> {
     this.broadcastUserInput([{ type: "text", text }]);
     return this.runTurn(toCodexInput([{ type: "text", text }]));
   }
@@ -717,23 +1064,17 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     itemId: string;
     text: string;
   }): Promise<
-    | { kind: "implement"; mode: "auto" | "full-access" }
+    | {
+        kind: "implement";
+        mode: "auto" | "full-access";
+        toolCallId: string;
+      }
     | { kind: "feedback"; feedback: string }
     | { kind: "stay" }
   > {
     const toolCallId = `${proposal.itemId}:implement`;
-    const toolCall = {
-      toolCallId,
-      title: "Ready to code?",
-      kind: "switch_mode",
-      content: [
-        {
-          type: "content" as const,
-          content: { type: "text" as const, text: proposal.text },
-        },
-      ],
-      rawInput: { plan: proposal.text },
-    };
+    const toolCall = this.buildPlanApprovalToolCall(proposal);
+    this.emitPlanProposal(toolCall, proposal.text);
     const options = [
       {
         optionId: "auto",
@@ -776,8 +1117,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     });
     const settled = await Promise.race([permission, cancelled]);
     this.planHandoffCancel = undefined;
-    if (!settled) return { kind: "stay" };
+    if (!settled) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
     if (settled.failed) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
       this.logger.warn("plan implementation prompt failed; staying in plan", {
         error: String(settled.err),
       });
@@ -789,23 +1134,136 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     const response = settled.res;
     if (this.session.cancelled || response.outcome.outcome !== "selected") {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
       return { kind: "stay" };
     }
     const optionId = response.outcome.optionId;
-    if (!offered.has(optionId)) return { kind: "stay" };
-    if (optionId === "auto") return { kind: "implement", mode: "auto" };
+    if (!offered.has(optionId)) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
+    if (optionId === "auto") {
+      return { kind: "implement", mode: "auto", toolCallId };
+    }
     // Double-gated: only ever offered under ALLOW_BYPASS, and re-checked here.
     if (optionId === "full-access" && ALLOW_BYPASS) {
-      return { kind: "implement", mode: "full-access" };
+      return { kind: "implement", mode: "full-access", toolCallId };
     }
     if (optionId === "reject_with_feedback") {
       const feedback = (response as { _meta?: { customInput?: unknown } })._meta
         ?.customInput;
       if (typeof feedback === "string" && feedback.trim()) {
+        this.completePlanApprovalToolCall(toolCallId, "failed");
         return { kind: "feedback", feedback: feedback.trim() };
       }
     }
+    this.completePlanApprovalToolCall(toolCallId, "failed");
     return { kind: "stay" };
+  }
+
+  private buildPlanApprovalToolCall(proposal: {
+    itemId: string;
+    text: string;
+  }): {
+    toolCallId: string;
+    title: string;
+    kind: "switch_mode";
+    content: Array<{
+      type: "content";
+      content: { type: "text"; text: string };
+    }>;
+    rawInput: { plan: string };
+  } {
+    return {
+      toolCallId: `${proposal.itemId}:implement`,
+      title: "Ready to code?",
+      kind: "switch_mode",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: proposal.text },
+        },
+      ],
+      rawInput: { plan: proposal.text },
+    };
+  }
+
+  private emitPlanProposal(
+    toolCall: ReturnType<CodexAppServerAgent["buildPlanApprovalToolCall"]>,
+    text: string,
+  ): void {
+    if (this.streamedPlanToolCallId === toolCall.toolCallId) {
+      this.emitPlanApprovalToolCall({
+        sessionUpdate: "tool_call_update",
+        toolCallId: toolCall.toolCallId,
+        status: "in_progress",
+        content: [{ type: "content", content: { type: "text", text } }],
+        rawInput: { plan: text },
+      });
+      return;
+    }
+    this.streamedPlanToolCallId = toolCall.toolCallId;
+    this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call",
+      ...toolCall,
+      status: "in_progress",
+    });
+  }
+
+  private completePlanApprovalToolCall(
+    toolCallId: string,
+    status: "completed" | "failed",
+  ): void {
+    this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call_update",
+      toolCallId,
+      status,
+    });
+  }
+
+  private emitPlanApprovalToolCall(update: Record<string, unknown>): void {
+    const notification = {
+      sessionId: this.sessionId,
+      update,
+    } as unknown as Parameters<AgentSideConnection["sessionUpdate"]>[0];
+    this.appendPlanApprovalNotification(notification);
+    void this.client.sessionUpdate(notification).catch((error) => {
+      this.logger.warn("Failed to emit plan approval tool call update", {
+        error: String(error),
+        sessionUpdate: update.sessionUpdate,
+        toolCallId: update.toolCallId,
+      });
+    });
+  }
+
+  private appendPlanApprovalNotification(
+    notification: Parameters<AgentSideConnection["sessionUpdate"]>[0],
+  ): void {
+    const update = notification.update as Record<string, unknown>;
+    if (
+      update.sessionUpdate === "tool_call_update" &&
+      update.status === "in_progress" &&
+      typeof update.toolCallId === "string"
+    ) {
+      for (
+        let index = this.session.notificationHistory.length - 1;
+        index >= 0;
+        index--
+      ) {
+        const previous = this.session.notificationHistory[index] as unknown as {
+          update?: Record<string, unknown>;
+        };
+        if (
+          previous.update?.sessionUpdate === "tool_call_update" &&
+          previous.update.status === "in_progress" &&
+          previous.update.toolCallId === update.toolCallId
+        ) {
+          this.session.notificationHistory[index] = notification;
+          return;
+        }
+      }
+    }
+    this.appendNotification(this.sessionId, notification);
   }
 
   /** Emit a plain agent message (user-facing status the model didn't produce). */
@@ -882,6 +1340,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   async closeSession(): Promise<void> {
     this.commandOutputs.clear();
+    this.subagentParents.clear();
+    this.pendingSubagentNotifications.clear();
+    this.nativeGoalTurnId = undefined;
     this.session.abortController.abort();
     this.session.cancelled = true;
     this.planHandoffCancel?.();
@@ -897,24 +1358,42 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   private handleNotification(method: string, params: unknown): void {
-    const mappedParams = this.withBufferedCommandOutput(method, params);
+    const notificationThreadId = readNotificationThreadId(params);
+    const isMainThread =
+      !notificationThreadId || notificationThreadId === this.threadId;
+    const relatedSubagentThreadIds = this.captureSubagentRelationship(
+      method,
+      params,
+      notificationThreadId,
+    );
+    const mappedParams = isMainThread
+      ? this.withBufferedCommandOutput(method, params)
+      : params;
+
     if (this.sessionId && !this.session.cancelled) {
       const notification = mapAppServerNotification(
         this.sessionId,
         method,
         mappedParams,
       );
-      if (notification) {
-        void this.client
-          .sessionUpdate(notification)
-          .catch((err) => this.logger.warn("sessionUpdate failed", err));
-        this.appendNotification(this.sessionId, notification);
+      const visibleNotification = isMainThread
+        ? notification
+        : this.mapSubagentNotification(notification, notificationThreadId);
+      if (visibleNotification) {
+        this.emitSessionNotification(visibleNotification);
+      } else if (
+        notification &&
+        notificationThreadId &&
+        isSubagentActivityNotification(notification)
+      ) {
+        const pending =
+          this.pendingSubagentNotifications.get(notificationThreadId) ?? [];
+        pending.push(notification);
+        this.pendingSubagentNotifications.set(notificationThreadId, pending);
       }
-    }
-
-    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
-      // Capture the active turn id (steer precondition / interrupt target).
-      this.turns.onStarted((params as { turn?: { id?: string } })?.turn?.id);
+      for (const threadId of relatedSubagentThreadIds) {
+        this.flushSubagentNotifications(threadId);
+      }
     }
 
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_STARTED) {
@@ -922,6 +1401,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     if (method === APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED) {
       this.mcp.release(params);
+    }
+
+    if (!isMainThread) return;
+
+    if (method === APP_SERVER_NOTIFICATIONS.TURN_STARTED) {
+      // Capture the active turn id (steer precondition / interrupt target).
+      const turnId = (params as { turn?: { id?: string } })?.turn?.id;
+      if (!this.turns.isPending && turnId) {
+        this.nativeGoalTurnId = turnId;
+      }
+      this.turns.onStarted(turnId);
+      this.interruptQueuedGoalTurn(turnId);
     }
 
     // codex auto-compaction surfaces as a contextCompaction item: item/started → in progress,
@@ -964,6 +1455,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       this.commandOutputs.clear();
       const turn = (params as { turn?: { id?: string; status?: string } })
         ?.turn;
+      if (turn?.id === this.nativeGoalTurnId) {
+        this.nativeGoalTurnId = undefined;
+      }
       // Drop the late completion of an already-interrupted turn (else it cancels the follow-up).
       if (this.turns.shouldDropCompletion(turn?.id)) return;
       void this.finalizeTurn(mapTurnStopReason(turn?.status));
@@ -985,14 +1479,156 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
     if (method === APP_SERVER_NOTIFICATIONS.ERROR) {
       // A non-retried fatal error: resolve the turn so prompt() returns rather than hangs.
-      const willRetry = (params as { willRetry?: boolean })?.willRetry;
+      const { willRetry, error } = (params ?? {}) as {
+        willRetry?: boolean;
+        error?: { message?: string };
+      };
       if (willRetry === false) {
         this.logger.warn("codex app-server fatal error notification", {
           params,
         });
+        const message = error?.message ?? "";
+        // A gateway billing denial rejects the prompt so the host classifies
+        // it and shows the upgrade gate. It must be a RequestError: a plain
+        // Error serializes to a bare "Internal error" at the ACP boundary,
+        // which the host reads as fatal and answers with a respawn loop.
+        if (classifyGatewayLimitError(message) !== null) {
+          if (this.compactionActive) {
+            this.compactionActive = false;
+            this.emitCompactionBoundary();
+          }
+          this.turns.fail(RequestError.internalError(undefined, message));
+          return;
+        }
+        if (
+          message.includes("413") ||
+          message.toLowerCase().includes("request body too large")
+        ) {
+          this.turns.fail(
+            RequestError.internalError(
+              undefined,
+              "This conversation is too large to continue. Start a new task and carry over a text summary instead of image or tool output.",
+            ),
+          );
+          return;
+        }
         void this.finalizeTurn("refusal");
       }
     }
+  }
+
+  private captureSubagentRelationship(
+    method: string,
+    params: unknown,
+    senderThreadId: string | undefined,
+  ): string[] {
+    if (
+      method !== APP_SERVER_NOTIFICATIONS.ITEM_STARTED &&
+      method !== APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED
+    ) {
+      return [];
+    }
+    const item = (params as { item?: AppServerItem })?.item;
+    return this.captureSubagentRelationshipItem(item, senderThreadId);
+  }
+
+  private restoreSubagentRelationships(
+    thread: AppServerThread | undefined,
+  ): void {
+    for (const turn of thread?.turns ?? []) {
+      for (const item of turn.items ?? []) {
+        this.captureSubagentRelationshipItem(item, item.senderThreadId);
+      }
+    }
+  }
+
+  private captureSubagentRelationshipItem(
+    item: AppServerItem | undefined,
+    senderThreadId: string | undefined,
+  ): string[] {
+    if (
+      item?.type !== "collabAgentToolCall" ||
+      (item.tool !== "spawnAgent" &&
+        item.tool !== "resumeAgent" &&
+        item.tool !== "sendInput") ||
+      !item.id ||
+      !item.receiverThreadIds?.length
+    ) {
+      return [];
+    }
+    const parentToolCallId =
+      senderThreadId && senderThreadId !== this.threadId
+        ? subagentToolCallId(senderThreadId, item.id)
+        : item.id;
+    for (const receiverThreadId of item.receiverThreadIds) {
+      this.subagentParents.set(receiverThreadId, parentToolCallId);
+    }
+    return item.receiverThreadIds;
+  }
+
+  private emitSessionNotification(notification: SessionNotification): void {
+    if (!this.sessionId) return;
+    void this.client
+      .sessionUpdate(notification)
+      .catch((err) => this.logger.warn("sessionUpdate failed", err));
+    this.appendNotification(this.sessionId, notification);
+  }
+
+  private flushSubagentNotifications(threadId: string): void {
+    const pending = this.pendingSubagentNotifications.get(threadId);
+    if (!pending) return;
+    this.pendingSubagentNotifications.delete(threadId);
+    for (const notification of pending) {
+      const visibleNotification = this.mapSubagentNotification(
+        notification,
+        threadId,
+      );
+      if (visibleNotification) {
+        this.emitSessionNotification(visibleNotification);
+      }
+    }
+  }
+
+  private mapSubagentNotification(
+    notification: SessionNotification | null,
+    threadId: string | undefined,
+  ): SessionNotification | null {
+    if (!notification || !threadId) return null;
+    const parentToolCallId = this.subagentParents.get(threadId);
+    if (!parentToolCallId) return null;
+    if (!isSubagentActivityNotification(notification)) return null;
+    const update = notification.update;
+    const toolCallId = update.toolCallId
+      ? subagentToolCallId(threadId, update.toolCallId)
+      : undefined;
+    if (update.sessionUpdate === "tool_call_update") {
+      return {
+        ...notification,
+        update: { ...update, ...(toolCallId ? { toolCallId } : {}) },
+      } as SessionNotification;
+    }
+    const existingPosthog = (update._meta?.posthog ?? {}) as Record<
+      string,
+      unknown
+    >;
+    return {
+      ...notification,
+      update: {
+        ...update,
+        ...(toolCallId ? { toolCallId } : {}),
+        _meta: {
+          ...update._meta,
+          posthog: {
+            toolName:
+              typeof existingPosthog.toolName === "string"
+                ? existingPosthog.toolName
+                : "subagent_activity",
+            ...existingPosthog,
+            parentToolCallId,
+          },
+        },
+      },
+    } as SessionNotification;
   }
 
   private withBufferedCommandOutput(method: string, params: unknown): unknown {
@@ -1054,7 +1690,16 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       params as { item?: { type?: string; id?: string; text?: string } }
     )?.item;
     if (item?.type === "plan" && typeof item.text === "string" && item.text) {
-      this.planProposal = { itemId: item.id ?? "codex-plan", text: item.text };
+      this.planProposal = {
+        itemId: item.id ?? "codex-plan",
+        text: item.text.slice(0, MAX_PLAN_PROPOSAL_CHARS),
+      };
+      if (this.config.mode === "plan" && this.streamedPlanToolCallId) {
+        this.emitPlanProposal(
+          this.buildPlanApprovalToolCall(this.planProposal),
+          this.planProposal.text,
+        );
+      }
     }
   }
 
@@ -1071,7 +1716,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         : (this.planProposal?.itemId ?? "codex-plan");
     const previousText =
       this.planProposal?.itemId === proposalId ? this.planProposal.text : "";
-    this.planProposal = { itemId: proposalId, text: previousText + delta };
+    const remainingChars = MAX_PLAN_PROPOSAL_CHARS - previousText.length;
+    if (remainingChars <= 0) return;
+    this.planProposal = {
+      itemId: proposalId,
+      text: previousText + delta.slice(0, remainingChars),
+    };
+    if (this.config.mode === "plan") {
+      this.emitPlanProposal(
+        this.buildPlanApprovalToolCall(this.planProposal),
+        this.planProposal.text,
+      );
+    }
   }
 
   /** Compaction started: emit `_posthog/status` so the host sets `isCompacting` (gates steer/queue). */
@@ -1167,7 +1823,10 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       await this.emitTurnCompleteSignal(reason, usage);
       await this.emitUsageBreakdown(contextUsed);
     }
-    pending.resolve(reason);
+    pending.resolve({
+      stopReason: reason,
+      ...(usage ? { usage } : {}),
+    });
   }
 
   /** Whether maybeOfferPlanImplementation will run for a turn that ended this way. */
@@ -1183,7 +1842,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** Emit the cloud idle signal `_posthog/turn_complete` (only with a taskRunId). */
   private async emitTurnCompleteSignal(
     reason: StopReason,
-    usage: AccumulatedUsage,
+    usage: PromptResponse["usage"],
   ): Promise<void> {
     if (!this.sessionId || !this.taskRunId) return;
     await this.client
@@ -1226,6 +1885,36 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   /**
+   * Sub-tool policy for a gated PostHog exec call. Codex's `approval_mode:
+   * "prompt"` gates the whole exec tool, so this is where the configured regex
+   * actually filters: non-matching sub-tools never prompt, and matching ones
+   * stay hands-off in local auto/full-access modes (parity with the Claude
+   * adapter's `!cloudMode && (auto || bypassPermissions)` branch). Cloud
+   * sessions always relay matching sub-tools so AgentServer routes them by the
+   * run's effective mode.
+   */
+  private shouldAutoAcceptPostHogExec(mcp: {
+    server: string;
+    tool: string;
+    args: unknown;
+  }): boolean {
+    if (!isPostHogExecDescriptor({ server: mcp.server, tool: mcp.tool })) {
+      return false;
+    }
+    const subTool = extractPostHogSubTool(mcp.args);
+    if (
+      !subTool ||
+      !matchesPostHogExecPermission(subTool, this.posthogExecPermissionRegex)
+    ) {
+      return true;
+    }
+    return (
+      this.environment !== "cloud" &&
+      (this.config.mode === "auto" || this.config.mode === "full-access")
+    );
+  }
+
+  /**
    * Server-initiated requests. Simple approvals resolve to a `{ decision }` envelope (a bare
    * string is rejected); richer ones (AskUserQuestion / permission profile / elicitation) go
    * to `handleServerRequest`. Whatever we return is sent back as the JSON-RPC result.
@@ -1238,6 +1927,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       sessionId: this.sessionId,
       logger: this.logger,
       resolveMcpToolCall: (serverName) => this.mcp.byServer(serverName),
+      shouldAutoAcceptMcpToolCall: (mcp) =>
+        this.shouldAutoAcceptPostHogExec(mcp),
     });
     if (richer.handled) {
       return richer.response;
@@ -1285,6 +1976,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // Codex has no MCP-specific approval; a known MCP call surfaces the real server/tool/args
     // so the host renders the proper MCP permission (incl. PostHog `exec` unwrapping).
     const mcp = this.mcp.byItemId(detail.itemId);
+    if (mcp && this.shouldAutoAcceptPostHogExec(mcp)) {
+      return { decision: "accept" };
+    }
     // kind + content route plain command/file approvals to Execute/EditPermission (not the fallback).
     const toolCall = mcp
       ? {
@@ -1395,6 +2089,33 @@ function mapTurnStopReason(status: string | undefined): StopReason {
   if (status === "interrupted") return "cancelled";
   if (status === "failed") return "refusal";
   return "end_turn";
+}
+
+function readNotificationThreadId(params: unknown): string | undefined {
+  if (!params || typeof params !== "object") return undefined;
+  const threadId = (params as { threadId?: unknown }).threadId;
+  return typeof threadId === "string" ? threadId : undefined;
+}
+
+function subagentToolCallId(threadId: string, toolCallId: string): string {
+  return `subagent:${threadId}:${toolCallId}`;
+}
+
+function isSubagentActivityNotification(
+  notification: SessionNotification,
+): notification is SessionNotification & {
+  update: SessionNotification["update"] & {
+    _meta?: Record<string, unknown>;
+    toolCallId?: string;
+  };
+} {
+  const { sessionUpdate } = notification.update;
+  return (
+    sessionUpdate === "agent_message_chunk" ||
+    sessionUpdate === "agent_thought_chunk" ||
+    sessionUpdate === "tool_call" ||
+    sessionUpdate === "tool_call_update"
+  );
 }
 
 /** The codex thread config override map: folds in MCP servers + makes extra workspace roots writable. Undefined when empty. */

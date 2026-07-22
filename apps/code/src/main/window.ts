@@ -1,5 +1,5 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createIPCHandler } from "@posthog/electron-trpc/main";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
 import { DARK_APP_BACKGROUND_COLOR } from "@posthog/shared/constants";
@@ -9,9 +9,9 @@ import {
   Menu,
   type MenuItemConstructorOptions,
   screen,
-  shell,
 } from "electron";
 import { container } from "./di/container";
+import { setupExternalLinkHandlers } from "./external-links";
 import { buildApplicationMenu } from "./menu";
 import type { ElectronMainWindow } from "./platform-adapters/electron-main-window";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
@@ -25,12 +25,14 @@ import { collectMemorySnapshot } from "./utils/crash-diagnostics";
 import { isDevBuild } from "./utils/env";
 import { logger, readChromiumLogTail } from "./utils/logger";
 import {
+  getFullScreenDisplayBounds,
+  saveFullScreenDisplayBounds,
   saveFullScreenState,
-  saveZoomLevel,
   setRestoreFullScreenOnNextLaunch,
   type WindowStateSchema,
   windowStateStore,
 } from "./utils/store";
+import { setupWindowZoom } from "./zoom";
 
 const log = logger.scope("window");
 const trpcLog = logger.scope("host-trpc");
@@ -58,6 +60,10 @@ function getSavedWindowState(): WindowStateSchema {
     isMaximized: windowStateStore.get("isMaximized", true),
     zoomLevel: windowStateStore.get("zoomLevel", 0),
     isFullScreen: windowStateStore.get("isFullScreen", false),
+    fullScreenDisplayBounds: windowStateStore.get(
+      "fullScreenDisplayBounds",
+      undefined,
+    ),
     restoreFullScreenOnNextLaunch: windowStateStore.get(
       "restoreFullScreenOnNextLaunch",
       false,
@@ -114,21 +120,6 @@ export function focusMainWindow(reason: string): void {
   }
 }
 
-function setupExternalLinkHandlers(window: BrowserWindow): void {
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
-
-  window.webContents.on("will-navigate", (event, url) => {
-    const appUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL || "file://";
-    if (!url.startsWith(appUrl)) {
-      event.preventDefault();
-      shell.openExternal(url);
-    }
-  });
-}
-
 function setupCrashLogging(window: BrowserWindow): void {
   window.webContents.on("render-process-gone", (_event, details) => {
     log.error("Renderer process gone", {
@@ -180,6 +171,23 @@ export function createWindow(): void {
   const restoreFullScreen = savedState.restoreFullScreenOnNextLaunch;
   if (restoreFullScreen) {
     setRestoreFullScreenOnNextLaunch(false);
+
+    // setFullScreen(true) fullscreens whichever display the window is on, so
+    // start the hidden window on the display that was fullscreen before the
+    // update. getDisplayMatching falls back to the nearest display if that
+    // monitor is gone.
+    const displayBounds = getFullScreenDisplayBounds();
+    if (displayBounds) {
+      const { workArea } = screen.getDisplayMatching(displayBounds);
+      savedState.width = Math.min(savedState.width, workArea.width);
+      savedState.height = Math.min(savedState.height, workArea.height);
+      savedState.x = Math.round(
+        workArea.x + (workArea.width - savedState.width) / 2,
+      );
+      savedState.y = Math.round(
+        workArea.y + (workArea.height - savedState.height) / 2,
+      );
+    }
   }
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -205,6 +213,10 @@ export function createWindow(): void {
           // buttons (40px bar, 24px buttons → centre at y=20; 12px dots → top at 14).
           // x mirrors y so the inset from the top and the left match.
           trafficLightPosition: { x: 14, y: 14 },
+          // Exposes the titlebar-area-* CSS env vars so the renderer can
+          // clear the traffic lights exactly; their size varies by macOS
+          // version (bigger on Tahoe), so it must not hardcode a width.
+          titleBarOverlay: true,
         }
       : process.platform === "win32"
         ? {
@@ -270,21 +282,7 @@ export function createWindow(): void {
   mainWindow.once("ready-to-show", showWindow);
   const showFallback = setTimeout(showWindow, 3000);
 
-  // Restore the zoom level once the renderer has loaded. Read the latest
-  // persisted value from the store (not the create-time snapshot) so zooming
-  // done during the session survives in-app reloads, which otherwise reset
-  // Chromium's per-webContents zoom.
-  mainWindow.webContents.on("did-finish-load", () => {
-    mainWindow?.webContents.setZoomLevel(windowStateStore.get("zoomLevel", 0));
-  });
-
-  // Persist mouse-wheel/pinch zoom. Menu-driven zoom is persisted by the
-  // menu items themselves (see buildViewMenu in menu.ts).
-  mainWindow.webContents.on("zoom-changed", () => {
-    if (mainWindow) {
-      saveZoomLevel(mainWindow.webContents.getZoomLevel());
-    }
-  });
+  setupWindowZoom(mainWindow);
 
   // Persist window state on changes
   mainWindow.on(
@@ -299,8 +297,16 @@ export function createWindow(): void {
   mainWindow.on("unmaximize", () => mainWindow && saveWindowState(mainWindow));
   mainWindow.on("close", () => mainWindow && saveWindowState(mainWindow));
 
-  // Live-track fullscreen so the update-quit path can read the current state.
-  mainWindow.on("enter-full-screen", () => saveFullScreenState(true));
+  // Live-track fullscreen (and which display it is on) so the update-quit
+  // path can restore the same monitor after the relaunch.
+  mainWindow.on("enter-full-screen", () => {
+    saveFullScreenState(true);
+    if (mainWindow) {
+      saveFullScreenDisplayBounds(
+        screen.getDisplayMatching(mainWindow.getBounds()).bounds,
+      );
+    }
+  });
   mainWindow.on("leave-full-screen", () => saveFullScreenState(false));
 
   container
@@ -320,7 +326,18 @@ export function createWindow(): void {
     },
   });
 
-  setupExternalLinkHandlers(mainWindow);
+  const rendererFilePath = path.join(
+    __dirname,
+    `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`,
+  );
+  // The URL the renderer is served from, used to tell in-app navigations from
+  // external links. In dev it's the Vite server origin; in prod it's the
+  // packaged index.html file URL.
+  const appHome = MAIN_WINDOW_VITE_DEV_SERVER_URL
+    ? new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
+    : pathToFileURL(rendererFilePath);
+
+  setupExternalLinkHandlers(mainWindow, appHome);
   setupEditableContextMenu(mainWindow);
   setupCrashLogging(mainWindow);
   buildApplicationMenu();
@@ -328,9 +345,7 @@ export function createWindow(): void {
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(rendererFilePath);
   }
 
   mainWindow.on("closed", () => {

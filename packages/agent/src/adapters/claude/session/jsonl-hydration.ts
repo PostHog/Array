@@ -7,6 +7,7 @@ import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
 import { isEmptyContentBlock } from "../../../utils/acp-content";
+import { neutralizeUnprocessableImages } from "../image-sanitization";
 import { supports1MContext } from "./models";
 
 interface ConversationTurn {
@@ -595,9 +596,11 @@ interface HydrationLog {
   warn: (msg: string, data?: unknown) => void;
 }
 
-// Heals JSONL files written before the empty-block and missing-tool_use-input
-// fixes existed; without this an already-poisoned transcript keeps 400ing on
-// every resume.
+// Heals a persisted transcript that would otherwise 400 on every resume:
+// empty content blocks, missing tool_use.input, and images the API can't
+// process (unsupported type or over the per-image byte limit). The image case
+// is why a session that once read/attached a bad image keeps re-triggering the
+// same error on nearly every subsequent turn until the block is neutralized.
 export async function sanitizeSessionJsonl(
   jsonlPath: string,
 ): Promise<boolean> {
@@ -632,6 +635,11 @@ export async function sanitizeSessionJsonl(
         block.input = {};
         lineChanged = true;
       }
+    }
+    const imageResult = neutralizeUnprocessableImages(message.content);
+    if (imageResult.changed) {
+      message.content = imageResult.value;
+      lineChanged = true;
     }
     if (!lineChanged) return line;
     changed = true;
@@ -682,9 +690,10 @@ export async function hydrateSessionJsonl(params: {
       await fs.access(jsonlPath);
       try {
         if (await sanitizeSessionJsonl(jsonlPath)) {
-          log.info("Removed empty content blocks from existing session JSONL", {
-            jsonlPath,
-          });
+          log.info(
+            "Healed existing session JSONL (empty and/or unprocessable-image blocks)",
+            { jsonlPath },
+          );
         }
       } catch (err) {
         // A sanitize failure must not block resuming from the existing file.

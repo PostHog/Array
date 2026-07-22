@@ -58,6 +58,7 @@ describe("feature settingsStore cloud selections", () => {
       allowBypassPermissions: false,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
+      cachedCloudDefaultBranchMap: {},
     });
   });
 
@@ -141,6 +142,63 @@ describe("feature settingsStore cloud selections", () => {
     });
   });
 
+  it("caches and persists the cloud default branch per repo", async () => {
+    useSettingsStore
+      .getState()
+      .setCachedCloudDefaultBranch("posthog/posthog", "master");
+    useSettingsStore
+      .getState()
+      .setCachedCloudDefaultBranch("posthog/code", "main");
+
+    expect(useSettingsStore.getState().cachedCloudDefaultBranchMap).toEqual({
+      "posthog/posthog": "master",
+      "posthog/code": "main",
+    });
+
+    await waitForPersistedWrite();
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+
+    expect(persisted.state.cachedCloudDefaultBranchMap).toEqual({
+      "posthog/posthog": "master",
+      "posthog/code": "main",
+    });
+  });
+
+  it("keeps the same map reference when the default branch is unchanged", () => {
+    useSettingsStore
+      .getState()
+      .setCachedCloudDefaultBranch("posthog/code", "main");
+    const first = useSettingsStore.getState().cachedCloudDefaultBranchMap;
+
+    useSettingsStore
+      .getState()
+      .setCachedCloudDefaultBranch("posthog/code", "main");
+    const second = useSettingsStore.getState().cachedCloudDefaultBranchMap;
+
+    expect(second).toBe(first);
+  });
+
+  it("rehydrates the cached cloud default branch map", async () => {
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: {
+          cachedCloudDefaultBranchMap: { "posthog/code": "main" },
+        },
+        version: 0,
+      }),
+    );
+
+    useSettingsStore.setState({ cachedCloudDefaultBranchMap: {} });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().cachedCloudDefaultBranchMap).toEqual({
+      "posthog/code": "main",
+    });
+  });
+
   it("rehydrates the unsafe mode toggle", async () => {
     getItem.mockResolvedValue(
       JSON.stringify({
@@ -161,6 +219,7 @@ describe("feature settingsStore cloud selections", () => {
     ["debugLogsCloudRuns", false, true],
     ["slotMachineMode", false, true],
     ["dismissibleUpdateBanners", false, true],
+    ["showSidebarWorktrees", false, true],
   ] as const)("rehydrates %s", async (field, initial, persisted) => {
     getItem.mockResolvedValue(
       JSON.stringify({ state: { [field]: persisted }, version: 0 }),

@@ -1,5 +1,6 @@
 import {
   isContentEmpty,
+  textToContent,
   xmlToContent,
 } from "@posthog/core/message-editor/content";
 import {
@@ -94,6 +95,42 @@ export function useSessionCallbacks({
         }
       }
 
+      // Editing a queued message in place: update it where it sits in the
+      // queue rather than sending a new prompt. If the target already drained
+      // or was discarded, fall through and send it as a fresh message.
+      const editingId =
+        sessionStoreSetters.getSessionByTaskId(taskId)?.editingQueuedId;
+      if (editingId) {
+        try {
+          const updated = await sessionService.updateQueuedMessage(
+            taskId,
+            editingId,
+            promptText ?? text,
+          );
+          if (updated) {
+            markAsViewed(taskId);
+            return;
+          }
+          // Target no longer queued — drop the stale hold and send as new.
+          sessionService.clearEditingQueuedMessage(taskId);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to update message";
+          toast.error(message);
+          log.error("Failed to update queued message", error);
+          // Keep the edit hold: releasing it would let the original, unedited
+          // message drain and send — the opposite of what the user intended by
+          // editing. The message stays held and the composer restores the
+          // edited text (unless the user already started typing) so they can
+          // retry the save or cancel the edit explicitly.
+          if (isContentEmpty(useDraftStore.getState().drafts[taskId] ?? null)) {
+            setPendingContent(taskId, xmlToContent(promptText ?? text));
+            requestFocus(taskId);
+          }
+          return;
+        }
+      }
+
       try {
         markAsViewed(taskId);
         markActivity(taskId);
@@ -136,6 +173,22 @@ export function useSessionCallbacks({
   );
 
   const handleCancelPrompt = useCallback(async () => {
+    // Stopping while a queued message is being edited: halt the turn but leave
+    // the queue and the composer alone, since recalling the queue into the
+    // composer would clobber the in-progress edit. The edit hold keeps the
+    // queue from auto-sending until the edit is saved or cancelled.
+    const currentSession = sessionStoreSetters.getSessionByTaskId(taskId);
+    const editingId = currentSession?.editingQueuedId;
+    if (
+      editingId &&
+      currentSession?.messageQueue.some((m) => m.id === editingId)
+    ) {
+      const result = await sessionService.cancelPrompt(taskId);
+      log.info("Prompt cancelled during queued edit", { success: result });
+      requestFocus(taskId);
+      return;
+    }
+
     const queuedMessages = sessionStoreSetters.dequeueMessages(taskId);
     const result = await sessionService.cancelPrompt(taskId);
     log.info("Prompt cancelled", { success: result });
@@ -147,14 +200,7 @@ export function useSessionCallbacks({
     if (queuedPrompt) {
       const pendingContent = sessionRef.current?.isCloud
         ? promptToQueuedEditorContent(queuedPrompt)
-        : {
-            segments: [
-              {
-                type: "text" as const,
-                text: typeof queuedPrompt === "string" ? queuedPrompt : "",
-              },
-            ],
-          };
+        : textToContent(typeof queuedPrompt === "string" ? queuedPrompt : "");
 
       setPendingContent(taskId, pendingContent);
     }

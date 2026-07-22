@@ -69,4 +69,39 @@ describe("PostHogAPIClient sandbox custom images", () => {
       }),
     );
   });
+
+  it.each([
+    ["name only", { name: "renamed" }],
+    ["description only", { description: "updated" }],
+    ["both", { name: "renamed", description: "updated" }],
+  ])("patches %s via updateSandboxCustomImage", async (_name, input) => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "im-1", ...input }),
+    });
+
+    await makeClient(fetch).updateSandboxCustomImage("im-1", input);
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "patch",
+        path: `/api/projects/123/sandbox_custom_images/im-1/`,
+        overrides: { body: JSON.stringify(input) },
+      }),
+    );
+  });
+
+  it("throws the backend detail message when update fails", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ detail: "Name cannot be blank." }),
+    });
+
+    await expect(
+      makeClient(fetch).updateSandboxCustomImage("im-1", { name: "  " }),
+    ).rejects.toThrow("Name cannot be blank.");
+  });
 });

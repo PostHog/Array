@@ -11,6 +11,8 @@ import type {
 import type {
   CLOUD_TASK_AUTH,
   ICloudTaskAuth,
+  MCP_RELAY_EXECUTOR,
+  McpRelayExecutor,
 } from "@posthog/core/cloud-task/identifiers";
 import type {
   CONTEXT_MENU_EXTERNAL_APPS_SERVICE,
@@ -180,12 +182,26 @@ import type {
 } from "@posthog/workspace-server/services/local-logs/identifiers";
 import type { MCP_PROXY_AUTH } from "@posthog/workspace-server/services/mcp-proxy/identifiers";
 import type { McpProxyAuth } from "@posthog/workspace-server/services/mcp-proxy/ports";
+import type {
+  MCP_RELAY_SERVICE,
+  McpRelayService,
+} from "@posthog/workspace-server/services/mcp-relay/identifiers";
+import type {
+  PI_RPC_CLIENT_FACTORY,
+  PI_RUNTIME_FACTORY,
+  PiRpcClientFactory,
+  PiRuntimeFactory,
+} from "@posthog/workspace-server/services/pi-session/identifiers";
 import type { PosthogPluginService } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin";
 import type { ProcessTrackingService } from "@posthog/workspace-server/services/process-tracking/process-tracking";
 import type {
   ISecureStoreService,
   SECURE_STORE_SERVICE,
 } from "@posthog/workspace-server/services/secure-store/identifiers";
+import type {
+  ISpeechSynthesizer,
+  SPEECH_SYNTHESIZER_SERVICE,
+} from "@posthog/workspace-server/services/speech/identifiers";
 import type {
   SUSPENSION_FILE_WATCHER,
   SUSPENSION_SERVICE,
@@ -340,6 +356,9 @@ export interface MainBindings {
   [AGENT_REPO_FILES]: unknown;
   [AGENT_AUTH]: unknown;
   [AGENT_LOGGER]: RootLogger;
+  [PI_RPC_CLIENT_FACTORY]: PiRpcClientFactory;
+
+  [PI_RUNTIME_FACTORY]: PiRuntimeFactory;
 
   // Logger
   [ROOT_LOGGER]: RootLogger;
@@ -354,9 +373,11 @@ export interface MainBindings {
   [MAIN_AUTH_SERVICE]: AuthService;
   [AUTH_SERVICE]: AuthService;
 
-  // Auth proxy / mcp proxy
+  // Auth proxy / mcp proxy / mcp relay
   [AUTH_PROXY_AUTH]: AuthProxyAuth;
   [MCP_PROXY_AUTH]: McpProxyAuth;
+  [MCP_RELAY_SERVICE]: McpRelayService;
+  [MCP_RELAY_EXECUTOR]: McpRelayExecutor;
 
   // Archive / suspension host ports
   [ARCHIVE_SESSION_CANCELLER]: SessionCanceller;
@@ -460,6 +481,7 @@ export interface MainBindings {
   [MAIN_SECURE_STORE_BACKEND]: typeof rendererStore;
   [MAIN_SECURE_STORE_SERVICE]: SecureStoreService;
   [SECURE_STORE_SERVICE]: ISecureStoreService;
+  [SPEECH_SYNTHESIZER_SERVICE]: ISpeechSynthesizer;
   [LOGS_SERVICE]: ILogsService;
   [MAIN_ENCRYPTION_SERVICE]: EncryptionService;
   [MAIN_DISCORD_PRESENCE_SERVICE]: DiscordPresenceService;

@@ -5,6 +5,7 @@ interface CommandCenterItemProps {
   isActive: boolean;
   onClick: () => void;
   activeCount?: number;
+  depth?: number;
 }
 
 function formatActiveCount(count: number): string {
@@ -16,10 +17,11 @@ export function CommandCenterItem({
   isActive,
   onClick,
   activeCount,
+  depth = 0,
 }: CommandCenterItemProps) {
   return (
     <SidebarItem
-      depth={0}
+      depth={depth}
       icon={<Lightning size={16} weight={isActive ? "fill" : "regular"} />}
       label="Command Center"
       isActive={isActive}
