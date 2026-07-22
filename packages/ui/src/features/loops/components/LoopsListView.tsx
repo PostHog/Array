@@ -1,4 +1,6 @@
 import { CloudIcon, PlusIcon, RepeatIcon } from "@phosphor-icons/react";
+import type { UserBasic } from "@posthog/shared/domain-types";
+import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
@@ -42,6 +44,15 @@ export function LoopsListView() {
   useSetHeaderContent(headerContent);
 
   const allLoops = loops ?? [];
+  const personalLoops = allLoops.filter(
+    (loop) => loop.visibility === "personal",
+  );
+  const teamLoops = allLoops.filter((loop) => loop.visibility === "team");
+  const {
+    members,
+    isLoading: membersLoading,
+    isError: membersError,
+  } = useOrgMembers({ enabled: teamLoops.length > 0 });
 
   const startBlank = () => {
     useLoopDraftStore.getState().setPrefill(null);
@@ -112,15 +123,19 @@ export function LoopsListView() {
               }
             />
           ) : allLoops.length > 0 ? (
-            <Flex direction="column" gap="3">
-              <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
-                Your loops
-              </Text>
-              <Flex direction="column" gap="2">
-                {allLoops.map((loop) => (
-                  <LoopRow key={loop.id} loop={loop} />
-                ))}
-              </Flex>
+            <Flex direction="column" gap="5">
+              {personalLoops.length > 0 ? (
+                <LoopListSection title="Personal loops" loops={personalLoops} />
+              ) : null}
+              {teamLoops.length > 0 ? (
+                <LoopListSection
+                  title="Team loops"
+                  loops={teamLoops}
+                  members={members}
+                  membersLoading={membersLoading}
+                  membersError={membersError}
+                />
+              ) : null}
             </Flex>
           ) : (
             <LoopsEmptyState />
@@ -139,6 +154,39 @@ export function LoopsListView() {
           <LoopBuilderComposer disabledReason={limitReason} />
         </Flex>
       </div>
+    </Flex>
+  );
+}
+
+function LoopListSection({
+  title,
+  loops,
+  members = [],
+  membersLoading = false,
+  membersError = false,
+}: {
+  title: string;
+  loops: NonNullable<ReturnType<typeof useLoops>["data"]>;
+  members?: UserBasic[];
+  membersLoading?: boolean;
+  membersError?: boolean;
+}) {
+  return (
+    <Flex direction="column" gap="3">
+      <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
+        {title}
+      </Text>
+      <Flex direction="column" gap="2">
+        {loops.map((loop) => (
+          <LoopRow
+            key={loop.id}
+            loop={loop}
+            creator={members.find((member) => member.id === loop.created_by_id)}
+            creatorLoading={membersLoading}
+            creatorError={membersError}
+          />
+        ))}
+      </Flex>
     </Flex>
   );
 }

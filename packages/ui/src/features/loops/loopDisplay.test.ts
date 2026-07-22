@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { describeTrigger } from "./loopDisplay";
+import {
+  describeTrigger,
+  summarizeNotificationDestinations,
+} from "./loopDisplay";
 
 describe("describeTrigger", () => {
   it.each([
@@ -23,5 +26,31 @@ describe("describeTrigger", () => {
         config: { cron_expression: "*/15 * * * *", timezone: "UTC" },
       }),
     ).toBe("Schedule · */15 * * * * (UTC)");
+  });
+});
+
+describe("summarizeNotificationDestinations", () => {
+  it("lists enabled destinations and includes the Slack channel", () => {
+    expect(
+      summarizeNotificationDestinations({
+        push: { enabled: true, events: [], params: {} },
+        email: { enabled: false, events: [], params: {} },
+        slack: {
+          enabled: true,
+          events: [],
+          params: { channel_name: "#loops" },
+        },
+      }),
+    ).toEqual(["Push", "Slack · #loops"]);
+  });
+
+  it("omits disabled destinations", () => {
+    expect(
+      summarizeNotificationDestinations({
+        push: { enabled: false, events: [], params: {} },
+        email: { enabled: false, events: [], params: {} },
+        slack: { enabled: false, events: [], params: {} },
+      }),
+    ).toEqual([]);
   });
 });

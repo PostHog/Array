@@ -12,6 +12,7 @@ export const ORG_MEMBERS_QUERY_KEY = ["org-members"] as const;
 export function useOrgMembers(options?: { enabled?: boolean }): {
   members: UserBasic[];
   isLoading: boolean;
+  isError: boolean;
 } {
   const query = useAuthenticatedQuery(
     ORG_MEMBERS_QUERY_KEY,
@@ -29,5 +30,5 @@ export function useOrgMembers(options?: { enabled?: boolean }): {
         .sort((a, b) => userDisplayName(a).localeCompare(userDisplayName(b))),
     [query.data],
   );
-  return { members, isLoading: query.isLoading };
+  return { members, isLoading: query.isLoading, isError: query.isError };
 }

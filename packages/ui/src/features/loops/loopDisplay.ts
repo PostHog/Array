@@ -47,6 +47,25 @@ interface TriggerLike {
   config: LoopSchemas.LoopTriggerConfig;
 }
 
+export function summarizeNotificationDestinations(
+  notifications: LoopSchemas.LoopNotifications,
+): string[] {
+  const destinations: string[] = [];
+
+  if (notifications.push.enabled) destinations.push("Push");
+  if (notifications.email.enabled) destinations.push("Email");
+  if (notifications.slack.enabled) {
+    const channelName = notifications.slack.params.channel_name;
+    destinations.push(
+      typeof channelName === "string" && channelName.length > 0
+        ? `Slack · #${channelName.replace(/^#/, "")}`
+        : "Slack",
+    );
+  }
+
+  return destinations;
+}
+
 /** Compact one-word-ish label for the form's review list. */
 export function summarizeTrigger(trigger: TriggerLike): string {
   if (trigger.type === "schedule") {
