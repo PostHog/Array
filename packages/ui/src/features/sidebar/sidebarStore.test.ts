@@ -78,7 +78,7 @@ describe("sidebarStore navItemOverrides", () => {
       "sidebar-storage",
       JSON.stringify({
         state: {
-          navItemOrder: ["loops", "retired-item", 7, "search", "loops"],
+          navItemOrder: ["loops", "retired-item", 7, "inbox", "loops"],
         },
         version: 0,
       }),
@@ -86,10 +86,7 @@ describe("sidebarStore navItemOverrides", () => {
 
     await useSidebarStore.persist.rehydrate();
 
-    expect(useSidebarStore.getState().navItemOrder).toEqual([
-      "loops",
-      "search",
-    ]);
+    expect(useSidebarStore.getState().navItemOrder).toEqual(["loops", "inbox"]);
     localStorage.removeItem("sidebar-storage");
   });
 
@@ -111,7 +108,7 @@ describe("sidebarStore navItemOverrides", () => {
       JSON.stringify({
         state: {
           navItemOverrides: {
-            search: true,
+            inbox: true,
             "retired-item": true,
             skills: "yes",
           },
@@ -123,7 +120,7 @@ describe("sidebarStore navItemOverrides", () => {
     await useSidebarStore.persist.rehydrate();
 
     expect(useSidebarStore.getState().navItemOverrides).toEqual({
-      search: true,
+      inbox: true,
     });
     localStorage.removeItem("sidebar-storage");
   });

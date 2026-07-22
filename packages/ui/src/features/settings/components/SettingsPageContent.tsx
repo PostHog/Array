@@ -17,6 +17,7 @@ import { UpdatesSettings } from "@posthog/ui/features/settings/sections/UpdatesS
 import { WorkspacesSettings } from "@posthog/ui/features/settings/sections/WorkspacesSettings";
 import { WorktreesSettings } from "@posthog/ui/features/settings/sections/worktrees/WorktreesSettings";
 import type { SettingsCategory } from "@posthog/ui/features/settings/types";
+import { CustomizeSidebarSettings } from "@posthog/ui/features/sidebar/components/CustomizeSidebarDialog";
 import { SkillsView } from "@posthog/ui/features/skills/SkillsView";
 import { Box, Flex, ScrollArea, Text } from "@radix-ui/themes";
 import type { ComponentType, ReactNode } from "react";
@@ -69,6 +70,7 @@ const SETTINGS_PAGES: Record<SettingsCategory, SettingsPageDefinition> = {
     "Personalization",
     PersonalizationSettings,
   ),
+  sidebar: defineSettingsPage("Sidebar", CustomizeSidebarSettings),
   terminal: defineSettingsPage("Terminal", TerminalSettings),
   "claude-code": defineSettingsPage("Claude Code", ClaudeCodeSettings),
   shortcuts: defineSettingsPage("Shortcuts", ShortcutsSettings),

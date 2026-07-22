@@ -45,32 +45,13 @@ vi.mock("@dnd-kit/react/sortable", () => ({
   }),
 }));
 
-import {
-  CUSTOMIZABLE_NAV_ITEM_IDS,
-  type CustomizableNavItemId,
-} from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
-import { CustomizeSidebarDialog } from "./CustomizeSidebarDialog";
+import { CustomizeSidebarSettings } from "./CustomizeSidebarDialog";
 
-function availability(
-  overrides: Partial<Record<CustomizableNavItemId, boolean>> = {},
-) {
-  return {
-    ...(Object.fromEntries(
-      CUSTOMIZABLE_NAV_ITEM_IDS.map((id) => [id, true]),
-    ) as Record<CustomizableNavItemId, boolean>),
-    ...overrides,
-  };
-}
-
-function renderDialog(available = availability()) {
+function renderSettings() {
   return render(
     <Theme>
-      <CustomizeSidebarDialog
-        open
-        onOpenChange={vi.fn()}
-        available={available}
-      />
+      <CustomizeSidebarSettings />
     </Theme>,
   );
 }
@@ -107,7 +88,7 @@ function rowLabels() {
     .map((checkbox) => checkbox.closest("label")?.textContent);
 }
 
-describe("CustomizeSidebarDialog", () => {
+describe("CustomizeSidebarSettings", () => {
   beforeEach(() => {
     track.mockReset();
     useSidebarStore.setState({ navItemOverrides: {}, navItemOrder: [] });
@@ -115,7 +96,7 @@ describe("CustomizeSidebarDialog", () => {
 
   it("unchecking a visible item demotes it and tracks the change", async () => {
     const user = userEvent.setup();
-    renderDialog();
+    renderSettings();
 
     await user.click(screen.getByRole("checkbox", { name: "Command Center" }));
 
@@ -130,40 +111,30 @@ describe("CustomizeSidebarDialog", () => {
 
   it("checking a hidden item promotes it and tracks the change", async () => {
     const user = userEvent.setup();
-    renderDialog();
+    useSidebarStore.setState({ navItemOverrides: { inbox: false } });
+    renderSettings();
 
-    await user.click(screen.getByRole("checkbox", { name: "Search" }));
+    await user.click(screen.getByRole("checkbox", { name: "Inbox" }));
 
-    expect(useSidebarStore.getState().navItemOverrides.search).toBe(true);
+    expect(useSidebarStore.getState().navItemOverrides.inbox).toBe(true);
     expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED, {
-      item: "search",
+      item: "inbox",
       visible: true,
     });
   });
 
-  it("omits items marked unavailable", () => {
-    renderDialog(availability({ loops: false }));
-
-    expect(
-      screen.queryByRole("checkbox", { name: "Loops" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("checkbox", { name: "Configure" }),
-    ).toBeInTheDocument();
-  });
-
   it("renders rows in the stored order", () => {
-    useSidebarStore.setState({ navItemOrder: ["configure", "search"] });
-    renderDialog();
+    useSidebarStore.setState({ navItemOrder: ["configure", "inbox"] });
+    renderSettings();
 
-    expect(rowLabels().slice(0, 2)).toEqual(["Configure", "Search"]);
+    expect(rowLabels().slice(0, 2)).toEqual(["Configure", "Inbox"]);
   });
 
   it("previews on dragover and persists only on drop", () => {
-    renderDialog();
+    renderSettings();
 
     dragStart("loops");
-    dragOver("loops", "search");
+    dragOver("loops", "inbox");
 
     expect(rowLabels()[0]).toBe("Loops");
     expect(useSidebarStore.getState().navItemOrder).toEqual([]);
@@ -173,7 +144,6 @@ describe("CustomizeSidebarDialog", () => {
 
     expect(useSidebarStore.getState().navItemOrder).toEqual([
       "loops",
-      "search",
       "inbox",
       "command-center",
       "contexts",
@@ -187,11 +157,11 @@ describe("CustomizeSidebarDialog", () => {
   });
 
   it("ignores a repeated dragover for the same source and target", () => {
-    renderDialog();
+    renderSettings();
 
     dragStart("loops");
-    dragOver("loops", "search");
-    dragOver("loops", "search");
+    dragOver("loops", "inbox");
+    dragOver("loops", "inbox");
 
     expect(rowLabels()[0]).toBe("Loops");
 
@@ -201,19 +171,19 @@ describe("CustomizeSidebarDialog", () => {
   });
 
   it("a canceled drag drops the preview and leaves the store untouched", () => {
-    renderDialog();
+    renderSettings();
 
     dragStart("loops");
-    dragOver("loops", "search");
+    dragOver("loops", "inbox");
     dragEnd("loops", { cancel: true });
 
-    expect(rowLabels()[0]).toBe("Search");
+    expect(rowLabels()[0]).toBe("Inbox");
     expect(useSidebarStore.getState().navItemOrder).toEqual([]);
     expect(track).not.toHaveBeenCalled();
   });
 
   it("a drop without movement neither persists nor tracks", () => {
-    renderDialog();
+    renderSettings();
 
     dragStart("loops");
     dragEnd("loops");
@@ -224,12 +194,12 @@ describe("CustomizeSidebarDialog", () => {
 
   it("reset clears the stored order back to the default", async () => {
     const user = userEvent.setup();
-    useSidebarStore.setState({ navItemOrder: ["loops", "search"] });
-    renderDialog();
+    useSidebarStore.setState({ navItemOrder: ["loops", "inbox"] });
+    renderSettings();
 
     await user.click(screen.getByRole("button", { name: "Reset" }));
 
     expect(useSidebarStore.getState().navItemOrder).toEqual([]);
-    expect(rowLabels()[0]).toBe("Search");
+    expect(rowLabels()[0]).toBe("Inbox");
   });
 });

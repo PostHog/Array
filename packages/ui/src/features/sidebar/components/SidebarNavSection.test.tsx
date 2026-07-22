@@ -103,47 +103,28 @@ describe("SidebarNavSection", () => {
     });
   });
 
+  it("renders Search directly and removes the More dropdown", () => {
+    renderNav();
+
+    expect(screen.getByRole("button", { name: /Search/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "More" }),
+    ).not.toBeInTheDocument();
+  });
+
   it.each([
-    ["search", "Search"],
     ["inbox", "Inbox"],
     ["command-center", "Command Center"],
     ["contexts", "Channels"],
     ["activity", "Activity"],
     ["configure", "Configure"],
     ["loops", "Loops"],
-  ] as const)(
-    "moves %s from the top level into More when hidden",
-    async (id, label) => {
-      const user = userEvent.setup();
-      useSidebarStore.setState({ navItemOverrides: { [id]: false } });
-      renderNav();
+  ] as const)("removes %s from the sidebar when hidden", (id, label) => {
+    useSidebarStore.setState({ navItemOverrides: { [id]: false } });
+    renderNav();
 
-      expect(screen.queryByText(label)).not.toBeInTheDocument();
-
-      await user.click(screen.getByRole("button", { name: "More" }));
-
-      expect(screen.getByText(label)).toBeInTheDocument();
-    },
-  );
-
-  it.each([
-    ["inbox", "inbox", "Inbox"],
-    ["command-center", "command-center", "Command Center"],
-    ["activity", "activity", "Activity"],
-    ["loops", "loops", "Loops"],
-  ] as const)(
-    "active hidden %s takes over the collapsed More row",
-    (id, viewType, label) => {
-      useAppView.mockReturnValue({ type: viewType });
-      useSidebarStore.setState({ navItemOverrides: { [id]: false } });
-      renderNav();
-
-      expect(
-        screen.queryByRole("button", { name: "More" }),
-      ).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
-    },
-  );
+    expect(screen.queryByText(label)).not.toBeInTheDocument();
+  });
 
   it("renders top-level items in the stored order", () => {
     useSidebarStore.setState({ navItemOrder: ["activity", "inbox"] });
@@ -159,13 +140,6 @@ describe("SidebarNavSection", () => {
     expect(position("Inbox")).toBeLessThan(position("Loops"));
   });
 
-  it("never lets hidden search take over the More row", () => {
-    useSidebarStore.setState({ navItemOverrides: { search: false } });
-    renderNav();
-
-    expect(screen.getByRole("button", { name: "More" })).toBeInTheDocument();
-  });
-
   it("tracks top-level clicks with in_more false", async () => {
     const user = userEvent.setup();
     renderNav();
@@ -176,21 +150,6 @@ describe("SidebarNavSection", () => {
     expect(track).toHaveBeenCalledWith(
       ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED,
       { item: "inbox", in_more: false },
-    );
-  });
-
-  it("tracks clicks inside the expanded More section with in_more true", async () => {
-    const user = userEvent.setup();
-    useSidebarStore.setState({ navItemOverrides: { inbox: false } });
-    renderNav();
-
-    await user.click(screen.getByRole("button", { name: "More" }));
-    await user.click(screen.getByRole("button", { name: /Inbox/ }));
-
-    expect(navigateToInbox).toHaveBeenCalledTimes(1);
-    expect(track).toHaveBeenCalledWith(
-      ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED,
-      { item: "inbox", in_more: true },
     );
   });
 

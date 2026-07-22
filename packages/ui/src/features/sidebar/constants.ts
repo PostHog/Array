@@ -3,12 +3,6 @@ import type { SidebarNavItem } from "@posthog/shared/analytics-events";
 export const SIDEBAR_MIN_WIDTH = 240;
 
 export const CUSTOMIZABLE_NAV_ITEMS = [
-  {
-    id: "search",
-    label: "Search",
-    analyticsId: "search",
-    defaultVisible: false,
-  },
   { id: "inbox", label: "Inbox", analyticsId: "inbox", defaultVisible: true },
   {
     id: "loops",

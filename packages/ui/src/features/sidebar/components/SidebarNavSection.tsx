@@ -31,17 +31,14 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
-import { Fragment, type ReactNode, useState } from "react";
-import { CustomizeSidebarDialog } from "./CustomizeSidebarDialog";
+import type { ReactNode } from "react";
 import { ActivityItem } from "./items/ActivityItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
 import { ContextsItem } from "./items/ContextsItem";
-import { CustomizeSidebarItem } from "./items/CustomizeSidebarItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
 import { LoopsItem } from "./items/LoopsItem";
-import { MoreItem } from "./items/MoreItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
 
@@ -159,24 +156,7 @@ export function SidebarNavSection({
       (id) => !isNavItemVisible(navItemOverrides, id),
     ),
   );
-  const [moreExpanded, setMoreExpanded] = useState(false);
-  const [customizeOpen, setCustomizeOpen] = useState(false);
-
-  // While More is collapsed, an active item hidden under it takes over the
-  // More row so the current page stays visible. Search, Contexts and Configure
-  // never do: none of them is a routed page.
-  const moreItemActive: Record<CustomizableNavItemId, boolean> = {
-    search: false,
-    inbox: isInboxActive,
-    "command-center": isCommandCenterActive,
-    contexts: false,
-    activity: isActivityActive,
-    configure: false,
-    loops: isLoopsActive,
-  };
-
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
-    search: true,
     inbox: true,
     "command-center": true,
     contexts: bluebirdEnabled,
@@ -186,12 +166,6 @@ export function SidebarNavSection({
     configure: true,
     loops: loopsEnabled,
   };
-
-  const activeHiddenItem = orderedItems.find(
-    ({ id }) => navItemAvailable[id] && hidden.has(id) && moreItemActive[id],
-  );
-  const takeoverLabel =
-    !moreExpanded && activeHiddenItem ? activeHiddenItem.label : null;
 
   const handleChannelsToggle = (depth: 0 | 1) => (checked: boolean) => {
     setChannelsEnabled(checked);
@@ -217,12 +191,6 @@ export function SidebarNavSection({
     CustomizableNavItemId,
     (depth: 0 | 1) => ReactNode
   > = {
-    search: (depth) => (
-      <SearchItem
-        depth={depth}
-        onClick={withNavTrack("search", openCommandMenu, depth)}
-      />
-    ),
     inbox: (depth) => (
       <InboxItem
         depth={depth}
@@ -271,10 +239,6 @@ export function SidebarNavSection({
   const topLevelItems = orderedItems.filter(
     ({ id }) => navItemAvailable[id] && !hidden.has(id),
   );
-  const moreItems = orderedItems.filter(
-    ({ id }) => navItemAvailable[id] && hidden.has(id),
-  );
-
   return (
     <Flex direction="column" className="shrink-0 gap-px px-2 py-2">
       <Box mb="2">
@@ -293,41 +257,13 @@ export function SidebarNavSection({
         </Box>
       )}
 
+      <Box>
+        <SearchItem onClick={withNavTrack("search", openCommandMenu)} />
+      </Box>
+
       {topLevelItems.map(({ id }) => (
         <Box key={id}>{renderNavItem[id](0)}</Box>
       ))}
-
-      {/* Hidden items plus the Customize entry live under More, always the
-          last row, like the app switcher pattern this mirrors. */}
-      <Flex direction="column" className="gap-px">
-        <MoreItem
-          expanded={moreExpanded}
-          activeItemLabel={takeoverLabel}
-          onClick={withNavTrack("more", () => setMoreExpanded((e) => !e))}
-        />
-
-        {moreExpanded && (
-          <>
-            {moreItems.map(({ id }) => (
-              <Fragment key={id}>{renderNavItem[id](1)}</Fragment>
-            ))}
-            <CustomizeSidebarItem
-              depth={1}
-              onClick={withNavTrack(
-                "customize_sidebar",
-                () => setCustomizeOpen(true),
-                1,
-              )}
-            />
-          </>
-        )}
-      </Flex>
-
-      <CustomizeSidebarDialog
-        open={customizeOpen}
-        onOpenChange={setCustomizeOpen}
-        available={navItemAvailable}
-      />
     </Flex>
   );
 }
