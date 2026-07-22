@@ -30,12 +30,12 @@ describe("orderedNavItems", () => {
   });
 
   it("puts stored ids first and appends the rest in default order", () => {
-    const ids = orderedNavItems(["loops", "search"]).map((item) => item.id);
+    const ids = orderedNavItems(["configure", "search"]).map((item) => item.id);
 
-    expect(ids.slice(0, 2)).toEqual(["loops", "search"]);
+    expect(ids.slice(0, 2)).toEqual(["configure", "search"]);
     expect(ids.slice(2)).toEqual(
       CUSTOMIZABLE_NAV_ITEM_IDS.filter(
-        (id) => id !== "loops" && id !== "search",
+        (id) => id !== "configure" && id !== "search",
       ),
     );
   });

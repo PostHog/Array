@@ -23,6 +23,12 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
     defaultVisible: true,
   },
   {
+    id: "loops",
+    label: "Loops",
+    analyticsId: "loops",
+    defaultVisible: true,
+  },
+  {
     id: "mcp-servers",
     label: "MCP servers",
     analyticsId: "mcp_servers",
@@ -50,12 +56,6 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
     id: "configure",
     label: "Configure",
     analyticsId: "configure",
-    defaultVisible: true,
-  },
-  {
-    id: "loops",
-    label: "Loops",
-    analyticsId: "loops",
     defaultVisible: true,
   },
 ] as const satisfies readonly {
