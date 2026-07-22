@@ -7,8 +7,7 @@ import {
 import { Switch } from "@posthog/quill";
 import { useIntegrationSelectors } from "@posthog/ui/features/integrations/store";
 import { useSlackConnect } from "@posthog/ui/features/integrations/useSlackConnect";
-import { SlackChannelCombobox } from "@posthog/ui/features/settings/components/SlackChannelCombobox";
-import { SlackWorkspaceSelect } from "@posthog/ui/features/settings/components/SlackWorkspaceSelect";
+import { SlackWorkspaceChannelPicker } from "@posthog/ui/features/settings/components/SlackWorkspaceChannelPicker";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Checkbox, Flex, Text } from "@radix-ui/themes";
 
@@ -212,48 +211,38 @@ function SlackNotificationRow({
             : "Connect Slack workspace"}
         </Button>
       ) : (
-        <Flex align="center" gap="2" wrap="wrap">
-          {slackIntegrations.length > 1 ? (
-            <SlackWorkspaceSelect
-              integrations={slackIntegrations}
-              value={integrationId}
-              disabled={disabled}
-              className="min-w-[200px] max-w-[240px]"
-              onValueChange={(nextIntegrationId) => {
-                const next: SlackChannelParams = {
-                  ...params,
-                  integration_id: nextIntegrationId,
-                };
-                delete next.channel_id;
-                delete next.channel_name;
-                onChange({ params: next });
-              }}
-            />
-          ) : null}
-          <SlackChannelCombobox
-            key={integrationId}
-            integrationId={integrationId}
-            value={channelTarget}
-            ariaLabel="Slack channel"
-            disabled={disabled}
-            onChange={(target) => {
-              if (!target || !integrationId) {
-                const next: SlackChannelParams = { ...params };
-                delete next.channel_id;
-                delete next.channel_name;
-                onChange({ params: next });
-                return;
-              }
-              onChange({
-                params: {
-                  integration_id: integrationId,
-                  channel_id: parseChannelIdFromTargetValue(target),
-                  channel_name: parseChannelNameFromTargetValue(target),
-                },
-              });
-            }}
-          />
-        </Flex>
+        <SlackWorkspaceChannelPicker
+          integrations={slackIntegrations}
+          integrationId={integrationId}
+          channelValue={channelTarget}
+          channelAriaLabel="Slack channel"
+          disabled={disabled}
+          onIntegrationChange={(nextIntegrationId) => {
+            const next: SlackChannelParams = {
+              ...params,
+              integration_id: nextIntegrationId,
+            };
+            delete next.channel_id;
+            delete next.channel_name;
+            onChange({ params: next });
+          }}
+          onChannelChange={(target) => {
+            if (!target || !integrationId) {
+              const next: SlackChannelParams = { ...params };
+              delete next.channel_id;
+              delete next.channel_name;
+              onChange({ params: next });
+              return;
+            }
+            onChange({
+              params: {
+                integration_id: integrationId,
+                channel_id: parseChannelIdFromTargetValue(target),
+                channel_name: parseChannelNameFromTargetValue(target),
+              },
+            });
+          }}
+        />
       )}
     </NotificationChannelRow>
   );
