@@ -32,7 +32,7 @@ export const SHORTCUTS = {
   MESSAGE_JUMP: "mod+j",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
-  SWITCH_MESSAGING_MODE: "mod+s",
+  SWITCH_MESSAGING_MODE: "ctrl+s",
   RELOAD_WINDOW: "mod+shift+r",
   ZOOM_IN: "mod+=",
   ZOOM_OUT: "mod+-",
