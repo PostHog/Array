@@ -22,7 +22,7 @@ jobs:
           days-before-issue-stale: -1
           days-before-issue-close: -1
           stale-pr-label: stale
-          stale-pr-message: "This PR has had no activity for 7 days and has been marked stale. It will be closed in 7 days if no further activity occurs."
+          stale-pr-message: "This PR has had no activity for 7 days and has been marked stale. We are moving to the monorepo and tightening PR staleness in preparation, so it will be closed in 7 days if no further activity occurs."
           close-pr-message: "Closing this PR due to inactivity. Feel free to reopen if you'd like to continue the work."
           exempt-pr-labels: "no stale,security"
           exempt-draft-pr: false
