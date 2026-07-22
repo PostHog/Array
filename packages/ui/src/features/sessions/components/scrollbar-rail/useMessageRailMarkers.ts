@@ -221,10 +221,16 @@ function interpolateOffset(
     return { top, height: ESTIMATE };
   }
   if (prev) {
-    return { top: prev.top + prev.height + ESTIMATE, height: ESTIMATE };
+    return {
+      top: prev.top + prev.height + (index - prevIdx) * ESTIMATE,
+      height: ESTIMATE,
+    };
   }
   if (next) {
-    return { top: Math.max(0, next.top - ESTIMATE), height: ESTIMATE };
+    return {
+      top: Math.max(0, next.top - (nextIdx - index) * ESTIMATE),
+      height: ESTIMATE,
+    };
   }
   return { top: index * ESTIMATE, height: ESTIMATE };
 }
