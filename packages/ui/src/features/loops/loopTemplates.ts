@@ -18,6 +18,7 @@ import {
   type LoopTriggerDraft,
   nextDraftTriggerKey,
 } from "./loopFormTypes";
+import { systemTimezone } from "./loopTimezone";
 
 export type LoopTemplateCategory = "engineering" | "operations";
 
@@ -49,7 +50,7 @@ function scheduleDraft(cron: string): LoopTriggerDraft {
     key: nextDraftTriggerKey(),
     type: "schedule",
     enabled: true,
-    config: { cron_expression: cron, timezone: "UTC" },
+    config: { cron_expression: cron, timezone: systemTimezone() },
   };
 }
 

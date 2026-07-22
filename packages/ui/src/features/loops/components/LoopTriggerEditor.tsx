@@ -25,6 +25,7 @@ import {
   isTriggerDraftValid,
   type LoopTriggerDraft,
 } from "../loopFormTypes";
+import { systemTimezone } from "../loopTimezone";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
 
 const TRIGGER_TYPE_OPTIONS: {
@@ -235,14 +236,6 @@ const WEEKDAY_OPTIONS = [
   { value: "6", label: "Saturday" },
 ];
 
-function localTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
-}
-
 function ScheduleTriggerFields({
   config,
   disabled,
@@ -264,7 +257,7 @@ function ScheduleTriggerFields({
       : (parsed?.frequency ?? "daily");
   const time = parsed?.time ?? DEFAULT_SCHEDULE_TIME;
   const weekday = parsed?.weekday ?? "1";
-  const timezone = config.timezone || localTimezone();
+  const timezone = config.timezone || systemTimezone();
   const frequencyOptions = isCustomCron
     ? [CUSTOM_FREQUENCY_OPTION, ...FREQUENCY_OPTIONS]
     : FREQUENCY_OPTIONS;
@@ -369,7 +362,30 @@ function ScheduleTriggerFields({
       </Flex>
 
       {frequency !== "once" ? (
-        <Text className="text-[11px] text-gray-9">Times in {timezone}</Text>
+        <Flex align="end" gap="2" wrap="wrap">
+          <Flex direction="column" gap="1">
+            <Text className="text-[11px] text-gray-9">Timezone</Text>
+            <input
+              aria-label="Schedule timezone"
+              type="text"
+              disabled={disabled}
+              value={timezone}
+              className="h-8 min-w-[220px] rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2 text-[12.5px] text-gray-12"
+              onChange={(event) =>
+                onChange({ ...config, timezone: event.target.value })
+              }
+            />
+          </Flex>
+          <Button
+            variant="outline"
+            color="gray"
+            size="1"
+            disabled={disabled || timezone === systemTimezone()}
+            onClick={() => onChange({ ...config, timezone: systemTimezone() })}
+          >
+            Use system timezone
+          </Button>
+        </Flex>
       ) : null}
     </Flex>
   );

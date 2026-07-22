@@ -1,4 +1,5 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { systemTimezone } from "./loopTimezone";
 
 /**
  * A trigger row in the create/edit form. `key` is a client-only stable
@@ -45,7 +46,7 @@ export interface LoopFormValues {
 }
 
 export function emptyLoopScheduleTriggerConfig(): LoopSchemas.LoopScheduleTriggerConfig {
-  return { cron_expression: "0 9 * * 1", timezone: "UTC" };
+  return { cron_expression: "0 9 * * 1", timezone: systemTimezone() };
 }
 
 export function emptyLoopGithubTriggerConfig(): LoopSchemas.LoopGithubTriggerConfig {
