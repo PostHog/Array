@@ -72,7 +72,18 @@ function IconSpan({
   ariaLabel?: string;
 }) {
   if (!link) {
-    return <span className="flex items-center justify-center">{icon}</span>;
+    if (!ariaLabel) {
+      return <span className="flex items-center justify-center">{icon}</span>;
+    }
+    return (
+      <span
+        aria-label={ariaLabel}
+        className="flex items-center justify-center"
+        role="img"
+      >
+        {icon}
+      </span>
+    );
   }
   return (
     <NestedButton
@@ -163,7 +174,11 @@ function CloudStatusIcon({
         <IconSpan
           icon={<Icon size={size} weight="fill" color="var(--green-11)" />}
           link={link}
-          ariaLabel={ariaLabel}
+          ariaLabel={
+            link
+              ? `Open ${sourceLabel} thread (stopped)`
+              : `${sourceLabel} (stopped)`
+          }
         />
       </Tooltip>
     );
