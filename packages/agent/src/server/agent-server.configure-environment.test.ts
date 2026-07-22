@@ -455,13 +455,19 @@ describe("AgentServer.configureEnvironment on the Go ai-gateway", () => {
     ).toMatchObject(expected);
   });
 
-  it("sends no per-property headers, which the Go gateway ignores", () => {
+  it("emits attribution as one X-PostHog-Properties blob, not per-property headers", () => {
+    // Asserts the gateway env this function produces. The Claude adapter's
+    // buildEnvironment later appends `x-posthog-property-team_id` and
+    // `x-posthog-use-bedrock-fallback` as separate header lines; the Go gateway
+    // reads only the blob (team_id is already in it, and it does Bedrock
+    // failover itself), so those extra lines are inert on this path.
     const env = buildServer().configureEnvironment({
       originProduct: "signal_report",
       aiStage: "scout",
     });
 
     expect(env.anthropicCustomHeaders).not.toContain("x-posthog-property-");
+    expect(env.anthropicCustomHeaders?.split("\n")).toHaveLength(1);
     expect(Object.keys(env.openaiCustomHeaders ?? {})).toEqual([
       "X-PostHog-Properties",
     ]);

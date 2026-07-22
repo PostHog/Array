@@ -264,6 +264,16 @@ describe("buildPosthogPropertiesBlob", () => {
     expect(new TextEncoder().encode(blob).length).toBeLessThanOrEqual(8192);
   });
 
+  it("returns empty when only non-string values remain and still overflow", () => {
+    // No string value to drop, so trimming can't shrink the blob: send nothing
+    // rather than a blob the gateway rejects wholesale.
+    const props: Record<string, number> = {};
+    for (let i = 0; i < 600; i++) {
+      props[`numeric_property_number_${i}`] = i;
+    }
+    expect(buildPosthogPropertiesBlob(props)).toBe("");
+  });
+
   it("sanitizes keys, which are serialized into the header value", () => {
     expect(
       buildPosthogPropertiesBlob({ "ai_stage\ud83d\ude80": "scout" }),
