@@ -1,3 +1,4 @@
+import { isSafeExternalUrl } from "@posthog/shared";
 import { z } from "zod";
 
 // The template id for freeform-React canvases. Stored on a canvas's meta so the
@@ -203,14 +204,27 @@ export type HostToCanvasMessage = z.infer<typeof hostToCanvasMessageSchema>;
 
 // The ONLY navigations a canvas may request of the host. The canvas runs
 // untrusted code in a null-origin iframe, so this nested union IS the security
-// allowlist: there is no free-form path/route field, only these four targets.
-// `channelId` is intentionally absent — the host supplies it from the loaded
-// record so the iframe can never pick the channel, only which task/dashboard.
+// allowlist: there is no free-form path/route field, only these targets.
+// `channelId` is intentionally absent from the in-app targets — the host
+// supplies it from the loaded record so the iframe can never pick the channel,
+// only which task/dashboard.
+//
+// `external` is the one target that carries a URL, for opening an outbound link
+// in the user's browser. The `isSafeExternalUrl` refine is the FIRST of several
+// scheme-validation layers (repeated in openUrlInBrowser, the os.openExternal
+// tRPC input, and the Electron main handler): a navigate frame whose url fails
+// it is dropped at safeParse and never reaches the host.
 export const canvasNavIntentSchema = z.discriminatedUnion("target", [
   z.object({ target: z.literal("task"), taskId: z.string().min(1) }),
   z.object({ target: z.literal("new-task") }),
   z.object({ target: z.literal("canvas"), dashboardId: z.string().min(1) }),
   z.object({ target: z.literal("new-canvas") }),
+  z.object({
+    target: z.literal("external"),
+    url: z
+      .string()
+      .refine(isSafeExternalUrl, "Only http(s)/mailto URLs may be opened"),
+  }),
 ]);
 export type CanvasNavIntent = z.infer<typeof canvasNavIntentSchema>;
 

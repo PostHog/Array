@@ -228,12 +228,16 @@ export function buildSandboxDocument(
       },
       // Navigate the host app. Fire-and-forget: the host validates the intent
       // against its allowlist and routes within the current channel. The canvas
-      // cannot pick the channel or an arbitrary path — only these four targets.
+      // cannot pick the channel or an arbitrary path — only these targets.
+      // toExternal opens an outbound link in the user's browser (a raw
+      // <a target="_blank"> is swallowed by the sandbox); the host only opens
+      // http(s)/mailto URLs and drops anything else.
       navigate: {
         toTask: (taskId) => post({ type: "navigate", nav: { target: "task", taskId } }),
         toNewTask: () => post({ type: "navigate", nav: { target: "new-task" } }),
         toCanvas: (dashboardId) => post({ type: "navigate", nav: { target: "canvas", dashboardId } }),
         toNewCanvas: () => post({ type: "navigate", nav: { target: "new-canvas" } }),
+        toExternal: (url) => post({ type: "navigate", nav: { target: "external", url } }),
       },
     };
 

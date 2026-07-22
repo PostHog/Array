@@ -49,6 +49,9 @@ const FREEFORM_BASE = [
   '- `await ph.query(arg)` is the SECONDARY/escape path (ad-hoc, NOT saved) — reach for it only when you genuinely cannot save an insight. `arg` is a typed query node `ph.query({ kind: "TrendsQuery", series: [...], dateRange: {...} })` (series-object result, as above) or an inline HogQL string `ph.query("SELECT …")` (rows result, as above). Same result shapes as ph.loadInsight; prefer ph.loadInsight.',
   '- `ph.capture(event, properties?, distinctId?)` sends an analytics event to the project (fire-and-forget; returns a promise). Use this for click/interaction tracking — e.g. `ph.capture("button_clicked", { label })`. NEVER roll your own posthog client or fetch the capture endpoint yourself.',
   "- Session replay, $session_id, and person attribution are handled automatically by the host's posthog-js running in the sandbox — you do NOT set session ids or initialise recording; just call ph.capture for custom events.",
+  "NAVIGATION — `ph.navigate` is the ONLY way to move the user. A raw `<a href>` / `target=\"_blank\"` is silently swallowed by the sandbox and does NOTHING, so NEVER use one:",
+  '- OUTBOUND/external links (e.g. an insight on PostHog.com, docs, any http(s) URL) MUST call `ph.navigate.toExternal(url)` — wire it to an `onClick`, e.g. a Quill `Button variant="link"`. Only http(s)/mailto URLs open; anything else is dropped by the host.',
+  "- IN-APP moves: `ph.navigate.toTask(taskId)`, `ph.navigate.toNewTask()`, `ph.navigate.toCanvas(dashboardId)`, `ph.navigate.toNewCanvas()`. All fire-and-forget and stay within the current channel.",
   "- Load data inside `useEffect` with `useState`; show a loading state first, then render. Handle the empty/error case. Keep result sets small — aggregate in the query, don't fetch raw event dumps.",
 ];
 

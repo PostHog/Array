@@ -9,8 +9,16 @@ import {
   navigateToChannelNewTask,
   navigateToChannelTask,
 } from "@posthog/ui/router/navigationBridge";
+import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+
+// Minimum gap between two accepted `toExternal` opens. A `navigate` frame is
+// fire-and-forget over postMessage and can't carry a trusted user-gesture bit,
+// so a buggy/malicious canvas could call it in a loop and spam the OS browser
+// with tabs. A human can't click faster than this, so real clicks always pass;
+// only a programmatic burst is throttled.
+const EXTERNAL_OPEN_MIN_INTERVAL_MS = 750;
 
 /**
  * Routes a canvas's allowlisted nav intent to real host navigation. channelId is
@@ -21,6 +29,7 @@ export function useCanvasNavigation(
   channelId: string,
 ): (intent: CanvasNavIntent) => void {
   const createAndOpen = useCreateAndOpenDashboard(channelId);
+  const lastExternalOpenRef = useRef(0);
   return useCallback(
     (intent: CanvasNavIntent) => {
       switch (intent.target) {
@@ -36,6 +45,14 @@ export function useCanvasNavigation(
         case "new-canvas":
           void createAndOpen();
           break;
+        case "external": {
+          const now = Date.now();
+          if (now - lastExternalOpenRef.current < EXTERNAL_OPEN_MIN_INTERVAL_MS)
+            break;
+          lastExternalOpenRef.current = now;
+          void openUrlInBrowser(intent.url);
+          break;
+        }
       }
     },
     [channelId, createAndOpen],

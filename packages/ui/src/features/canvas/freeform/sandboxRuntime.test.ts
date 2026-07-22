@@ -55,4 +55,18 @@ describe("buildSandboxDocument", () => {
     );
     expect(html).toContain("jsxUnicodeEscapesPlugin");
   });
+
+  it("exposes the ph.navigate shim including toExternal", () => {
+    const html = buildSandboxDocument("edit");
+    for (const method of [
+      "toTask",
+      "toNewTask",
+      "toCanvas",
+      "toNewCanvas",
+      "toExternal",
+    ]) {
+      expect(html).toContain(`${method}:`);
+    }
+    expect(html).toContain('nav: { target: "external", url }');
+  });
 });
