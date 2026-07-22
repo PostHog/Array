@@ -153,10 +153,10 @@ describe("CustomizeSidebarDialog", () => {
   });
 
   it("renders rows in the stored order", () => {
-    useSidebarStore.setState({ navItemOrder: ["loops", "search"] });
+    useSidebarStore.setState({ navItemOrder: ["configure", "search"] });
     renderDialog();
 
-    expect(rowLabels().slice(0, 2)).toEqual(["Loops", "Search"]);
+    expect(rowLabels().slice(0, 2)).toEqual(["Configure", "Search"]);
   });
 
   it("previews on dragover and persists only on drop", () => {
@@ -176,12 +176,12 @@ describe("CustomizeSidebarDialog", () => {
       "search",
       "inbox",
       "agents",
+      "loops",
       "mcp-servers",
       "command-center",
       "contexts",
       "activity",
       "configure",
-      "loops",
     ]);
     expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.SIDEBAR_REORDERED, {
       item: "skills",
