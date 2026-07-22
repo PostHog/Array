@@ -305,7 +305,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
 
 function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
   const updateLoop = useUpdateLoop(loop.id);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [draft, setDraft] = useState<string | null>(null);
   // Escape reverts and blurs; skip the resulting onBlur save.
   const skipCommit = useRef(false);
 
@@ -316,17 +316,23 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
     }
     const trimmed = value.trim();
     if (!trimmed) {
-      if (textareaRef.current) textareaRef.current.value = loop.instructions;
+      setDraft(null);
       return;
     }
-    if (trimmed === loop.instructions.trim() || updateLoop.isPending) return;
+    if (updateLoop.isPending) return;
+    if (trimmed === loop.instructions.trim()) {
+      setDraft(null);
+      return;
+    }
     updateLoop.mutate(
       { instructions: trimmed },
       {
-        onSuccess: () => toast.success("Instructions updated"),
+        onSuccess: () => {
+          setDraft(null);
+          toast.success("Instructions updated");
+        },
         onError: (error) => {
-          if (textareaRef.current)
-            textareaRef.current.value = loop.instructions;
+          setDraft(null);
           toast.error("Failed to update instructions", {
             description: error.message,
           });
@@ -346,17 +352,16 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
         ) : null}
       </Flex>
       <Textarea
-        key={loop.instructions}
-        ref={textareaRef}
-        defaultValue={loop.instructions}
+        value={draft ?? loop.instructions}
         disabled={updateLoop.isPending}
         aria-label="Loop instructions"
         className="min-h-[200px] bg-(--color-panel-solid) text-[12.5px] leading-relaxed"
+        onChange={(e) => setDraft(e.currentTarget.value)}
         onBlur={(e) => commit(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             skipCommit.current = true;
-            e.currentTarget.value = loop.instructions;
+            setDraft(null);
             e.currentTarget.blur();
           }
         }}
