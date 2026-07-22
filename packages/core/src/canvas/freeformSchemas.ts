@@ -1,3 +1,4 @@
+import { isSafePostHogUrl } from "@posthog/shared";
 import { z } from "zod";
 
 // The template id for freeform-React canvases. Stored on a canvas's meta so the
@@ -252,6 +253,13 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     channel: z.literal(CANVAS_CHANNEL),
     type: z.literal("navigate"),
     nav: canvasNavIntentSchema,
+  }),
+  // Open a URL outside the sandbox. The PostHog-only https allowlist is part
+  // of the schema, so no consumer can forward an unvalidated URL.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("open-external"),
+    url: z.string().refine(isSafePostHogUrl),
   }),
 ]);
 export type CanvasToHostMessage = z.infer<typeof canvasToHostMessageSchema>;

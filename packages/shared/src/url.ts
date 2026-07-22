@@ -20,3 +20,21 @@ export function isSafeExternalUrl(url: string): boolean {
   }
   return SAFE_EXTERNAL_URL_SCHEMES.has(parsed.protocol);
 }
+
+/**
+ * Whether a URL from untrusted code (the freeform-canvas sandbox) may be
+ * opened externally: absolute https URLs on posthog.com or a subdomain only.
+ */
+export function isSafePostHogUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return (
+    parsed.protocol === "https:" &&
+    (parsed.hostname === "posthog.com" ||
+      parsed.hostname.endsWith(".posthog.com"))
+  );
+}
