@@ -99,9 +99,11 @@ const MIXED_LOOPS: LoopSchemas.Loop[] = [
     name: "Daily product pulse",
     notifications: notifications(["push"]),
   }),
-  loop("personal-email", {
-    name: "Weekly account summary",
-    notifications: notifications(["email"]),
+  loop("personal-long", {
+    name: "A very long personal loop name that tests truncation without displacing status badges or navigation",
+    description:
+      "This intentionally long description verifies that creator and notification metadata remain visible while descriptive copy truncates independently.",
+    notifications: notifications(["push", "email"]),
   }),
   loop("team-slack", {
     name: "Agentic-detection rollout monitoring",
@@ -113,6 +115,19 @@ const MIXED_LOOPS: LoopSchemas.Loop[] = [
     visibility: "team",
     created_by_id: PAUL.id,
     notifications: notifications(["push", "email", "slack"], "incidents"),
+  }),
+  loop("team-none", {
+    name: "Paused loop without notifications",
+    visibility: "team",
+    enabled: false,
+  }),
+  loop("team-former-owner", {
+    name: "Loop owned by a former organization member",
+    visibility: "team",
+    created_by_id: 999,
+    last_run_status: "failed",
+    consecutive_failures: 3,
+    notifications: notifications(["email"]),
   }),
 ];
 
@@ -138,27 +153,7 @@ const meta: Meta<typeof LoopsListViewPresentation> = {
 export default meta;
 type Story = StoryObj<typeof LoopsListViewPresentation>;
 
-export const MixedNotifications: Story = {};
-
-export const LongContent: Story = {
-  args: {
-    loops: [
-      loop("long-personal", {
-        name: "A very long personal loop name that tests truncation without displacing status badges or navigation",
-        description:
-          "This description is intentionally long so notification and creator metadata remain visible on their own line while the descriptive copy truncates independently.",
-        notifications: notifications(["push", "email"]),
-      }),
-      loop("long-team", {
-        name: "Monitor every production deployment and correlate regressions across all customer-facing services",
-        description:
-          "Checks deployments, error rates, session replay signals, support volume, and conversion changes before posting a concise summary for the team.",
-        visibility: "team",
-        notifications: notifications(["push", "email", "slack"]),
-      }),
-    ],
-  },
-};
+export const Comprehensive: Story = {};
 
 export const LongMixedList: Story = {
   args: {
@@ -177,37 +172,4 @@ export const LongMixedList: Story = {
       });
     }),
   },
-};
-
-export const CreatorStates: Story = {
-  args: {
-    loops: [
-      loop("personal-owner", { name: "Personal loop" }),
-      loop("known-owner", {
-        name: "Known team creator",
-        visibility: "team",
-      }),
-      loop("former-owner", {
-        name: "Former organization member",
-        visibility: "team",
-        created_by_id: 999,
-      }),
-    ],
-  },
-};
-
-export const CreatorLoading: Story = {
-  args: { members: [], membersLoading: true },
-};
-
-export const CreatorUnavailable: Story = {
-  args: { members: [], membersError: true },
-};
-
-export const Empty: Story = { args: { loops: [] } };
-
-export const Loading: Story = { args: { loops: [], isLoading: true } };
-
-export const LoadError: Story = {
-  args: { loops: [], error: new Error("Loops could not be loaded") },
 };
