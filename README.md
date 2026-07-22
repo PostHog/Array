@@ -9,6 +9,8 @@ Found a bug or have feedback? [Open an issue](https://github.com/PostHog/code/is
 
 This is the monorepo for the PostHog desktop and mobile apps and the agent framework that powers them.
 
+See the development guide below to get started locally.
+
 ## Development
 
 ### Prerequisites
