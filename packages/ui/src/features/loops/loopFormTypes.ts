@@ -45,7 +45,7 @@ export interface LoopFormValues {
 }
 
 export function emptyLoopScheduleTriggerConfig(): LoopSchemas.LoopScheduleTriggerConfig {
-  return { cron_expression: "0 9 * * *", timezone: "UTC" };
+  return { cron_expression: "0 9 * * 1", timezone: "UTC" };
 }
 
 export function emptyLoopGithubTriggerConfig(): LoopSchemas.LoopGithubTriggerConfig {

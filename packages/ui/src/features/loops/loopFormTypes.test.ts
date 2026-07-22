@@ -129,13 +129,13 @@ describe("isLoopFormValid", () => {
 });
 
 describe("emptyLoopFormValues", () => {
-  it("starts new loops with an enabled daily schedule trigger", () => {
+  it("starts new loops with an enabled weekly schedule trigger", () => {
     expect(emptyLoopFormValues().triggers).toEqual([
       {
         key: expect.any(String),
         type: "schedule",
         enabled: true,
-        config: { cron_expression: "0 9 * * *", timezone: "UTC" },
+        config: { cron_expression: "0 9 * * 1", timezone: "UTC" },
       },
     ]);
   });
