@@ -1,4 +1,5 @@
 import { CloudIcon, PlusIcon, RepeatIcon } from "@phosphor-icons/react";
+import type { LoopSchemas } from "@posthog/api-client/loops";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -44,9 +45,6 @@ export function LoopsListView() {
   useSetHeaderContent(headerContent);
 
   const allLoops = loops ?? [];
-  const personalLoops = allLoops.filter(
-    (loop) => loop.visibility === "personal",
-  );
   const teamLoops = allLoops.filter((loop) => loop.visibility === "team");
   const {
     members,
@@ -65,6 +63,47 @@ export function LoopsListView() {
       .setPrefill({ description: template.description, ...template.build() });
     navigateToNewLoop();
   };
+
+  return (
+    <LoopsListViewPresentation
+      loops={allLoops}
+      isLoading={isLoading}
+      error={isError ? error : null}
+      limitReason={limitReason}
+      members={members}
+      membersLoading={membersLoading}
+      membersError={membersError}
+      onStartBlank={startBlank}
+      onStartFromTemplate={startFromTemplate}
+    />
+  );
+}
+
+interface LoopsListViewPresentationProps {
+  loops: LoopSchemas.Loop[];
+  isLoading?: boolean;
+  error?: unknown;
+  limitReason?: string | null;
+  members?: UserBasic[];
+  membersLoading?: boolean;
+  membersError?: boolean;
+  onStartBlank: () => void;
+  onStartFromTemplate: (template: LoopTemplate) => void;
+}
+
+export function LoopsListViewPresentation({
+  loops,
+  isLoading = false,
+  error = null,
+  limitReason = null,
+  members = [],
+  membersLoading = false,
+  membersError = false,
+  onStartBlank,
+  onStartFromTemplate,
+}: LoopsListViewPresentationProps) {
+  const personalLoops = loops.filter((loop) => loop.visibility === "personal");
+  const teamLoops = loops.filter((loop) => loop.visibility === "team");
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -102,7 +141,7 @@ export function LoopsListView() {
               variant="soft"
               color="gray"
               size="2"
-              onClick={startBlank}
+              onClick={onStartBlank}
               disabled={limitReason != null}
               disabledReason={limitReason}
             >
@@ -113,7 +152,7 @@ export function LoopsListView() {
 
           {isLoading ? (
             <LoopsSkeleton />
-          ) : isError ? (
+          ) : error ? (
             <LoopsEmptyNotice
               title="Couldn't load loops."
               hint={
@@ -122,7 +161,7 @@ export function LoopsListView() {
                   : "The loops API returned an error."
               }
             />
-          ) : allLoops.length > 0 ? (
+          ) : loops.length > 0 ? (
             <Flex direction="column" gap="5">
               {personalLoops.length > 0 ? (
                 <LoopListSection title="Personal loops" loops={personalLoops} />
@@ -141,7 +180,7 @@ export function LoopsListView() {
             <LoopsEmptyState />
           )}
 
-          <LoopTemplatesSection onSelect={startFromTemplate} />
+          <LoopTemplatesSection onSelect={onStartFromTemplate} />
         </Flex>
       </div>
 
