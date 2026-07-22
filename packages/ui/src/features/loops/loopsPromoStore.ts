@@ -1,4 +1,7 @@
-import { electronStorage } from "@posthog/ui/shell/rendererStorage";
+import {
+  electronStorage,
+  flushRendererStateWrites,
+} from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -17,8 +20,16 @@ export const useLoopsPromoStore = create<LoopsPromoState>()(
     (set) => ({
       dismissed: false,
       _hasHydrated: false,
-      dismiss: () => set({ dismissed: true }),
-      reset: () => set({ dismissed: false }),
+      // Flushed immediately: the debounced write could otherwise be lost if
+      // the window closes right after the click, resurrecting the card.
+      dismiss: () => {
+        set({ dismissed: true });
+        void flushRendererStateWrites();
+      },
+      reset: () => {
+        set({ dismissed: false });
+        void flushRendererStateWrites();
+      },
       setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
