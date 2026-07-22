@@ -47,16 +47,26 @@ describe("FreeformCanvas", () => {
       vi.mocked(openExternalUrl).mockClear();
     });
 
-    it("opens PostHog https URLs", () => {
+    it("opens PostHog https URLs once the user has focused the canvas", () => {
       const iframe = renderCanvas();
+      iframe.focus();
 
       postFromCanvas(iframe, "https://posthog.com/docs");
 
       expect(openExternalUrl).toHaveBeenCalledWith("https://posthog.com/docs");
     });
 
+    it("drops opens when the user has not interacted with the canvas", () => {
+      const iframe = renderCanvas();
+
+      postFromCanvas(iframe, "https://posthog.com/docs");
+
+      expect(openExternalUrl).not.toHaveBeenCalled();
+    });
+
     it("drops non-PostHog URLs", () => {
       const iframe = renderCanvas();
+      iframe.focus();
 
       postFromCanvas(iframe, "https://example.com");
       postFromCanvas(iframe, "javascript:alert(1)");
@@ -67,6 +77,7 @@ describe("FreeformCanvas", () => {
 
     it("throttles rapid opens so canvas code cannot spam the launcher", () => {
       const iframe = renderCanvas();
+      iframe.focus();
 
       postFromCanvas(iframe, "https://posthog.com/a");
       postFromCanvas(iframe, "https://posthog.com/b");

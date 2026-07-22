@@ -251,7 +251,8 @@ export function buildSandboxDocument(
       },
       // External navigation is brokered by the host. The iframe has no popup
       // permission; the host only opens https://posthog.com (or subdomain)
-      // URLs and rate-limits opens, since canvas code is untrusted.
+      // URLs, rate-limits opens, and ignores requests while the canvas is
+      // unfocused (no auto-opens on load), since canvas code is untrusted.
       openExternal: (url) => post({ type: "open-external", url }),
       // Navigate the host app. Fire-and-forget: the host validates the intent
       // against its allowlist and routes within the current channel. The canvas

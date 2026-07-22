@@ -197,6 +197,14 @@ export function FreeformCanvas({
             log.warn("Blocked non-PostHog canvas external URL", {
               url: msg.url,
             });
+          } else if (document.activeElement !== iframeRef.current) {
+            // The host can't observe gestures inside the null-origin iframe,
+            // but a real link click moves focus INTO it. Requiring the canvas
+            // to hold focus stops code from auto-opening URLs on load — e.g.
+            // a shared canvas or a dashboard thumbnail rendering offscreen.
+            log.warn("Ignored canvas external URL open without interaction", {
+              url: msg.url,
+            });
           } else if (
             Date.now() - lastExternalOpenRef.current <
             EXTERNAL_OPEN_MIN_INTERVAL_MS
