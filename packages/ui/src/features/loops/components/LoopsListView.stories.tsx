@@ -3,12 +3,12 @@ import type { UserBasic } from "@posthog/shared/domain-types";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { LoopsListViewPresentation } from "./LoopsListView";
 
-const VINCENT: UserBasic = {
+const BOB: UserBasic = {
   id: 2,
-  uuid: "user-vincent",
-  email: "vincent@example.com",
-  first_name: "Vincent",
-  last_name: "Ge",
+  uuid: "user-bob",
+  email: "bob@example.com",
+  first_name: "Bob",
+  last_name: "John",
 };
 
 const PAUL: UserBasic = {
@@ -43,7 +43,7 @@ function loop(
   overrides: Partial<LoopSchemas.Loop> = {},
 ): LoopSchemas.Loop {
   const visibility = overrides.visibility ?? "personal";
-  const createdById = visibility === "personal" ? 1 : VINCENT.id;
+  const createdById = visibility === "personal" ? 1 : BOB.id;
   return {
     id,
     team_id: 2,
@@ -144,7 +144,7 @@ const meta: Meta<typeof LoopsListViewPresentation> = {
   ],
   args: {
     loops: MIXED_LOOPS,
-    members: [VINCENT, PAUL],
+    members: [BOB, PAUL],
     onStartBlank: () => {},
     onStartFromTemplate: () => {},
   },
@@ -166,7 +166,7 @@ export const LongMixedList: Story = {
       return loop(`long-list-${index + 1}`, {
         name: `Loop ${String(index + 1).padStart(2, "0")} · ${index % 2 === 0 ? "Monitor product health" : "Summarize customer feedback"}`,
         visibility,
-        created_by_id: visibility === "team" ? VINCENT.id : 1,
+        created_by_id: visibility === "team" ? BOB.id : 1,
         enabled: index % 7 !== 0,
         notifications: notifications(channels, `team-loop-${index + 1}`),
       });
