@@ -16,6 +16,7 @@ import {
   detectRtkBinary,
   isMcpToolReadOnly,
   isNotification,
+  POSTHOG_METHODS,
   POSTHOG_NOTIFICATIONS,
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
@@ -114,7 +115,9 @@ import {
   type ReconnectSessionInput,
   type RtkStatus,
   type SessionResponse,
+  type SideQuestionOutput,
   type StartSessionInput,
+  sideQuestionOutput,
 } from "./schemas";
 
 export type { InterruptReason };
@@ -302,6 +305,16 @@ function extractSteeringCapability(init: unknown): string | undefined {
   return typeof steering === "string" ? steering : undefined;
 }
 
+/** Pull the adapter's `agentCapabilities._meta.posthog.sideQuestion` from initialize. */
+function extractSideQuestionCapability(init: unknown): boolean | undefined {
+  const sideQuestion = (
+    init as {
+      agentCapabilities?: { _meta?: { posthog?: { sideQuestion?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.sideQuestion;
+  return typeof sideQuestion === "boolean" ? sideQuestion : undefined;
+}
+
 interface ManagedSession {
   taskRunId: string;
   taskId: string;
@@ -318,6 +331,8 @@ interface ManagedSession {
   configOptions?: SessionConfigOption[];
   /** Adapter's negotiated steering capability from initialize (`_meta.posthog.steering`). */
   steering?: string;
+  /** Adapter's negotiated side-question capability from initialize (`_meta.posthog.sideQuestion`). */
+  sideQuestion?: boolean;
   /** Tracks in-flight MCP tool calls (toolCallId → toolKey) for cancellation */
   inFlightMcpToolCalls: Map<string, string>;
   /** MCP tool approval states fetched at session start */
@@ -946,6 +961,7 @@ If a repository IS genuinely required, attach one in this priority order:
       // the host gates steer-vs-resend on the negotiated capability, not on a
       // hardcoded adapter name (codex-acp advertises "interrupt-resend").
       const steering = extractSteeringCapability(initResult);
+      const sideQuestion = extractSideQuestionCapability(initResult);
 
       const {
         servers: mcpServers,
@@ -1161,6 +1177,7 @@ If a repository IS genuinely required, attach one in this priority order:
         promptPending: false,
         configOptions,
         steering,
+        sideQuestion,
         inFlightMcpToolCalls: new Map(),
         mcpToolApprovals: toolApprovals,
         toolInstallations,
@@ -1375,6 +1392,31 @@ If a repository IS genuinely required, attach one in this priority order:
         this.emit(AgentServiceEvent.SessionsIdle, undefined);
       }
     }
+  }
+
+  /**
+   * Answers a one-shot "/btw" side question via the adapter's SIDE_QUESTION
+   * extension method. Deliberately does not touch promptPending or the
+   * sleep/idle lifecycle: the exchange runs beside the conversation (ACP
+   * JSON-RPC multiplexes, so this works mid-turn) and never becomes part of it.
+   */
+  async sideQuestion(
+    sessionId: string,
+    question: string,
+  ): Promise<SideQuestionOutput> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    session.lastActivityAt = Date.now();
+    this.recordActivity(sessionId);
+
+    const result = await session.clientSideConnection.extMethod(
+      POSTHOG_METHODS.SIDE_QUESTION,
+      { sessionId: getAgentSessionId(session), question },
+    );
+    return sideQuestionOutput.parse(result);
   }
 
   async cancelSession(sessionId: string): Promise<boolean> {
@@ -2070,6 +2112,7 @@ For git operations while detached:
       channel: session.channel,
       configOptions: session.configOptions,
       steering: session.steering,
+      sideQuestion: session.sideQuestion,
     };
   }
 

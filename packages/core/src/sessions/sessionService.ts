@@ -35,6 +35,7 @@ import {
   type StoredLogEntry,
   sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
+  sessionSupportsSideQuestion,
   type TaskRunStatus,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -179,6 +180,7 @@ export interface SessionTrpc {
     reconnect: TrpcMutation;
     cancel: TrpcMutation;
     prompt: TrpcMutation;
+    sideQuestion: TrpcMutation;
     cancelPrompt: TrpcMutation;
     cancelPermission: TrpcMutation;
     respondToPermission: TrpcMutation;
@@ -1504,6 +1506,11 @@ function readSteering(result: unknown): string | undefined {
   return (result as { steering?: string } | undefined)?.steering;
 }
 
+/** The side-question capability on a loosely-typed agent start/reconnect result. */
+function readSideQuestion(result: unknown): boolean | undefined {
+  return (result as { sideQuestion?: boolean } | undefined)?.sideQuestion;
+}
+
 function classifyTurnEventKind(
   msg: AcpMessage["message"],
 ): "text" | "output" | "other" {
@@ -2062,6 +2069,7 @@ export class SessionService {
           status: "connected",
           configOptions,
           steering: readSteering(result),
+          sideQuestion: readSideQuestion(result),
         });
 
         // Persist the merged config options
@@ -2406,6 +2414,7 @@ export class SessionService {
       | undefined;
     session.configOptions = configOptions;
     session.steering = readSteering(result);
+    session.sideQuestion = readSideQuestion(result);
 
     // Persist the config options
     if (configOptions) {
@@ -3568,6 +3577,35 @@ export class SessionService {
       prompt: blocks,
       steer: true,
     });
+  }
+
+  /**
+   * Ask a one-shot "/btw" side question: a single-turn, tool-less query forked
+   * off the live transcript. The exchange never enters the conversation, so
+   * this bypasses the queue/steer machinery entirely and is valid both
+   * mid-turn and idle.
+   */
+  async askSideQuestion(taskId: string, question: string): Promise<string> {
+    if (!this.d.getIsOnline()) {
+      throw new Error(
+        "No internet connection. Please check your connection and try again.",
+      );
+    }
+
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session) throw new Error("No active session for task");
+    if (!sessionSupportsSideQuestion(session)) {
+      throw new Error("Side questions aren't supported for this session yet.");
+    }
+    if (session.status !== "connected") {
+      throw new Error("Session is not ready. Try again once it's connected.");
+    }
+
+    const result = (await this.d.trpc.agent.sideQuestion.mutate({
+      sessionId: session.taskRunId,
+      question,
+    })) as { answer: string };
+    return result.answer;
   }
 
   /**
