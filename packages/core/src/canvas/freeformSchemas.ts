@@ -254,9 +254,8 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("navigate"),
     nav: canvasNavIntentSchema,
   }),
-  // A request to open a URL outside the sandbox. The allowlist is part of the
-  // schema: only absolute https://posthog.com (or subdomain) URLs parse, so
-  // every consumer drops anything else before it can reach a launcher.
+  // Open a URL outside the sandbox. The PostHog-only https allowlist is part
+  // of the schema, so no consumer can forward an unvalidated URL.
   z.object({
     channel: z.literal(CANVAS_CHANNEL),
     type: z.literal("open-external"),

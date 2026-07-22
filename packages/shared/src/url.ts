@@ -22,10 +22,8 @@ export function isSafeExternalUrl(url: string): boolean {
 }
 
 /**
- * Whether a URL from UNTRUSTED code (the freeform-canvas sandbox) may be
- * opened externally. Stricter than `isSafeExternalUrl`: only absolute https
- * URLs on posthog.com or a subdomain, so a malicious or generated canvas
- * cannot send the viewer to an arbitrary site.
+ * Whether a URL from untrusted code (the freeform-canvas sandbox) may be
+ * opened externally: absolute https URLs on posthog.com or a subdomain only.
  */
 export function isSafePostHogUrl(url: string): boolean {
   let parsed: URL;

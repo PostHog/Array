@@ -63,7 +63,6 @@ describe("buildSandboxDocument", () => {
       "const resolveExternalAnchorUrl = function resolveExternalAnchorUrl(",
     );
     expect(html).toContain('"open-external"');
-    // The open decision is deferred so a canvas preventDefault() is honored.
     expect(html).toContain("event.defaultPrevented");
   });
 });

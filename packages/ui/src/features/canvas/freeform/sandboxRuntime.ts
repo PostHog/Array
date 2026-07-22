@@ -144,9 +144,7 @@ export function decodeJsxUnicodeEscapes(value: string): string {
 }
 
 // Resolves a click target to the absolute URL of an enclosing target="_blank"
-// anchor, or null when the click must not be brokered to the host. Exported for
-// tests; its source is interpolated into the sandbox bootstrap below so the
-// iframe runs this exact implementation.
+// anchor, or null. Interpolated into the sandbox bootstrap; exported for tests.
 export function resolveExternalAnchorUrl(target: unknown): string | null {
   const anchor = target instanceof Element ? target.closest("a[href]") : null;
   if (!anchor) return null;
@@ -154,10 +152,8 @@ export function resolveExternalAnchorUrl(target: unknown): string | null {
   if ((anchor.getAttribute("target") ?? "").toLowerCase() !== "_blank") {
     return null;
   }
-  // Read the attribute, not the .href IDL property: SVG anchors expose an
-  // SVGAnimatedString there, and the property resolves relative hrefs against
-  // the srcdoc's inherited base URL (the host app's own URL). Only absolute
-  // URLs are brokered; the host then enforces its PostHog-only allowlist.
+  // getAttribute, not the .href property: SVG anchors expose SVGAnimatedString
+  // there, and relative hrefs would resolve against the host's base URL.
   const href = anchor.getAttribute("href") ?? "";
   try {
     return new URL(href).href;
@@ -249,10 +245,8 @@ export function buildSandboxDocument(
         }
         return call("capture", { event, properties: properties ?? {}, distinctId });
       },
-      // External navigation is brokered by the host. The iframe has no popup
-      // permission; the host only opens https://posthog.com (or subdomain)
-      // URLs, rate-limits opens, and ignores requests while the canvas is
-      // unfocused (no auto-opens on load), since canvas code is untrusted.
+      // Brokered by the host: PostHog-only https URLs, rate-limited, and
+      // ignored while the canvas is unfocused (no auto-opens on load).
       openExternal: (url) => post({ type: "open-external", url }),
       // Navigate the host app. Fire-and-forget: the host validates the intent
       // against its allowlist and routes within the current channel. The canvas
@@ -265,13 +259,10 @@ export function buildSandboxDocument(
       },
     };
 
-    // Preserve normal anchor ergonomics for generated canvases while keeping
-    // navigation behind the validated host capability. Existing canvases that
-    // render target="_blank" links therefore work without source migrations.
-    // Capture phase so a canvas stopPropagation() can't swallow the click; the
-    // open decision is deferred a tick so a canvas preventDefault() is still
-    // honored. No preventDefault here — the native popup attempt is blocked by
-    // the sandbox (no allow-popups) regardless.
+    // Keep target="_blank" anchors working without popup permission. Capture
+    // phase so stopPropagation() can't swallow the click; the open is deferred
+    // a tick so preventDefault() is honored (the native popup attempt is
+    // sandbox-blocked regardless, so we never call preventDefault ourselves).
     const resolveExternalAnchorUrl = ${resolveExternalAnchorUrl.toString()};
     document.addEventListener(
       "click",

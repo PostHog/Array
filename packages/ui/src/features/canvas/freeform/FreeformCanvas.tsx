@@ -20,8 +20,7 @@ import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
 
-// Canvas code is untrusted and can post open-external without a user gesture,
-// so successful opens are rate-limited host-side.
+// Canvas code can post open-external without a gesture, so opens are limited.
 const EXTERNAL_OPEN_MIN_INTERVAL_MS = 1_000;
 
 export interface FreeformCanvasProps {
@@ -80,7 +79,6 @@ export function FreeformCanvas({
   // only gates an imperative postMessage and is never shown on screen, so it
   // shouldn't trigger re-renders.
   const readyRef = useRef(false);
-  // Timestamp of the last brokered external open, for the rate limit.
   const lastExternalOpenRef = useRef(0);
 
   // The document is keyed on mode + the analytics host (which the CSP must open
@@ -191,17 +189,14 @@ export function FreeformCanvas({
           latest.current.onNavigate?.(msg.nav);
           break;
         case "open-external":
-          // The schema already refines on the PostHog-only allowlist; the
-          // re-check keeps the invariant local if the schema ever drifts.
+          // Re-checks the schema's allowlist refine in case it ever drifts.
           if (!isSafePostHogUrl(msg.url)) {
             log.warn("Blocked non-PostHog canvas external URL", {
               url: msg.url,
             });
           } else if (document.activeElement !== iframeRef.current) {
-            // The host can't observe gestures inside the null-origin iframe,
-            // but a real link click moves focus INTO it. Requiring the canvas
-            // to hold focus stops code from auto-opening URLs on load — e.g.
-            // a shared canvas or a dashboard thumbnail rendering offscreen.
+            // A real link click moves focus into the iframe; requiring focus
+            // stops code from auto-opening URLs on load (e.g. thumbnails).
             log.warn("Ignored canvas external URL open without interaction", {
               url: msg.url,
             });
