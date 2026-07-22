@@ -605,4 +605,39 @@ describe("ClaudeAcpAgent /clear", () => {
       "s-reconnect",
     );
   });
+
+  it("resets pre-clear plan and notification state so it can't resurface after /clear", async () => {
+    // ExitPlanMode falls back to lastPlanContent/fileContentCache/
+    // notificationHistory when its tool input omits an explicit plan; left
+    // untouched, a plan written before /clear (possibly carrying
+    // repo-injected content) could resurface in the fresh session.
+    const { agent } = makeAgent();
+    const { session } = installFakeSession(agent, "s-plan");
+    (session as unknown as { lastPlanContent?: string }).lastPlanContent =
+      "stale pre-clear plan";
+    (session as unknown as { lastPlanFilePath?: string }).lastPlanFilePath =
+      "/tmp/repo/.claude/plans/old.md";
+    session.notificationHistory.push({ type: "assistant", text: "old" });
+    agent.fileContentCache["/tmp/repo/.claude/plans/old.md"] = "stale content";
+
+    await agent.prompt({
+      sessionId: "s-plan",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+
+    expect(
+      (session as unknown as { lastPlanContent?: string }).lastPlanContent,
+    ).toBeUndefined();
+    expect(
+      (session as unknown as { lastPlanFilePath?: string }).lastPlanFilePath,
+    ).toBeUndefined();
+    // The reset happens before broadcastUserMessage, which legitimately logs
+    // the "/clear" command itself afterward — assert the stale pre-clear
+    // entry is gone rather than the history being empty.
+    expect(session.notificationHistory).not.toContainEqual({
+      type: "assistant",
+      text: "old",
+    });
+    expect(agent.fileContentCache).toEqual({});
+  });
 });
