@@ -63,7 +63,7 @@ export function LoopRow({
             <Badge color={loopStatusColor(loop)}>{loopStatusLabel(loop)}</Badge>
             <Badge color="gray">{loop.visibility}</Badge>
           </Flex>
-          <Text className="truncate text-[12px] text-gray-11 leading-snug">
+          <Text className="text-[12px] text-gray-11 leading-snug">
             {metadata.join(" · ")}
           </Text>
           {description ? (

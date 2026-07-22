@@ -22,6 +22,20 @@ function loopLimitReason(max: number): string {
   return `You've reached the limit of ${max} loops for this project. Delete one to add another.`;
 }
 
+const EMPTY_MEMBERS: UserBasic[] = [];
+
+function startBlankLoop(): void {
+  useLoopDraftStore.getState().setPrefill(null);
+  navigateToNewLoop();
+}
+
+function startLoopFromTemplate(template: LoopTemplate): void {
+  useLoopDraftStore
+    .getState()
+    .setPrefill({ description: template.description, ...template.build() });
+  navigateToNewLoop();
+}
+
 export function LoopsListView() {
   const { data: loops, isLoading, isError, error } = useLoops();
   const limits = useLoopLimits();
@@ -52,18 +66,6 @@ export function LoopsListView() {
     isError: membersError,
   } = useOrgMembers({ enabled: teamLoops.length > 0 });
 
-  const startBlank = () => {
-    useLoopDraftStore.getState().setPrefill(null);
-    navigateToNewLoop();
-  };
-
-  const startFromTemplate = (template: LoopTemplate) => {
-    useLoopDraftStore
-      .getState()
-      .setPrefill({ description: template.description, ...template.build() });
-    navigateToNewLoop();
-  };
-
   return (
     <LoopsListViewPresentation
       loops={allLoops}
@@ -73,8 +75,8 @@ export function LoopsListView() {
       members={members}
       membersLoading={membersLoading}
       membersError={membersError}
-      onStartBlank={startBlank}
-      onStartFromTemplate={startFromTemplate}
+      onStartBlank={startBlankLoop}
+      onStartFromTemplate={startLoopFromTemplate}
     />
   );
 }
@@ -96,7 +98,7 @@ export function LoopsListViewPresentation({
   isLoading = false,
   error = null,
   limitReason = null,
-  members = [],
+  members = EMPTY_MEMBERS,
   membersLoading = false,
   membersError = false,
   onStartBlank,
@@ -200,12 +202,12 @@ export function LoopsListViewPresentation({
 function LoopListSection({
   title,
   loops,
-  members = [],
+  members = EMPTY_MEMBERS,
   membersLoading = false,
   membersError = false,
 }: {
   title: string;
-  loops: NonNullable<ReturnType<typeof useLoops>["data"]>;
+  loops: LoopSchemas.Loop[];
   members?: UserBasic[];
   membersLoading?: boolean;
   membersError?: boolean;
