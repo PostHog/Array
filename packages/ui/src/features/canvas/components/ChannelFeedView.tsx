@@ -61,10 +61,12 @@ import {
   Fragment,
   memo,
   type ReactNode,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
@@ -409,6 +411,56 @@ function channelTaskStarter(task: Task): UserBasic | null {
     : null;
 }
 
+function ExpandablePrompt({
+  children,
+  lines,
+}: {
+  children: string;
+  lines: 2 | 4;
+}) {
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [truncated, setTruncated] = useState(false);
+
+  const measureRef = useCallback(
+    (body: HTMLDivElement | null) => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      if (!body || expanded) return;
+      const measure = () => setTruncated(body.scrollHeight > body.clientHeight);
+      measure();
+      const observer = new ResizeObserver(measure);
+      observer.observe(body);
+      observerRef.current = observer;
+    },
+    [expanded],
+  );
+
+  return (
+    <div>
+      <ThreadItemBody
+        ref={measureRef}
+        className={cn(
+          "wrap-break-word whitespace-pre-wrap",
+          !expanded && (lines === 2 ? "line-clamp-2" : "line-clamp-4"),
+        )}
+      >
+        {children}
+      </ThreadItemBody>
+      {(truncated || expanded) && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "less" : "more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function TaskFeedRow({
   task,
   actions,
@@ -451,10 +503,10 @@ export function TaskFeedRow({
           </ThreadItemTimestamp>
         </ThreadItemHeader>
 
-        <ThreadItemBody className="wrap-break-word line-clamp-2 whitespace-pre-wrap">
+        <ExpandablePrompt lines={2}>
           {prompt ||
             (starter ? "started a new task" : "A new task was started")}
-        </ThreadItemBody>
+        </ExpandablePrompt>
 
         {children}
       </ThreadItemContent>
@@ -569,9 +621,7 @@ function PendingFeedRow({
             <ThreadItemAuthor>You</ThreadItemAuthor>
             <ThreadItemTimestamp dateTime={createdAt}>now</ThreadItemTimestamp>
           </ThreadItemHeader>
-          <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
-            {pending.prompt}
-          </ThreadItemBody>
+          <ExpandablePrompt lines={4}>{pending.prompt}</ExpandablePrompt>
           <Card
             size="sm"
             className="mt-1.5 w-full max-w-[820px] rounded-sm py-0"
