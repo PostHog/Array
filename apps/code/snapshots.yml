@@ -332,6 +332,14 @@ snapshots:
         hash: v1.k4693efd2.602ee87d6d7a745d4b09d9e49bd12a70e52299b78ca97a48b5ca73a01532d801.F_1XKDzCxzMm_opEt9FvzczBb_2n-vyvOyGFXHGJmTk
     features-sessions-conversationview--with-pending-prompt--light:
         hash: v1.k4693efd2.1636dfc3ee0dd9d28065166f2fff0193f2d499692c74749d3afa7585aae898b5.YxTPa4CsqI2YuGLUdck8340ITZQrpna_C6z-SgII4Ws
+    features-sessions-scrollbarrail--pure--dark:
+        hash: v1.k4693efd2.6baec21b1942848a3a376d2b90ca106b2c1b94de74382b4cd05673695d2649ee.UDDPtLDf1J2E3d3Oiy9is77Nm5xRSIfB7q5z0uUZRSQ
+    features-sessions-scrollbarrail--pure--light:
+        hash: v1.k4693efd2.33f02943fdbb1ea9774881f8909b580ab03ba02749614c533af1bf51dd817dca.ieP2bhDz0U_PTB4M6Zplvit0XlSTFiUn083GYBFNuC0
+    features-sessions-scrollbarrail--scrollable-conversation--dark:
+        hash: v1.k4693efd2.203b62b52d6365d6ec222f7529c35b3f46b17cd07ca792a8ce2de594af4d589b.3dfpnVM8yxor1PNO5aPk0pxn5THZjK4otA6mbz3XhtA
+    features-sessions-scrollbarrail--scrollable-conversation--light:
+        hash: v1.k4693efd2.fa7ef9cbdb09aef6108efcd3606cee32d889b3ad3b8f8be1ac637aed4e80cc72.0XcIKzM-sZHVG9hTZkAHdnBIPSrBiKmjq56QRQ6nasc
     features-sessions-toolcallblock--create-new-file--dark:
         hash: v1.k4693efd2.8847f96037682460aba47f0e0f5113037918235fc98596933f2d1d06fd6f8f92.SHetexoVOtozsZGZQMcVbmpBlbk7M5D5Q0R_TJvPnyc
     features-sessions-toolcallblock--create-new-file--light:

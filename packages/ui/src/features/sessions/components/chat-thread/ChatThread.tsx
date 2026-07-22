@@ -57,6 +57,8 @@ import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
+import { MessageScrollbarRail } from "@posthog/ui/features/sessions/components/scrollbar-rail/MessageScrollbarRail";
+import { useMessageRailMarkers } from "@posthog/ui/features/sessions/components/scrollbar-rail/useMessageRailMarkers";
 import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
 import { extractCustomInstructions } from "@posthog/ui/features/sessions/components/session-update/customInstructions";
@@ -950,6 +952,10 @@ function ThreadScrollBody({
     >
       <StickyHeaderOverlay items={items} />
       <ThreadAutoFollow items={items} />
+      <ThreadScrollbarRail
+        items={items}
+        keyboardFocusedMessageId={keyboardFocusedMessageId}
+      />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent
           className="gap-4 py-4 pb-8"
@@ -975,6 +981,103 @@ function ThreadScrollBody({
       </ChatMessageScrollerViewport>
       <ChatMessageScrollerButton />
     </ChatMessageScroller>
+  );
+}
+
+/**
+ * Scrollbar marker rail for the (non-virtualized) ChatThread. One darker marker
+ * per user message, positioned by that message's offset within the scroller;
+ * click jumps to it (`scrollToMessage`), hover shows the first few words.
+ *
+ * Locates the quill scroller elements at runtime via a hidden probe (the same
+ * `closest('[data-slot="chat-message-scroller"]')` pattern `StickyHeaderOverlay`
+ * and `ThreadAutoFollow` use), since they're owned by quill and not handed to us
+ * as refs. The viewport is the scroll element; the inner `ChatMessageScrollerContent`
+ * is the content element (rows are its children, so their offsets within it are
+ * scroll-invariant).
+ */
+function ThreadScrollbarRail({
+  items,
+  keyboardFocusedMessageId,
+}: {
+  items: ConversationItem[];
+  keyboardFocusedMessageId?: string | null;
+}) {
+  const { scrollToMessage } = useChatMessageScroller();
+  const probeRef = useRef<HTMLSpanElement>(null);
+  const [els, setEls] = useState<{
+    scrollEl: HTMLElement | null;
+    contentEl: HTMLElement | null;
+  }>({ scrollEl: null, contentEl: null });
+
+  useLayoutEffect(() => {
+    const resolve = (): {
+      scrollEl: HTMLElement | null;
+      contentEl: HTMLElement | null;
+    } => {
+      const scroller = probeRef.current?.closest(
+        '[data-slot="chat-message-scroller"]',
+      );
+      return {
+        scrollEl:
+          (scroller?.querySelector(
+            '[data-slot="chat-message-scroller-viewport"]',
+          ) as HTMLElement | null) ?? null,
+        contentEl:
+          (scroller?.querySelector(
+            '[data-slot="chat-message-scroller-content"]',
+          ) as HTMLElement | null) ?? null,
+      };
+    };
+    const found = resolve();
+    setEls((prev) =>
+      prev.scrollEl === found.scrollEl && prev.contentEl === found.contentEl
+        ? prev
+        : found,
+    );
+    if (!found.scrollEl || !found.contentEl) {
+      // Re-resolve once the scroller's inner elements have mounted.
+      const raf = requestAnimationFrame(() => {
+        const again = resolve();
+        setEls((prev) =>
+          prev.scrollEl === again.scrollEl && prev.contentEl === again.contentEl
+            ? prev
+            : again,
+        );
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+    return;
+  }, []);
+
+  const userMessages = useMemo(
+    () =>
+      items
+        .map((item, index) =>
+          item.type === "user_message"
+            ? { id: item.id, content: item.content, index }
+            : null,
+        )
+        .filter(
+          (x): x is { id: string; content: string; index: number } => x != null,
+        ),
+    [items],
+  );
+
+  const railMarkers = useMessageRailMarkers({
+    contentEl: els.contentEl,
+    scrollEl: els.scrollEl,
+    userMessages,
+    onJump: (id) => scrollToMessage(id),
+    activeId: keyboardFocusedMessageId,
+    rowAttribute: "data-message-id",
+  });
+
+  return (
+    <>
+      <span ref={probeRef} className="hidden" aria-hidden="true" />
+      <MessageScrollbarRail markers={railMarkers} />
+    </>
   );
 }
 
