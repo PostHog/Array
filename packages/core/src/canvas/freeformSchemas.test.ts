@@ -17,10 +17,22 @@ describe("canvasNavIntentSchema", () => {
   // The url refine is the first scheme-validation layer: a disallowed scheme (or
   // a missing url) must be dropped before it can reach the host's browser open.
   it.each([
-    { name: "javascript: scheme", intent: { target: "external", url: "javascript:alert(1)" } },
-    { name: "file: scheme", intent: { target: "external", url: "file:///etc/passwd" } },
-    { name: "custom deep-link scheme", intent: { target: "external", url: "ms-msdt://x" } },
-    { name: "non-URL string", intent: { target: "external", url: "not a url" } },
+    {
+      name: "javascript: scheme",
+      intent: { target: "external", url: "javascript:alert(1)" },
+    },
+    {
+      name: "file: scheme",
+      intent: { target: "external", url: "file:///etc/passwd" },
+    },
+    {
+      name: "custom deep-link scheme",
+      intent: { target: "external", url: "ms-msdt://x" },
+    },
+    {
+      name: "non-URL string",
+      intent: { target: "external", url: "not a url" },
+    },
     { name: "missing url", intent: { target: "external" } },
   ])("rejects $name", ({ intent }) => {
     expect(canvasNavIntentSchema.safeParse(intent).success).toBe(false);
