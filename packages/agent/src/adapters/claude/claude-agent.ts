@@ -72,6 +72,7 @@ import {
   withAbort,
   withTimeout,
 } from "../../utils/common";
+import { text } from "../../utils/acp-content";
 import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
@@ -1590,30 +1591,20 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     if (session.queryClosed) {
       throw RequestError.internalError(undefined, SESSION_ENDED_MESSAGE);
     }
-    if (session.clearing) {
-      // A second /clear while one is mid-swap would race the same session
-      // fields (query/input/abortController) and orphan a live SDK query.
+    // A second /clear mid-swap would race the same session fields
+    // (query/input/abortController) and orphan a live SDK query; a clear
+    // mid-turn would rip the query out from under the active prompt.
+    const refusal = session.clearing
+      ? "A conversation clear is already in progress."
+      : session.activeTurn !== null || session.turnQueue.length > 0
+        ? "Cannot clear the conversation while a turn is in progress. Wait for it to finish (or cancel it) and try again."
+        : null;
+    if (refusal) {
       await this.client.sessionUpdate({
         sessionId: params.sessionId,
         update: {
           sessionUpdate: "agent_message_chunk",
-          content: {
-            type: "text",
-            text: "A conversation clear is already in progress.",
-          },
-        },
-      });
-      return { stopReason: "end_turn" };
-    }
-    if (session.activeTurn !== null || session.turnQueue.length > 0) {
-      await this.client.sessionUpdate({
-        sessionId: params.sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: {
-            type: "text",
-            text: "Cannot clear the conversation while a turn is in progress. Wait for it to finish (or cancel it) and try again.",
-          },
+          content: text(refusal),
         },
       });
       return { stopReason: "end_turn" };
@@ -1621,15 +1612,18 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Claim the session synchronously, before the first await: ACP handlers
     // are not serialized, so a prompt/cancel/second clear can arrive at any
-    // await point below. They key off this flag (see Session.clearing).
-    let settleClearing!: () => void;
-    session.clearing = new Promise<void>((resolve) => {
-      settleClearing = resolve;
-    });
+    // await point of the swap. They key off this flag (see Session.clearing).
+    // performClear runs synchronously up to its first await, so the claim is
+    // visible before any other handler can interleave. Waiters only need
+    // settlement; a failure still surfaces through the returned promise.
+    const clear = this.performClear(params, session);
+    session.clearing = clear.then(
+      () => undefined,
+      () => undefined,
+    );
     try {
-      return await this.performClear(params, session);
+      return await clear;
     } finally {
-      settleClearing();
       session.clearing = undefined;
     }
   }
@@ -1697,10 +1691,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           `Conversation clear timed out after ${SESSION_VALIDATION_TIMEOUT_MS}ms`,
         );
       }
-      return await this.finishClear(params, session, newQuery, {
+      return await this.finishClear(
+        params,
+        session,
+        newQuery,
         newSdkSessionId,
-        initResult: result.value,
-      });
+        result.value,
+      );
     } catch (error) {
       // The old query is already retired and the new one is unproven, so any
       // failure here — timeout, SDK init rejection, a consumer that died while
@@ -1733,12 +1730,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     params: PromptRequest,
     session: Session,
     newQuery: Query,
-    swap: {
-      newSdkSessionId: string;
-      initResult: Awaited<ReturnType<Query["initializationResult"]>>;
-    },
+    newSdkSessionId: string,
+    initResult: Awaited<ReturnType<Query["initializationResult"]>>,
   ): Promise<PromptResponse> {
-    const { newSdkSessionId, initResult } = swap;
     session.knownSlashCommands = collectKnownSlashCommands(initResult.commands);
     session.fastModeEnabled = fastModeStateEnabled(initResult.fast_mode_state);
 

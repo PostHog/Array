@@ -43,6 +43,18 @@ function makeQueryHandle(): SdkQueryHandle {
   };
 }
 
+/** Points nextInitPromise at a deferred the test settles once the clear has
+ *  reached its init await (after `vi.waitFor` on createdQueries). */
+function deferInit() {
+  let resolve!: (result: InitResult) => void;
+  let reject!: (error: Error) => void;
+  nextInitPromise = new Promise<InitResult>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { resolve, reject };
+}
+
 const lastQueryCall: { options?: Record<string, unknown> } = {};
 const createdQueries: SdkQueryHandle[] = [];
 
@@ -367,10 +379,7 @@ describe("ClaudeAcpAgent /clear", () => {
     // would orphan a live SDK query; the second must be refused.
     const { agent, client } = makeAgent();
     installFakeSession(agent, "s-concurrent");
-    let releaseInit!: (result: InitResult) => void;
-    nextInitPromise = new Promise<InitResult>((resolve) => {
-      releaseInit = resolve;
-    });
+    const init = deferInit();
 
     const first = agent.prompt({
       sessionId: "s-concurrent",
@@ -392,7 +401,7 @@ describe("ClaudeAcpAgent /clear", () => {
     // The refused clear started no second swap.
     expect(createdQueries).toHaveLength(1);
 
-    releaseInit({ result: "success", commands: [], models: [] });
+    init.resolve({ result: "success", commands: [], models: [] });
     await expect(first).resolves.toMatchObject({ stopReason: "end_turn" });
     expect(
       findAllExtNotifications(
@@ -407,10 +416,7 @@ describe("ClaudeAcpAgent /clear", () => {
     // half-initialized replacement; interrupting it would corrupt the swap.
     const { agent, client } = makeAgent();
     installFakeSession(agent, "s-cancel-mid-clear");
-    let releaseInit!: (result: InitResult) => void;
-    nextInitPromise = new Promise<InitResult>((resolve) => {
-      releaseInit = resolve;
-    });
+    const init = deferInit();
 
     const clearPromise = agent.prompt({
       sessionId: "s-cancel-mid-clear",
@@ -421,7 +427,7 @@ describe("ClaudeAcpAgent /clear", () => {
     await agent.cancel({ sessionId: "s-cancel-mid-clear" });
     expect(createdQueries[0].interrupt).not.toHaveBeenCalled();
 
-    releaseInit({ result: "success", commands: [], models: [] });
+    init.resolve({ result: "success", commands: [], models: [] });
     await expect(clearPromise).resolves.toMatchObject({
       stopReason: "end_turn",
     });
@@ -437,20 +443,18 @@ describe("ClaudeAcpAgent /clear", () => {
     // it spinning with the session half-swapped.
     const { agent, client } = makeAgent();
     const { session } = installFakeSession(agent, "s-init-crash");
-    const initFailure = Promise.reject<InitResult>(
-      new Error("SDK subprocess crashed"),
-    );
-    initFailure.catch(() => {
-      // Handled when clearConversation awaits it; silence the early tick.
-    });
-    nextInitPromise = initFailure;
+    const init = deferInit();
 
-    await expect(
-      agent.prompt({
-        sessionId: "s-init-crash",
-        prompt: [{ type: "text", text: "/clear" }],
-      }),
-    ).rejects.toThrow(/SDK subprocess crashed/);
+    const promptPromise = agent.prompt({
+      sessionId: "s-init-crash",
+      prompt: [{ type: "text", text: "/clear" }],
+    });
+    const rejection = expect(promptPromise).rejects.toThrow(
+      /SDK subprocess crashed/,
+    );
+    await vi.waitFor(() => expect(createdQueries).toHaveLength(1));
+    init.reject(new Error("SDK subprocess crashed"));
+    await rejection;
 
     expect((session as unknown as { queryClosed: boolean }).queryClosed).toBe(
       true,
@@ -481,10 +485,7 @@ describe("ClaudeAcpAgent /clear", () => {
     // as the usual session-ended rejection.
     const { agent } = makeAgent();
     installFakeSession(agent, "s-prompt-mid-clear");
-    let failInit!: (error: Error) => void;
-    nextInitPromise = new Promise<InitResult>((_, reject) => {
-      failInit = reject;
-    });
+    const init = deferInit();
 
     const clearPromise = agent.prompt({
       sessionId: "s-prompt-mid-clear",
@@ -502,7 +503,7 @@ describe("ClaudeAcpAgent /clear", () => {
     );
     const followUpRejection =
       expect(followUp).rejects.toThrow(/session has ended/);
-    failInit(new Error("SDK subprocess crashed"));
+    init.reject(new Error("SDK subprocess crashed"));
     await clearRejection;
     await followUpRejection;
   });
