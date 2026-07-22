@@ -2589,6 +2589,14 @@ export class PostHogAPIClient {
   // Everyone in the current organization — the pool of taggable teammates for
   // thread @-mentions. Membership churn is slow, so callers cache aggressively.
   async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {
+    const result = await this.listOrganizationMembersWithStatus();
+    return result.members;
+  }
+
+  async listOrganizationMembersWithStatus(): Promise<{
+    members: OrganizationMemberBasic[];
+    isComplete: boolean;
+  }> {
     const ORG_MEMBERS_MAX_PAGES = 20;
     const ORG_MEMBERS_PAGE_SIZE = 200;
     const all: OrganizationMemberBasic[] = [];
@@ -2609,7 +2617,7 @@ export class PostHogAPIClient {
         next: string | null;
       };
       all.push(...page.results);
-      if (!page.next) return all;
+      if (!page.next) return { members: all, isComplete: true };
       const nextUrl = new URL(page.next);
       urlPath = `${nextUrl.pathname}${nextUrl.search}`;
     }
@@ -2617,7 +2625,7 @@ export class PostHogAPIClient {
       `listOrganizationMembers hit MAX_PAGES (${ORG_MEMBERS_MAX_PAGES}); returning partial results`,
       { returned: all.length },
     );
-    return all;
+    return { members: all, isComplete: false };
   }
 
   async sendRunCommand(

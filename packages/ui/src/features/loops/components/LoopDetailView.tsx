@@ -267,6 +267,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
     members,
     isLoading: membersLoading,
     isError: membersError,
+    isComplete: membersComplete,
   } = useOrgMembers({ enabled: loop.visibility === "team" });
   const creator = members.find((member) => member.id === loop.created_by_id);
   let creatorContent: React.ReactNode = null;
@@ -281,8 +282,10 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         {userDisplayName(creator)}
       </Flex>
     );
-  } else if (loop.visibility === "team") {
+  } else if (loop.visibility === "team" && membersComplete) {
     creatorContent = "Former organization member";
+  } else if (loop.visibility === "team") {
+    creatorContent = "Creator unavailable";
   }
   const notificationDestinations = summarizeNotificationDestinations(
     loop.notifications,

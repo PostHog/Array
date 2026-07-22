@@ -16,11 +16,13 @@ export function LoopRow({
   creator,
   creatorLoading = false,
   creatorError = false,
+  creatorLookupComplete = true,
 }: {
   loop: LoopSchemas.Loop;
   creator?: UserBasic;
   creatorLoading?: boolean;
   creatorError?: boolean;
+  creatorLookupComplete?: boolean;
 }) {
   const description = loop.description.trim();
   const triggerLabel = loop.triggers.length === 1 ? "trigger" : "triggers";
@@ -31,6 +33,12 @@ export function LoopRow({
 
   let creatorLabel: string | null = null;
   if (loop.visibility === "team" && creatorError) {
+    creatorLabel = "Creator unavailable";
+  } else if (
+    loop.visibility === "team" &&
+    !creatorLoading &&
+    !creatorLookupComplete
+  ) {
     creatorLabel = "Creator unavailable";
   } else if (loop.visibility === "team" && !creatorLoading) {
     creatorLabel = creator

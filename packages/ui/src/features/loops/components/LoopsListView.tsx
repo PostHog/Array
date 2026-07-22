@@ -64,6 +64,7 @@ export function LoopsListView() {
     members,
     isLoading: membersLoading,
     isError: membersError,
+    isComplete: membersComplete,
   } = useOrgMembers({ enabled: teamLoops.length > 0 });
 
   return (
@@ -75,6 +76,7 @@ export function LoopsListView() {
       members={members}
       membersLoading={membersLoading}
       membersError={membersError}
+      membersComplete={membersComplete}
       onStartBlank={startBlankLoop}
       onStartFromTemplate={startLoopFromTemplate}
     />
@@ -89,6 +91,7 @@ interface LoopsListViewPresentationProps {
   members?: UserBasic[];
   membersLoading?: boolean;
   membersError?: boolean;
+  membersComplete?: boolean;
   onStartBlank: () => void;
   onStartFromTemplate: (template: LoopTemplate) => void;
 }
@@ -101,6 +104,7 @@ export function LoopsListViewPresentation({
   members = EMPTY_MEMBERS,
   membersLoading = false,
   membersError = false,
+  membersComplete = true,
   onStartBlank,
   onStartFromTemplate,
 }: LoopsListViewPresentationProps) {
@@ -175,6 +179,7 @@ export function LoopsListViewPresentation({
                   members={members}
                   membersLoading={membersLoading}
                   membersError={membersError}
+                  membersComplete={membersComplete}
                 />
               ) : null}
             </Flex>
@@ -205,12 +210,14 @@ function LoopListSection({
   members = EMPTY_MEMBERS,
   membersLoading = false,
   membersError = false,
+  membersComplete = true,
 }: {
   title: string;
   loops: LoopSchemas.Loop[];
   members?: UserBasic[];
   membersLoading?: boolean;
   membersError?: boolean;
+  membersComplete?: boolean;
 }) {
   return (
     <Flex direction="column" gap="3">
@@ -225,6 +232,7 @@ function LoopListSection({
             creator={members.find((member) => member.id === loop.created_by_id)}
             creatorLoading={membersLoading}
             creatorError={membersError}
+            creatorLookupComplete={membersComplete}
           />
         ))}
       </Flex>
