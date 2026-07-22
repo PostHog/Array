@@ -1,5 +1,6 @@
 import { FREEFORM_TEMPLATE_ID } from "./freeformSchemas";
 import { FREEFORM_WHITELIST } from "./freeformWhitelist";
+import { HTML_TEMPLATE_ID } from "./htmlCanvasSchemas";
 import type { CanvasSuggestion } from "./templateSchemas";
 
 export interface CanvasTemplate {
@@ -151,6 +152,44 @@ const FREEFORM_WEB_ANALYTICS_RULES = [
 
 const FREEFORM_SYSTEM_PROMPT = buildFreeformPrompt();
 
+// HTML-document canvas: the agent writes a complete, standalone HTML page (a
+// report, spec, one-pager, …) instead of a React app. It renders in the same
+// null-origin sandboxed iframe, but with a locked-down CSP and NO `ph` data
+// shim — the document is a static artifact teammates read and comment on
+// (anchored to exact text and elements), so structural stability matters.
+const HTML_BASE = [
+  "You are PostHog Canvas, an agent that writes a standalone HTML document (a report, spec, one-pager, runbook, …) for the user's team. The document renders in a sandboxed iframe where teammates read it and leave comments anchored to exact text and elements.",
+  "",
+  "OUTPUT FORMAT — every turn:",
+  "- Write a SHORT sentence of prose, then the COMPLETE document as ONE fenced code block tagged html (```html ... ```).",
+  "- FULL-FILE REWRITE: always output the entire document, even for a tiny change. Never output a partial file, a diff, or multiple code blocks.",
+  "- The document MUST be a full page: `<!doctype html>` through `</html>`, with `<head>` and `<body>`.",
+  "",
+  "SELF-CONTAINED — the sandbox's Content-Security-Policy blocks ALL network access, so everything must be inline:",
+  "- All CSS in `<style>` blocks; all JavaScript in inline `<script>` blocks.",
+  "- FORBIDDEN: external resources of any kind — no CDN `<script src>` or `<link href>`, no `fetch()` / XMLHttpRequest, no remote images, fonts, or iframes. They will be blocked and the page will look broken.",
+  "- Images: inline SVG or `data:` URIs only. Fonts: a system font stack (e.g. ui-sans-serif, system-ui).",
+  "",
+  "SANDBOX CONSTRAINTS — the iframe has a null origin:",
+  "- No cookies, localStorage, or sessionStorage; no `window.top` / `window.parent`; no navigation, external links that must open, or form submissions.",
+  "- The document scrolls itself. Self-contained interactive JS (tabs, sortable tables, toggles, print styling) is fine.",
+  "",
+  "DATA — this document is STATIC. There is no runtime data shim (`ph.*` does not exist here). If the document needs PostHog numbers, query them NOW via the PostHog MCP tools (mcp__posthog__*) and bake the values into the HTML. Never emit fetch()/XHR to load data at view time.",
+  "",
+  "COMMENT-FRIENDLY STRUCTURE — teammates anchor comments to exact text and elements, and anchors break when the underlying text or structure changes:",
+  "- Use semantic structure: real headings (h1–h4), sections, tables, lists.",
+  "- Give every major section and table a stable `id`, and KEEP existing ids when editing.",
+  "- When editing, change ONLY what was asked. Do not reword text you weren't asked to change — rewording orphans the comments anchored to it.",
+  "",
+  "STYLE:",
+  "- The document owns its entire design (there is no host theme inside the sandbox) — pick a clean, readable, self-consistent style with good typography, spacing, and a sensible max content width. Make it responsive.",
+  "- Write real, specific copy — never lorem ipsum.",
+  "",
+  "Do NOT write files, edit code on disk, or run shell commands. Your entire document is the single fenced html block in your reply.",
+];
+
+const HTML_SYSTEM_PROMPT = HTML_BASE.join("\n");
+
 // System prompts keyed by templateId for the canvas gen path; the generic
 // freeform sandbox is the fallback. The create-picker only offers "freeform"
 // today, but legacy canvases carrying the older "dashboard" / "web-analytics"
@@ -159,6 +198,7 @@ const FREEFORM_SYSTEM_PROMPTS: Record<string, string> = {
   [FREEFORM_TEMPLATE_ID]: FREEFORM_SYSTEM_PROMPT,
   dashboard: buildFreeformPrompt(FREEFORM_DASHBOARD_RULES),
   "web-analytics": buildFreeformPrompt(FREEFORM_WEB_ANALYTICS_RULES),
+  [HTML_TEMPLATE_ID]: HTML_SYSTEM_PROMPT,
 };
 
 // The React-tier prompt for a templateId, falling back to the generic sandbox.
@@ -197,8 +237,38 @@ const FREEFORM_TEMPLATE: CanvasTemplate = {
   systemPrompt: FREEFORM_SYSTEM_PROMPT,
 };
 
-/** Built-in templates offered by the create-picker. Only the freeform (React)
- * template exists today; more can be appended later. */
-export const BUILT_IN_TEMPLATES: CanvasTemplate[] = [FREEFORM_TEMPLATE];
+const HTML_SUGGESTIONS: CanvasSuggestion[] = [
+  {
+    label: "Quarterly report",
+    prompt:
+      "Write a one-page quarterly product report: a headline summary, a table of key metrics from our PostHog data, and a short outlook section.",
+  },
+  {
+    label: "Launch one-pager",
+    prompt:
+      "Write a launch one-pager for an upcoming feature: the problem, the solution, rollout plan, and success metrics.",
+  },
+  {
+    label: "Runbook",
+    prompt:
+      "Write an incident runbook: severity levels, escalation steps, and a checklist table for first responders.",
+  },
+];
+
+const HTML_TEMPLATE: CanvasTemplate = {
+  id: HTML_TEMPLATE_ID,
+  name: "Document (HTML)",
+  description:
+    "A standalone HTML page — reports, specs, one-pagers. Teammates can comment on exact text and elements.",
+  builtIn: true,
+  suggestions: HTML_SUGGESTIONS,
+  systemPrompt: HTML_SYSTEM_PROMPT,
+};
+
+/** Built-in templates offered by the create-picker. */
+export const BUILT_IN_TEMPLATES: CanvasTemplate[] = [
+  FREEFORM_TEMPLATE,
+  HTML_TEMPLATE,
+];
 
 export const DEFAULT_TEMPLATE_ID = FREEFORM_TEMPLATE_ID;

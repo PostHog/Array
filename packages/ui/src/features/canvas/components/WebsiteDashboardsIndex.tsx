@@ -1,5 +1,6 @@
 import { DotsThreeIcon, LinkIcon, TrashIcon } from "@phosphor-icons/react";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import { isHtmlTemplate } from "@posthog/core/canvas/htmlCanvasSchemas";
 import {
   Badge,
   Button,
@@ -17,6 +18,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { FreeformCanvas } from "@posthog/ui/features/canvas/freeform/FreeformCanvas";
 import { handleFreeformDataRequest } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
+import { buildHtmlArtifactDocument } from "@posthog/ui/features/canvas/html/htmlSandbox";
 import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import {
   useDashboardMutations,
@@ -125,7 +127,10 @@ const DashboardCard = memo(function DashboardCard({
         }
       >
         <Card className="gap-0 overflow-hidden p-0">
-          <FreeformPreview code={summary.code} />
+          <FreeformPreview
+            code={summary.code}
+            templateId={summary.templateId}
+          />
           <CardContent className="flex flex-col gap-0.5 p-3">
             <Flex align="center" justify="between" gap="2">
               <Text size="sm" weight="medium" className="truncate">
@@ -157,8 +162,16 @@ const DashboardCard = memo(function DashboardCard({
 
 // A freeform (React-in-iframe) canvas preview: the app rendered at PREVIEW_SCALE
 // in a clipped frame, the same shape as DashboardPreview. Deferred until near
-// the viewport, and runs with NO analytics so it fires no events.
-function FreeformPreview({ code }: { code?: string }) {
+// the viewport, and runs with NO analytics so it fires no events. HTML-document
+// canvases skip the React sandbox (their code isn't tsx — Babel would choke)
+// and render the raw document in a bare sandboxed iframe instead.
+function FreeformPreview({
+  code,
+  templateId,
+}: {
+  code?: string;
+  templateId?: string;
+}) {
   const [ref, inView] = useInView<HTMLDivElement>(PREVIEW_VIEWPORT);
 
   // Preview data handler: swallow captures so a thumbnail never emits analytics
@@ -196,11 +209,22 @@ function FreeformPreview({ code }: { code?: string }) {
               resetKey={code}
               fallback={<PreviewPlaceholder label="Preview unavailable" />}
             >
-              <FreeformCanvas
-                code={code}
-                mode="edit"
-                onDataRequest={onDataRequest}
-              />
+              {isHtmlTemplate(templateId) ? (
+                <iframe
+                  title="Document preview"
+                  // Same isolation as the full view: null origin, and the
+                  // composed document's CSP blocks network access.
+                  sandbox="allow-scripts"
+                  srcDoc={buildHtmlArtifactDocument(code)}
+                  className="h-full w-full border-0 bg-white"
+                />
+              ) : (
+                <FreeformCanvas
+                  code={code}
+                  mode="edit"
+                  onDataRequest={onDataRequest}
+                />
+              )}
             </ErrorBoundary>
           </Box>
         ) : (

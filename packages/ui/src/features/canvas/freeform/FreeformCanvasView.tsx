@@ -2,12 +2,16 @@ import {
   ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  ChatCircleIcon,
+  CursorClickIcon,
+  FileHtmlIcon,
   ShapesIcon,
   SidebarSimpleIcon,
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
+import { isHtmlTemplate } from "@posthog/core/canvas/htmlCanvasSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
   Button,
@@ -23,7 +27,11 @@ import {
   isCanvasGenerationRunning,
 } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useCanvasComments } from "@posthog/ui/features/canvas/hooks/useCanvasComments";
+import { CanvasCommentsPanel } from "@posthog/ui/features/canvas/html/CanvasCommentsPanel";
+import { HtmlCanvasBody } from "@posthog/ui/features/canvas/html/HtmlCanvasBody";
 import { useCanvasChatPanelStore } from "@posthog/ui/features/canvas/stores/canvasChatPanelStore";
+import { useCanvasCommentsStore } from "@posthog/ui/features/canvas/stores/canvasCommentsStore";
 import {
   useFreeformChatStore,
   useFreeformThread,
@@ -103,6 +111,20 @@ export function FreeformCanvasView({
   );
   const genTaskId = dashboard?.generationTaskId ?? null;
   const channelId = dashboard?.channelId ?? "";
+  // HTML-document canvases render in their own frame (no warm pool, no data
+  // shim) and carry the anchored-comments surface.
+  const isHtml = isHtmlTemplate(dashboard?.templateId);
+  const pickMode = useCanvasCommentsStore((s) => s.pickMode);
+  const setPickMode = useCanvasCommentsStore((s) => s.setPickMode);
+  const panelTab = useCanvasCommentsStore((s) => s.panelTab);
+  const setPanelTab = useCanvasCommentsStore((s) => s.setPanelTab);
+  const { threads: commentThreads } = useCanvasComments(
+    isHtml ? dashboardId : undefined,
+  );
+  const openThread = useCallback(() => {
+    setCollapsed(false);
+    setPanelTab("comments");
+  }, [setCollapsed, setPanelTab]);
 
   // Reconcile the optimistic bridge against the polled record during render
   // (not via an effect, which would flash a stale frame): once the record
@@ -342,6 +364,35 @@ export function FreeformCanvasView({
                   </>
                 )
               )}
+              {isHtml && showCanvas && (
+                <>
+                  <Tooltip content="Comment on an element">
+                    <Button
+                      size="icon"
+                      variant={pickMode ? "primary" : "default"}
+                      aria-label="Comment on an element"
+                      onClick={() => setPickMode(!pickMode)}
+                    >
+                      <CursorClickIcon size={16} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Comments">
+                    <Button
+                      size="sm"
+                      variant="default"
+                      aria-label="Comments"
+                      onClick={openThread}
+                    >
+                      <ChatCircleIcon size={16} />
+                      {commentThreads.length > 0 && (
+                        <span className="text-[11px]">
+                          {commentThreads.length}
+                        </span>
+                      )}
+                    </Button>
+                  </Tooltip>
+                </>
+              )}
               {showPanel && collapsed && (
                 <Tooltip
                   content={effectiveTaskId ? "Show chat" : "Edit canvas"}
@@ -371,20 +422,34 @@ export function FreeformCanvasView({
             }
           />
           {showCanvas ? (
-            // The iframe lives in the persistent warm-frame pool (CanvasFrameHost);
-            // this placeholder just reserves the viewport box and owns scroll via
-            // the host's overlay, so the canvas survives navigation without a reload.
-            <Box className="h-full w-full">
-              <CanvasFramePlaceholder
-                dashboardId={dashboardId}
-                code={renderCode}
-                analytics={analytics}
-                onDataRequest={onDataRequest}
-                onError={onError}
-                onRendered={onRendered}
-                onNavigate={onNavigate}
-              />
-            </Box>
+            isHtml ? (
+              // HTML documents render in their own inline frame — no warm pool
+              // (nothing to amortize: static HTML, no compile) — wrapped with
+              // the anchored-comment affordances.
+              <Box className="h-full w-full">
+                <HtmlCanvasBody
+                  dashboardId={dashboardId}
+                  html={renderCode}
+                  canvasVersionId={currentVersionId ?? undefined}
+                  onOpenThread={openThread}
+                />
+              </Box>
+            ) : (
+              // The iframe lives in the persistent warm-frame pool (CanvasFrameHost);
+              // this placeholder just reserves the viewport box and owns scroll via
+              // the host's overlay, so the canvas survives navigation without a reload.
+              <Box className="h-full w-full">
+                <CanvasFramePlaceholder
+                  dashboardId={dashboardId}
+                  code={renderCode}
+                  analytics={analytics}
+                  onDataRequest={onDataRequest}
+                  onError={onError}
+                  onRendered={onRendered}
+                  onNavigate={onNavigate}
+                />
+              </Box>
+            )
           ) : (
             <ScrollArea className="h-full">
               {showGeneratingState ? (
@@ -398,11 +463,19 @@ export function FreeformCanvasView({
                 <Empty className="h-full border-0">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
-                      <ShapesIcon size={24} />
+                      {isHtml ? (
+                        <FileHtmlIcon size={24} />
+                      ) : (
+                        <ShapesIcon size={24} />
+                      )}
                     </EmptyMedia>
-                    <EmptyTitle>Freeform canvas</EmptyTitle>
+                    <EmptyTitle>
+                      {isHtml ? "HTML document" : "Freeform canvas"}
+                    </EmptyTitle>
                     <EmptyDescription>
-                      This canvas is empty. Hit Edit to build it with an agent.
+                      {isHtml
+                        ? "This document is empty. Hit Edit to write it with an agent."
+                        : "This canvas is empty. Hit Edit to build it with an agent."}
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
@@ -435,6 +508,16 @@ export function FreeformCanvasView({
             currentCode={renderCode || undefined}
             editorRef={editorRef}
             onStarted={setStartedTaskId}
+            commentsPanel={
+              isHtml ? (
+                <CanvasCommentsPanel
+                  dashboardId={dashboardId}
+                  canvasVersionId={currentVersionId ?? undefined}
+                />
+              ) : undefined
+            }
+            tab={panelTab}
+            onTabChange={setPanelTab}
           />
         </ResizableSidebar>
       )}

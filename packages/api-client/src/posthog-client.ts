@@ -2666,6 +2666,67 @@ export class PostHogAPIClient {
     return (await response.json()) as TaskThreadMessage;
   }
 
+  // --- Comments (discussions) ----------------------------------------------
+  // PostHog's generic comments surface: a comment attaches to any resource via
+  // a free-form `scope` + `item_id` pair, carries an arbitrary JSON
+  // `item_context` (we store comment anchors there — see canvas comments in
+  // core), and threads via `source_comment`. DELETE is disabled server-side
+  // (405); deletion is a soft PATCH `deleted: true`.
+
+  async listComments(
+    scope: string,
+    itemId: string,
+  ): Promise<Schemas.Comment[]> {
+    const COMMENTS_MAX_PAGES = 20;
+    const teamId = await this.getTeamId();
+    const all: Schemas.Comment[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < COMMENTS_MAX_PAGES; i++) {
+      const page = await this.api.get("/api/projects/{project_id}/comments/", {
+        path: { project_id: teamId.toString() },
+        query: { scope, item_id: itemId, ...(cursor ? { cursor } : {}) },
+      });
+      all.push(...page.results);
+      if (!page.next) return all;
+      // `next` is a full URL; the typed endpoint paginates by `cursor` param.
+      cursor = new URL(page.next).searchParams.get("cursor") ?? undefined;
+      if (!cursor) return all;
+    }
+    log.warn(
+      `listComments hit MAX_PAGES (${COMMENTS_MAX_PAGES}); returning partial results`,
+      { returned: all.length },
+    );
+    return all;
+  }
+
+  async createComment(input: {
+    content: string;
+    scope: string;
+    item_id: string;
+    item_context?: Record<string, unknown>;
+    source_comment?: string;
+  }): Promise<Schemas.Comment> {
+    const teamId = await this.getTeamId();
+    // The generated Comment type demands server-stamped fields (id, created_by,
+    // version, …) and types the JSON `item_context` as `null`, so the write
+    // shape needs the same cast createTask uses.
+    return await this.api.post("/api/projects/{project_id}/comments/", {
+      path: { project_id: teamId.toString() },
+      body: input as unknown as Schemas.Comment,
+    });
+  }
+
+  async patchComment(
+    id: string,
+    patch: { deleted?: boolean; content?: string },
+  ): Promise<Schemas.Comment> {
+    const teamId = await this.getTeamId();
+    return await this.api.patch("/api/projects/{project_id}/comments/{id}/", {
+      path: { project_id: teamId.toString(), id },
+      body: patch as Schemas.PatchedComment,
+    });
+  }
+
   // Everyone in the current organization — the pool of taggable teammates for
   // thread @-mentions. Membership churn is slow, so callers cache aggressively.
   async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {

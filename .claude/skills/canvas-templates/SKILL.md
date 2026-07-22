@@ -17,6 +17,15 @@ A canvas's `kind` (set at create time, persisted in file meta) decides everythin
 | --- | --- | --- | --- | --- |
 | **json-render** | `"json-render"` | JSONL patches against a component catalog | `ViewRenderer` (Quill component tree) | `state.queries` HogQL, re-run by `dashboardsService` on refresh |
 | **freeform / React** | `"freeform"` | a single-file React app | sandboxed `<iframe>` (`FreeformCanvas`) | the `ph.*` shim → host → PostHog |
+| **HTML document** | templateId `"html"` | a complete standalone HTML page | sandboxed `<iframe>` (`HtmlArtifactFrame`, no warm pool) | none — static; the agent bakes MCP-queried values in at generation time |
+
+The HTML tier (`HTML_TEMPLATE_ID` / `isHtmlTemplate` in
+`packages/core/src/canvas/htmlCanvasSchemas.ts`) is the artifact tier for
+documents (reports, specs, one-pagers): no `ph` shim, a locked-down CSP
+(`packages/ui/src/features/canvas/html/htmlSandbox.ts` — no network egress),
+and an injected annotation shim (`annotationShim.ts`) that powers anchored
+teammate comments (text-quote / element / page anchors, stored on PostHog's
+comments API via `CanvasCommentsService`, scope `code_canvas`).
 
 Which template maps to which tier: `REACT_TIER_TEMPLATE_IDS` in
 `packages/core/src/canvas/freeformSchemas.ts`. Today `dashboard`, `web-analytics`,

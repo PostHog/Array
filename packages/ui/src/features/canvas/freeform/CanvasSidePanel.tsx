@@ -1,5 +1,6 @@
 import {
   ChatCircleIcon,
+  ChatsCircleIcon,
   PencilSimpleIcon,
   SidebarSimpleIcon,
   SpinnerGapIcon,
@@ -11,7 +12,7 @@ import { EmbeddedSessionView } from "@posthog/ui/features/sessions/components/Em
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 
 // The canvas's right-hand dock. While a generation/edit run is in flight it
 // shows that run's live chat (steering/queue included); otherwise it shows the
@@ -28,6 +29,9 @@ export function CanvasSidePanel({
   currentCode,
   editorRef,
   onStarted,
+  commentsPanel,
+  tab = "main",
+  onTabChange,
 }: {
   effectiveTaskId: string | null;
   onMinimize: () => void;
@@ -40,8 +44,15 @@ export function CanvasSidePanel({
   // Exposes the edit composer's editor so self-repair can prefill it.
   editorRef?: Ref<EditorHandle>;
   onStarted?: (taskId: string) => void;
+  // When provided (HTML canvases), the panel grows a second "Comments" tab
+  // alongside the chat/edit surface.
+  commentsPanel?: ReactNode;
+  tab?: "main" | "comments";
+  onTabChange?: (tab: "main" | "comments") => void;
 }) {
   const isChat = !!effectiveTaskId;
+  const showComments = !!commentsPanel && tab === "comments";
+  const mainLabel = isChat ? "Chat" : "Edit";
 
   return (
     <Flex direction="column" className="h-full min-w-0 bg-gray-1">
@@ -50,16 +61,41 @@ export function CanvasSidePanel({
         justify="between"
         className="h-10 shrink-0 items-center border-b bg-chrome px-3"
       >
-        <Flex align="center" gap="2" className="min-w-0">
-          {isChat ? (
-            <ChatCircleIcon size={15} className="shrink-0 text-gray-10" />
-          ) : (
-            <PencilSimpleIcon size={15} className="shrink-0 text-gray-10" />
-          )}
-          <Text size="2" weight="medium" className="truncate text-gray-12">
-            {isChat ? "Chat" : "Edit canvas"}
-          </Text>
-        </Flex>
+        {commentsPanel ? (
+          <Flex align="center" gap="1" className="min-w-0">
+            <Button
+              size="sm"
+              variant={tab === "main" ? "default" : "outline"}
+              onClick={() => onTabChange?.("main")}
+            >
+              {isChat ? (
+                <ChatCircleIcon size={14} />
+              ) : (
+                <PencilSimpleIcon size={14} />
+              )}
+              {mainLabel}
+            </Button>
+            <Button
+              size="sm"
+              variant={tab === "comments" ? "default" : "outline"}
+              onClick={() => onTabChange?.("comments")}
+            >
+              <ChatsCircleIcon size={14} />
+              Comments
+            </Button>
+          </Flex>
+        ) : (
+          <Flex align="center" gap="2" className="min-w-0">
+            {isChat ? (
+              <ChatCircleIcon size={15} className="shrink-0 text-gray-10" />
+            ) : (
+              <PencilSimpleIcon size={15} className="shrink-0 text-gray-10" />
+            )}
+            <Text size="2" weight="medium" className="truncate text-gray-12">
+              {isChat ? "Chat" : "Edit canvas"}
+            </Text>
+          </Flex>
+        )}
         <Tooltip content="Minimize panel">
           <Button
             size="icon"
@@ -73,7 +109,9 @@ export function CanvasSidePanel({
       </Flex>
 
       <div className="min-h-0 flex-1">
-        {effectiveTaskId ? (
+        {showComments ? (
+          commentsPanel
+        ) : effectiveTaskId ? (
           <CanvasChatLoader taskId={effectiveTaskId} />
         ) : (
           <Flex direction="column" className="h-full p-3">

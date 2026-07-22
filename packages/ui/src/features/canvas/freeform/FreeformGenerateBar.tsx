@@ -1,3 +1,4 @@
+import { isHtmlTemplate } from "@posthog/core/canvas/htmlCanvasSchemas";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@posthog/quill";
 import { useGenerateFreeformCanvas } from "@posthog/ui/features/canvas/hooks/useGenerateFreeformCanvas";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
@@ -53,8 +54,10 @@ export const FreeformGenerateBar = forwardRef<
   // On a FIRST build we seed the agent with a known-good starter scaffold by
   // default (faster, more consistent than authoring from scratch). Uncheck to
   // opt out and have the agent build from a blank canvas. Only meaningful on an
-  // empty canvas, so the toggle is hidden in edit mode.
+  // empty canvas, so the toggle is hidden in edit mode — and for HTML
+  // documents, whose tier has no scaffold (it's a React app).
   const isEdit = !!currentCode?.trim();
+  const isHtml = isHtmlTemplate(templateId);
   const [useStarter, setUseStarter] = useState(true);
 
   // Generation always runs in the cloud, except the dev-only picker below lets a
@@ -70,7 +73,7 @@ export const FreeformGenerateBar = forwardRef<
       templateId,
       instruction,
       currentCode,
-      useStarter: !isEdit && useStarter,
+      useStarter: !isEdit && !isHtml && useStarter,
       workspaceMode,
     });
     if (taskId) onStarted?.(taskId);
@@ -89,7 +92,7 @@ export const FreeformGenerateBar = forwardRef<
         hideDefaultToolbar
         onSubmit={(text) => void run(text)}
       />
-      {!isEdit && (
+      {!isEdit && !isHtml && (
         <label className="flex cursor-pointer select-none items-center gap-1.5 self-start px-1 text-muted-foreground text-xs">
           <input
             type="checkbox"

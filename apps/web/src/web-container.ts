@@ -26,6 +26,7 @@ import {
   type IAuthTokenCipher,
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
+import { canvasCommentsCoreModule } from "@posthog/core/canvas/canvasComments.module";
 import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
 import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
@@ -468,6 +469,7 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
 // API), so the web host binds them by loading the same core module desktop does;
 // the web host router forwards its canvas routers to these.
 container.load(canvasCoreModule);
+container.load(canvasCommentsCoreModule);
 container.load(taskThreadCoreModule);
 
 // SessionService is built from host-agnostic deps (host tRPC client + UI

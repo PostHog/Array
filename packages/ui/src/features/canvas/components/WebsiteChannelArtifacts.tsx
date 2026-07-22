@@ -1,6 +1,7 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import { isHtmlTemplate } from "@posthog/core/canvas/htmlCanvasSchemas";
 import {
   getPrVisualConfig,
   parsePrNumber,
@@ -150,7 +151,7 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
                     className: "text-violet-9",
                   })}
                   title={item.title}
-                  subtitle={`Canvas · ${formatRelativeTimeShort(item.ts)}`}
+                  subtitle={`${isHtmlTemplate(item.templateId) ? "Document" : "Canvas"} · ${formatRelativeTimeShort(item.ts)}`}
                   onClick={() => openCanvas(item.dashboardId)}
                 />
               ) : (
