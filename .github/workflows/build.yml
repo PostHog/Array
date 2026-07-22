@@ -59,29 +59,26 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
+      # Restore-only: warm-caches.yml seeds this on main pushes. PR jobs never
+      # save it, so the cache quota is not churned by per-PR copies.
+      - name: Restore turbo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ github.sha }}
+          restore-keys: |
+            turbo-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # The packaged --dir app below is never launched, so the Electron-ABI
+          # sqlite rebuild is dead weight. Electron's own binary download stays
+          # on because electron-builder packages that binary.
+          SKIP_ELECTRON_REBUILD: "1"
 
-      - name: Build electron-trpc
-        run: pnpm --filter @posthog/electron-trpc build
-
-      - name: Build platform
-        run: pnpm --filter @posthog/platform build
-
-      - name: Build shared
-        run: pnpm --filter @posthog/shared build
-
-      - name: Build git
-        run: pnpm --filter @posthog/git build
-
-      - name: Build enricher
-        run: pnpm --filter @posthog/enricher build
-
-      - name: Build harness
-        run: pnpm --filter @posthog/harness build
-
-      - name: Build agent
-        run: pnpm --filter agent build
+      - name: Build packages
+        run: pnpm exec turbo build --filter='@posthog/code^...'
 
       - name: Build code
         run: pnpm --filter code build

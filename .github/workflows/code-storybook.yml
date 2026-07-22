@@ -115,8 +115,22 @@ jobs:
           restore-keys: |
             playwright-chromium-${{ runner.os }}-
 
+      # Restore-only: warm-caches.yml seeds this on main pushes. PR jobs never
+      # save it, so the cache quota is not churned by per-PR copies.
+      - name: Restore turbo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ github.sha }}
+          restore-keys: |
+            turbo-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # Stories render in Chromium; Electron and its ABI rebuild are unused.
+          SKIP_ELECTRON_REBUILD: "1"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
@@ -130,38 +144,9 @@ jobs:
         run: pnpm exec playwright install-deps chromium
 
       - name: Build workspace packages
-        # Bare `wait` returns the exit status of only the last job passed to
-        # it, silently swallowing failures from the others. `wait_all` waits
-        # on each PID individually and checks its own status so any failed
-        # build fails the step.
-        run: |
-          wait_all() {
-            status=0
-            for pid in "$@"; do
-              wait "$pid" || status=$?
-            done
-            [ "$status" -eq 0 ]
-          }
-
-          pnpm --filter @posthog/electron-trpc build &
-          pid1=$!
-          (pnpm --filter @posthog/shared build && pnpm --filter @posthog/platform build) &
-          pid2=$!
-          wait_all "$pid1" "$pid2"
-
-          # @posthog/agent imports the dist of @posthog/git and
-          # @posthog/harness, so both must finish before the last group starts.
-          pnpm --filter @posthog/git build &
-          pid3=$!
-          pnpm --filter @posthog/harness build &
-          pid4=$!
-          wait_all "$pid3" "$pid4"
-
-          pnpm --filter @posthog/enricher build &
-          pid5=$!
-          pnpm --filter @posthog/agent build &
-          pid6=$!
-          wait_all "$pid5" "$pid6"
+        # turbo parallelizes from the dependency graph and fails the step on
+        # any failed build, replacing the hand-rolled fork/wait choreography.
+        run: pnpm exec turbo build --filter='@posthog/code^...'
 
       - name: Build Storybook
         working-directory: apps/code

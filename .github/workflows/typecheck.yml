@@ -59,8 +59,23 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
+      # Restore-only: warm-caches.yml seeds this on main pushes. PR jobs never
+      # save it, so the cache quota is not churned by per-PR copies.
+      - name: Restore turbo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ github.sha }}
+          restore-keys: |
+            turbo-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # Typecheck never launches Electron; skip its binary download and
+          # the Electron-ABI native rebuild.
+          SKIP_ELECTRON_REBUILD: "1"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Run type check
         run: pnpm run typecheck
