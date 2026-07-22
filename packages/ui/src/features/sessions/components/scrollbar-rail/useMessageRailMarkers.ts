@@ -94,10 +94,18 @@ export function useMessageRailMarkers({
     // both move together). `offsetTop` can't be used directly because virtual
     // list rows live in a `transform`-ed wrapper that becomes the offset parent.
     const contentTop = content.getBoundingClientRect().top;
+    // Collect all rendered rows in a single DOM pass and index them by id,
+    // rather than one `querySelector` per message: in the long threads this
+    // rail targets, a per-message query on every scroll frame is hundreds or
+    // thousands of synchronous DOM lookups. `querySelectorAll` walks the
+    // (virtualized, bounded) rendered set once.
+    const rowById = new Map<string, HTMLElement>();
+    for (const row of content.querySelectorAll<HTMLElement>(`[${attr}]`)) {
+      const id = row.getAttribute(attr);
+      if (id != null) rowById.set(id, row);
+    }
     for (const entry of userMessagesRef.current) {
-      const row = content.querySelector(
-        `[${attr}="${CSS.escape(entry.id)}"]`,
-      ) as HTMLElement | null;
+      const row = rowById.get(entry.id);
       if (!row) continue;
       const rect = row.getBoundingClientRect();
       const top = rect.top - contentTop;
@@ -111,24 +119,41 @@ export function useMessageRailMarkers({
     if (changed) bump();
   }, [bump]);
 
+  // Coalesce observer/scroll-driven measures to at most one per animation
+  // frame — a burst of scroll or mutation events within a frame only needs a
+  // single re-measure. Cancelled on unmount via the ref below.
+  const frameRef = useRef<number | null>(null);
+  const scheduleMeasure = useCallback(() => {
+    if (frameRef.current != null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      measure();
+    });
+  }, [measure]);
+
   // Refresh on scroll (positions change as the thumb moves) + on DOM mutation
   // (rows entering/leaving the virtualization window) + on content resize.
   useEffect(() => {
     if (!contentEl) return;
+    // Measure synchronously on mount so markers paint on the first frame; later
+    // event-driven measures are frame-coalesced through `scheduleMeasure`.
     measure();
-    const mutation = new MutationObserver(() => measure());
+    const mutation = new MutationObserver(scheduleMeasure);
     mutation.observe(contentEl, { childList: true, subtree: true });
-    const resize = new ResizeObserver(() => measure());
+    const resize = new ResizeObserver(scheduleMeasure);
     resize.observe(contentEl);
-    const onScroll = () => measure();
     const scroll = scrollEl ?? contentEl;
-    scroll.addEventListener("scroll", onScroll, { passive: true });
+    scroll.addEventListener("scroll", scheduleMeasure, { passive: true });
     return () => {
       mutation.disconnect();
       resize.disconnect();
-      scroll.removeEventListener("scroll", onScroll);
+      scroll.removeEventListener("scroll", scheduleMeasure);
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
     };
-  }, [contentEl, scrollEl, measure]);
+  }, [contentEl, scrollEl, measure, scheduleMeasure]);
 
   // Drop stale ids (removed messages) so markers don't linger after compaction.
   useEffect(() => {
