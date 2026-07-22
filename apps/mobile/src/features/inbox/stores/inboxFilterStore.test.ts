@@ -15,7 +15,7 @@ describe("inboxFilterStore", () => {
     useInboxFilterStore.getState().resetFilters();
   });
 
-  it.each<SourceProduct>(["signals_scout", "error_tracking", "github"])(
+  it.each<SourceProduct>(["signals_scout", "error_tracking", "sentry"])(
     "toggles %s in and out of the source filter",
     (source) => {
       const { toggleSourceProduct } = useInboxFilterStore.getState();
