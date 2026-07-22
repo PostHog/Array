@@ -2,7 +2,7 @@ import { injectable } from "inversify";
 import { type ListReleasesOutput, listReleasesOutput } from "./schemas";
 
 const RELEASES_FEED_URL =
-  "https://posthog-desktop-app-releases-prod-us.s3.us-east-1.amazonaws.com/stable/releases.json";
+  "https://d11gemrf2ia4q8.cloudfront.net/stable/releases.json";
 const CACHE_TTL_MS = 10 * 60_000;
 const MISSING_VERSION_RETRY_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;

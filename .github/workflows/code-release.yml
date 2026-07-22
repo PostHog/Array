@@ -744,3 +744,35 @@ jobs:
           aws s3 cp "$STAGING/releases.json" "$FEED/releases.json"
 
           aws s3 rm --recursive "$STAGING/" || echo "staging cleanup failed; harmless"
+
+      # The little markdown table in the run summary: public CloudFront URLs for
+      # everything this release published to the feed.
+      - name: Write release summary
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          BASE="https://d11gemrf2ia4q8.cloudfront.net/stable"
+          V="$APP_VERSION"
+          {
+            echo "## v$V on the update feed"
+            echo ""
+            echo "| Artifact | URL |"
+            echo "| --- | --- |"
+            for f in \
+              "PostHog-Code-$V-arm64-mac.dmg" \
+              "PostHog-Code-$V-arm64-mac.zip" \
+              "PostHog-Code-$V-x64-mac.dmg" \
+              "PostHog-Code-$V-x64-mac.zip" \
+              "PostHog-Code-$V-x64-win.exe" \
+              "PostHog-Code-$V-arm64-linux.AppImage" \
+              "PostHog-Code-$V-arm64-linux.deb" \
+              "PostHog-Code-$V-arm64-linux.rpm" \
+              "PostHog-Code-$V-x64-linux.AppImage" \
+              "PostHog-Code-$V-x64-linux.deb" \
+              "PostHog-Code-$V-x64-linux.rpm" \
+              "latest-mac.yml" \
+              "latest.yml" \
+              "releases.json"; do
+              echo "| \`$f\` | $BASE/$f |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
