@@ -51,6 +51,8 @@ const preview: Preview = {
           scaling="105%"
         >
           <Story />
+          {/* Match ThemeWrapper so portaled Quill components inherit the story's active theme. */}
+          <div id="portal-container" />
         </Theme>
       );
     },

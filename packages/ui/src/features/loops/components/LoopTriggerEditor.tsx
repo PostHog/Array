@@ -10,6 +10,9 @@ import { Switch } from "@posthog/quill";
 import { CopyButton } from "@posthog/ui/features/agent-applications/components/CopyButton";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { Button } from "@posthog/ui/primitives/Button";
+import { TimezonePicker } from "@posthog/ui/primitives/TimezonePicker";
+import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { Box, Checkbox, Flex, IconButton, Text } from "@radix-ui/themes";
 import {
   compileCronSchedule,
@@ -17,6 +20,7 @@ import {
   parseCronSchedule,
   type RecurringFrequency,
 } from "../loopCron";
+import { nextScheduleRun } from "../loopDisplay";
 import {
   defaultLoopScheduleTrigger,
   emptyLoopApiTriggerConfig,
@@ -25,7 +29,6 @@ import {
   isTriggerDraftValid,
   type LoopTriggerDraft,
 } from "../loopFormTypes";
-import { systemTimezone } from "../loopTimezone";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
 
 const TRIGGER_TYPE_OPTIONS: {
@@ -118,6 +121,7 @@ export function LoopTriggerEditor({
         variant="outline"
         color="gray"
         size="1"
+        className="self-start"
         disabled={disabled}
         onClick={addTrigger}
       >
@@ -258,6 +262,19 @@ function ScheduleTriggerFields({
   const time = parsed?.time ?? DEFAULT_SCHEDULE_TIME;
   const weekday = parsed?.weekday ?? "1";
   const timezone = config.timezone || systemTimezone();
+  const nextRun = nextScheduleRun(config);
+  const nextRunTimezone = frequency === "once" ? systemTimezone() : timezone;
+  const nextRunLabel = nextRun
+    ? new Intl.DateTimeFormat(undefined, {
+        timeZone: nextRunTimezone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }).format(nextRun)
+    : null;
   const frequencyOptions = isCustomCron
     ? [CUSTOM_FREQUENCY_OPTION, ...FREQUENCY_OPTIONS]
     : FREQUENCY_OPTIONS;
@@ -362,29 +379,26 @@ function ScheduleTriggerFields({
       </Flex>
 
       {frequency !== "once" ? (
-        <Flex align="end" gap="2" wrap="wrap">
-          <Flex direction="column" gap="1">
-            <Text className="text-[11px] text-gray-9">Timezone</Text>
-            <input
-              aria-label="Schedule timezone"
-              type="text"
-              disabled={disabled}
-              value={timezone}
-              className="h-8 min-w-[220px] rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2 text-[12.5px] text-gray-12"
-              onChange={(event) =>
-                onChange({ ...config, timezone: event.target.value })
-              }
-            />
-          </Flex>
-          <Button
-            variant="outline"
-            color="gray"
-            size="1"
-            disabled={disabled || timezone === systemTimezone()}
-            onClick={() => onChange({ ...config, timezone: systemTimezone() })}
-          >
-            Use system timezone
-          </Button>
+        <Flex direction="column" gap="1">
+          <Text className="text-[11px] text-gray-9">Timezone</Text>
+          <TimezonePicker
+            value={timezone}
+            disabled={disabled}
+            className="w-[240px] max-w-full"
+            onValueChange={(value) => onChange({ ...config, timezone: value })}
+          />
+        </Flex>
+      ) : null}
+
+      {nextRun && nextRunLabel ? (
+        <Flex align="center" gap="2" className="text-[12px]">
+          <Text className="text-gray-10">Next run</Text>
+          <TimezoneTimestamp
+            timestamp={nextRun}
+            timezone={nextRunTimezone}
+            label={nextRunLabel}
+            className="text-gray-12"
+          />
         </Flex>
       ) : null}
     </Flex>

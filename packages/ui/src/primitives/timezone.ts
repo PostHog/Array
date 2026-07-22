@@ -1,0 +1,93 @@
+export interface TimezoneOption {
+  value: string;
+  label: string;
+}
+
+let cachedTimezoneOptions: TimezoneOption[] | null = null;
+let timezoneOptionsExpireAt = 0;
+
+export function systemTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+export function formatTimezoneLabel(timezone: string): string {
+  const name = timezone.replaceAll("_", " ").replaceAll("/", " / ");
+
+  try {
+    const offset = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "longOffset",
+    })
+      .formatToParts()
+      .find((part) => part.type === "timeZoneName")
+      ?.value.replace("GMT", "UTC");
+    return offset ? `${name} (${offset})` : name;
+  } catch {
+    return name;
+  }
+}
+
+export function formatTimezoneAbbreviation(
+  timezone: string,
+  date = new Date(),
+): string {
+  try {
+    return (
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        timeZoneName: "short",
+      })
+        .formatToParts(date)
+        .find((part) => part.type === "timeZoneName")?.value ?? timezone
+    );
+  } catch {
+    return timezone;
+  }
+}
+
+export function formatTimestampInTimezone(
+  date: Date,
+  timezone: string,
+): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: timezone,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+export function timezoneOptions(): TimezoneOption[] {
+  if (cachedTimezoneOptions && Date.now() < timezoneOptionsExpireAt) {
+    return cachedTimezoneOptions;
+  }
+
+  const localTimezone = systemTimezone();
+  let timezones: string[];
+
+  try {
+    timezones = Intl.supportedValuesOf("timeZone");
+  } catch {
+    timezones = [];
+  }
+
+  cachedTimezoneOptions = [...new Set([localTimezone, "UTC", ...timezones])]
+    .sort((left, right) => left.localeCompare(right))
+    .map((timezone) => ({
+      value: timezone,
+      label: formatTimezoneLabel(timezone),
+    }));
+  timezoneOptionsExpireAt = Date.now() + 60 * 60 * 1000;
+  return cachedTimezoneOptions;
+}

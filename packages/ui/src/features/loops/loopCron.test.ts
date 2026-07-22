@@ -36,7 +36,10 @@ describe("parseCronSchedule", () => {
     { name: "specific month", cron: "0 9 * 6 *" },
     { name: "weekday list", cron: "0 9 * * 1,3,5" },
     { name: "hourly on a weekday", cron: "0 * * * 1" },
+    { name: "non-zero hourly minute", cron: "30 * * * *" },
     { name: "wildcard minute", cron: "* 9 * * *" },
+    { name: "minute out of range", cron: "60 9 * * *" },
+    { name: "hour out of range", cron: "0 24 * * *" },
     { name: "six fields", cron: "0 0 9 * * *" },
     { name: "named weekday", cron: "0 9 * * MON" },
   ])("returns null for $name so it renders as custom", ({ cron }) => {

@@ -1,12 +1,13 @@
+import type {
+  RecurringSchedule,
+  RecurringScheduleFrequency,
+} from "@posthog/ui/primitives/nextRecurringRun";
+
 export const DEFAULT_SCHEDULE_TIME = "09:00";
 
-export type RecurringFrequency = "hourly" | "daily" | "weekdays" | "weekly";
+export type RecurringFrequency = RecurringScheduleFrequency;
 
-export interface ParsedRecurringSchedule {
-  frequency: RecurringFrequency;
-  time: string;
-  weekday: string;
-}
+export type ParsedRecurringSchedule = RecurringSchedule;
 
 /** Reads the shapes the frequency picker writes. Anything else (step values,
  * day-of-month, day lists, ...) returns null and must be treated as a custom
@@ -20,12 +21,15 @@ export function parseCronSchedule(
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
   if (dayOfMonth !== "*" || month !== "*") return null;
   if (!/^\d{1,2}$/.test(minute)) return null;
+  const minuteNumber = Number(minute);
+  if (minuteNumber > 59) return null;
   if (hour === "*") {
-    return dayOfWeek === "*"
+    return minute === "0" && dayOfWeek === "*"
       ? { frequency: "hourly", time: DEFAULT_SCHEDULE_TIME, weekday: "1" }
       : null;
   }
   if (!/^\d{1,2}$/.test(hour)) return null;
+  if (Number(hour) > 23) return null;
   const time = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
   if (dayOfWeek === "*") return { frequency: "daily", time, weekday: "1" };
   if (dayOfWeek === "1-5") return { frequency: "weekdays", time, weekday: "1" };

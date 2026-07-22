@@ -1,4 +1,5 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { describe, expect, it } from "vitest";
 import {
   defaultLoopBehaviors,
@@ -135,7 +136,10 @@ describe("emptyLoopFormValues", () => {
         key: expect.any(String),
         type: "schedule",
         enabled: true,
-        config: { cron_expression: "0 9 * * 1", timezone: "UTC" },
+        config: {
+          cron_expression: "0 9 * * 1",
+          timezone: systemTimezone(),
+        },
       },
     ]);
   });

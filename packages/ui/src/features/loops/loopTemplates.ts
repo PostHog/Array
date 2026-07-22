@@ -13,12 +13,12 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import {
   type LoopFormValues,
   type LoopTriggerDraft,
   nextDraftTriggerKey,
 } from "./loopFormTypes";
-import { systemTimezone } from "./loopTimezone";
 
 export type LoopTemplateCategory = "engineering" | "operations";
 

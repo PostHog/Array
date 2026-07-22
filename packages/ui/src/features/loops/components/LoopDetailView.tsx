@@ -17,6 +17,8 @@ import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToEditLoop,
@@ -36,6 +38,7 @@ import {
   describeTrigger,
   loopStatusColor,
   loopStatusLabel,
+  nextScheduleRun,
   summarizeNotificationDestinations,
 } from "../loopDisplay";
 import { LoopLoadError } from "./LoopFallbacks";
@@ -329,7 +332,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             <Flex direction="column" gap="1">
               {loop.triggers.map((trigger) => (
                 <Text key={trigger.id} className="text-[12.5px] text-gray-12">
-                  {describeTrigger(trigger)}
+                  <TriggerDescription trigger={trigger} />
                   {!trigger.enabled ? " (disabled)" : ""}
                 </Text>
               ))}
@@ -411,6 +414,32 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
         }}
       />
     </Flex>
+  );
+}
+
+function TriggerDescription({ trigger }: { trigger: LoopSchemas.LoopTrigger }) {
+  const description = describeTrigger(trigger);
+  if (trigger.type !== "schedule") return description;
+
+  const config = trigger.config as LoopSchemas.LoopScheduleTriggerConfig;
+  const nextRun = nextScheduleRun(config);
+  if (!nextRun) return description;
+  const nextRunSeparator = " · Next run ";
+  const [scheduleDescription, nextRunDescription] =
+    description.split(nextRunSeparator);
+  const timezone =
+    config.timezone ?? (config.run_at ? systemTimezone() : "UTC");
+
+  return (
+    <>
+      {scheduleDescription}
+      {nextRunSeparator}
+      <TimezoneTimestamp
+        timestamp={nextRun}
+        timezone={timezone}
+        label={nextRunDescription}
+      />
+    </>
   );
 }
 

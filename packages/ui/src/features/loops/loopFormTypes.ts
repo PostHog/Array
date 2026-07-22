@@ -1,5 +1,5 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
-import { systemTimezone } from "./loopTimezone";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 
 /**
  * A trigger row in the create/edit form. `key` is a client-only stable
