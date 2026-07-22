@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Memory benchmark for the PostHog Code dev app.
+ * Memory benchmark for the PostHog dev app.
  *
  * Samples RSS across the app's entire process tree (main, renderers, GPU,
  * utility, workspace-server, spawned agents) plus the renderer JS heap over

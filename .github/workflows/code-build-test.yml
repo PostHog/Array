@@ -114,9 +114,9 @@ jobs:
           MATRIX_ARCH: ${{ matrix.arch }}
         run: |
           if [[ "$MATRIX_ARCH" == "arm64" ]]; then
-            APP_BUNDLE="apps/code/out/mac-arm64/PostHog Code.app"
+            APP_BUNDLE="apps/code/out/mac-arm64/PostHog.app"
           else
-            APP_BUNDLE="apps/code/out/mac/PostHog Code.app"
+            APP_BUNDLE="apps/code/out/mac/PostHog.app"
           fi
           RESOURCES="$APP_BUNDLE/Contents/Resources"
           UNPACKED="$RESOURCES/app.asar.unpacked/node_modules"

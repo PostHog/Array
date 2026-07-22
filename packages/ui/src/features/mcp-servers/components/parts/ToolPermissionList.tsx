@@ -95,7 +95,7 @@ export interface ToolPermissionListProps {
  * Searchable, expandable tool-permission list with optional default-mode, bulk,
  * refresh, and removed-tools controls. Purely presentational: it owns search and
  * expand state only — every permission decision is delegated to the parent via
- * callbacks, so the same component serves PostHog Code's global MCP-server
+ * callbacks, so the same component serves PostHog's global MCP-server
  * config and an agent's per-server overrides without knowing which it is.
  */
 export function ToolPermissionList({

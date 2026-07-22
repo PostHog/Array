@@ -12,7 +12,7 @@ import { ArgsSection } from "./AgentApprovalDetail";
 
 /**
  * The approval surface for non-Code channels (MCP, a Slack link): a
- * `<scheme>://approval/<id>?agent=<slug>` deep link opens PostHog Code into this
+ * `<scheme>://approval/<id>?agent=<slug>` deep link opens PostHog into this
  * modal. Fetch + decide go straight to the slug-routed ingress, authenticated
  * as the session principal (the user's bearer) — no project-scoped console call,
  * so it resolves from any project. The link carries only a non-actionable id +

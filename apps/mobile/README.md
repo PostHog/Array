@@ -219,7 +219,7 @@ Canonical native source lives outside generated iOS output:
 - `native/watch/` — SwiftUI watch app source, Info.plists, and entitlements
 - `native/ios/` — iPhone WatchConnectivity bridge
 
-Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHogCode/WatchTaskControlModule.*`, and `PostHogCode.xcodeproj/project.pbxproj`.
+Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHog/WatchTaskControlModule.*`, and `PostHog.xcodeproj/project.pbxproj`.
 
 ### Watch architecture
 
@@ -242,10 +242,10 @@ The `./plugins/withWatchApp` plugin copies native sources from `native/`, recrea
 
 ### Running in simulators
 
-1. Open `ios/PostHogCode.xcworkspace` in Xcode.
+1. Open `ios/PostHog.xcworkspace` in Xcode.
 2. Select the iOS app scheme with a paired iPhone + Apple Watch simulator destination.
 3. Build/run the iOS app; Xcode should install the embedded watch app.
-4. Sign in on iPhone and open or start a PostHog Code task.
+4. Sign in on iPhone and open or start a PostHog task.
 5. Open the watch app and verify the mission overview, checklist, timeline, approvals, and blocker cards.
 
 ### Verification checklist

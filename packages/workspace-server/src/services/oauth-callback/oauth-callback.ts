@@ -122,9 +122,10 @@ function callbackHtml(status: "success" | "cancelled" | "error"): string {
     error: "Authorization failed",
   };
   const messages = {
-    success: "You can close this window and return to PostHog Code.",
-    cancelled: "You can close this window and return to PostHog Code.",
-    error: "You can close this window and return to PostHog Code.",
+    success: "You can close this window and return to the PostHog desktop app.",
+    cancelled:
+      "You can close this window and return to the PostHog desktop app.",
+    error: "You can close this window and return to the PostHog desktop app.",
   };
 
   return `<!DOCTYPE html>

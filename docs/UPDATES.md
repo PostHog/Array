@@ -1,6 +1,6 @@
 # Releasing Updates
 
-PostHog Code uses semantic versioning with git tags. Patch versions are automatically computed from commit counts.
+PostHog uses semantic versioning with git tags. Patch versions are automatically computed from commit counts.
 
 The version in `apps/code/package.json` is set to `0.0.0-dev` - this is intentional. CI injects the real version at build time from git tags.
 
@@ -13,7 +13,7 @@ The version in `apps/code/package.json` is set to `0.0.0-dev` - this is intentio
 
 ## Auto-Update Mechanism
 
-PostHog Code uses [electron-updater](https://www.electron.build/auto-update) (the npm package, not the built-in Electron autoUpdater). On startup the app checks for updates against the GitHub Release for PostHog/code.
+PostHog uses [electron-updater](https://www.electron.build/auto-update) (the npm package, not the built-in Electron autoUpdater). On startup the app checks for updates against the GitHub Release for PostHog/code.
 
 electron-builder generates and uploads a `latest-mac.yml` (macOS) or `latest.yml` (Windows) manifest to the GitHub Release during CI. The path to these manifests is baked into `app-update.yml` inside the app bundle at package time.
 

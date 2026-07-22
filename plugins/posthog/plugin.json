@@ -1,5 +1,5 @@
 {
   "name": "posthog",
-  "description": "PostHog skills for PostHog Code",
+  "description": "PostHog skills for the PostHog desktop app",
   "version": "1.0.0"
 }

@@ -106,7 +106,7 @@ export function UpdateAvailableModal() {
               <Dialog.Description>
                 <Text color="gray" size="2">
                   {targetVersion
-                    ? `PostHog Code ${targetVersion}${sizeLabel ? ` · ${sizeLabel}` : ""}`
+                    ? `PostHog ${targetVersion}${sizeLabel ? ` · ${sizeLabel}` : ""}`
                     : "A new version is available"}
                 </Text>
               </Dialog.Description>

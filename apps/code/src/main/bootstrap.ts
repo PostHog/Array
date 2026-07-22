@@ -38,7 +38,7 @@ const isDev = !app.isPackaged;
 
 // Set app name for single-instance lock, crashReporter, etc
 const appName = isDev ? "posthog-code-dev" : "posthog-code";
-app.setName(isDev ? "PostHog Code (Development)" : "PostHog Code");
+app.setName(isDev ? "PostHog (Development)" : "PostHog");
 
 // Set userData path for @posthog/code
 const appDataPath = app.getPath("appData");

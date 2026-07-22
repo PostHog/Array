@@ -30,4 +30,4 @@ pnpm exec electron-builder build --mac zip --arm64 --publish never \
   -c.extraMetadata.version="$OLD_VERSION" --config electron-builder.ts
 
 echo "==> feed=$FEED_DIR"
-echo "==> app=out/mac-arm64/PostHog Code.app ($OLD_VERSION)"
+echo "==> app=out/mac-arm64/PostHog.app ($OLD_VERSION)"

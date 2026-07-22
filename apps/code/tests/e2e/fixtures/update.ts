@@ -11,11 +11,11 @@ import path from "node:path";
 
 const OUT_DIR = path.join(__dirname, "../../../out");
 
-export const PRISTINE_APP = path.join(OUT_DIR, "mac-arm64/PostHog Code.app");
+export const PRISTINE_APP = path.join(OUT_DIR, "mac-arm64/PostHog.app");
 export const FEED_DIR = path.join(OUT_DIR, "dev-update-feed");
 export const RUN_DIR = path.join(OUT_DIR, "e2e-update-run");
-export const RUN_APP = path.join(RUN_DIR, "PostHog Code.app");
-export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog Code");
+export const RUN_APP = path.join(RUN_DIR, "PostHog.app");
+export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog");
 
 // The "old" side of the Forge -> electron-builder test: a real Electron Forge
 // build (v0.55.132) produced by scripts/dev-update/build-old-forge.sh. It runs
@@ -29,6 +29,16 @@ export const FORGE_RUN_APP = path.join(FORGE_RUN_DIR, "PostHog Code.app");
 export const FORGE_RUN_APP_BIN = path.join(
   FORGE_RUN_APP,
   "Contents/MacOS/PostHog Code",
+);
+// Squirrel installs the update under the update bundle's own name, so the swap renames the .app on disk.
+export const FORGE_RUN_APP_UPDATED = path.join(
+  FORGE_RUN_DIR,
+  path.basename(RUN_APP),
+);
+export const FORGE_RUN_APP_BIN_UPDATED = path.join(
+  FORGE_RUN_APP_UPDATED,
+  "Contents/MacOS",
+  path.basename(RUN_APP_BIN),
 );
 
 export const MAIN_LOG = path.join(homedir(), ".posthog-code/logs/main.log");
@@ -111,6 +121,14 @@ export function readBundleVersion(appPath: string): string {
   ).trim();
 }
 
+export function readBundleVersionIfPresent(appPath: string): string | null {
+  try {
+    return readBundleVersion(appPath);
+  } catch {
+    return null;
+  }
+}
+
 export function readMainLog(): string {
   try {
     return readFileSync(MAIN_LOG, "utf8");
@@ -137,9 +155,14 @@ export function shipItEvidence(): { exists: boolean; entries: string[] } {
   }
 }
 
+// The forge leg is "PostHog Code" pre-swap and "PostHog" post-swap, so match either name.
+const APP_PROCESS_PATTERN = [FORGE_RUN_APP_BIN, RUN_APP_BIN]
+  .map((bin) => path.basename(bin))
+  .join("|");
+
 export function isAppRunning(): boolean {
   try {
-    execFileSync("pgrep", ["-x", "PostHog Code"], { stdio: "ignore" });
+    execFileSync("pgrep", ["-x", APP_PROCESS_PATTERN], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -151,7 +174,9 @@ export function isAppRunning(): boolean {
 export function runningAppExecutables(): string[] {
   let pids: string[];
   try {
-    pids = execFileSync("pgrep", ["-x", "PostHog Code"], { encoding: "utf8" })
+    pids = execFileSync("pgrep", ["-x", APP_PROCESS_PATTERN], {
+      encoding: "utf8",
+    })
       .trim()
       .split("\n")
       .filter(Boolean);
@@ -173,7 +198,7 @@ export function runningAppExecutables(): string[] {
 
 export function killApp(): void {
   try {
-    execFileSync("pkill", ["-x", "PostHog Code"]);
+    execFileSync("pkill", ["-x", APP_PROCESS_PATTERN]);
   } catch {
     // nothing running, fine
   }

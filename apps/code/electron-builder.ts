@@ -11,8 +11,8 @@ const skipNotarize =
 const config: Configuration = {
   // Original release bundle id; changing it breaks existing installs' data dir and Keychain entries.
   appId: "com.posthog.array",
-  productName: "PostHog Code",
-  executableName: "PostHog Code",
+  productName: "PostHog",
+  executableName: "PostHog",
 
   directories: {
     output: "out",
@@ -61,7 +61,7 @@ const config: Configuration = {
 
   protocols: [
     {
-      name: "PostHog Code",
+      name: "PostHog",
       schemes: ["posthog-code"],
     },
   ],
@@ -81,7 +81,7 @@ const config: Configuration = {
       // Shown in the macOS microphone-permission prompt when a user records a
       // custom notification sound.
       NSMicrophoneUsageDescription:
-        "PostHog Code uses the microphone to record custom notification sounds.",
+        "PostHog uses the microphone to record custom notification sounds.",
     },
     notarize: !skipNotarize,
   },

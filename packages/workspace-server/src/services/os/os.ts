@@ -407,7 +407,7 @@ export class OsService {
       options?.type && options.type !== "none" ? options.type : undefined;
     const response = await this.dialog.confirm({
       severity,
-      title: options?.title || "PostHog Code",
+      title: options?.title || "PostHog",
       message: options?.message || "",
       detail: options?.detail,
       options:

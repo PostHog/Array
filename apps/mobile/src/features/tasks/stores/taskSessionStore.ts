@@ -125,7 +125,7 @@ function maybePresentLocalNotification(args: {
   if (previous && now - previous < NOTIFICATION_DEDUP_WINDOW_MS) return;
   lastNotificationAt.set(session.taskId, now);
 
-  const title = session.taskTitle ?? "PostHog Code";
+  const title = session.taskTitle ?? "PostHog";
   let body: string;
   switch (args.kind) {
     case "awaiting_user_input":
@@ -140,7 +140,7 @@ function maybePresentLocalNotification(args: {
   }
 
   presentLocalNotification({
-    title: "PostHog Code",
+    title: "PostHog",
     body,
     data: { taskId: session.taskId, taskRunId: session.taskRunId },
   }).catch(() => {});

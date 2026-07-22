@@ -123,7 +123,7 @@ describe("AgentAuthAdapter", () => {
     );
   });
 
-  it("identifies as the PostHog Code consumer so the MCP server emits UI-app metadata", async () => {
+  it("identifies as the posthog-code consumer so the MCP server emits UI-app metadata", async () => {
     const { servers } = await adapter.buildMcpServers(baseCredentials);
 
     const posthogServer = servers.find((s) => s.name === "posthog");

@@ -205,7 +205,7 @@ export function ImportConfigStep({ onNext, onBack }: ImportConfigStepProps) {
                   Your Claude Code environment is ready
                 </Text>
                 <Text className="text-(--gray-11) text-sm leading-relaxed">
-                  Same workflow, now in PostHog Code.
+                  Same workflow, now in PostHog.
                 </Text>
               </Flex>
             </motion.div>

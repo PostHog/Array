@@ -1,4 +1,4 @@
-// PostHog Task model (matches PostHog Code's OpenAPI schema)
+// PostHog Task model (matches the desktop task API's OpenAPI schema)
 import type { AgentRuntime } from "./agent-runtime";
 import type { UploadableSkillSource } from "./skills";
 
