@@ -30,7 +30,7 @@ export function HomeActiveAgentsStrip({ agents }: HomeActiveAgentsStripProps) {
         </Text>
       </Flex>
       <ScrollArea scrollbars="horizontal">
-        <Flex gap="2" className="pb-1">
+        <Flex gap="2" className="pt-1 pb-1">
           {agents.map((agent) => {
             const task = taskById.get(agent.taskId);
             const dotColor = agent.needsPermission
