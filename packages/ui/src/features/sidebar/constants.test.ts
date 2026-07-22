@@ -13,6 +13,22 @@ describe("orderedNavItems", () => {
     );
   });
 
+  it("inserts an id missing from a full stored order after its default predecessor", () => {
+    const withoutSkills = CUSTOMIZABLE_NAV_ITEM_IDS.filter(
+      (id) => id !== "skills",
+    ).reverse();
+
+    const ids = orderedNavItems(withoutSkills).map((item) => item.id);
+
+    expect(ids.indexOf("skills")).toBe(ids.indexOf("agents") + 1);
+  });
+
+  it("inserts a missing id with no present predecessor at the start", () => {
+    const ids = orderedNavItems(["loops", "inbox"]).map((item) => item.id);
+
+    expect(ids[0]).toBe("search");
+  });
+
   it("puts stored ids first and appends the rest in default order", () => {
     const ids = orderedNavItems(["loops", "search"]).map((item) => item.id);
 

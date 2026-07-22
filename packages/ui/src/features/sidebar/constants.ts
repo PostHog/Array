@@ -88,18 +88,31 @@ export function isNavItemVisible(
 
 export type CustomizableNavItem = (typeof CUSTOMIZABLE_NAV_ITEMS)[number];
 
-/** Applies a stored drag order. Items missing from it (newly shipped, or an
- * empty order) keep their default relative position after the ordered ones. */
+/** Applies a stored drag order. Ids missing from it (newly shipped items)
+ * slot in after their nearest default predecessor instead of at the end, so
+ * users with a saved order still get new items near their intended spot. */
 export function orderedNavItems(
   order: readonly CustomizableNavItemId[],
 ): readonly CustomizableNavItem[] {
   if (order.length === 0) return CUSTOMIZABLE_NAV_ITEMS;
-  const position = new Map(order.map((id, index) => [id, index]));
-  return [...CUSTOMIZABLE_NAV_ITEMS].sort(
-    (a, b) =>
-      (position.get(a.id) ?? order.length) -
-      (position.get(b.id) ?? order.length),
-  );
+  const byId = new Map(CUSTOMIZABLE_NAV_ITEMS.map((item) => [item.id, item]));
+  const result = [...order];
+  for (const [defaultIndex, item] of CUSTOMIZABLE_NAV_ITEMS.entries()) {
+    if (result.includes(item.id)) continue;
+    let insertAt = 0;
+    for (let i = defaultIndex - 1; i >= 0; i--) {
+      const neighbor = result.indexOf(CUSTOMIZABLE_NAV_ITEMS[i].id);
+      if (neighbor !== -1) {
+        insertAt = neighbor + 1;
+        break;
+      }
+    }
+    result.splice(insertAt, 0, item.id);
+  }
+  return result.flatMap((id) => {
+    const item = byId.get(id);
+    return item ? [item] : [];
+  });
 }
 
 export function moveNavItem(
