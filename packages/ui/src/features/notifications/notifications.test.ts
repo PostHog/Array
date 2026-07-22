@@ -225,6 +225,19 @@ describe("notifyError", () => {
 });
 
 describe("sound", () => {
+  it("presents an immediately repeated notification only once", () => {
+    const { bus, play } = makeBus({
+      hasFocus: true,
+      activeTarget: taskTarget(OTHER_TASK_ID),
+    });
+
+    bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
+    bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
+
+    expect(toastMock.success).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
   it("plays on the toast tier too (not just native)", () => {
     const { bus, play } = makeBus({
       hasFocus: true,

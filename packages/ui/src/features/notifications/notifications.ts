@@ -21,6 +21,7 @@ import {
 import { routeNotification } from "./routeNotification";
 
 const MAX_TITLE_LENGTH = 50;
+const DUPLICATE_WINDOW_MS = 1_000;
 
 // In-app toast presentation for the focused-but-elsewhere tier. Only levels that
 // support an action link are allowed (the bus derives the action from `target`).
@@ -56,6 +57,8 @@ export interface NotificationDescriptor {
 // only appears while the app is focused).
 @injectable()
 export class NotificationBus {
+  private readonly recentNotifications = new Map<string, number>();
+
   constructor(
     @inject(NOTIFICATIONS_SERVICE)
     private readonly notifications: INotifications,
@@ -72,6 +75,7 @@ export class NotificationBus {
       notificationTarget: descriptor.target,
     });
     if (channel === "suppress") return;
+    if (this.isDuplicate(descriptor)) return;
 
     const settings = this.settings.get();
     const playbackRate =
@@ -162,6 +166,28 @@ export class NotificationBus {
       duration: descriptor.toast?.duration,
       action: this.deriveAction(descriptor),
     });
+  }
+
+  private isDuplicate(descriptor: NotificationDescriptor): boolean {
+    const key = JSON.stringify({
+      title: descriptor.title,
+      body: descriptor.body,
+      target: descriptor.target,
+      toast: descriptor.toast,
+      silent: descriptor.silent,
+      soundDurationMs: descriptor.soundDurationMs,
+    });
+    const now = Date.now();
+    const previous = this.recentNotifications.get(key);
+    this.recentNotifications.set(key, now);
+
+    for (const [recentKey, timestamp] of this.recentNotifications) {
+      if (now - timestamp > DUPLICATE_WINDOW_MS) {
+        this.recentNotifications.delete(recentKey);
+      }
+    }
+
+    return previous !== undefined && now - previous <= DUPLICATE_WINDOW_MS;
   }
 
   private deriveAction(
