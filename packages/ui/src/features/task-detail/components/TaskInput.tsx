@@ -9,7 +9,11 @@ import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
-import { type AgentRuntime, ANALYTICS_EVENTS } from "@posthog/shared";
+import {
+  type AgentRuntime,
+  ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
+} from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
@@ -35,6 +39,14 @@ import {
 } from "../../autoresearch/autoresearchDraftStore";
 import { toStageSelectOptions } from "../../autoresearch/stageModels";
 import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnabled";
+import { ChannelPicker } from "../../canvas/components/ChannelPicker";
+import { useChannels } from "../../canvas/hooks/useChannels";
+import { useFolderInstructions } from "../../canvas/hooks/useFolderInstructions";
+import {
+  normalizeChannelName,
+  PERSONAL_CHANNEL_NAME,
+  useBackendChannel,
+} from "../../canvas/hooks/useTaskChannels";
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
@@ -253,18 +265,88 @@ export function TaskInput({
     reportAssociation ?? null,
   );
 
+  // --- Channel selection (Home-space channels; project-bluebird only) ---
+  // The generic composer lets the user target a channel instead of a repo. When
+  // the composer is already bound to a fixed channel via props (the per-channel
+  // screen) or forced repo-less by the caller, defer entirely to those props and
+  // don't offer the picker.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelSelectorEnabled =
+    bluebirdEnabled && !channelContextId && !allowNoRepo;
+  const { channels: allChannels, isLoading: channelsLoading } = useChannels({
+    enabled: channelSelectorEnabled,
+  });
+  // Omit the personal #me channel: "No channel" already routes tasks to it via
+  // useTaskCreation's default, so listing it would be a duplicate way to say the
+  // same thing.
+  const selectableChannels = useMemo(
+    () =>
+      allChannels.filter(
+        (c) => normalizeChannelName(c.name) !== PERSONAL_CHANNEL_NAME,
+      ),
+    [allChannels],
+  );
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
+    null,
+  );
+  const selectedChannel = useMemo(
+    () =>
+      selectedChannelId
+        ? (selectableChannels.find((c) => c.id === selectedChannelId) ?? null)
+        : null,
+    [selectedChannelId, selectableChannels],
+  );
+  // Drop the selection if the channel disappears (deleted/renamed elsewhere)
+  // once the list has loaded, so the composer never sticks in repo-less mode
+  // pointing at a channel that no longer exists.
+  useEffect(() => {
+    if (selectedChannelId && !channelsLoading && !selectedChannel) {
+      setSelectedChannelId(null);
+    }
+  }, [selectedChannelId, channelsLoading, selectedChannel]);
+  // Resolve the picked channel's backend feed id + CONTEXT.md. Both hooks no-op
+  // (return undefined/null) until a channel is selected.
+  const { channel: selectedBackendChannel } = useBackendChannel(
+    selectedChannel?.name,
+  );
+  const { data: selectedChannelInstructions } = useFolderInstructions(
+    selectedChannel?.id ?? null,
+    { enabled: !!selectedChannel },
+  );
+
+  const channelChosen = channelSelectorEnabled && !!selectedChannel;
+  // Props (per-channel screen) win over an in-composer pick, so those flows stay
+  // unaffected and channel context is never injected twice.
+  const effectiveAllowNoRepo = allowNoRepo || channelChosen;
+  const effectiveChannelContext = channelChosen
+    ? selectedChannelInstructions?.content
+    : channelContext;
+  const effectiveChannelName = channelChosen
+    ? selectedChannel?.name
+    : channelName;
+  const effectiveChannelContextId = channelChosen
+    ? selectedChannel?.id
+    : channelContextId;
+  const effectiveChannelId = channelChosen
+    ? selectedBackendChannel?.id
+    : undefined;
+
   // Channel CONTEXT.md is included by default; the chip lets the user drop it
   // from this task's prompt. Re-include whenever the source context changes
   // (e.g. switching channels) so a dismissal doesn't stick across channels.
   const [channelContextDismissed, setChannelContextDismissed] = useState(false);
-  const lastChannelContextRef = useRef(channelContext);
+  const lastChannelContextRef = useRef(effectiveChannelContext);
   useEffect(() => {
-    if (lastChannelContextRef.current !== channelContext) {
-      lastChannelContextRef.current = channelContext;
+    if (lastChannelContextRef.current !== effectiveChannelContext) {
+      lastChannelContextRef.current = effectiveChannelContext;
       setChannelContextDismissed(false);
     }
-  }, [channelContext]);
-  const includeChannelContext = !!channelContext && !channelContextDismissed;
+  }, [effectiveChannelContext]);
+  const includeChannelContext =
+    !!effectiveChannelContext && !channelContextDismissed;
 
   const adapter = lastUsedAdapter;
   const prefillRequestKey = initialPromptKey ?? initialPrompt;
@@ -696,7 +778,10 @@ export function TaskInput({
     );
   }
 
-  const effectiveWorkspaceMode = workspaceMode;
+  // A channel task runs repo-less, so worktree (which needs a repo) is invalid;
+  // collapse it to local, mirroring ChannelHomeComposer.
+  const effectiveWorkspaceMode =
+    channelChosen && workspaceMode === "worktree" ? "local" : workspaceMode;
 
   // Get current values from preview config options for task creation.
   // Defaults ensure values are always passed even before the preview config loads.
@@ -876,10 +961,11 @@ export function TaskInput({
         ? selectedCustomImageId
         : undefined,
     signalReportId: activeReportAssociation?.reportId,
-    channelContext: includeChannelContext ? channelContext : undefined,
-    channelName,
-    channelContextId,
-    allowNoRepo,
+    channelContext: includeChannelContext ? effectiveChannelContext : undefined,
+    channelName: effectiveChannelName,
+    channelId: effectiveChannelId,
+    channelContextId: effectiveChannelContextId,
+    allowNoRepo: effectiveAllowNoRepo,
   });
 
   // Wraps the prompt in the autoresearch kickoff: protocol preamble first,
@@ -1114,15 +1200,28 @@ export function TaskInput({
                   />
                 )}
                 <WorkspaceModeSelect
-                  value={workspaceMode}
+                  value={effectiveWorkspaceMode}
                   onChange={setWorkspaceMode}
+                  // Worktree needs a repo, so a channel task can only run
+                  // local or cloud.
+                  overrideModes={channelChosen ? ["local", "cloud"] : undefined}
                   selectedCloudEnvironmentId={selectedCloudEnvId}
                   onCloudEnvironmentChange={setSelectedCloudEnvId}
                   selectedCustomImageId={selectedCustomImageId}
                   onCustomImageChange={setSelectedCustomImageId}
                   size="1"
                 />
-                {!allowNoRepo && workspaceMode === "worktree" && (
+                {channelSelectorEnabled && (
+                  <ChannelPicker
+                    value={selectedChannelId}
+                    onChange={setSelectedChannelId}
+                    channels={selectableChannels}
+                    isLoading={channelsLoading}
+                    disabled={isCreatingTask}
+                    size="1"
+                  />
+                )}
+                {!allowNoRepo && effectiveWorkspaceMode === "worktree" && (
                   <EnvironmentSelector
                     repoPath={effectiveRepoPath ?? null}
                     value={selectedEnvironment}
@@ -1139,6 +1238,15 @@ export function TaskInput({
                   <ButtonGroup
                     ref={buttonGroupRef}
                     data-tour="folder-picker"
+                    // A picked channel runs repo-less: grey out + disable the
+                    // repo/branch pickers rather than removing them, so it stays
+                    // clear they're suppressed by the channel choice.
+                    aria-disabled={channelChosen || undefined}
+                    className={
+                      channelChosen
+                        ? "pointer-events-none opacity-50"
+                        : undefined
+                    }
                     data-tour-ready={
                       (
                         workspaceMode === "cloud"
@@ -1172,7 +1280,7 @@ export function TaskInput({
                         onLoadMore={handleLoadMoreCloudRepositories}
                         placeholder="Select repository..."
                         size="1"
-                        disabled={isCreatingTask}
+                        disabled={isCreatingTask || channelChosen}
                       />
                     ) : (
                       <FolderPicker
@@ -1196,6 +1304,7 @@ export function TaskInput({
                       }
                       disabled={
                         isCreatingTask ||
+                        channelChosen ||
                         (workspaceMode === "cloud" && !selectedCloudRepository)
                       }
                       loading={
@@ -1224,12 +1333,12 @@ export function TaskInput({
                     />
                   </ButtonGroup>
                 )}
-                {!allowNoRepo && workspaceMode !== "cloud" && (
+                {!allowNoRepo && effectiveWorkspaceMode !== "cloud" && (
                   <AdditionalDirectoriesButton
                     values={additionalDirectories}
                     onChange={setAdditionalDirectories}
                     primaryDirectory={selectedDirectory}
-                    disabled={isCreatingTask}
+                    disabled={isCreatingTask || channelChosen}
                   />
                 )}
                 {cloudRegion === "dev" && (
@@ -1376,7 +1485,10 @@ export function TaskInput({
                           >
                             <FileText size={12} />
                             <span className="truncate">
-                              {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                              {effectiveChannelName
+                                ? `#${effectiveChannelName} `
+                                : ""}
+                              CONTEXT.md
                             </span>
                           </button>
                         </Tooltip>
@@ -1384,7 +1496,10 @@ export function TaskInput({
                         <>
                           <FileText size={12} />
                           <span className="truncate">
-                            {channelName ? `#${channelName} ` : ""}CONTEXT.md
+                            {effectiveChannelName
+                              ? `#${effectiveChannelName} `
+                              : ""}
+                            CONTEXT.md
                           </span>
                         </>
                       )}
@@ -1402,6 +1517,7 @@ export function TaskInput({
                   </div>
                 )}
                 {effectiveWorkspaceMode === "cloud" &&
+                  !channelChosen &&
                   !isLoadingRepos &&
                   !hasGithubIntegration && (
                     <div className="mx-2 mt-2">
