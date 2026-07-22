@@ -43,7 +43,7 @@ import type {
   TaskRunStatus,
   UserBasic,
 } from "@posthog/shared/domain-types";
-import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
@@ -401,9 +401,7 @@ function ReplyFooter({
     <ThreadItemReplies onClick={onOpenThread} className="mt-1">
       <AvatarGroup size="xs">
         {authors.map((author, index) => (
-          <Avatar key={author?.uuid ?? index} size="xs">
-            <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
-          </Avatar>
+          <UserAvatar key={author?.uuid ?? index} user={author} size="xs" />
         ))}
       </AvatarGroup>
       <ThreadItemRepliesLabel>
@@ -440,11 +438,15 @@ export function TaskFeedRow({
   return (
     <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
-        <Avatar>
-          <AvatarFallback>
-            {starter ? getUserInitials(starter) : <RobotIcon size={16} />}
-          </AvatarFallback>
-        </Avatar>
+        {starter ? (
+          <UserAvatar user={starter} />
+        ) : (
+          <Avatar>
+            <AvatarFallback>
+              <RobotIcon size={16} />
+            </AvatarFallback>
+          </Avatar>
+        )}
       </ThreadItemGutter>
 
       <ThreadItemContent className="min-w-0">
@@ -611,15 +613,15 @@ function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
     <ChatMessageScrollerItem messageId={message.id}>
       <ThreadItem className="rounded-none py-1 pr-8">
         <ThreadItemGutter>
-          <Avatar>
-            <AvatarFallback>
-              {message.author ? (
-                getUserInitials(message.author)
-              ) : (
+          {message.author ? (
+            <UserAvatar user={message.author} />
+          ) : (
+            <Avatar>
+              <AvatarFallback>
                 <RobotIcon size={16} />
-              )}
-            </AvatarFallback>
-          </Avatar>
+              </AvatarFallback>
+            </Avatar>
+          )}
         </ThreadItemGutter>
         <ThreadItemContent className="min-w-0">
           <ThreadItemHeader>
