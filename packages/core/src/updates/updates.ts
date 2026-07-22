@@ -28,6 +28,7 @@ import {
   type UpdatesEvents,
   type UpdatesStatusPayload,
 } from "./schemas";
+import { isStrictlyNewer } from "./versionCompare";
 
 type CheckSource = "user" | "periodic";
 type UpdateState =
@@ -191,11 +192,12 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return { success: false, errorMessage: reason, errorCode: "disabled" };
     }
 
-    if (this.isUpdateStaged()) {
+    // An install handoff is already underway — never disturb it.
+    if (this.state === "installing") {
       this.logStateTransition(this.state, {
         source,
         skippedBecauseUpdateStaged: true,
-        reason: "check skipped because update is already staged",
+        reason: "check skipped because an install is in progress",
       });
 
       if (source === "user") {
@@ -207,20 +209,37 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return { success: true };
     }
 
-    if (source === "periodic" && this.state === "available") {
-      this.logStateTransition(this.state, {
-        source,
-        reason: "periodic check skipped because an update is already available",
-      });
-      return { success: true };
-    }
-
     if (this.state === "checking" || this.state === "downloading") {
       return {
         success: false,
         errorMessage: "Already checking for updates",
         errorCode: "already_checking",
       };
+    }
+
+    // We already have an update available or downloaded. A user-initiated check
+    // just re-surfaces what we already have so we don't yank the banner away. A
+    // periodic check quietly looks for a newer release, so the app can supersede
+    // toward the latest version without the user having to restart once per
+    // intermediate release.
+    if (this.state === "available" || this.state === "ready") {
+      if (source === "user") {
+        if (this.state === "ready") {
+          this.pendingNotification = true;
+          this.flushPendingNotification();
+          this.emitStatus(this.stagedStatusPayload());
+        } else {
+          this.emitStatus(this.availableStatusPayload());
+        }
+        return { success: true };
+      }
+
+      this.logStateTransition(this.state, {
+        source,
+        reason: "periodic re-check for a newer update while one is pending",
+      });
+      this.performSilentCheck();
+      return { success: true };
     }
 
     this.transitionTo("checking", { source });
@@ -375,17 +394,44 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   }
 
   private handleUpdateAvailable(info: UpdateAvailableInfo): void {
-    if (this.isUpdateStaged()) {
-      this.log.info(
-        "Ignoring update-available because an update is already staged",
-        {
-          downloadedVersion: this.downloadedVersion,
-        },
-      );
+    this.clearCheckTimeout();
+
+    // Never disturb an install handoff.
+    if (this.state === "installing") {
       return;
     }
 
-    this.clearCheckTimeout();
+    // If an update is already downloaded, only a strictly newer release should
+    // displace it; otherwise a background re-check is just re-reporting the
+    // version we already have staged.
+    if (this.state === "ready") {
+      if (!isStrictlyNewer(info.version, this.downloadedVersion)) {
+        this.log.info(
+          "Ignoring update-available; not newer than the staged update",
+          {
+            stagedVersion: this.downloadedVersion,
+            incomingVersion: info.version,
+          },
+        );
+        return;
+      }
+      this.log.info("Newer update available; superseding staged update", {
+        stagedVersion: this.downloadedVersion,
+        incomingVersion: info.version,
+      });
+      this.downloadedVersion = null;
+    } else if (this.state === "available") {
+      if (!isStrictlyNewer(info.version, this.availableInfo?.version)) {
+        // Same (or older) version re-reported by a background re-check — leave
+        // the existing banner untouched.
+        return;
+      }
+      this.log.info("Newer update available; replacing the pending update", {
+        previousVersion: this.availableInfo?.version,
+        incomingVersion: info.version,
+      });
+    }
+
     this.availableInfo = info;
     this.downloadProgress = null;
 
@@ -450,8 +496,22 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private handleUpdateDownloaded(version?: string): void {
     this.clearCheckTimeout();
 
-    if (this.isUpdateStaged()) {
-      this.log.info("Ignoring duplicate update-downloaded event", {
+    // Never disturb an install handoff.
+    if (this.state === "installing") {
+      this.log.info("Ignoring update-downloaded event during install", {
+        existingVersion: this.downloadedVersion,
+        incomingVersion: version,
+      });
+      return;
+    }
+
+    // If we already have a downloaded update, only accept a strictly newer one
+    // so a duplicate or stale event can't reset the staged version.
+    if (
+      this.state === "ready" &&
+      !isStrictlyNewer(version, this.downloadedVersion)
+    ) {
+      this.log.info("Ignoring duplicate or older update-downloaded event", {
         existingVersion: this.downloadedVersion,
         incomingVersion: version,
       });
@@ -463,7 +523,9 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       reason: "update downloaded",
       incomingVersion: version ?? null,
     });
-    this.clearCheckInterval();
+    // The periodic interval intentionally keeps running: if a newer release
+    // ships while this one is staged, the next re-check supersedes it in place
+    // instead of forcing a restart-per-version.
     this.emitStatus(this.stagedStatusPayload());
 
     this.log.info("Update downloaded, awaiting user confirmation", {
@@ -522,6 +584,29 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       this.emitStatus({
         checking: false,
         error: "Failed to check for updates. Please try again.",
+      });
+    }
+  }
+
+  // A background re-check that leaves the visible state untouched. The update
+  // event handlers only act on a strictly newer version, so if nothing newer
+  // has shipped the pending update is left exactly as it was — no banner
+  // flicker, no "checking" status emitted to the UI.
+  private performSilentCheck(): void {
+    this.clearCheckTimeout();
+
+    this.checkTimeoutId = setTimeout(() => {
+      // A stalled silent re-check has nothing to surface; just clear itself and
+      // leave the pending update in place.
+      this.clearCheckTimeout();
+    }, UpdatesService.CHECK_TIMEOUT_MS);
+
+    try {
+      this.updater.check();
+    } catch (error) {
+      this.clearCheckTimeout();
+      this.log.warn("Silent update re-check failed", {
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }

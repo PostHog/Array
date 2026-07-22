@@ -533,7 +533,7 @@ describe("UpdatesService", () => {
       });
     });
 
-    it("ignores later update events once an update is already downloaded", () => {
+    it("re-checks silently once an update is downloaded without disturbing it", () => {
       // Simulate update already downloaded
       const downloadedHandler = updaterHandlers.updateDownloaded;
       if (downloadedHandler) {
@@ -547,20 +547,24 @@ describe("UpdatesService", () => {
 
       mockUpdater.check.mockClear();
 
-      // Periodic checks should be suppressed once an update is staged.
+      // A periodic check now re-checks in the background so a newer release can
+      // supersede the staged one, but it must do so silently.
       service.checkForUpdates("periodic");
-      expect(mockUpdater.check).not.toHaveBeenCalled();
+      expect(mockUpdater.check).toHaveBeenCalled();
 
       const notAvailableHandler = updaterHandlers.noUpdate;
       if (notAvailableHandler) {
         notAvailableHandler();
       }
 
+      // Nothing newer shipped, so the staged update is untouched and the UI
+      // sees no "checking"/"upToDate" flicker.
       expect(statusHandler).not.toHaveBeenCalledWith({ checking: false });
       expect(statusHandler).not.toHaveBeenCalledWith(
         expect.objectContaining({ upToDate: true }),
       );
       expect(readyHandler).not.toHaveBeenCalled();
+      expect(service.hasUpdateReady).toBe(true);
     });
 
     it("handles update-downloaded event with version info", () => {
@@ -723,7 +727,7 @@ describe("UpdatesService", () => {
   });
 
   describe("available update guards", () => {
-    it("does not re-check or clear the banner on periodic checks while available", async () => {
+    it("silently re-checks on periodic checks while available without clearing the banner", async () => {
       await initializeService(service);
 
       updaterHandlers.updateAvailable?.({
@@ -741,13 +745,54 @@ describe("UpdatesService", () => {
 
       const result = service.checkForUpdates("periodic");
 
+      // The re-check runs (so a newer version can supersede) but emits no
+      // status, leaving the existing "available" banner in place.
       expect(result).toEqual({ success: true });
-      expect(mockUpdater.check).not.toHaveBeenCalled();
+      expect(mockUpdater.check).toHaveBeenCalled();
       expect(statusHandler).not.toHaveBeenCalled();
       expect(service.getStatus()).toMatchObject({
         available: true,
         availableVersion: "v2.0.0",
       });
+    });
+
+    it("supersedes an available update when a periodic re-check finds a newer one", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: "Old notes",
+      });
+      expect(service.getStatus()).toMatchObject({ availableVersion: "v2.0.0" });
+
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: "New notes",
+      });
+
+      expect(service.getStatus()).toMatchObject({
+        available: true,
+        availableVersion: "v3.0.0",
+        releaseNotes: "New notes",
+      });
+    });
+
+    it("keeps the available version when a re-check reports the same or an older release", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: "Notes",
+      });
+
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v1.5.0",
+        releaseNotes: "Older",
+      });
+
+      expect(service.getStatus()).toMatchObject({ availableVersion: "v2.0.0" });
     });
 
     it("starts the download when auto-download is enabled while available", async () => {
@@ -893,23 +938,46 @@ describe("UpdatesService", () => {
       expect(mockUpdater.check.mock.calls.length).toBe(initialCallCount + 2);
     });
 
-    it("stops the periodic interval once an update is staged", async () => {
+    it("keeps the periodic interval running once an update is staged", async () => {
       await initializeService(service);
 
       updaterHandlers.updateDownloaded?.("v2.0.0");
 
       const baselineCallCount = mockUpdater.check.mock.calls.length;
 
-      // The interval would normally fire every hour; with the update staged it
-      // should be cleared so no further wake-ups occur.
+      // The interval keeps firing so a newer release can supersede the staged
+      // one in the background instead of forcing a restart-per-version.
       await vi.advanceTimersByTimeAsync(60 * 60 * 1000 * 3);
 
-      expect(mockUpdater.check.mock.calls.length).toBe(baselineCallCount);
+      expect(mockUpdater.check.mock.calls.length).toBe(baselineCallCount + 3);
+    });
+
+    it("supersedes a staged update when a later re-check downloads a newer one", async () => {
+      await initializeService(service);
+      service.setAutoDownloadEnabled(true);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      expect(service.getStatus()).toMatchObject({ version: "v2.0.0" });
+
+      // A background re-check finds a newer release; with auto-download on it
+      // is fetched and replaces the staged one seamlessly.
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: null,
+      });
+      expect(mockUpdater.download).toHaveBeenCalled();
+
+      updaterHandlers.updateDownloaded?.("v3.0.0");
+      expect(service.getStatus()).toMatchObject({
+        updateReady: true,
+        version: "v3.0.0",
+      });
     });
   });
 
   describe("staged update guards", () => {
-    it("does not re-check on periodic checks when update is ready", async () => {
+    it("re-checks silently on periodic checks when an update is ready", async () => {
       await initializeService(service);
 
       // Simulate update downloaded
@@ -921,10 +989,11 @@ describe("UpdatesService", () => {
       // Clear the checkForUpdates calls from initialization
       mockUpdater.check.mockClear();
 
-      // Periodic check should not overwrite or refresh the staged update.
+      // Periodic check re-checks in the background but leaves the staged update
+      // untouched unless a newer release comes back.
       const result = service.checkForUpdates("periodic");
       expect(result).toEqual({ success: true });
-      expect(mockUpdater.check).not.toHaveBeenCalled();
+      expect(mockUpdater.check).toHaveBeenCalled();
       // Update should still be ready (state not reset)
       expect(service.hasUpdateReady).toBe(true);
     });
@@ -960,7 +1029,7 @@ describe("UpdatesService", () => {
 
       mockUpdater.check.mockClear();
       service.checkForUpdates("periodic");
-      expect(mockUpdater.check).not.toHaveBeenCalled();
+      expect(mockUpdater.check).toHaveBeenCalled();
 
       // Simulate a stale updater error after staging.
       const errorHandler = updaterHandlers.error;
@@ -968,7 +1037,7 @@ describe("UpdatesService", () => {
         errorHandler(new Error("Network error"));
       }
 
-      // Update should still be ready
+      // A failed background re-check must not discard the staged update.
       expect(service.hasUpdateReady).toBe(true);
     });
 
@@ -995,31 +1064,40 @@ describe("UpdatesService", () => {
       expect(readyHandler).not.toHaveBeenCalled();
     });
 
-    it("does not overwrite staged version when a later download event arrives", async () => {
+    it("supersedes the staged version when a newer download event arrives", async () => {
       await initializeService(service);
 
       const readyHandler = vi.fn();
       service.on(UpdatesEvent.Ready, readyHandler);
 
-      // Simulate update downloaded
       const downloadedHandler = updaterHandlers.updateDownloaded;
-      if (downloadedHandler) {
-        downloadedHandler("v2.0.0");
-      }
+      downloadedHandler?.("v2.0.0");
       expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
 
       readyHandler.mockClear();
 
-      if (downloadedHandler) {
-        downloadedHandler("v3.0.0");
-      }
+      // A strictly newer downloaded build replaces the staged one and re-notifies.
+      downloadedHandler?.("v3.0.0");
+      expect(readyHandler).toHaveBeenCalledWith({ version: "v3.0.0" });
+      expect(service.getStatus()).toMatchObject({
+        updateReady: true,
+        version: "v3.0.0",
+      });
+    });
 
-      // User checks should still surface the originally staged update.
-      service.checkForUpdates("user");
-      expect(readyHandler).toHaveBeenCalledWith({ version: "v2.0.0" });
+    it("ignores a stale download event that is not newer than the staged version", async () => {
+      await initializeService(service);
 
-      // Update should still be ready (state not corrupted)
-      expect(service.hasUpdateReady).toBe(true);
+      const downloadedHandler = updaterHandlers.updateDownloaded;
+      downloadedHandler?.("v3.0.0");
+
+      const readyHandler = vi.fn();
+      service.on(UpdatesEvent.Ready, readyHandler);
+
+      // An older/equal download arriving late must not downgrade the staged update.
+      downloadedHandler?.("v2.0.0");
+      expect(readyHandler).not.toHaveBeenCalled();
+      expect(service.getStatus()).toMatchObject({ version: "v3.0.0" });
     });
   });
 
@@ -1039,7 +1117,7 @@ describe("UpdatesService", () => {
       );
     });
 
-    it("logs skipped checks after an update is staged", async () => {
+    it("logs the background re-check performed after an update is staged", async () => {
       await initializeService(service);
       updaterHandlers.updateDownloaded?.("v2.0.0");
 
@@ -1053,6 +1131,28 @@ describe("UpdatesService", () => {
           fromState: "ready",
           toState: "ready",
           downloadedVersion: "v2.0.0",
+          reason: "periodic re-check for a newer update while one is pending",
+        }),
+      );
+    });
+
+    it("logs skipped checks while an install is in progress", async () => {
+      await initializeService(service);
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      mockLifecycleService.shutdownWithoutContainer.mockReturnValue(
+        new Promise(() => {}),
+      );
+      void service.installUpdate();
+      await Promise.resolve();
+
+      mockLog.info.mockClear();
+      service.checkForUpdates("periodic");
+
+      expect(mockLog.info).toHaveBeenCalledWith(
+        "Update state transition",
+        expect.objectContaining({
+          source: "periodic",
+          toState: "installing",
           skippedBecauseUpdateStaged: true,
         }),
       );
