@@ -49,34 +49,24 @@ import {
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
-import {
-  holdSidebarPeek,
-  releaseSidebarPeek,
-} from "@posthog/ui/features/sidebar/sidebarPeekStore";
+import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Avatar, Box } from "@radix-ui/themes";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 // The two-line user/project card used at the bottom of the sidebar.
 export function ProjectSwitcher() {
   const [popoverOpen, setPopoverOpen] = useState(false);
 
-  // Hold the sidebar's hover-peek open while this dropdown is open: it lives in
-  // a portal anchored to the trigger, so if the peek collapsed underneath it
-  // (pointer leaving the panel, e.g. toward a submenu flyout) the menu would be
-  // left floating over the content, chasing its vanished anchor.
+  const holdPeek = useHoldSidebarPeek();
   const handleOpenChange = (next: boolean): void => {
     setPopoverOpen(next);
-    if (next) holdSidebarPeek();
-    else releaseSidebarPeek();
+    holdPeek(next);
   };
-  // Release if we unmount while the menu is open (e.g. a route change) so the
-  // hold can't outlive it.
-  useEffect(() => () => releaseSidebarPeek(), []);
 
   const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
   const client = useOptionalAuthenticatedClient();

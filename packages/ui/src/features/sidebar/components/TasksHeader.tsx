@@ -26,16 +26,13 @@ import {
 import type { WorkspaceMode } from "@posthog/shared";
 import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
-import {
-  holdSidebarPeek,
-  releaseSidebarPeek,
-} from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
+import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const log = logger.scope("tasks-header");
 
@@ -109,11 +106,7 @@ function TaskFilterMenu() {
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
-  const handleOpenChange = (next: boolean): void => {
-    if (next) holdSidebarPeek();
-    else releaseSidebarPeek();
-  };
-  useEffect(() => () => releaseSidebarPeek(), []);
+  const handleOpenChange = useHoldSidebarPeek();
 
   return (
     <DropdownMenu onOpenChange={handleOpenChange}>
