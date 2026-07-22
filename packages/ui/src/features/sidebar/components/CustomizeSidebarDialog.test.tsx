@@ -44,7 +44,6 @@ vi.mock("@dnd-kit/react/sortable", () => ({
     isDragging: false,
   }),
 }));
-vi.mock("@dnd-kit/dom", () => ({ PointerSensor: class {} }));
 
 import {
   CUSTOMIZABLE_NAV_ITEM_IDS,
@@ -76,21 +75,36 @@ function renderDialog(available = availability()) {
   );
 }
 
-function drag(
-  sourceId: string,
-  targetId: string,
-  { cancel = false }: { cancel?: boolean } = {},
-) {
+function dragStart(sourceId: string) {
   act(() => {
     dndCapture.onDragStart?.({ operation: { source: { id: sourceId } } });
+  });
+}
+
+function dragOver(sourceId: string, targetId: string) {
+  act(() => {
     dndCapture.onDragOver?.({
       operation: { source: { id: sourceId }, target: { id: targetId } },
     });
+  });
+}
+
+function dragEnd(
+  sourceId: string,
+  { cancel = false }: { cancel?: boolean } = {},
+) {
+  act(() => {
     dndCapture.onDragEnd?.({
-      operation: { source: { id: sourceId }, target: { id: targetId } },
+      operation: { source: { id: sourceId } },
       canceled: cancel,
     });
   });
+}
+
+function rowLabels() {
+  return screen
+    .getAllByRole("checkbox")
+    .map((checkbox) => checkbox.closest("label")?.textContent);
 }
 
 describe("CustomizeSidebarDialog", () => {
@@ -142,17 +156,20 @@ describe("CustomizeSidebarDialog", () => {
     useSidebarStore.setState({ navItemOrder: ["loops", "search"] });
     renderDialog();
 
-    const labels = screen
-      .getAllByRole("checkbox")
-      .map((checkbox) => checkbox.closest("label")?.textContent);
-
-    expect(labels.slice(0, 2)).toEqual(["Loops", "Search"]);
+    expect(rowLabels().slice(0, 2)).toEqual(["Loops", "Search"]);
   });
 
-  it("dragging a row persists the new order and tracks on drop", () => {
+  it("previews on dragover and persists only on drop", () => {
     renderDialog();
 
-    drag("skills", "search");
+    dragStart("skills");
+    dragOver("skills", "search");
+
+    expect(rowLabels()[0]).toBe("Skills");
+    expect(useSidebarStore.getState().navItemOrder).toEqual([]);
+    expect(track).not.toHaveBeenCalled();
+
+    dragEnd("skills");
 
     expect(useSidebarStore.getState().navItemOrder).toEqual([
       "skills",
@@ -172,12 +189,50 @@ describe("CustomizeSidebarDialog", () => {
     });
   });
 
-  it("a canceled drag restores the order from dragstart", () => {
+  it("ignores a repeated dragover for the same source and target", () => {
     renderDialog();
 
-    drag("skills", "search", { cancel: true });
+    dragStart("skills");
+    dragOver("skills", "search");
+    dragOver("skills", "search");
+
+    expect(rowLabels()[0]).toBe("Skills");
+
+    dragEnd("skills");
+
+    expect(useSidebarStore.getState().navItemOrder[0]).toBe("skills");
+  });
+
+  it("a canceled drag drops the preview and leaves the store untouched", () => {
+    renderDialog();
+
+    dragStart("skills");
+    dragOver("skills", "search");
+    dragEnd("skills", { cancel: true });
+
+    expect(rowLabels()[0]).toBe("Search");
+    expect(useSidebarStore.getState().navItemOrder).toEqual([]);
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it("a drop without movement neither persists nor tracks", () => {
+    renderDialog();
+
+    dragStart("skills");
+    dragEnd("skills");
 
     expect(useSidebarStore.getState().navItemOrder).toEqual([]);
     expect(track).not.toHaveBeenCalled();
+  });
+
+  it("reset clears the stored order back to the default", async () => {
+    const user = userEvent.setup();
+    useSidebarStore.setState({ navItemOrder: ["loops", "search"] });
+    renderDialog();
+
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(useSidebarStore.getState().navItemOrder).toEqual([]);
+    expect(rowLabels()[0]).toBe("Search");
   });
 });
