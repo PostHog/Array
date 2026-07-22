@@ -9,8 +9,8 @@ import {
   navigateToEditLoop,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
-import { AlertDialog, Flex, Text } from "@radix-ui/themes";
-import { useState } from "react";
+import { AlertDialog, Flex, Text, TextArea } from "@radix-ui/themes";
+import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
   useDeleteLoop,
@@ -165,6 +165,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
 
         <ConfigSummarySection loop={loop} />
 
+        <InstructionsSection loop={loop} />
+
         <Flex direction="column" gap="2">
           <Flex align="center" gap="2">
             <Text className="font-medium text-[13px] text-gray-12">
@@ -278,13 +280,72 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             </Flex>
           )}
         </SummaryRow>
-
-        <SummaryRow label="Instructions">
-          <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap text-[12px] text-gray-12 [font-family:var(--font-mono)]">
-            {loop.instructions}
-          </pre>
-        </SummaryRow>
       </Flex>
+    </Flex>
+  );
+}
+
+function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
+  const updateLoop = useUpdateLoop(loop.id);
+  const [draft, setDraft] = useState(loop.instructions);
+  // Escape reverts and blurs; skip the resulting onBlur save.
+  const skipCommit = useRef(false);
+
+  // Keep the box in sync when the loop is refetched or updated elsewhere.
+  useEffect(() => {
+    setDraft(loop.instructions);
+  }, [loop.instructions]);
+
+  const commit = () => {
+    if (skipCommit.current) {
+      skipCommit.current = false;
+      return;
+    }
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      setDraft(loop.instructions);
+      return;
+    }
+    if (trimmed === loop.instructions.trim() || updateLoop.isPending) return;
+    updateLoop.mutate(
+      { instructions: trimmed },
+      {
+        onSuccess: () => toast.success("Instructions updated"),
+        onError: (error) => {
+          setDraft(loop.instructions);
+          toast.error("Failed to update instructions", {
+            description: error.message,
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <Flex direction="column" gap="3">
+      <Flex align="center" gap="2">
+        <Text className="font-medium text-[13px] text-gray-12">
+          Instructions
+        </Text>
+        {updateLoop.isPending ? (
+          <Text className="text-[11px] text-gray-10">Saving…</Text>
+        ) : null}
+      </Flex>
+      <TextArea
+        value={draft}
+        disabled={updateLoop.isPending}
+        aria-label="Loop instructions"
+        className="min-h-[200px] text-[12.5px] leading-relaxed"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            skipCommit.current = true;
+            setDraft(loop.instructions);
+            e.currentTarget.blur();
+          }
+        }}
+      />
     </Flex>
   );
 }
