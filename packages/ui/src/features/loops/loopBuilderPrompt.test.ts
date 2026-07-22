@@ -1,15 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { buildLoopBuilderPrompt } from "./loopBuilderPrompt";
+import {
+  buildLoopBuilderPrompt,
+  buildLoopBuilderSystemInstructions,
+} from "./loopBuilderPrompt";
 
 describe("buildLoopBuilderPrompt", () => {
   it("embeds the seed instructions when provided", () => {
     const prompt = buildLoopBuilderPrompt({
       instructions: "Summarize failing CI runs",
     });
+    expect(prompt).toContain("Summarize failing CI runs");
     expect(prompt).toContain(
-      "Here's what I want automated:\n\nSummarize failing CI runs",
+      "The user's message describes what they want automated.",
     );
     expect(prompt).not.toContain("Start by asking me");
+  });
+
+  it("keeps the user prompt out of system instructions", () => {
+    const instructions = buildLoopBuilderSystemInstructions({
+      hasSeed: true,
+    });
+
+    expect(instructions).toContain(
+      "The user's message describes what they want automated.",
+    );
+    expect(instructions).not.toContain("Summarize failing CI runs");
   });
 
   it.each([

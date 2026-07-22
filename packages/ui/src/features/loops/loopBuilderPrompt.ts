@@ -13,13 +13,28 @@ export function buildLoopBuilderPrompt({
 }): string {
   const seed = instructions?.trim();
 
+  return [
+    seed || undefined,
+    buildLoopBuilderSystemInstructions({ hasSeed: !!seed, context }),
+  ]
+    .filter((part): part is string => !!part)
+    .join("\n\n");
+}
+
+export function buildLoopBuilderSystemInstructions({
+  hasSeed,
+  context,
+}: {
+  hasSeed: boolean;
+  context?: { folderId: string; name: string };
+}): string {
   return `Your job in this session is to help me create a Loop for this PostHog project, then create it for me.
 
 A Loop is a named, cloud-executed agent automation: instructions the agent runs whenever a trigger fires (a schedule, a GitHub event, or an API call). Loops run unattended in a sandbox and can post results, open pull requests, and keep a context up to date.
 
 ${
-  seed
-    ? `Here's what I want automated:\n\n${seed}\n`
+  hasSeed
+    ? "The user's message describes what they want automated.\n"
     : `Start by asking me what I want automated, and offer a couple of concrete ideas.\n`
 }${
   context
