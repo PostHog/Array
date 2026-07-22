@@ -33,7 +33,9 @@ import {
   buildRemoteReviewItems,
   buildUntrackedReviewItems,
   changedFileSignature,
+  orderPathsLikeTree,
   patchFileSignature,
+  sortReviewItemsByTreeOrder,
 } from "./reviewItemBuilders";
 
 const EMPTY_CHANGED_FILES: ChangedFile[] = [];
@@ -344,16 +346,10 @@ function LocalReviewContent({
     return map;
   }, [stagedParsedFiles, unstagedParsedFiles, untrackedFiles]);
 
-  const items = useMemo<ReviewListItem[]>(() => {
-    const reviewItems: ReviewListItem[] = [];
-
-    if (hasStagedFiles && stagedParsedFiles.length > 0) {
-      reviewItems.push({
-        key: "section:staged",
-        node: <SectionLabel label="Staged Changes" />,
-      });
-      reviewItems.push(
-        ...buildPatchReviewItems({
+  const stagedItems = useMemo(
+    () =>
+      sortReviewItemsByTreeOrder(
+        buildPatchReviewItems({
           files: stagedParsedFiles,
           staged: true,
           repoPath,
@@ -367,66 +363,98 @@ function LocalReviewContent({
           prUrl,
           commentThreads,
         }),
-      );
+        orderPathsLikeTree(
+          stagedParsedFiles.map((f) => f.name ?? f.prevName ?? ""),
+        ),
+      ),
+    [
+      collapsedFiles,
+      commentThreads,
+      diffOptions,
+      onDiscardFile,
+      onStageFile,
+      openFile,
+      prUrl,
+      repoPath,
+      stagedParsedFiles,
+      taskId,
+      toggleFile,
+    ],
+  );
+
+  const changesItems = useMemo(
+    () =>
+      sortReviewItemsByTreeOrder(
+        [
+          ...buildPatchReviewItems({
+            files: unstagedParsedFiles,
+            alsoStagedPaths: stagedPathSet,
+            repoPath,
+            taskId,
+            diffOptions,
+            collapsedFiles,
+            toggleFile,
+            openFile,
+            onDiscardFile,
+            onStageFile,
+            prUrl,
+            commentThreads,
+          }),
+          ...buildUntrackedReviewItems({
+            files: untrackedFiles,
+            repoPath,
+            taskId,
+            diffOptions,
+            collapsedFiles,
+            toggleFile,
+            onDiscardFile,
+            onStageFile,
+          }),
+        ],
+        orderPathsLikeTree([
+          ...unstagedParsedFiles.map((f) => f.name ?? f.prevName ?? ""),
+          ...untrackedFiles.map((f) => f.path),
+        ]),
+      ),
+    [
+      collapsedFiles,
+      commentThreads,
+      diffOptions,
+      onDiscardFile,
+      onStageFile,
+      openFile,
+      prUrl,
+      repoPath,
+      stagedPathSet,
+      taskId,
+      toggleFile,
+      untrackedFiles,
+      unstagedParsedFiles,
+    ],
+  );
+
+  const items = useMemo<ReviewListItem[]>(() => {
+    const reviewItems: ReviewListItem[] = [];
+
+    if (hasStagedFiles && stagedItems.length > 0) {
+      reviewItems.push({
+        key: "section:staged",
+        node: <SectionLabel label="Staged Changes" />,
+      });
+      reviewItems.push(...stagedItems);
     }
 
-    if (
-      hasStagedFiles &&
-      (unstagedParsedFiles.length > 0 || untrackedFiles.length > 0)
-    ) {
+    if (hasStagedFiles && changesItems.length > 0) {
       reviewItems.push({
         key: "section:changes",
         node: <SectionLabel label="Changes" />,
       });
     }
 
-    reviewItems.push(
-      ...buildPatchReviewItems({
-        files: unstagedParsedFiles,
-        alsoStagedPaths: stagedPathSet,
-        repoPath,
-        taskId,
-        diffOptions,
-        collapsedFiles,
-        toggleFile,
-        openFile,
-        onDiscardFile,
-        onStageFile,
-        prUrl,
-        commentThreads,
-      }),
-    );
-    reviewItems.push(
-      ...buildUntrackedReviewItems({
-        files: untrackedFiles,
-        repoPath,
-        taskId,
-        diffOptions,
-        collapsedFiles,
-        toggleFile,
-        onDiscardFile,
-        onStageFile,
-      }),
-    );
+    reviewItems.push(...changesItems);
 
     return reviewItems;
-  }, [
-    collapsedFiles,
-    commentThreads,
-    diffOptions,
-    hasStagedFiles,
-    onDiscardFile,
-    onStageFile,
-    openFile,
-    prUrl,
-    repoPath,
-    stagedParsedFiles,
-    stagedPathSet,
-    taskId,
-    toggleFile,
-    untrackedFiles,
-    unstagedParsedFiles,
-  ]);
+  }, [changesItems, hasStagedFiles, stagedItems]);
 
   return (
     <ReviewShell
@@ -524,15 +552,18 @@ function RemoteReviewPage({
 
   const items = useMemo(
     () =>
-      buildRemoteReviewItems({
-        files,
-        taskId,
-        prUrl,
-        options: reviewState.diffOptions,
-        collapsedFiles: reviewState.collapsedFiles,
-        toggleFile: reviewState.toggleFile,
-        commentThreads,
-      }),
+      sortReviewItemsByTreeOrder(
+        buildRemoteReviewItems({
+          files,
+          taskId,
+          prUrl,
+          options: reviewState.diffOptions,
+          collapsedFiles: reviewState.collapsedFiles,
+          toggleFile: reviewState.toggleFile,
+          commentThreads,
+        }),
+        orderPathsLikeTree(files.map((f) => f.path)),
+      ),
     [
       commentThreads,
       files,

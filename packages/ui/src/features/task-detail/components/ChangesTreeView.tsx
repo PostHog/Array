@@ -1,55 +1,16 @@
+import {
+  buildChangeTree,
+  type ChangeTreeNode,
+  compactChangeTree,
+} from "@posthog/core/git-interaction/changeTree";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { TreeDirectoryRow } from "@posthog/ui/primitives/TreeDirectoryRow";
 import { useCallback, useMemo, useState } from "react";
 
-export interface TreeNode {
-  name: string;
-  path: string;
-  children: Map<string, TreeNode>;
-  files: ChangedFile[];
-}
+export type TreeNode = ChangeTreeNode;
 
-export function buildChangesTree(files: ChangedFile[]): TreeNode {
-  const root: TreeNode = { name: "", path: "", children: new Map(), files: [] };
-  for (const file of files) {
-    const parts = file.path.split("/");
-    let node = root;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i];
-      if (!node.children.has(part)) {
-        node.children.set(part, {
-          name: part,
-          path: parts.slice(0, i + 1).join("/"),
-          children: new Map(),
-          files: [],
-        });
-      }
-      const child = node.children.get(part);
-      if (!child) break;
-      node = child;
-    }
-    node.files.push(file);
-  }
-  return root;
-}
-
-/** Collapse single-child directory chains into one node (e.g. "src/utils") */
-export function compactTree(node: TreeNode): TreeNode {
-  const compacted = new Map<string, TreeNode>();
-  for (const [key, child] of node.children) {
-    let current = child;
-    let label = current.name;
-    while (current.children.size === 1 && current.files.length === 0) {
-      const [, only] = [...current.children.entries()][0];
-      label = `${label}/${only.name}`;
-      current = only;
-    }
-    const result = compactTree(current);
-    result.name = label;
-    compacted.set(key, result);
-  }
-  return { ...node, children: compacted };
-}
+export const buildChangesTree = buildChangeTree;
+export const compactTree = compactChangeTree;
 
 interface ChangesTreeNodeProps {
   node: TreeNode;

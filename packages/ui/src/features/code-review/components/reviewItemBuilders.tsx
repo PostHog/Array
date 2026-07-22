@@ -5,11 +5,18 @@ import {
   computeSkipExpansion,
 } from "@posthog/core/code-review/reviewItemKeys";
 import type { PrCommentThread } from "@posthog/core/code-review/types";
+import {
+  orderPathsLikeChangeTree,
+  sortByChangeTreeOrder,
+} from "@posthog/core/git-interaction/changeTree";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { makeFileKey } from "../../git-interaction/utils/fileKey";
 import type { ReviewListItem } from "../commentFileFilter";
 import type { DiffOptions } from "../types";
 import { PatchRow, RemoteRow, UntrackedRow } from "./ReviewRows";
+
+export const orderPathsLikeTree = orderPathsLikeChangeTree;
+export const sortReviewItemsByTreeOrder = sortByChangeTreeOrder<ReviewListItem>;
 
 export function changedFileSignature(file: ChangedFile): string | null {
   if (file.patch) return contentHash(file.patch);
