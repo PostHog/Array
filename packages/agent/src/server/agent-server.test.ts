@@ -1905,6 +1905,46 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("POST /command", () => {
+    it("acknowledges an asynchronous user message before its turn completes", async () => {
+      const s = createServer();
+      await s.start();
+      let resolvePrompt!: (value: { stopReason: string }) => void;
+      const promptPending = new Promise<{ stopReason: string }>((resolve) => {
+        resolvePrompt = resolve;
+      });
+      const serverInternals = s as unknown as {
+        session: {
+          clientConnection: { prompt: () => Promise<{ stopReason: string }> };
+        };
+      };
+      serverInternals.session.clientConnection.prompt = () => promptPending;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken({ run_id: "test-run-id" })}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "async-message",
+          method: "user_message",
+          params: {
+            content: "do the thing",
+            messageId: "message-1",
+            waitForCompletion: false,
+          },
+        }),
+      });
+
+      expect(await response.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "async-message",
+        result: { accepted: true },
+      });
+      resolvePrompt({ stopReason: "end_turn" });
+    });
+
     it("returns 401 without authorization", async () => {
       await createServer().start();
 

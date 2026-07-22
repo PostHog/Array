@@ -712,10 +712,28 @@ export class AgentServer {
       }
 
       try {
-        const result = await this.executeCommand(
+        const commandPromise = this.executeCommand(
           command.method,
           (command.params as Record<string, unknown>) || {},
         );
+        if (
+          (command.method === POSTHOG_NOTIFICATIONS.USER_MESSAGE ||
+            command.method === "user_message") &&
+          command.params?.waitForCompletion === false
+        ) {
+          void commandPromise.catch((error) =>
+            this.logger.error("Asynchronous user_message command failed", {
+              error,
+              messageId: command.params?.messageId,
+            }),
+          );
+          return c.json({
+            jsonrpc: "2.0",
+            id: command.id,
+            result: { accepted: true },
+          });
+        }
+        const result = await commandPromise;
         return c.json({
           jsonrpc: "2.0",
           id: command.id,
