@@ -245,7 +245,7 @@ jobs:
           SKIP_ELECTRON_REBUILD: "1"
 
       - name: Build agent dependencies
-        run: pnpm exec turbo build --filter=@posthog/shared --filter=@posthog/git --filter=@posthog/enricher
+        run: pnpm exec turbo build --filter='@posthog/agent^...'
 
       - name: Download native codex binary
         # Non-fatal at the STEP so a failure surfaces as the fail-loud binary guard
