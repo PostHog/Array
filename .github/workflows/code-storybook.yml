@@ -135,7 +135,7 @@ jobs:
         run: pnpm exec playwright install-deps chromium
 
       - name: Build workspace packages
-        run: pnpm exec turbo build --filter='@posthog/code^...'
+        run: pnpm run build:deps
 
       - name: Build Storybook
         working-directory: apps/code

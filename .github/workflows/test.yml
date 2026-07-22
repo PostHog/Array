@@ -140,7 +140,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
-        run: pnpm exec turbo build --filter='@posthog/code^...'
+        run: pnpm run build:deps
 
       - name: Package Electron app
         run: pnpm --filter code run package

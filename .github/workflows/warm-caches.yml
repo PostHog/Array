@@ -47,8 +47,8 @@ jobs:
 
       - name: Seed turbo cache (build + typecheck)
         run: |
-          pnpm exec turbo build --filter='@posthog/code^...'
-          pnpm exec turbo typecheck
+          pnpm run build:deps
+          pnpm run typecheck
 
   macos:
     runs-on: macos-latest

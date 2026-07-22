@@ -69,7 +69,7 @@ jobs:
           SKIP_ELECTRON_REBUILD: "1"
 
       - name: Build packages
-        run: pnpm exec turbo build --filter='@posthog/code^...'
+        run: pnpm run build:deps
 
       - name: Build code
         run: pnpm --filter code build
