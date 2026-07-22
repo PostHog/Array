@@ -89,6 +89,10 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private checkTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private checkIntervalId: ReturnType<typeof setInterval> | null = null;
   private downloadedVersion: string | null = null;
+  // When a strictly-newer release supersedes an already-downloaded update, this
+  // holds the version we had staged so a failed supersede download can roll back
+  // to it instead of dropping to an error with nothing installable.
+  private supersededReadyVersion: string | null = null;
   private notifiedVersion: string | null = null;
   private lastError: string | null = null;
   private initialized = false;
@@ -383,6 +387,23 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return;
     }
 
+    // A superseding download that fails must not discard the update we already
+    // had staged. Roll back to it instead of dropping to an error with nothing
+    // installable.
+    if (this.state === "downloading" && this.supersededReadyVersion !== null) {
+      this.downloadedVersion = this.supersededReadyVersion;
+      this.supersededReadyVersion = null;
+      this.availableInfo = null;
+      this.downloadProgress = null;
+      this.transitionTo("ready", {
+        reason:
+          "superseding download failed; restored previously staged update",
+        error: error.message,
+      });
+      this.emitStatus(this.stagedStatusPayload());
+      return;
+    }
+
     if (this.state === "checking" || this.state === "downloading") {
       this.lastError = error.message;
       this.transitionTo("error", { error: error.message });
@@ -401,35 +422,35 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return;
     }
 
-    // If an update is already downloaded, only a strictly newer release should
-    // displace it; otherwise a background re-check is just re-reporting the
-    // version we already have staged.
-    if (this.state === "ready") {
-      if (!isStrictlyNewer(info.version, this.downloadedVersion)) {
+    // If an update is already available or downloaded, only a strictly newer
+    // release should displace it; otherwise a background re-check is just
+    // re-reporting the version we already have pending.
+    if (this.state === "ready" || this.state === "available") {
+      const currentVersion =
+        this.state === "ready"
+          ? this.downloadedVersion
+          : this.availableInfo?.version;
+
+      if (!isStrictlyNewer(info.version, currentVersion)) {
         this.log.info(
-          "Ignoring update-available; not newer than the staged update",
-          {
-            stagedVersion: this.downloadedVersion,
-            incomingVersion: info.version,
-          },
+          "Ignoring update-available; not newer than the pending update",
+          { currentVersion, incomingVersion: info.version },
         );
         return;
       }
-      this.log.info("Newer update available; superseding staged update", {
-        stagedVersion: this.downloadedVersion,
+
+      this.log.info("Newer update available; superseding pending update", {
+        currentVersion,
         incomingVersion: info.version,
       });
-      this.downloadedVersion = null;
-    } else if (this.state === "available") {
-      if (!isStrictlyNewer(info.version, this.availableInfo?.version)) {
-        // Same (or older) version re-reported by a background re-check — leave
-        // the existing banner untouched.
-        return;
+
+      if (this.state === "ready") {
+        // Keep the already-downloaded build recorded until the newer one is
+        // in hand, so a failed supersede download can restore it
+        // (handleError).
+        this.supersededReadyVersion = this.downloadedVersion;
+        this.downloadedVersion = null;
       }
-      this.log.info("Newer update available; replacing the pending update", {
-        previousVersion: this.availableInfo?.version,
-        incomingVersion: info.version,
-      });
     }
 
     this.availableInfo = info;
@@ -519,6 +540,8 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     }
 
     this.downloadedVersion = version ?? null;
+    // The newer build is in hand; we no longer need the superseded fallback.
+    this.supersededReadyVersion = null;
     this.transitionTo("ready", {
       reason: "update downloaded",
       incomingVersion: version ?? null,
@@ -559,33 +582,31 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   }
 
   private performCheck(): void {
-    this.clearCheckTimeout();
-
-    this.checkTimeoutId = setTimeout(() => {
-      if (this.state === "checking" || this.state === "downloading") {
-        const timeoutSeconds = UpdatesService.CHECK_TIMEOUT_MS / 1000;
-        const message = "Update check timed out. Please try again.";
-        this.log.warn(`Update check timed out after ${timeoutSeconds} seconds`);
-        this.lastError = message;
-        this.transitionTo("error", { error: message });
-        this.emitStatus({ checking: false, error: message });
-      }
-    }, UpdatesService.CHECK_TIMEOUT_MS);
-
-    try {
-      this.updater.check();
-    } catch (error) {
-      this.clearCheckTimeout();
-      this.log.error("Failed to check for updates", { error });
-      this.lastError = "Failed to check for updates. Please try again.";
-      this.transitionTo("error", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      this.emitStatus({
-        checking: false,
-        error: "Failed to check for updates. Please try again.",
-      });
-    }
+    this.runUpdaterCheck({
+      onTimeout: () => {
+        if (this.state === "checking" || this.state === "downloading") {
+          const timeoutSeconds = UpdatesService.CHECK_TIMEOUT_MS / 1000;
+          const message = "Update check timed out. Please try again.";
+          this.log.warn(
+            `Update check timed out after ${timeoutSeconds} seconds`,
+          );
+          this.lastError = message;
+          this.transitionTo("error", { error: message });
+          this.emitStatus({ checking: false, error: message });
+        }
+      },
+      onError: (error) => {
+        this.log.error("Failed to check for updates", { error });
+        this.lastError = "Failed to check for updates. Please try again.";
+        this.transitionTo("error", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.emitStatus({
+          checking: false,
+          error: "Failed to check for updates. Please try again.",
+        });
+      },
+    });
   }
 
   // A background re-check that leaves the visible state untouched. The update
@@ -593,21 +614,37 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   // has shipped the pending update is left exactly as it was — no banner
   // flicker, no "checking" status emitted to the UI.
   private performSilentCheck(): void {
+    this.runUpdaterCheck({
+      // A stalled silent re-check has nothing to surface; just clear itself
+      // and leave the pending update in place.
+      onTimeout: () => {},
+      onError: (error) => {
+        this.log.warn("Silent update re-check failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    });
+  }
+
+  // Shared scaffold for `performCheck`/`performSilentCheck`: arms the check
+  // timeout, invokes the updater, and routes timeout/error handling to the
+  // caller so each can decide whether to surface it to the UI.
+  private runUpdaterCheck(handlers: {
+    onTimeout: () => void;
+    onError: (error: unknown) => void;
+  }): void {
     this.clearCheckTimeout();
 
     this.checkTimeoutId = setTimeout(() => {
-      // A stalled silent re-check has nothing to surface; just clear itself and
-      // leave the pending update in place.
       this.clearCheckTimeout();
+      handlers.onTimeout();
     }, UpdatesService.CHECK_TIMEOUT_MS);
 
     try {
       this.updater.check();
     } catch (error) {
       this.clearCheckTimeout();
-      this.log.warn("Silent update re-check failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      handlers.onError(error);
     }
   }
 

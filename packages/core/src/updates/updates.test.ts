@@ -974,6 +974,35 @@ describe("UpdatesService", () => {
         version: "v3.0.0",
       });
     });
+
+    it("restores the previously staged update when a superseding download fails", async () => {
+      await initializeService(service);
+      service.setAutoDownloadEnabled(true);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      expect(service.getStatus()).toMatchObject({ version: "v2.0.0" });
+
+      // A newer release supersedes and starts downloading, dropping the staged
+      // v2.0.0 from view while v3.0.0 is fetched.
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: null,
+      });
+      expect(service.getStatus()).toMatchObject({ downloading: true });
+
+      // The v3.0.0 download fails — we must fall back to the still-installable
+      // v2.0.0 rather than leaving the user with nothing.
+      updaterHandlers.error?.(new Error("network error"));
+
+      expect(service.hasUpdateReady).toBe(true);
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v2.0.0",
+      });
+    });
   });
 
   describe("staged update guards", () => {

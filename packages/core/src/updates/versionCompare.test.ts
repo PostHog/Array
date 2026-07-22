@@ -27,6 +27,20 @@ describe("compareVersions", () => {
     expect(compareVersions("1.2.0", "1.2.0-beta")).toBeGreaterThan(0);
   });
 
+  it("compares numeric prerelease identifiers numerically, not lexically", () => {
+    expect(compareVersions("1.2.0-alpha.10", "1.2.0-alpha.9")).toBeGreaterThan(
+      0,
+    );
+    expect(compareVersions("1.2.0-beta.2", "1.2.0-beta.11")).toBeLessThan(0);
+  });
+
+  it("ranks numeric identifiers below alphanumeric and longer sets above shorter", () => {
+    // Numeric identifier has lower precedence than an alphanumeric one.
+    expect(compareVersions("1.0.0-1", "1.0.0-alpha")).toBeLessThan(0);
+    // A longer set of identifiers outranks its shorter prefix.
+    expect(compareVersions("1.0.0-alpha.1", "1.0.0-alpha")).toBeGreaterThan(0);
+  });
+
   it("treats unparseable input as incomparable (equal)", () => {
     expect(compareVersions("not-a-version", "1.2.3")).toBe(0);
     expect(compareVersions("1.2.3", "")).toBe(0);

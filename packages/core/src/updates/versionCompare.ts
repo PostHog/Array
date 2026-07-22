@@ -49,7 +49,37 @@ export function compareVersions(a: string, b: string): number {
   // A final release outranks any prerelease of the same core version.
   if (parsedA.prerelease === null) return 1;
   if (parsedB.prerelease === null) return -1;
-  return parsedA.prerelease < parsedB.prerelease ? -1 : 1;
+  return comparePrerelease(parsedA.prerelease, parsedB.prerelease);
+}
+
+// Compare two prerelease strings per semver §11: dot-separated identifiers,
+// numeric ones compared numerically, numeric ranked below alphanumeric, and a
+// longer set of identifiers ranked above a shorter prefix of it.
+function comparePrerelease(a: string, b: string): number {
+  const aIds = a.split(".");
+  const bIds = b.split(".");
+  const length = Math.max(aIds.length, bIds.length);
+
+  for (let i = 0; i < length; i++) {
+    if (i >= aIds.length) return -1;
+    if (i >= bIds.length) return 1;
+
+    const aId = aIds[i];
+    const bId = bIds[i];
+    const aNumeric = /^\d+$/.test(aId);
+    const bNumeric = /^\d+$/.test(bId);
+
+    if (aNumeric && bNumeric) {
+      const diff = Number(aId) - Number(bId);
+      if (diff !== 0) return diff < 0 ? -1 : 1;
+    } else if (aNumeric !== bNumeric) {
+      return aNumeric ? -1 : 1;
+    } else if (aId !== bId) {
+      return aId < bId ? -1 : 1;
+    }
+  }
+
+  return 0;
 }
 
 /**
