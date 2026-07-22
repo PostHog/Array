@@ -161,7 +161,7 @@ function CloudStatusIcon({
         side="right"
       >
         {renderIconSpan({
-          icon: <Icon size={size} color="var(--gray-9)" />,
+          icon: <Icon size={size} weight="fill" color="var(--green-11)" />,
           link,
           ariaLabel,
         })}
