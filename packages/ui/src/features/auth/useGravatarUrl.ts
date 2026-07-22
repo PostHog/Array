@@ -26,7 +26,6 @@ export function useGravatarUrl(email?: string | null): string | undefined {
     let cancelled = false;
     // Clear any prior URL so a reused avatar whose email just changed shows
     // initials during the async hash rather than the previous person's photo.
-    let cancelled = false;
     setUrl(undefined);
     gravatarUrlForEmail(email)
       .then((next) => {
