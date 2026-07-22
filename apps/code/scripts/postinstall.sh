@@ -8,9 +8,7 @@ set -e
 REPO_ROOT="$(cd ../.. && pwd)"
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# CI jobs that never launch or package Electron (typecheck, lint, unit tests,
-# storybook) set SKIP_ELECTRON_REBUILD=1 to skip the binary download and the
-# Electron-ABI node-gyp rebuild, which otherwise adds ~60s to every install.
+# CI jobs that never run Electron set this to skip ~60s of node-gyp per install.
 if [ "$SKIP_ELECTRON_REBUILD" = "1" ]; then
   echo "SKIP_ELECTRON_REBUILD=1: skipping Electron binary check and native rebuild."
 else

@@ -62,10 +62,8 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      # Restore-only: warm-caches.yml seeds this on main pushes. `turbo test`
-      # builds each package's dependencies first (dependsOn ^build), so hits
-      # here skip those builds. Test tasks themselves are never in the seed
-      # and always run.
+      # Restore-only; warm-caches.yml seeds this on main. Only dependency
+      # builds are cached, tests themselves always run.
       - name: Restore turbo cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -77,9 +75,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
-          # Unit tests run under plain Node; the Electron binary and the
-          # Electron-ABI sqlite rebuild are unused (the rebuild is immediately
-          # undone by the Node rebuild below).
+          # The Electron-ABI rebuild would be undone by the Node rebuild below.
           SKIP_ELECTRON_REBUILD: "1"
 
       - name: Rebuild native modules for Node
@@ -141,8 +137,8 @@ jobs:
           restore-keys: |
             electron-${{ runner.os }}-
 
-      # Restore-only: warm-caches.yml seeds this on main pushes. turbo cache
-      # artifacts are plain JS/dts, so the Linux-seeded cache is valid here.
+      # Seeded on Linux by warm-caches.yml; turbo artifacts are plain JS, so
+      # cross-OS restore is fine.
       - name: Restore turbo cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -151,8 +147,7 @@ jobs:
           restore-keys: |
             turbo-
 
-      # apps/code's postinstall already rebuilds better-sqlite3 for Electron
-      # during install; no separate rebuild step needed.
+      # apps/code's postinstall rebuilds better-sqlite3 for Electron here.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -253,7 +248,7 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      # Restore-only: warm-caches.yml seeds this on main pushes.
+      # Restore-only; warm-caches.yml seeds this on main.
       - name: Restore turbo cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -265,7 +260,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
-          # The agent e2e suite runs under plain Node; Electron is unused.
           SKIP_ELECTRON_REBUILD: "1"
 
       - name: Build agent dependencies

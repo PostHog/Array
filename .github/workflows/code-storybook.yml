@@ -115,8 +115,7 @@ jobs:
           restore-keys: |
             playwright-chromium-${{ runner.os }}-
 
-      # Restore-only: warm-caches.yml seeds this on main pushes. PR jobs never
-      # save it, so the cache quota is not churned by per-PR copies.
+      # Restore-only; warm-caches.yml seeds this on main.
       - name: Restore turbo cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -128,7 +127,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
-          # Stories render in Chromium; Electron and its ABI rebuild are unused.
           SKIP_ELECTRON_REBUILD: "1"
 
       - name: Install Playwright Chromium
@@ -143,8 +141,6 @@ jobs:
         run: pnpm exec playwright install-deps chromium
 
       - name: Build workspace packages
-        # turbo parallelizes from the dependency graph and fails the step on
-        # any failed build, replacing the hand-rolled fork/wait choreography.
         run: pnpm exec turbo build --filter='@posthog/code^...'
 
       - name: Build Storybook

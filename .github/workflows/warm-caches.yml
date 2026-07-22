@@ -1,12 +1,7 @@
 name: Warm caches
 
-# Actions caches saved on a PR's merge ref are invisible to every other PR;
-# only caches saved on main are shared with all branches. The PR workflows
-# only run on pull_request, so without this job nothing ever seeds the macOS
-# pnpm/Electron/Playwright caches (or the turbo cache) on main and every new
-# PR pays the full install plus a multi-minute cache re-save. This workflow
-# runs on each push to main and saves those caches under the exact keys the
-# PR jobs restore.
+# GitHub only shares caches saved on main with other branches, and the PR
+# workflows never run on main. This job seeds the caches they restore.
 
 on:
   push:
@@ -38,9 +33,7 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      # Saved fresh per main commit (no restore) so the cache holds exactly the
-      # artifacts for this sha and never grows unbounded. PR jobs restore it
-      # via the turbo- prefix and get cache hits for unchanged packages.
+      # No restore-keys: a fresh save per commit keeps the cache from growing forever.
       - name: Cache turbo artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -93,16 +86,14 @@ jobs:
           path: ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      # Everything below only needs to run when a cache is missing; macOS
-      # runner minutes are 10x, so exit cheaply when main is already warm.
+      # macOS minutes are 10x; do nothing when every cache is already warm.
       - name: Install dependencies
         if: >-
           steps.node.outputs.cache-hit != 'true' ||
           steps.electron-cache.outputs.cache-hit != 'true' ||
           steps.playwright-cache.outputs.cache-hit != 'true'
-        # Electron's own postinstall populates ~/Library/Caches/electron, so
-        # the binary download must stay on. The Electron-ABI sqlite rebuild
-        # writes only to node_modules, which is not cached, so skip it.
+        # Electron's own postinstall fills ~/Library/Caches/electron; the sqlite
+        # rebuild only touches node_modules, which is not cached, so skip it.
         run: pnpm install --frozen-lockfile
         env:
           SKIP_ELECTRON_REBUILD: "1"
