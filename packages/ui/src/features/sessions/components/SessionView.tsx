@@ -336,6 +336,7 @@ export function SessionView({
     (s) => !!s?.editingQueuedId,
   );
   const cancelQueuedEdit = useCancelQueuedMessageEdit(taskId);
+  const activeTaskRunId = useSessionSelector(taskId, (s) => s?.taskRunId);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const editorRef = useRef<PromptInputHandle>(null);
@@ -672,7 +673,12 @@ export function SessionView({
                       }`}
                     >
                       <ComposerWidth compact={compact}>
-                        {taskId && <SideQuestionCard taskId={taskId} />}
+                        {taskId && (
+                          <SideQuestionCard
+                            taskId={taskId}
+                            taskRunId={activeTaskRunId}
+                          />
+                        )}
                         {taskId && <QueuedMessagesDock taskId={taskId} />}
                         <PromptInput
                           ref={editorRef}
