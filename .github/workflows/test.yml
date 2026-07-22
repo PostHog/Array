@@ -62,15 +62,9 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      # Restore-only; warm-caches.yml seeds this on main. Only dependency
-      # builds are cached, tests themselves always run.
+      # Only dependency builds are cached, tests themselves always run.
       - name: Restore turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo/cache
-          key: turbo-${{ github.sha }}
-          restore-keys: |
-            turbo-
+        uses: ./.github/actions/restore-turbo-cache
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -137,15 +131,9 @@ jobs:
           restore-keys: |
             electron-${{ runner.os }}-
 
-      # Seeded on Linux by warm-caches.yml; turbo artifacts are plain JS, so
-      # cross-OS restore is fine.
+      # Seeded on Linux; turbo artifacts are plain JS, so cross-OS restore is fine.
       - name: Restore turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo/cache
-          key: turbo-${{ github.sha }}
-          restore-keys: |
-            turbo-
+        uses: ./.github/actions/restore-turbo-cache
 
       # apps/code's postinstall rebuilds better-sqlite3 for Electron here.
       - name: Install dependencies
@@ -248,14 +236,8 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      # Restore-only; warm-caches.yml seeds this on main.
       - name: Restore turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo/cache
-          key: turbo-${{ github.sha }}
-          restore-keys: |
-            turbo-
+        uses: ./.github/actions/restore-turbo-cache
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
