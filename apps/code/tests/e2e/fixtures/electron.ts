@@ -15,9 +15,9 @@ function getAppPath(): string {
   if (process.platform === "darwin") {
     const arm64Path = path.join(
       outDir,
-      "mac-arm64/PostHog.app/Contents/MacOS/PostHog",
+      "mac-arm64/PostHog Code.app/Contents/MacOS/PostHog Code",
     );
-    const x64Path = path.join(outDir, "mac/PostHog.app/Contents/MacOS/PostHog");
+    const x64Path = path.join(outDir, "mac/PostHog Code.app/Contents/MacOS/PostHog Code");
 
     if (requestedArch === "arm64") {
       if (existsSync(arm64Path)) return arm64Path;

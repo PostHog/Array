@@ -11,8 +11,11 @@ const skipNotarize =
 const config: Configuration = {
   // Original release bundle id; changing it breaks existing installs' data dir and Keychain entries.
   appId: "com.posthog.array",
-  productName: "PostHog",
-  executableName: "PostHog",
+  // Frozen like appId: Squirrel names the installed bundle after the update
+  // payload and relaunches the pre-update path, so renaming these strands
+  // every existing install (no relaunch, dead Dock pins) — see v0.58.0.
+  productName: "PostHog Code",
+  executableName: "PostHog Code",
 
   directories: {
     output: "out",

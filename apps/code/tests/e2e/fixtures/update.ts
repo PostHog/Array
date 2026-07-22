@@ -11,11 +11,11 @@ import path from "node:path";
 
 const OUT_DIR = path.join(__dirname, "../../../out");
 
-export const PRISTINE_APP = path.join(OUT_DIR, "mac-arm64/PostHog.app");
+export const PRISTINE_APP = path.join(OUT_DIR, "mac-arm64/PostHog Code.app");
 export const FEED_DIR = path.join(OUT_DIR, "dev-update-feed");
 export const RUN_DIR = path.join(OUT_DIR, "e2e-update-run");
-export const RUN_APP = path.join(RUN_DIR, "PostHog.app");
-export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog");
+export const RUN_APP = path.join(RUN_DIR, "PostHog Code.app");
+export const RUN_APP_BIN = path.join(RUN_APP, "Contents/MacOS/PostHog Code");
 
 // The "old" side of the Forge -> electron-builder test: a real Electron Forge
 // build (v0.55.132) produced by scripts/dev-update/build-old-forge.sh. It runs

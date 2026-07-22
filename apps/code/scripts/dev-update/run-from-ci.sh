@@ -57,7 +57,7 @@ FEED_YML="$(find "$TMP/new" -name latest-mac.yml | head -1)"
 echo "==> old 1.0.0 app -> out/mac-arm64"
 rm -rf out/mac-arm64 && mkdir -p out/mac-arm64
 ditto -x -k "$OLD_ZIP" out/mac-arm64
-xattr -dr com.apple.quarantine "out/mac-arm64/PostHog.app" 2>/dev/null || true
+xattr -dr com.apple.quarantine "out/mac-arm64/PostHog Code.app" 2>/dev/null || true
 
 echo "==> new 2.0.0 feed -> out/dev-update-feed"
 rm -rf out/dev-update-feed && mkdir -p out/dev-update-feed
@@ -81,6 +81,6 @@ echo "    It swaps and relaunches into 2.0.0. Quit the app (or Ctrl+C) to finish
 echo "    App output: $APP_LOG   update log: ~/.posthog-code/logs/main.log"
 echo
 POSTHOG_E2E_UPDATE_FEED="http://127.0.0.1:$PORT" \
-  "out/mac-arm64/PostHog.app/Contents/MacOS/PostHog" >"$APP_LOG" 2>&1 || true
+  "out/mac-arm64/PostHog Code.app/Contents/MacOS/PostHog Code" >"$APP_LOG" 2>&1 || true
 
 echo "==> app exited; cleaning up"

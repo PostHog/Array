@@ -56,7 +56,7 @@ pnpm make
 
 Output will be in:
 
-- `out/mac-arm64/PostHog.app` - Packaged app
+- `out/mac-arm64/PostHog Code.app` - Packaged app
 - `out/PostHog-Code-*.dmg` - macOS installer
 - `out/make/zip/` - ZIP archives
 
