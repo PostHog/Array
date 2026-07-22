@@ -226,9 +226,14 @@ export function ConversationView({
   const firstUserMessageId = firstUserMessageIdRef.current;
 
   const initialItemIdsRef = useRef<Set<string> | null>(null);
-  initialItemIdsRef.current ??= new Set(
-    conversationItems.filter((i) => i.type === "user_message").map((i) => i.id),
-  );
+  if (initialItemIdsRef.current === null) {
+    initialItemIdsRef.current = new Set<string>();
+    for (const item of conversationItems) {
+      if (item.type === "user_message") {
+        initialItemIdsRef.current.add(item.id);
+      }
+    }
+  }
   const initialItemIds = initialItemIdsRef.current;
 
   const pendingPermissions = usePendingPermissionsForTask(taskId ?? "");
