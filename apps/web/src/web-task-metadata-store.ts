@@ -1,14 +1,19 @@
+import { z } from "zod";
+import { createRecordStore } from "./web-local-store";
+
 // Per-device task metadata (pins + viewed/activity timestamps) for the web host,
 // backed by localStorage. Desktop persists this in a local metadata service
 // (workspace.getPinnedTaskIds / togglePin / getAllTaskTimestamps / markViewed /
 // markActivity). The archive flow reads pins early (getPinnedTaskIds + unpin),
 // so without these the whole archive rejects — hence this store.
 
-export interface TaskMetadata {
-  pinnedAt: string | null;
-  lastViewedAt: string | null;
-  lastActivityAt: string | null;
-}
+const taskMetadataSchema = z.object({
+  pinnedAt: z.string().nullable(),
+  lastViewedAt: z.string().nullable(),
+  lastActivityAt: z.string().nullable(),
+});
+
+export type TaskMetadata = z.infer<typeof taskMetadataSchema>;
 
 const EMPTY: TaskMetadata = {
   pinnedAt: null,
@@ -16,51 +21,35 @@ const EMPTY: TaskMetadata = {
   lastActivityAt: null,
 };
 
-const STORAGE_KEY = "posthog-code:web-task-metadata";
-
-function load(): Record<string, TaskMetadata> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, TaskMetadata>) : {};
-  } catch {
-    return {};
-  }
-}
-
-let metadata: Record<string, TaskMetadata> = load();
-
-function persist(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(metadata));
-  } catch {
-    // Best-effort persistence.
-  }
-}
+const store = createRecordStore(
+  "posthog-code:web-task-metadata",
+  taskMetadataSchema,
+);
 
 function update(taskId: string, patch: Partial<TaskMetadata>): TaskMetadata {
-  const next = { ...(metadata[taskId] ?? EMPTY), ...patch };
-  metadata = { ...metadata, [taskId]: next };
-  persist();
+  const current = store.get();
+  const next = { ...(current[taskId] ?? EMPTY), ...patch };
+  store.set({ ...current, [taskId]: next });
   return next;
 }
 
 export const webTaskMetadataStore = {
   getAll(): Record<string, TaskMetadata> {
-    return metadata;
+    return store.get();
   },
 
   get(taskId: string): TaskMetadata {
-    return metadata[taskId] ?? EMPTY;
+    return store.get()[taskId] ?? EMPTY;
   },
 
   getPinnedTaskIds(): string[] {
-    return Object.entries(metadata)
+    return Object.entries(store.get())
       .filter(([, m]) => m.pinnedAt !== null)
       .map(([taskId]) => taskId);
   },
 
   togglePin(taskId: string): { isPinned: boolean; pinnedAt: string | null } {
-    const current = metadata[taskId] ?? EMPTY;
+    const current = store.get()[taskId] ?? EMPTY;
     const pinnedAt = current.pinnedAt ? null : new Date().toISOString();
     update(taskId, { pinnedAt });
     return { isPinned: pinnedAt !== null, pinnedAt };
@@ -75,9 +64,9 @@ export const webTaskMetadataStore = {
   },
 
   remove(taskId: string): void {
-    if (!(taskId in metadata)) return;
-    const { [taskId]: _removed, ...rest } = metadata;
-    metadata = rest;
-    persist();
+    const current = store.get();
+    if (!(taskId in current)) return;
+    const { [taskId]: _removed, ...rest } = current;
+    store.set(rest);
   },
 };
