@@ -96,7 +96,11 @@ describe("SidebarNavSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppView.mockReturnValue({ type: "home" });
-    useSidebarStore.setState({ navItemOverrides: {}, channelsEnabled: true });
+    useSidebarStore.setState({
+      navItemOverrides: {},
+      navItemOrder: [],
+      channelsEnabled: true,
+    });
   });
 
   it.each([
@@ -146,6 +150,20 @@ describe("SidebarNavSection", () => {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     },
   );
+
+  it("renders top-level items in the stored order", () => {
+    useSidebarStore.setState({ navItemOrder: ["activity", "inbox"] });
+    renderNav();
+
+    const labels = screen
+      .getAllByRole("button")
+      .map((button) => button.textContent ?? "");
+    const position = (label: string) =>
+      labels.findIndex((text) => text.includes(label));
+
+    expect(position("Activity")).toBeLessThan(position("Inbox"));
+    expect(position("Inbox")).toBeLessThan(position("Agents"));
+  });
 
   it("never lets hidden search take over the More row", () => {
     useSidebarStore.setState({ navItemOverrides: { search: false } });

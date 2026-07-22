@@ -86,6 +86,47 @@ export function isNavItemVisible(
   return overrides[id] ?? DEFAULT_VISIBILITY[id];
 }
 
+export type CustomizableNavItem = (typeof CUSTOMIZABLE_NAV_ITEMS)[number];
+
+/** Applies a stored drag order. Items missing from it (newly shipped, or an
+ * empty order) keep their default relative position after the ordered ones. */
+export function orderedNavItems(
+  order: readonly CustomizableNavItemId[],
+): readonly CustomizableNavItem[] {
+  if (order.length === 0) return CUSTOMIZABLE_NAV_ITEMS;
+  const position = new Map(order.map((id, index) => [id, index]));
+  return [...CUSTOMIZABLE_NAV_ITEMS].sort(
+    (a, b) =>
+      (position.get(a.id) ?? order.length) -
+      (position.get(b.id) ?? order.length),
+  );
+}
+
+export function moveNavItem(
+  order: readonly CustomizableNavItemId[],
+  sourceId: string,
+  targetId: string,
+): readonly CustomizableNavItemId[] {
+  const full = orderedNavItems(order).map((item) => item.id);
+  const ids: readonly string[] = full;
+  const from = ids.indexOf(sourceId);
+  const to = ids.indexOf(targetId);
+  if (from === -1 || to === -1 || from === to) return order;
+  const [moved] = full.splice(from, 1);
+  full.splice(to, 0, moved);
+  return full;
+}
+
+export function sanitizeNavItemOrder(value: unknown): CustomizableNavItemId[] {
+  if (!Array.isArray(value)) return [];
+  const order = new Set<CustomizableNavItemId>();
+  for (const entry of value) {
+    const id = CUSTOMIZABLE_NAV_ITEM_IDS.find((known) => known === entry);
+    if (id) order.add(id);
+  }
+  return [...order];
+}
+
 /** Keeps only known item ids with boolean values, so corrupt or stale
  * persisted state degrades to per-item defaults instead of crashing. */
 export function sanitizeNavItemOverrides(value: unknown): NavItemOverrides {

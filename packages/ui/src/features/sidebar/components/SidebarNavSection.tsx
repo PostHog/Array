@@ -10,9 +10,9 @@ import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAll
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import {
   CUSTOMIZABLE_NAV_ITEM_IDS,
-  CUSTOMIZABLE_NAV_ITEMS,
   type CustomizableNavItemId,
   isNavItemVisible,
+  orderedNavItems,
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -167,6 +167,8 @@ export function SidebarNavSection({
     };
 
   const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
+  const navItemOrder = useSidebarStore((s) => s.navItemOrder);
+  const orderedItems = orderedNavItems(navItemOrder);
   const hidden = new Set<CustomizableNavItemId>(
     CUSTOMIZABLE_NAV_ITEM_IDS.filter(
       (id) => !isNavItemVisible(navItemOverrides, id),
@@ -206,7 +208,7 @@ export function SidebarNavSection({
     loops: loopsEnabled,
   };
 
-  const activeHiddenItem = CUSTOMIZABLE_NAV_ITEMS.find(
+  const activeHiddenItem = orderedItems.find(
     ({ id }) => navItemAvailable[id] && hidden.has(id) && moreItemActive[id],
   );
   const takeoverLabel =
@@ -308,10 +310,10 @@ export function SidebarNavSection({
     ),
   };
 
-  const topLevelItems = CUSTOMIZABLE_NAV_ITEMS.filter(
+  const topLevelItems = orderedItems.filter(
     ({ id }) => navItemAvailable[id] && !hidden.has(id),
   );
-  const moreItems = CUSTOMIZABLE_NAV_ITEMS.filter(
+  const moreItems = orderedItems.filter(
     ({ id }) => navItemAvailable[id] && hidden.has(id),
   );
 

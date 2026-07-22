@@ -6,6 +6,7 @@ import {
   type CustomizableNavItemId,
   type NavItemOverrides,
   SIDEBAR_MIN_WIDTH,
+  sanitizeNavItemOrder,
   sanitizeNavItemOverrides,
 } from "./constants";
 
@@ -30,6 +31,9 @@ interface SidebarStoreState {
   // absent from the map follow their CUSTOMIZABLE_NAV_ITEMS defaultVisible, so newly
   // shipped moreable items keep their intended default for existing users.
   navItemOverrides: NavItemOverrides;
+  // Drag order from the Customize sidebar dialog. Empty means default order;
+  // ids absent from it (newly shipped items) render after the ordered ones.
+  navItemOrder: readonly CustomizableNavItemId[];
 }
 
 interface SidebarStoreActions {
@@ -51,6 +55,7 @@ interface SidebarStoreActions {
   toggleTaskType: (mode: WorkspaceMode) => void;
   setChannelsEnabled: (channelsEnabled: boolean) => void;
   setNavItemVisible: (item: CustomizableNavItemId, visible: boolean) => void;
+  setNavItemOrder: (order: readonly CustomizableNavItemId[]) => void;
 }
 
 type SidebarStore = SidebarStoreState & SidebarStoreActions;
@@ -72,6 +77,7 @@ export const useSidebarStore = create<SidebarStore>()(
       taskTypeFilter: [...ALL_WORKSPACE_MODES],
       channelsEnabled: false,
       navItemOverrides: {},
+      navItemOrder: [],
       setOpen: (open) => set({ open, hasUserSetOpen: true }),
       setOpenAuto: (open) =>
         set((state) => (state.hasUserSetOpen ? state : { open })),
@@ -133,6 +139,7 @@ export const useSidebarStore = create<SidebarStore>()(
         set((state) => ({
           navItemOverrides: { ...state.navItemOverrides, [item]: visible },
         })),
+      setNavItemOrder: (navItemOrder) => set({ navItemOrder }),
     }),
     {
       name: "sidebar-storage",
@@ -150,6 +157,7 @@ export const useSidebarStore = create<SidebarStore>()(
         taskTypeFilter: state.taskTypeFilter,
         channelsEnabled: state.channelsEnabled,
         navItemOverrides: state.navItemOverrides,
+        navItemOrder: state.navItemOrder,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as {
@@ -166,6 +174,7 @@ export const useSidebarStore = create<SidebarStore>()(
           taskTypeFilter?: WorkspaceMode[];
           channelsEnabled?: boolean;
           navItemOverrides?: unknown;
+          navItemOrder?: unknown;
         };
         return {
           ...current,
@@ -191,6 +200,7 @@ export const useSidebarStore = create<SidebarStore>()(
           navItemOverrides: sanitizeNavItemOverrides(
             persistedState.navItemOverrides,
           ),
+          navItemOrder: sanitizeNavItemOrder(persistedState.navItemOrder),
         };
       },
     },

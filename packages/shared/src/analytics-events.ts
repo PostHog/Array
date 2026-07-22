@@ -270,6 +270,12 @@ export interface SidebarCustomizedProperties {
   visible: boolean;
 }
 
+export interface SidebarReorderedProperties {
+  item: SidebarNavItem;
+  /** Zero-based position of the item in the nav after the drag. */
+  to_index: number;
+}
+
 export interface BrainrotActivatedProperties {
   /** Grid layout preset, e.g. "2x2". */
   layout: string;
@@ -1140,6 +1146,7 @@ export const ANALYTICS_EVENTS = {
   POSTHOG_WEB_OPENED: "PostHog web opened",
   SIDEBAR_NAV_ITEM_CLICKED: "Sidebar nav item clicked",
   SIDEBAR_CUSTOMIZED: "Sidebar customized",
+  SIDEBAR_REORDERED: "Sidebar reordered",
 
   // Permission events
   PERMISSION_RESPONDED: "Permission responded",
@@ -1300,6 +1307,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
   [ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED]: SidebarNavItemClickedProperties;
   [ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED]: SidebarCustomizedProperties;
+  [ANALYTICS_EVENTS.SIDEBAR_REORDERED]: SidebarReorderedProperties;
 
   // Permission events
   [ANALYTICS_EVENTS.PERMISSION_RESPONDED]: PermissionRespondedProperties;

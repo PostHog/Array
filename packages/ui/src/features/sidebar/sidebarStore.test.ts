@@ -4,7 +4,7 @@ import { useSidebarStore } from "./sidebarStore";
 
 describe("sidebarStore navItemOverrides", () => {
   beforeEach(() => {
-    useSidebarStore.setState({ navItemOverrides: {} });
+    useSidebarStore.setState({ navItemOverrides: {}, navItemOrder: [] });
   });
 
   it.each(
@@ -70,6 +70,38 @@ describe("sidebarStore navItemOverrides", () => {
     await useSidebarStore.persist.rehydrate();
 
     expect(useSidebarStore.getState().navItemOverrides).toEqual({});
+    localStorage.removeItem("sidebar-storage");
+  });
+
+  it("rehydration sanitizes navItemOrder to known unique ids", async () => {
+    localStorage.setItem(
+      "sidebar-storage",
+      JSON.stringify({
+        state: {
+          navItemOrder: ["loops", "retired-item", 7, "search", "loops"],
+        },
+        version: 0,
+      }),
+    );
+
+    await useSidebarStore.persist.rehydrate();
+
+    expect(useSidebarStore.getState().navItemOrder).toEqual([
+      "loops",
+      "search",
+    ]);
+    localStorage.removeItem("sidebar-storage");
+  });
+
+  it("rehydration falls back to default order when the persisted order is not an array", async () => {
+    localStorage.setItem(
+      "sidebar-storage",
+      JSON.stringify({ state: { navItemOrder: "corrupt" }, version: 0 }),
+    );
+
+    await useSidebarStore.persist.rehydrate();
+
+    expect(useSidebarStore.getState().navItemOrder).toEqual([]);
     localStorage.removeItem("sidebar-storage");
   });
 
