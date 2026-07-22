@@ -7,6 +7,7 @@ import {
   Robot,
   ShieldCheck,
 } from "@phosphor-icons/react";
+import type { ExecutionMode } from "@posthog/shared";
 
 export interface ModeStyle {
   icon: React.ReactNode;
@@ -66,3 +67,14 @@ export const MODE_LABELS: Record<string, string> = {
   "read-only": "Read-only",
   "full-access": "Full access",
 };
+
+// Concrete modes `buildExitPlanModePermissionOptions` (packages/agent) can
+// offer when a plan is approved, excluding "plan" itself. Kept here, next to
+// the label map settings/approval UI already share, so both pick modes from
+// one list.
+export const PLAN_APPROVAL_MODES: readonly ExecutionMode[] = [
+  "auto",
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+];

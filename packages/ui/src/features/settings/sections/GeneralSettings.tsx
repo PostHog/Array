@@ -7,7 +7,10 @@ import {
   COLLAPSE_MODE_OPTIONS,
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
-import { MODE_LABELS } from "@posthog/ui/features/sessions/modeStyles";
+import {
+  MODE_LABELS,
+  PLAN_APPROVAL_MODES,
+} from "@posthog/ui/features/sessions/modeStyles";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
@@ -330,14 +333,11 @@ export function GeneralSettings() {
           <Select.Trigger className="min-w-[100px]" />
           <Select.Content>
             <Select.Item value="last_used">Last used</Select.Item>
-            <Select.Item value="auto">{MODE_LABELS.auto}</Select.Item>
-            <Select.Item value="default">{MODE_LABELS.default}</Select.Item>
-            <Select.Item value="acceptEdits">
-              {MODE_LABELS.acceptEdits}
-            </Select.Item>
-            <Select.Item value="bypassPermissions">
-              {MODE_LABELS.bypassPermissions}
-            </Select.Item>
+            {PLAN_APPROVAL_MODES.map((mode) => (
+              <Select.Item key={mode} value={mode}>
+                {MODE_LABELS[mode]}
+              </Select.Item>
+            ))}
           </Select.Content>
         </Select.Root>
       </SettingRow>

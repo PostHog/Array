@@ -5,7 +5,10 @@ import type {
 import type { ExecutionMode } from "@posthog/shared";
 import { ModeSelector } from "@posthog/ui/features/message-editor/components/ModeSelector";
 import { MODE_LABELS } from "@posthog/ui/features/sessions/modeStyles";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import {
+  type DefaultPlanApprovalMode,
+  useSettingsStore,
+} from "@posthog/ui/features/settings/settingsStore";
 import {
   ActionSelector,
   InlineEditableText,
@@ -29,6 +32,32 @@ function hasCustomInput(option: PermissionOption): boolean {
   return (
     (option._meta as { customInput?: boolean } | null | undefined)
       ?.customInput === true
+  );
+}
+
+// Resolution order: a pinned default mode (if configured and offered), else
+// the mode last approved with (remembered preference), then "auto", then
+// manual-approve, then any single-use mode, then the first.
+function resolveInitialPlanApprovalMode(
+  approveOptions: PermissionOption[],
+  defaultApprovalMode: DefaultPlanApprovalMode,
+  lastApprovalMode: ExecutionMode | null,
+): string | undefined {
+  const has = (id: string) => approveOptions.some((o) => o.optionId === id);
+
+  if (defaultApprovalMode !== "last_used" && has(defaultApprovalMode)) {
+    return defaultApprovalMode;
+  }
+  if (lastApprovalMode && has(lastApprovalMode)) {
+    return lastApprovalMode;
+  }
+  if (has("auto")) {
+    return "auto";
+  }
+  return (
+    approveOptions.find((o) => o.optionId === "default")?.optionId ??
+    approveOptions.find((o) => o.kind === "allow_once")?.optionId ??
+    approveOptions[0]?.optionId
   );
 }
 
@@ -81,24 +110,15 @@ export function PlanApprovalSelector({
     (s) => s.defaultPlanApprovalMode,
   );
 
-  // Resolution order: a pinned default mode (if configured and offered), else
-  // the mode last approved with (remembered preference), then "auto", then
-  // manual-approve, then any single-use mode, then the first.
-  const initialMode = useMemo(() => {
-    const has = (id: string) => approveOptions.some((o) => o.optionId === id);
-    return (
-      (defaultApprovalMode !== "last_used" && has(defaultApprovalMode)
-        ? defaultApprovalMode
-        : undefined) ??
-      (lastApprovalMode && has(lastApprovalMode)
-        ? lastApprovalMode
-        : undefined) ??
-      (has("auto") ? "auto" : undefined) ??
-      approveOptions.find((o) => o.optionId === "default")?.optionId ??
-      approveOptions.find((o) => o.kind === "allow_once")?.optionId ??
-      approveOptions[0]?.optionId
-    );
-  }, [approveOptions, lastApprovalMode, defaultApprovalMode]);
+  const initialMode = useMemo(
+    () =>
+      resolveInitialPlanApprovalMode(
+        approveOptions,
+        defaultApprovalMode,
+        lastApprovalMode,
+      ),
+    [approveOptions, lastApprovalMode, defaultApprovalMode],
+  );
 
   const [selectedMode, setSelectedMode] = useState(initialMode);
   const [selectedIndex, setSelectedIndex] = useState(0);
