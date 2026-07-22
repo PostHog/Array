@@ -1396,9 +1396,10 @@ If a repository IS genuinely required, attach one in this priority order:
 
   /**
    * Answers a one-shot "/btw" side question via the adapter's SIDE_QUESTION
-   * extension method. Deliberately does not touch promptPending or the
-   * sleep/idle lifecycle: the exchange runs beside the conversation (ACP
-   * JSON-RPC multiplexes, so this works mid-turn) and never becomes part of it.
+   * extension method. Never touches promptPending and never becomes part of
+   * the conversation; it does count as activity (resets the idle-kill timer),
+   * the same way refreshSession does. The exchange runs beside the
+   * conversation (ACP JSON-RPC multiplexes, so this works mid-turn).
    */
   async sideQuestion(
     sessionId: string,
