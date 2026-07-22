@@ -26,12 +26,16 @@ import {
 import type { WorkspaceMode } from "@posthog/shared";
 import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import {
+  holdSidebarPeek,
+  releaseSidebarPeek,
+} from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const log = logger.scope("tasks-header");
 
@@ -105,8 +109,20 @@ function TaskFilterMenu() {
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
+  // Hold the sidebar's hover-peek open while this dropdown is open: it lives in
+  // a portal anchored to the trigger, so if the peek collapsed underneath it
+  // (pointer leaving the panel, e.g. toward the Environment flyout) the menu
+  // would be left floating over the content, chasing its vanished anchor.
+  const handleOpenChange = (next: boolean): void => {
+    if (next) holdSidebarPeek();
+    else releaseSidebarPeek();
+  };
+  // Release if we unmount while the menu is open (e.g. a route change) so the
+  // hold can't outlive it.
+  useEffect(() => () => releaseSidebarPeek(), []);
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         render={
           <Button type="button" aria-label="Filter tasks" size="icon-sm">
