@@ -152,14 +152,28 @@ function CloudStatusIcon({
       </Tooltip>
     );
   }
-  if (taskRunStatus === "failed" || taskRunStatus === "cancelled") {
-    const statusLabel =
-      taskRunStatus === "cancelled"
-        ? `${sourceLabel} (cancelled)`
-        : `${sourceLabel} (failed)`;
+  if (taskRunStatus === "cancelled") {
     return (
       <Tooltip
-        content={link ? `Open ${sourceLabel} thread` : statusLabel}
+        content={
+          link ? `Open ${sourceLabel} thread` : `${sourceLabel} (stopped)`
+        }
+        side="right"
+      >
+        {renderIconSpan({
+          icon: <Icon size={size} color="var(--gray-9)" />,
+          link,
+          ariaLabel,
+        })}
+      </Tooltip>
+    );
+  }
+  if (taskRunStatus === "failed") {
+    return (
+      <Tooltip
+        content={
+          link ? `Open ${sourceLabel} thread` : `${sourceLabel} (failed)`
+        }
         side="right"
       >
         {renderIconSpan({
