@@ -450,6 +450,7 @@ function ExpandablePrompt({
       {(truncated || expanded) && (
         <button
           type="button"
+          aria-expanded={expanded}
           className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
           onClick={() => setExpanded((value) => !value)}
         >
