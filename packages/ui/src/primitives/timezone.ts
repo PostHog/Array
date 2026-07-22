@@ -5,6 +5,7 @@ export interface TimezoneOption {
 
 let cachedTimezoneOptions: TimezoneOption[] | null = null;
 let timezoneOptionsExpireAt = 0;
+const scheduleTimestampFormatters = new Map<string, Intl.DateTimeFormat>();
 
 export function systemTimezone(): string {
   try {
@@ -65,6 +66,36 @@ export function formatTimestampInTimezone(
     }).format(date);
   } catch {
     return date.toLocaleString();
+  }
+}
+
+export function formatScheduleTimestamp(date: Date, timezone: string): string {
+  try {
+    let formatter = scheduleTimestampFormatters.get(timezone);
+    if (!formatter) {
+      formatter = new Intl.DateTimeFormat(undefined, {
+        timeZone: timezone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      });
+      scheduleTimestampFormatters.set(timezone, formatter);
+    }
+    return formatter.format(date);
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+export function isValidTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+    return true;
+  } catch {
+    return false;
   }
 }
 

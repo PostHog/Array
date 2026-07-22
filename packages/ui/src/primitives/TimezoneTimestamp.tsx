@@ -1,4 +1,5 @@
 import { TimezoneConversionTooltip } from "./TimezoneConversionTooltip";
+import { formatScheduleTimestamp } from "./timezone";
 
 interface TimezoneTimestampProps {
   timestamp: string | number | Date;
@@ -18,19 +19,7 @@ export function TimezoneTimestamp({
 
   let displayLabel = label;
   if (!displayLabel) {
-    try {
-      displayLabel = new Intl.DateTimeFormat(undefined, {
-        timeZone: timezone,
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZoneName: "short",
-      }).format(date);
-    } catch {
-      displayLabel = date.toLocaleString();
-    }
+    displayLabel = formatScheduleTimestamp(date, timezone);
   }
 
   return (

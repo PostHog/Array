@@ -12,7 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@posthog/quill";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import {
   formatTimestampInTimezone,
   formatTimezoneAbbreviation,
@@ -85,16 +85,11 @@ export function TimezoneConversionTooltip({
 }: TimezoneConversionTooltipProps) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
   const open = controlledOpen ?? internalOpen;
-  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
-    null,
-  );
+  const portalContainer =
+    typeof document === "undefined"
+      ? null
+      : document.getElementById("portal-container");
   const closeTimer = useRef<number | null>(null);
-  useEffect(() => {
-    setPortalContainer(document.getElementById("portal-container"));
-    return () => {
-      if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
-    };
-  }, []);
   const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
   if (Number.isNaN(date.getTime())) return children;
 

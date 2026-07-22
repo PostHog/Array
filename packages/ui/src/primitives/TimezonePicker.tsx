@@ -9,8 +9,13 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@posthog/quill";
-import { useRef } from "react";
-import { type TimezoneOption, timezoneOptions } from "./timezone";
+import { useRef, useState } from "react";
+import {
+  formatTimezoneLabel,
+  isValidTimezone,
+  type TimezoneOption,
+  timezoneOptions,
+} from "./timezone";
 
 interface TimezonePickerProps {
   value: string;
@@ -29,6 +34,12 @@ export function TimezonePicker({
   const selectedOption =
     options.find((option) => option.value === value) ?? null;
   const anchorRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState("");
+  const customTimezone = search.trim();
+  const canUseCustomTimezone =
+    customTimezone !== "" &&
+    !options.some((option) => option.value === customTimezone) &&
+    isValidTimezone(customTimezone);
 
   return (
     <div ref={anchorRef} className={className}>
@@ -37,7 +48,10 @@ export function TimezonePicker({
         value={selectedOption}
         disabled={disabled}
         onValueChange={(option) => {
-          if (option) onValueChange(option.value);
+          if (option) {
+            onValueChange(option.value);
+            setSearch("");
+          }
         }}
       >
         <ComboboxTrigger
@@ -71,8 +85,26 @@ export function TimezonePicker({
           <ComboboxInput
             placeholder="Search timezones..."
             showTrigger={false}
+            value={search}
+            onValueChange={setSearch}
           />
-          <ComboboxEmpty>No timezones found.</ComboboxEmpty>
+          <ComboboxEmpty>
+            {canUseCustomTimezone ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  onValueChange(customTimezone);
+                  setSearch("");
+                }}
+              >
+                Use {formatTimezoneLabel(customTimezone)}
+              </Button>
+            ) : (
+              "No timezones found."
+            )}
+          </ComboboxEmpty>
           <ComboboxList className="max-h-[240px]">
             {(option: TimezoneOption) => (
               <ComboboxItem

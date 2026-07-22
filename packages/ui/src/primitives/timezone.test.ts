@@ -3,13 +3,14 @@ import {
   formatTimestampInTimezone,
   formatTimezoneAbbreviation,
   formatTimezoneLabel,
+  isValidTimezone,
   systemTimezone,
   timezoneOptions,
 } from "./timezone";
 
-describe("systemTimezone", () => {
-  afterEach(() => vi.restoreAllMocks());
+afterEach(() => vi.restoreAllMocks());
 
+describe("systemTimezone", () => {
   it("returns the runtime IANA timezone", () => {
     vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
       resolvedOptions: () => ({ timeZone: "America/New_York" }),
@@ -60,5 +61,13 @@ describe("timezone options", () => {
     expect(timezoneOptions().map(({ value }) => value)).toEqual(
       expect.arrayContaining(["America/New_York", "UTC"]),
     );
+  });
+
+  it.each([
+    ["Europe/London", true],
+    ["America/Toronto", true],
+    ["Not/A_Timezone", false],
+  ])("validates %s", (timezone, expected) => {
+    expect(isValidTimezone(timezone)).toBe(expected);
   });
 });

@@ -12,7 +12,10 @@ import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOpti
 import { Button } from "@posthog/ui/primitives/Button";
 import { TimezonePicker } from "@posthog/ui/primitives/TimezonePicker";
 import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
-import { systemTimezone } from "@posthog/ui/primitives/timezone";
+import {
+  formatScheduleTimestamp,
+  systemTimezone,
+} from "@posthog/ui/primitives/timezone";
 import { Box, Checkbox, Flex, IconButton, Text } from "@radix-ui/themes";
 import {
   compileCronSchedule,
@@ -261,19 +264,11 @@ function ScheduleTriggerFields({
       : (parsed?.frequency ?? "daily");
   const time = parsed?.time ?? DEFAULT_SCHEDULE_TIME;
   const weekday = parsed?.weekday ?? "1";
-  const timezone = config.timezone || systemTimezone();
+  const timezone = config.timezone ?? "UTC";
   const nextRun = nextScheduleRun(config);
   const nextRunTimezone = frequency === "once" ? systemTimezone() : timezone;
   const nextRunLabel = nextRun
-    ? new Intl.DateTimeFormat(undefined, {
-        timeZone: nextRunTimezone,
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZoneName: "short",
-      }).format(nextRun)
+    ? formatScheduleTimestamp(nextRun, nextRunTimezone)
     : null;
   const frequencyOptions = isCustomCron
     ? [CUSTOM_FREQUENCY_OPTION, ...FREQUENCY_OPTIONS]
@@ -299,7 +294,10 @@ function ScheduleTriggerFields({
     if (next === "custom") return;
     if (next === "once") {
       // The backend rejects run_at values in the past; default an hour out.
-      onChange({ run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
+      onChange({
+        run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        timezone,
+      });
       return;
     }
     setRecurring(next, time, weekday);
