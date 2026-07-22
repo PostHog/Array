@@ -43,13 +43,11 @@ vi.mock("@posthog/ui/router/navigationBridge", () => ({
   navigateToActivity,
   navigateToAgents,
   navigateToCommandCenter,
-  navigateToHome: vi.fn(),
   navigateToInbox,
   navigateToLoops: vi.fn(),
   navigateToMcpServers,
   navigateToSkills,
   navigateToWebsiteCommandCenter: vi.fn(),
-  navigateToWebsiteHome: vi.fn(),
   navigateToWebsiteMcpServers: vi.fn(),
   navigateToWebsiteSkills: vi.fn(),
 }));
@@ -95,7 +93,7 @@ function renderNav() {
 describe("SidebarNavSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAppView.mockReturnValue({ type: "home" });
+    useAppView.mockReturnValue({ type: "task-input" });
     useSidebarStore.setState({
       navItemOverrides: {},
       navItemOrder: [],

@@ -134,7 +134,6 @@ export function useSidebarData({
 
   const isHomeActive =
     activeView.type === "task-input" || activeView.type === "task-pending";
-  const isHomeViewActive = activeView.type === "home";
   const isInboxActive = activeView.type === "inbox";
   const isAgentsActive = activeView.type === "agents";
   const isCommandCenterActive = activeView.type === "command-center";
@@ -226,7 +225,6 @@ export function useSidebarData({
 
   return {
     isHomeActive,
-    isHomeViewActive,
     isInboxActive,
     isAgentsActive,
     isCommandCenterActive,

@@ -408,7 +408,6 @@ export class TaskCreationSaga extends Saga<
             rtkEnabled: input.cloudRtkEnabled,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
-            homeQuickAction: input.homeQuickActionLabel,
             importedMcpServers: input.importedMcpServers,
             relayedMcpServers: input.relayedMcpServers,
             initialPermissionMode:

@@ -17,11 +17,7 @@ export interface PromptHistorySelectedProperties {
 
 type ExecutionType = "cloud" | "local";
 export type RepositoryProvider = "github" | "gitlab" | "local" | "none";
-type TaskCreatedFrom =
-  | "cli"
-  | "command-menu"
-  | "home-quick-action"
-  | "sidebar-worktree";
+type TaskCreatedFrom = "cli" | "command-menu" | "sidebar-worktree";
 type RepositorySelectSource = "task-creation" | "task-detail";
 type GitActionType =
   | "push"
@@ -244,7 +240,6 @@ export interface CommandMenuActionProperties {
 
 export type SidebarNavItem =
   | "new_task"
-  | "home"
   | "search"
   | "inbox"
   | "agents"

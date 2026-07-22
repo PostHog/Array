@@ -11,7 +11,6 @@ export type AppViewType =
   | "task-pending"
   | "task-input"
   | "folder-settings"
-  | "home"
   | "activity"
   | "inbox"
   | "agents"
@@ -62,11 +61,6 @@ function deriveFromMatches(matches: Match[]): AppView {
       return { type: "task-input" };
     case "/folders/$folderId":
       return { type: "folder-settings", folderId: last.params.folderId };
-    case "/code/home":
-    // Channels-space mirrors share the same view type so the sidebar's
-    // active-state highlighting works identically in either space.
-    case "/website/home":
-      return { type: "home" };
     case "/website/activity":
       return { type: "activity" };
     case "/code/inbox":
