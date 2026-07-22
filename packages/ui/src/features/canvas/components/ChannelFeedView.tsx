@@ -443,17 +443,18 @@ function ExpandablePrompt({
         }
         // Find the longest prefix that still fits in `lines` once "…more" is
         // appended — so the toggle can sit inline right after the ellipsis on the
-        // last line. We probe by swapping the measure's text to "prefix…more" and
-        // reading scrollHeight (no per-line geometry), then restore the full text
-        // so the next resize re-measures against the uncut prompt.
+        // last line. We probe by swapping the measure's text node to "prefix…more"
+        // and reading scrollHeight (no per-line geometry), then restore it so the
+        // next resize re-measures against the uncut prompt. `children` is the
+        // source of truth (and a dep below) so a polled prompt update re-measures
+        // even when its rendered size is unchanged.
         const text = measure.firstChild as Text;
-        const original = text.nodeValue ?? "";
         const fits = (end: number) => {
-          text.nodeValue = `${original.slice(0, end).trimEnd()}…more`;
+          text.nodeValue = `${children.slice(0, end).trimEnd()}…more`;
           return measure.scrollHeight <= maxHeight + 0.5;
         };
         let lo = 0;
-        let hi = original.length;
+        let hi = children.length;
         let best = 0;
         while (lo <= hi) {
           const mid = (lo + hi) >> 1;
@@ -464,8 +465,11 @@ function ExpandablePrompt({
             hi = mid - 1;
           }
         }
-        text.nodeValue = original;
-        setCut(best > 0 ? `${original.slice(0, best).trimEnd()}…` : null);
+        text.nodeValue = children;
+        // Even when no full character fits alongside "…more" (best === 0, only at
+        // extreme narrow widths), still cut so the toggle shows and the prompt
+        // stays expandable instead of silently clipped.
+        setCut(`${children.slice(0, best).trimEnd()}…`);
       };
 
       compute();
@@ -473,7 +477,7 @@ function ExpandablePrompt({
       observer.observe(measure);
       observerRef.current = observer;
     },
-    [expanded, lines],
+    [children, expanded, lines],
   );
 
   const truncated = cut !== null;
