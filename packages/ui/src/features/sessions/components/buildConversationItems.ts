@@ -22,6 +22,7 @@ import {
 } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import type { UserShellExecute } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
 import type {
+  CompactBoundaryMetadata,
   ConversationSessionUpdate,
   ToolCall,
 } from "@posthog/ui/features/sessions/types";
@@ -680,11 +681,7 @@ function handleNotification(
 
   if (isNotification(msg.method, POSTHOG_NOTIFICATIONS.COMPACT_BOUNDARY)) {
     ensureImplicitTurn(b, ts);
-    const params = msg.params as {
-      trigger: "manual" | "auto";
-      preTokens: number;
-      contextSize?: number;
-    };
+    const params = msg.params as CompactBoundaryMetadata;
     markRuntimeStatusComplete(b, "compacting");
     pushItem(b, {
       sessionUpdate: "compact_boundary",
