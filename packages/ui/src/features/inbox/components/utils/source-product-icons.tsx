@@ -176,4 +176,6 @@ export const SOURCE_PRODUCT_META: Partial<
     color: "var(--amber-9)",
     label: "Judge.me",
   },
+  intercom: { Icon: ChatsIcon, color: "var(--blue-9)", label: "Intercom" },
+  hubspot: { Icon: LifebuoyIcon, color: "var(--orange-9)", label: "HubSpot" },
 };
