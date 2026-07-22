@@ -2,6 +2,7 @@ import {
   ArrowSquareOutIcon,
   ChatCircleIcon,
   GitBranchIcon,
+  LinkIcon,
   RobotIcon,
 } from "@phosphor-icons/react";
 import { taskFeedRunStatus } from "@posthog/core/canvas/channelFeed";
@@ -49,6 +50,7 @@ import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { taskCardNavigation } from "@posthog/ui/features/canvas/taskCardNavigation";
+import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
   type SidebarPrState,
@@ -534,11 +536,19 @@ const FeedItem = memo(function FeedItem({
       task={task}
       actions={
         // Replying now lives in the always-visible ReplyFooter, so the hover
-        // toolbar only carries the distinct "Open task" action. Actions anchor
-        // to the row's top-right corner; a top tooltip there overhangs the panel
-        // edge and gets clipped by the scroll container, so open tooltips toward
-        // the content instead.
+        // toolbar only carries per-row actions (copy link, open task). Actions
+        // anchor to the row's top-right corner; a top tooltip there overhangs
+        // the panel edge and gets clipped by the scroll container, so open
+        // tooltips toward the content instead.
         <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
+          <ThreadItemAction
+            label="Copy link to task"
+            onClick={() =>
+              void copyChannelLink(channelId, "thread_panel", task.id)
+            }
+          >
+            <LinkIcon size={15} />
+          </ThreadItemAction>
           <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
             <ArrowSquareOutIcon size={15} />
           </ThreadItemAction>
