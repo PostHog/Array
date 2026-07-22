@@ -7,7 +7,7 @@ import {
 import { Switch } from "@posthog/quill";
 import { useIntegrationSelectors } from "@posthog/ui/features/integrations/store";
 import { useSlackConnect } from "@posthog/ui/features/integrations/useSlackConnect";
-import { SlackChannelCombobox } from "@posthog/ui/features/settings/components/SlackChannelCombobox";
+import { SlackWorkspaceChannelPicker } from "@posthog/ui/features/settings/components/SlackWorkspaceChannelPicker";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Checkbox, Flex, Text } from "@radix-ui/themes";
 
@@ -211,13 +211,22 @@ function SlackNotificationRow({
             : "Connect Slack workspace"}
         </Button>
       ) : (
-        <SlackChannelCombobox
+        <SlackWorkspaceChannelPicker
+          integrations={slackIntegrations}
           integrationId={integrationId}
-          value={channelTarget}
-          ariaLabel="Slack channel"
-          offLabel="No channel selected"
+          channelValue={channelTarget}
+          channelAriaLabel="Slack channel"
           disabled={disabled}
-          onChange={(target) => {
+          onIntegrationChange={(nextIntegrationId) => {
+            const next: SlackChannelParams = {
+              ...params,
+              integration_id: nextIntegrationId,
+            };
+            delete next.channel_id;
+            delete next.channel_name;
+            onChange({ params: next });
+          }}
+          onChannelChange={(target) => {
             if (!target || !integrationId) {
               const next: SlackChannelParams = { ...params };
               delete next.channel_id;
