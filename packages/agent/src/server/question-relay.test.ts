@@ -524,7 +524,9 @@ describe("Question relay", () => {
         payload: TEST_PAYLOAD,
         logWriter: {
           flush: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue("agent response"),
+          takeUnrelayedAgentResponseParts: vi
+            .fn()
+            .mockReturnValue(["agent response"]),
           isRegistered: vi.fn().mockReturnValue(true),
         },
       };
@@ -545,8 +547,7 @@ describe("Question relay", () => {
         payload: TEST_PAYLOAD,
         logWriter: {
           flush: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue("agent response"),
-          getAgentResponseParts: vi
+          takeUnrelayedAgentResponseParts: vi
             .fn()
             .mockReturnValue(["first part", "agent response"]),
           isRegistered: vi.fn().mockReturnValue(true),
@@ -559,7 +560,7 @@ describe("Question relay", () => {
       expect(relaySpy).toHaveBeenCalledWith(
         "test-task-id",
         "test-run-id",
-        "agent response",
+        "first part\n\nagent response",
         ["first part", "agent response"],
         undefined,
       );
@@ -574,8 +575,9 @@ describe("Question relay", () => {
         payload: TEST_PAYLOAD,
         logWriter: {
           flush: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue("agent response"),
-          getAgentResponseParts: vi.fn().mockReturnValue(["agent response"]),
+          takeUnrelayedAgentResponseParts: vi
+            .fn()
+            .mockReturnValue(["agent response"]),
           isRegistered: vi.fn().mockReturnValue(true),
         },
       };
@@ -601,7 +603,7 @@ describe("Question relay", () => {
         payload: TEST_PAYLOAD,
         logWriter: {
           flush: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           isRegistered: vi.fn().mockReturnValue(true),
         },
       };
@@ -636,7 +638,7 @@ describe("Question relay", () => {
         clientConnection: { prompt: promptSpy },
         logWriter: {
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           resetTurnMessages: vi.fn(),
           appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
@@ -681,7 +683,7 @@ describe("Question relay", () => {
         clientConnection: { prompt: promptSpy },
         logWriter: {
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           resetTurnMessages: vi.fn(),
           appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
@@ -716,7 +718,7 @@ describe("Question relay", () => {
         clientConnection: { prompt: promptSpy },
         logWriter: {
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           resetTurnMessages: vi.fn(),
           appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
@@ -751,7 +753,7 @@ describe("Question relay", () => {
         clientConnection: { prompt: promptSpy },
         logWriter: {
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           resetTurnMessages: vi.fn(),
           appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
@@ -789,7 +791,7 @@ describe("Question relay", () => {
         clientConnection: { prompt: promptSpy },
         logWriter: {
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           resetTurnMessages: vi.fn(),
           appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
@@ -841,7 +843,7 @@ describe("Question relay", () => {
         clientConnection: { prompt: promptSpy },
         logWriter: {
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           resetTurnMessages: vi.fn(),
           appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),
@@ -890,7 +892,7 @@ describe("Question relay", () => {
         clientConnection: { prompt: promptSpy },
         logWriter: {
           flushAll: vi.fn().mockResolvedValue(undefined),
-          getFullAgentResponse: vi.fn().mockReturnValue(null),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(undefined),
           resetTurnMessages: vi.fn(),
           appendRawLine: vi.fn(),
           flush: vi.fn().mockResolvedValue(undefined),

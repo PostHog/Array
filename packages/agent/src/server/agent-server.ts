@@ -264,6 +264,22 @@ export function isTurnCompleteNotification(message: unknown): boolean {
   );
 }
 
+export function backgroundTurnCompleteStopReason(
+  message: unknown,
+): string | null {
+  if (
+    typeof message !== "object" ||
+    message === null ||
+    (message as { method?: unknown }).method !==
+      POSTHOG_NOTIFICATIONS.BACKGROUND_TURN_COMPLETE
+  ) {
+    return null;
+  }
+  const stopReason = (message as { params?: { stopReason?: unknown } }).params
+    ?.stopReason;
+  return typeof stopReason === "string" ? stopReason : "end_turn";
+}
+
 interface SseController {
   send: (data: unknown) => void;
   close: () => void;
@@ -4109,8 +4125,17 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       });
     }
 
-    const message = this.session.logWriter.getFullAgentResponse(payload.run_id);
-    if (!message) {
+    // Ordered assistant text blocks (one per message between tool calls),
+    // scoped to what no prior relay has delivered — a background turn appends
+    // to the same buffer as the tracked turn before it, so an unscoped read
+    // would re-post already-delivered prose. The backend picks the last entry
+    // — the post-last-tool-use answer — so Slack no longer sees the "Let me
+    // check…" narration. `message` stays as the joined fallback for backends
+    // that don't understand `text_parts`.
+    const messageParts = this.session.logWriter.takeUnrelayedAgentResponseParts(
+      payload.run_id,
+    );
+    if (!messageParts) {
       this.logger.debug("No agent message found for Slack relay", {
         taskId: payload.task_id,
         runId: payload.run_id,
@@ -4118,14 +4143,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       });
       return;
     }
-
-    // Ordered assistant text blocks (one per message between tool calls).
-    // The backend picks the last entry — the post-last-tool-use answer — so
-    // Slack no longer sees the "Let me check…" narration. `message` stays as
-    // the joined fallback for backends that don't understand `text_parts`.
-    const messageParts = this.session.logWriter.getAgentResponseParts(
-      payload.run_id,
-    );
+    const message = messageParts.join("\n\n");
 
     try {
       await this.posthogAPI.relayMessage(
@@ -4512,6 +4530,20 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
         return;
       }
       this.adapterEmittedTurnComplete = true;
+    }
+    // A background (task-notification) turn resolves no tracked prompt, so
+    // the prompt-resolution relay sites never fire for it — without this, the
+    // prose it produced (e.g. results of a finished background process) never
+    // reaches Slack. Mirror the tracked path's gating on a clean end_turn.
+    if (
+      backgroundTurnCompleteStopReason(message) === "end_turn" &&
+      this.session
+    ) {
+      this.relayAgentResponse(this.session.payload).catch((error) =>
+        this.logger.debug("Failed to relay background-turn response", {
+          error,
+        }),
+      );
     }
     const event = {
       type: "notification",

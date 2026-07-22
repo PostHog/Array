@@ -479,6 +479,83 @@ describe("AgentServer HTTP Mode", () => {
     testServer.session = null;
   });
 
+  describe("background turn relay", () => {
+    // A background (task-notification) turn resolves no tracked prompt, so
+    // the prompt-resolution relay sites never fire — the transport tap must
+    // relay its prose when _posthog/background_turn_complete passes through.
+    const stubRelaySession = (parts: string[] | undefined) => {
+      const testServer = createServer() as unknown as {
+        session: unknown;
+        posthogAPI: PostHogAPIClient;
+        handleAcpTransportMessage(message: unknown): void;
+      };
+      const relaySpy = vi
+        .spyOn(testServer.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+      testServer.session = {
+        payload: { task_id: "test-task-id", run_id: "test-run-id" },
+        sseController: null,
+        logWriter: {
+          flush: vi.fn().mockResolvedValue(undefined),
+          takeUnrelayedAgentResponseParts: vi.fn().mockReturnValue(parts),
+          isRegistered: vi.fn().mockReturnValue(true),
+        },
+      };
+      return { testServer, relaySpy };
+    };
+
+    it("relays the background turn's prose on background_turn_complete", async () => {
+      const { testServer, relaySpy } = stubRelaySession([
+        "fetch finished",
+        "the actual answer",
+      ]);
+
+      testServer.handleAcpTransportMessage({
+        jsonrpc: "2.0",
+        method: "_posthog/background_turn_complete",
+        params: { sessionId: "s-1", stopReason: "end_turn" },
+      });
+
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        "fetch finished\n\nthe actual answer",
+        ["fetch finished", "the actual answer"],
+        undefined,
+      );
+      testServer.session = null;
+    });
+
+    it("does not relay a background turn that did not end cleanly", async () => {
+      const { testServer, relaySpy } = stubRelaySession(["half an answer"]);
+
+      testServer.handleAcpTransportMessage({
+        jsonrpc: "2.0",
+        method: "_posthog/background_turn_complete",
+        params: { sessionId: "s-1", stopReason: "refusal" },
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(relaySpy).not.toHaveBeenCalled();
+      testServer.session = null;
+    });
+
+    it("does not relay a background turn that produced no new prose", async () => {
+      const { testServer, relaySpy } = stubRelaySession(undefined);
+
+      testServer.handleAcpTransportMessage({
+        jsonrpc: "2.0",
+        method: "_posthog/background_turn_complete",
+        params: { sessionId: "s-1", stopReason: "end_turn" },
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(relaySpy).not.toHaveBeenCalled();
+      testServer.session = null;
+    });
+  });
+
   describe("GET /health", () => {
     it("returns ok status with active session", async () => {
       await createServer().start();
@@ -2782,8 +2859,9 @@ describe("AgentServer HTTP Mode", () => {
         session: {
           clientConnection: { prompt: typeof prompt };
           logWriter: {
-            getFullAgentResponse: (runId: string) => string | undefined;
-            getAgentResponseParts: (runId: string) => string[];
+            takeUnrelayedAgentResponseParts: (
+              runId: string,
+            ) => string[] | undefined;
           };
         };
         posthogAPI: PostHogAPIClient;
@@ -2791,11 +2869,7 @@ describe("AgentServer HTTP Mode", () => {
       serverInternals.session.clientConnection.prompt = prompt;
       vi.spyOn(
         serverInternals.session.logWriter,
-        "getFullAgentResponse",
-      ).mockReturnValue("final answer");
-      vi.spyOn(
-        serverInternals.session.logWriter,
-        "getAgentResponseParts",
+        "takeUnrelayedAgentResponseParts",
       ).mockReturnValue(["final answer"]);
       const relaySpy = vi
         .spyOn(serverInternals.posthogAPI, "relayMessage")

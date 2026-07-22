@@ -460,6 +460,65 @@ describe("SessionLogWriter", () => {
       expect(logWriter.getAgentResponseParts(sessionId)).toBeUndefined();
     });
 
+    it("takeUnrelayedAgentResponseParts returns only prose since the previous take", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      // Tracked turn: prose, relayed once.
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message", {
+          content: { type: "text", text: "I'll wait for the fetch." },
+        }),
+      );
+      expect(logWriter.takeUnrelayedAgentResponseParts(sessionId)).toEqual([
+        "I'll wait for the fetch.",
+      ]);
+
+      // A background turn appends to the same buffer without a reset; only
+      // its own prose must relay, not the already-delivered tracked prose.
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message", {
+          content: { type: "text", text: "Fetch done — here's the answer." },
+        }),
+      );
+      expect(logWriter.takeUnrelayedAgentResponseParts(sessionId)).toEqual([
+        "Fetch done — here's the answer.",
+      ]);
+
+      // A silent background turn (no new prose) has nothing to relay.
+      expect(
+        logWriter.takeUnrelayedAgentResponseParts(sessionId),
+      ).toBeUndefined();
+    });
+
+    it("takeUnrelayedAgentResponseParts starts over after a turn reset", async () => {
+      const sessionId = "s1";
+      logWriter.register(sessionId, { taskId: "t1", runId: sessionId });
+
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message", {
+          content: { type: "text", text: "first turn" },
+        }),
+      );
+      expect(logWriter.takeUnrelayedAgentResponseParts(sessionId)).toEqual([
+        "first turn",
+      ]);
+
+      logWriter.resetTurnMessages(sessionId);
+      logWriter.appendRawLine(
+        sessionId,
+        makeSessionUpdate("agent_message", {
+          content: { type: "text", text: "second turn" },
+        }),
+      );
+      expect(logWriter.takeUnrelayedAgentResponseParts(sessionId)).toEqual([
+        "second turn",
+      ]);
+    });
+
     it("persisted log does not contain stale entries when chunks are superseded", async () => {
       const sessionId = "s1";
       logWriter.register(sessionId, { taskId: "t1", runId: sessionId });

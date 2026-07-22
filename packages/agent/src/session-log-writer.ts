@@ -44,6 +44,8 @@ interface SessionState {
   chunkBuffer?: ChunkBuffer;
   lastAgentMessage?: string;
   currentTurnMessages: string[];
+  /** Count of currentTurnMessages entries already delivered by a relay. */
+  relayedTurnMessageCount: number;
   toolUpdateCache: Map<string, BufferedToolUpdate>;
   pendingRawInputSnapshots: Map<string, StoredNotification>;
 }
@@ -106,6 +108,7 @@ export class SessionLogWriter {
     this.sessions.set(sessionId, {
       context,
       currentTurnMessages: [],
+      relayedTurnMessageCount: 0,
       toolUpdateCache: new Map(),
       pendingRawInputSnapshots: new Map(),
     });
@@ -523,10 +526,8 @@ export class SessionLogWriter {
   /**
    * Returns the ordered assistant text blocks for the current turn — one entry
    * per message between tool calls. The last entry is the text after the final
-   * tool_use (the actual answer to the user).
-   *
-   * The Slack relay uses this so the backend can post only the last block
-   * instead of every interim "Let me check…" narration.
+   * tool_use (the actual answer to the user). Non-consuming; the Slack relay
+   * uses takeUnrelayedAgentResponseParts instead.
    */
   getAgentResponseParts(sessionId: string): string[] | undefined {
     const session = this.sessions.get(sessionId);
@@ -549,7 +550,40 @@ export class SessionLogWriter {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.currentTurnMessages = [];
+      session.relayedTurnMessageCount = 0;
     }
+  }
+
+  /**
+   * Returns the assistant text blocks accumulated since the last take (or the
+   * last turn reset) and advances the relay cursor past them.
+   *
+   * The Slack relay uses this instead of getAgentResponseParts because not
+   * every turn resets the buffer: a background (task-notification) turn
+   * appends to the same buffer as the tracked turn before it, and relaying
+   * the full buffer would re-post prose that was already delivered.
+   */
+  takeUnrelayedAgentResponseParts(sessionId: string): string[] | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) return undefined;
+
+    if (session.chunkBuffer) {
+      this.logger.warn(
+        "takeUnrelayedAgentResponseParts called with non-empty chunk buffer",
+        {
+          sessionId,
+          bufferedLength: session.chunkBuffer.text.length,
+        },
+      );
+    }
+
+    const start = Math.min(
+      session.relayedTurnMessageCount,
+      session.currentTurnMessages.length,
+    );
+    const parts = session.currentTurnMessages.slice(start);
+    session.relayedTurnMessageCount = session.currentTurnMessages.length;
+    return parts.length > 0 ? parts : undefined;
   }
 
   private extractAgentMessageText(
