@@ -102,6 +102,7 @@ import {
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
 import { type McpRelayResponse, McpRelayServer } from "./mcp-relay-server";
+import { checkoutExistingPullRequest } from "./pr-checkout";
 import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
@@ -1625,6 +1626,15 @@ export class AgentServer {
     };
 
     await this.waitForRepoReady();
+    const existingPrCheckoutPromise =
+      prUrl &&
+      this.config.repositoryPath &&
+      this.shouldAutoPublishCloudChanges()
+        ? checkoutExistingPullRequest({
+            repositoryPath: this.config.repositoryPath,
+            prUrl,
+          })
+        : null;
     await this.installSkillBundleArtifacts(
       payload.task_id,
       payload.run_id,
@@ -1647,6 +1657,25 @@ export class AgentServer {
       ...(this.config.mcpServers ?? []),
       ...(await this.startMcpRelayServer()),
     ];
+
+    if (existingPrCheckoutPromise) {
+      const checkoutResult = await existingPrCheckoutPromise;
+      if (checkoutResult.status === "failed") {
+        this.logger.warn(
+          "Existing PR pre-checkout failed; agent will retry if needed",
+          {
+            prUrl,
+            error: checkoutResult.error,
+          },
+        );
+      } else {
+        this.logger.debug("Existing PR branch prepared before session start", {
+          prUrl,
+          branch: checkoutResult.branch,
+          alreadyActive: checkoutResult.status === "already_active",
+        });
+      }
+    }
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
