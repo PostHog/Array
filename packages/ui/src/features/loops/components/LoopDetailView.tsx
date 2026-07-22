@@ -12,6 +12,7 @@ import {
 import { AlertDialog, Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { useLoop } from "../hooks/useLoop";
+import { useLoopDisplayModel } from "../hooks/useLoopDisplayModel";
 import {
   useDeleteLoop,
   useRunLoop,
@@ -237,6 +238,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
 }
 
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
+  const displayModel = useLoopDisplayModel(loop.runtime_adapter, loop.model);
+
   return (
     <Flex direction="column" gap="3">
       <Text className="font-medium text-[13px] text-gray-12">
@@ -251,7 +254,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         <SummaryRow label="Model">
           {[
             loop.runtime_adapter,
-            loop.model,
+            displayModel,
             loop.reasoning_effort ? `${loop.reasoning_effort} reasoning` : null,
           ]
             .filter(Boolean)
