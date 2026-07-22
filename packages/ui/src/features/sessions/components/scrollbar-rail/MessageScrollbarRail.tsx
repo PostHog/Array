@@ -27,8 +27,8 @@ export interface MessageScrollbarRailProps {
  *
  * The rail is `position: absolute` and pinned to the right edge, sized to the
  * native scrollbar gutter so it reads as part of the scrollbar rather than a
- * floating overlay. It is mouse-only — native drag-scrolling and keyboard
- * scrolling still work because the rail only intercepts clicks on its markers.
+ * floating overlay. Its marker buttons are labelled so keyboard and assistive
+ * technology users can jump directly to a message as well.
  */
 export function MessageScrollbarRail({
   markers,
@@ -39,7 +39,6 @@ export function MessageScrollbarRail({
 
   return (
     <div
-      aria-hidden
       className={cn(
         "pointer-events-none absolute top-0 right-0 z-10 h-full",
         className,
@@ -53,13 +52,7 @@ export function MessageScrollbarRail({
               <button
                 type="button"
                 onClick={marker.onClick}
-                // The rail is mouse-only (aria-hidden on the root, below) — the
-                // messages it jumps to are already accessible in the transcript.
-                // `tabIndex={-1}` keeps these spatial shortcuts out of the tab
-                // order so the rail never produces focusable-but-unlabeled
-                // controls in the accessibility tree.
-                tabIndex={-1}
-                aria-label={`Jump to message: ${marker.label}`}
+                aria-labelledby={`message-rail-marker-${marker.id}`}
                 // The marker button spans the rail's full width; its vertical
                 // position is the fractional offset of the message within the
                 // scrollable content.
@@ -69,6 +62,12 @@ export function MessageScrollbarRail({
                   height: `${Math.max(marker.heightPct * 100, 0.6)}%`,
                 }}
               >
+                <span
+                  id={`message-rail-marker-${marker.id}`}
+                  className="sr-only"
+                >
+                  Jump to message: {marker.label}
+                </span>
                 <span
                   className={cn(
                     "block h-full w-full rounded-full transition-colors",
