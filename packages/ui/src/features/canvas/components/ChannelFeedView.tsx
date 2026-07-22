@@ -436,28 +436,32 @@ function ExpandablePrompt({
     [expanded],
   );
 
+  // pre-line (not pre-wrap) collapses the runs of spaces that -webkit-line-clamp
+  // would otherwise leave in front of its ellipsis, while still breaking on the
+  // prompt's newlines. The toggle is pinned inside the clamp box at the
+  // bottom-right so it sits beside that ellipsis instead of on its own line.
+  const clampClass = lines === 2 ? "line-clamp-2" : "line-clamp-4";
+
   return (
-    <div>
-      <ThreadItemBody
-        ref={measureRef}
-        className={cn(
-          "wrap-break-word whitespace-pre-wrap",
-          !expanded && (lines === 2 ? "line-clamp-2" : "line-clamp-4"),
-        )}
-      >
-        {children}
-      </ThreadItemBody>
-      {(truncated || expanded) && (
+    <ThreadItemBody
+      ref={measureRef}
+      className={cn(
+        "wrap-break-word relative whitespace-pre-line",
+        !expanded && clampClass,
+      )}
+    >
+      {children}
+      {truncated && (
         <button
           type="button"
           aria-expanded={expanded}
-          className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+          className="absolute right-0 bottom-0 bg-[var(--background)] pl-1 text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "less" : "more"}
         </button>
       )}
-    </div>
+    </ThreadItemBody>
   );
 }
 

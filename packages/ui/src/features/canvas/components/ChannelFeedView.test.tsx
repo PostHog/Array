@@ -2,7 +2,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskFeedRow } from "./ChannelFeedView";
 
 const task = {
@@ -23,23 +23,45 @@ const task = {
   },
 } satisfies Task;
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("TaskFeedRow", () => {
   it("expands a truncated prompt", async () => {
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(60);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(40);
     const user = userEvent.setup();
+    const { container } = render(
+      <Theme>
+        <TaskFeedRow task={task} />
+      </Theme>,
+    );
+
+    const prompt = container.querySelector(
+      "[data-slot=thread-item-body]",
+    ) as HTMLElement;
+    expect(prompt).toHaveClass("line-clamp-2");
+    const more = screen.getByRole("button", { name: "more" });
+    // The toggle lives inside the clamped prompt, beside the ellipsis — not as a
+    // sibling pushed onto its own line.
+    expect(prompt).toContainElement(more);
+
+    await user.click(more);
+
+    expect(prompt).not.toHaveClass("line-clamp-2");
+    expect(screen.getByRole("button", { name: "less" })).toBeInTheDocument();
+  });
+
+  it("renders no toggle when the prompt fits", () => {
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(20);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(40);
     render(
       <Theme>
         <TaskFeedRow task={task} />
       </Theme>,
     );
 
-    const prompt = screen.getByText(task.description);
-    expect(prompt).toHaveClass("line-clamp-2");
-
-    await user.click(screen.getByRole("button", { name: "more" }));
-
-    expect(prompt).not.toHaveClass("line-clamp-2");
-    expect(screen.getByRole("button", { name: "less" })).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
