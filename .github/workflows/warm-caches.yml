@@ -20,6 +20,7 @@ concurrency:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -50,7 +51,6 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           SKIP_ELECTRON_REBUILD: "1"
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Seed turbo cache (build + typecheck)
         run: |
@@ -59,6 +59,7 @@ jobs:
 
   macos:
     runs-on: macos-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:

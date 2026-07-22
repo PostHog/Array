@@ -81,7 +81,6 @@ jobs:
           # Electron-ABI sqlite rebuild are unused (the rebuild is immediately
           # undone by the Node rebuild below).
           SKIP_ELECTRON_REBUILD: "1"
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Rebuild native modules for Node
         run: node scripts/rebuild-better-sqlite3-node.mjs
@@ -268,7 +267,6 @@ jobs:
         env:
           # The agent e2e suite runs under plain Node; Electron is unused.
           SKIP_ELECTRON_REBUILD: "1"
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Build agent dependencies
         run: pnpm exec turbo build --filter=@posthog/shared --filter=@posthog/git --filter=@posthog/enricher

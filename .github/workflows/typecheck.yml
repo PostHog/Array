@@ -75,7 +75,6 @@ jobs:
           # Typecheck never launches Electron; skip its binary download and
           # the Electron-ABI native rebuild.
           SKIP_ELECTRON_REBUILD: "1"
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Run type check
         run: pnpm run typecheck

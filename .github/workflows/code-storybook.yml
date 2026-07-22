@@ -130,7 +130,6 @@ jobs:
         env:
           # Stories render in Chromium; Electron and its ABI rebuild are unused.
           SKIP_ELECTRON_REBUILD: "1"
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
