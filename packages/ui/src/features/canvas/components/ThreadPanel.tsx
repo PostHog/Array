@@ -9,12 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   buildThreadTimeline,
-  deriveThreadAgentStatus,
   hasAgentMention,
-  normalizeAgentPromptText,
-  shouldSuspendThreadSession,
-  type ThreadAgentMessage,
-  type ThreadAgentStatus,
   type ThreadTimelineRow,
 } from "@posthog/core/canvas/threadTimeline";
 import {
@@ -56,12 +51,8 @@ import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
-import {
-  MentionText,
-  mentionChipClass,
-} from "@posthog/ui/features/canvas/components/MentionText";
+import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
-import { agentTurns } from "@posthog/ui/features/canvas/components/threadAgentTurns";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
   useDeleteTaskThreadMessage,
@@ -71,16 +62,6 @@ import {
   useTaskThread,
 } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import {
-  ChatMarkdown,
-  ChatStreamingMarkdown,
-} from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
-import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
-import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
-import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
-import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
-import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
@@ -184,109 +165,6 @@ export function ThreadMessageRow({
   );
 }
 
-function agentPrompts(items: ConversationItem[]): ThreadAgentMessage[] {
-  const prompts: ThreadAgentMessage[] = [];
-  for (const item of items) {
-    if (item.type !== "user_message") continue;
-    const text = (
-      extractChannelContext(item.content)?.stripped ?? item.content
-    ).trim();
-    if (!text) continue;
-    prompts.push({ id: item.id, text, timestamp: item.timestamp });
-  }
-  return prompts;
-}
-
-export function AgentStatusLine({ status }: { status: ThreadAgentStatus }) {
-  return (
-    <output
-      aria-live="polite"
-      className="flex items-center gap-1.5 px-3 py-1.5 text-muted-foreground text-xs"
-    >
-      {status.phase === "active" ? (
-        <Spinner className="size-3" />
-      ) : (
-        <RobotIcon size={12} />
-      )}
-      <span>{status.label}</span>
-    </output>
-  );
-}
-
-export function AgentTurnRow({
-  message,
-  streaming,
-}: {
-  message: ThreadAgentMessage;
-  streaming: boolean;
-}) {
-  return (
-    <ThreadItem>
-      <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>
-            <RobotIcon size={14} />
-          </AvatarFallback>
-        </Avatar>
-      </ThreadItemGutter>
-      <ThreadItemContent>
-        <ThreadItemHeader>
-          <ThreadItemAuthor>Agent</ThreadItemAuthor>
-          {message.timestamp !== undefined && (
-            <ThreadTimestamp
-              dateTime={new Date(message.timestamp).toISOString()}
-            />
-          )}
-        </ThreadItemHeader>
-        {message.text && (
-          <ThreadItemBody>
-            <div className="rounded-md border border-border bg-muted px-2 py-1.5">
-              {streaming ? (
-                <ChatStreamingMarkdown content={message.text} />
-              ) : (
-                <ChatMarkdown content={message.text} />
-              )}
-            </div>
-          </ThreadItemBody>
-        )}
-      </ThreadItemContent>
-    </ThreadItem>
-  );
-}
-
-export function UserPromptRow({
-  message,
-  author,
-}: {
-  message: ThreadAgentMessage;
-  author: TaskThreadMessage["author"];
-}) {
-  const promptText = normalizeAgentPromptText(message.text);
-
-  return (
-    <ThreadItem>
-      <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
-        </Avatar>
-      </ThreadItemGutter>
-      <ThreadItemContent>
-        <ThreadItemHeader>
-          <ThreadItemAuthor>{userDisplayName(author)}</ThreadItemAuthor>
-          {message.timestamp !== undefined && (
-            <ThreadTimestamp
-              dateTime={new Date(message.timestamp).toISOString()}
-            />
-          )}
-        </ThreadItemHeader>
-        <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
-          <span className={mentionChipClass}>@agent</span> {promptText}
-        </ThreadItemBody>
-      </ThreadItemContent>
-    </ThreadItem>
-  );
-}
-
 function ThreadLoadingState() {
   return (
     <Empty className="h-full border-0">
@@ -351,25 +229,19 @@ function ThreadHeader({
 function ThreadTimeline({
   timeline,
   isReady,
-  taskAuthor,
   currentUserUuid,
   currentUserEmail,
   isTaskAuthor,
   canForward,
-  lastAgentId,
-  agentActive,
   onSendToAgent,
   onDelete,
 }: {
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
   isReady: boolean;
-  taskAuthor: UserBasic | null | undefined;
   currentUserUuid?: string;
   currentUserEmail?: string;
   isTaskAuthor: boolean;
   canForward: boolean;
-  lastAgentId?: string;
-  agentActive: boolean;
   onSendToAgent: (messageId: string) => void;
   onDelete: (messageId: string) => void;
 }) {
@@ -383,9 +255,8 @@ function ThreadTimeline({
           </EmptyMedia>
           <EmptyTitle>No messages yet</EmptyTitle>
           <EmptyDescription>
-            Discuss this task with your team. The agent's status shows up here
-            too; messages stay between humans unless the task author sends one
-            to the agent.
+            Discuss this task with your team. Messages stay between humans
+            unless the task author sends one to the agent.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -394,35 +265,21 @@ function ThreadTimeline({
 
   return (
     <ThreadItemGroup>
-      {timeline.map((row) =>
-        row.kind === "prompt" ? (
-          <UserPromptRow
-            key={row.message.id}
-            message={row.message}
-            author={taskAuthor}
-          />
-        ) : row.kind === "human" ? (
-          <ThreadMessageRow
-            key={row.message.id}
-            message={row.message.value as TaskThreadMessage}
-            isTaskAuthor={isTaskAuthor}
-            isOwnMessage={
-              !!currentUserUuid &&
-              currentUserUuid === row.message.value?.author?.uuid
-            }
-            currentUserEmail={currentUserEmail}
-            canForward={canForward}
-            onSendToAgent={() => onSendToAgent(row.message.id)}
-            onDelete={() => onDelete(row.message.id)}
-          />
-        ) : (
-          <AgentTurnRow
-            key={row.message.id}
-            message={row.message}
-            streaming={row.message.id === lastAgentId && agentActive}
-          />
-        ),
-      )}
+      {timeline.map((row) => (
+        <ThreadMessageRow
+          key={row.message.id}
+          message={row.message.value as TaskThreadMessage}
+          isTaskAuthor={isTaskAuthor}
+          isOwnMessage={
+            !!currentUserUuid &&
+            currentUserUuid === row.message.value?.author?.uuid
+          }
+          currentUserEmail={currentUserEmail}
+          canForward={canForward}
+          onSendToAgent={() => onSendToAgent(row.message.id)}
+          onDelete={() => onDelete(row.message.id)}
+        />
+      ))}
     </ThreadItemGroup>
   );
 }
@@ -503,62 +360,9 @@ function ThreadConversation({
   const isSendingToAgent = isPostingToAgent || isSending;
   const { members } = useOrgMembers();
 
-  const {
-    session,
-    repoPath,
-    isCloud,
-    events,
-    cloudStatus,
-    isPromptPending,
-    isInitializing,
-    hasError,
-    errorTitle,
-  } = useSessionViewState(taskId, task);
-  useSessionConnection({
-    taskId,
-    task,
-    session,
-    repoPath,
-    isCloud,
-    isSuspended: shouldSuspendThreadSession({
-      isCloud,
-      hasRun: Boolean(task.latest_run?.id),
-      hasSession: Boolean(session),
-    }),
-  });
-  const { items } = useConversationItems(events, isPromptPending);
-  const pendingPermissions = usePendingPermissionsForTask(taskId);
-  const agentMsgs = useMemo(() => agentTurns(items), [items]);
-  const promptMsgs = useMemo(() => agentPrompts(items), [items]);
-
-  const agentStatus = useMemo(
-    () =>
-      deriveThreadAgentStatus({
-        hasActivity: events.length > 0 || !!task.latest_run,
-        hasError,
-        cloudStatus,
-        errorTitle,
-        pendingPermissionCount: pendingPermissions.size,
-        isPromptPending,
-        isInitializing,
-      }),
-    [
-      events.length,
-      task.latest_run,
-      hasError,
-      cloudStatus,
-      errorTitle,
-      pendingPermissions.size,
-      isPromptPending,
-      isInitializing,
-    ],
-  );
-
   const timeline = useMemo(
     () =>
       buildThreadTimeline({
-        prompts: promptMsgs,
-        agentMessages: agentMsgs,
         humanMessages: messages.map((message) => ({
           id: message.id,
           content: message.content,
@@ -567,10 +371,8 @@ function ThreadConversation({
           value: message,
         })),
       }),
-    [promptMsgs, messages, agentMsgs],
+    [messages],
   );
-
-  const lastAgentId = agentMsgs[agentMsgs.length - 1]?.id;
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -590,7 +392,7 @@ function ThreadConversation({
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [timeline, agentStatus?.phase]);
+  }, [timeline]);
 
   const isTaskAuthor =
     !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
@@ -649,7 +451,7 @@ function ThreadConversation({
     });
   };
 
-  const isReady = !isInitializing && !isLoading;
+  const isReady = !isLoading;
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
@@ -668,19 +470,14 @@ function ThreadConversation({
         <ThreadTimeline
           timeline={timeline}
           isReady={isReady}
-          taskAuthor={task.created_by}
           currentUserUuid={currentUser?.uuid}
           currentUserEmail={currentUser?.email}
           isTaskAuthor={isTaskAuthor}
           canForward={canForward}
-          lastAgentId={lastAgentId}
-          agentActive={agentStatus?.phase === "active"}
           onSendToAgent={handleSendToAgent}
           onDelete={handleDelete}
         />
       </div>
-
-      {agentStatus && <AgentStatusLine status={agentStatus} />}
 
       <ThreadReplyComposer
         draft={draft}
