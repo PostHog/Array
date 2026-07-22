@@ -2,18 +2,15 @@ import {
   buildChangeTree,
   type ChangeTreeNode,
   compactChangeTree,
+  orderedTreeDirs,
+  orderedTreeFiles,
 } from "@posthog/core/git-interaction/changeTree";
 import type { ChangedFile } from "@posthog/shared/domain-types";
 import { TreeDirectoryRow } from "@posthog/ui/primitives/TreeDirectoryRow";
 import { useCallback, useMemo, useState } from "react";
 
-export type TreeNode = ChangeTreeNode;
-
-export const buildChangesTree = buildChangeTree;
-export const compactTree = compactChangeTree;
-
 interface ChangesTreeNodeProps {
-  node: TreeNode;
+  node: ChangeTreeNode;
   depth: number;
   collapsedDirs: Set<string>;
   onToggleDir: (path: string) => void;
@@ -28,20 +25,8 @@ function ChangesTreeNode({
   renderFile,
 }: ChangesTreeNodeProps) {
   const isCollapsed = collapsedDirs.has(node.path);
-  const sortedDirs = useMemo(
-    () =>
-      [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name)),
-    [node.children],
-  );
-  const sortedFiles = useMemo(
-    () =>
-      [...node.files].sort((a, b) => {
-        const aName = a.path.split("/").pop() || "";
-        const bName = b.path.split("/").pop() || "";
-        return aName.localeCompare(bName);
-      }),
-    [node.files],
-  );
+  const sortedDirs = useMemo(() => orderedTreeDirs(node), [node]);
+  const sortedFiles = useMemo(() => orderedTreeFiles(node), [node]);
 
   return (
     <>
@@ -80,7 +65,10 @@ interface ChangesTreeViewProps {
 }
 
 export function ChangesTreeView({ files, renderFile }: ChangesTreeViewProps) {
-  const tree = useMemo(() => compactTree(buildChangesTree(files)), [files]);
+  const tree = useMemo(
+    () => compactChangeTree(buildChangeTree(files)),
+    [files],
+  );
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
 
   const handleToggleDir = useCallback((path: string) => {

@@ -1,6 +1,10 @@
 import type { parsePatchFiles } from "@pierre/diffs";
 import type { ResolvedDiffSource } from "@posthog/core/code-review/resolveDiffSource";
 import type { PrCommentThread } from "@posthog/core/code-review/types";
+import {
+  orderPathsLikeChangeTree,
+  sortByChangeTreeOrder,
+} from "@posthog/core/git-interaction/changeTree";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { ChangedFile, Task } from "@posthog/shared/domain-types";
 import { Flex, Text } from "@radix-ui/themes";
@@ -33,9 +37,7 @@ import {
   buildRemoteReviewItems,
   buildUntrackedReviewItems,
   changedFileSignature,
-  orderPathsLikeTree,
   patchFileSignature,
-  sortReviewItemsByTreeOrder,
 } from "./reviewItemBuilders";
 
 const EMPTY_CHANGED_FILES: ChangedFile[] = [];
@@ -348,7 +350,7 @@ function LocalReviewContent({
 
   const stagedItems = useMemo(
     () =>
-      sortReviewItemsByTreeOrder(
+      sortByChangeTreeOrder(
         buildPatchReviewItems({
           files: stagedParsedFiles,
           staged: true,
@@ -363,7 +365,7 @@ function LocalReviewContent({
           prUrl,
           commentThreads,
         }),
-        orderPathsLikeTree(
+        orderPathsLikeChangeTree(
           stagedParsedFiles.map((f) => f.name ?? f.prevName ?? ""),
         ),
       ),
@@ -384,7 +386,7 @@ function LocalReviewContent({
 
   const changesItems = useMemo(
     () =>
-      sortReviewItemsByTreeOrder(
+      sortByChangeTreeOrder(
         [
           ...buildPatchReviewItems({
             files: unstagedParsedFiles,
@@ -411,7 +413,7 @@ function LocalReviewContent({
             onStageFile,
           }),
         ],
-        orderPathsLikeTree([
+        orderPathsLikeChangeTree([
           ...unstagedParsedFiles.map((f) => f.name ?? f.prevName ?? ""),
           ...untrackedFiles.map((f) => f.path),
         ]),
@@ -552,7 +554,7 @@ function RemoteReviewPage({
 
   const items = useMemo(
     () =>
-      sortReviewItemsByTreeOrder(
+      sortByChangeTreeOrder(
         buildRemoteReviewItems({
           files,
           taskId,
@@ -562,7 +564,7 @@ function RemoteReviewPage({
           toggleFile: reviewState.toggleFile,
           commentThreads,
         }),
-        orderPathsLikeTree(files.map((f) => f.path)),
+        orderPathsLikeChangeTree(files.map((f) => f.path)),
       ),
     [
       commentThreads,

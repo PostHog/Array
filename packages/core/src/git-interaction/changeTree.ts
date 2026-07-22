@@ -55,20 +55,25 @@ export function compactChangeTree(node: ChangeTreeNode): ChangeTreeNode {
 
 const compareLocale = (a: string, b: string) => a.localeCompare(b);
 
-function flattenNode(node: ChangeTreeNode, out: ChangedFile[]) {
-  const sortedDirs = [...node.children.values()].sort((a, b) =>
+export function orderedTreeDirs(node: ChangeTreeNode): ChangeTreeNode[] {
+  return [...node.children.values()].sort((a, b) =>
     compareLocale(a.name, b.name),
   );
-  const sortedFiles = [...node.files].sort((a, b) => {
+}
+
+export function orderedTreeFiles(node: ChangeTreeNode): ChangedFile[] {
+  return [...node.files].sort((a, b) => {
     const aName = a.path.split("/").pop() ?? "";
     const bName = b.path.split("/").pop() ?? "";
     return compareLocale(aName, bName);
   });
+}
 
-  for (const child of sortedDirs) {
+function flattenNode(node: ChangeTreeNode, out: ChangedFile[]) {
+  for (const child of orderedTreeDirs(node)) {
     flattenNode(child, out);
   }
-  for (const file of sortedFiles) {
+  for (const file of orderedTreeFiles(node)) {
     out.push(file);
   }
 }
