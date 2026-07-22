@@ -11,6 +11,7 @@ import { FreeformCanvas } from "./FreeformCanvas";
 export function CanvasFrameHost() {
   const slots = useCanvasFrameStore((s) => s.slots);
   const activeDashboardId = useCanvasFrameStore((s) => s.activeDashboardId);
+  const frameKeys = useCanvasFrameStore((s) => s.frameKeys);
 
   return (
     // Fixed, viewport-filling, click-through layer. Children are positioned in
@@ -43,7 +44,9 @@ export function CanvasFrameHost() {
         // Keyed by the physical frame's identity (its slot index), NOT dashboardId:
         // reassigning a slot to a new canvas must reuse the same iframe (init
         // code-swap), not remount it — remounting re-parents the iframe = reload.
-        const frameKey = `slot-${slotId}`;
+        // The remount generation (bumped only by an explicit user Refresh) is
+        // folded in so that action — and only that action — recreates the iframe.
+        const frameKey = `slot-${slotId}-${frameKeys[slotId] ?? 0}`;
         return (
           <div key={frameKey} style={style}>
             <ErrorBoundary name="freeform-canvas" resetKey={slot.dashboardId}>
@@ -51,7 +54,6 @@ export function CanvasFrameHost() {
                 code={slot.inputs.code}
                 mode="edit"
                 analytics={slot.inputs.analytics}
-                refreshKey={slot.inputs.refreshKey}
                 onDataRequest={slot.inputs.onDataRequest}
                 onError={slot.inputs.onError}
                 onRendered={slot.inputs.onRendered}
