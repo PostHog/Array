@@ -152,8 +152,6 @@ export function TimezoneConversionTooltip({
             className="inline-flex appearance-none border-0 bg-transparent p-0 text-inherit"
             onMouseEnter={keepOpen}
             onMouseLeave={scheduleClose}
-            onFocus={keepOpen}
-            onBlur={scheduleClose}
           >
             {children}
           </button>
