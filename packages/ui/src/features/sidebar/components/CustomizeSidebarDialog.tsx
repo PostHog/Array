@@ -9,7 +9,9 @@ import {
   RepeatIcon,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
+import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import {
   CUSTOMIZABLE_NAV_ITEMS,
   type CustomizableNavItem,
@@ -43,6 +45,12 @@ function sameOrder(
 }
 
 export function CustomizeSidebarSettings() {
+  const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled = useSidebarStore((s) => s.channelsEnabled);
   const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
   const navItemOrder = useSidebarStore((s) => s.navItemOrder);
   const setNavItemVisible = useSidebarStore((s) => s.setNavItemVisible);
@@ -64,7 +72,14 @@ export function CustomizeSidebarSettings() {
   // sits on a row boundary; replaying the move would swap the rows back.
   const lastMove = useRef<string | null>(null);
 
-  const items = orderedNavItems(previewOrder ?? navItemOrder);
+  const items = orderedNavItems(previewOrder ?? navItemOrder).filter(
+    ({ id }) => {
+      if (id === "loops") return loopsEnabled;
+      if (id === "contexts") return bluebirdEnabled;
+      if (id === "activity") return bluebirdEnabled && channelsEnabled;
+      return true;
+    },
+  );
 
   const handleDragStart: DragDropEvents["dragstart"] = () => {
     lastMove.current = null;

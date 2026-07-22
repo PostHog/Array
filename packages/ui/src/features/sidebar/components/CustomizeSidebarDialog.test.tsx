@@ -1,3 +1,4 @@
+import { LOOPS_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Theme } from "@radix-ui/themes";
 import { act, render, screen } from "@testing-library/react";
@@ -9,8 +10,9 @@ type CapturedDragEvent = {
   canceled?: boolean;
 };
 
-const { track, dndCapture } = vi.hoisted(() => ({
+const { track, dndCapture, featureFlags } = vi.hoisted(() => ({
   track: vi.fn(),
+  featureFlags: new Map<string, boolean>(),
   dndCapture: {} as {
     onDragStart?: (event: CapturedDragEvent) => void;
     onDragOver?: (event: CapturedDragEvent) => void;
@@ -19,6 +21,9 @@ const { track, dndCapture } = vi.hoisted(() => ({
 }));
 
 vi.mock("@posthog/ui/shell/analytics", () => ({ track }));
+vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
+  useFeatureFlag: (key: string) => featureFlags.get(key) ?? true,
+}));
 vi.mock("@dnd-kit/react", () => ({
   DragDropProvider: ({
     onDragStart,
@@ -91,7 +96,18 @@ function rowLabels() {
 describe("CustomizeSidebarSettings", () => {
   beforeEach(() => {
     track.mockReset();
+    featureFlags.clear();
     useSidebarStore.setState({ navItemOverrides: {}, navItemOrder: [] });
+  });
+
+  it("omits items whose features are unavailable", () => {
+    featureFlags.set(LOOPS_FLAG, false);
+
+    renderSettings();
+
+    expect(
+      screen.queryByRole("checkbox", { name: "Loops" }),
+    ).not.toBeInTheDocument();
   });
 
   it("unchecking a visible item demotes it and tracks the change", async () => {
