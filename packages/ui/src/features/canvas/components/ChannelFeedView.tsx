@@ -48,7 +48,7 @@ import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import { shouldOpenTaskCardInline } from "@posthog/ui/features/canvas/taskCardNavigation";
+import { taskCardNavigation } from "@posthog/ui/features/canvas/taskCardNavigation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
   type SidebarPrState,
@@ -59,7 +59,6 @@ import { Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import {
   Fragment,
-  type MouseEvent,
   memo,
   type ReactNode,
   useEffect,
@@ -270,12 +269,10 @@ const NO_PENDING: PendingKickoff[] = [];
 export function TaskCard({
   task,
   channelId,
-  onOpen,
   inThread = false,
 }: {
   task: Task;
   channelId: string;
-  onOpen?: () => void;
   inThread?: boolean;
 }) {
   const statusDisplay = useTaskStatusDisplay(task);
@@ -284,18 +281,10 @@ export function TaskCard({
       ? task.latest_run.output.pr_url
       : undefined;
   const stage = task.latest_run?.stage;
-  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!onOpen || !shouldOpenTaskCardInline(event)) return;
-    event.preventDefault();
-    onOpen();
-  };
-
   return (
     <Link
-      to="/website/$channelId/tasks/$taskId"
-      params={{ channelId, taskId: task.id }}
+      {...taskCardNavigation(channelId, task.id)}
       preload="intent"
-      onClick={handleClick}
       className={cn(
         "mt-1.5 block w-full text-inherit no-underline outline-none focus-visible:ring-(--accent-8) focus-visible:ring-2",
         inThread ? "rounded-none" : "rounded-sm",
@@ -504,11 +493,7 @@ const FeedItem = memo(function FeedItem({
         </ThreadItemActions>
       }
     >
-      <TaskCard
-        task={task}
-        channelId={channelId}
-        onOpen={() => onOpenThread(task)}
-      />
+      <TaskCard task={task} channelId={channelId} />
       <ReplyFooter
         taskId={task.id}
         inView={inView}
