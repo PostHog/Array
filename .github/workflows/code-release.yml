@@ -751,7 +751,7 @@ jobs:
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          BASE="https://d11gemrf2ia4q8.cloudfront.net/stable"
+          BASE="https://desktop-releases.posthog.com/stable"
           V="$APP_VERSION"
           {
             echo "## v$V on the update feed"

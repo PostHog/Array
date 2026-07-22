@@ -138,7 +138,7 @@ const config: Configuration = {
   // there until that fleet drains.
   publish: {
     provider: "generic",
-    url: "https://d11gemrf2ia4q8.cloudfront.net/stable",
+    url: "https://desktop-releases.posthog.com/stable",
   },
 };
 
