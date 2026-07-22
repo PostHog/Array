@@ -32,11 +32,11 @@ describe("sidebarStore navItemOverrides", () => {
   );
 
   it("overriding one item leaves the others at their defaults", () => {
-    useSidebarStore.getState().setNavItemVisible("agents", false);
+    useSidebarStore.getState().setNavItemVisible("inbox", false);
 
     const overrides = useSidebarStore.getState().navItemOverrides;
     for (const item of CUSTOMIZABLE_NAV_ITEMS) {
-      if (item.id === "agents") continue;
+      if (item.id === "inbox") continue;
       expect(isNavItemVisible(overrides, item.id)).toBe(item.defaultVisible);
     }
   });

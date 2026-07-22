@@ -11,27 +11,9 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
   },
   { id: "inbox", label: "Inbox", analyticsId: "inbox", defaultVisible: true },
   {
-    id: "agents",
-    label: "Agents",
-    analyticsId: "agents",
-    defaultVisible: true,
-  },
-  {
-    id: "skills",
-    label: "Skills",
-    analyticsId: "skills",
-    defaultVisible: true,
-  },
-  {
     id: "loops",
     label: "Loops",
     analyticsId: "loops",
-    defaultVisible: true,
-  },
-  {
-    id: "mcp-servers",
-    label: "MCP servers",
-    analyticsId: "mcp_servers",
     defaultVisible: true,
   },
   {

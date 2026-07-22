@@ -106,9 +106,6 @@ describe("SidebarNavSection", () => {
   it.each([
     ["search", "Search"],
     ["inbox", "Inbox"],
-    ["agents", "Agents"],
-    ["skills", "Skills"],
-    ["mcp-servers", "MCP servers"],
     ["command-center", "Command Center"],
     ["contexts", "Channels"],
     ["activity", "Activity"],
@@ -131,9 +128,6 @@ describe("SidebarNavSection", () => {
 
   it.each([
     ["inbox", "inbox", "Inbox"],
-    ["agents", "agents", "Agents"],
-    ["skills", "skills", "Skills"],
-    ["mcp-servers", "mcp-servers", "MCP servers"],
     ["command-center", "command-center", "Command Center"],
     ["activity", "activity", "Activity"],
     ["loops", "loops", "Loops"],
@@ -162,7 +156,7 @@ describe("SidebarNavSection", () => {
       labels.findIndex((text) => text.includes(label));
 
     expect(position("Activity")).toBeLessThan(position("Inbox"));
-    expect(position("Inbox")).toBeLessThan(position("Agents"));
+    expect(position("Inbox")).toBeLessThan(position("Loops"));
   });
 
   it("never lets hidden search take over the More row", () => {

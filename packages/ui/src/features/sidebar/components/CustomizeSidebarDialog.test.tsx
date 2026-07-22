@@ -117,13 +117,13 @@ describe("CustomizeSidebarDialog", () => {
     const user = userEvent.setup();
     renderDialog();
 
-    await user.click(screen.getByRole("checkbox", { name: "MCP servers" }));
+    await user.click(screen.getByRole("checkbox", { name: "Command Center" }));
 
-    expect(useSidebarStore.getState().navItemOverrides["mcp-servers"]).toBe(
+    expect(useSidebarStore.getState().navItemOverrides["command-center"]).toBe(
       false,
     );
     expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED, {
-      item: "mcp_servers",
+      item: "command_center",
       visible: false,
     });
   });
@@ -162,29 +162,26 @@ describe("CustomizeSidebarDialog", () => {
   it("previews on dragover and persists only on drop", () => {
     renderDialog();
 
-    dragStart("skills");
-    dragOver("skills", "search");
+    dragStart("loops");
+    dragOver("loops", "search");
 
-    expect(rowLabels()[0]).toBe("Skills");
+    expect(rowLabels()[0]).toBe("Loops");
     expect(useSidebarStore.getState().navItemOrder).toEqual([]);
     expect(track).not.toHaveBeenCalled();
 
-    dragEnd("skills");
+    dragEnd("loops");
 
     expect(useSidebarStore.getState().navItemOrder).toEqual([
-      "skills",
+      "loops",
       "search",
       "inbox",
-      "agents",
-      "loops",
-      "mcp-servers",
       "command-center",
       "contexts",
       "activity",
       "configure",
     ]);
     expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.SIDEBAR_REORDERED, {
-      item: "skills",
+      item: "loops",
       to_index: 0,
     });
   });
@@ -192,23 +189,23 @@ describe("CustomizeSidebarDialog", () => {
   it("ignores a repeated dragover for the same source and target", () => {
     renderDialog();
 
-    dragStart("skills");
-    dragOver("skills", "search");
-    dragOver("skills", "search");
+    dragStart("loops");
+    dragOver("loops", "search");
+    dragOver("loops", "search");
 
-    expect(rowLabels()[0]).toBe("Skills");
+    expect(rowLabels()[0]).toBe("Loops");
 
-    dragEnd("skills");
+    dragEnd("loops");
 
-    expect(useSidebarStore.getState().navItemOrder[0]).toBe("skills");
+    expect(useSidebarStore.getState().navItemOrder[0]).toBe("loops");
   });
 
   it("a canceled drag drops the preview and leaves the store untouched", () => {
     renderDialog();
 
-    dragStart("skills");
-    dragOver("skills", "search");
-    dragEnd("skills", { cancel: true });
+    dragStart("loops");
+    dragOver("loops", "search");
+    dragEnd("loops", { cancel: true });
 
     expect(rowLabels()[0]).toBe("Search");
     expect(useSidebarStore.getState().navItemOrder).toEqual([]);
@@ -218,8 +215,8 @@ describe("CustomizeSidebarDialog", () => {
   it("a drop without movement neither persists nor tracks", () => {
     renderDialog();
 
-    dragStart("skills");
-    dragEnd("skills");
+    dragStart("loops");
+    dragEnd("loops");
 
     expect(useSidebarStore.getState().navItemOrder).toEqual([]);
     expect(track).not.toHaveBeenCalled();

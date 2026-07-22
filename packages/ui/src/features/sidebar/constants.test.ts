@@ -6,6 +6,14 @@ import {
   sanitizeNavItemOrder,
 } from "./constants";
 
+describe("CUSTOMIZABLE_NAV_ITEM_IDS", () => {
+  it("keeps configuration destinations out of the top-level navigation", () => {
+    expect(CUSTOMIZABLE_NAV_ITEM_IDS).not.toEqual(
+      expect.arrayContaining(["agents", "skills", "mcp-servers"]),
+    );
+  });
+});
+
 describe("orderedNavItems", () => {
   it("returns the default order for an empty stored order", () => {
     expect(orderedNavItems([]).map((item) => item.id)).toEqual(
@@ -14,13 +22,13 @@ describe("orderedNavItems", () => {
   });
 
   it("inserts an id missing from a full stored order after its default predecessor", () => {
-    const withoutSkills = CUSTOMIZABLE_NAV_ITEM_IDS.filter(
-      (id) => id !== "skills",
+    const withoutLoops = CUSTOMIZABLE_NAV_ITEM_IDS.filter(
+      (id) => id !== "loops",
     ).reverse();
 
-    const ids = orderedNavItems(withoutSkills).map((item) => item.id);
+    const ids = orderedNavItems(withoutLoops).map((item) => item.id);
 
-    expect(ids.indexOf("skills")).toBe(ids.indexOf("agents") + 1);
+    expect(ids.indexOf("loops")).toBe(ids.indexOf("inbox") + 1);
   });
 
   it("inserts a missing id with no present predecessor at the start", () => {
@@ -43,17 +51,17 @@ describe("orderedNavItems", () => {
 
 describe("moveNavItem", () => {
   it("moves an item backward to the target position", () => {
-    const next = moveNavItem([], "skills", "search");
+    const next = moveNavItem([], "loops", "search");
 
-    expect(next[0]).toBe("skills");
+    expect(next[0]).toBe("loops");
     expect(next).toHaveLength(CUSTOMIZABLE_NAV_ITEM_IDS.length);
   });
 
   it("moves an item forward to the target position", () => {
-    const next = moveNavItem([], "search", "agents");
+    const next = moveNavItem([], "search", "loops");
 
     expect(next.indexOf("search")).toBe(
-      CUSTOMIZABLE_NAV_ITEM_IDS.indexOf("agents"),
+      CUSTOMIZABLE_NAV_ITEM_IDS.indexOf("loops"),
     );
   });
 

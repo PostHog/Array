@@ -18,17 +18,12 @@ import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
   navigateToActivity,
-  navigateToAgents,
   navigateToCommandCenter,
   navigateToHome,
   navigateToInbox,
   navigateToLoops,
-  navigateToMcpServers,
-  navigateToSkills,
   navigateToWebsiteCommandCenter,
   navigateToWebsiteHome,
-  navigateToWebsiteMcpServers,
-  navigateToWebsiteSkills,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -39,7 +34,6 @@ import { useRouterState } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useState } from "react";
 import { CustomizeSidebarDialog } from "./CustomizeSidebarDialog";
 import { ActivityItem } from "./items/ActivityItem";
-import { AgentsItem } from "./items/AgentsItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
 import { ContextsItem } from "./items/ContextsItem";
@@ -47,11 +41,9 @@ import { CustomizeSidebarItem } from "./items/CustomizeSidebarItem";
 import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
 import { LoopsItem } from "./items/LoopsItem";
-import { McpServersItem } from "./items/McpServersItem";
 import { MoreItem } from "./items/MoreItem";
 import { NewTaskItem } from "./items/NewTaskItem";
 import { SearchItem } from "./items/SearchItem";
-import { SkillsItem } from "./items/SkillsItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -68,8 +60,8 @@ interface SidebarNavSectionProps {
 // and the Channels pane. It is fully self-contained — every item's active
 // state, badge count, and click handler is wired here — so it can be dropped
 // into either layout. In the Channels space, destinations with a /website
-// mirror (Home, Skills, MCP servers, Command Center) stay in that space;
-// Inbox, Agents and New task have no mirror yet and jump back to Code.
+// mirror (Home and Command Center) stay in that space; Inbox and New task have
+// no mirror yet and jump back to Code.
 // Configure opens the shared settings UI. Search opens the command menu in
 // place and defaults to the collapsible More row; the Customize sidebar
 // dialog controls which items show at the top level.
@@ -101,10 +93,6 @@ export function SidebarNavSection({
   const goNewTask = () =>
     openTaskInput(inChannels ? { space: "website" } : undefined);
   const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
-  const goSkills = inChannels ? navigateToWebsiteSkills : navigateToSkills;
-  const goMcpServers = inChannels
-    ? navigateToWebsiteMcpServers
-    : navigateToMcpServers;
   const goCommandCenter = inChannels
     ? navigateToWebsiteCommandCenter
     : navigateToCommandCenter;
@@ -116,11 +104,8 @@ export function SidebarNavSection({
   const isHomeViewActive = view.type === "home";
   const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
-  const isAgentsActive = view.type === "agents";
   const isLoopsActive = view.type === "loops";
   const isCommandCenterActive = view.type === "command-center";
-  const isSkillsActive = view.type === "skills";
-  const isMcpServersActive = view.type === "mcp-servers";
 
   // Open pull requests in the inbox — the main CTA, and the same count the inbox
   // Pull requests tab shows, so the badge and the tab always agree.
@@ -183,9 +168,6 @@ export function SidebarNavSection({
   const moreItemActive: Record<CustomizableNavItemId, boolean> = {
     search: false,
     inbox: isInboxActive,
-    agents: isAgentsActive,
-    skills: isSkillsActive,
-    "mcp-servers": isMcpServersActive,
     "command-center": isCommandCenterActive,
     contexts: false,
     activity: isActivityActive,
@@ -196,9 +178,6 @@ export function SidebarNavSection({
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
     search: true,
     inbox: true,
-    agents: true,
-    skills: true,
-    "mcp-servers": true,
     "command-center": true,
     contexts: bluebirdEnabled,
     // Activity (the mentions feed) is a channels surface, so it only appears
@@ -250,27 +229,6 @@ export function SidebarNavSection({
         isActive={isInboxActive}
         onClick={withNavTrack("inbox", navigateToInbox, depth)}
         pullRequestCount={inboxPullRequestCount}
-      />
-    ),
-    agents: (depth) => (
-      <AgentsItem
-        depth={depth}
-        isActive={isAgentsActive}
-        onClick={withNavTrack("agents", navigateToAgents, depth)}
-      />
-    ),
-    skills: (depth) => (
-      <SkillsItem
-        depth={depth}
-        isActive={isSkillsActive}
-        onClick={withNavTrack("skills", goSkills, depth)}
-      />
-    ),
-    "mcp-servers": (depth) => (
-      <McpServersItem
-        depth={depth}
-        isActive={isMcpServersActive}
-        onClick={withNavTrack("mcp_servers", goMcpServers, depth)}
       />
     ),
     "command-center": (depth) => (

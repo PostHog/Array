@@ -5,12 +5,9 @@ import {
   DotsSixVertical,
   EnvelopeSimple,
   HashIcon,
-  Lightbulb,
   Lightning,
   MagnifyingGlass,
-  Plugs,
   RepeatIcon,
-  Robot,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -33,9 +30,6 @@ const ITEM_ICONS: Record<
 > = {
   search: MagnifyingGlass,
   inbox: EnvelopeSimple,
-  agents: Robot,
-  skills: Lightbulb,
-  "mcp-servers": Plugs,
   "command-center": Lightning,
   contexts: HashIcon,
   activity: Bell,
