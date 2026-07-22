@@ -15,6 +15,10 @@ import type {
   ConversationItem,
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import {
+  ConversationMinimap,
+  toMinimapMessages,
+} from "@posthog/ui/features/sessions/components/ConversationMinimap";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
 import {
   PROMPT_RECALL_HINT_KEY,
@@ -260,6 +264,26 @@ export function ConversationView({
   }, [items]);
 
   usePromptRecallSource(userMessages, promptRecallRef);
+
+  const minimapMessages = useMemo(() => toMinimapMessages(items), [items]);
+
+  // "You are here" for the minimap: the last user message at or above the top
+  // of the viewport (the message whose turn is on screen). Derived from the
+  // list's first-visible-row pings; state only changes when scrolling crosses
+  // a user message, so this re-renders far less often than it fires.
+  const [minimapActiveId, setMinimapActiveId] = useState<string | null>(null);
+  const userMessagesRef = useRef(userMessages);
+  userMessagesRef.current = userMessages;
+  const handleFirstVisibleRowChange = useCallback((rowIndex: number) => {
+    let active: string | null = null;
+    for (const message of userMessagesRef.current) {
+      const messageRow =
+        itemIdToRowIndexRef.current.get(message.id) ?? message.index;
+      if (messageRow > rowIndex) break;
+      active = message.id;
+    }
+    setMinimapActiveId(active);
+  }, []);
 
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
@@ -513,6 +537,7 @@ export function ConversationView({
             getItemKey={getRowKey}
             renderItem={renderRow}
             onScrollStateChange={handleScrollStateChange}
+            onFirstVisibleRowChange={handleFirstVisibleRowChange}
             keepMounted={rowKeepMounted}
             className="absolute inset-0 bg-background"
             itemClassName="mx-auto px-2 py-1.5"
@@ -521,6 +546,13 @@ export function ConversationView({
             scrollX={scrollX}
           />
         </SessionTaskIdProvider>
+        {!compact && (
+          <ConversationMinimap
+            messages={minimapMessages}
+            activeId={minimapActiveId}
+            onSelect={handleJumpToMessage}
+          />
+        )}
         {showScrollButton && (
           <Box className="absolute right-6 bottom-4 z-10">
             <Tooltip>

@@ -22,6 +22,12 @@ interface VirtualizedListProps<T> {
   itemStyle?: CSSProperties;
   footer?: ReactNode;
   onScrollStateChange?: (isAtBottom: boolean) => void;
+  /**
+   * Reports the topmost row in view whenever it changes while scrolling.
+   * Drives position indicators (the minimap's active marker) without making
+   * every scroll frame a parent re-render.
+   */
+  onFirstVisibleRowChange?: (rowIndex: number) => void;
   keepMounted?: readonly number[];
   /**
    * Allow horizontal scrolling of the list viewport. Defaults to true. Narrow
@@ -57,6 +63,7 @@ function VirtualizedListInner<T>(
     itemStyle,
     footer,
     onScrollStateChange,
+    onFirstVisibleRowChange,
     keepMounted,
     scrollX = true,
   }: VirtualizedListProps<T>,
@@ -71,6 +78,9 @@ function VirtualizedListInner<T>(
   const settleRafRef = useRef<number | null>(null);
   const onScrollStateChangeRef = useRef(onScrollStateChange);
   onScrollStateChangeRef.current = onScrollStateChange;
+  const onFirstVisibleRowChangeRef = useRef(onFirstVisibleRowChange);
+  onFirstVisibleRowChangeRef.current = onFirstVisibleRowChange;
+  const lastFirstVisibleRowRef = useRef(-1);
 
   const hasFooter = footer != null;
 
@@ -225,6 +235,25 @@ function VirtualizedListInner<T>(
       isAtBottomRef.current = true;
     } else if (scrolledUp || farFromEnd) {
       isAtBottomRef.current = false;
+    }
+
+    if (onFirstVisibleRowChangeRef.current) {
+      // Virtual items include overscan rows above the viewport; the first row
+      // actually in view is the first whose bottom edge is past scrollTop.
+      let firstVisible = -1;
+      for (const v of virtualizer.getVirtualItems()) {
+        if (v.end > scrollTop) {
+          firstVisible = v.index;
+          break;
+        }
+      }
+      if (
+        firstVisible !== -1 &&
+        firstVisible !== lastFirstVisibleRowRef.current
+      ) {
+        lastFirstVisibleRowRef.current = firstVisible;
+        onFirstVisibleRowChangeRef.current(firstVisible);
+      }
     }
 
     if (!initializedRef.current) return;

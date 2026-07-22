@@ -38,6 +38,10 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import {
+  ConversationMinimap,
+  toMinimapMessages,
+} from "@posthog/ui/features/sessions/components/ConversationMinimap";
+import {
   ChatMarkdown,
   ChatStreamingMarkdown,
 } from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
@@ -747,6 +751,26 @@ const ThreadRow = memo(function ThreadRow({
 });
 
 /**
+ * Right-edge minimap of the user's messages. Highlights the engine's current anchor (the user
+ * message whose turn is on screen) and jumps via `scrollToMessage` — the same primitives the
+ * sticky header uses. Like the header, only this small component subscribes to per-scroll
+ * visibility state, so rows never re-render while scrolling.
+ */
+function ThreadMinimap({ items }: { items: ConversationItem[] }) {
+  const { scrollToMessage } = useChatMessageScroller();
+  const { currentAnchorId } = useChatMessageScrollerVisibility();
+  const messages = useMemo(() => toMinimapMessages(items), [items]);
+
+  return (
+    <ConversationMinimap
+      messages={messages}
+      activeId={currentAnchorId}
+      onSelect={scrollToMessage}
+    />
+  );
+}
+
+/**
  * Keeps the view pinned to the bottom from prompt submit until the user scrolls away.
  *
  * The engine's own follow mode isn't enough on its own:
@@ -928,6 +952,7 @@ function ThreadScrollBody({
   footer,
   keyboardFocusedMessageId,
   onUserInteract,
+  showMinimap = true,
 }: {
   items: ConversationItem[];
   rows: TurnRow[];
@@ -937,6 +962,8 @@ function ThreadScrollBody({
   keyboardFocusedMessageId?: string | null;
   /** Clears keyboard-focused message state on any pointer interaction with the thread. */
   onUserInteract?: () => void;
+  /** Narrow embeds (command center, canvas panel) drop the minimap rail. */
+  showMinimap?: boolean;
 }) {
   const keyedRows = useMemo(() => {
     let userTurn = 0;
@@ -955,6 +982,7 @@ function ThreadScrollBody({
     >
       <StickyHeaderOverlay items={items} />
       <ThreadAutoFollow items={items} />
+      {showMinimap && <ThreadMinimap items={items} />}
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent
           className="gap-4 py-4 pb-8"
@@ -1001,6 +1029,8 @@ interface SharedChatThreadProps {
   repoPath?: string | null;
   task?: Task;
   taskId?: string;
+  /** Embedded in a narrow container; hides overlays that need horizontal room (minimap). */
+  compact?: boolean;
 }
 
 export interface ChatThreadProps extends SharedChatThreadProps {
@@ -1052,6 +1082,7 @@ function ChatThreadRenderer({
   task,
   taskId,
   promptRecallRef,
+  compact = false,
 }: ChatThreadRendererProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -1170,6 +1201,7 @@ function ChatThreadRenderer({
               renderItem={renderItem}
               keyboardFocusedMessageId={keyboardFocusedMessageId}
               onUserInteract={clearKeyboardFocus}
+              showMinimap={!compact}
               footer={
                 <ChatThreadFooter
                   events={footerEvents}
