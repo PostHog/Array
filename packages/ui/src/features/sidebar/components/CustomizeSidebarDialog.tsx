@@ -6,7 +6,9 @@ import {
   Lightning,
   MagnifyingGlass,
   Plugs,
+  RepeatIcon,
   Robot,
+  SlidersHorizontal,
 } from "@phosphor-icons/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
@@ -30,16 +32,22 @@ const ITEM_ICONS: Record<
   "command-center": Lightning,
   contexts: HashIcon,
   activity: Bell,
+  configure: SlidersHorizontal,
+  loops: RepeatIcon,
 };
 
 interface CustomizeSidebarDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Items gated off by feature flags stay out of the dialog too, so it never
+  // offers a checkbox for a nav row the user can't have.
+  available?: Record<CustomizableNavItemId, boolean>;
 }
 
 export function CustomizeSidebarDialog({
   open,
   onOpenChange,
+  available,
 }: CustomizeSidebarDialogProps) {
   const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
   const setNavItemVisible = useSidebarStore((s) => s.setNavItemVisible);
@@ -54,7 +62,9 @@ export function CustomizeSidebarDialog({
         </Dialog.Description>
 
         <Flex direction="column" gap="3" mt="4">
-          {CUSTOMIZABLE_NAV_ITEMS.map(({ id, label, analyticsId }) => {
+          {CUSTOMIZABLE_NAV_ITEMS.filter(
+            ({ id }) => available?.[id] !== false,
+          ).map(({ id, label, analyticsId }) => {
             const ItemIcon = ITEM_ICONS[id];
             const visible = isNavItemVisible(navItemOverrides, id);
             return (

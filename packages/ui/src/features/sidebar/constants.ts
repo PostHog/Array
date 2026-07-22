@@ -46,6 +46,18 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
     analyticsId: "activity",
     defaultVisible: true,
   },
+  {
+    id: "configure",
+    label: "Configure",
+    analyticsId: "configure",
+    defaultVisible: true,
+  },
+  {
+    id: "loops",
+    label: "Loops",
+    analyticsId: "loops",
+    defaultVisible: true,
+  },
 ] as const satisfies readonly {
   id: string;
   label: string;

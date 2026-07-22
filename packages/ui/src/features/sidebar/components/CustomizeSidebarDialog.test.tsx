@@ -8,13 +8,32 @@ const { track } = vi.hoisted(() => ({ track: vi.fn() }));
 
 vi.mock("@posthog/ui/shell/analytics", () => ({ track }));
 
+import {
+  CUSTOMIZABLE_NAV_ITEM_IDS,
+  type CustomizableNavItemId,
+} from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { CustomizeSidebarDialog } from "./CustomizeSidebarDialog";
 
-function renderDialog() {
+function availability(
+  overrides: Partial<Record<CustomizableNavItemId, boolean>> = {},
+) {
+  return {
+    ...(Object.fromEntries(
+      CUSTOMIZABLE_NAV_ITEM_IDS.map((id) => [id, true]),
+    ) as Record<CustomizableNavItemId, boolean>),
+    ...overrides,
+  };
+}
+
+function renderDialog(available = availability()) {
   return render(
     <Theme>
-      <CustomizeSidebarDialog open onOpenChange={vi.fn()} />
+      <CustomizeSidebarDialog
+        open
+        onOpenChange={vi.fn()}
+        available={available}
+      />
     </Theme>,
   );
 }
@@ -51,5 +70,16 @@ describe("CustomizeSidebarDialog", () => {
       item: "search",
       visible: true,
     });
+  });
+
+  it("omits items marked unavailable", () => {
+    renderDialog(availability({ loops: false }));
+
+    expect(
+      screen.queryByRole("checkbox", { name: "Loops" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Configure" }),
+    ).toBeInTheDocument();
   });
 });

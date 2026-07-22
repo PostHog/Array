@@ -108,6 +108,8 @@ describe("SidebarNavSection", () => {
     ["command-center", "Command Center"],
     ["contexts", "Channels"],
     ["activity", "Activity"],
+    ["configure", "Configure"],
+    ["loops", "Loops"],
   ] as const)(
     "moves %s from the top level into More when hidden",
     async (id, label) => {
@@ -130,6 +132,7 @@ describe("SidebarNavSection", () => {
     ["mcp-servers", "mcp-servers", "MCP servers"],
     ["command-center", "command-center", "Command Center"],
     ["activity", "activity", "Activity"],
+    ["loops", "loops", "Loops"],
   ] as const)(
     "active hidden %s takes over the collapsed More row",
     (id, viewType, label) => {

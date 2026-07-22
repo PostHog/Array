@@ -253,6 +253,8 @@ export type SidebarNavItem =
   | "command_center"
   | "contexts"
   | "activity"
+  | "configure"
+  | "loops"
   | "more"
   | "customize_sidebar";
 

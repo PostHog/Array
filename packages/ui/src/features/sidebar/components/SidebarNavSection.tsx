@@ -176,8 +176,8 @@ export function SidebarNavSection({
   const [customizeOpen, setCustomizeOpen] = useState(false);
 
   // While More is collapsed, an active item hidden under it takes over the
-  // More row so the current page stays visible. Search and Contexts never do:
-  // neither is a routed page.
+  // More row so the current page stays visible. Search, Contexts and Configure
+  // never do: none of them is a routed page.
   const moreItemActive: Record<CustomizableNavItemId, boolean> = {
     search: false,
     inbox: isInboxActive,
@@ -187,6 +187,8 @@ export function SidebarNavSection({
     "command-center": isCommandCenterActive,
     contexts: false,
     activity: isActivityActive,
+    configure: false,
+    loops: isLoopsActive,
   };
 
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
@@ -200,6 +202,8 @@ export function SidebarNavSection({
     // Activity (the mentions feed) is a channels surface, so it only appears
     // once channels are enabled.
     activity: channelsEnabled,
+    configure: true,
+    loops: loopsEnabled,
   };
 
   const activeHiddenItem = CUSTOMIZABLE_NAV_ITEMS.find(
@@ -289,6 +293,19 @@ export function SidebarNavSection({
         onClick={withNavTrack("activity", navigateToActivity, depth)}
       />
     ),
+    configure: (depth) => (
+      <ConfigureItem
+        depth={depth}
+        onClick={withNavTrack("configure", () => openSettings("agents"), depth)}
+      />
+    ),
+    loops: (depth) => (
+      <LoopsItem
+        depth={depth}
+        isActive={isLoopsActive}
+        onClick={withNavTrack("loops", navigateToLoops, depth)}
+      />
+    ),
   };
 
   const topLevelItems = CUSTOMIZABLE_NAV_ITEMS.filter(
@@ -320,16 +337,6 @@ export function SidebarNavSection({
         <Box key={id}>{renderNavItem[id](0)}</Box>
       ))}
 
-      <Box>
-        <ConfigureItem onClick={() => openSettings("agents")} />
-      </Box>
-
-      {loopsEnabled ? (
-        <Box>
-          <LoopsItem isActive={isLoopsActive} onClick={navigateToLoops} />
-        </Box>
-      ) : null}
-
       {/* Hidden items plus the Customize entry live under More, always the
           last row, like the app switcher pattern this mirrors. */}
       <Flex direction="column" className="gap-px">
@@ -359,6 +366,7 @@ export function SidebarNavSection({
       <CustomizeSidebarDialog
         open={customizeOpen}
         onOpenChange={setCustomizeOpen}
+        available={navItemAvailable}
       />
     </Flex>
   );
