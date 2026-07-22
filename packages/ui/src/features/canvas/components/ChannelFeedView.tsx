@@ -422,42 +422,80 @@ function ExpandablePrompt({
 }) {
   const observerRef = useRef<ResizeObserver | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [truncated, setTruncated] = useState(false);
+  const [truncatedText, setTruncatedText] = useState<string | null>(null);
+  const measureTextRef = useRef<HTMLSpanElement>(null);
+  const measureMoreRef = useRef<HTMLSpanElement>(null);
+  const collapsedText = children.replace(/\s+/g, " ").trim();
 
   const measureRef = useCallback(
     (body: HTMLDivElement | null) => {
       observerRef.current?.disconnect();
       observerRef.current = null;
       if (!body || expanded) return;
-      const measure = () => setTruncated(body.scrollHeight > body.clientHeight);
+      const measure = () => {
+        const text = measureTextRef.current;
+        const more = measureMoreRef.current;
+        if (!text || !more) return;
+
+        more.hidden = true;
+        text.textContent = collapsedText;
+        if (body.scrollHeight <= body.clientHeight) {
+          setTruncatedText(null);
+          return;
+        }
+
+        more.hidden = false;
+        let low = 0;
+        let high = collapsedText.length;
+        while (low < high) {
+          const middle = Math.ceil((low + high) / 2);
+          text.textContent = `${collapsedText.slice(0, middle).trimEnd()}... `;
+          if (body.scrollHeight <= body.clientHeight) {
+            low = middle;
+          } else {
+            high = middle - 1;
+          }
+        }
+        setTruncatedText(collapsedText.slice(0, low).trimEnd());
+      };
       measure();
       const observer = new ResizeObserver(measure);
-      observer.observe(body);
+      observer.observe(body.parentElement ?? body);
       observerRef.current = observer;
     },
-    [expanded],
+    [collapsedText, expanded],
   );
 
   return (
-    <div>
-      <ThreadItemBody
-        ref={measureRef}
-        className={cn(
-          "wrap-break-word whitespace-pre-wrap",
-          !expanded && (lines === 2 ? "line-clamp-2" : "line-clamp-4"),
+    <div className="relative">
+      <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
+        {expanded || truncatedText === null ? children : truncatedText}
+        {truncatedText !== null && !expanded && "... "}
+        {truncatedText !== null && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "less" : "more"}
+          </button>
         )}
-      >
-        {children}
       </ThreadItemBody>
-      {(truncated || expanded) && (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
-          onClick={() => setExpanded((value) => !value)}
+      {!expanded && (
+        <ThreadItemBody
+          ref={measureRef}
+          aria-hidden="true"
+          className={cn(
+            "wrap-break-word pointer-events-none invisible absolute inset-x-0 top-0 whitespace-normal",
+            lines === 2 ? "line-clamp-2" : "line-clamp-4",
+          )}
         >
-          {expanded ? "less" : "more"}
-        </button>
+          <span ref={measureTextRef}>{collapsedText}</span>
+          <span ref={measureMoreRef} className="text-xs">
+            more
+          </span>
+        </ThreadItemBody>
       )}
     </div>
   );
