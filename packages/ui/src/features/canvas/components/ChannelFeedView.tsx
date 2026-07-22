@@ -418,49 +418,94 @@ function ExpandablePrompt({
   children: string;
   lines: 2 | 4;
 }) {
+  // The prompt is truncated by hand — not with -webkit-line-clamp — so the
+  // "more" toggle can sit inline right after the ellipsis on the last visible
+  // line, like "...prompt…more". A hidden copy of the full text is measured to
+  // find how much fits, leaving room for the toggle; the visible body renders
+  // the cut. Measuring the full text (not the visible, already-cut text) keeps
+  // the ResizeObserver stable instead of oscillating as content swaps.
   const observerRef = useRef<ResizeObserver | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [truncated, setTruncated] = useState(false);
+  const [cut, setCut] = useState<string | null>(null);
 
   const measureRef = useCallback(
-    (body: HTMLDivElement | null) => {
+    (measure: HTMLDivElement | null) => {
       observerRef.current?.disconnect();
       observerRef.current = null;
-      if (!body || expanded) return;
-      const measure = () => setTruncated(body.scrollHeight > body.clientHeight);
-      measure();
-      const observer = new ResizeObserver(measure);
-      observer.observe(body);
+      if (!measure || expanded) return;
+
+      const compute = () => {
+        const lineHeight = parseFloat(getComputedStyle(measure).lineHeight);
+        const maxHeight = lineHeight * lines;
+        if (measure.scrollHeight <= maxHeight + 0.5) {
+          setCut(null);
+          return;
+        }
+        // Find the longest prefix that still fits in `lines` once "…more" is
+        // appended — so the toggle can sit inline right after the ellipsis on the
+        // last line. We probe by swapping the measure's text to "prefix…more" and
+        // reading scrollHeight (no per-line geometry), then restore the full text
+        // so the next resize re-measures against the uncut prompt.
+        const text = measure.firstChild as Text;
+        const original = text.nodeValue ?? "";
+        const fits = (end: number) => {
+          text.nodeValue = `${original.slice(0, end).trimEnd()}…more`;
+          return measure.scrollHeight <= maxHeight + 0.5;
+        };
+        let lo = 0;
+        let hi = original.length;
+        let best = 0;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (fits(mid)) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        text.nodeValue = original;
+        setCut(best > 0 ? `${original.slice(0, best).trimEnd()}…` : null);
+      };
+
+      compute();
+      const observer = new ResizeObserver(compute);
+      observer.observe(measure);
       observerRef.current = observer;
     },
-    [expanded],
+    [expanded, lines],
   );
 
-  // pre-line (not pre-wrap) collapses the runs of spaces that -webkit-line-clamp
-  // would otherwise leave in front of its ellipsis, while still breaking on the
-  // prompt's newlines. The toggle is pinned inside the clamp box at the
-  // bottom-right so it sits beside that ellipsis instead of on its own line.
-  const clampClass = lines === 2 ? "line-clamp-2" : "line-clamp-4";
+  const truncated = cut !== null;
+  const displayText = expanded || !truncated ? children : cut;
+
+  const clampClass = lines === 2 ? "max-h-[2lh]" : "max-h-[4lh]";
 
   return (
-    <ThreadItemBody
-      ref={measureRef}
-      className={cn(
-        "wrap-break-word relative whitespace-pre-line",
-        !expanded && clampClass,
-      )}
-    >
-      {children}
-      {truncated && (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          className="absolute right-0 bottom-0 bg-[var(--background)] pl-1 text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? "less" : "more"}
-        </button>
-      )}
+    <ThreadItemBody className="wrap-break-word relative overflow-hidden whitespace-pre-line">
+      <div
+        aria-hidden
+        className="pointer-events-none invisible absolute top-0 right-0 left-0"
+      >
+        <div ref={measureRef} className="wrap-break-word whitespace-pre-line">
+          {children}
+        </div>
+      </div>
+      <div
+        className={cn(!expanded && clampClass, !expanded && "overflow-hidden")}
+      >
+        {displayText}
+        {truncated && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            className="pl-1 text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "less" : "more"}
+          </button>
+        )}
+      </div>
     </ThreadItemBody>
   );
 }
