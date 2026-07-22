@@ -556,6 +556,14 @@ snapshots:
         hash: v1.k4693efd2.39d47f04f9ee6a6508342a8cddd00169b4b8c6628d1f63d81759e20f6dec136a.XJ6pqjbtYJv9ESWNflv286xYvR2Pn3xg44mLVyWTnv4
     git-dialogs--sync-success--light:
         hash: v1.k4693efd2.8d79d77c9338aeaa73734836f0e17fde987f6d3239914f4013889d3110e5088d.Rq-w2o1uhes_a5hUWqMXeiDkfnoPCZPt932LkEQXCco
+    loops-loopslistview--comprehensive--dark:
+        hash: v1.k4693efd2.a9b9a8b23cca2079c3ced1878b6537ee9fbbdd0d3de205a9584fbe7d6875d405.dWfER84S8r_MU7EVDmjW8CuCf6lNhTx6RjfV_cNzKOA
+    loops-loopslistview--comprehensive--light:
+        hash: v1.k4693efd2.9ff3f3787ef56ab9d1d39562eed6f19b6c9c1e7a6d79965fbf99fbac16ba33fb.DDuj_KZx0pcUxXwCgzNGFmCemCT1MuCzIQmbbPMgatw
+    loops-loopslistview--long-mixed-list--dark:
+        hash: v1.k4693efd2.683dedbfa7da3313eeaf52ff9e3cc7908af5c77173b1cad450b2acd61ac30cd4.YFm7fXVZSr29fa0R40pzq-FjRZrqIBEsIMiOiddB840
+    loops-loopslistview--long-mixed-list--light:
+        hash: v1.k4693efd2.577fa23e3bc43f0ba033a59669fa73035ff2d65df1f994cf5753ac306ca830cf.r3v1hne0uC4dHpkzXriz6yzcA3fD2b8wD6ZLxA_0Fuo
     scouts-scoutsfleetlist--filtered-to-you--dark:
         hash: v1.k4693efd2.a3af6e76ef36598eaa347bedc4430878ed62754660166398e0576a9978cd084b.x3Ky-O6HOw0srWdOmnnKJwFNpmGmQVWip0t7CwVaRXY
     scouts-scoutsfleetlist--filtered-to-you--light:
