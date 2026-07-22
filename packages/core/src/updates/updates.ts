@@ -526,14 +526,19 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return;
     }
 
-    // If we already have a downloaded update, only accept a strictly newer one
-    // so a duplicate or stale event can't reset the staged version.
-    if (
-      this.state === "ready" &&
-      !isStrictlyNewer(version, this.downloadedVersion)
-    ) {
+    // Reject a stale or duplicate download for a version no newer than one we
+    // already have in hand — or are actively superseding away from —
+    // regardless of state. A delayed update-downloaded event for the old
+    // artifact can arrive while a newer supersede download is still in flight
+    // (state "downloading"/"available", so downloadedVersion is momentarily
+    // null); without this guard it would overwrite the pending newer update
+    // with the stale one and strand us on the old version. The two fields are
+    // mutually exclusive — a supersede nulls downloadedVersion and records
+    // supersededReadyVersion — so `??` picks whichever floor applies.
+    const floorVersion = this.downloadedVersion ?? this.supersededReadyVersion;
+    if (floorVersion !== null && !isStrictlyNewer(version, floorVersion)) {
       this.log.info("Ignoring duplicate or older update-downloaded event", {
-        existingVersion: this.downloadedVersion,
+        floorVersion,
         incomingVersion: version,
       });
       return;

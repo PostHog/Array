@@ -975,6 +975,38 @@ describe("UpdatesService", () => {
       });
     });
 
+    it("ignores a stale download for the old artifact while a supersede is in flight", async () => {
+      await initializeService(service);
+      service.setAutoDownloadEnabled(true);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      expect(service.getStatus()).toMatchObject({ version: "v2.0.0" });
+
+      // Supersede to v3.0.0 kicks off a download; v2.0.0 is no longer staged.
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: null,
+      });
+      expect(service.getStatus()).toMatchObject({ downloading: true });
+
+      // A delayed update-downloaded for the OLD v2.0.0 arrives mid-download; it
+      // must not strand us back on v2.0.0.
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      expect(service.hasUpdateReady).toBe(false);
+      expect(service.getStatus()).toMatchObject({
+        downloading: true,
+        availableVersion: "v3.0.0",
+      });
+
+      // The real v3.0.0 download still completes and stages cleanly.
+      updaterHandlers.updateDownloaded?.("v3.0.0");
+      expect(service.getStatus()).toMatchObject({
+        updateReady: true,
+        version: "v3.0.0",
+      });
+    });
+
     it("restores the previously staged update when a superseding download fails", async () => {
       await initializeService(service);
       service.setAutoDownloadEnabled(true);
