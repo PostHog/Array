@@ -1254,6 +1254,11 @@ export const ANALYTICS_EVENTS = {
   // Autoresearch events
   AUTORESEARCH_ARMED: "Autoresearch armed",
   AUTORESEARCH_RUN_STARTED: "Autoresearch run started",
+
+  // Loops promo events
+  LOOPS_PROMO_OPENED: "Loops promo opened",
+  LOOPS_PROMO_DISMISSED: "Loops promo dismissed",
+  LOOPS_PROMO_LEARN_MORE_CLICKED: "Loops promo learn more clicked",
 } as const;
 
 // Event property mapping
@@ -1414,6 +1419,11 @@ export type EventPropertyMap = {
   // Autoresearch events
   [ANALYTICS_EVENTS.AUTORESEARCH_ARMED]: AutoresearchArmedProperties;
   [ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED]: AutoresearchRunStartedProperties;
+
+  // Loops promo events
+  [ANALYTICS_EVENTS.LOOPS_PROMO_OPENED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_DISMISSED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_LEARN_MORE_CLICKED]: never;
 };
 
 /**
