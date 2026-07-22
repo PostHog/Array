@@ -62,9 +62,23 @@ import type { RepositoriesService } from "@posthog/core/integrations/repositorie
 import { LLM_GATEWAY_SERVICE } from "@posthog/core/llm-gateway/identifiers";
 import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
 import {
+  LOCAL_MCP_IMPORT_SERVICE,
+  LOCAL_MCP_WORKSPACE_CLIENT,
+} from "@posthog/core/local-mcp/identifiers";
+import type {
+  LocalMcpImportService,
+  LocalMcpWorkspaceClient,
+} from "@posthog/core/local-mcp/localMcpImport";
+import {
   GITHUB_CONNECT_CLIENT,
   type GithubConnectClient,
 } from "@posthog/core/onboarding/identifiers";
+import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
+import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
+import {
+  PI_SESSION_CLIENT,
+  type PiSessionClient,
+} from "@posthog/core/pi-runtime/piSessionController";
 import {
   type BundleLocalSkill,
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
@@ -97,6 +111,12 @@ import {
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { SKILLS_WORKSPACE_CLIENT } from "@posthog/core/skills/identifiers";
 import type { SkillsWorkspaceClient } from "@posthog/core/skills/teamSkillsService";
+import {
+  SPEECH_SETTINGS_PROVIDER,
+  SPEECH_USER_NAME_PROVIDER,
+  type SpeechSettingsProvider,
+  type UserNameProvider,
+} from "@posthog/core/speech/identifiers";
 import {
   TASK_CREATION_EFFECTS,
   TASK_CREATION_HOST,
@@ -134,9 +154,14 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import {
+  HOST_CAPABILITIES,
+  type HostCapabilities,
+} from "@posthog/platform/host-capabilities";
+import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
+import { type ISpeech, SPEECH_SERVICE } from "@posthog/platform/speech";
 import {
   AUTH_SIDE_EFFECTS,
   type IAuthSideEffects,
@@ -188,7 +213,9 @@ import {
   ACTIVE_VIEW_PROVIDER,
   type IActiveView,
   type INotificationSettings,
+  type ISpeechNotifySettings,
   NOTIFICATION_SETTINGS_PROVIDER,
+  SPEECH_NOTIFY_SETTINGS,
 } from "@posthog/ui/features/notifications/identifiers";
 import {
   AGENT_PROMPT_SENDER,
@@ -202,6 +229,10 @@ import {
   DEV_MODE_CLIENT,
   type DevModeClient,
 } from "@posthog/ui/features/settings/devModeClient";
+import {
+  type ISpeechKeyStore,
+  SPEECH_KEY_STORE,
+} from "@posthog/ui/features/settings/speechKeyStore";
 import {
   SHELL_CLIENT,
   type ShellClient,
@@ -263,6 +294,8 @@ export interface RendererBindings {
   [SHELL_PROCESS_READER]: ShellProcessReader;
   [ANALYTICS_TRACKER]: AnalyticsTracker;
   [TASK_CREATION_HOST]: ITaskCreationHost;
+  [PI_RUNNER]: PiRunner;
+  [PI_SESSION_CLIENT]: PiSessionClient;
   [TASK_CREATION_EFFECTS]: TaskCreationEffects;
   [RENDERER_TASK_SERVICE]: TaskService;
   [TASK_SERVICE]: TaskService;
@@ -288,6 +321,8 @@ export interface RendererBindings {
   [CODE_REVIEW_WORKSPACE_CLIENT]: CodeReviewWorkspaceClient;
   [REVERT_HUNK_SERVICE]: RevertHunkService;
   [SKILLS_WORKSPACE_CLIENT]: SkillsWorkspaceClient;
+  [LOCAL_MCP_WORKSPACE_CLIENT]: LocalMcpWorkspaceClient;
+  [LOCAL_MCP_IMPORT_SERVICE]: LocalMcpImportService;
   [CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL]: BundleLocalSkill;
   [CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES]: ResolveSkillBundleDependencies;
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
@@ -316,10 +351,16 @@ export interface RendererBindings {
   [NOTIFICATIONS_SERVICE]: INotifications;
   [NOTIFICATION_SETTINGS_PROVIDER]: INotificationSettings;
   [ACTIVE_VIEW_PROVIDER]: IActiveView;
+  [SPEECH_SERVICE]: ISpeech;
+  [SPEECH_SETTINGS_PROVIDER]: SpeechSettingsProvider;
+  [SPEECH_USER_NAME_PROVIDER]: UserNameProvider;
+  [SPEECH_NOTIFY_SETTINGS]: ISpeechNotifySettings;
+  [SPEECH_KEY_STORE]: ISpeechKeyStore;
   [FILE_WATCHER_CLIENT]: FileWatcherClient;
   [FEATURE_FLAGS]: FeatureFlags;
   [AUTH_SIDE_EFFECTS]: IAuthSideEffects;
   [SETUP_STORE]: ISetupStore;
+  [HOST_CAPABILITIES]: HostCapabilities;
 
   // --- desktop-contributions.ts ---
   [CONTRIBUTION]: Contribution;

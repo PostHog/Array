@@ -1,9 +1,4 @@
-import {
-  Archive,
-  GitFork,
-  GitPullRequest,
-  PushPin,
-} from "@phosphor-icons/react";
+import { Archive, GitPullRequest, PushPin } from "@phosphor-icons/react";
 import { parseGithubUrl } from "@posthog/git/utils";
 import type { WorkspaceMode } from "@posthog/shared";
 import { formatRelativeTimeShort } from "@posthog/shared";
@@ -34,17 +29,6 @@ function PrBadge({ url, number }: { url: string; number: number }) {
   );
 }
 
-function WorktreeChip({ name, path }: { name: string; path?: string }) {
-  return (
-    <Tooltip content={path ?? name} side="top">
-      <span className="flex h-4 max-w-[96px] shrink-0 items-center gap-0.5 rounded bg-gray-3 px-1 text-[11px] text-gray-11">
-        <GitFork size={10} weight="bold" className="shrink-0" />
-        <span className="truncate">{name}</span>
-      </span>
-    </Tooltip>
-  );
-}
-
 interface TaskItemProps {
   depth?: number;
   taskId: string;
@@ -55,10 +39,6 @@ interface TaskItemProps {
   isArchiving?: boolean;
   hideHoverActions?: boolean;
   workspaceMode?: WorkspaceMode;
-  /** Checkout name shown as a chip when the task runs in a git worktree. */
-  worktreeName?: string;
-  /** Full path of that checkout, surfaced in the chip's tooltip. */
-  worktreePath?: string;
   isGenerating?: boolean;
   isUnread?: boolean;
   isPinned?: boolean;
@@ -131,8 +111,6 @@ export function TaskItem({
   isArchiving = false,
   hideHoverActions = false,
   workspaceMode,
-  worktreeName,
-  worktreePath,
   isSuspended = false,
   isGenerating,
   isUnread,
@@ -195,14 +173,9 @@ export function TaskItem({
       />
     ) : null;
 
-  const worktreeChip = worktreeName ? (
-    <WorktreeChip name={worktreeName} path={worktreePath} />
-  ) : null;
-
   const endContent =
-    worktreeChip || prBadge || timestampNode || toolbar ? (
+    prBadge || timestampNode || toolbar ? (
       <>
-        {worktreeChip}
         {prBadge}
         {timestampNode}
         {toolbar}

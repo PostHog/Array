@@ -23,7 +23,8 @@ export function ScoutHelperSkillLinks({ surface }: { surface: ScoutSurface }) {
         <span key={skill.name}>
           {index > 0 ? " · " : null}
           <Link
-            to="/skills"
+            to="/settings/$category"
+            params={{ category: "skills" }}
             onClick={() => {
               track(ANALYTICS_EVENTS.SCOUT_ACTION, {
                 action_type: "open_helper_skill",

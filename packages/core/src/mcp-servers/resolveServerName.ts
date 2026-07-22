@@ -20,7 +20,8 @@ export interface ResolvedServerDetails {
   name: string;
   description: string;
   docsUrl: string | null;
-  iconKey: string | null;
+  iconDomain: string | null;
+  serverUrl: string | null;
   authType: McpRecommendedServer["auth_type"] | undefined;
 }
 
@@ -37,7 +38,8 @@ export function resolveServerDetails(
       "Server",
     description: installation?.description || template?.description || "",
     docsUrl: template?.docs_url || null,
-    iconKey: installation?.icon_key || template?.icon_key || null,
+    iconDomain: installation?.icon_domain || template?.icon_domain || null,
+    serverUrl: installation?.url || template?.url || null,
     authType: installation?.auth_type || template?.auth_type,
   };
 }

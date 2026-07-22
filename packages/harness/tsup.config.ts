@@ -3,9 +3,9 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: [
+    "src/index.ts",
     "src/cli.ts",
-    "src/session.ts",
-    "src/spawn.ts",
+    "src/runtime.ts",
     "src/extensions/registry.ts",
     "src/extensions/hog-branding/extension.ts",
     "src/extensions/hog-branding/index.ts",
@@ -33,6 +33,7 @@ export default defineConfig({
     "src/extensions/subagent/auth.ts",
     "src/extensions/subagent/context.ts",
     "src/extensions/subagent/process/child-process.ts",
+    "src/extensions/subagent/process/pi-subprocess.ts",
     "src/extensions/subagent/run-agent.ts",
     "src/extensions/subagent/process/pool.ts",
     "src/extensions/subagent/lifecycle.ts",
@@ -67,10 +68,9 @@ export default defineConfig({
     "src/extensions/footer-focus-demo/footer.ts",
     "src/extensions/footer-focus-demo/editor.ts",
     "src/extensions/footer-focus-demo/overlay.ts",
-    "src/pi-cli.ts",
   ],
   format: ["esm"],
-  dts: true,
+  dts: false,
   sourcemap: true,
   clean: true,
   splitting: false,

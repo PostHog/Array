@@ -57,4 +57,41 @@ describe("toCodexMcpServers", () => {
       },
     });
   });
+
+  it("prompts for PostHog exec when gating is enabled", () => {
+    const servers = [
+      {
+        type: "http",
+        name: "posthog_cloud",
+        url: "https://mcp.example/mcp",
+      },
+      {
+        type: "http",
+        name: "other",
+        url: "https://other.example/mcp",
+      },
+    ] as unknown as McpServer[];
+
+    expect(toCodexMcpServers(servers, { gatePosthogExec: true })).toEqual({
+      posthog_cloud: {
+        url: "https://mcp.example/mcp",
+        tools: { exec: { approval_mode: "prompt" } },
+      },
+      other: { url: "https://other.example/mcp" },
+    });
+  });
+
+  it("leaves PostHog exec unchanged when gating is not enabled", () => {
+    const servers = [
+      {
+        type: "http",
+        name: "posthog",
+        url: "https://mcp.example/mcp",
+      },
+    ] as unknown as McpServer[];
+
+    expect(toCodexMcpServers(servers)).toEqual({
+      posthog: { url: "https://mcp.example/mcp" },
+    });
+  });
 });

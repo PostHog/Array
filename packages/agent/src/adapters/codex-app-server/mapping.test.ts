@@ -42,20 +42,14 @@ describe("mapAppServerNotification", () => {
     });
   });
 
-  it("streams a plan delta as an ACP agent_message_chunk", () => {
+  it("keeps plan deltas out of the agent transcript", () => {
     const result = mapAppServerNotification(
       "s-1",
       APP_SERVER_NOTIFICATIONS.PLAN_DELTA,
       { itemId: "p1", delta: "## Plan\n" },
     );
 
-    expect(result).toEqual({
-      sessionId: "s-1",
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: "## Plan\n" },
-      },
-    });
+    expect(result).toBeNull();
   });
 
   it("returns null when the delta is missing or empty", () => {
@@ -227,6 +221,74 @@ describe("mapAppServerNotification", () => {
     expect(meta.posthog).toEqual({
       toolName: "mcp__posthog__exec",
       mcp: { server: "posthog", tool: "exec" },
+    });
+  });
+
+  it("maps a spawned Codex agent to an explicit subagent tool call", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_STARTED,
+      {
+        item: {
+          type: "collabAgentToolCall",
+          id: "spawn-1",
+          tool: "spawnAgent",
+          status: "inProgress",
+          senderThreadId: "main-thread",
+          receiverThreadIds: ["child-thread"],
+          prompt: "Review the authentication changes\nFocus on security.",
+          model: "gpt-5.5",
+          reasoningEffort: "high",
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "spawn-1",
+        title: "Review the authentication changes",
+        kind: "other",
+        status: "in_progress",
+        rawInput: {
+          prompt: "Review the authentication changes\nFocus on security.",
+          receiverThreadIds: ["child-thread"],
+          model: "gpt-5.5",
+          reasoningEffort: "high",
+        },
+        _meta: { posthog: { toolName: "spawn_agent" } },
+      },
+    });
+  });
+
+  it("keeps a completed spawn tool call terminal while its subagent is running", () => {
+    const result = mapAppServerNotification(
+      "s-1",
+      APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED,
+      {
+        item: {
+          type: "collabAgentToolCall",
+          id: "spawn-1",
+          tool: "spawnAgent",
+          status: "completed",
+          senderThreadId: "main-thread",
+          receiverThreadIds: ["child-thread"],
+          prompt: "Review the authentication changes",
+          agentsStates: {
+            "child-thread": { status: "running", message: null },
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      sessionId: "s-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "spawn-1",
+        status: "completed",
+      },
     });
   });
 
@@ -541,15 +603,25 @@ describe("mapHistoryItem", () => {
     ]);
   });
 
-  it("replays a persisted plan item as an agent_message_chunk", () => {
+  it("replays a persisted plan item as a historical plan tool call", () => {
     expect(
       mapHistoryItem("s-1", { type: "plan", id: "p1", text: "# The plan" }),
     ).toEqual([
       {
         sessionId: "s-1",
         update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: "# The plan" },
+          sessionUpdate: "tool_call",
+          toolCallId: "p1:implement",
+          title: "Plan",
+          kind: "switch_mode",
+          status: "completed",
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "# The plan" },
+            },
+          ],
+          rawInput: { plan: "# The plan", historical: true },
         },
       },
     ]);

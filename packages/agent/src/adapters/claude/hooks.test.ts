@@ -12,6 +12,7 @@ import type { TaskState } from "./conversion/task-state";
 import {
   createPreToolUseHook,
   createReadEnrichmentHook,
+  createReadImageGuardHook,
   createSignedCommitGuardHook,
   createTaskHook,
   type EnrichedReadCache,
@@ -41,6 +42,131 @@ function buildReadHookInput(
     ...overrides,
   } as HookInput;
 }
+
+describe("createReadImageGuardHook", () => {
+  test.each([
+    {
+      name: "unsupported image type",
+      image: {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/heic",
+          data: "ZmFrZQ==",
+        },
+      },
+      expectedReason: "unsupported image type image/heic",
+    },
+    {
+      name: "oversized image",
+      image: {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "A".repeat((6 * 1024 * 1024 * 4) / 3),
+        },
+      },
+      expectedReason: "5 MB per-image limit",
+    },
+    {
+      name: "empty image data",
+      image: {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "",
+        },
+      },
+      expectedReason: "image data is empty",
+    },
+  ])(
+    "replaces a $name before it reaches the model",
+    async ({ image, expectedReason }) => {
+      const hook = createReadImageGuardHook();
+      const result = await hook(
+        buildReadHookInput({
+          tool_response: {
+            content: [{ type: "text", text: "Image Size: 1200x800." }, image],
+          },
+        }),
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toMatchObject({
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: "PostToolUse",
+          updatedToolOutput: {
+            content: [
+              { type: "text", text: "Image Size: 1200x800." },
+              { type: "text", text: expect.stringContaining(expectedReason) },
+            ],
+          },
+        },
+      });
+    },
+  );
+
+  test("wraps sanitized bare content arrays as a Read tool result", async () => {
+    const hook = createReadImageGuardHook();
+    const result = await hook(
+      buildReadHookInput({
+        tool_response: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/heic",
+              data: "ZmFrZQ==",
+            },
+          },
+        ],
+      }),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toEqual({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        updatedToolOutput: {
+          content: [
+            {
+              type: "text",
+              text: "[Removed unprocessable image: unsupported image type image/heic]",
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  test("leaves supported images unchanged", async () => {
+    const hook = createReadImageGuardHook();
+    const result = await hook(
+      buildReadHookInput({
+        tool_response: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: "ZmFrZQ==",
+            },
+          },
+        ],
+      }),
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toEqual({ continue: true });
+  });
+});
 
 describe("createReadEnrichmentHook", () => {
   test("returns { continue: true } for non-PostToolUse events", async () => {
@@ -225,6 +351,8 @@ function buildSettingsManagerStub(
 
 describe("createPreToolUseHook", () => {
   const logger = new Logger({ debug: false });
+  const posthogExecPermissionRegex =
+    /(^|-)(partial-update|update|patch|delete|destroy)(-|$)/i;
 
   test("defers destructive PostHog exec sub-tool to canUseTool via ask", async () => {
     const settingsManager = buildSettingsManagerStub({
@@ -232,7 +360,11 @@ describe("createPreToolUseHook", () => {
       rule: "mcp__posthog__exec",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("mcp__posthog__exec", {
         command: 'call dashboard-update {"id": 1, "name": "x"}',
@@ -256,7 +388,11 @@ describe("createPreToolUseHook", () => {
       rule: "mcp__posthog__exec",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("mcp__posthog__exec", {
         command: 'call experiment-get {"id": 1}',
@@ -282,7 +418,11 @@ describe("createPreToolUseHook", () => {
       rule: "Bash(ls:*)",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("Bash", { command: "ls -la" }),
       undefined,
@@ -300,7 +440,11 @@ describe("createPreToolUseHook", () => {
       rule: "mcp__posthog__exec",
       source: "allow",
     });
-    const hook = createPreToolUseHook(settingsManager, logger);
+    const hook = createPreToolUseHook(
+      settingsManager,
+      logger,
+      posthogExecPermissionRegex,
+    );
     const result = await hook(
       buildPreToolUseHookInput("mcp__posthog__exec", {
         command: 'call cohorts-partial-update {"id": 1}',

@@ -4,7 +4,10 @@ export const POSTHOG_US_CLIENT_ID = "HCWoE0aRFMYxIxFNTTwkOORn5LBjOt2GVDzwSw5W";
 export const POSTHOG_EU_CLIENT_ID = "AIvijgMS0dxKEmr5z6odvRd8Pkh5vts3nPTzgzU9";
 export const POSTHOG_DEV_CLIENT_ID = "DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ";
 
-// Bump OAUTH_SCOPE_VERSION below whenever OAUTH_SCOPES changes to force re-authentication
+// Wildcard, not the explicit scope list: the prod OAuth apps have no seeded scope ceiling,
+// so /oauth/authorize rejects the privileged llm_gateway:read with invalid_scope while "*"
+// is grandfathered. Re-land the explicit list only after the US and EU app ceilings are
+// seeded with ["@default", "llm_gateway:read"]. Bump OAUTH_SCOPE_VERSION on any change.
 export const OAUTH_SCOPES = ["*"];
 
 export const OAUTH_SCOPE_VERSION = 5;

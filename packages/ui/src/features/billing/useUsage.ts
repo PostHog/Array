@@ -2,7 +2,7 @@ import { useHostTRPCClient } from "@posthog/host-router/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
 
-const USAGE_QUERY_KEY = ["billing", "usage", "latest"] as const;
+export const USAGE_QUERY_KEY = ["billing", "usage", "latest"] as const;
 
 export function useUsage({ enabled = true }: { enabled?: boolean } = {}) {
   const client = useHostTRPCClient();

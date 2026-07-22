@@ -6,9 +6,11 @@ import {
   cn,
   Spinner,
 } from "@posthog/quill";
+import { readAgentToolName } from "@posthog/shared";
 import type { ToolCall } from "@posthog/ui/features/sessions/types";
 import { memo } from "react";
 import type { ConversationItem } from "../buildConversationItems";
+import { grouping } from "../new-thread/conversationThreadConfig";
 import { SessionUpdateView } from "../session-update/SessionUpdateView";
 import { iconForToolCall } from "../session-update/toolCallUtils";
 
@@ -38,10 +40,10 @@ function resolveTool(item: ToolGroupItem["tools"][number]): {
     ...(update as unknown as ToolCall),
     status: (update as unknown as ToolCall).status ?? "in_progress",
   };
-  const meta = fromMap._meta as
-    | { claudeCode?: { toolName?: string } }
-    | undefined;
-  return { toolCall: fromMap, toolName: meta?.claudeCode?.toolName };
+  return {
+    toolCall: fromMap,
+    toolName: readAgentToolName(fromMap._meta),
+  };
 }
 
 /** Identity used to decide if a group is "all the same tool". */
@@ -52,9 +54,12 @@ function toolKey(item: ToolGroupItem["tools"][number]): string {
 
 /** Human label for a uniform group, e.g. `ToolSearch` → "Tool search", `mcp__x__run` → "Run". */
 function friendlyName(key: string): string {
+  if (grouping.subagentToolNames.has(key)) return "Subagents";
   const last = key.includes("__") ? (key.split("__").pop() ?? key) : key;
-  // Split PascalCase/camelCase into words so `ToolSearch` reads "Tool search" rather than "Toolsearch".
-  const spaced = last.replace(/([a-z\d])([A-Z])/g, "$1 $2");
+  // Split separators and PascalCase/camelCase so tool identifiers read naturally.
+  const spaced = last
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 }
 

@@ -2,10 +2,13 @@ import "./generated.augment";
 import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type {
   Adapter,
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   CloudRunSource,
   ExecutionMode,
   PrAuthorshipMode,
-  SeatData,
+  SourceProduct,
+  SourceType,
   StoredLogEntry,
   TaskRunArtifactMetadata,
 } from "@posthog/shared";
@@ -13,7 +16,6 @@ import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
   resolveCloudInitialPermissionMode,
-  SEAT_PRODUCT_KEY,
 } from "@posthog/shared";
 import type {
   AgentAnalyticsData,
@@ -52,6 +54,8 @@ import type {
   ActionabilityJudgmentArtefact,
   AvailableSuggestedReviewer,
   AvailableSuggestedReviewersResponse,
+  ChannelFeedMessage,
+  ChannelFeedMessageEvent,
   CodeReferenceArtefact,
   CommitArtefact,
   CommitDiffResponse,
@@ -94,7 +98,7 @@ import {
   type HogQLGrid,
   shapeAgentAnalytics,
 } from "./agent-analytics";
-import { buildApiFetcher } from "./fetcher";
+import { buildApiFetcher, requestErrorStatus } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
 export interface ApiClientLogger {
@@ -115,20 +119,8 @@ export function setPosthogApiClientAppVersion(version: string): void {
   clientAppVersion = version;
 }
 
-export class SeatSubscriptionRequiredError extends Error {
-  redirectUrl: string;
-  constructor(redirectUrl: string) {
-    super("Billing subscription required");
-    this.name = "SeatSubscriptionRequiredError";
-    this.redirectUrl = redirectUrl;
-  }
-}
-
-export class SeatPaymentFailedError extends Error {
-  constructor(message?: string) {
-    super(message ?? "Payment failed");
-    this.name = "SeatPaymentFailedError";
-  }
+export function getPosthogApiClientAppVersion(): string {
+  return clientAppVersion;
 }
 
 export class SandboxCustomImagesDisabledError extends Error {
@@ -144,6 +136,11 @@ export type UsageLimitType = "burst" | "sustained" | null;
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
 
 export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
+
+export interface TaskRunSessionLogsResult {
+  entries: StoredLogEntry[];
+  complete: boolean;
+}
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
@@ -253,26 +250,8 @@ export interface LlmSkillFileInput {
 
 export interface SignalSourceConfig {
   id: string;
-  source_product:
-    | "session_replay"
-    | "llm_analytics"
-    | "github"
-    | "linear"
-    | "jira"
-    | "zendesk"
-    | "conversations"
-    | "error_tracking"
-    | "pganalyze"
-    | "signals_scout";
-  source_type:
-    | "session_analysis_cluster"
-    | "evaluation"
-    | "issue"
-    | "ticket"
-    | "issue_created"
-    | "issue_reopened"
-    | "issue_spiking"
-    | "cross_source_issue";
+  source_product: SourceProduct;
+  source_type: SourceType;
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
@@ -446,6 +425,34 @@ export interface SourceFieldOauthConfig {
   requiredScopes?: string;
 }
 
+/**
+ * A picker whose options are the accounts/resources a connected OAuth integration exposes (loaded
+ * from the `oauth_accounts` endpoint using the integration's server-side token). Used e.g. for a
+ * GitHub repository or an ad account.
+ */
+export interface SourceFieldOauthAccountSelectConfig {
+  type: "oauth-account-select";
+  name: string;
+  label: string;
+  /** Name of the sibling OAuth id field this selector reads its integration id from. */
+  integrationField: string;
+  /** Integration kind used to validate the connected integration, e.g. "github". */
+  integrationKind: string;
+  placeholder?: string;
+  caption?: string;
+  required?: boolean;
+}
+
+/** A selectable account/resource an OAuth integration exposes (shared `IntegrationAccount` shape). */
+export interface IntegrationAccount {
+  value: string;
+  display_name: string;
+  is_primary: boolean;
+  badges: string[];
+  group: string | null;
+  secondary_text: string | null;
+}
+
 export interface SourceFieldSelectConfigOption {
   label: string;
   value: string;
@@ -480,6 +487,7 @@ export interface SourceFieldUnsupportedConfig {
 export type SourceFieldConfig =
   | SourceFieldInputConfig
   | SourceFieldOauthConfig
+  | SourceFieldOauthAccountSelectConfig
   | SourceFieldSelectConfig
   | SourceFieldSwitchGroupConfig
   | SourceFieldUnsupportedConfig;
@@ -583,7 +591,12 @@ interface CloudRunOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
-  homeQuickAction?: string;
+  /**
+   * Local url-based MCP servers to make available inside the sandbox. The
+   * backend merges these into the agent server's `--mcpServers` at spawn.
+   */
+  importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -675,8 +688,11 @@ function buildCloudRunRequestBody(
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
   }
-  if (options?.homeQuickAction) {
-    body.home_quick_action = options.homeQuickAction;
+  if (options?.importedMcpServers?.length) {
+    body.imported_mcp_servers = options.importedMcpServers;
+  }
+  if (options?.relayedMcpServers?.length) {
+    body.relayed_mcp_servers = options.relayedMcpServers;
   }
 
   return body;
@@ -1819,82 +1835,6 @@ export class PostHogAPIClient {
     return data as Schemas.Team;
   }
 
-  async getHomeSnapshot(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch home snapshot: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async refreshHomeSnapshot(): Promise<void> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/refresh/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to request home refresh: ${response.status}`);
-    }
-  }
-
-  async getCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  // 409/422 carry a structured save-result body the caller validates.
-  async saveCodeWorkflow(body: {
-    config: unknown;
-    expectedVersion: number;
-  }): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/save/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-      overrides: {
-        body: JSON.stringify(body),
-      },
-    });
-    if (!response.ok && response.status !== 409 && response.status !== 422) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async resetCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/reset/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
   async listSignalSourceConfigs(
     projectId: number,
   ): Promise<SignalSourceConfig[]> {
@@ -2253,6 +2193,35 @@ export class PostHogAPIClient {
     return (await response.json()) as Record<string, SourceConfig>;
   }
 
+  /**
+   * List the accounts/resources a connected OAuth integration exposes for a source type (e.g. the
+   * repositories a GitHub integration can access), for an `oauth-account-select` field. The backend
+   * uses the integration's stored token; the client only passes the integration id. Pass `search`
+   * to filter server-side for large lists.
+   */
+  async getOauthAccounts(
+    projectId: number,
+    sourceType: string,
+    integrationId: number | string,
+    search?: string,
+  ): Promise<IntegrationAccount[]> {
+    const url = new URL(
+      `${this.api.baseUrl}/api/environments/${projectId}/external_data_sources/oauth_accounts/`,
+    );
+    url.searchParams.set("source_type", sourceType);
+    url.searchParams.set("integration_id", String(integrationId));
+    if (search?.trim()) {
+      url.searchParams.set("search", search.trim());
+    }
+    const path = `/api/environments/${projectId}/external_data_sources/oauth_accounts/`;
+    const response = await this.api.fetcher.fetch({ method: "get", url, path });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch accounts: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { accounts?: IntegrationAccount[] };
+    return data.accounts ?? [];
+  }
+
   async updateExternalDataSchema(
     projectId: number,
     schemaId: string,
@@ -2370,6 +2339,7 @@ export class PostHogAPIClient {
           | "repository"
           | "json_schema"
           | "origin_product"
+          | "runtime"
           | "signal_report"
         >
       > & {
@@ -2465,6 +2435,56 @@ export class PostHogAPIClient {
       throw new Error(`Failed to resolve task channel: ${response.statusText}`);
     }
     return (await response.json()) as TaskChannel;
+  }
+
+  // A channel's system-announcement feed (context created, CONTEXT.md being
+  // built), chronological. Durable + team-visible, rendered alongside task cards.
+  async getChannelFeed(channelId: string): Promise<ChannelFeedMessage[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${channelId}/feed/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch channel feed: ${response.statusText}`);
+    }
+    return (await response.json()) as ChannelFeedMessage[];
+  }
+
+  // Post a system announcement into a channel's feed. The row is authored by the
+  // system; the server records the requester as `author` for "Adam …" rendering.
+  async postChannelFeedMessage(
+    channelId: string,
+    input: {
+      event: ChannelFeedMessageEvent;
+      payload?: Record<string, unknown>;
+      // Optional explicit timestamp (ISO) so a burst of announcements orders
+      // deterministically instead of racing on server insert time.
+      createdAt?: string;
+    },
+  ): Promise<ChannelFeedMessage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_channels/${channelId}/feed/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({
+          event: input.event,
+          payload: input.payload ?? {},
+          ...(input.createdAt ? { created_at: input.createdAt } : {}),
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to post channel feed message: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as ChannelFeedMessage;
   }
 
   // Mentions of the current user across task threads, newest first.
@@ -2693,6 +2713,8 @@ export class PostHogAPIClient {
     runtime_adapter?: string | null;
     model?: string | null;
     reasoning_effort?: string | null;
+    sandbox_environment_id?: string | null;
+    custom_image_id?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/warm/`;
@@ -2709,6 +2731,12 @@ export class PostHogAPIClient {
           runtime_adapter: options.runtime_adapter ?? null,
           model: options.model ?? null,
           reasoning_effort: options.reasoning_effort ?? null,
+          ...(options.sandbox_environment_id
+            ? { sandbox_environment_id: options.sandbox_environment_id }
+            : {}),
+          ...(options.custom_image_id
+            ? { custom_image_id: options.custom_image_id }
+            : {}),
         }),
       },
     });
@@ -3042,6 +3070,15 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    return (await this.getTaskRunSessionLogsResult(taskId, runId, options))
+      .entries;
+  }
+
+  async getTaskRunSessionLogsResult(
+    taskId: string,
+    runId: string,
+    options?: { limit?: number; after?: string },
+  ): Promise<TaskRunSessionLogsResult> {
     const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
     const entries: StoredLogEntry[] = [];
     try {
@@ -3072,21 +3109,21 @@ export class PostHogAPIClient {
           log.warn(
             `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
           );
-          break;
+          return { entries, complete: false };
         }
 
         const page = (await response.json()) as StoredLogEntry[];
         entries.push(...page);
         const hasMore = response.headers.get("X-Has-More") === "true";
         if (!hasMore || page.length === 0) {
-          break;
+          return { entries, complete: true };
         }
         offset += page.length;
       }
-      return entries;
+      return { entries, complete: false };
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return entries;
+      return { entries, complete: false };
     }
   }
 
@@ -4071,6 +4108,40 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
+  /**
+   * Object URL for an MCP server's brand icon, proxied from logo.dev by the
+   * authenticated `mcp_servers/icon/` endpoint. Returns null when no brand
+   * icon exists for the domain (the endpoint 404s so callers render their own
+   * fallback glyph, e.g. on self-hosted instances without a logo.dev token).
+   */
+  async getMcpServerIconUrl(
+    domain: string,
+    theme?: "light" | "dark",
+  ): Promise<string | null> {
+    const teamId = await this.getTeamId();
+    const path = `/api/environments/${teamId}/mcp_servers/icon/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("domain", domain);
+    if (theme) {
+      url.searchParams.set("theme", theme);
+    }
+    let response: Response;
+    try {
+      response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+    } catch (error) {
+      // 404 is the endpoint's definitive "no icon for this domain" answer,
+      // not a failure; anything else propagates so callers can retry.
+      if (requestErrorStatus(error) === 404) return null;
+      throw error;
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  }
+
   async getMcpServerInstallations(): Promise<McpServerInstallation[]> {
     const teamId = await this.getTeamId();
     const url = new URL(
@@ -4320,113 +4391,6 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
-  async getMySeat(
-    options: { best?: boolean } = { best: true },
-  ): Promise<SeatData | null> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
-      url.searchParams.set("product_key", SEAT_PRODUCT_KEY);
-      if (options.best) {
-        url.searchParams.set("best", "true");
-      }
-      const response = await this.api.fetcher.fetch({
-        method: "get",
-        url,
-        path: "/api/seats/me/",
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      if (this.isFetcherStatusError(error, 404)) {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  async createSeat(planKey: string): Promise<SeatData> {
-    try {
-      const user = await this.getCurrentUser();
-      const distinctId = user.distinct_id;
-      if (!distinctId) {
-        throw new Error("Cannot create seat: user has no distinct_id");
-      }
-      const url = new URL(`${this.api.baseUrl}/api/seats/`);
-      const response = await this.api.fetcher.fetch({
-        method: "post",
-        url,
-        path: "/api/seats/",
-        overrides: {
-          body: JSON.stringify({
-            product_key: SEAT_PRODUCT_KEY,
-            plan_key: planKey,
-            user_distinct_id: distinctId,
-          }),
-        },
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      this.throwSeatError(error);
-    }
-  }
-
-  async upgradeSeat(planKey: string): Promise<SeatData> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
-      const response = await this.api.fetcher.fetch({
-        method: "patch",
-        url,
-        path: "/api/seats/me/",
-        overrides: {
-          body: JSON.stringify({
-            product_key: SEAT_PRODUCT_KEY,
-            plan_key: planKey,
-          }),
-        },
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      this.throwSeatError(error);
-    }
-  }
-
-  async cancelSeat(): Promise<void> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/`);
-      url.searchParams.set("product_key", SEAT_PRODUCT_KEY);
-      await this.api.fetcher.fetch({
-        method: "delete",
-        url,
-        path: "/api/seats/me/",
-      });
-    } catch (error) {
-      if (this.isFetcherStatusError(error, 204)) {
-        return;
-      }
-      this.throwSeatError(error);
-    }
-  }
-
-  async reactivateSeat(): Promise<SeatData> {
-    try {
-      const url = new URL(`${this.api.baseUrl}/api/seats/me/reactivate/`);
-      const response = await this.api.fetcher.fetch({
-        method: "post",
-        url,
-        path: "/api/seats/me/reactivate/",
-        overrides: {
-          body: JSON.stringify({ product_key: SEAT_PRODUCT_KEY }),
-        },
-      });
-      return (await response.json()) as SeatData;
-    } catch (error) {
-      this.throwSeatError(error);
-    }
-  }
-
-  private isFetcherStatusError(error: unknown, status: number): boolean {
-    return error instanceof Error && error.message.includes(`[${status}]`);
-  }
-
   private parseFetcherError(error: unknown): {
     status: number;
     body: Record<string, unknown>;
@@ -4473,26 +4437,6 @@ export class PostHogAPIClient {
       }
       throw error;
     }
-  }
-
-  private throwSeatError(error: unknown): never {
-    const parsed = this.parseFetcherError(error);
-
-    if (parsed) {
-      if (
-        parsed.status === 400 &&
-        typeof parsed.body.redirect_url === "string"
-      ) {
-        throw new SeatSubscriptionRequiredError(parsed.body.redirect_url);
-      }
-      if (parsed.status === 402) {
-        const message =
-          typeof parsed.body.error === "string" ? parsed.body.error : undefined;
-        throw new SeatPaymentFailedError(message);
-      }
-    }
-
-    throw error;
   }
 
   /**
@@ -4690,6 +4634,34 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(
         `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async updateSandboxCustomImage(
+    id: string,
+    input: { name?: string; description?: string },
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update sandbox custom image: ${response.statusText}`,
       );
     }
     return (await response.json()) as SandboxCustomImage;

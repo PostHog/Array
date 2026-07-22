@@ -15,11 +15,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { gateRestrictedModelPick } from "@posthog/ui/features/billing/modelGate";
+import { ModelRadioItem } from "@posthog/ui/features/sessions/components/ModelRadioItem";
 import { flattenSelectOptions } from "@posthog/ui/features/sessions/sessionStore";
 import { useRetainedConfigOption } from "@posthog/ui/features/sessions/useRetainedConfigOption";
 import type { AgentAdapter } from "@posthog/ui/features/settings/settingsStore";
@@ -144,6 +145,13 @@ export function UnifiedModelSelector({
           <DropdownMenuRadioGroup
             value={currentValue ?? ""}
             onValueChange={(value) => {
+              // A plan-restricted model opens the upgrade gate instead of
+              // becoming the selection.
+              if (gateRestrictedModelPick(options, value)) {
+                pendingValueRef.current = null;
+                setOpen(false);
+                return;
+              }
               pendingValueRef.current = value;
               setOpen(false);
             }}
@@ -154,19 +162,12 @@ export function UnifiedModelSelector({
                     {index > 0 && <DropdownMenuSeparator />}
                     <MenuLabel>{group.name}</MenuLabel>
                     {group.options.map((model) => (
-                      <DropdownMenuRadioItem
-                        key={model.value}
-                        value={model.value}
-                      >
-                        <span className="whitespace-nowrap">{model.name}</span>
-                      </DropdownMenuRadioItem>
+                      <ModelRadioItem key={model.value} model={model} />
                     ))}
                   </Fragment>
                 ))
               : options.map((model) => (
-                  <DropdownMenuRadioItem key={model.value} value={model.value}>
-                    <span className="whitespace-nowrap">{model.name}</span>
-                  </DropdownMenuRadioItem>
+                  <ModelRadioItem key={model.value} model={model} />
                 ))}
           </DropdownMenuRadioGroup>
         )}

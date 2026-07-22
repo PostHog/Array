@@ -1,6 +1,6 @@
-# Connecting PostHog Code to a Local PostHog Instance
+# Connecting the Desktop App to a Local PostHog Instance
 
-This guide walks you through running PostHog Code's dev build against a local PostHog instance (localhost:8010).
+This guide walks you through running the desktop app's dev build against a local PostHog instance (localhost:8010).
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This guide walks you through running PostHog Code's dev build against a local Po
 
 ## 1. Set up the OAuth application in PostHog
 
-PostHog Code authenticates with PostHog via OAuth. Your local PostHog instance needs an OAuth application registered for PostHog Code to connect to it.
+The desktop app authenticates with PostHog via OAuth. Your local PostHog instance needs an OAuth application registered for the app to connect to it.
 
 ### Option A: Generate demo data (easiest)
 
@@ -30,15 +30,15 @@ This creates an OAuth application with:
 1. Go to http://localhost:8010/admin/posthog/oauthapplication/
 2. Click **Add OAuth Application**
 3. Set these fields:
-   - **Name**: `PostHog Code` (or whatever you like)
-   - **Client ID**: `DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ` — this must match the `POSTHOG_DEV_CLIENT_ID` in PostHog Code's source
-   - **Client type**: `Public` (PostHog Code is an Electron desktop app)
+   - **Name**: `PostHog Desktop` (or whatever you like)
+   - **Client ID**: `DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ` — this must match the `POSTHOG_DEV_CLIENT_ID` in the app's source
+   - **Client type**: `Public` (the app is an Electron desktop app)
    - **Authorization grant type**: `Authorization code`
    - **Redirect URIs**: `http://localhost:8237/callback http://localhost:8239/callback`
    - **Algorithm**: `RS256`
 4. Save
 
-> **Important**: The Client ID must be exactly `DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ` — this is hardcoded in PostHog Code as the Dev region client ID (see `apps/code/src/shared/constants/oauth.ts`).
+> **Important**: The Client ID must be exactly `DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ` — this is hardcoded in the app as the Dev region client ID (see `apps/code/src/shared/constants/oauth.ts`).
 
 ## 2. Configure RSA keys in PostHog
 
@@ -58,7 +58,7 @@ openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt -outform PEM | \
 # Add to your PostHog .env as OIDC_RSA_PRIVATE_KEY="<generated_key>"
 ```
 
-## 3. Clone and run PostHog Code
+## 3. Clone and run the app
 
 ```bash
 git clone https://github.com/PostHog/code.git
@@ -70,14 +70,14 @@ pnpm dev
 
 ## 4. Connect to your local instance
 
-1. When the PostHog Code app opens, select the **Dev** region on the login screen (in addition to US & EU, the dev build shows a Dev option that points to `localhost:8010`)
+1. When the app opens, select the **Dev** region on the login screen (in addition to US & EU, the dev build shows a Dev option that points to `localhost:8010`)
 2. This will redirect you to your local PostHog instance for OAuth authorization
 3. Authorize the application and select the project/organization access level
-4. You'll be redirected back to PostHog Code, now connected to your local PostHog
+4. You'll be redirected back to the app, now connected to your local PostHog
 
 ## How it works
 
-The dev build of PostHog Code includes a "Dev" cloud region that maps to:
+The dev build includes a "Dev" cloud region that maps to:
 - **API URL**: `http://localhost:8010`
 - **OAuth Client ID**: `DC5uRLVbGI02YQ82grxgnK6Qn12SXWpCqdPb60oZ`
 
@@ -141,7 +141,7 @@ Ensure your local PostHog instance is running at `http://localhost:8010` and tha
 
 ### Existing projects not showing up
 
-After connecting, PostHog Code will show projects from your local PostHog instance. If you need test data, run `python manage.py generate_demo_data` in your PostHog repo.
+After connecting, the app will show projects from your local PostHog instance. If you need test data, run `python manage.py generate_demo_data` in your PostHog repo.
 
 ### 431 error
 

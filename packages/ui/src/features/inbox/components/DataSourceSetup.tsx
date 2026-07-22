@@ -1,5 +1,8 @@
-import { useHostTRPC } from "@posthog/host-router/react";
 import { Button } from "@posthog/quill";
+import {
+  EXTERNAL_INBOX_SOURCE_BY_PRODUCT,
+  type ToggleableSourceProduct,
+} from "@posthog/shared";
 import { useAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { GitHubRepoPicker } from "@posthog/ui/features/folder-picker/GitHubRepoPicker";
@@ -14,24 +17,13 @@ import {
 } from "@posthog/ui/features/integrations/useIntegrations";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text, TextField } from "@radix-ui/themes";
-import { useMutation } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
-
-type DataSourceType = "github" | "linear" | "jira" | "zendesk" | "pganalyze";
-
-const REQUIRED_SCHEMAS: Record<DataSourceType, string[]> = {
-  github: ["issues"],
-  linear: ["issues"],
-  jira: ["issues"],
-  zendesk: ["tickets"],
-  pganalyze: ["issues", "servers"],
-};
+import { useCallback, useEffect, useState } from "react";
 
 /** PostHog DWH: full table replication (non-incremental); API enum value `full_refresh`. */
 const FULL_TABLE_REPLICATION = "full_refresh" as const;
 
-function schemasPayload(source: DataSourceType) {
-  return REQUIRED_SCHEMAS[source].map((name) => ({
+function schemasPayload(tables: readonly string[]) {
+  return tables.map((name) => ({
     name,
     should_sync: true,
     sync_type: FULL_TABLE_REPLICATION,
@@ -39,35 +31,42 @@ function schemasPayload(source: DataSourceType) {
 }
 
 interface DataSourceSetupProps {
-  source: DataSourceType;
+  source: ToggleableSourceProduct;
   onComplete: () => void;
   onCancel: () => void;
 }
 
+/**
+ * Renders the connect flow for a warehouse inbox source. Credential-based sources
+ * (`setup: "dynamic"`) render the generic `DynamicSourceSetup` form driven by the source's
+ * connect-form schema served by PostHog Cloud — no per-source form code. The three legacy
+ * special cases (GitHub repo picker, Zendesk, pganalyze) keep their bespoke forms.
+ */
 export function DataSourceSetup({
   source,
   onComplete,
   onCancel,
 }: DataSourceSetupProps) {
-  switch (source) {
+  const config = EXTERNAL_INBOX_SOURCE_BY_PRODUCT[source];
+  if (!config) return null;
+
+  switch (config.setup) {
     case "github":
       return <GitHubSetup onComplete={onComplete} onCancel={onCancel} />;
-    case "linear":
-      return <LinearSetup onComplete={onComplete} onCancel={onCancel} />;
-    case "jira":
-      return (
-        <DynamicSourceSetup
-          sourceType="Jira"
-          title="Connect Jira"
-          schemas={schemasPayload("jira")}
-          onComplete={onComplete}
-          onCancel={onCancel}
-        />
-      );
     case "zendesk":
       return <ZendeskSetup onComplete={onComplete} onCancel={onCancel} />;
     case "pganalyze":
       return <PgAnalyzeSetup onComplete={onComplete} onCancel={onCancel} />;
+    default:
+      return (
+        <DynamicSourceSetup
+          sourceType={config.dwSourceType}
+          title={`Connect ${config.label}`}
+          schemas={schemasPayload(config.requiredTables)}
+          onComplete={onComplete}
+          onCancel={onCancel}
+        />
+      );
   }
 }
 
@@ -138,7 +137,7 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
             selection: "oauth",
             github_integration_id: selectedIntegrationId,
           },
-          schemas: schemasPayload("github"),
+          schemas: schemasPayload(["issues"]),
         },
       });
       toast.success("GitHub data source created");
@@ -272,142 +271,6 @@ function GitHubSetup({ onComplete, onCancel }: SetupFormProps) {
   );
 }
 
-const POLL_INTERVAL_MS = 3_000;
-const POLL_TIMEOUT_MS = 5 * 60 * 1000;
-
-function LinearSetup({ onComplete }: SetupFormProps) {
-  const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
-  const projectId = useAuthStateValue((state) => state.currentProjectId);
-  const client = useAuthenticatedClient();
-  const trpc = useHostTRPC();
-  const [loading, setLoading] = useState(false);
-  const [oauthConnected, setOauthConnected] = useState(false);
-  const [linearIntegrationId, setLinearIntegrationId] = useState<
-    number | string | null
-  >(null);
-  const [pollError, setPollError] = useState<string | null>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    if (pollTimeoutRef.current) {
-      clearTimeout(pollTimeoutRef.current);
-      pollTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => stopPolling, [stopPolling]);
-
-  const startLinearFlow = useMutation(
-    trpc.linearIntegration.startFlow.mutationOptions(),
-  );
-
-  const handleOAuthConnect = useCallback(async () => {
-    if (!cloudRegion || !projectId || !client) return;
-    setLoading(true);
-    setPollError(null);
-    try {
-      await startLinearFlow.mutateAsync({
-        region: cloudRegion,
-        projectId,
-      });
-
-      pollTimerRef.current = setInterval(async () => {
-        try {
-          const integrations =
-            await client.getIntegrationsForProject(projectId);
-          const linearIntegration = integrations.find(
-            (i: { kind: string }) => i.kind === "linear",
-          ) as { id: number | string } | undefined;
-          if (linearIntegration) {
-            stopPolling();
-            setLoading(false);
-            setOauthConnected(true);
-            setLinearIntegrationId(linearIntegration.id);
-            toast.success("Linear connected");
-          }
-        } catch {
-          // Ignore individual poll failures
-        }
-      }, POLL_INTERVAL_MS);
-
-      pollTimeoutRef.current = setTimeout(() => {
-        stopPolling();
-        setLoading(false);
-        setPollError("Connection timed out. Please try again.");
-      }, POLL_TIMEOUT_MS);
-    } catch (error) {
-      setLoading(false);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to connect Linear",
-      );
-    }
-  }, [cloudRegion, projectId, client, stopPolling, startLinearFlow]);
-
-  const handleSubmit = useCallback(async () => {
-    if (!projectId || !client || !linearIntegrationId) return;
-
-    setLoading(true);
-    try {
-      await client.createExternalDataSource(projectId, {
-        source_type: "Linear",
-        payload: {
-          linear_integration_id: linearIntegrationId,
-          schemas: schemasPayload("linear"),
-        },
-      });
-      toast.success("Linear data source created");
-      onComplete();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to create data source",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, client, linearIntegrationId, onComplete]);
-
-  return (
-    <SetupFormContainer title="Connect Linear">
-      <Flex direction="column" gap="3">
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          onClick={handleOAuthConnect}
-          disabled={loading || oauthConnected}
-        >
-          {oauthConnected
-            ? "Linear connected"
-            : loading
-              ? "Waiting for authorization..."
-              : "Log into Linear to continue"}
-        </Button>
-
-        {pollError && (
-          <Text className="text-(--red-11) text-sm">{pollError}</Text>
-        )}
-
-        <Flex gap="2" justify="end">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!oauthConnected || loading}
-          >
-            {loading ? "Creating..." : "Create source"}
-          </Button>
-        </Flex>
-      </Flex>
-    </SetupFormContainer>
-  );
-}
-
 function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const client = useAuthenticatedClient();
@@ -431,7 +294,7 @@ function ZendeskSetup({ onComplete, onCancel }: SetupFormProps) {
           subdomain: subdomain.trim(),
           api_key: apiKey.trim(),
           email_address: email.trim(),
-          schemas: schemasPayload("zendesk"),
+          schemas: schemasPayload(["tickets"]),
         },
       });
       toast.success("Zendesk data source created");
@@ -514,7 +377,7 @@ function PgAnalyzeSetup({ onComplete, onCancel }: SetupFormProps) {
         payload: {
           api_key: apiKey.trim(),
           organization_slug: organizationSlug.trim(),
-          schemas: schemasPayload("pganalyze"),
+          schemas: schemasPayload(["issues", "servers"]),
         },
       });
       toast.success("pganalyze data source created");

@@ -7,7 +7,6 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button, ButtonGroup } from "@posthog/quill";
 import {
   BILLING_FLAG,
-  HOME_TAB_FLAG,
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
@@ -16,6 +15,7 @@ import { isContentlessTask } from "@posthog/shared/domain-types";
 import { DeepLinkApprovalModal } from "@posthog/ui/features/agent-applications/components/DeepLinkApprovalModal";
 import { useApprovalDeepLink } from "@posthog/ui/features/agent-applications/hooks/useApprovalDeepLink";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { UsageBillingAnnouncementModal } from "@posthog/ui/features/billing/UsageBillingAnnouncementModal";
 import { UsageButton } from "@posthog/ui/features/billing/UsageButton";
 import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
@@ -69,8 +69,9 @@ import { logger } from "@posthog/ui/shell/logger";
 import { onFeatureFlagsLoaded } from "@posthog/ui/shell/posthogAnalyticsImpl";
 import { SpaceSwitcher } from "@posthog/ui/shell/SpaceSwitcher";
 import { useShortcutsSheetStore } from "@posthog/ui/shell/shortcutsSheetStore";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
-import { isWindows } from "@posthog/ui/utils/platform";
+import { isMac, isWindows } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
@@ -103,6 +104,9 @@ function RootLayout() {
   const view = useAppView();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  // Cloud-only hosts (web) run in a real browser tab that already provides
+  // native back/forward chrome, so the in-app history buttons are redundant.
+  const { localWorkspaces } = useHostCapabilities();
   // Width of the Channels sidebar below — used to right-align the back/forward
   // buttons in the title bar with the sidebar's (and project switcher's) right edge.
   const channelsSidebarWidth = useChannelsSidebarStore((state) => state.width);
@@ -179,7 +183,6 @@ function RootLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
-  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
   // "PostHog Web" is a channels-world affordance — show it only while the user
   // is actually seeing channels (toggle on, which itself requires the flag).
   const bluebirdEnabled = useFeatureFlag(
@@ -258,17 +261,10 @@ function RootLayout() {
     trpc,
   ]);
 
-  // The /code/home route is only reachable while the home-tab flag is on, but
-  // flags resolve asynchronously – a restored route (or a flag flipping off
-  // mid-session) can leave us on home without access. Redirect to the new-task
-  // screen once flags have loaded and home is gated off.
+  // Flags resolve asynchronously — flag-gated routes below wait for this
+  // before redirecting away from a restored route the user can't access.
   const [flagsLoaded, setFlagsLoaded] = useState(false);
   useEffect(() => onFeatureFlagsLoaded(() => setFlagsLoaded(true)), []);
-  useEffect(() => {
-    if (flagsLoaded && !homeTabEnabled && view.type === "home") {
-      openTaskInput();
-    }
-  }, [flagsLoaded, homeTabEnabled, view.type]);
 
   // Settings is a full-page route — drop the app chrome (header/sidebar/
   // space-switcher) so the panel occupies the full window.
@@ -322,6 +318,7 @@ function RootLayout() {
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
         {billingEnabled && <UsageLimitModal />}
+        <UsageBillingAnnouncementModal />
         <UpdateAvailableModal />
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
@@ -338,7 +335,9 @@ function RootLayout() {
         {/* Full-width title bar: a window-drag region carrying the PostHog
             mark. The left section matches the sidebar width so the tab strip
             starts flush with the content pane; its padding clears the macOS
-            stoplights. */}
+            stoplights via env(titlebar-area-x), the system-reported right
+            edge of the traffic-light strip (see titleBarOverlay in
+            window.ts). */}
         <Flex
           align="center"
           className="drag h-10 shrink-0"
@@ -351,8 +350,12 @@ function RootLayout() {
             align="center"
             justify="between"
             gap="3"
-            className="shrink-0 pr-2 pl-[78px]"
+            className="shrink-0 pr-2"
             style={{
+              // Traffic-light size varies by macOS version, so a fixed inset
+              // over- or under-shoots; the env var fallback covers hosts
+              // without Window Controls Overlay.
+              paddingLeft: isMac ? "env(titlebar-area-x, 78px)" : "78px",
               width: sidebarOpen ? channelsSidebarWidth : undefined,
               // Same curve/duration as ResizableSidebar's SLIDE_EASING so the
               // title bar tracks the sidebar edge.
@@ -381,28 +384,30 @@ function RootLayout() {
                 )}
               </Button>
             </Flex>
-            <Flex align="center" gap="2" className="no-drag">
-              <ButtonGroup className="no-drag">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Back"
-                  disabled={!canGoBack}
-                  onClick={() => router.history.back()}
-                >
-                  <CaretLeftIcon size={14} />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Forward"
-                  disabled={!canGoForward}
-                  onClick={() => router.history.forward()}
-                >
-                  <CaretRightIcon size={14} />
-                </Button>
-              </ButtonGroup>
-            </Flex>
+            {localWorkspaces && (
+              <Flex align="center" gap="2" className="no-drag">
+                <ButtonGroup className="no-drag">
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Back"
+                    disabled={!canGoBack}
+                    onClick={() => router.history.back()}
+                  >
+                    <CaretLeftIcon size={14} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Forward"
+                    disabled={!canGoForward}
+                    onClick={() => router.history.forward()}
+                  >
+                    <CaretRightIcon size={14} />
+                  </Button>
+                </ButtonGroup>
+              </Flex>
+            )}
           </Flex>
           {/* Tabs work in both spaces: channel tabs under /website and plain
               task tabs in the Code experience. The strip's route→tab effect
@@ -489,6 +494,7 @@ function RootLayout() {
         />
         <TourOverlay />
         {billingEnabled && <UsageLimitModal />}
+        <UsageBillingAnnouncementModal />
         <UpdateAvailableModal />
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />

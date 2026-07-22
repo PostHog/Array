@@ -12,11 +12,12 @@ import type {
   TaskGroup,
 } from "@posthog/core/sidebar/sidebarData.types";
 import { MenuLabel } from "@posthog/quill";
-import { getFileName } from "@posthog/shared";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { DraggableFolder } from "@posthog/ui/features/sidebar/components/DraggableFolder";
+import { GroupWorktreesSection } from "@posthog/ui/features/sidebar/components/GroupWorktreesSection";
 import { TaskItem } from "@posthog/ui/features/sidebar/components/items/TaskItem";
 import { SidebarSection } from "@posthog/ui/features/sidebar/components/SidebarSection";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -90,32 +91,10 @@ function TaskRow({
   depth?: number;
 }) {
   const workspace = useWorkspace(task.id);
-  const { folders } = useFolders();
   const effectiveMode =
     workspace?.mode ??
     (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
 
-  // Chip identifying the checkout the task runs in: app-managed worktrees
-  // (worktree mode) and local tasks whose registered folder is itself a
-  // linked worktree of the group's main clone.
-  const worktreeCheckout = useMemo(() => {
-    if (workspace?.worktreePath) {
-      return {
-        name: workspace.worktreeName ?? getFileName(workspace.worktreePath),
-        path: workspace.worktreePath,
-      };
-    }
-    if (workspace?.mode === "local" && workspace.folderPath) {
-      const folder = folders.find((f) => f.path === workspace.folderPath);
-      if (folder?.mainRepoPath) {
-        return {
-          name: getFileName(workspace.folderPath),
-          path: workspace.folderPath,
-        };
-      }
-    }
-    return null;
-  }, [workspace, folders]);
   const { prState, hasDiff } = useTaskPrStatus(task);
   const isArchiving = useArchivingTasksStore((s) =>
     s.archivingTaskIds.has(task.id),
@@ -132,8 +111,6 @@ function TaskRow({
       hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}
-      worktreeName={worktreeCheckout?.name}
-      worktreePath={worktreeCheckout?.path}
       isSuspended={task.isSuspended}
       isGenerating={task.isGenerating}
       isUnread={task.isUnread}
@@ -188,6 +165,9 @@ export function TaskListView({
     (state) => state.resetHistoryVisibleCount,
   );
   const { folders } = useFolders();
+  const showSidebarWorktrees = useSettingsStore(
+    (state) => state.showSidebarWorktrees,
+  );
   const view = useAppView();
   const isOnTaskInput =
     view.type === "task-input" || view.type === "task-pending";
@@ -368,6 +348,12 @@ export function TaskListView({
                           depth={1}
                         />
                       ))
+                    )}
+                    {folder && showSidebarWorktrees && (
+                      <GroupWorktreesSection
+                        groupId={group.id}
+                        mainRepoPath={folder.mainRepoPath ?? folder.path}
+                      />
                     )}
                   </SidebarSection>
                 </DraggableFolder>

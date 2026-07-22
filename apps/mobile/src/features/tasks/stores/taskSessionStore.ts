@@ -6,6 +6,7 @@ import { usePreferencesStore } from "@/features/preferences/stores/preferencesSt
 import { logger } from "@/lib/logger";
 import {
   CloudCommandError,
+  cancelRun,
   getTask,
   runTaskInCloud,
   sendCloudCommand,
@@ -124,7 +125,7 @@ function maybePresentLocalNotification(args: {
   if (previous && now - previous < NOTIFICATION_DEDUP_WINDOW_MS) return;
   lastNotificationAt.set(session.taskId, now);
 
-  const title = session.taskTitle ?? "PostHog Code";
+  const title = session.taskTitle ?? "PostHog";
   let body: string;
   switch (args.kind) {
     case "awaiting_user_input":
@@ -139,7 +140,7 @@ function maybePresentLocalNotification(args: {
   }
 
   presentLocalNotification({
-    title: "PostHog Code",
+    title: "PostHog",
     body,
     data: { taskId: session.taskId, taskRunId: session.taskRunId },
   }).catch(() => {});
@@ -319,6 +320,10 @@ export interface TaskSession {
   // the running turn, which would abort an in-flight compaction, so queued
   // messages are held until compaction ends.
   isCompacting?: boolean;
+  // True once the user has requested the whole run be stopped, until the run
+  // reaches a terminal status. Hides the Stop control so it can't be tapped
+  // twice while the cancel is in flight.
+  stopRequested?: boolean;
 }
 
 interface TaskSessionStore {
@@ -345,6 +350,9 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  /** Cancel the whole cloud run. Optimistically marks the session stop-requested
+   *  and reverts on failure. Returns false if there is no session or the API fails. */
+  stopRun: (taskId: string) => Promise<boolean>;
   /** Send a prompt now, interrupting the running turn first if one is live. */
   sendInterrupting: (
     taskId: string,
@@ -352,6 +360,10 @@ interface TaskSessionStore {
     attachments?: PendingAttachment[],
   ) => Promise<void>;
   flushQueuedMessages: (taskId: string) => Promise<void>;
+  /** Flush the queue only if the agent is idle. Used after an in-place edit is
+   *  saved or cancelled: the turn may have ended while the user was editing, so
+   *  nothing else would trigger the turn-end drain. A no-op mid-turn. */
+  flushQueuedMessagesIfIdle: (taskId: string) => void;
   /** Drop one queued message and resend it now as a steer (interrupt + resend). */
   steerQueuedMessage: (taskId: string, messageId: string) => Promise<void>;
   setConfigOption: (
@@ -804,6 +816,45 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     }
   },
 
+  stopRun: async (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (!session) return false;
+    const runId = session.taskRunId;
+
+    const previous = {
+      stopRequested: session.stopRequested,
+      isPromptPending: session.isPromptPending,
+    };
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [runId]: {
+          ...state.sessions[runId],
+          stopRequested: true,
+          isPromptPending: false,
+        },
+      },
+    }));
+
+    try {
+      await cancelRun(taskId, runId);
+      return true;
+    } catch (error) {
+      log.error("Failed to stop cloud run", error);
+      set((state) => {
+        const current = state.sessions[runId];
+        if (!current) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [runId]: { ...current, ...previous },
+          },
+        };
+      });
+      return false;
+    }
+  },
+
   sendInterrupting: async (taskId, prompt, attachments) => {
     // The cloud has no mid-turn inject, so steering interrupts the running
     // turn and resends as a fresh prompt.
@@ -817,7 +868,9 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     if (flushingTasks.has(taskId)) return;
     flushingTasks.add(taskId);
     try {
-      const drained = useMessageQueueStore.getState().drain(taskId);
+      const drained = useMessageQueueStore
+        .getState()
+        .drain(taskId, { stopAtEdited: true });
       if (drained.length === 0) return;
 
       const { text, attachments } = combineQueuedMessages(drained);
@@ -832,6 +885,21 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       }
     } finally {
       flushingTasks.delete(taskId);
+    }
+  },
+
+  flushQueuedMessagesIfIdle: (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (
+      session?.status === "connected" &&
+      !session.isPromptPending &&
+      !session.terminalStatus &&
+      !session.isCompacting &&
+      useMessageQueueStore.getState().getQueue(taskId).length > 0
+    ) {
+      get()
+        .flushQueuedMessages(taskId)
+        .catch((err) => log.warn("Queue flush failed", err));
     }
   },
 

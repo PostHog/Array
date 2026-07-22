@@ -40,6 +40,10 @@ import { getSuggestedBranchName } from "../utils/getSuggestedBranchName";
 
 const COMBOBOX_LIMIT = 50;
 
+// Shared so the two "still loading branches" render sites (the empty-list
+// spinner and the seeded-default row) can never drift out of sync on a copy edit.
+const LOADING_BRANCHES_LABEL = "Loading branches…";
+
 // Sentinel value for the "Create new branch" action. Rendered as a real
 // ComboboxItem in the list footer so it's reachable by keyboard, not a
 // plain button the combobox's roving focus skips over.
@@ -140,8 +144,19 @@ export function BranchSelector({
   const isSelectionOnly = workspaceMode === "worktree" || isCloudMode;
   const displayedBranch = isSelectionOnly ? selectedBranch : currentBranch;
 
+  // The branch we auto-selected, so we can tell our own pick apart from one the
+  // user made. Lets us correct a stale default (e.g. a cached "trunk" that the
+  // live list later contradicts) without ever clobbering a deliberate choice.
+  const autoSelectedBranchRef = useRef<string | null>(null);
   useEffect(() => {
-    if (isSelectionOnly && defaultBranch && !selectedBranch && onBranchSelect) {
+    if (!isSelectionOnly || !defaultBranch || !onBranchSelect) return;
+    // Adopt the default when nothing is selected yet, or when the default has
+    // changed out from under a value we ourselves auto-selected — but leave a
+    // user's own selection alone.
+    const selectionIsOurs =
+      !selectedBranch || selectedBranch === autoSelectedBranchRef.current;
+    if (selectionIsOurs && selectedBranch !== defaultBranch) {
+      autoSelectedBranchRef.current = defaultBranch;
       onBranchSelect(defaultBranch);
     }
   }, [isSelectionOnly, defaultBranch, selectedBranch, onBranchSelect]);
@@ -175,11 +190,27 @@ export function BranchSelector({
     return byBranch;
   }, [repoCheckouts]);
 
-  const branches = isCloudMode ? (cloudBranches ?? []) : localBranches;
+  const liveBranches = isCloudMode ? (cloudBranches ?? []) : localBranches;
   const effectiveLoading = loading || (isCloudMode && cloudBranchesLoading);
   const branchListLoading = isCloudMode
     ? !!cloudBranchesLoading
     : localBranchesLoading;
+
+  // On a cold start the live cloud branch list is still empty while the (slow)
+  // remote fetch runs. Surface the known default ("trunk") branch as a real
+  // list item straight away — with a loading row rendered below it — so the
+  // common "start on trunk" case is pickable with zero wait. Only when there's
+  // no active search: once the user types, the results should be purely what
+  // the remote returns.
+  const seededDefaultBranch =
+    isCloudMode &&
+    branchListLoading &&
+    liveBranches.length === 0 &&
+    !!defaultBranch &&
+    !(cloudSearchQuery ?? "").trim()
+      ? defaultBranch
+      : null;
+  const branches = seededDefaultBranch ? [seededDefaultBranch] : liveBranches;
 
   const checkoutMutation = useMutation({
     ...trpc.git.checkoutBranch.mutationOptions(),
@@ -456,7 +487,7 @@ export function BranchSelector({
         ) : null}
 
         {branchListLoading && branches.length === 0 ? (
-          <LoadingRow label="Loading branches…" />
+          <LoadingRow label={LOADING_BRANCHES_LABEL} />
         ) : (
           <ComboboxEmpty>No branches found.</ComboboxEmpty>
         )}
@@ -518,6 +549,15 @@ export function BranchSelector({
             );
           }}
         </ComboboxList>
+
+        {/*
+          Cold start: the default ("trunk") branch is seeded as the only list
+          item while the remote list loads. A loading row directly below it
+          makes clear the rest of the branches are still on the way.
+        */}
+        {seededDefaultBranch ? (
+          <LoadingRow label={LOADING_BRANCHES_LABEL} />
+        ) : null}
 
         {isCloudMode && cloudBranchesHasMore ? (
           <ComboboxListFooter>

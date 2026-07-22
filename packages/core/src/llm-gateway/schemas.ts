@@ -50,11 +50,12 @@ export interface AnthropicMessagesResponse {
 }
 
 export interface AnthropicErrorResponse {
-  error: {
+  error?: {
     message: string;
     type: string;
     code?: string;
   };
+  detail?: unknown;
 }
 
 export type { UsageBucket, UsageOutput } from "../usage/schemas";

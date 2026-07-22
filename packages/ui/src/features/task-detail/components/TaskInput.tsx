@@ -9,7 +9,7 @@ import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
-import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { type AgentRuntime, ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
@@ -25,6 +25,7 @@ import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
 import { toast } from "../../../primitives/toast";
 import { useActiveRepoStore } from "../../../shell/activeRepoStore";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { FOCUSABLE_SELECTOR } from "../../../utils/overlay";
 import { useAuthStateValue } from "../../auth/store";
 import { AutoresearchComposerControls } from "../../autoresearch/AutoresearchComposerControls";
@@ -37,6 +38,7 @@ import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnable
 import { useFileSearchStore } from "../../command/fileSearchStore";
 import { NewTaskFilePreview } from "../../command/NewTaskFilePreview";
 import { EnvironmentSelector } from "../../environments/EnvironmentSelector";
+import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { useFeatureFlagsLoaded } from "../../feature-flags/useFeatureFlagsLoaded";
 import { AdditionalDirectoriesButton } from "../../folder-picker/AdditionalDirectoriesButton";
 import { FolderPicker } from "../../folder-picker/FolderPicker";
@@ -87,6 +89,7 @@ import { usePreviewConfig } from "../hooks/usePreviewConfig";
 import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
 import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
+import { AgentRuntimeSelect } from "./AgentRuntimeSelect";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
@@ -108,6 +111,12 @@ interface TaskInputProps {
   channelContext?: string;
   /** Display name of the channel the CONTEXT.md came from (for the chip). */
   channelName?: string;
+  /**
+   * Desktop file-system folder id that owns the channel's CONTEXT.md. When set,
+   * the injected context lets the agent publish upkeep corrections addressed to
+   * this id rather than resolving the channel by name.
+   */
+  channelContextId?: string;
   /**
    * Channels "generic chat box" mode: hide the repo/branch pickers and let the
    * task be submitted without a repo. The agent decides at runtime whether it
@@ -146,6 +155,7 @@ export function TaskInput({
   reportAssociation,
   channelContext,
   channelName,
+  channelContextId,
   allowNoRepo,
   suggestions,
   onSuggestionSelect,
@@ -189,6 +199,8 @@ export function TaskInput({
     setLastUsedAdapter,
     lastUsedCloudRepository,
     setLastUsedCloudRepository,
+    cachedCloudDefaultBranchMap,
+    setCachedCloudDefaultBranch,
     allowBypassPermissions,
     setLastUsedEnvironment,
     getLastUsedEnvironment,
@@ -225,6 +237,7 @@ export function TaskInput({
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<AgentRuntime>("acp");
   const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
   const [isCloudRepoPickerOpen, setIsCloudRepoPickerOpen] = useState(false);
   const [cloudBranchSearchQuery, setCloudBranchSearchQuery] = useState("");
@@ -318,7 +331,10 @@ export function TaskInput({
     hasGithubIntegration,
   } = useUserRepositoryIntegration();
 
+  // Force cloud mode on cloud-only hosts (web).
+  const { localWorkspaces } = useHostCapabilities();
   const cloudModeEnabled = useCloudModeEnabled();
+  const piHarnessEnabled = useFeatureFlag("pi-harness");
   const flagsLoaded = useFeatureFlagsLoaded();
   const reposReady = areReposReady({
     isLoadingRepos,
@@ -328,6 +344,7 @@ export function TaskInput({
 
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
+    if (!localWorkspaces) return "cloud";
     return resolveWorkspaceModePreference({
       preferredMode: lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE,
       cloudModeEnabled,
@@ -354,6 +371,7 @@ export function TaskInput({
     const preferredMode = lastUsedWorkspaceMode || DEFAULT_WORKSPACE_MODE;
     if (preferredMode === "cloud" && !cloudSignalsSettled) return;
     didResolveWorkspaceModeRef.current = true;
+    if (!localWorkspaces) return;
     setWorkspaceModeState(
       resolveWorkspaceModePreference({
         preferredMode,
@@ -366,6 +384,7 @@ export function TaskInput({
     settingsHydrated,
     lastUsedWorkspaceMode,
     initialCloudRepository,
+    localWorkspaces,
     cloudSignalsSettled,
     cloudModeEnabled,
     hasGithubIntegration,
@@ -374,6 +393,7 @@ export function TaskInput({
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     didResolveWorkspaceModeRef.current = true;
+    if (mode === "cloud") setRuntime("acp");
     setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
     if (mode !== "cloud") {
@@ -425,7 +445,33 @@ export function TaskInput({
     cloudBranchSearchQuery,
   );
   const cloudBranches = cloudBranchData?.branches;
-  const cloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  const liveCloudDefaultBranch = cloudBranchData?.defaultBranch ?? null;
+  // Serve the persisted default branch until the live list resolves, so the
+  // majority "start on trunk" case pre-selects trunk with zero wait on a cold
+  // start. The cached value is best-effort: if it's stale (a default branch
+  // renamed since it was cached), `cloudDefaultBranch` switches to the live
+  // value on arrival and BranchSelector re-selects it — as long as the user
+  // hasn't picked a branch of their own in the meantime.
+  const cloudDefaultBranch =
+    liveCloudDefaultBranch ??
+    (selectedCloudRepository
+      ? (cachedCloudDefaultBranchMap[selectedCloudRepository] ?? null)
+      : null);
+
+  // Persist the freshly loaded default branch so the next cold start can
+  // pre-select trunk immediately.
+  useEffect(() => {
+    if (selectedCloudRepository && liveCloudDefaultBranch) {
+      setCachedCloudDefaultBranch(
+        selectedCloudRepository,
+        liveCloudDefaultBranch,
+      );
+    }
+  }, [
+    selectedCloudRepository,
+    liveCloudDefaultBranch,
+    setCachedCloudDefaultBranch,
+  ]);
 
   const {
     branchOpen,
@@ -697,6 +743,8 @@ export function TaskInput({
     runtimeAdapter: adapter ?? null,
     model: effectiveModel,
     reasoningEffort: effectiveReasoningLevel,
+    sandboxEnvironmentId: workspaceMode === "cloud" ? selectedCloudEnvId : null,
+    customImageId: workspaceMode === "cloud" ? selectedCustomImageId : null,
   });
 
   const branchForTaskCreation =
@@ -813,6 +861,7 @@ export function TaskInput({
     branch: branchForTaskCreation,
     editorIsEmpty,
     adapter,
+    runtime,
     executionMode: currentExecutionMode,
     model: effectiveModel,
     reasoningLevel: effectiveReasoningLevel,
@@ -830,6 +879,7 @@ export function TaskInput({
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
+    channelContextId,
     allowNoRepo,
   });
 
@@ -1057,6 +1107,13 @@ export function TaskInput({
                 align="center"
                 className="absolute bottom-full left-0 mb-2 min-w-0"
               >
+                {piHarnessEnabled && workspaceMode !== "cloud" && (
+                  <AgentRuntimeSelect
+                    value={runtime}
+                    onChange={setRuntime}
+                    disabled={isCreatingTask}
+                  />
+                )}
                 <WorkspaceModeSelect
                   value={workspaceMode}
                   onChange={setWorkspaceMode}
@@ -1315,7 +1372,7 @@ export function TaskInput({
                     <span className="shrink-0 text-gray-10">Using:</span>
                     <span className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]">
                       {onContextChipClick ? (
-                        <Tooltip content="View this context">
+                        <Tooltip content="View this CONTEXT.md">
                           <button
                             type="button"
                             onClick={onContextChipClick}
@@ -1335,11 +1392,11 @@ export function TaskInput({
                           </span>
                         </>
                       )}
-                      <Tooltip content="Don't include this context">
+                      <Tooltip content="Don't include this CONTEXT.md">
                         <button
                           type="button"
                           onClick={() => setChannelContextDismissed(true)}
-                          aria-label="Remove context from prompt"
+                          aria-label="Remove CONTEXT.md from prompt"
                           className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
                         >
                           <X size={12} />

@@ -1,8 +1,6 @@
 import { AtIcon, LinkIcon } from "@phosphor-icons/react";
 import type { MentionActivityItem } from "@posthog/core/canvas/mentionActivity";
 import {
-  Avatar,
-  AvatarFallback,
   Button,
   Empty,
   EmptyDescription,
@@ -14,8 +12,8 @@ import {
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
@@ -68,9 +66,7 @@ function ActivityRow({
         className="flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary"
       >
         <span className="relative mt-0.5 shrink-0">
-          <Avatar size="xs">
-            <AvatarFallback>{getUserInitials(item.author)}</AvatarFallback>
-          </Avatar>
+          <UserAvatar user={item.author} size="xs" />
           {isNew && (
             <span
               className="-top-0.5 -right-0.5 absolute h-2 w-2 rounded-full bg-(--red-9)"
@@ -104,7 +100,7 @@ function ActivityRow({
           <MentionText
             content={item.content}
             currentUserEmail={currentUserEmail}
-            className="mt-1 block whitespace-pre-wrap break-words"
+            className="mt-1 block whitespace-pre-wrap break-words text-xs"
           />
         </span>
       </button>
@@ -176,7 +172,7 @@ export function ActivityView() {
           Activity
         </Text>
         <Text size="2" className="block text-muted-foreground">
-          Mentions of you across contexts.
+          Mentions of you across channels.
         </Text>
         <div className="mt-4">
           {isLoading && items.length === 0 ? (

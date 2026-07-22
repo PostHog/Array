@@ -49,6 +49,7 @@ import {
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
+import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
@@ -60,6 +61,12 @@ import { type ReactNode, useMemo, useState } from "react";
 // The two-line user/project card used at the bottom of the sidebar.
 export function ProjectSwitcher() {
   const [popoverOpen, setPopoverOpen] = useState(false);
+
+  const holdPeek = useHoldSidebarPeek();
+  const handleOpenChange = (next: boolean): void => {
+    setPopoverOpen(next);
+    holdPeek(next);
+  };
 
   const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
   const client = useOptionalAuthenticatedClient();
@@ -168,7 +175,7 @@ export function ProjectSwitcher() {
   };
 
   return (
-    <DropdownMenu open={popoverOpen} onOpenChange={setPopoverOpen}>
+    <DropdownMenu open={popoverOpen} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         render={
           <Item
@@ -296,7 +303,7 @@ export function ProjectSwitcher() {
                   onClick={() => handleOpenExternal(EXTERNAL_LINKS.website)}
                 >
                   <ArrowSquareOut size={14} className="text-gray-11" />
-                  PostHog Code Website
+                  Website
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

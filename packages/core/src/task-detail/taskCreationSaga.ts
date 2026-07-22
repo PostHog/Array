@@ -24,6 +24,7 @@ import type {
   ImportedClaudeCliSession,
   ITaskCreationHost,
 } from "./taskCreationHost";
+import { resolveTaskRepository } from "./taskRepository";
 
 export interface TaskCreationDeps {
   posthogClient: TaskCreationApiClient;
@@ -57,6 +58,7 @@ function buildCloudFirstMessage(
   const channelContextText = buildChannelContextText(
     input.channelContext,
     input.channelName,
+    input.channelContextId,
   );
   const pendingUserMessage =
     [messageText, customInstructionsText, channelContextText]
@@ -406,13 +408,25 @@ export class TaskCreationSaga extends Saga<
             rtkEnabled: input.cloudRtkEnabled,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
-            homeQuickAction: input.homeQuickActionLabel,
+            importedMcpServers: input.importedMcpServers,
+            relayedMcpServers: input.relayedMcpServers,
             initialPermissionMode:
               input.executionMode ??
               (cloudAdapter === "codex" ? "auto" : "plan"),
           });
           if (!taskRun?.id) {
             throw new Error("Failed to create cloud run");
+          }
+
+          if (input.relayedMcpServers?.length) {
+            // Best-effort: relay designation failing must not fail creation —
+            // the run still works, minus desktop-relayed servers.
+            await this.deps.sessionService
+              .designateRelayedMcpServers(
+                taskRun.id,
+                input.relayedMcpServers.map((server) => server.name),
+              )
+              .catch(() => undefined);
           }
 
           const pendingUserArtifactIds = transport
@@ -487,6 +501,7 @@ export class TaskCreationSaga extends Saga<
       const channelContextBlock = buildChannelContextBlock(
         input.channelContext,
         input.channelName,
+        input.channelContextId,
       );
       if (initialPrompt && channelContextBlock) {
         initialPrompt.push(channelContextBlock);
@@ -681,13 +696,22 @@ export class TaskCreationSaga extends Saga<
           runtimeAdapter: input.adapter ?? null,
           model: input.model ?? null,
           reasoningEffort: input.reasoningLevel ?? null,
+          sandboxEnvironmentId: input.sandboxEnvironmentId ?? null,
+          customImageId: input.customImageId ?? null,
         })
       : null;
+
+    const requiresConfiguredWarm = Boolean(
+      input.sandboxEnvironmentId || input.customImageId,
+    );
 
     const needsAttachments =
       transport.filePaths.length > 0 || transport.skillBundles.length > 0;
     if (!needsAttachments) {
-      return base;
+      return {
+        ...base,
+        suppressWarmReuse: requiresConfiguredWarm && !lease,
+      };
     }
     if (!lease) {
       return { ...base, suppressWarmReuse: true };
@@ -719,27 +743,9 @@ export class TaskCreationSaga extends Saga<
     input: TaskCreationInput,
     warmPayload: WarmActivationPayload | null,
   ): Promise<Task> {
-    let repository = input.repository;
-
-    const repoPathForDetection = input.repoPath;
-    if (!repository && repoPathForDetection) {
-      // Detection only fills the org/repo metadata on the task; a transient
-      // failure (e.g. the workspace-server transport dropping mid-call) must
-      // not abort task creation, so degrade to an untagged task instead.
-      const detected = await this.readOnlyStep("repo_detection", () =>
-        this.deps.host
-          .detectRepo({ directoryPath: repoPathForDetection })
-          .catch((error) => {
-            this.log.warn("Repo detection failed; creating task without one", {
-              error,
-            });
-            return null;
-          }),
-      );
-      if (detected) {
-        repository = `${detected.organization}/${detected.repository}`;
-      }
-    }
+    const repository = await this.readOnlyStep("repo_detection", () =>
+      resolveTaskRepository(input, this.deps.host, this.log),
+    );
 
     return this.step({
       name: "task_creation",
@@ -777,8 +783,17 @@ export class TaskCreationSaga extends Saga<
             input.workspaceMode === "cloud"
               ? (input.reasoningLevel ?? null)
               : undefined,
+          sandbox_environment_id:
+            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+              ? input.sandboxEnvironmentId
+              : undefined,
+          custom_image_id:
+            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+              ? input.customImageId
+              : undefined,
           signal_report: input.signalReportId ?? undefined,
           channel: input.channelId ?? undefined,
+          runtime: "acp",
           pending_user_message: warmPayload?.pendingUserMessage,
           pending_user_artifact_ids: warmPayload?.pendingUserArtifactIds,
           // If creation activates a pre-warmed run, this is the only request

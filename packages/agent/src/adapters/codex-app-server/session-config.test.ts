@@ -1,3 +1,4 @@
+import { isRestrictedModelOption } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   buildCodexModes,
@@ -6,6 +7,8 @@ import {
   collaborationModeFor,
   DEFAULT_EFFORTS,
   modeApprovalPolicy,
+  resolveCodexMode,
+  SessionConfigState,
   sandboxPolicyFor,
 } from "./session-config";
 
@@ -103,6 +106,98 @@ describe("collaborationModeFor", () => {
     expect(collaborationModeFor("auto")).toBe("default");
     expect(collaborationModeFor("full-access")).toBe("default");
     expect(collaborationModeFor(undefined)).toBe("default");
+  });
+});
+
+describe("resolveCodexMode", () => {
+  it.each([
+    ["read-only", "read-only"],
+    ["auto", "auto"],
+    ["full-access", "full-access"],
+    ["bypassPermissions", "full-access"],
+    ["default", "auto"],
+    [undefined, "auto"],
+  ])("maps host mode %s to codex mode %s", (mode, expected) => {
+    expect(resolveCodexMode(mode)).toBe(expected);
+  });
+});
+
+describe("SessionConfigState", () => {
+  it("canonicalizes bypassPermissions during a live mode update", () => {
+    const config = new SessionConfigState("gpt-5.5");
+
+    config.setOption("mode", "bypassPermissions");
+
+    expect(config.mode).toBe("full-access");
+    expect(config.approvalPolicy()).toBe("never");
+    expect(config.sandboxPolicy()).toEqual({ type: "dangerFullAccess" });
+    expect(
+      config.options.find((option) => option.category === "mode")?.currentValue,
+    ).toBe("full-access");
+  });
+
+  it("uses gateway models when the app-server model list is stale", () => {
+    const config = new SessionConfigState("gpt-5.5", undefined, [
+      { id: "gpt-5.5", allowed: true },
+      { id: "gpt-5.6-sol", allowed: true },
+      { id: "gpt-5.6-terra", allowed: false },
+    ]);
+
+    config.loadModels([
+      { id: "gpt-5.5", model: "gpt-5.5", displayName: "GPT-5.5" },
+      {
+        id: "gpt-5.6-terra",
+        model: "gpt-5.6-terra",
+        displayName: "GPT-5.6 Terra",
+      },
+    ]);
+
+    const modelOption = config.options.find(
+      (option) => option.category === "model",
+    );
+    const modelOptions =
+      modelOption?.type === "select"
+        ? (modelOption.options as Array<{
+            name: string;
+            value: string;
+            _meta?: Record<string, unknown>;
+          }>)
+        : [];
+    expect(modelOptions).toEqual([
+      { name: "GPT-5.5", value: "gpt-5.5" },
+      { name: "gpt-5.6-sol", value: "gpt-5.6-sol" },
+      {
+        name: "GPT-5.6 Terra",
+        value: "gpt-5.6-terra",
+        _meta: { "posthog.code/restrictedModel": true },
+      },
+    ]);
+
+    config.setOption("model", "gpt-5.6-terra");
+
+    expect(config.model).toBe("gpt-5.5");
+    expect(
+      isRestrictedModelOption(
+        modelOptions.find((option) => option.value === "gpt-5.6-terra")?._meta,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps gateway models when the app-server model list fails", () => {
+    const config = new SessionConfigState("gpt-5.5", undefined, [
+      { id: "gpt-5.5", allowed: true },
+      { id: "gpt-5.6-sol", allowed: true },
+    ]);
+
+    config.clearModels();
+
+    const modelOption = config.options.find(
+      (option) => option.category === "model",
+    );
+    expect(modelOption?.type === "select" ? modelOption.options : []).toEqual([
+      { name: "gpt-5.5", value: "gpt-5.5" },
+      { name: "gpt-5.6-sol", value: "gpt-5.6-sol" },
+    ]);
   });
 });
 

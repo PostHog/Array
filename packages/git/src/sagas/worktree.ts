@@ -87,21 +87,8 @@ export class CreateWorktreeSaga extends GitSaga<
     });
 
     await this.step({
-      name: "symlink-claude-config",
+      name: "symlink-claude-local-instructions",
       execute: async () => {
-        const sourceClaudeDir = path.join(baseDir, ".claude");
-        const targetClaudeDir = path.join(worktreePath, ".claude");
-        const linkedDir = await safeSymlink(
-          sourceClaudeDir,
-          targetClaudeDir,
-          "dir",
-        );
-        if (linkedDir) {
-          await addToLocalExclude(worktreePath, ".claude", {
-            abortSignal: signal,
-          });
-        }
-
         const sourceClaudeLocalMd = path.join(baseDir, "CLAUDE.local.md");
         const targetClaudeLocalMd = path.join(worktreePath, "CLAUDE.local.md");
         const linkedFile = await safeSymlink(
@@ -116,9 +103,7 @@ export class CreateWorktreeSaga extends GitSaga<
         }
       },
       rollback: async () => {
-        const targetClaudeDir = path.join(worktreePath, ".claude");
         const targetClaudeLocalMd = path.join(worktreePath, "CLAUDE.local.md");
-        await fs.rm(targetClaudeDir, { force: true }).catch(() => {});
         await fs.rm(targetClaudeLocalMd, { force: true }).catch(() => {});
       },
     });
@@ -191,21 +176,8 @@ export class CreateWorktreeForBranchSaga extends GitSaga<
     });
 
     await this.step({
-      name: "symlink-claude-config",
+      name: "symlink-claude-local-instructions",
       execute: async () => {
-        const sourceClaudeDir = path.join(baseDir, ".claude");
-        const targetClaudeDir = path.join(worktreePath, ".claude");
-        const linkedDir = await safeSymlink(
-          sourceClaudeDir,
-          targetClaudeDir,
-          "dir",
-        );
-        if (linkedDir) {
-          await addToLocalExclude(worktreePath, ".claude", {
-            abortSignal: signal,
-          });
-        }
-
         const sourceClaudeLocalMd = path.join(baseDir, "CLAUDE.local.md");
         const targetClaudeLocalMd = path.join(worktreePath, "CLAUDE.local.md");
         const linkedFile = await safeSymlink(
@@ -220,9 +192,7 @@ export class CreateWorktreeForBranchSaga extends GitSaga<
         }
       },
       rollback: async () => {
-        const targetClaudeDir = path.join(worktreePath, ".claude");
         const targetClaudeLocalMd = path.join(worktreePath, "CLAUDE.local.md");
-        await fs.rm(targetClaudeDir, { force: true }).catch(() => {});
         await fs.rm(targetClaudeLocalMd, { force: true }).catch(() => {});
       },
     });

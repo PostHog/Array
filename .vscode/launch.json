@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug PostHog Code (Main Process)",
+      "name": "Debug PostHog (Main Process)",
       "type": "node",
       "request": "attach",
       "port": 5858,
@@ -15,7 +15,7 @@
       "remoteRoot": "${workspaceFolder}"
     },
     {
-      "name": "Debug PostHog Code (Renderer Process)",
+      "name": "Debug PostHog (Renderer Process)",
       "type": "chrome",
       "request": "attach",
       "port": 9222,
@@ -32,10 +32,10 @@
   ],
   "compounds": [
     {
-      "name": "Debug PostHog Code (Main + Renderer)",
+      "name": "Debug PostHog (Main + Renderer)",
       "configurations": [
-        "Debug PostHog Code (Main Process)",
-        "Debug PostHog Code (Renderer Process)"
+        "Debug PostHog (Main Process)",
+        "Debug PostHog (Renderer Process)"
       ],
       "preLaunchTask": "start-dev-with-debug",
       "stopAll": true

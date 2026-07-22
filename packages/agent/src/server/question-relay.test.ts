@@ -23,7 +23,10 @@ interface TestableAgentServer {
   };
   questionRelayedToSlack: boolean;
   session: unknown;
-  relayAgentResponse: (payload: Record<string, unknown>) => Promise<void>;
+  relayAgentResponse: (
+    payload: Record<string, unknown>,
+    messageId?: string,
+  ) => Promise<void>;
   sendInitialTaskMessage: (payload: Record<string, unknown>) => Promise<void>;
 }
 
@@ -323,7 +326,7 @@ describe("Question relay", () => {
             optionId: string,
             customInput?: string,
             answers?: Record<string, string>,
-          ) => boolean;
+          ) => "resolved" | "not_found" | "invalid_option";
         };
         srv.session = {
           payload: TEST_PAYLOAD,
@@ -465,7 +468,10 @@ describe("Question relay", () => {
           options: unknown[];
           toolCall?: unknown;
         }) => Promise<{ outcome: { outcome: string; optionId: string } }>;
-        resolvePermission: (requestId: string, optionId: string) => boolean;
+        resolvePermission: (
+          requestId: string,
+          optionId: string,
+        ) => "resolved" | "not_found" | "invalid_option";
         session: {
           payload: typeof TEST_PAYLOAD;
           sseController: null;
@@ -494,7 +500,7 @@ describe("Question relay", () => {
       expect(request.params.toolCallId).toBe("tool-1");
       const requestId = request.params.requestId;
 
-      expect(srv.resolvePermission(requestId, "allow")).toBe(true);
+      expect(srv.resolvePermission(requestId, "allow")).toBe("resolved");
 
       const resolved = logged("_posthog/permission_resolved");
       expect(resolved).toBeTruthy();
@@ -555,6 +561,34 @@ describe("Question relay", () => {
         "test-run-id",
         "agent response",
         ["first part", "agent response"],
+        undefined,
+      );
+    });
+
+    it("passes the initiating message id through to relayMessage", async () => {
+      const relaySpy = vi
+        .spyOn(server.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+
+      server.session = {
+        payload: TEST_PAYLOAD,
+        logWriter: {
+          flush: vi.fn().mockResolvedValue(undefined),
+          getFullAgentResponse: vi.fn().mockReturnValue("agent response"),
+          getAgentResponseParts: vi.fn().mockReturnValue(["agent response"]),
+          isRegistered: vi.fn().mockReturnValue(true),
+        },
+      };
+
+      server.questionRelayedToSlack = false;
+      await server.relayAgentResponse(TEST_PAYLOAD, "msg-123");
+
+      expect(relaySpy).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        "agent response",
+        ["agent response"],
+        "msg-123",
       );
     });
 

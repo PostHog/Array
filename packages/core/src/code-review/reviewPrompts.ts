@@ -15,6 +15,17 @@ function formatThreadForPrompt(comments: PrReviewComment[]): string {
   return comments.map((c) => `@${c.user.login}:\n> ${c.body}`).join("\n\n");
 }
 
+function formatPrCommentPromptContext(
+  filePath: string,
+  line: number,
+  side: "old" | "new",
+  comments: PrReviewComment[],
+): string {
+  const escapedPath = escapeXmlAttr(filePath);
+  const thread = formatThreadForPrompt(comments);
+  return `<file path="${escapedPath}" />, line ${line} (${side}):\n\n${thread}`;
+}
+
 function formatLineRef(startLine: number, endLine: number): string {
   return startLine === endLine
     ? `line ${startLine}`
@@ -85,9 +96,8 @@ export function buildFixPrCommentPrompt(
   side: "old" | "new",
   comments: PrReviewComment[],
 ): string {
-  const escapedPath = escapeXmlAttr(filePath);
-  const thread = formatThreadForPrompt(comments);
-  return `Fix this PR review comment on <file path="${escapedPath}" />, line ${line} (${side}):\n\n${thread}`;
+  const context = formatPrCommentPromptContext(filePath, line, side, comments);
+  return `Fix this PR review comment on ${context}`;
 }
 
 export function buildAskAboutPrCommentPrompt(
@@ -96,7 +106,17 @@ export function buildAskAboutPrCommentPrompt(
   side: "old" | "new",
   comments: PrReviewComment[],
 ): string {
-  const escapedPath = escapeXmlAttr(filePath);
-  const thread = formatThreadForPrompt(comments);
-  return `Help me understand this PR review comment on <file path="${escapedPath}" />, line ${line} (${side}):\n\n${thread}\n\nWhat is this comment asking for and how should I address it? Do not make any changes, your job is simply to chat with me about this comment. If I need further changes, I'll ask.`;
+  const context = formatPrCommentPromptContext(filePath, line, side, comments);
+  return `Help me understand this PR review comment on ${context}\n\nWhat is this comment asking for and how should I address it? Do not make any changes, your job is simply to chat with me about this comment. If I need further changes, I'll ask.`;
+}
+
+export function buildChatAboutPrCommentPrompt(
+  filePath: string,
+  line: number,
+  side: "old" | "new",
+  comments: PrReviewComment[],
+  message: string,
+): string {
+  const context = formatPrCommentPromptContext(filePath, line, side, comments);
+  return `Regarding this PR review comment on ${context}\n\n${message}`;
 }

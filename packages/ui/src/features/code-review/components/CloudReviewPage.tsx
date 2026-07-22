@@ -7,14 +7,14 @@ import { useMemo } from "react";
 import { useDiffViewerStore } from "../../code-editor/diffViewerStore";
 import { usePrDetails } from "../../git-interaction/usePrDetails";
 import { useCloudChangedFiles } from "../../task-detail/hooks/useCloudChangedFiles";
+import {
+  getCommentedFilePaths,
+  type ReviewListItem,
+} from "../commentFileFilter";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import { PatchedFileDiff } from "./PatchedFileDiff";
-import {
-  buildItemIndex,
-  type ReviewListItem,
-  ReviewShell,
-  useReviewState,
-} from "./ReviewShell";
+import { ReviewShell, useReviewState } from "./ReviewShell";
+import { changedFileSignature } from "./reviewItemBuilders";
 
 interface CloudReviewPageProps {
   task: Task;
@@ -35,9 +35,16 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     toolCalls,
     isLoading,
   } = useCloudChangedFiles(taskId, task, isReviewOpen);
-  const { commentThreads } = usePrDetails(prUrl, {
+  const { commentThreads, commentsLoading } = usePrDetails(prUrl, {
     includeComments: isReviewOpen && showReviewComments,
   });
+  const commentedFilePaths = useMemo(
+    () =>
+      prUrl && !commentsLoading
+        ? getCommentedFilePaths(commentThreads)
+        : undefined,
+    [commentThreads, commentsLoading, prUrl],
+  );
 
   const allPaths = useMemo(() => reviewFiles.map((f) => f.path), [reviewFiles]);
 
@@ -50,7 +57,19 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     expandAll,
     collapseAll,
     uncollapseFile,
-  } = useReviewState(reviewFiles, allPaths);
+    collapseFiles,
+    viewedRecord,
+    toggleViewed,
+  } = useReviewState(reviewFiles, allPaths, taskId);
+
+  const currentSignatures = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of reviewFiles) {
+      const signature = changedFileSignature(f);
+      if (signature) map.set(f.path, signature);
+    }
+    return map;
+  }, [reviewFiles]);
 
   const toolCallFallbacks = useMemo(
     () =>
@@ -70,6 +89,9 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       return {
         key: file.path,
         scrollKey: file.path,
+        filePaths: [file.path, file.originalPath].filter(
+          (path): path is string => !!path,
+        ),
         node: (
           <PatchedFileDiff
             file={file}
@@ -81,6 +103,7 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
             commentThreads={showReviewComments ? commentThreads : undefined}
             fallback={toolCallFallbacks?.get(file.path) ?? null}
             externalUrl={githubFileUrl}
+            viewedKey={file.path}
           />
         ),
       };
@@ -96,8 +119,6 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     toggleFile,
     toolCallFallbacks,
   ]);
-
-  const itemIndexByFilePath = useMemo(() => buildItemIndex(items), [items]);
 
   if (!prUrl && !effectiveBranch && reviewFiles.length === 0) {
     if (isRunActive) {
@@ -130,8 +151,13 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
       onExpandAll={expandAll}
       onCollapseAll={collapseAll}
       onUncollapseFile={uncollapseFile}
+      onCollapseFiles={collapseFiles}
       items={items}
-      itemIndexByFilePath={itemIndexByFilePath}
+      commentedFilePaths={commentedFilePaths?.all}
+      unresolvedCommentedFilePaths={commentedFilePaths?.unresolved}
+      currentSignatures={currentSignatures}
+      viewedRecord={viewedRecord}
+      onToggleViewed={toggleViewed}
     />
   );
 }

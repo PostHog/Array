@@ -10,6 +10,8 @@ const mockHost = vi.hoisted(() => ({
   getAuthenticatedClient: vi.fn(),
   getTaskDirectory: vi.fn(),
   ensureScratchDir: vi.fn(),
+  startPiSession: vi.fn(),
+  stopPiSession: vi.fn(),
   getWorkspace: vi.fn(),
   createWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
@@ -35,7 +37,9 @@ const mockHost = vi.hoisted(() => ({
   linkTaskBranch: vi.fn(),
 }));
 
+import { PiTaskCreator } from "./piTaskCreator";
 import { TaskCreationSaga } from "./taskCreationSaga";
+import { buildWorktreeAdoptionInput } from "./taskInput";
 
 const host = mockHost as unknown as ITaskCreationHost;
 
@@ -338,6 +342,42 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("starts a Pi session without creating an ACP session", async () => {
+    const createdTask = createTask({ repository: undefined });
+    const createTaskRequest = vi.fn().mockResolvedValue(createdTask);
+    const saga = new PiTaskCreator({
+      posthogClient: {
+        createTask: createTaskRequest,
+        deleteTask: vi.fn(),
+      } as never,
+      host,
+      piRunner: {
+        create: mockHost.startPiSession,
+        stop: mockHost.stopPiSession,
+      } as never,
+    });
+
+    const result = await saga.run({
+      content: "Draft a launch email",
+      workspaceMode: "local",
+      runtime: "pi",
+      model: "claude-sonnet",
+      allowNoRepo: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ runtime: "pi" }),
+    );
+    expect(mockHost.startPiSession).toHaveBeenCalledWith({
+      taskId: "task-123",
+      cwd: "/tmp/scratch/task-123",
+      prompt: "Draft a launch email",
+      model: "claude-sonnet",
+    });
+    expect(sessionService.connectToTask).not.toHaveBeenCalled();
+  });
+
   it("uploads initial cloud attachments before starting the run", async () => {
     const createdTask = createTask();
     const startedTask = createTask({ latest_run: createRun() });
@@ -569,6 +609,8 @@ describe("TaskCreationSaga", () => {
       runtimeAdapter: null,
       model: null,
       reasoningEffort: null,
+      sandboxEnvironmentId: null,
+      customImageId: null,
     });
     // The bundle must land on the warm run before createTask triggers activation.
     expect(mockHost.uploadRunAttachments).toHaveBeenCalledWith(
@@ -685,6 +727,83 @@ describe("TaskCreationSaga", () => {
       pendingUserMessage: "/my-skill do it",
       pendingUserArtifactIds: ["skill-artifact-1"],
     });
+  });
+
+  it.each([
+    {
+      selection: "sandbox environment",
+      input: { sandboxEnvironmentId: "environment-123" },
+      expectedRunOptions: { sandboxEnvironmentId: "environment-123" },
+    },
+    {
+      selection: "custom image",
+      input: { customImageId: "image-123" },
+      expectedRunOptions: { customImageId: "image-123" },
+    },
+  ])(
+    "falls back to a cold run without a matching warm $selection lease",
+    async ({ input, expectedRunOptions }) => {
+      mockHost.takeWarmTaskLease.mockReturnValue(null);
+      const createdTask = createTask();
+      const startedTask = createTask({ latest_run: createRun() });
+      const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+      const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+      const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+      const saga = makeSaga({
+        createTask: createTaskMock,
+        createTaskRun: createTaskRunMock,
+        startTaskRun: startTaskRunMock,
+      });
+
+      const result = await saga.run({
+        content: "Ship the fix",
+        repository: "posthog/posthog",
+        workspaceMode: "cloud",
+        branch: "main",
+        ...input,
+      });
+
+      expect(result.success).toBe(true);
+      expect(createTaskMock.mock.calls[0][0].branch).toBeUndefined();
+      expect(createTaskRunMock).toHaveBeenCalledWith(
+        "task-123",
+        expect.objectContaining(expectedRunOptions),
+      );
+    },
+  );
+
+  it("reuses a warm run built from the selected custom image", async () => {
+    mockHost.takeWarmTaskLease.mockReturnValue({
+      taskId: "warm-task",
+      runId: "warm-run",
+    });
+    const warmActivatedTask = createTask({
+      id: "warm-task",
+      latest_run: createRun({ id: "warm-run", task: "warm-task" }),
+    });
+    const createTaskMock = vi.fn().mockResolvedValue(warmActivatedTask);
+    const createTaskRunMock = vi.fn();
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      customImageId: "image-123",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "main",
+        custom_image_id: "image-123",
+      }),
+    );
+    expect(createTaskRunMock).not.toHaveBeenCalled();
   });
 
   it("uses the selected user GitHub integration for cloud task creation", async () => {
@@ -945,6 +1064,51 @@ describe("TaskCreationSaga", () => {
     ).toBeLessThan(
       vi.mocked(sessionService.connectToTask).mock.invocationCallOrder[0],
     );
+  });
+
+  it("adopts an existing worktree into a promptless task (worktree adoption)", async () => {
+    const createTaskMock = vi.fn().mockResolvedValue(createTask());
+    mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+    mockHost.detectRepo.mockResolvedValue(null);
+    mockHost.createWorkspace.mockResolvedValue({
+      taskId: "task-123",
+      mode: "worktree",
+      worktree: {
+        worktreePath: "/wt/orphan",
+        worktreeName: "orphan",
+        branchName: "feature/orphan",
+        baseBranch: "",
+        createdAt: "",
+      },
+      branchName: "feature/orphan",
+      linkedBranch: null,
+    });
+
+    const saga = makeSaga({ createTask: createTaskMock });
+
+    const result = await saga.run(
+      buildWorktreeAdoptionInput({
+        repoPath: "/repo",
+        branch: "feature/orphan",
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    // The branch doubles as the task description so the task is named after it.
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "feature/orphan" }),
+    );
+    expect(mockHost.createWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "feature/orphan",
+        reuseExistingWorktree: true,
+      }),
+    );
+    // No typed prompt: the agent session starts idle in the adopted worktree.
+    const connectParams = vi.mocked(sessionService.connectToTask).mock
+      .calls[0][0];
+    expect(connectParams.repoPath).toBe("/wt/orphan");
+    expect(connectParams.initialPrompt).toBeUndefined();
   });
 
   it("creates the task without a repository when repo detection fails", async () => {

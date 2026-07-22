@@ -1,5 +1,10 @@
 const URL_PATTERN = /https?:\/\/[^\s<>]+/gi;
 
+// Named links written as markdown `[label](https://url)` — the shape auto-posted
+// thread messages use. Label excludes brackets and the URL excludes parens so
+// the token boundaries are unambiguous (same reasoning as MENTION_PATTERN).
+const MARKDOWN_LINK_PATTERN = /\[([^\][\n]+)\]\((https?:\/\/[^\s()]+)\)/gi;
+
 export interface LinkTextSegment {
   type: "text";
   text: string;
@@ -39,8 +44,34 @@ function trimTrailingPunctuation(url: string): string {
   return url.slice(0, end);
 }
 
-/** Split plain text into text and http(s) link segments, in document order. */
+/**
+ * Split plain text into text and http(s) link segments, in document order.
+ * Markdown-style `[label](url)` tokens become links titled by their label;
+ * bare URLs in the remaining text link as themselves.
+ */
 export function splitLinkSegments(text: string): LinkSegment[] {
+  const segments: LinkSegment[] = [];
+  let lastIndex = 0;
+  MARKDOWN_LINK_PATTERN.lastIndex = 0;
+  for (const match of text.matchAll(MARKDOWN_LINK_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      segments.push(...splitBareUrlSegments(text.slice(lastIndex, index)));
+    }
+    segments.push({
+      type: "link",
+      text: match[1] ?? "",
+      href: match[2] ?? "",
+    });
+    lastIndex = index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    segments.push(...splitBareUrlSegments(text.slice(lastIndex)));
+  }
+  return segments;
+}
+
+function splitBareUrlSegments(text: string): LinkSegment[] {
   const segments: LinkSegment[] = [];
   let lastIndex = 0;
   URL_PATTERN.lastIndex = 0;

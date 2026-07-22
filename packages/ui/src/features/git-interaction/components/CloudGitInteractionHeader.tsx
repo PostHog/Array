@@ -9,6 +9,7 @@ import {
 } from "@posthog/ui/features/sessions/localHandoffService";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { DirtyTreeDialog } from "../../sessions/components/DirtyTreeDialog";
 import { HandoffConfirmDialog } from "../../sessions/components/HandoffConfirmDialog";
@@ -40,6 +41,7 @@ export function CloudGitInteractionHeader({
     GIT_CACHE_KEY_PROVIDER,
   );
   const localHandoff = useService<LocalHandoffService>(LOCAL_HANDOFF_SERVICE);
+  const { localWorkspaces } = useHostCapabilities();
   const cloudHandoffEnabled =
     useFeatureFlag(CLOUD_HANDOFF_FLAG) || import.meta.env.DEV;
 
@@ -106,7 +108,8 @@ export function CloudGitInteractionHeader({
     await localHandoff.afterCommit();
   };
 
-  if (!cloudHandoffEnabled) return null;
+  // "Continue locally" hands the task off to a local checkout
+  if (!cloudHandoffEnabled || !localWorkspaces) return null;
   if (task.origin_product === "image_builder") return null;
 
   const inProgress = session?.handoffInProgress ?? false;

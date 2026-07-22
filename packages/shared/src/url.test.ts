@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSafeExternalUrl } from "./url";
+import { isSafeExternalUrl, isSafePostHogUrl } from "./url";
 
 describe("isSafeExternalUrl", () => {
   it.each([
@@ -26,5 +26,33 @@ describe("isSafeExternalUrl", () => {
     "   ",
   ])("blocks %s", (url) => {
     expect(isSafeExternalUrl(url)).toBe(false);
+  });
+});
+
+describe("isSafePostHogUrl", () => {
+  it.each([
+    "https://posthog.com",
+    "https://posthog.com/docs?q=1#frag",
+    "https://us.posthog.com/project/2",
+    "https://app.posthog.com",
+    "HTTPS://POSTHOG.COM/pricing",
+  ])("allows %s", (url) => {
+    expect(isSafePostHogUrl(url)).toBe(true);
+  });
+
+  it.each([
+    "http://posthog.com",
+    "https://example.com",
+    "https://myposthog.com",
+    "https://evilposthog.com",
+    "https://posthog.com.evil.com",
+    "mailto:hi@posthog.com",
+    "javascript:alert(1)",
+    "file:///etc/passwd",
+    "posthog.com/docs",
+    "/relative/path",
+    "",
+  ])("blocks %s", (url) => {
+    expect(isSafePostHogUrl(url)).toBe(false);
   });
 });

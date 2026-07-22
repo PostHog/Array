@@ -1061,6 +1061,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         additions: number;
         deletions: number;
         patch?: string;
+        sha?: string;
       }>
     >;
     const files = pages.flat();
@@ -1088,6 +1089,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         originalPath: f.previous_filename,
         linesAdded: f.additions,
         linesRemoved: f.deletions,
+        sha: f.sha,
         patch: f.patch
           ? toUnifiedDiffPatch(f.patch, f.filename, f.previous_filename, status)
           : undefined,
@@ -1247,6 +1249,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         additions: number;
         deletions: number;
         patch?: string;
+        sha?: string;
       }>;
     };
     const files = response.files;
@@ -1276,6 +1279,7 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
         originalPath: f.previous_filename,
         linesAdded: f.additions,
         linesRemoved: f.deletions,
+        sha: f.sha,
         patch: f.patch
           ? toUnifiedDiffPatch(f.patch, f.filename, f.previous_filename, status)
           : undefined,

@@ -1,3 +1,4 @@
+import { HashIcon } from "@phosphor-icons/react";
 import {
   Button,
   Tooltip,
@@ -7,7 +8,6 @@ import {
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { Flex, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
-import { SquircleDashed } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 interface ChannelBreadcrumbProps {
@@ -22,6 +22,7 @@ interface ChannelBreadcrumbProps {
   leafIcon?: ReactNode;
   /** The trailing (current page) segment label. */
   leafLabel: string;
+  editScopeKey?: string;
   /**
    * When provided, the leaf becomes inline-editable: double-click to rename,
    * Enter or blur to submit, Escape to cancel. Receives the trimmed new value.
@@ -40,18 +41,18 @@ export function ChannelBreadcrumb({
   channelId,
   leafIcon,
   leafLabel,
+  editScopeKey,
   onRename,
   trailing,
 }: ChannelBreadcrumbProps) {
-  const [editing, setEditing] = useState(false);
+  const currentEditScope = editScopeKey ?? leafLabel;
+  const [editingScope, setEditingScope] = useState<string | null>(null);
+  const editing = editingScope === currentEditScope;
   const navigate = useNavigate();
 
   const channelSegment = (
     <>
-      <SquircleDashed
-        size={12}
-        className="mt-px shrink-0 text-muted-foreground/80"
-      />
+      <HashIcon size={12} className="mt-px shrink-0 text-muted-foreground/80" />
       <Text
         className="min-w-0 truncate whitespace-nowrap font-medium text-[13px]"
         title={channelName}
@@ -90,10 +91,10 @@ export function ChannelBreadcrumb({
             <HeaderTitleEditor
               initialTitle={leafLabel}
               onSubmit={(next) => {
-                setEditing(false);
+                setEditingScope(null);
                 onRename(next);
               }}
-              onCancel={() => setEditing(false)}
+              onCancel={() => setEditingScope(null)}
             />
           ) : (
             <Tooltip>
@@ -103,7 +104,9 @@ export function ChannelBreadcrumb({
                     truncate
                     className="no-drag min-w-0 whitespace-nowrap text-[13px]"
                     onDoubleClick={
-                      onRename ? () => setEditing(true) : undefined
+                      onRename
+                        ? () => setEditingScope(currentEditScope)
+                        : undefined
                     }
                   />
                 }

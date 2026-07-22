@@ -5,7 +5,6 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
-import { useSeat } from "@posthog/ui/features/billing/useSeat";
 import { Avatar, Badge, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 
 export function AccountSettings() {
@@ -19,7 +18,6 @@ export function AccountSettings() {
     client,
     enabled: isAuthenticated,
   });
-  const { seat, isPro, planLabel } = useSeat();
 
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -63,11 +61,6 @@ export function AccountSettings() {
             {cloudRegion && (
               <Badge size="1" variant="soft">
                 {formatRegionBadge(cloudRegion)}
-              </Badge>
-            )}
-            {seat && (
-              <Badge size="1" variant="soft" color={isPro ? "orange" : "gray"}>
-                {planLabel}
               </Badge>
             )}
           </Flex>

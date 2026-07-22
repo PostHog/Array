@@ -15,7 +15,9 @@ export interface McpRecommendedServer {
   docs_url?: string;
   description?: string;
   auth_type?: McpAuthType;
-  icon_key?: string;
+  /** The vendor's brand domain (e.g. "linear.app"), rendered via the
+   *  logo.dev icon proxy. Empty when no brand icon is known. */
+  icon_domain?: string;
   category?: string;
   /** Some templates expose a `transport_type` ("stdio" | "streamable_http"); when
    *  absent, treat as HTTP. Stdio servers can't run on mobile; we badge them. */
@@ -27,7 +29,9 @@ export interface McpServerInstallation {
   id: string;
   template_id: string | null;
   name: string;
-  icon_key: string;
+  /** Brand domain from the linked template, rendered via the logo.dev icon
+   *  proxy. Empty if custom install (no template). */
+  icon_domain?: string;
   display_name?: string;
   url?: string;
   description?: string;

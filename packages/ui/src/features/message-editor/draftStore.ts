@@ -23,6 +23,12 @@ interface DraftState {
   focusRequested: Record<SessionId, number>;
   pendingContent: Record<SessionId, EditorContent>;
   pendingInsert: Record<SessionId, EditorContent>;
+  /**
+   * Composer content captured when a queued-message edit begins, so cancelling
+   * the edit restores the user's prior draft instead of blanking the composer.
+   * Keyed by sessionId. Not persisted.
+   */
+  preEditDraft: Record<SessionId, EditorContent>;
   _hasHydrated: boolean;
 }
 
@@ -49,6 +55,16 @@ export interface DraftActions {
   /** Insert content at the cursor (append), unlike setPendingContent which replaces. */
   insertPendingContent: (sessionId: SessionId, content: EditorContent) => void;
   clearPendingInsert: (sessionId: SessionId) => void;
+  /**
+   * Snapshot composer content before a queued-message edit overwrites it (see
+   * {@link DraftState.preEditDraft}). Passing null clears any existing snapshot.
+   */
+  setPreEditDraft: (
+    sessionId: SessionId,
+    content: EditorContent | null,
+  ) => void;
+  /** Return and remove the snapshot set by {@link setPreEditDraft} (null if none). */
+  takePreEditDraft: (sessionId: SessionId) => EditorContent | null;
 }
 
 type DraftStore = DraftState & { actions: DraftActions };
@@ -62,6 +78,7 @@ export const useDraftStore = create<DraftStore>()(
       focusRequested: {},
       pendingContent: {},
       pendingInsert: {},
+      preEditDraft: {},
       _hasHydrated: false,
 
       actions: {
@@ -154,6 +171,25 @@ export const useDraftStore = create<DraftStore>()(
           set((state) => {
             delete state.pendingInsert[sessionId];
           }),
+
+        setPreEditDraft: (sessionId, content) =>
+          set((state) => {
+            if (content === null) {
+              delete state.preEditDraft[sessionId];
+            } else {
+              state.preEditDraft[sessionId] = content;
+            }
+          }),
+
+        takePreEditDraft: (sessionId) => {
+          const snapshot = get().preEditDraft[sessionId] ?? null;
+          if (snapshot) {
+            set((state) => {
+              delete state.preEditDraft[sessionId];
+            });
+          }
+          return snapshot;
+        },
       },
     })),
     {

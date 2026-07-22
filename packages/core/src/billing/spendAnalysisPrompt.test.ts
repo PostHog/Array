@@ -111,7 +111,7 @@ describe("buildAnalysisPrompt", () => {
     const prompt = buildAnalysisPrompt(makeResponse());
     expect(prompt).toContain("Total spend: $100");
     // Values under $100 render with 2 decimal places per `formatUsd`.
-    expect(prompt).toContain("PostHog Code spend: $80.00 (80% of total)");
+    expect(prompt).toContain("This app's spend: $80.00 (80% of total)");
     expect(prompt).toContain("Generations: 800");
   });
 
@@ -129,7 +129,7 @@ describe("buildAnalysisPrompt", () => {
         },
       }),
     );
-    expect(prompt).toContain("PostHog Code spend: $0 (0% of total)");
+    expect(prompt).toContain("This app's spend: $0 (0% of total)");
   });
 
   it("escapes injection-shaped tool names so they can't break out of the table", () => {

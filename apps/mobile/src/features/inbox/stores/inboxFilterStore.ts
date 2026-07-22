@@ -1,3 +1,4 @@
+import type { SourceProduct } from "@posthog/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -14,15 +15,7 @@ type SortField = Extract<
 
 type SortDirection = "asc" | "desc";
 
-export type SourceProduct =
-  | "session_replay"
-  | "error_tracking"
-  | "llm_analytics"
-  | "github"
-  | "linear"
-  | "zendesk"
-  | "conversations"
-  | "signals_scout";
+export type { SourceProduct };
 
 export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",
@@ -47,6 +40,7 @@ interface InboxFilterActions {
   setStatusFilter: (statuses: SignalReportStatus[]) => void;
   toggleStatus: (status: SignalReportStatus) => void;
   toggleSourceProduct: (source: SourceProduct) => void;
+  clearSourceProductFilter: () => void;
   toggleSuggestedReviewer: (reviewerUuid: string) => void;
   setSuggestedReviewerFilter: (reviewerUuids: string[]) => void;
   togglePriority: (priority: SignalReportPriority) => void;
@@ -85,6 +79,7 @@ export const useInboxFilterStore = create<InboxFilterStore>()(
             : [...current, source];
           return { sourceProductFilter: next };
         }),
+      clearSourceProductFilter: () => set({ sourceProductFilter: [] }),
       toggleSuggestedReviewer: (reviewerUuid) =>
         set((state) => {
           const current = state.suggestedReviewerFilter;

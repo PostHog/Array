@@ -9,7 +9,7 @@ const log = logger.scope("linux-appimage-protocol");
 // Stable basename for the desktop entry we write. Used both as the file name in
 // the applications dir and as the handler id passed to `xdg-mime default`.
 const DESKTOP_FILE_BASENAME = "posthog-code";
-const PRODUCT_NAME = "PostHog Code";
+const PRODUCT_NAME = "PostHog";
 
 /**
  * True when the current process is a Linux AppImage. AppImage runtimes export

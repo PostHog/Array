@@ -1,6 +1,13 @@
+import { chmodSync, existsSync, renameSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
+import { extract } from "tar";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { downloadFile, MAX_DOWNLOAD_ATTEMPTS } from "./download-binaries.mjs";
+import {
+  BINARIES,
+  downloadBinary,
+  downloadFile,
+  MAX_DOWNLOAD_ATTEMPTS,
+} from "./download-binaries.mjs";
 
 vi.mock("node:timers/promises", () => {
   const setTimeout = vi.fn(() => Promise.resolve());
@@ -10,6 +17,20 @@ vi.mock("node:stream/promises", () => {
   const pipeline = vi.fn(() => Promise.resolve());
   return { pipeline, default: { pipeline } };
 });
+vi.mock("tar", () => {
+  const extract = vi.fn(() => Promise.resolve());
+  return { extract, default: { extract } };
+});
+vi.mock("adm-zip", () => {
+  const extractAllTo = vi.fn();
+  return {
+    default: class AdmZip {
+      extractAllTo(...args) {
+        extractAllTo(...args);
+      }
+    },
+  };
+});
 vi.mock("node:fs", () => {
   const fns = {
     chmodSync: vi.fn(),
@@ -17,6 +38,7 @@ vi.mock("node:fs", () => {
     existsSync: vi.fn(() => true),
     mkdirSync: vi.fn(),
     realpathSync: vi.fn(() => "/not/the/entrypoint"),
+    renameSync: vi.fn(),
     rmSync: vi.fn(),
   };
   return { ...fns, default: fns };
@@ -35,7 +57,7 @@ const errorResponse = (status, statusText) => ({
   body: null,
 });
 
-describe("downloadFile", () => {
+describe("download binaries", () => {
   let fetchMock;
 
   beforeEach(() => {
@@ -109,5 +131,60 @@ describe("downloadFile", () => {
       expect(delay).toBeGreaterThanOrEqual(base * 0.5);
       expect(delay).toBeLessThan(base);
     });
+  });
+
+  it("downloads and stages the codex code-mode host beside codex", async () => {
+    const hostBinary = BINARIES.find(
+      (binary) => binary.name === "codex-code-mode-host",
+    );
+    expect(hostBinary).toBeDefined();
+
+    const destination = "/tmp/codex-binaries";
+    const target = hostBinary.getTarget();
+    const extractedPath = `${destination}/${hostBinary.archiveBinaryName(target)}`;
+    const binaryName =
+      process.platform === "win32"
+        ? "codex-code-mode-host.exe"
+        : "codex-code-mode-host";
+    const binaryPath = `${destination}/${binaryName}`;
+    const archiveSuffix = target.includes("windows") ? ".exe.zip" : ".tar.gz";
+    const archiveExtension = target.includes("windows") ? ".zip" : ".tar.gz";
+    const files = new Set([extractedPath]);
+
+    existsSync.mockImplementation((path) => files.has(path));
+    renameSync.mockImplementation((source, targetPath) => {
+      files.delete(source);
+      files.add(targetPath);
+    });
+    fetchMock.mockResolvedValue(okResponse());
+
+    await downloadBinary(hostBinary, destination);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://github.com/openai/codex/releases/download/rust-v${hostBinary.version}/codex-code-mode-host-${target}${archiveSuffix}`,
+      { redirect: "follow" },
+    );
+    if (process.platform !== "win32") {
+      expect(extract).toHaveBeenCalledWith({
+        file: `${destination}/codex-code-mode-host-archive${archiveExtension}`,
+        cwd: destination,
+      });
+    }
+    expect(renameSync).toHaveBeenCalledWith(extractedPath, binaryPath);
+    expect(chmodSync).toHaveBeenCalledWith(binaryPath, 0o755);
+  });
+
+  it.each([
+    ["aarch64-apple-darwin", "codex-code-mode-host-aarch64-apple-darwin"],
+    [
+      "x86_64-pc-windows-msvc",
+      "codex-code-mode-host-x86_64-pc-windows-msvc.exe",
+    ],
+  ])("uses the upstream host archive member for %s", (target, expected) => {
+    const hostBinary = BINARIES.find(
+      (binary) => binary.name === "codex-code-mode-host",
+    );
+
+    expect(hostBinary?.archiveBinaryName(target)).toBe(expected);
   });
 });

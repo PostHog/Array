@@ -148,6 +148,13 @@
       "when": 1783685997328,
       "tag": "0020_repair_browser_tabs_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1783956659993,
+      "tag": "0021_famous_bloodaxe",
+      "breakpoints": true
     }
   ]
 }

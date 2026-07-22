@@ -27,6 +27,7 @@ import type { WorkspaceMode } from "@posthog/shared";
 import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
+import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
@@ -105,8 +106,10 @@ function TaskFilterMenu() {
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
+  const handleOpenChange = useHoldSidebarPeek();
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         render={
           <Button type="button" aria-label="Filter tasks" size="icon-sm">

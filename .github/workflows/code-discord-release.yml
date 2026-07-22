@@ -1,4 +1,4 @@
-name: Release PostHog Code to Discord
+name: Release PostHog to Discord
 
 on:
   release:

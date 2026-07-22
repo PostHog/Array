@@ -6,7 +6,7 @@ The core runtime for PostHog cloud runs. Provides two things: an **Agent SDK** f
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│  Client (PostHog Code IDE or local CLI)                                  │
+│  Client (PostHog desktop app or local CLI)                                  │
 │    connects via SSE/JSON-RPC (cloud) or in-process streams (local)│
 └────────────────────┬─────────────────────────────────────────────┘
                      │
@@ -57,7 +57,7 @@ The same ACP agent runs in both contexts. The difference is how it's connected:
 
 **Cloud (AgentServer):** The agent runs inside a sandbox. `AgentServer` is an HTTP server (Hono) that wraps the ACP connection. Clients connect via `GET /events` (SSE) and `POST /command` (JSON-RPC). Authentication uses JWT tokens (RS256) — the sandbox holds a public key, PostHog Django holds the private key. In background mode, the server auto-starts, prompts the agent with the task description, and signals completion via the PostHog API. In interactive mode, it stays open for conversation.
 
-**Local (PostHog Code desktop):** The agent runs in-process. PostHog Code calls `createAcpConnection()` directly — no HTTP server, no JWT. The bidirectional ACP streams connect client ↔ agent within the same process.
+**Local (desktop):** The agent runs in-process. The desktop app calls `createAcpConnection()` directly — no HTTP server, no JWT. The bidirectional ACP streams connect client ↔ agent within the same process.
 
 **HandoffCheckpointTracker** handles the bridge between these contexts: it captures git checkpoint state plus the object pack/index needed to restore the worktree across cloud and local. This enables the "hand off" flow — start locally, continue in cloud, or vice versa.
 
@@ -73,6 +73,8 @@ Four modes defined in `src/execution-mode.ts`:
 | Bypass permissions  | `bypassPermissions` | Auto-approves everything (hidden when running as root)          |
 
 In cloud background mode, permissions are always auto-approved. In interactive mode, the permission system is active and configurable per session. Tool categorization lives in `src/adapters/claude/tools.ts` — each tool belongs to a group (read, write, bash, search, web, agent) and modes whitelist groups.
+
+Cloud provisioning can pass `--posthogExecPermissionRegex <regex>` to require one-time client approval for matching PostHog MCP `exec` sub-tools in every interactive cloud Claude and Codex permission mode. Non-matching sub-tools never prompt. Locally, hands-off modes stay hands-off: Claude `auto` and `bypassPermissions`, and Codex `auto` and `full-access`, auto-approve matching sub-tools; other local modes prompt. Matching is case-insensitive against the delegated name in `call [--json] <sub-tool> ...`. These prompts offer Claude users an always-allow choice remembered in local repository settings; Codex approvals remain one-time. An invalid or empty regex is logged and falls back to the default. Background runs keep their existing auto-approval behavior. The default is `(^|-)(partial-update|update|patch|delete|destroy)(-|$)`.
 
 ## ACP connection layer
 
@@ -126,6 +128,8 @@ start()
 
 The two tapping layers are distinct. The inner tap (from `createAcpConnection`) persists to logs. The outer tap (in `AgentServer`) broadcasts to SSE. This means log persistence works for both cloud and local, while SSE broadcast is cloud-only.
 
+Adapters must remove provider notifications that do not belong to the active parent session before writing ACP updates. Persisted ACP updates do not retain enough provider-specific identity to separate a subagent transcript or completion from its parent safely during cloud replay.
+
 ### HTTP endpoints
 
 | Method | Path       | Auth | Description                                              |
@@ -138,11 +142,11 @@ JWT validation (`src/server/jwt.ts`) uses RS256 with a configurable public key. 
 
 ### Commands flow through ACP
 
-When `POST /command` receives a `user_message`, it doesn't handle it directly — it calls `clientConnection.prompt()` on the ACP `ClientSideConnection`, which sends a `session/prompt` message through the ACP streams to the agent. Similarly, `cancel` sends `session/cancel`. This means all commands follow the same path as in-process calls from PostHog Code, with the HTTP layer just being a thin translation.
+When `POST /command` receives a `user_message`, it doesn't handle it directly — it calls `clientConnection.prompt()` on the ACP `ClientSideConnection`, which sends a `session/prompt` message through the ACP streams to the agent. Similarly, `cancel` sends `session/cancel`. This means all commands follow the same path as in-process calls from the desktop app, with the HTTP layer just being a thin translation.
 
-### Auto-approval in cloud mode
+### Permission routing in cloud mode
 
-The `AgentServer` provides a `requestPermission` callback to the `ClientSideConnection` that always selects the "allow" option. In background mode this is necessary (no human to ask). In interactive mode it currently does the same, with a TODO for future per-tool approval via SSE round-trips.
+The `AgentServer` provides the `requestPermission` callback to the `ClientSideConnection`. Background mode selects an allow option automatically. Interactive mode relays approvals that need a person over SSE and parks them until a client responds; other requests follow the selected permission mode.
 
 ### Checkpoint capture
 
@@ -155,6 +159,7 @@ npx agent-server \
   --port 3001 \
   --mode interactive \
   --repositoryPath /path/to/repo \
+  --posthogExecPermissionRegex '(^|-)(partial-update|update|patch|delete|destroy)(-|$)' \
   --taskId task_123 \
   --runId run_456
 ```
@@ -194,7 +199,7 @@ await agent.attachPullRequestToTask(taskId, prUrl)
 await agent.cleanup()
 ```
 
-Key difference from `AgentServer`: the SDK returns raw ACP streams for the caller to manage. There's no HTTP layer, no SSE broadcasting, and no auto-prompting. The caller is responsible for creating a `ClientSideConnection`, running the ACP handshake, and sending prompts. This is what PostHog Code does when running agents locally.
+Key difference from `AgentServer`: the SDK returns raw ACP streams for the caller to manage. There's no HTTP layer, no SSE broadcasting, and no auto-prompting. The caller is responsible for creating a `ClientSideConnection`, running the ACP handshake, and sending prompts. This is what the desktop app does when running agents locally.
 
 For Codex adapters, `agent.run()` also fetches available models from the PostHog gateway and filters to OpenAI-compatible models, passing the allowed set to the ACP connection for model list filtering.
 

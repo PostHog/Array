@@ -30,6 +30,13 @@ export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
 export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
 
+// When spoken notifications are allowed to talk, relative to what's on screen:
+//   - always: speak regardless of what the user is looking at
+//   - unviewed_task: stay quiet for the task currently on screen
+//   - app_unfocused: only speak when PostHog isn't the focused app
+// (needs-input lines ignore this so a blocker is never missed.)
+export type SpokenFocusMode = "always" | "unviewed_task" | "app_unfocused";
+
 export type BuiltInCompletionSound =
   | "none"
   | "guitar"
@@ -45,7 +52,8 @@ export type BuiltInCompletionSound =
   | "slide"
   | "switch"
   | "wilhelm"
-  | "icq";
+  | "icq"
+  | "msn";
 
 // A user-installed sound is selected by referencing its id as `custom:<id>`.
 export type CompletionSound =
@@ -101,6 +109,10 @@ interface SettingsStore {
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
   cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
+  // Last-known default ("trunk") branch per cloud repo, keyed by lowercased
+  // "owner/repo". Persisted so a cold start can pre-select trunk in the branch
+  // picker immediately, before the (slow) live branch list resolves.
+  cachedCloudDefaultBranchMap: Record<string, string>;
   lastUsedEnvironments: Record<string, string>;
   defaultInitialTaskMode: DefaultInitialTaskMode;
   lastUsedInitialTaskMode: ExecutionMode;
@@ -120,6 +132,7 @@ interface SettingsStore {
   setCachedCloudRepositoryMap: (
     map: Record<string, UserRepositoryIntegrationRef>,
   ) => void;
+  setCachedCloudDefaultBranch: (repo: string, branch: string) => void;
   setLastUsedEnvironment: (
     repoPath: string,
     environmentId: string | null,
@@ -149,6 +162,24 @@ interface SettingsStore {
   addCustomSound: (sound: CustomSound) => void;
   removeCustomSound: (id: string) => void;
   renameCustomSound: (id: string, name: string) => void;
+
+  // Spoken notifications
+  spokenNotifications: boolean;
+  spokenNotifyNeedsInput: boolean;
+  spokenNotifyCompletion: boolean;
+  spokenNotifyProgress: boolean;
+  spokenFocusMode: SpokenFocusMode;
+  elevenLabsVoiceId: string;
+  // Mirrors whether an ElevenLabs key is stored (the key itself lives in
+  // encrypted secure storage, never in this persisted blob).
+  elevenLabsKeyConfigured: boolean;
+  setSpokenNotifications: (enabled: boolean) => void;
+  setSpokenNotifyNeedsInput: (enabled: boolean) => void;
+  setSpokenNotifyCompletion: (enabled: boolean) => void;
+  setSpokenNotifyProgress: (enabled: boolean) => void;
+  setSpokenFocusMode: (mode: SpokenFocusMode) => void;
+  setElevenLabsVoiceId: (voiceId: string) => void;
+  setElevenLabsKeyConfigured: (configured: boolean) => void;
 
   // Composer / chat
   autoConvertLongText: AutoConvertLongText;
@@ -201,6 +232,12 @@ interface SettingsStore {
   conversationCollapseMode: CollapseMode;
   setConversationCollapseMode: (mode: CollapseMode) => void;
 
+  // Sidebar
+  // Shows a per-repo "Worktrees" dropdown of task-less worktrees a click can
+  // start a task in. Opt-in: off by default to keep the sidebar uncluttered.
+  showSidebarWorktrees: boolean;
+  setShowSidebarWorktrees: (enabled: boolean) => void;
+
   // Experimental / misc
   hedgehogMode: boolean;
   slotMachineMode: boolean;
@@ -247,6 +284,13 @@ export const NOTIFICATION_DEFAULTS = {
   completionSound: "none" as CompletionSound,
   completionVolume: 80,
   scaleSoundWithTaskLength: false,
+  spokenNotifications: false,
+  spokenNotifyNeedsInput: true,
+  spokenNotifyCompletion: true,
+  spokenNotifyProgress: false,
+  spokenFocusMode: "unviewed_task" as SpokenFocusMode,
+  elevenLabsVoiceId: "",
+  elevenLabsKeyConfigured: false,
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -262,6 +306,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
+      cachedCloudDefaultBranchMap: {},
       lastUsedEnvironments: {},
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
@@ -281,6 +326,16 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedCloudRepository: repo }),
       setCachedCloudRepositoryMap: (map) =>
         set({ cachedCloudRepositoryMap: map }),
+      setCachedCloudDefaultBranch: (repo, branch) =>
+        set((state) => {
+          if (state.cachedCloudDefaultBranchMap[repo] === branch) return {};
+          return {
+            cachedCloudDefaultBranchMap: {
+              ...state.cachedCloudDefaultBranchMap,
+              [repo]: branch,
+            },
+          };
+        }),
       setLastUsedEnvironment: (repoPath, environmentId) =>
         set((state) => {
           const next = { ...state.lastUsedEnvironments };
@@ -316,6 +371,18 @@ export const useSettingsStore = create<SettingsStore>()(
       setToastNotifications: (enabled) => set({ toastNotifications: enabled }),
       setCompletionSound: (sound) => set({ completionSound: sound }),
       setCompletionVolume: (volume) => set({ completionVolume: volume }),
+      setSpokenNotifications: (enabled) =>
+        set({ spokenNotifications: enabled }),
+      setSpokenNotifyNeedsInput: (enabled) =>
+        set({ spokenNotifyNeedsInput: enabled }),
+      setSpokenNotifyCompletion: (enabled) =>
+        set({ spokenNotifyCompletion: enabled }),
+      setSpokenNotifyProgress: (enabled) =>
+        set({ spokenNotifyProgress: enabled }),
+      setSpokenFocusMode: (mode) => set({ spokenFocusMode: mode }),
+      setElevenLabsVoiceId: (voiceId) => set({ elevenLabsVoiceId: voiceId }),
+      setElevenLabsKeyConfigured: (configured) =>
+        set({ elevenLabsKeyConfigured: configured }),
       setScaleSoundWithTaskLength: (enabled) =>
         set({ scaleSoundWithTaskLength: enabled }),
       addCustomSound: (sound) =>
@@ -392,6 +459,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setConversationCollapseMode: (mode) =>
         set({ conversationCollapseMode: mode }),
 
+      // Sidebar
+      showSidebarWorktrees: false,
+      setShowSidebarWorktrees: (enabled) =>
+        set({ showSidebarWorktrees: enabled }),
+
       // Experimental / misc
       hedgehogMode: false,
       slotMachineMode: false,
@@ -463,6 +535,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
+        cachedCloudDefaultBranchMap: state.cachedCloudDefaultBranchMap,
         lastUsedEnvironments: state.lastUsedEnvironments,
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
@@ -479,6 +552,13 @@ export const useSettingsStore = create<SettingsStore>()(
         completionVolume: state.completionVolume,
         scaleSoundWithTaskLength: state.scaleSoundWithTaskLength,
         customSounds: state.customSounds,
+        spokenNotifications: state.spokenNotifications,
+        spokenNotifyNeedsInput: state.spokenNotifyNeedsInput,
+        spokenNotifyCompletion: state.spokenNotifyCompletion,
+        spokenNotifyProgress: state.spokenNotifyProgress,
+        spokenFocusMode: state.spokenFocusMode,
+        elevenLabsVoiceId: state.elevenLabsVoiceId,
+        elevenLabsKeyConfigured: state.elevenLabsKeyConfigured,
 
         // Composer / chat
         autoConvertLongText: state.autoConvertLongText,
@@ -504,6 +584,9 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Conversation thread (new-thread)
         conversationCollapseMode: state.conversationCollapseMode,
+
+        // Sidebar
+        showSidebarWorktrees: state.showSidebarWorktrees,
 
         // Experimental / misc
         hedgehogMode: state.hedgehogMode,

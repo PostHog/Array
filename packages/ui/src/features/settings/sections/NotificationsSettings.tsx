@@ -4,7 +4,12 @@ import {
   type INotifications,
   NOTIFICATIONS_SERVICE,
 } from "@posthog/platform/notifications";
-import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { type ISpeech, SPEECH_SERVICE } from "@posthog/platform/speech";
+import {
+  ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
+  SPOKEN_NARRATION_FLAG,
+} from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
@@ -14,12 +19,18 @@ import {
   type CompletionSound,
   type CustomSound,
   NOTIFICATION_DEFAULTS,
+  type SpokenFocusMode,
   useSettingsStore,
 } from "@posthog/ui/features/settings/settingsStore";
+import {
+  type ISpeechKeyStore,
+  SPEECH_KEY_STORE,
+} from "@posthog/ui/features/settings/speechKeyStore";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { formatDurationSeconds } from "@posthog/ui/utils/customSound";
 import { playCompletionSound } from "@posthog/ui/utils/sounds";
 import {
@@ -63,10 +74,18 @@ export function NotificationsSettings() {
   const notifications = useServiceOptional<INotifications>(
     NOTIFICATIONS_SERVICE,
   );
+  // Dock badge/bounce are macOS desktop-dock features.
+  const { localWorkspaces } = useHostCapabilities();
 
   // Canvases only exist behind the bluebird flag, so only mention them when on.
   const canvasEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+
+  // Spoken narration is behind a flag for a staged rollout; always on in dev.
+  const spokenNarrationEnabled = useFeatureFlag(
+    SPOKEN_NARRATION_FLAG,
     import.meta.env.DEV,
   );
 
@@ -91,7 +110,7 @@ export function NotificationsSettings() {
         if (permission !== "granted") {
           toast.info("Notifications are blocked", {
             description:
-              "Allow notifications for PostHog Code in your system settings.",
+              "Allow notifications for PostHog in your system settings.",
           });
           return;
         }
@@ -170,7 +189,7 @@ export function NotificationsSettings() {
       {notificationsDenied && (
         <Text color="yellow" className="mb-2 text-[13px]">
           Notifications are blocked in your system settings. Enable
-          notifications for PostHog Code to receive them.
+          notifications for PostHog to receive them.
         </Text>
       )}
 
@@ -193,27 +212,31 @@ export function NotificationsSettings() {
         />
       </SettingRow>
 
-      <SettingRow
-        label="Dock badge"
-        description="Display a badge on the dock icon when the agent finishes a task or needs your input"
-      >
-        <Switch
-          checked={dockBadgeNotifications}
-          onCheckedChange={setDockBadgeNotifications}
-          size="1"
-        />
-      </SettingRow>
+      {localWorkspaces && (
+        <>
+          <SettingRow
+            label="Dock badge"
+            description="Display a badge on the dock icon when the agent finishes a task or needs your input"
+          >
+            <Switch
+              checked={dockBadgeNotifications}
+              onCheckedChange={setDockBadgeNotifications}
+              size="1"
+            />
+          </SettingRow>
 
-      <SettingRow
-        label="Bounce dock icon"
-        description="Bounce the dock icon when the agent finishes a task or needs your input"
-      >
-        <Switch
-          checked={dockBounceNotifications}
-          onCheckedChange={setDockBounceNotifications}
-          size="1"
-        />
-      </SettingRow>
+          <SettingRow
+            label="Bounce dock icon"
+            description="Bounce the dock icon when the agent finishes a task or needs your input"
+          >
+            <Switch
+              checked={dockBounceNotifications}
+              onCheckedChange={setDockBounceNotifications}
+              size="1"
+            />
+          </SettingRow>
+        </>
+      )}
 
       <SettingRow
         label="In-app toasts"
@@ -260,6 +283,7 @@ export function NotificationsSettings() {
               <Select.Item value="switch">Switch</Select.Item>
               <Select.Item value="wilhelm">Wilhelm scream</Select.Item>
               <Select.Item value="icq">ICQ</Select.Item>
+              <Select.Item value="msn">MSN Messenger</Select.Item>
               {customSounds.length > 0 && (
                 <Select.Group>
                   <Select.Label>Custom</Select.Label>
@@ -360,6 +384,8 @@ export function NotificationsSettings() {
         </SettingRow>
       )}
 
+      {spokenNarrationEnabled && <SpokenNotificationsSection />}
+
       <NotificationTestHarness
         bus={bus}
         notifications={notifications}
@@ -367,6 +393,231 @@ export function NotificationsSettings() {
         canvasEnabled={canvasEnabled}
       />
     </Flex>
+  );
+}
+
+function SpeechSwitchRow({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <SettingRow label={label} description={description}>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        size="1"
+      />
+    </SettingRow>
+  );
+}
+
+// Voice narration: the agent speaks a short line when it needs the user or
+// finishes. The master toggle gates the whole feature; sub-controls disable
+// when it's off. The ElevenLabs key is written to encrypted host storage via an
+// injected capability (never kept in packages/ui or the persisted blob).
+function SpokenNotificationsSection() {
+  const {
+    spokenNotifications,
+    spokenNotifyNeedsInput,
+    spokenNotifyCompletion,
+    spokenNotifyProgress,
+    spokenFocusMode,
+    elevenLabsVoiceId,
+    elevenLabsKeyConfigured,
+    setSpokenNotifications,
+    setSpokenNotifyNeedsInput,
+    setSpokenNotifyCompletion,
+    setSpokenNotifyProgress,
+    setSpokenFocusMode,
+    setElevenLabsVoiceId,
+    setElevenLabsKeyConfigured,
+  } = useSettingsStore();
+
+  const keyStore = useServiceOptional<ISpeechKeyStore>(SPEECH_KEY_STORE);
+  const speech = useServiceOptional<ISpeech>(SPEECH_SERVICE);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+
+  const disabled = !spokenNotifications;
+
+  const saveKey = useCallback(async () => {
+    if (!keyStore || !keyDraft.trim()) return;
+    setSavingKey(true);
+    try {
+      await keyStore.save(keyDraft.trim());
+      setElevenLabsKeyConfigured(true);
+      setKeyDraft("");
+      toast.success("ElevenLabs key saved");
+    } catch {
+      toast.error("Couldn't save the key");
+    } finally {
+      setSavingKey(false);
+    }
+  }, [keyStore, keyDraft, setElevenLabsKeyConfigured]);
+
+  const clearKey = useCallback(async () => {
+    if (!keyStore) return;
+    try {
+      await keyStore.clear();
+      setElevenLabsKeyConfigured(false);
+      toast.success("ElevenLabs key removed");
+    } catch {
+      toast.error("Couldn't remove the key");
+    }
+  }, [keyStore, setElevenLabsKeyConfigured]);
+
+  const testVoice = useCallback(() => {
+    void speech?.speak("PostHog task 'demo' — [excited] this is my voice!", {
+      voiceId: elevenLabsVoiceId || undefined,
+    });
+  }, [speech, elevenLabsVoiceId]);
+
+  return (
+    <>
+      <Text className="mt-4 mb-1 block border-gray-6 border-t pt-4 font-medium text-sm">
+        Spoken notifications
+      </Text>
+      <Text color="gray" className="mb-1 text-[13px]">
+        Have the agent say a short line out loud when it needs you or finishes,
+        so you hear it across parallel tasks without watching the screen. Lines
+        are serialized so agents never talk over each other.
+      </Text>
+
+      <SpeechSwitchRow
+        label="Enable spoken notifications"
+        description="Let the agent speak up out loud when it decides it's worth interrupting you."
+        checked={spokenNotifications}
+        onCheckedChange={setSpokenNotifications}
+      />
+
+      <SpeechSwitchRow
+        label="Speak when I'm needed"
+        description="Blocked on a question, decision, or confirmation. Always spoken — even for the task you're viewing."
+        checked={spokenNotifyNeedsInput}
+        onCheckedChange={setSpokenNotifyNeedsInput}
+        disabled={disabled}
+      />
+
+      <SpeechSwitchRow
+        label="Speak when a task finishes"
+        description="Announce completion so you can review and ship."
+        checked={spokenNotifyCompletion}
+        onCheckedChange={setSpokenNotifyCompletion}
+        disabled={disabled}
+      />
+
+      <SpeechSwitchRow
+        label="Speak on progress"
+        description="Narrate meaningful new phases too. Off by default — can get chatty."
+        checked={spokenNotifyProgress}
+        onCheckedChange={setSpokenNotifyProgress}
+        disabled={disabled}
+      />
+
+      <SettingRow
+        label="When to speak"
+        description="Choose how spoken lines behave relative to what's on screen. Needs-you lines always play."
+      >
+        <Select.Root
+          value={spokenFocusMode}
+          onValueChange={(v) => setSpokenFocusMode(v as SpokenFocusMode)}
+          disabled={disabled}
+          size="1"
+        >
+          <Select.Trigger className="min-w-[180px]" />
+          <Select.Content>
+            <Select.Item value="unviewed_task">
+              Quiet for the task I'm viewing
+            </Select.Item>
+            <Select.Item value="app_unfocused">
+              Only when app is in background
+            </Select.Item>
+            <Select.Item value="always">Always</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="ElevenLabs API key"
+        description={
+          elevenLabsKeyConfigured
+            ? "A key is saved — expressive Eleven v3 voice is on."
+            : "Optional. Add a key for an expressive Eleven v3 voice; otherwise your system voice is used."
+        }
+      >
+        {elevenLabsKeyConfigured ? (
+          <Flex align="center" gap="2">
+            <Text color="green" className="text-[13px]">
+              Key saved
+            </Text>
+            <Button
+              variant="soft"
+              size="1"
+              color="red"
+              onClick={clearKey}
+              disabled={!keyStore}
+            >
+              Remove
+            </Button>
+          </Flex>
+        ) : (
+          <Flex align="center" gap="2">
+            <TextField.Root
+              type="password"
+              placeholder="xi-…"
+              size="1"
+              className="w-[180px]"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.currentTarget.value)}
+              disabled={disabled || !keyStore}
+            />
+            <Button
+              variant="soft"
+              size="1"
+              onClick={saveKey}
+              disabled={disabled || !keyStore || !keyDraft.trim() || savingKey}
+            >
+              Save
+            </Button>
+          </Flex>
+        )}
+      </SettingRow>
+
+      <SettingRow
+        label="Voice"
+        description="Optional ElevenLabs voice id. Leave blank for the default voice."
+        noBorder
+      >
+        <Flex align="center" gap="2">
+          <TextField.Root
+            size="1"
+            className="w-[180px]"
+            placeholder="default"
+            value={elevenLabsVoiceId}
+            onChange={(e) => setElevenLabsVoiceId(e.currentTarget.value)}
+            disabled={disabled}
+          />
+          <Button
+            variant="soft"
+            size="1"
+            onClick={testVoice}
+            disabled={disabled || !speech}
+          >
+            <Play weight="fill" /> Test
+          </Button>
+        </Flex>
+      </SettingRow>
+    </>
   );
 }
 
@@ -450,6 +701,10 @@ function NotificationTestHarness({
   canvasEnabled: boolean;
 }) {
   const nativeUnavailable = !notifications;
+  // Deep links (OS URL scheme) and the dock are desktop concepts; hide those
+  // test rows on cloud-only hosts. Clicking a native notification still opens
+  // its task in-app on web.
+  const { localWorkspaces } = useHostCapabilities();
 
   const testToast = () =>
     bus?.notify({
@@ -476,7 +731,7 @@ function NotificationTestHarness({
 
   const testNative = () =>
     notifications?.notify({
-      title: "PostHog Code",
+      title: "PostHog",
       body: "This is a native OS notification.",
       silent: false,
     });
@@ -484,7 +739,7 @@ function NotificationTestHarness({
   const testNativeDeepLink = () => {
     if (!notifications || !deepLinkTask) return;
     notifications.notify({
-      title: "PostHog Code",
+      title: "PostHog",
       body: `Click to open "${deepLinkTask.title}"`,
       silent: false,
       target: { kind: "task", taskId: deepLinkTask.id },
@@ -512,27 +767,30 @@ function NotificationTestHarness({
         </Button>
       </SettingRow>
 
-      <SettingRow
-        label="Deep-link toast"
-        description={
-          deepLinkTask
-            ? `Toast with a "View" action that opens "${deepLinkTask.title}".`
-            : "Run a task first to test deep-linking from a toast."
-        }
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={testToastDeepLink}
-          disabled={!bus || !deepLinkTask}
+      {localWorkspaces && (
+        <SettingRow
+          label="Deep-link toast"
+          description={
+            deepLinkTask
+              ? `Toast with a "View" action that opens "${deepLinkTask.title}".`
+              : "Run a task first to test deep-linking from a toast."
+          }
         >
-          Send
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={testToastDeepLink}
+            disabled={!bus || !deepLinkTask}
+          >
+            Send
+          </Button>
+        </SettingRow>
+      )}
 
       <SettingRow
         label="Native OS notification"
         description="Shows a system notification — the tier used when the app is in the background."
+        noBorder={!localWorkspaces}
       >
         <Button
           variant="soft"
@@ -544,52 +802,58 @@ function NotificationTestHarness({
         </Button>
       </SettingRow>
 
-      <SettingRow
-        label="Deep-link notification"
-        description={
-          deepLinkTask
-            ? `Fires a native notification that opens "${deepLinkTask.title}" when clicked.`
-            : "Run a task first to test deep-linking from a notification."
-        }
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={testNativeDeepLink}
-          disabled={nativeUnavailable || !deepLinkTask}
+      {localWorkspaces && (
+        <SettingRow
+          label="Deep-link notification"
+          description={
+            deepLinkTask
+              ? `Fires a native notification that opens "${deepLinkTask.title}" when clicked.`
+              : "Run a task first to test deep-linking from a notification."
+          }
         >
-          Send
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={testNativeDeepLink}
+            disabled={nativeUnavailable || !deepLinkTask}
+          >
+            Send
+          </Button>
+        </SettingRow>
+      )}
 
-      <SettingRow
-        label="Dock badge"
-        description="Adds the unread dot to the dock icon (clears on next focus)."
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={() => notifications?.showUnreadIndicator()}
-          disabled={nativeUnavailable}
+      {localWorkspaces && (
+        <SettingRow
+          label="Dock badge"
+          description="Adds the unread dot to the dock icon (clears on next focus)."
         >
-          Show
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={() => notifications?.showUnreadIndicator()}
+            disabled={nativeUnavailable}
+          >
+            Show
+          </Button>
+        </SettingRow>
+      )}
 
-      <SettingRow
-        label="Dock bounce"
-        description="Bounces the dock icon once to request attention."
-        noBorder
-      >
-        <Button
-          variant="soft"
-          size="1"
-          onClick={() => notifications?.requestAttention()}
-          disabled={nativeUnavailable}
+      {localWorkspaces && (
+        <SettingRow
+          label="Dock bounce"
+          description="Bounces the dock icon once to request attention."
+          noBorder
         >
-          Bounce
-        </Button>
-      </SettingRow>
+          <Button
+            variant="soft"
+            size="1"
+            onClick={() => notifications?.requestAttention()}
+            disabled={nativeUnavailable}
+          >
+            Bounce
+          </Button>
+        </SettingRow>
+      )}
     </>
   );
 }

@@ -5,7 +5,7 @@ import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
-import { buildSessionOptions } from "./options";
+import { buildSessionOptions, buildSystemPrompt } from "./options";
 import { SettingsManager } from "./settings";
 
 const GIT_COMMIT_HOOK_INPUT = {
@@ -44,6 +44,55 @@ function makeParams() {
 }
 
 describe("buildSessionOptions", () => {
+  it("replaces unprocessable Read images before model delivery", async () => {
+    const options = buildSessionOptions(makeParams());
+    const hooks = (options.hooks?.PostToolUse ?? []).flatMap(
+      (entry) => entry.hooks ?? [],
+    );
+    const input = {
+      session_id: "s",
+      transcript_path: "/tmp/t",
+      cwd: "/tmp",
+      hook_event_name: "PostToolUse",
+      tool_name: "Read",
+      tool_use_id: "toolu_image",
+      tool_input: { file_path: "/tmp/image.heic" },
+      tool_response: [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/heic",
+            data: "ZmFrZQ==",
+          },
+        },
+      ],
+    } as HookInput;
+
+    const results = await Promise.all(
+      hooks.map((hook) =>
+        hook(input, undefined, {
+          signal: new AbortController().signal,
+        }),
+      ),
+    );
+
+    expect(results).toContainEqual({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        updatedToolOutput: {
+          content: [
+            {
+              type: "text",
+              text: "[Removed unprocessable image: unsupported image type image/heic]",
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it.each(Object.entries(SUBAGENT_REWRITES))(
     'registers rewrite target "%s" → "%s" in options.agents',
     (_source, target) => {
@@ -356,5 +405,68 @@ describe("buildSessionOptions", () => {
 
       expect(headers).toBe(expected);
     });
+  });
+});
+
+describe("buildSystemPrompt", () => {
+  const promptText = (prompt: Options["systemPrompt"]): string => {
+    if (typeof prompt === "string") return prompt;
+    if (Array.isArray(prompt)) return prompt.join("\n");
+    return prompt?.append ?? "";
+  };
+
+  const prompts = [
+    { name: "default preset", customPrompt: undefined },
+    { name: "string prompt", customPrompt: "You are a test agent." },
+    {
+      name: "preset with append",
+      customPrompt: {
+        type: "preset",
+        preset: "claude_code",
+        append: "Custom append.",
+      },
+    },
+  ];
+
+  it.each(prompts)(
+    "appends the narration block with narration on ($name)",
+    ({ customPrompt }) => {
+      const prompt = buildSystemPrompt(customPrompt, { spokenNarration: true });
+      expect(promptText(prompt)).toContain("# Spoken Narration");
+    },
+  );
+
+  it.each(prompts)(
+    "omits the narration block with narration off ($name)",
+    ({ customPrompt }) => {
+      const prompt = buildSystemPrompt(customPrompt, {
+        spokenNarration: false,
+      });
+      expect(promptText(prompt)).not.toContain("Spoken Narration");
+    },
+  );
+
+  it.each(prompts)(
+    "omits the narration block when opts are absent ($name)",
+    ({ customPrompt }) => {
+      const prompt = buildSystemPrompt(customPrompt);
+      expect(promptText(prompt)).not.toContain("Spoken Narration");
+    },
+  );
+
+  it("keeps the custom prompt ahead of the appended instructions", () => {
+    const prompt = buildSystemPrompt("You are a test agent.", {
+      spokenNarration: true,
+    });
+    expect(typeof prompt).toBe("string");
+    expect(prompt).toMatch(/^You are a test agent\./);
+  });
+
+  it("keeps the custom append ahead of the appended instructions", () => {
+    const prompt = buildSystemPrompt(
+      { type: "preset", preset: "claude_code", append: "Custom append." },
+      { spokenNarration: true },
+    );
+    expect(promptText(prompt)).toMatch(/^Custom append\./);
   });
 });

@@ -6,6 +6,26 @@ export type ApiFetcherConfig = {
   appVersion: string;
 };
 
+/**
+ * Non-2xx HTTP response from the PostHog API. Keeps the legacy
+ * `Failed request: [<status>] <body>` message format — many catch sites
+ * string-match on it — while exposing the status as a typed field.
+ */
+export class ApiRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number, serializedBody: string) {
+    super(`Failed request: [${status}] ${serializedBody}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
+/** HTTP status of an ApiRequestError, or undefined for any other error. */
+export function requestErrorStatus(error: unknown): number | undefined {
+  return error instanceof ApiRequestError ? error.status : undefined;
+}
+
 export const buildApiFetcher: (
   config: ApiFetcherConfig,
 ) => Parameters<typeof createApiClient>[0] = (config) => {
@@ -91,8 +111,9 @@ export const buildApiFetcher: (
             .catch(() =>
               cloned.text().then((t) => ({ error: t || `${response.status}` })),
             );
-          throw new Error(
-            `Failed request: [${response.status}] ${JSON.stringify(errorResponse)}`,
+          throw new ApiRequestError(
+            response.status,
+            JSON.stringify(errorResponse),
           );
         }
       }
@@ -104,8 +125,9 @@ export const buildApiFetcher: (
           .catch(() =>
             cloned.text().then((t) => ({ error: t || `${response.status}` })),
           );
-        throw new Error(
-          `Failed request: [${response.status}] ${JSON.stringify(errorResponse)}`,
+        throw new ApiRequestError(
+          response.status,
+          JSON.stringify(errorResponse),
         );
       }
 

@@ -1,3 +1,4 @@
+import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import type { TaskChannel } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
@@ -13,6 +14,26 @@ export const PERSONAL_CHANNEL_NAME = "me";
 /** Client-side mirror of the backend's channel-name normalization. */
 export function normalizeChannelName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, "-").slice(0, 128);
+}
+
+/**
+ * Imperative twin of `useBackendChannel`, for flows with no mounted hook (e.g.
+ * launching a task right after creating a context): map a folder channel's
+ * display name onto its backend channel id. The "me" folder maps to the
+ * personal channel; any other name resolve-or-creates its public channel.
+ */
+export async function resolveBackendChannelId(
+  client: PostHogAPIClient | null,
+  channelName: string,
+): Promise<string | undefined> {
+  if (!client) return undefined;
+  const normalized = normalizeChannelName(channelName);
+  if (!normalized) return undefined;
+  if (normalized === PERSONAL_CHANNEL_NAME) {
+    const channels = await client.getTaskChannels();
+    return channels.find((c) => c.channel_type === "personal")?.id;
+  }
+  return (await client.resolveTaskChannel(normalized)).id;
 }
 
 /**
@@ -82,14 +103,40 @@ export function useBackendChannel(channelName: string | undefined): {
     },
   });
   const { mutate: resolve, isPending: isResolving } = resolveMutation;
+  // A failed resolve must not re-fire: the effect's own deps flip when the
+  // mutation settles, so retrying on error would spin the POST forever. Scoped
+  // to the name that failed (via the mutation's variables) so a different
+  // channel still gets its own attempt.
+  const resolveFailed =
+    resolveMutation.isError && resolveMutation.variables === normalized;
   useEffect(() => {
-    if (normalized && !isPersonal && !isLoading && !existing && !isResolving) {
+    if (
+      normalized &&
+      !isPersonal &&
+      !isLoading &&
+      !existing &&
+      !isResolving &&
+      !resolveFailed
+    ) {
       resolve(normalized);
     }
-  }, [normalized, isPersonal, isLoading, existing, isResolving, resolve]);
+  }, [
+    normalized,
+    isPersonal,
+    isLoading,
+    existing,
+    isResolving,
+    resolveFailed,
+    resolve,
+  ]);
 
   return {
     channel: existing,
-    isLoading: isLoading || (!existing && isResolving),
+    // Loading spans the whole identity resolution — the list fetch, the gap
+    // before the resolve effect fires, and the resolve itself — so callers
+    // never see a "not loading, no channel" flash for a name that is still
+    // resolving. A failed resolve settles it.
+    isLoading:
+      isLoading || (!!normalized && !isPersonal && !existing && !resolveFailed),
   };
 }

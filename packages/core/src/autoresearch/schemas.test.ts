@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AUTORESEARCH_MAX_ITERATIONS_LIMIT,
   autoresearchConfigSchema,
@@ -86,10 +86,13 @@ describe("parseStoredAutoresearchRun", () => {
     expect(run?.interruptedReason).toBeNull();
   });
 
-  it("restores a running run as an app-restart interruption", () => {
+  it("restores a running run as a paused app-restart interruption", () => {
+    vi.setSystemTime(20_000);
     const run = parseStoredAutoresearchRun(storedRun("running"));
     expect(run?.status).toBe("interrupted");
     expect(run?.interruptedReason).toBe("app-restart");
+    expect(run?.pausedAt).toBe(20_000);
+    expect(run?.pausedDurationMs).toBe(0);
   });
 
   it("defaults interruptedReason for blobs persisted before the field existed", () => {

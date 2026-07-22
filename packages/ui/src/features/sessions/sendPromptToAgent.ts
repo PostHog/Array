@@ -17,20 +17,20 @@ import {
 export function sendPromptToAgent(
   taskId: string,
   prompt: string | ContentBlock[],
-): void {
-  // Button/review/skill-initiated prompts are fire-and-forget, but a rejected
-  // send (auth failure, sandbox unreachable, agent process died) must still be
-  // surfaced, or the turn just shows "Generated in Xs" with no reply.
-  void resolveService<AgentPromptSender>(AGENT_PROMPT_SENDER)(
+): Promise<boolean> {
+  const sendPromise = resolveService<AgentPromptSender>(AGENT_PROMPT_SENDER)(
     taskId,
     prompt,
-  ).catch((error: unknown) => {
-    toast.error(
-      error instanceof Error
-        ? error.message
-        : "Failed to send your message to the agent. Please try again.",
-    );
-  });
+  )
+    .then(() => true)
+    .catch((error: unknown) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to send your message to the agent. Please try again.",
+      );
+      return false;
+    });
 
   const { getReviewMode, setReviewMode } = useReviewNavigationStore.getState();
   if (getReviewMode(taskId) === "expanded") {
@@ -45,4 +45,6 @@ export function sendPromptToAgent(
       setActiveTab(taskId, result.panelId, DEFAULT_TAB_IDS.LOGS);
     }
   }
+
+  return sendPromise;
 }
