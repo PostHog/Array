@@ -9,8 +9,8 @@ REPO_ROOT="$(cd ../.. && pwd)"
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # CI jobs that never run Electron set this to skip ~60s of node-gyp per install.
-if [ "$SKIP_ELECTRON_REBUILD" = "1" ]; then
-  echo "SKIP_ELECTRON_REBUILD=1: skipping Electron binary check and native rebuild."
+if [ "$SKIP_ELECTRON_REBUILD" = "1" ] || [ "$SKIP_ELECTRON_REBUILD" = "true" ]; then
+  echo "SKIP_ELECTRON_REBUILD=$SKIP_ELECTRON_REBUILD: skipping Electron binary check and native rebuild."
 else
   # Self-heal missing Electron binary.
   # pnpm skips package-level postinstall scripts when the lockfile is already
