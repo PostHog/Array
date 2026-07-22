@@ -2863,6 +2863,16 @@ export class SessionService {
         if (session && session.currentPromptId !== msg.id) {
           continue;
         }
+        if (session?.isCloud) {
+          // Cloud logs carry both this response and `_posthog/turn_complete`,
+          // in either order (they race in the agent's log stream). Only
+          // turn_complete may disarm the turn; disarming here would make the
+          // completion notification fire or vanish based on log line order.
+          this.d.store.updateSession(taskRunId, {
+            isPromptPending: false,
+          });
+          continue;
+        }
         this.d.store.updateSession(taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
@@ -2874,13 +2884,15 @@ export class SessionService {
       }
       if (isTurnCompleteEvent(acpMsg)) {
         // Local sessions use the JSON-RPC response as the canonical turn-done
-        // signal; clearing currentPromptId here would race the id-match guard
-        // above. Cloud sessions never see that response.
+        // signal; turn_complete is the cloud one, so only cloud disarms here.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
           const completedActiveTurn =
             session.currentPromptId !== null &&
             session.currentPromptId !== undefined;
+          const stopReason =
+            (msg as { params?: { stopReason?: string } }).params?.stopReason ??
+            "end_turn";
           const turnStartedAtTs =
             this.liveTurnContent.get(taskRunId)?.startedAtTs ??
             session.promptStartedAt;
@@ -2891,10 +2903,14 @@ export class SessionService {
           });
           if (isLive) {
             // Queued messages will start a new turn — suppress the "done" notification in that case.
-            if (completedActiveTurn && session.messageQueue.length === 0) {
+            if (
+              completedActiveTurn &&
+              stopReason === "end_turn" &&
+              session.messageQueue.length === 0
+            ) {
               this.d.notifyPromptComplete(
                 session.taskTitle,
-                "end_turn",
+                stopReason,
                 session.taskId,
                 turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
