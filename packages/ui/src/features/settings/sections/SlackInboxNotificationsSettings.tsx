@@ -5,7 +5,7 @@ import {
 } from "@posthog/core/settings/slackNotificationTarget";
 import { useSignalSourceManager } from "@posthog/ui/features/inbox/hooks/useSignalSourceManager";
 import { useIntegrationSelectors } from "@posthog/ui/features/integrations/store";
-import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
+import { SlackWorkspaceSelect } from "@posthog/ui/features/settings/components/SlackWorkspaceSelect";
 import { SignalDefaultChannelSettings } from "@posthog/ui/features/settings/sections/SignalDefaultChannelSettings";
 import { SignalSlackNotificationsSettings } from "@posthog/ui/features/settings/sections/SignalSlackNotificationsSettings";
 import {
@@ -13,7 +13,6 @@ import {
   SlackWorkspaceConnectionCallouts,
 } from "@posthog/ui/features/settings/sections/SlackWorkspaceConnection";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { useMemo } from "react";
 
 const WORKSPACE_CONTROL_CLASS = "min-w-[160px] max-w-[240px]";
 
@@ -36,9 +35,8 @@ export function SlackInboxNotificationsSettings({
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
     useSignalSourceManager();
 
-  // Workspace is shared by both the team default and the per-user channel. We
-  // default to the only workspace when there's a single one; otherwise the user
-  // picks (which also persists their personal notification integration).
+  // Personal notifications default to the only workspace when there's a single
+  // one; otherwise the user picks and persists their notification integration.
   const selectedIntegrationId =
     userAutonomyConfig?.slack_notification_integration_id ?? null;
   const effectiveIntegrationId = deriveEffectiveIntegrationId(
@@ -46,18 +44,7 @@ export function SlackInboxNotificationsSettings({
     slackIntegrations,
   );
 
-  const integrationOptions = useMemo(
-    () =>
-      slackIntegrations.map((integration) => ({
-        value: String(integration.id),
-        label: getSlackIntegrationLabel(integration),
-      })),
-    [slackIntegrations],
-  );
-
-  const onIntegrationChange = (value: string) => {
-    const integrationId = Number(value);
-    if (!Number.isFinite(integrationId)) return;
+  const onIntegrationChange = (integrationId: number) => {
     // Switching workspaces clears the personal channel — the previously picked
     // channel won't exist in the new workspace.
     void handleUpdateSlackNotifications({ integrationId, channel: null });
@@ -90,19 +77,21 @@ export function SlackInboxNotificationsSettings({
       <SlackWorkspaceConnection isLoading={isLoading} />
       <SlackWorkspaceConnectionCallouts />
 
+      <SignalDefaultChannelSettings
+        integrationId={slackIntegrations[0]?.id ?? null}
+        channelComboboxModal={channelComboboxModal}
+        isLoading={isLoading}
+      />
+
       {!isLoading && hasSlackIntegration ? (
         <Flex align="center" gap="2" pt="2" className="min-w-0">
           <Text className="shrink-0 text-(--gray-11) text-[12px]">
-            Workspace
+            Personal workspace
           </Text>
           {slackIntegrations.length > 1 ? (
-            <SettingsOptionSelect
-              value={
-                effectiveIntegrationId ? String(effectiveIntegrationId) : ""
-              }
-              options={integrationOptions}
-              ariaLabel="Slack workspace"
-              placeholder="Select workspace"
+            <SlackWorkspaceSelect
+              integrations={slackIntegrations}
+              value={effectiveIntegrationId}
               className={WORKSPACE_CONTROL_CLASS}
               onValueChange={onIntegrationChange}
             />
@@ -113,12 +102,6 @@ export function SlackInboxNotificationsSettings({
           ) : null}
         </Flex>
       ) : null}
-
-      <SignalDefaultChannelSettings
-        integrationId={effectiveIntegrationId}
-        channelComboboxModal={channelComboboxModal}
-        isLoading={isLoading}
-      />
       <SignalSlackNotificationsSettings
         integrationId={effectiveIntegrationId}
         channelComboboxModal={channelComboboxModal}
