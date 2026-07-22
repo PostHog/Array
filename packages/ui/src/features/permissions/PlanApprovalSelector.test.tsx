@@ -53,27 +53,49 @@ function renderSelector(options: PermissionOption[]) {
 describe("PlanApprovalSelector", () => {
   beforeEach(() => {
     // Reset the remembered choice so tests don't leak through persistence.
-    useSettingsStore.setState({ lastPlanApprovalMode: null });
+    useSettingsStore.setState({
+      lastPlanApprovalMode: null,
+      defaultPlanApprovalMode: "last_used",
+    });
   });
 
   it.each([
     {
       label: "there is no prior or remembered mode",
       lastMode: null,
+      defaultMode: "last_used",
       options: [AUTO, ACCEPT_EDITS, DEFAULT_MODE, REJECT],
       expected: "auto",
     },
     {
       label: "a last choice is remembered",
       lastMode: "acceptEdits",
+      defaultMode: "last_used",
+      options: [AUTO, ACCEPT_EDITS, DEFAULT_MODE],
+      expected: "acceptEdits",
+    },
+    {
+      label: "a pinned default mode overrides the remembered choice",
+      lastMode: "acceptEdits",
+      defaultMode: "auto",
+      options: [AUTO, ACCEPT_EDITS, DEFAULT_MODE],
+      expected: "auto",
+    },
+    {
+      label: "the pinned default mode isn't offered",
+      lastMode: "acceptEdits",
+      defaultMode: "bypassPermissions",
       options: [AUTO, ACCEPT_EDITS, DEFAULT_MODE],
       expected: "acceptEdits",
     },
   ] as const)(
     "defaults to $expected when $label",
-    async ({ lastMode, options, expected }) => {
+    async ({ lastMode, defaultMode, options, expected }) => {
       const user = userEvent.setup();
-      useSettingsStore.setState({ lastPlanApprovalMode: lastMode });
+      useSettingsStore.setState({
+        lastPlanApprovalMode: lastMode,
+        defaultPlanApprovalMode: defaultMode,
+      });
       const { onSelect } = renderSelector([...options]);
 
       await user.click(screen.getByText("Approve and proceed"));

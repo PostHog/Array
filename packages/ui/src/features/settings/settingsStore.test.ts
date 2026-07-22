@@ -220,6 +220,7 @@ describe("feature settingsStore cloud selections", () => {
     ["slotMachineMode", false, true],
     ["dismissibleUpdateBanners", false, true],
     ["showSidebarWorktrees", false, true],
+    ["defaultPlanApprovalMode", "last_used", "auto"],
   ] as const)("rehydrates %s", async (field, initial, persisted) => {
     getItem.mockResolvedValue(
       JSON.stringify({ state: { [field]: persisted }, version: 0 }),

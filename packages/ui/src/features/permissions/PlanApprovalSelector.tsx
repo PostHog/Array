@@ -77,12 +77,19 @@ export function PlanApprovalSelector({
   const setLastApprovalMode = useSettingsStore(
     (s) => s.setLastPlanApprovalMode,
   );
+  const defaultApprovalMode = useSettingsStore(
+    (s) => s.defaultPlanApprovalMode,
+  );
 
-  // Resolution order: the mode last approved with (remembered preference),
-  // then "auto", then manual-approve, then any single-use mode, then the first.
+  // Resolution order: a pinned default mode (if configured and offered), else
+  // the mode last approved with (remembered preference), then "auto", then
+  // manual-approve, then any single-use mode, then the first.
   const initialMode = useMemo(() => {
     const has = (id: string) => approveOptions.some((o) => o.optionId === id);
     return (
+      (defaultApprovalMode !== "last_used" && has(defaultApprovalMode)
+        ? defaultApprovalMode
+        : undefined) ??
       (lastApprovalMode && has(lastApprovalMode)
         ? lastApprovalMode
         : undefined) ??
@@ -91,7 +98,7 @@ export function PlanApprovalSelector({
       approveOptions.find((o) => o.kind === "allow_once")?.optionId ??
       approveOptions[0]?.optionId
     );
-  }, [approveOptions, lastApprovalMode]);
+  }, [approveOptions, lastApprovalMode, defaultApprovalMode]);
 
   const [selectedMode, setSelectedMode] = useState(initialMode);
   const [selectedIndex, setSelectedIndex] = useState(0);

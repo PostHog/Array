@@ -7,11 +7,13 @@ import {
   COLLAPSE_MODE_OPTIONS,
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { MODE_LABELS } from "@posthog/ui/features/sessions/modeStyles";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
   type DefaultInitialTaskMode,
   type DefaultMessagingMode,
+  type DefaultPlanApprovalMode,
   type DefaultReasoningEffort,
   type DiffOpenMode,
   type SendMessagesWith,
@@ -77,6 +79,7 @@ export function GeneralSettings() {
     autoConvertLongText,
     defaultInitialTaskMode,
     defaultMessagingMode,
+    defaultPlanApprovalMode,
     defaultReasoningEffort,
     diffOpenMode,
     sendMessagesWith,
@@ -87,6 +90,7 @@ export function GeneralSettings() {
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
     setDefaultMessagingMode,
+    setDefaultPlanApprovalMode,
     setDefaultReasoningEffort,
     setDiffOpenMode,
     setSendMessagesWith,
@@ -144,6 +148,18 @@ export function GeneralSettings() {
       setDefaultInitialTaskMode(value);
     },
     [defaultInitialTaskMode, setDefaultInitialTaskMode],
+  );
+
+  const handleDefaultPlanApprovalModeChange = useCallback(
+    (value: DefaultPlanApprovalMode) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "default_plan_approval_mode",
+        new_value: value,
+        old_value: defaultPlanApprovalMode,
+      });
+      setDefaultPlanApprovalMode(value);
+    },
+    [defaultPlanApprovalMode, setDefaultPlanApprovalMode],
   );
 
   const handleDefaultMessagingModeChange = useCallback(
@@ -294,6 +310,34 @@ export function GeneralSettings() {
           <Select.Content>
             <Select.Item value="plan">Plan</Select.Item>
             <Select.Item value="last_used">Last used</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="Mode after plan approval"
+        description="Choose whether approving a plan always resumes in a specific mode, or remembers your last choice"
+      >
+        <Select.Root
+          value={defaultPlanApprovalMode}
+          onValueChange={(value) =>
+            handleDefaultPlanApprovalModeChange(
+              value as DefaultPlanApprovalMode,
+            )
+          }
+          size="1"
+        >
+          <Select.Trigger className="min-w-[100px]" />
+          <Select.Content>
+            <Select.Item value="last_used">Last used</Select.Item>
+            <Select.Item value="auto">{MODE_LABELS.auto}</Select.Item>
+            <Select.Item value="default">{MODE_LABELS.default}</Select.Item>
+            <Select.Item value="acceptEdits">
+              {MODE_LABELS.acceptEdits}
+            </Select.Item>
+            <Select.Item value="bypassPermissions">
+              {MODE_LABELS.bypassPermissions}
+            </Select.Item>
           </Select.Content>
         </Select.Root>
       </SettingRow>

@@ -16,6 +16,7 @@ export type LocalWorkspaceMode = "worktree" | "local";
 export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
 export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
+export type DefaultPlanApprovalMode = ExecutionMode | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
 export type DefaultReasoningEffort =
   | "low"
@@ -117,6 +118,9 @@ interface SettingsStore {
   lastUsedInitialTaskMode: ExecutionMode;
   // Mode last chosen when approving a plan; pre-selected on the next approval.
   lastPlanApprovalMode: ExecutionMode | null;
+  // Pins plan approval to always pre-select a specific mode, overriding
+  // lastPlanApprovalMode; "last_used" preserves the old sticky behavior.
+  defaultPlanApprovalMode: DefaultPlanApprovalMode;
   defaultReasoningEffort: DefaultReasoningEffort;
   defaultMessagingMode: DefaultMessagingMode;
   setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
@@ -140,6 +144,7 @@ interface SettingsStore {
   setDefaultInitialTaskMode: (mode: DefaultInitialTaskMode) => void;
   setLastUsedInitialTaskMode: (mode: ExecutionMode) => void;
   setLastPlanApprovalMode: (mode: ExecutionMode) => void;
+  setDefaultPlanApprovalMode: (mode: DefaultPlanApprovalMode) => void;
   setDefaultReasoningEffort: (effort: DefaultReasoningEffort) => void;
 
   // Notifications
@@ -306,6 +311,7 @@ export const useSettingsStore = create<SettingsStore>()(
       defaultInitialTaskMode: "plan",
       lastUsedInitialTaskMode: "plan",
       lastPlanApprovalMode: null,
+      defaultPlanApprovalMode: "last_used",
       defaultReasoningEffort: "last_used",
       defaultMessagingMode: "queue",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
@@ -348,6 +354,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setLastUsedInitialTaskMode: (mode) =>
         set({ lastUsedInitialTaskMode: mode }),
       setLastPlanApprovalMode: (mode) => set({ lastPlanApprovalMode: mode }),
+      setDefaultPlanApprovalMode: (mode) =>
+        set({ defaultPlanApprovalMode: mode }),
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
@@ -531,6 +539,7 @@ export const useSettingsStore = create<SettingsStore>()(
         defaultInitialTaskMode: state.defaultInitialTaskMode,
         lastUsedInitialTaskMode: state.lastUsedInitialTaskMode,
         lastPlanApprovalMode: state.lastPlanApprovalMode,
+        defaultPlanApprovalMode: state.defaultPlanApprovalMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         defaultMessagingMode: state.defaultMessagingMode,
 
