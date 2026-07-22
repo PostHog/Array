@@ -33,7 +33,8 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      # No restore-keys: a fresh save per commit keeps the cache from growing forever.
+      # No restore-keys: a fresh save per commit keeps the cache from growing
+      # forever, at the cost of a cold build on every main push.
       - name: Cache turbo artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
