@@ -1644,11 +1644,18 @@ describe("SessionService", () => {
           "run-123",
           expect.objectContaining({
             isPromptPending: false,
-            promptStartedAt: null,
-            currentPromptId: null,
           }),
         );
       });
+      // The response must not disarm the turn: `_posthog/turn_complete` is the
+      // cloud turn-done signal and still needs currentPromptId to notify.
+      const disarmed = mockSessionStoreSetters.updateSession.mock.calls.some(
+        (call) =>
+          call[0] === "run-123" &&
+          (call[1] as Record<string, unknown> | undefined)?.currentPromptId ===
+            null,
+      );
+      expect(disarmed).toBe(false);
     });
 
     it("flushes queued cloud messages on _posthog/turn_complete", async () => {
