@@ -1,11 +1,9 @@
-import { getSlackIntegrationLabel } from "@posthog/core/settings/slackNotificationTarget";
 import { Button } from "@posthog/quill";
 import type { SignalReportPriority } from "@posthog/shared/domain-types";
 import { useSignalSourceManager } from "@posthog/ui/features/inbox/hooks/useSignalSourceManager";
 import { useIntegrationSelectors } from "@posthog/ui/features/integrations/store";
 import { useSlackConnect } from "@posthog/ui/features/integrations/useSlackConnect";
 import { SlackChannelCombobox } from "@posthog/ui/features/settings/components/SlackChannelCombobox";
-import { SlackWorkspaceSelect } from "@posthog/ui/features/settings/components/SlackWorkspaceSelect";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { Box, Callout, Flex, Text } from "@radix-ui/themes";
 
@@ -26,7 +24,7 @@ const MIN_PRIORITY_OPTIONS: {
 const SETTINGS_CONTROL_CLASS = "min-w-[200px] max-w-[240px]";
 
 interface SignalSlackNotificationsSettingsProps {
-  /** Workspace used for the current user's notifications. */
+  /** Workspace whose channels are listed — shared with the team default. */
   integrationId: number | null;
   channelComboboxModal?: boolean;
   isLoading?: boolean;
@@ -46,7 +44,7 @@ export function SignalSlackNotificationsSettings({
   const topBorderClass = showTopBorder
     ? "border-(--gray-5) border-t border-dashed pt-4"
     : "";
-  const { hasSlackIntegration, slackIntegrations } = useIntegrationSelectors();
+  const { hasSlackIntegration } = useIntegrationSelectors();
   const { userAutonomyConfig, handleUpdateSlackNotifications } =
     useSignalSourceManager();
   const slackConnect = useSlackConnect();
@@ -126,13 +124,6 @@ export function SignalSlackNotificationsSettings({
     void handleUpdateSlackNotifications({ integrationId, channel });
   };
 
-  const onIntegrationChange = (nextIntegrationId: number) => {
-    void handleUpdateSlackNotifications({
-      integrationId: nextIntegrationId,
-      channel: null,
-    });
-  };
-
   const onMinPriorityChange = (value: string) => {
     void handleUpdateSlackNotifications({
       minPriority: value === NOTIFY_ALL_VALUE ? null : value,
@@ -152,21 +143,6 @@ export function SignalSlackNotificationsSettings({
       </Flex>
 
       <Flex gap="2" wrap="wrap" align="end">
-        <Flex direction="column" gap="1" className="min-w-0">
-          <Text className="text-(--gray-11) text-[12px]">Workspace</Text>
-          {slackIntegrations.length > 1 ? (
-            <SlackWorkspaceSelect
-              integrations={slackIntegrations}
-              value={integrationId}
-              className={SETTINGS_CONTROL_CLASS}
-              onValueChange={onIntegrationChange}
-            />
-          ) : slackIntegrations[0] ? (
-            <Text className="flex h-8 items-center truncate font-medium text-(--gray-12) text-[13px]">
-              {getSlackIntegrationLabel(slackIntegrations[0])}
-            </Text>
-          ) : null}
-        </Flex>
         <Flex direction="column" gap="1" className="min-w-0">
           <Text className="text-(--gray-11) text-[12px]">Channel</Text>
           <SlackChannelCombobox
