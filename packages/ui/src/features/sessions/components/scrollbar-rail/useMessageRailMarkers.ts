@@ -140,7 +140,17 @@ export function useMessageRailMarkers({
     measure();
     const mutation = new MutationObserver(scheduleMeasure);
     mutation.observe(contentEl, { childList: true, subtree: true });
-    const resize = new ResizeObserver(scheduleMeasure);
+    const resize = new ResizeObserver(() => {
+      // Virtualized layout changes can move offscreen rows without remounting
+      // them. Their cached offsets are no longer trustworthy, so drop them and
+      // let the next marker build interpolate from the freshly measured rows.
+      // Keeping stale values here can place markers outside the content bounds.
+      if (measuredRef.current.size > 0) {
+        measuredRef.current.clear();
+        bump();
+      }
+      scheduleMeasure();
+    });
     resize.observe(contentEl);
     const scroll = scrollEl ?? contentEl;
     scroll.addEventListener("scroll", scheduleMeasure, { passive: true });
@@ -153,7 +163,7 @@ export function useMessageRailMarkers({
         frameRef.current = null;
       }
     };
-  }, [contentEl, scrollEl, measure, scheduleMeasure]);
+  }, [contentEl, scrollEl, measure, scheduleMeasure, bump]);
 
   // Drop stale ids (removed messages) so markers don't linger after compaction.
   useEffect(() => {
