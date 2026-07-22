@@ -102,6 +102,10 @@ import {
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
 import { type McpRelayResponse, McpRelayServer } from "./mcp-relay-server";
+import {
+  checkoutExistingPullRequest,
+  type ExistingPrCheckoutResult,
+} from "./pr-checkout";
 import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
@@ -1625,28 +1629,55 @@ export class AgentServer {
     };
 
     await this.waitForRepoReady();
-    await this.installSkillBundleArtifacts(
-      payload.task_id,
-      payload.run_id,
-      this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
-    );
-
-    const nativeResume = await this.prepareNativeResume(
-      payload,
-      posthogAPI,
-      preTaskRun,
-      runtimeAdapter,
-      sessionCwd,
-      initialPermissionMode,
-    );
+    const existingPrCheckoutPromise =
+      this.buildExistingPrCheckoutPromise(prUrl);
+    // Overlap the best-effort PR checkout with the rest of session setup. The
+    // checkout promise is always awaited in `finally` so a throw from
+    // installSkillBundleArtifacts / prepareNativeResume / startMcpRelayServer
+    // can never abandon an in-flight `gh pr checkout` that would keep mutating
+    // the working tree after session start has been abandoned — the awaited
+    // settle (plus the checkout's own abort-on-return) cancels it. The overlap
+    // is safe despite both touching repositoryPath: skill bundles install under
+    // `.posthog/skills/<runId>/...`, which is gitignored (untracked) in target
+    // repos, so `git checkout` — which only updates tracked files — cannot
+    // conflict with those writes or leave them associated with the wrong branch.
+    let nativeResume: { sessionId: string; warm: boolean } | null;
     let effectiveSessionMeta: typeof sessionMeta & {
       nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
     } = sessionMeta;
+    let sessionMcpServers: RemoteMcpServer[];
+    try {
+      await this.installSkillBundleArtifacts(
+        payload.task_id,
+        payload.run_id,
+        this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
+      );
 
-    const sessionMcpServers = [
-      ...(this.config.mcpServers ?? []),
-      ...(await this.startMcpRelayServer()),
-    ];
+      nativeResume = await this.prepareNativeResume(
+        payload,
+        posthogAPI,
+        preTaskRun,
+        runtimeAdapter,
+        sessionCwd,
+        initialPermissionMode,
+      );
+
+      sessionMcpServers = [
+        ...(this.config.mcpServers ?? []),
+        ...(await this.startMcpRelayServer()),
+      ];
+    } finally {
+      // Always consume the checkout result — on the success path this is the
+      // intended await; on a throw it ensures the in-flight checkout settles
+      // (and aborts its children) instead of mutating the tree in the
+      // background. checkoutExistingPullRequest never rejects.
+      if (existingPrCheckoutPromise) {
+        this.logExistingPrCheckoutResult(
+          prUrl,
+          await existingPrCheckoutPromise,
+        );
+      }
+    }
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
@@ -3283,6 +3314,54 @@ export class AgentServer {
 
   private buildExistingPrCheckoutInstruction(prUrl: string): string {
     return `Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.`;
+  }
+
+  /**
+   * Fire-and-overlap: starts the best-effort PR-branch checkout so it runs
+   * concurrently with the rest of session setup, returning the promise (or
+   * null when there is nothing to check out). Only runs when auto-publishing,
+   * matching the system-prompt fallback's gate: a review-first run must not
+   * silently check out a branch the prompt told the agent to leave alone.
+   */
+  private buildExistingPrCheckoutPromise(
+    prUrl: string | null,
+  ): Promise<ExistingPrCheckoutResult> | null {
+    if (!prUrl || !this.config.repositoryPath) {
+      return null;
+    }
+    if (!this.shouldAutoPublishCloudChanges()) {
+      return null;
+    }
+    return checkoutExistingPullRequest({
+      repositoryPath: this.config.repositoryPath,
+      prUrl,
+    });
+  }
+
+  /**
+   * Consume a pre-checkout result without throwing — a transient `gh` failure
+   * must fall back to the agent's own checkout (via the system-prompt
+   * instruction), never abort session start.
+   */
+  private logExistingPrCheckoutResult(
+    prUrl: string | null,
+    result: ExistingPrCheckoutResult,
+  ): void {
+    if (result.status === "failed") {
+      this.logger.warn(
+        "Existing PR pre-checkout failed; agent will retry if needed",
+        {
+          prUrl,
+          error: result.error,
+        },
+      );
+    } else {
+      this.logger.debug("Existing PR branch prepared before session start", {
+        prUrl,
+        branch: result.branch,
+        alreadyActive: result.status === "already_active",
+      });
+    }
   }
 
   private buildDetectedPrContext(prUrl: string): string {
