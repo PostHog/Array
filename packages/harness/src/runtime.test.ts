@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHarnessRuntime } from "./runtime";
 
@@ -34,7 +35,7 @@ describe("createHarnessRuntime", () => {
 
       const runtime = await createHarnessRuntime({
         agentDir,
-        authStorage: pi.AuthStorage.inMemory(),
+        credentialStore: new InMemoryCredentialStore(),
         cwd,
         sessionManager: pi.SessionManager.inMemory(cwd),
       });
@@ -42,6 +43,7 @@ describe("createHarnessRuntime", () => {
       try {
         expect(runtime).toBeInstanceOf(pi.AgentSessionRuntime);
         expect(runtime.session.model?.provider).toBe("posthog");
+        expect(runtime.session.getAvailableThinkingLevels()).toContain("off");
         expect(runtime.services.settingsManager.isProjectTrusted()).toBe(false);
         expect(
           runtime.services.resourceLoader
@@ -82,11 +84,9 @@ describe("createHarnessRuntime", () => {
     });
 
     try {
-      expect(runtime.services.authStorage.get("posthog")).toMatchObject({
-        type: "oauth",
-        access: "access-token",
-        refresh: "refresh-token",
-      });
+      await expect(
+        runtime.services.modelRuntime.getAuth("posthog"),
+      ).resolves.toMatchObject({ auth: { apiKey: "access-token" } });
       expect(existsSync(join(agentDir, "auth.json"))).toBe(false);
     } finally {
       await runtime.dispose();
@@ -123,14 +123,12 @@ describe("createHarnessRuntime", () => {
     });
 
     try {
-      expect(runtime.services.authStorage.get("anthropic")).toMatchObject({
-        type: "api_key",
-        key: "anthropic-key",
-      });
-      expect(runtime.services.authStorage.get("posthog")).toMatchObject({
-        access: "access-token",
-        refresh: "refresh-token",
-      });
+      await expect(
+        runtime.services.modelRuntime.getAuth("anthropic"),
+      ).resolves.toMatchObject({ auth: { apiKey: "anthropic-key" } });
+      await expect(
+        runtime.services.modelRuntime.getAuth("posthog"),
+      ).resolves.toMatchObject({ auth: { apiKey: "access-token" } });
       expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual(
         storedCredentials,
       );
@@ -166,18 +164,23 @@ describe("createHarnessRuntime", () => {
 
     try {
       await expect(
-        runtime.services.modelRegistry.getApiKeyForProvider("posthog"),
-      ).resolves.toBe("proxy-key");
+        runtime.services.modelRuntime.getAuth("posthog"),
+      ).resolves.toMatchObject({ auth: { apiKey: "proxy-key" } });
     } finally {
       await runtime.dispose();
     }
   });
 
-  it("uses file-backed auth storage when no desktop credentials are provided", async () => {
+  it("uses file-backed credentials when desktop credentials are absent", async () => {
     vi.stubEnv("PI_OFFLINE", "1");
     const pi = await import("@earendil-works/pi-coding-agent");
     const cwd = await temporaryDirectory();
     const agentDir = await temporaryDirectory();
+    const authPath = join(agentDir, "auth.json");
+    await writeFile(
+      authPath,
+      JSON.stringify({ posthog: { type: "api_key", key: "stored-key" } }),
+    );
 
     const runtime = await createHarnessRuntime({
       agentDir,
@@ -186,14 +189,9 @@ describe("createHarnessRuntime", () => {
     });
 
     try {
-      runtime.services.authStorage.set("posthog", {
-        type: "oauth",
-        access: "access-token",
-        refresh: "refresh-token",
-        expires: Date.now() + 60_000,
-      });
-
-      expect(existsSync(join(agentDir, "auth.json"))).toBe(true);
+      await expect(
+        runtime.services.modelRuntime.listCredentials(),
+      ).resolves.toContainEqual({ providerId: "posthog", type: "api_key" });
     } finally {
       await runtime.dispose();
     }

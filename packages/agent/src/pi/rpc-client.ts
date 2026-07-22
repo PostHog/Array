@@ -3,16 +3,10 @@ import type { Writable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import {
-  type Api,
-  getSupportedThinkingLevels,
-  type Model,
-} from "@earendil-works/pi-ai";
-import {
   RpcClient,
   type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
 import { safePiEnvironment } from "./rpc-environment";
-import type { PiModelOption, PiThinkingLevel } from "./types";
 
 export type PiRpcClient = RpcClient;
 
@@ -20,19 +14,6 @@ export interface PiRpcProviderOptions {
   region?: "us" | "eu" | "dev";
   apiKey: string;
   baseUrl?: string;
-}
-
-export async function getAvailableModelsWithThinkingLevels(
-  client: PiRpcClient,
-): Promise<PiModelOption[]> {
-  const models = await client.getAvailableModels();
-
-  return models.map((model) => ({
-    ...model,
-    thinkingLevels: getSupportedThinkingLevels(
-      model as unknown as Model<Api>,
-    ) as PiThinkingLevel[],
-  }));
 }
 
 type RpcClientProcessAccess = {
@@ -76,6 +57,7 @@ class SecurePiRpcClient extends RpcClient {
   constructor(
     private readonly secureOptions: RpcClientOptions,
     private readonly providerOptions: PiRpcProviderOptions,
+    private readonly sessionDir?: string,
   ) {
     super(secureOptions);
   }
@@ -148,7 +130,10 @@ class SecurePiRpcClient extends RpcClient {
 
     const bootstrapPipe = child.stdio[3] as Writable | null;
     bootstrapPipe?.end(
-      JSON.stringify({ providerOptions: this.providerOptions }),
+      JSON.stringify({
+        providerOptions: this.providerOptions,
+        sessionDir: this.sessionDir,
+      }),
     );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -167,21 +152,29 @@ export function getPiRpcClientProcess(
   return (client as unknown as RpcClientProcessAccess).process ?? null;
 }
 
-export type PiRpcClientOptions = Pick<RpcClientOptions, "cwd" | "model"> & {
+export type PiRpcClientOptions = Pick<
+  RpcClientOptions,
+  "cliPath" | "cwd" | "model"
+> & {
+  sessionDir?: string;
   sessionFile?: string;
   providerOptions: PiRpcProviderOptions;
 };
 
 export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {
-  const { sessionFile, providerOptions, ...rpcOptions } = options;
+  const { sessionDir, sessionFile, providerOptions, ...rpcOptions } = options;
   const args = sessionFile ? ["--session-file", sessionFile] : [];
+  const cliPath =
+    rpcOptions.cliPath ??
+    fileURLToPath(new URL("./rpc-host.js", import.meta.url));
   return new SecurePiRpcClient(
     {
       ...rpcOptions,
       args,
-      cliPath: fileURLToPath(new URL("./rpc-host.js", import.meta.url)),
+      cliPath,
       provider: "posthog",
     },
     providerOptions,
+    sessionDir,
   );
 }

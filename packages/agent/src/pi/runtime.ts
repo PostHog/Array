@@ -4,14 +4,7 @@ import {
   createPiConversationTranslator,
   type PiConversationTranslator,
 } from "./conversation/translatePiConversation";
-import {
-  createPiRpcClient,
-  getAvailableModelsWithThinkingLevels,
-  getPiRpcClientProcess,
-  type PiRpcClient,
-  type PiRpcClientOptions,
-} from "./rpc-client";
-import type { PiModelOption } from "./types";
+import { getPiRpcClientProcess, type PiRpcClient } from "./rpc-client";
 
 export class PiRuntime {
   readonly client: PiRpcClient;
@@ -46,24 +39,6 @@ export class PiRuntime {
     return () => this.conversationListeners.delete(listener);
   }
 
-  availableModels(): Promise<PiModelOption[]> {
-    return getAvailableModelsWithThinkingLevels(this.client);
-  }
-
-  async conversation(): Promise<AgentConversationEvent[]> {
-    const entries = await this.client.getEntries();
-    const translator = createPiConversationTranslator();
-    const events: AgentConversationEvent[] = [];
-
-    for (const entry of entries.entries) {
-      if (entry.type === "message") {
-        events.push(...translator.translateHistoryMessage(entry.message));
-      }
-    }
-
-    return events;
-  }
-
   private handleEvent(event: AgentSessionEvent): void {
     for (const listener of this.runtimeListeners) {
       listener(event);
@@ -76,8 +51,4 @@ export class PiRuntime {
       }
     }
   }
-}
-
-export function createPiRuntime(options: PiRpcClientOptions): PiRuntime {
-  return new PiRuntime(createPiRpcClient(options));
 }

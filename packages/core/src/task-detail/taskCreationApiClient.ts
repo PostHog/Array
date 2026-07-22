@@ -45,4 +45,5 @@ export interface TaskCreationApiClient {
     runId: string,
     options?: StartTaskRunClientOptions,
   ): Promise<Task>;
+  resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun>;
 }

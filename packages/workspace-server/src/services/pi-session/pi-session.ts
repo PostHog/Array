@@ -1,6 +1,10 @@
 import type { PiRpcClient } from "@posthog/agent/pi/rpc-client";
+import {
+  type RpcCommand,
+  type RpcResponse,
+  sendPiRpcCommand,
+} from "@posthog/agent/pi/rpc-transport";
 import type { PiRuntime } from "@posthog/agent/pi/runtime";
-import type { PiModelOption } from "@posthog/agent/pi/types";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   type AgentConversationEvent,
@@ -21,6 +25,7 @@ interface PiPoolEntry {
   taskId: string;
   state: PiPoolSessionState;
   lastUsedAt: number;
+  activeRequestCount: number;
 }
 
 export function selectPiPoolEvictionCandidate(
@@ -29,7 +34,10 @@ export function selectPiPoolEvictionCandidate(
 ): string | null {
   const candidate = entries
     .filter(
-      (entry) => entry.taskId !== protectedTaskId && entry.state === "idle",
+      (entry) =>
+        entry.taskId !== protectedTaskId &&
+        entry.state === "idle" &&
+        entry.activeRequestCount === 0,
     )
     .sort((left, right) => left.lastUsedAt - right.lastUsedAt)[0];
 
@@ -47,6 +55,7 @@ interface ManagedPiSession {
   runtime: PiRuntime;
   state: PiPoolSessionState;
   lastUsedAt: number;
+  activeRequestCount: number;
   pid?: number;
 }
 
@@ -161,227 +170,27 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
     await this.startSession(input.taskId, client, session, async () => {});
   }
 
-  async prompt(
-    taskId: string,
-    prompt: string,
-    images?: Parameters<PiRpcClient["prompt"]>[1],
-  ): Promise<void> {
-    await this.requireSession(taskId).client.prompt(prompt, images);
-  }
+  async request(taskId: string, command: RpcCommand): Promise<RpcResponse> {
+    const session = this.requireSession(taskId);
+    session.activeRequestCount += 1;
 
-  async steer(
-    taskId: string,
-    message: string,
-    images?: Parameters<PiRpcClient["steer"]>[1],
-  ): Promise<void> {
-    await this.requireSession(taskId).client.steer(message, images);
-  }
+    try {
+      const response = await sendPiRpcCommand(session.client, command);
 
-  async followUp(
-    taskId: string,
-    message: string,
-    images?: Parameters<PiRpcClient["followUp"]>[1],
-  ): Promise<void> {
-    await this.requireSession(taskId).client.followUp(message, images);
-  }
+      if (
+        response.success &&
+        ["new_session", "switch_session", "fork", "clone"].includes(
+          command.type,
+        )
+      ) {
+        await this.persistSessionState(taskId);
+      }
 
-  async abort(taskId: string): Promise<void> {
-    await this.requireSession(taskId).client.abort();
-  }
-
-  async newSession(
-    taskId: string,
-    parentSession?: string,
-  ): ReturnType<PiRpcClient["newSession"]> {
-    const result =
-      await this.requireSession(taskId).client.newSession(parentSession);
-
-    if (!result.cancelled) {
-      await this.persistSessionState(taskId);
+      return response;
+    } finally {
+      session.activeRequestCount -= 1;
+      void this.enforceHotPoolLimit();
     }
-
-    return result;
-  }
-
-  setModel(
-    taskId: string,
-    provider: string,
-    modelId: string,
-  ): ReturnType<PiRpcClient["setModel"]> {
-    return this.requireSession(taskId).client.setModel(provider, modelId);
-  }
-
-  cycleModel(taskId: string): ReturnType<PiRpcClient["cycleModel"]> {
-    return this.requireSession(taskId).client.cycleModel();
-  }
-
-  availableModels(taskId: string): Promise<PiModelOption[]> {
-    return this.requireSession(taskId).runtime.availableModels();
-  }
-
-  setThinkingLevel(
-    taskId: string,
-    level: Parameters<PiRpcClient["setThinkingLevel"]>[0],
-  ): ReturnType<PiRpcClient["setThinkingLevel"]> {
-    return this.requireSession(taskId).client.setThinkingLevel(level);
-  }
-
-  cycleThinkingLevel(
-    taskId: string,
-  ): ReturnType<PiRpcClient["cycleThinkingLevel"]> {
-    return this.requireSession(taskId).client.cycleThinkingLevel();
-  }
-
-  setSteeringMode(
-    taskId: string,
-    mode: Parameters<PiRpcClient["setSteeringMode"]>[0],
-  ): ReturnType<PiRpcClient["setSteeringMode"]> {
-    return this.requireSession(taskId).client.setSteeringMode(mode);
-  }
-
-  setFollowUpMode(
-    taskId: string,
-    mode: Parameters<PiRpcClient["setFollowUpMode"]>[0],
-  ): ReturnType<PiRpcClient["setFollowUpMode"]> {
-    return this.requireSession(taskId).client.setFollowUpMode(mode);
-  }
-
-  compact(
-    taskId: string,
-    customInstructions?: string,
-  ): ReturnType<PiRpcClient["compact"]> {
-    return this.requireSession(taskId).client.compact(customInstructions);
-  }
-
-  setAutoCompaction(
-    taskId: string,
-    enabled: boolean,
-  ): ReturnType<PiRpcClient["setAutoCompaction"]> {
-    return this.requireSession(taskId).client.setAutoCompaction(enabled);
-  }
-
-  setAutoRetry(
-    taskId: string,
-    enabled: boolean,
-  ): ReturnType<PiRpcClient["setAutoRetry"]> {
-    return this.requireSession(taskId).client.setAutoRetry(enabled);
-  }
-
-  abortRetry(taskId: string): ReturnType<PiRpcClient["abortRetry"]> {
-    return this.requireSession(taskId).client.abortRetry();
-  }
-
-  bash(taskId: string, command: string): ReturnType<PiRpcClient["bash"]> {
-    return this.requireSession(taskId).client.bash(command);
-  }
-
-  abortBash(taskId: string): ReturnType<PiRpcClient["abortBash"]> {
-    return this.requireSession(taskId).client.abortBash();
-  }
-
-  sessionStats(taskId: string): ReturnType<PiRpcClient["getSessionStats"]> {
-    return this.requireSession(taskId).client.getSessionStats();
-  }
-
-  exportHtml(
-    taskId: string,
-    outputPath?: string,
-  ): ReturnType<PiRpcClient["exportHtml"]> {
-    return this.requireSession(taskId).client.exportHtml(outputPath);
-  }
-
-  async switchSession(
-    taskId: string,
-    sessionPath: string,
-  ): ReturnType<PiRpcClient["switchSession"]> {
-    const result =
-      await this.requireSession(taskId).client.switchSession(sessionPath);
-
-    if (!result.cancelled) {
-      await this.persistSessionState(taskId);
-    }
-
-    return result;
-  }
-
-  async fork(taskId: string, entryId: string): ReturnType<PiRpcClient["fork"]> {
-    const result = await this.requireSession(taskId).client.fork(entryId);
-
-    if (!result.cancelled) {
-      await this.persistSessionState(taskId);
-    }
-
-    return result;
-  }
-
-  async clone(taskId: string): ReturnType<PiRpcClient["clone"]> {
-    const result = await this.requireSession(taskId).client.clone();
-
-    if (!result.cancelled) {
-      await this.persistSessionState(taskId);
-    }
-
-    return result;
-  }
-
-  forkMessages(taskId: string): ReturnType<PiRpcClient["getForkMessages"]> {
-    return this.requireSession(taskId).client.getForkMessages();
-  }
-
-  tree(taskId: string): ReturnType<PiRpcClient["getTree"]> {
-    return this.requireSession(taskId).client.getTree();
-  }
-
-  lastAssistantText(
-    taskId: string,
-  ): ReturnType<PiRpcClient["getLastAssistantText"]> {
-    return this.requireSession(taskId).client.getLastAssistantText();
-  }
-
-  setSessionName(
-    taskId: string,
-    name: string,
-  ): ReturnType<PiRpcClient["setSessionName"]> {
-    return this.requireSession(taskId).client.setSessionName(name);
-  }
-
-  messages(taskId: string): ReturnType<PiRpcClient["getMessages"]> {
-    return this.requireSession(taskId).client.getMessages();
-  }
-
-  commands(taskId: string): ReturnType<PiRpcClient["getCommands"]> {
-    return this.requireSession(taskId).client.getCommands();
-  }
-
-  waitForIdle(
-    taskId: string,
-    timeout?: number,
-  ): ReturnType<PiRpcClient["waitForIdle"]> {
-    return this.requireSession(taskId).client.waitForIdle(timeout);
-  }
-
-  collectEvents(
-    taskId: string,
-    timeout?: number,
-  ): ReturnType<PiRpcClient["collectEvents"]> {
-    return this.requireSession(taskId).client.collectEvents(timeout);
-  }
-
-  promptAndWait(
-    taskId: string,
-    prompt: string,
-    images?: Parameters<PiRpcClient["promptAndWait"]>[1],
-    timeout?: number,
-  ): ReturnType<PiRpcClient["promptAndWait"]> {
-    return this.requireSession(taskId).client.promptAndWait(
-      prompt,
-      images,
-      timeout,
-    );
-  }
-
-  stderr(taskId: string): string {
-    return this.requireSession(taskId).client.getStderr();
   }
 
   async stop(taskId: string): Promise<void> {
@@ -418,21 +227,6 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
       pid: session.pid,
       lastUsedAt: session.lastUsedAt,
     };
-  }
-
-  status(taskId: string): ReturnType<PiRpcClient["getState"]> {
-    return this.requireSession(taskId).client.getState();
-  }
-
-  conversation(taskId: string): Promise<AgentConversationEvent[]> {
-    return this.requireSession(taskId).runtime.conversation();
-  }
-
-  entries(
-    taskId: string,
-    since?: string,
-  ): ReturnType<PiRpcClient["getEntries"]> {
-    return this.requireSession(taskId).client.getEntries(since);
   }
 
   async cleanup(): Promise<void> {
@@ -513,6 +307,7 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
       runtime,
       state: "starting",
       lastUsedAt: Date.now(),
+      activeRequestCount: 0,
     };
 
     this.sessions.set(taskId, session);
@@ -614,6 +409,7 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
           taskId,
           state: session.state,
           lastUsedAt: session.lastUsedAt,
+          activeRequestCount: session.activeRequestCount,
         })),
         protectedTaskId,
       );
@@ -621,12 +417,22 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
       if (!taskId) {
         return;
       }
-      this.log.info("Evicting least recently used Pi session", {
-        taskId,
-        maxHotSessions: this.maxHotSessions,
-      });
       try {
-        await this.stop(taskId);
+        await this.runExclusive(taskId, async () => {
+          const session = this.sessions.get(taskId);
+          const isEvictable =
+            session?.state === "idle" && session.activeRequestCount === 0;
+
+          if (!isEvictable || taskId === protectedTaskId) {
+            return;
+          }
+
+          this.log.info("Evicting least recently used Pi session", {
+            taskId,
+            maxHotSessions: this.maxHotSessions,
+          });
+          await this.stopLocked(taskId);
+        });
       } catch (error) {
         this.log.warn("Failed to evict Pi session", { taskId, error });
         return;

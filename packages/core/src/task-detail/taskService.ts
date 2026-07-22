@@ -14,7 +14,6 @@ import { inject, injectable } from "inversify";
 import { PI_RUNNER } from "../pi-runtime/identifiers";
 import type { PiRunner } from "../pi-runtime/piRunner";
 import { TASK_CREATION_EFFECTS, TASK_CREATION_HOST } from "./identifiers";
-import { PiTaskCreator } from "./piTaskCreator";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import { TaskCreationSaga } from "./taskCreationSaga";
@@ -108,31 +107,18 @@ export class TaskService {
       }
     }
 
-    let result: CreateTaskResult;
-    if (input.runtime === "pi") {
-      const creator = new PiTaskCreator(
-        {
-          posthogClient,
-          host: this.host,
-          piRunner: this.piRunner,
-          onTaskReady,
-        },
-        this.log,
-      );
-      result = await creator.run(input);
-    } else {
-      const creator = new TaskCreationSaga(
-        {
-          posthogClient,
-          host: this.host,
-          sessionService: this.sessionService,
-          track: (event, props) => this.host.track(event, props),
-          onTaskReady,
-        },
-        this.log,
-      );
-      result = await creator.run(input);
-    }
+    const creator = new TaskCreationSaga(
+      {
+        posthogClient,
+        host: this.host,
+        sessionService: this.sessionService,
+        piRunner: this.piRunner,
+        track: (event, props) => this.host.track(event, props),
+        onTaskReady,
+      },
+      this.log,
+    );
+    const result = await creator.run(input);
 
     if (result.success) {
       this.effects.onWorkspaceCreated(result.data);
@@ -140,6 +126,20 @@ export class TaskService {
     }
 
     return result;
+  }
+
+  public async getTask(taskId: string, taskRunId?: string): Promise<Task> {
+    const posthogClient = await this.host.getAuthenticatedClient();
+    if (!posthogClient) {
+      throw new Error("Not authenticated");
+    }
+
+    const task = await posthogClient.getTask(taskId);
+    if (taskRunId) {
+      task.latest_run = await posthogClient.getTaskRun(taskId, taskRunId);
+    }
+
+    return task;
   }
 
   public async openTask(
@@ -174,6 +174,35 @@ export class TaskService {
 
     const runtime = task.runtime === "pi" ? "pi" : "acp";
     const existingWorkspace = await this.host.getWorkspace(taskId);
+    if (runtime === "pi" && task.latest_run?.environment === "cloud") {
+      try {
+        if (
+          task.latest_run.status === "completed" ||
+          task.latest_run.status === "failed" ||
+          task.latest_run.status === "cancelled"
+        ) {
+          task.latest_run = await posthogClient.resumeRunInCloud(
+            taskId,
+            task.latest_run.id,
+          );
+        }
+
+        return {
+          success: true,
+          data: { task, workspace: existingWorkspace },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to resume cloud Pi session",
+          failedStep: "pi_session",
+        };
+      }
+    }
+
     if (existingWorkspace) {
       this.log.info("Workspace already exists, fetching task only", { taskId });
       try {
@@ -223,6 +252,7 @@ export class TaskService {
         posthogClient,
         host: this.host,
         sessionService: this.sessionService,
+        piRunner: this.piRunner,
         track: (event, props) => this.host.track(event, props),
       },
       this.log,

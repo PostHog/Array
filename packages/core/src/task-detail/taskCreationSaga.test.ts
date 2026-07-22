@@ -10,8 +10,6 @@ const mockHost = vi.hoisted(() => ({
   getAuthenticatedClient: vi.fn(),
   getTaskDirectory: vi.fn(),
   ensureScratchDir: vi.fn(),
-  startPiSession: vi.fn(),
-  stopPiSession: vi.fn(),
   getWorkspace: vi.fn(),
   createWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
@@ -37,11 +35,16 @@ const mockHost = vi.hoisted(() => ({
   linkTaskBranch: vi.fn(),
 }));
 
-import { PiTaskCreator } from "./piTaskCreator";
 import { TaskCreationSaga } from "./taskCreationSaga";
 import { buildWorktreeAdoptionInput } from "./taskInput";
 
 const host = mockHost as unknown as ITaskCreationHost;
+
+const piRunner = {
+  create: vi.fn(async () => {}),
+  resume: vi.fn(async () => {}),
+  stop: vi.fn(async () => {}),
+};
 
 const sessionService = {
   connectToTask: vi.fn(),
@@ -97,6 +100,7 @@ function makeSaga(
     } as never,
     host,
     sessionService,
+    piRunner,
     track: vi.fn(),
     ...extra,
   });
@@ -253,6 +257,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      piRunner,
       track: vi.fn(),
     });
 
@@ -303,6 +308,7 @@ describe("TaskCreationSaga", () => {
       } as never,
       host,
       sessionService,
+      piRunner,
       track: vi.fn(),
     });
 
@@ -345,17 +351,7 @@ describe("TaskCreationSaga", () => {
   it("starts a Pi session without creating an ACP session", async () => {
     const createdTask = createTask({ repository: undefined });
     const createTaskRequest = vi.fn().mockResolvedValue(createdTask);
-    const saga = new PiTaskCreator({
-      posthogClient: {
-        createTask: createTaskRequest,
-        deleteTask: vi.fn(),
-      } as never,
-      host,
-      piRunner: {
-        create: mockHost.startPiSession,
-        stop: mockHost.stopPiSession,
-      } as never,
-    });
+    const saga = makeSaga({ createTask: createTaskRequest });
 
     const result = await saga.run({
       content: "Draft a launch email",
@@ -369,13 +365,131 @@ describe("TaskCreationSaga", () => {
     expect(createTaskRequest).toHaveBeenCalledWith(
       expect.objectContaining({ runtime: "pi" }),
     );
-    expect(mockHost.startPiSession).toHaveBeenCalledWith({
+    expect(piRunner.create).toHaveBeenCalledWith({
       taskId: "task-123",
       cwd: "/tmp/scratch/task-123",
       prompt: "Draft a launch email",
       model: "claude-sonnet",
     });
     expect(sessionService.connectToTask).not.toHaveBeenCalled();
+    expect(sessionService.markTaskCreationInFlight).not.toHaveBeenCalled();
+  });
+
+  it("starts a cloud Pi run without creating a local runtime", async () => {
+    const createdTask = createTask({ repository: "posthog/posthog" });
+    const startedTask = createTask({ latest_run: createRun(), runtime: "pi" });
+    const createTaskRun = vi.fn().mockResolvedValue(createRun());
+    const startTaskRun = vi.fn().mockResolvedValue(startedTask);
+    const saga = makeSaga({
+      createTask: vi.fn().mockResolvedValue(createdTask),
+      createTaskRun,
+      startTaskRun,
+    });
+
+    const result = await saga.run({
+      content: "Fix the cloud build",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      runtime: "pi",
+      branch: "main",
+      adapter: "codex",
+      model: "gpt-5.4",
+      reasoningLevel: "high",
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskRun).toHaveBeenCalledWith("task-123", {
+      environment: "cloud",
+      mode: "interactive",
+      branch: "main",
+      adapter: "codex",
+      model: "gpt-5.4",
+      reasoningLevel: "high",
+      sandboxEnvironmentId: undefined,
+      customImageId: undefined,
+      prAuthorshipMode: "user",
+      autoPublish: undefined,
+      rtkEnabled: undefined,
+      runSource: "manual",
+      signalReportId: undefined,
+      homeQuickAction: undefined,
+      importedMcpServers: undefined,
+      relayedMcpServers: undefined,
+      initialPermissionMode: "auto",
+    });
+    expect(startTaskRun).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "Fix the cloud build",
+      pendingUserArtifactIds: undefined,
+    });
+    expect(piRunner.create).not.toHaveBeenCalled();
+  });
+
+  it("uploads initial Pi files and local skill bundles before starting the cloud run", async () => {
+    const createdTask = createTask({ repository: "posthog/posthog" });
+    const startedTask = createTask({ latest_run: createRun(), runtime: "pi" });
+    const createTaskRun = vi.fn().mockResolvedValue(createRun());
+    const startTaskRun = vi.fn().mockResolvedValue(startedTask);
+    const skillTag =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it <file path="/tmp/input.txt" />';
+    const messageText =
+      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
+    const skillBundles = [
+      { name: "my-skill", source: "user" as const, path: "/skills/my-skill" },
+    ];
+
+    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: ["/tmp/input.txt"],
+      skillBundles,
+      messageText,
+      promptText: "do it\n\nAttached files: input.txt",
+    });
+    mockHost.uploadRunAttachments.mockResolvedValue([
+      "file-artifact",
+      "skill-artifact",
+    ]);
+
+    const saga = makeSaga({
+      createTask: vi.fn().mockResolvedValue(createdTask),
+      createTaskRun,
+      startTaskRun,
+    });
+
+    const result = await saga.run({
+      content: '/my-skill do it <file path="/tmp/input.txt" />',
+      filePaths: ["/tmp/input.txt"],
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      runtime: "pi",
+      adapter: "codex",
+      model: "gpt-5.4",
+      reasoningLevel: "high",
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
+      '/my-skill do it <file path="/tmp/input.txt" />',
+    );
+    expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(skillTag, [
+      "/tmp/input.txt",
+    ]);
+    expect(mockHost.uploadRunAttachments).toHaveBeenCalledWith(
+      expect.anything(),
+      "task-123",
+      "run-123",
+      ["/tmp/input.txt"],
+      skillBundles,
+    );
+    expect(startTaskRun).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: messageText,
+      pendingUserArtifactIds: ["file-artifact", "skill-artifact"],
+    });
+    expect(createTaskRun.mock.invocationCallOrder[0]).toBeLessThan(
+      mockHost.uploadRunAttachments.mock.invocationCallOrder[0],
+    );
+    expect(
+      mockHost.uploadRunAttachments.mock.invocationCallOrder[0],
+    ).toBeLessThan(startTaskRun.mock.invocationCallOrder[0]);
   });
 
   it("uploads initial cloud attachments before starting the run", async () => {

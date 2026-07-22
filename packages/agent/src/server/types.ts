@@ -27,6 +27,7 @@ export interface AgentServerConfig {
   mode: AgentMode;
   taskId: string;
   runId: string;
+  sandboxId?: string;
   createPr?: boolean;
   // User-opted auto-publish: push and open a draft PR on completion even for
   // manual (non-automated-origin) cloud runs. createPr=false still wins.
@@ -47,6 +48,8 @@ export interface AgentServerConfig {
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];
+  protocol?: "acp" | "pi";
+  piRpcHostPath?: string;
   runtimeAdapter?: Adapter;
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";

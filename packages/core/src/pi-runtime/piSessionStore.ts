@@ -2,6 +2,7 @@ import type {
   PiCommand,
   PiModelOption,
   PiSessionStatus,
+  PiThinkingLevel,
 } from "@posthog/agent/pi/types";
 import type { AgentConversationEvent } from "@posthog/shared";
 import { createStore, type StoreApi } from "zustand/vanilla";
@@ -10,6 +11,7 @@ export interface PiControllerSessionState {
   connectionState: "connecting" | "connected" | "failed";
   events: AgentConversationEvent[];
   models: PiModelOption[];
+  thinkingLevels: PiThinkingLevel[];
   commands: PiCommand[];
   status?: PiSessionStatus;
   error?: string;
@@ -31,6 +33,7 @@ export function createEmptyPiControllerSession(): PiControllerSessionState {
     connectionState: "connecting",
     events: [],
     models: [],
+    thinkingLevels: [],
     commands: [],
     isBashRunning: false,
   };

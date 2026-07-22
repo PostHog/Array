@@ -104,6 +104,21 @@ const sharedOptions = {
 
 export default defineConfig([
   {
+    entry: {
+      "pi/rpc-transport": "src/pi/rpc-transport.ts",
+      "pi/remote-rpc-client": "src/pi/remote-rpc-client.ts",
+    },
+    format: ["esm"],
+    dts: false,
+    clean: false,
+    sourcemap: true,
+    splitting: false,
+    outDir: "dist",
+    target: "es2022",
+    platform: "browser",
+    external: ["@earendil-works/pi-ai", "@posthog/shared", "zod"],
+  },
+  {
     entry: [
       "src/index.ts",
       "src/acp-extensions.ts",
@@ -167,9 +182,12 @@ export default defineConfig([
   },
   {
     entry: { "server/bin": "src/server/bin.ts" },
-    format: ["cjs"],
+    format: ["esm"],
     dts: false,
     clean: false,
+    banner: {
+      js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+    },
     ...sharedOptions,
   },
   {

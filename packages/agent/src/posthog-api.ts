@@ -1,3 +1,4 @@
+import type { StoredLogEntry } from "@posthog/shared";
 import packageJson from "../package.json" with { type: "json" };
 import type {
   ArtifactType,
@@ -38,6 +39,18 @@ export interface PreparedTaskArtifactUpload {
   storage_path: string;
   expires_in: number;
   presigned_post: { url: string; fields: Record<string, string> };
+}
+
+export interface TaskSessionStorageAccess {
+  id: string;
+  download_url: string;
+  revision: number;
+}
+
+export interface TaskSessionSyncUpload {
+  id: string;
+  sync_id: string;
+  upload: { url: string; fields: Record<string, string> };
 }
 
 export interface TaskArtifactFinalizeUploadPayload {
@@ -210,10 +223,115 @@ export class PostHogAPIClient {
     );
   }
 
+  async getTaskSession(
+    taskId: string,
+    runId: string,
+  ): Promise<TaskSessionStorageAccess> {
+    const teamId = this.getTeamId();
+    return this.apiRequest<TaskSessionStorageAccess>(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session/`,
+    );
+  }
+
+  async downloadTaskSession(access: TaskSessionStorageAccess): Promise<string> {
+    const response = await fetch(access.download_url, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.status === 404) {
+      return "";
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download task session: [${response.status}] ${response.statusText}`,
+      );
+    }
+    return response.text();
+  }
+
+  async syncTaskSession(
+    taskId: string,
+    runId: string,
+    sandboxId: string,
+    expectedRevision: number,
+    content: string,
+  ): Promise<number> {
+    const teamId = this.getTeamId();
+    const prepared = await this.apiRequest<TaskSessionSyncUpload>(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session_sync_prepare/`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sandbox_id: sandboxId,
+          expected_revision: expectedRevision,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    const form = new FormData();
+    for (const [key, value] of Object.entries(prepared.upload.fields)) {
+      form.append(key, value);
+    }
+    form.append("file", new Blob([content]), "session.jsonl");
+    const uploadResponse = await fetch(prepared.upload.url, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!uploadResponse.ok) {
+      throw new Error(
+        `Failed to upload task session: [${uploadResponse.status}] ${uploadResponse.statusText}`,
+      );
+    }
+
+    try {
+      const result = await this.apiRequest<{ id: string; revision: number }>(
+        `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session_sync/`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            sandbox_id: sandboxId,
+            sync_id: prepared.sync_id,
+            expected_revision: expectedRevision,
+          }),
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
+      return result.revision;
+    } catch (error) {
+      const current = await this.getTaskSession(taskId, runId);
+      const uploadStoragePath = prepared.upload.fields.key;
+      const promotedStoragePath = uploadStoragePath?.replace(
+        "/uploads/",
+        "/revisions/",
+      );
+      if (
+        current.id === prepared.id &&
+        current.revision === expectedRevision + 1 &&
+        promotedStoragePath &&
+        this.isTaskSessionStoragePath(current.download_url, promotedStoragePath)
+      ) {
+        return current.revision;
+      }
+      throw error;
+    }
+  }
+
+  private isTaskSessionStoragePath(
+    downloadUrl: string,
+    storagePath: string,
+  ): boolean {
+    try {
+      const pathname = decodeURIComponent(new URL(downloadUrl).pathname);
+      return pathname.endsWith(`/${storagePath}`);
+    } catch {
+      return false;
+    }
+  }
+
   async appendTaskRunLog(
     taskId: string,
     runId: string,
-    entries: StoredEntry[],
+    entries: (StoredEntry | StoredLogEntry)[],
   ): Promise<TaskRun> {
     const teamId = this.getTeamId();
     return this.apiRequest<TaskRun>(

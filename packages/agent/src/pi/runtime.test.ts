@@ -26,22 +26,13 @@ function assistant(text: string): AssistantMessage {
   };
 }
 
-function createClient(messages: AssistantMessage[] = []) {
+function createClient() {
   let listener: (event: AgentSessionEvent) => void = () => {};
   const client = {
     onEvent: vi.fn((nextListener) => {
       listener = nextListener;
       return () => {};
     }),
-    getEntries: vi.fn(async () => ({
-      entries: messages.map((message, index) => ({
-        type: "message" as const,
-        id: `entry-${index}`,
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        message,
-      })),
-    })),
   } as unknown as RpcClient;
 
   return { client, emit: (event: AgentSessionEvent) => listener(event) };
@@ -60,17 +51,6 @@ describe("PiRuntime", () => {
       type: "assistant_message_chunk",
       timestamp: 1,
       content: { type: "text", text: "hello" },
-    });
-  });
-
-  it("normalizes persisted conversation history", async () => {
-    const { client } = createClient([assistant("history")]);
-    const runtime = new PiRuntime(client);
-
-    await expect(runtime.conversation()).resolves.toContainEqual({
-      type: "assistant_message_chunk",
-      timestamp: 1,
-      content: { type: "text", text: "history" },
     });
   });
 });

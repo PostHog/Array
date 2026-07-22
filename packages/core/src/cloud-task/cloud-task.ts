@@ -15,8 +15,8 @@ import {
   TypedEventEmitter,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import type { CloudTaskPermissionRequestUpdate } from "@posthog/shared/domain-types";
 import { inject, injectable, optional, preDestroy } from "inversify";
-import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
 import {
   CLOUD_TASK_AUTH,
   type ICloudTaskAuth,
@@ -706,6 +706,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
+  getCloudContext(): Promise<{ apiHost: string; teamId: number } | null> {
+    return this.auth.getCloudContext();
+  }
+
   watch(input: WatchInput): void {
     const key = watcherKey(input.taskId, input.runId);
 
@@ -861,7 +865,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           status: response.status,
           error: errorMessage,
         });
-        return { success: false, error: errorMessage };
+        const retryable = [400, 502, 503, 504].includes(response.status);
+        return {
+          success: false,
+          error: errorMessage,
+          status: response.status,
+          retryable,
+        };
       }
 
       const data = (await response.json()) as {
@@ -896,7 +906,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         method: input.method,
         error: errorMessage,
       });
-      return { success: false, error: errorMessage };
+      return { success: false, error: errorMessage, retryable: true };
     }
   }
 

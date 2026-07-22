@@ -1,0 +1,376 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { PiAgentServer } from "./pi-agent-server";
+import type { AgentServerConfig } from "./types";
+
+function config(): AgentServerConfig {
+  return {
+    port: 0,
+    jwtPublicKey: "public-key",
+    apiUrl: "https://us.posthog.com",
+    apiKey: "token",
+    projectId: 1,
+    mode: "interactive",
+    taskId: "task-1",
+    runId: "run-1",
+    sandboxId: "sandbox-1",
+  };
+}
+
+describe("PiAgentServer", () => {
+  it("persists translated Pi events at the turn boundary", async () => {
+    const appendTaskRunLog = vi.fn(async () => ({}));
+    const server = new PiAgentServer(config()) as unknown as {
+      posthogAPI: { appendTaskRunLog: typeof appendTaskRunLog };
+      handleEvent(event: Record<string, unknown>): void;
+      logFlushQueue: Promise<void>;
+    };
+    server.posthogAPI.appendTaskRunLog = appendTaskRunLog;
+
+    server.handleEvent({
+      type: "user_message",
+      timestamp: 1,
+      content: [{ type: "text", text: "hello" }],
+    });
+    server.handleEvent({ type: "turn_completed", timestamp: 2 });
+    await server.logFlushQueue;
+
+    expect(appendTaskRunLog).toHaveBeenCalledWith("task-1", "run-1", [
+      {
+        type: "pi_event",
+        timestamp: expect.any(String),
+        event: {
+          type: "user_message",
+          timestamp: 1,
+          content: [{ type: "text", text: "hello" }],
+        },
+      },
+      {
+        type: "pi_event",
+        timestamp: expect.any(String),
+        event: { type: "turn_completed", timestamp: 2 },
+      },
+    ]);
+  });
+
+  it("uses native Pi prompt for an idle cloud user message", async () => {
+    const prompt = vi.fn(async () => {});
+    const followUp = vi.fn(async () => {});
+    const server = new PiAgentServer(config()) as unknown as {
+      session: unknown;
+      executeCommand(
+        method: string,
+        params: Record<string, unknown>,
+      ): Promise<unknown>;
+    };
+    server.session = {
+      runtime: {
+        client: {
+          getState: vi.fn(async () => ({ isStreaming: false })),
+          prompt,
+          followUp,
+        },
+      },
+    };
+
+    await server.executeCommand("user_message", { content: "hello" });
+
+    expect(prompt).toHaveBeenCalledWith("hello");
+    expect(followUp).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates completed user messages by their stable messageId", async () => {
+    const prompt = vi.fn(async () => {});
+    const server = new PiAgentServer(config()) as unknown as {
+      app: {
+        request(path: string, init: RequestInit): Promise<Response>;
+      };
+      authenticate(): { task_id: string; run_id: string };
+      session: unknown;
+    };
+    server.authenticate = () => ({ task_id: "task-1", run_id: "run-1" });
+    server.session = {
+      payload: { run_id: "run-1" },
+      runtime: {
+        client: {
+          getState: vi.fn(async () => ({ isStreaming: false })),
+          prompt,
+        },
+      },
+    };
+    const command = (id: number) =>
+      server.app.request("/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method: "user_message",
+          params: { content: "hello", messageId: "message-1" },
+        }),
+      });
+
+    const firstResponse = await command(1);
+    const retryResponse = await command(2);
+
+    expect(firstResponse.status).toBe(200);
+    expect(retryResponse.status).toBe(200);
+    expect(prompt).toHaveBeenCalledOnce();
+    expect(prompt).toHaveBeenCalledWith("hello");
+  });
+
+  it("deduplicates concurrent in-flight user-message deliveries", async () => {
+    let resolvePrompt: (() => void) | undefined;
+    const prompt = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePrompt = resolve;
+        }),
+    );
+    const server = new PiAgentServer(config()) as unknown as {
+      session: unknown;
+      executeCommand(
+        method: string,
+        params: Record<string, unknown>,
+      ): Promise<unknown>;
+    };
+    server.session = {
+      runtime: {
+        client: {
+          getState: vi.fn(async () => ({ isStreaming: false })),
+          prompt,
+        },
+      },
+    };
+    const params = { content: "hello", messageId: "message-1" };
+
+    const firstDelivery = server.executeCommand("user_message", params);
+    const concurrentDelivery = server.executeCommand("user_message", params);
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce());
+    resolvePrompt?.();
+    await Promise.all([firstDelivery, concurrentDelivery]);
+
+    expect(prompt).toHaveBeenCalledOnce();
+  });
+
+  it("allows a failed user-message delivery to be retried", async () => {
+    const prompt = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("delivery failed"))
+      .mockResolvedValueOnce(undefined);
+    const server = new PiAgentServer(config()) as unknown as {
+      session: unknown;
+      executeCommand(
+        method: string,
+        params: Record<string, unknown>,
+      ): Promise<unknown>;
+    };
+    server.session = {
+      runtime: {
+        client: {
+          getState: vi.fn(async () => ({ isStreaming: false })),
+          prompt,
+        },
+      },
+    };
+    const params = { content: "hello", messageId: "message-1" };
+
+    await expect(server.executeCommand("user_message", params)).rejects.toThrow(
+      "delivery failed",
+    );
+    await expect(
+      server.executeCommand("user_message", params),
+    ).resolves.toBeUndefined();
+
+    expect(prompt).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds completed user-message deliveries without evicting recent IDs", async () => {
+    const prompt = vi.fn(async () => {});
+    const server = new PiAgentServer(config()) as unknown as {
+      session: unknown;
+      completedUserMessageDeliveries: Map<string, unknown>;
+      executeCommand(
+        method: string,
+        params: Record<string, unknown>,
+      ): Promise<unknown>;
+    };
+    server.session = {
+      runtime: {
+        client: {
+          getState: vi.fn(async () => ({ isStreaming: false })),
+          prompt,
+        },
+      },
+    };
+
+    for (let index = 0; index <= 500; index++) {
+      await server.executeCommand("user_message", {
+        content: `message ${index}`,
+        messageId: `message-${index}`,
+      });
+    }
+
+    expect(server.completedUserMessageDeliveries.size).toBe(500);
+    expect(server.completedUserMessageDeliveries.has("message-0")).toBe(false);
+    expect(server.completedUserMessageDeliveries.has("message-1")).toBe(true);
+
+    await server.executeCommand("user_message", {
+      content: "recent retry",
+      messageId: "message-1",
+    });
+
+    expect(prompt).toHaveBeenCalledTimes(501);
+  });
+
+  it("does not install an SSE controller canceled during initialization", async () => {
+    let finishInitialization: (() => void) | undefined;
+    const initializationGate = new Promise<void>((resolve) => {
+      finishInitialization = resolve;
+    });
+    const controller = { send: vi.fn(), close: vi.fn() };
+    const payload = { task_id: "task-1", run_id: "run-1" };
+    type TestController = typeof controller;
+    type TestPayload = typeof payload;
+    const server = new PiAgentServer(config()) as unknown as {
+      session: {
+        payload: TestPayload;
+        sseController: TestController | null;
+      } | null;
+      createSession(sessionPayload: TestPayload): Promise<void>;
+      initializeSession(
+        sessionPayload: TestPayload,
+        sseController: TestController,
+      ): Promise<void>;
+      cancelSseController(sseController: TestController): void;
+    };
+    server.createSession = vi.fn(async (sessionPayload) => {
+      await initializationGate;
+      server.session = { payload: sessionPayload, sseController: null };
+    });
+
+    const initialization = server.initializeSession(payload, controller);
+    server.cancelSseController(controller);
+    finishInitialization?.();
+    await initialization;
+
+    expect(server.session?.sseController).toBeNull();
+    expect(controller.send).not.toHaveBeenCalled();
+  });
+
+  it("preserves a replacement SSE controller when the old stream cancels", () => {
+    const oldController = { send: vi.fn(), close: vi.fn() };
+    const replacementController = { send: vi.fn(), close: vi.fn() };
+    const server = new PiAgentServer(config()) as unknown as {
+      session: { sseController: typeof replacementController } | null;
+      cancelSseController(controller: typeof oldController): void;
+    };
+    server.session = { sseController: replacementController };
+
+    server.cancelSseController(oldController);
+
+    expect(server.session?.sseController).toBe(replacementController);
+
+    server.cancelSseController(replacementController);
+
+    expect(server.session?.sseController).toBeNull();
+  });
+
+  it("forwards native Pi RPC commands without redefining operations", async () => {
+    const send = vi.fn(async () => ({
+      type: "response",
+      command: "set_follow_up_mode",
+      success: true,
+    }));
+    const server = new PiAgentServer(config()) as unknown as {
+      session: unknown;
+      executeCommand(
+        method: string,
+        params: Record<string, unknown>,
+      ): Promise<unknown>;
+    };
+    server.session = { runtime: { client: { send } } };
+    const command = {
+      type: "set_follow_up_mode",
+      mode: "one-at-a-time",
+    };
+
+    const response = await server.executeCommand("pi/rpc", { command });
+
+    expect(send).toHaveBeenCalledWith(command);
+    expect(response).toEqual({
+      type: "response",
+      command: "set_follow_up_mode",
+      success: true,
+    });
+  });
+
+  it("waits for Pi to create the native session file before syncing", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-session-sync-"));
+    const syncTaskSession = vi.fn(async () => 1);
+    const server = new PiAgentServer(config()) as unknown as {
+      sessionFile: string;
+      posthogAPI: { syncTaskSession: typeof syncTaskSession };
+      syncTaskSession(): Promise<void>;
+    };
+    server.sessionFile = join(directory, "not-created.jsonl");
+    server.posthogAPI = { syncTaskSession };
+
+    await server.syncTaskSession();
+
+    expect(syncTaskSession).not.toHaveBeenCalled();
+    await rm(directory, { recursive: true });
+  });
+
+  it("syncs changed native session JSONL to durable task storage", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-session-sync-"));
+    const sessionFile = join(directory, "session.jsonl");
+    const content = '{"type":"session"}\n';
+    await writeFile(sessionFile, content);
+    const syncTaskSession = vi.fn(async () => 1);
+    const server = new PiAgentServer(config()) as unknown as {
+      sessionFile: string;
+      posthogAPI: { syncTaskSession: typeof syncTaskSession };
+      syncTaskSession(): Promise<void>;
+    };
+    server.sessionFile = sessionFile;
+    server.posthogAPI = { syncTaskSession };
+
+    await server.syncTaskSession();
+    await server.syncTaskSession();
+
+    expect(syncTaskSession).toHaveBeenCalledOnce();
+    expect(syncTaskSession).toHaveBeenCalledWith(
+      "task-1",
+      "run-1",
+      "sandbox-1",
+      0,
+      content,
+    );
+    await rm(directory, { recursive: true });
+  });
+
+  it("publishes runtime-neutral Pi conversation events", () => {
+    const send = vi.fn();
+    const server = new PiAgentServer(config()) as unknown as {
+      session: unknown;
+      handleEvent(event: unknown): void;
+    };
+    server.session = { sseController: { send } };
+
+    server.handleEvent({
+      type: "assistant_message_chunk",
+      timestamp: 1,
+      content: { type: "text", text: "hello" },
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "pi_event",
+        event: expect.objectContaining({ type: "assistant_message_chunk" }),
+      }),
+    );
+  });
+});

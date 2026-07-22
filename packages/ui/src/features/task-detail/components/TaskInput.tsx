@@ -392,7 +392,6 @@ export function TaskInput({
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
     didResolveWorkspaceModeRef.current = true;
-    if (mode === "cloud") setRuntime("acp");
     setWorkspaceModeState(mode);
     setLastUsedWorkspaceMode(mode);
     if (mode !== "cloud") {
@@ -1106,7 +1105,7 @@ export function TaskInput({
                 align="center"
                 className="absolute bottom-full left-0 mb-2 min-w-0"
               >
-                {piHarnessEnabled && workspaceMode !== "cloud" && (
+                {piHarnessEnabled && (
                   <AgentRuntimeSelect
                     value={runtime}
                     onChange={setRuntime}

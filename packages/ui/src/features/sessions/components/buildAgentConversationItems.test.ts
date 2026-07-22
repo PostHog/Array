@@ -86,6 +86,60 @@ describe("buildAgentConversationItems", () => {
     });
   });
 
+  it("keeps generic extension tool result content for rendering", () => {
+    const rawOutput = [{ type: "text", text: "Workflow finished" }];
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "tool_call_started",
+          timestamp: 1,
+          toolCall: {
+            id: "workflow-1",
+            title: "workflow",
+            kind: null,
+            status: "pending",
+            rawInput: { name: "release" },
+          },
+        },
+        {
+          type: "tool_call_updated",
+          timestamp: 2,
+          toolCall: {
+            id: "workflow-1",
+            status: "completed",
+            rawOutput,
+            content: [
+              {
+                type: "content",
+                content: { type: "text", text: "Workflow finished" },
+              },
+            ],
+          },
+        },
+      ],
+      false,
+    );
+
+    expect(result.items).toContainEqual(
+      expect.objectContaining({
+        type: "session_update",
+        update: expect.objectContaining({
+          sessionUpdate: "tool_call",
+          toolCallId: "workflow-1",
+          title: "workflow",
+          status: "completed",
+          rawOutput,
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "Workflow finished" },
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
   it("builds and completes a generic compaction status", () => {
     const result = buildAgentConversationItems(
       [

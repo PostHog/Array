@@ -1,39 +1,6 @@
 import { RpcClient } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import {
-  createPiRpcClient,
-  getAvailableModelsWithThinkingLevels,
-  type PiRpcClient,
-} from "./rpc-client";
-
-describe("getAvailableModelsWithThinkingLevels", () => {
-  it("uses Pi's per-model capability map", async () => {
-    const client = {
-      getAvailableModels: async () => [
-        {
-          provider: "openai",
-          id: "gpt-5.6",
-          contextWindow: 200000,
-          reasoning: true,
-          thinkingLevelMap: {
-            off: "none",
-            minimal: null,
-            xhigh: "xhigh",
-            max: "max",
-          },
-        },
-      ],
-    } as unknown as PiRpcClient;
-
-    await expect(getAvailableModelsWithThinkingLevels(client)).resolves.toEqual(
-      [
-        expect.objectContaining({
-          thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
-        }),
-      ],
-    );
-  });
-});
+import { createPiRpcClient } from "./rpc-client";
 
 describe("createPiRpcClient", () => {
   it("does not put provider credentials in the child environment", () => {

@@ -1,8 +1,12 @@
 import type { TaskRunStatus } from "@posthog/shared";
+import type { CloudTaskUpdatePayload } from "@posthog/shared/domain-types";
 import { z } from "zod";
-import type { CloudTaskUpdatePayload } from "./cloud-task-types";
 
 export type { CloudTaskUpdatePayload, TaskRunStatus };
+
+export const cloudContextOutput = z
+  .object({ apiHost: z.string(), teamId: z.number() })
+  .nullable();
 
 export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
@@ -65,6 +69,7 @@ export const sendCommandInput = z.object({
     "permission_response",
     "set_config_option",
     "mcp_response",
+    "pi/rpc",
   ]),
   params: z.record(z.string(), z.unknown()).optional(),
 });
@@ -84,6 +89,8 @@ export const sendCommandOutput = z.object({
   success: z.boolean(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  status: z.number().optional(),
+  retryable: z.boolean().optional(),
 });
 
 export type SendCommandOutput = z.infer<typeof sendCommandOutput>;

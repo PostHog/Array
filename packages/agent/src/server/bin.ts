@@ -1,15 +1,19 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE } from "../posthog-exec-permission";
 import { AgentServer } from "./agent-server";
+import { PiAgentServer } from "./pi-agent-server";
 import {
   claudeCodeConfigSchema,
   mcpServersSchema,
   posthogExecPermissionRegexSchema,
   relayMcpServerNamesSchema,
 } from "./schemas";
+import type { AgentServerConfig } from "./types";
 
 const envSchema = z.object({
   JWT_PUBLIC_KEY: z
@@ -33,6 +37,8 @@ const envSchema = z.object({
     })
     .regex(/^\d+$/, "POSTHOG_PROJECT_ID must be a numeric string")
     .transform((val) => parseInt(val, 10)),
+  POSTHOG_AGENT_PROTOCOL: z.enum(["acp", "pi"]).optional(),
+  POSTHOG_SANDBOX_ID: z.string().min(1).optional(),
   POSTHOG_CODE_RUNTIME_ADAPTER: z.enum(["claude", "codex"]).optional(),
   POSTHOG_CODE_MODEL: z.string().optional(),
   POSTHOG_CODE_REASONING_EFFORT: z
@@ -215,7 +221,7 @@ program
       );
     }
 
-    const server = new AgentServer({
+    const serverConfig: AgentServerConfig = {
       port: parseInt(options.port, 10),
       agentStateDir: env.POSTHOG_AGENT_STATE_DIR,
       jwtPublicKey: env.JWT_PUBLIC_KEY,
@@ -233,6 +239,7 @@ program
       mode,
       taskId: options.taskId,
       runId: options.runId,
+      sandboxId: env.POSTHOG_SANDBOX_ID,
       createPr,
       autoPublish,
       mcpServers,
@@ -241,10 +248,19 @@ program
       baseBranch: options.baseBranch,
       claudeCode,
       allowedDomains,
+      protocol: env.POSTHOG_AGENT_PROTOCOL,
+      piRpcHostPath: resolve(
+        dirname(realpathSync(process.argv[1])),
+        "../pi/rpc-host.js",
+      ),
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,
       model: env.POSTHOG_CODE_MODEL,
       reasoningEffort: env.POSTHOG_CODE_REASONING_EFFORT,
-    });
+    };
+    const server =
+      env.POSTHOG_AGENT_PROTOCOL === "pi"
+        ? new PiAgentServer(serverConfig)
+        : new AgentServer(serverConfig);
 
     process.on("SIGINT", async () => {
       await server.stop();

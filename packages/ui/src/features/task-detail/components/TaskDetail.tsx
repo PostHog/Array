@@ -51,6 +51,17 @@ export function TaskDetail({
   channelId,
 }: TaskDetailProps) {
   const taskId = initialTask.id;
+  const selectedTaskRunRef = useRef({
+    taskId,
+    taskRunId: initialTask.latest_run?.id,
+  });
+  if (selectedTaskRunRef.current.taskId !== taskId) {
+    selectedTaskRunRef.current = {
+      taskId,
+      taskRunId: initialTask.latest_run?.id,
+    };
+  }
+  const selectedTaskRunId = selectedTaskRunRef.current.taskRunId;
 
   const { task } = useTaskData({ taskId, initialTask });
   const runtime = task.runtime === "pi" ? "pi" : "acp";
@@ -273,7 +284,9 @@ export function TaskDetail({
     <Box data-task-detail-id={taskId} height="100%" ref={containerRef}>
       <Flex height="100%">
         <Box className={`min-w-0 flex-1 ${isExpanded ? "hidden" : ""}`}>
-          {runtime === "pi" && <PiSessionView taskId={taskId} />}
+          {runtime === "pi" && (
+            <PiSessionView taskId={taskId} taskRunId={selectedTaskRunId} />
+          )}
           {runtime === "acp" && <PanelLayout taskId={taskId} task={task} />}
         </Box>
 

@@ -6,6 +6,7 @@ import { sanitizePiHostEnvironment } from "./rpc-environment";
 
 interface PiRpcBootstrap {
   providerOptions?: PosthogProviderOptions;
+  sessionDir?: string;
 }
 
 function argumentValue(name: string): string | undefined {
@@ -24,7 +25,7 @@ const cwd = process.cwd();
 const sessionFile = argumentValue("--session-file");
 const sessionManager = sessionFile
   ? SessionManager.open(sessionFile, undefined, cwd)
-  : undefined;
+  : SessionManager.create(cwd, bootstrap.sessionDir);
 const runtime = await createHarnessRuntime({
   cwd,
   sessionManager,
@@ -33,7 +34,10 @@ const runtime = await createHarnessRuntime({
 
 const requestedModel = argumentValue("--model")?.replace(/^posthog\//, "");
 if (requestedModel) {
-  const model = runtime.services.modelRegistry.find("posthog", requestedModel);
+  const model = runtime.services.modelRuntime.getModel(
+    "posthog",
+    requestedModel,
+  );
   if (!model) {
     throw new Error(`PostHog model not found: ${requestedModel}`);
   }

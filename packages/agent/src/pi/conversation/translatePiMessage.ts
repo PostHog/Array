@@ -7,6 +7,7 @@ import type {
 import type {
   AgentContent,
   AgentConversationEvent,
+  AgentToolCallContent,
   AgentToolCallStatus,
 } from "@posthog/shared";
 import { type PiToolName, TOOL_KIND_BY_NAME } from "./toolKind";
@@ -41,6 +42,21 @@ interface PiToolExecutionResult {
 
 function isPiToolName(name: string): name is PiToolName {
   return name in TOOL_KIND_BY_NAME;
+}
+
+function toGenericToolContent(
+  resultContent: ToolResultMessage["content"],
+): AgentToolCallContent[] | undefined {
+  const text = resultContent
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+
+  if (!text) {
+    return undefined;
+  }
+
+  return [{ type: "content", content: { type: "text", text } }];
 }
 
 function toContent(block: {
@@ -213,6 +229,12 @@ export function createPiMessageTranslator(): PiMessageTranslator {
 
       if (output.locations) {
         toolCall.locations = output.locations;
+      }
+    } else {
+      const content = toGenericToolContent(result.content);
+
+      if (content) {
+        toolCall.content = content;
       }
     }
 

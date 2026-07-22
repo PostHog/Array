@@ -32,9 +32,10 @@ import {
 
 interface PiSessionViewProps {
   taskId: string;
+  taskRunId?: string;
 }
 
-export function PiSessionView({ taskId }: PiSessionViewProps) {
+export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   const piSessionController = useService<PiSessionController>(
     PI_SESSION_CONTROLLER,
   );
@@ -49,9 +50,9 @@ export function PiSessionView({ taskId }: PiSessionViewProps) {
   const setMessagingMode = useMessagingModeStore((state) => state.setMode);
 
   useEffect(() => {
-    void piSessionController.ensureConnected(taskId);
+    void piSessionController.ensureConnected(taskId, taskRunId).catch(() => {});
     return () => piSessionController.disconnect(taskId);
-  }, [piSessionController, taskId]);
+  }, [piSessionController, taskId, taskRunId]);
 
   const sessionAvailable = session?.connectionState === "connected";
   const status = session?.status;
@@ -192,12 +193,9 @@ export function PiSessionView({ taskId }: PiSessionViewProps) {
   }
 
   const pending = isStreaming || isBashRunning;
-  const currentModel = session.models.find(
-    (model) =>
-      model.provider === status.model?.provider && model.id === status.model.id,
+  const supportsThinking = session.thinkingLevels.some(
+    (level) => level !== "off",
   );
-  const thinkingLevels = currentModel?.thinkingLevels ?? [];
-  const supportsThinking = thinkingLevels.some((level) => level !== "off");
   const queueMode =
     messagingMode === "steer" ? status.steeringMode : status.followUpMode;
 
@@ -236,7 +234,7 @@ export function PiSessionView({ taskId }: PiSessionViewProps) {
             supportsThinking ? (
               <PiThinkingLevelSelector
                 level={status.thinkingLevel}
-                levels={thinkingLevels}
+                levels={session.thinkingLevels}
                 disabled={pending || isCompacting}
                 onChange={setThinkingLevel}
               />

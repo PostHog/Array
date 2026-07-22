@@ -127,6 +127,164 @@ describe("PostHogAPIClient", () => {
     },
   );
 
+  it("loads and syncs the durable task session", async () => {
+    const client = new PostHogAPIClient({
+      apiUrl: "https://app.posthog.com",
+      getApiKey: vi.fn().mockResolvedValue("token"),
+      projectId: 7,
+    });
+    const content = '{"type":"session"}\n';
+    const access = {
+      id: "session-1",
+      download_url: "https://storage.example/session.jsonl",
+      revision: 3,
+    };
+    const prepared = {
+      id: "session-1",
+      sync_id: "sync-1",
+      upload: {
+        url: "https://storage.example/upload",
+        fields: { key: "task-sessions/session-1/uploads/4.jsonl" },
+      },
+    };
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue(access),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: vi.fn().mockResolvedValue(content),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue(prepared),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ id: "session-1", revision: 4 }),
+      });
+
+    const storage = await client.getTaskSession("task-1", "run-1");
+    await expect(client.downloadTaskSession(storage)).resolves.toBe(content);
+    await expect(
+      client.syncTaskSession("task-1", "run-1", "sandbox-1", 3, content),
+    ).resolves.toBe(4);
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      4,
+      "https://storage.example/upload",
+      expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
+    );
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "https://app.posthog.com/api/projects/7/tasks/task-1/runs/run-1/task_session_sync/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          sandbox_id: "sandbox-1",
+          sync_id: "sync-1",
+          expected_revision: 3,
+        }),
+      }),
+    );
+  });
+
+  it("recovers an ambiguous finalize only when its prepared object was promoted", async () => {
+    const client = new PostHogAPIClient({
+      apiUrl: "https://app.posthog.com",
+      getApiKey: vi.fn().mockResolvedValue("token"),
+      projectId: 7,
+    });
+    const prepared = {
+      id: "session-1",
+      sync_id: "sync-1",
+      upload: {
+        url: "https://storage.example/upload",
+        fields: {
+          key: "task-sessions/org/task/session/uploads/4-sync-1.jsonl",
+        },
+      },
+    };
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue(prepared),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 504,
+        json: vi.fn().mockResolvedValue({ error: "Gateway timeout" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          id: "session-1",
+          revision: 4,
+          download_url:
+            "https://storage.example/task-sessions/org/task/session/revisions/4-sync-1.jsonl?signature=abc",
+        }),
+      });
+
+    await expect(
+      client.syncTaskSession(
+        "task-1",
+        "run-1",
+        "sandbox-1",
+        3,
+        '{"type":"session"}\n',
+      ),
+    ).resolves.toBe(4);
+  });
+
+  it("rejects an ambiguous finalize when a competing revision was promoted", async () => {
+    const client = new PostHogAPIClient({
+      apiUrl: "https://app.posthog.com",
+      getApiKey: vi.fn().mockResolvedValue("token"),
+      projectId: 7,
+    });
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          id: "session-1",
+          sync_id: "sync-1",
+          upload: {
+            url: "https://storage.example/upload",
+            fields: {
+              key: "task-sessions/org/task/session/uploads/4-sync-1.jsonl",
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: vi.fn().mockResolvedValue({ error: "Stale revision" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          id: "session-1",
+          revision: 4,
+          download_url:
+            "https://storage.example/task-sessions/org/task/session/revisions/4-sync-2.jsonl?signature=abc",
+        }),
+      });
+
+    await expect(
+      client.syncTaskSession(
+        "task-1",
+        "run-1",
+        "sandbox-1",
+        3,
+        '{"type":"session"}\n',
+      ),
+    ).rejects.toThrow("Stale revision");
+  });
+
   it("returns only the artifacts created by the current upload request", async () => {
     const client = new PostHogAPIClient({
       apiUrl: "https://app.posthog.com",

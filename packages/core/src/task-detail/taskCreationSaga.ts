@@ -18,6 +18,7 @@ import {
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
+import type { PiRunner } from "../pi-runtime/piRunner";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 import type {
   CloudPromptTransport,
@@ -30,6 +31,7 @@ export interface TaskCreationDeps {
   posthogClient: TaskCreationApiClient;
   host: ITaskCreationHost;
   sessionService: SessionService;
+  piRunner: PiRunner;
   onTaskReady?: (output: TaskCreationOutput) => void;
   track: (event: string, props?: Record<string, unknown>) => void;
 }
@@ -87,15 +89,18 @@ export class TaskCreationSaga extends Saga<
     input: TaskCreationInput,
   ): Promise<TaskCreationOutput> {
     const taskId = input.taskId;
+    const isPiRuntime = input.runtime === "pi";
     const folderPromise =
       !taskId && input.repoPath
         ? this.resolveFolder(input.repoPath)
         : undefined;
 
-    const importedClaude = await this.importClaudeSession(input);
+    const importedClaude = isPiRuntime
+      ? undefined
+      : await this.importClaudeSession(input);
 
     const warmPayload =
-      !taskId && input.workspaceMode === "cloud"
+      !isPiRuntime && !taskId && input.workspaceMode === "cloud"
         ? await this.prepareWarmActivation(input)
         : null;
 
@@ -105,9 +110,9 @@ export class TaskCreationSaga extends Saga<
         )
       : await this.createTask(input, warmPayload);
 
-    // Session reconcile auto-recovers run-less local tasks; mark this one as
-    // mid-creation so the recovery doesn't race the agent_session step below.
-    this.deps.sessionService.markTaskCreationInFlight(task.id);
+    if (!isPiRuntime) {
+      this.deps.sessionService.markTaskCreationInFlight(task.id);
+    }
 
     if (importedClaude && input.repoPath) {
       await this.recordClaudeImport(input, importedClaude, task.id);
@@ -384,7 +389,7 @@ export class TaskCreationSaga extends Saga<
           // the optimistic placeholder would show the bare task description with
           // no CONTEXT.md / personalization chip. Hand the augmented message to
           // the session service so it seeds the placeholder right away.
-          if (augmented && pendingUserMessage) {
+          if (!isPiRuntime && augmented && pendingUserMessage) {
             this.deps.sessionService.rememberInitialCloudPrompt(
               task.id,
               pendingUserMessage,
@@ -418,7 +423,7 @@ export class TaskCreationSaga extends Saga<
             throw new Error("Failed to create cloud run");
           }
 
-          if (input.relayedMcpServers?.length) {
+          if (!isPiRuntime && input.relayedMcpServers?.length) {
             // Best-effort: relay designation failing must not fail creation —
             // the run still works, minus desktop-relayed servers.
             await this.deps.sessionService
@@ -485,7 +490,7 @@ export class TaskCreationSaga extends Saga<
 
     if (shouldConnect) {
       const initialPrompt =
-        !input.taskId && input.content
+        !isPiRuntime && !input.taskId && input.content
           ? await this.readOnlyStep("build_prompt_blocks", () =>
               buildPromptBlocks(
                 input.content ?? "",
@@ -510,6 +515,16 @@ export class TaskCreationSaga extends Saga<
       await this.step({
         name: "agent_session",
         execute: async () => {
+          if (isPiRuntime) {
+            await this.deps.piRunner.create({
+              taskId: task.id,
+              cwd: agentCwd ?? "",
+              prompt: input.content ?? "",
+              model: input.model,
+            });
+            return { taskId: task.id };
+          }
+
           const connectParams: ConnectParams = {
             task,
             repoPath: agentCwd ?? "",
@@ -530,6 +545,10 @@ export class TaskCreationSaga extends Saga<
           return { taskId: task.id };
         },
         rollback: async ({ taskId }) => {
+          if (isPiRuntime) {
+            await this.deps.piRunner.stop(taskId);
+            return;
+          }
           this.log.info("Rolling back: disconnecting agent session", {
             taskId,
           });
@@ -749,6 +768,8 @@ export class TaskCreationSaga extends Saga<
       name: "task_creation",
       execute: async () => {
         const description = input.taskDescription ?? input.content ?? "";
+        const canActivateWarmRun =
+          input.runtime !== "pi" && !warmPayload?.suppressWarmReuse;
         const result = await this.deps.posthogClient.createTask({
           description,
           repository: repository ?? undefined,
@@ -768,36 +789,40 @@ export class TaskCreationSaga extends Saga<
           // The server associates the task with the report and records the implementation
           // task_run artefact — no relationship label is sent (associations are unlabelled).
           branch:
-            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+            input.workspaceMode === "cloud" && canActivateWarmRun
               ? (input.branch ?? null)
               : undefined,
           runtime_adapter:
-            input.workspaceMode === "cloud"
+            input.workspaceMode === "cloud" && canActivateWarmRun
               ? (input.adapter ?? null)
               : undefined,
           model:
-            input.workspaceMode === "cloud" ? (input.model ?? null) : undefined,
+            input.workspaceMode === "cloud" && canActivateWarmRun
+              ? (input.model ?? null)
+              : undefined,
           reasoning_effort:
-            input.workspaceMode === "cloud"
+            input.workspaceMode === "cloud" && canActivateWarmRun
               ? (input.reasoningLevel ?? null)
               : undefined,
           sandbox_environment_id:
-            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+            input.workspaceMode === "cloud" && canActivateWarmRun
               ? input.sandboxEnvironmentId
               : undefined,
           custom_image_id:
-            input.workspaceMode === "cloud" && !warmPayload?.suppressWarmReuse
+            input.workspaceMode === "cloud" && canActivateWarmRun
               ? input.customImageId
               : undefined,
           signal_report: input.signalReportId ?? undefined,
           channel: input.channelId ?? undefined,
-          runtime: "acp",
+          runtime: input.runtime ?? "acp",
           pending_user_message: warmPayload?.pendingUserMessage,
           pending_user_artifact_ids: warmPayload?.pendingUserArtifactIds,
           // If creation activates a pre-warmed run, this is the only request
           // that can carry the choice — the saga skips run creation entirely.
           auto_publish:
-            input.workspaceMode === "cloud" && input.cloudAutoPublish
+            input.workspaceMode === "cloud" &&
+            canActivateWarmRun &&
+            input.cloudAutoPublish
               ? true
               : undefined,
         });
