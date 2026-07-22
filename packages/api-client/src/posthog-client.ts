@@ -2900,6 +2900,34 @@ export class PostHogAPIClient {
     return data.artifacts ?? [];
   }
 
+  async presignTaskRunArtifact(
+    taskId: string,
+    runId: string,
+    storagePath: string,
+  ): Promise<string> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+      overrides: {
+        body: JSON.stringify({ storage_path: storagePath }),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to generate artifact preview URL: ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as { url: string };
+    return data.url;
+  }
+
   async resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun> {
     const teamId = await this.getTeamId();
     const url = new URL(

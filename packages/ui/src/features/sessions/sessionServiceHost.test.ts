@@ -133,6 +133,7 @@ const mockAuthenticatedClient = vi.hoisted(() => ({
   finalizeTaskRunArtifactUploads: vi.fn(),
   prepareTaskStagedArtifactUploads: vi.fn(),
   finalizeTaskStagedArtifactUploads: vi.fn(),
+  presignTaskRunArtifact: vi.fn(),
   startGithubUserIntegrationConnect: vi.fn(),
   getTaskRunSessionLogs: vi.fn(),
   getTaskRunSessionLogsResult: vi.fn(),
@@ -575,6 +576,169 @@ describe("SessionService", () => {
         ).toBe(expected);
       },
     );
+  });
+
+  describe("cloud attachment previews", () => {
+    it("deduplicates concurrent manifest requests for the same run", async () => {
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({
+        artifacts: [
+          {
+            id: "artifact-1",
+            storage_path: "tasks/run-123/artifacts/one.png",
+          },
+          {
+            id: "artifact-2",
+            storage_path: "tasks/run-123/artifacts/two.png",
+          },
+        ],
+      });
+      mockAuthenticatedClient.presignTaskRunArtifact.mockImplementation(
+        async (_taskId, _runId, storagePath) =>
+          `https://s3.example.com/${storagePath}`,
+      );
+      const service = getSessionService();
+
+      await Promise.all([
+        service.getCloudAttachmentPreviewUrl(
+          "task-123",
+          "run-123",
+          "artifact-1",
+        ),
+        service.getCloudAttachmentPreviewUrl(
+          "task-123",
+          "run-123",
+          "artifact-2",
+        ),
+      ]);
+
+      expect(mockAuthenticatedClient.getTaskRun).toHaveBeenCalledTimes(1);
+      expect(
+        mockAuthenticatedClient.presignTaskRunArtifact,
+      ).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not share manifest requests across projects", async () => {
+      const resolvers: Array<(value: { artifacts: unknown[] }) => void> = [];
+      mockAuthenticatedClient.getTaskRun.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvers.push(resolve);
+          }),
+      );
+      const service = getSessionService();
+      const first = service.getCloudAttachmentPreviewUrl(
+        "task-123",
+        "run-123",
+        "artifact-1",
+      );
+      await vi.waitFor(() =>
+        expect(mockAuthenticatedClient.getTaskRun).toHaveBeenCalledTimes(1),
+      );
+
+      mockAuth.fetchAuthState.mockResolvedValue({
+        status: "authenticated",
+        bootstrapComplete: true,
+        cloudRegion: "us",
+        orgProjectsMap: {},
+        currentOrgId: "org-2",
+        currentProjectId: 456,
+        hasCodeAccess: true,
+        needsScopeReauth: false,
+      });
+      const second = service.getCloudAttachmentPreviewUrl(
+        "task-123",
+        "run-123",
+        "artifact-1",
+      );
+      await vi.waitFor(() =>
+        expect(mockAuthenticatedClient.getTaskRun).toHaveBeenCalledTimes(2),
+      );
+
+      for (const resolve of resolvers) resolve({ artifacts: [] });
+      await Promise.all([first, second]);
+    });
+
+    it("resolves an artifact id to a presigned URL", async () => {
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({
+        artifacts: [
+          {
+            id: "artifact-456",
+            storage_path: "tasks/run-123/artifacts/screenshot.png",
+          },
+        ],
+      });
+      mockAuthenticatedClient.presignTaskRunArtifact.mockResolvedValue(
+        "https://s3.example.com/screenshot.png?signature=abc",
+      );
+
+      await expect(
+        getSessionService().getCloudAttachmentPreviewUrl(
+          "task-123",
+          "run-123",
+          "artifact-456",
+        ),
+      ).resolves.toBe("https://s3.example.com/screenshot.png?signature=abc");
+      expect(
+        mockAuthenticatedClient.presignTaskRunArtifact,
+      ).toHaveBeenCalledWith(
+        "task-123",
+        "run-123",
+        "tasks/run-123/artifacts/screenshot.png",
+      );
+    });
+
+    it("returns null when the artifact is absent", async () => {
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({ artifacts: [] });
+
+      await expect(
+        getSessionService().getCloudAttachmentPreviewUrl(
+          "task-123",
+          "run-123",
+          "missing",
+        ),
+      ).resolves.toBeNull();
+      expect(
+        mockAuthenticatedClient.presignTaskRunArtifact,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("returns null when authentication is unavailable", async () => {
+      mockAuth.fetchAuthState.mockResolvedValue({
+        status: "anonymous",
+        bootstrapComplete: true,
+      });
+
+      await expect(
+        getSessionService().getCloudAttachmentPreviewUrl(
+          "task-123",
+          "run-123",
+          "artifact-456",
+        ),
+      ).resolves.toBeNull();
+      expect(mockAuthenticatedClient.getTaskRun).not.toHaveBeenCalled();
+    });
+
+    it("returns null when presigning fails", async () => {
+      mockAuthenticatedClient.getTaskRun.mockResolvedValue({
+        artifacts: [
+          {
+            id: "artifact-456",
+            storage_path: "tasks/run-123/artifacts/screenshot.png",
+          },
+        ],
+      });
+      mockAuthenticatedClient.presignTaskRunArtifact.mockRejectedValue(
+        new Error("presign unavailable"),
+      );
+
+      await expect(
+        getSessionService().getCloudAttachmentPreviewUrl(
+          "task-123",
+          "run-123",
+          "artifact-456",
+        ),
+      ).resolves.toBeNull();
+    });
   });
 
   describe("connectToTask", () => {

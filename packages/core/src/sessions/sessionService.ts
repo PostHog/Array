@@ -1595,6 +1595,11 @@ export class SessionService {
     string,
     Promise<CloudHydrationResult | undefined>
   >();
+  /** Deduplicates concurrent manifest reads when a message renders many images. */
+  private cloudAttachmentManifestRequests = new Map<
+    string,
+    Promise<Array<{ id?: string; storage_path?: string }>>
+  >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -7086,6 +7091,69 @@ export class SessionService {
         this.stopCloudTaskWatch(update.taskId);
       }
     }
+  }
+
+  async getCloudAttachmentPreviewUrl(
+    taskId: string,
+    runId: string,
+    artifactId: string,
+  ): Promise<string | null> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") return null;
+
+    try {
+      const artifacts = await this.getCloudAttachmentManifest(
+        authStatus.auth.client,
+        `${authStatus.auth.apiHost}:${authStatus.auth.projectId}`,
+        taskId,
+        runId,
+      );
+      const artifact = artifacts.find(
+        (candidate) => candidate.id === artifactId,
+      );
+      if (!artifact?.storage_path) return null;
+
+      return await authStatus.auth.client.presignTaskRunArtifact(
+        taskId,
+        runId,
+        artifact.storage_path,
+      );
+    } catch (error) {
+      this.d.log.warn("Failed to resolve cloud attachment preview", {
+        taskId,
+        runId,
+        artifactId,
+        error: String(error),
+      });
+      return null;
+    }
+  }
+
+  private getCloudAttachmentManifest(
+    client: AuthClient,
+    authIdentity: string,
+    taskId: string,
+    runId: string,
+  ): Promise<Array<{ id?: string; storage_path?: string }>> {
+    const key = `${authIdentity}:${taskId}:${runId}`;
+    const existing = this.cloudAttachmentManifestRequests.get(key);
+    if (existing) return existing;
+
+    const request = client
+      .getTaskRun(taskId, runId)
+      .then(
+        (run: { artifacts?: Array<{ id?: string; storage_path?: string }> }) =>
+          run.artifacts ?? [],
+      );
+    this.cloudAttachmentManifestRequests.set(key, request);
+
+    const clear = () => {
+      if (this.cloudAttachmentManifestRequests.get(key) === request) {
+        this.cloudAttachmentManifestRequests.delete(key);
+      }
+    };
+    void request.then(clear, clear);
+    return request;
   }
 
   // --- Helper Methods ---
