@@ -111,10 +111,6 @@ export function openNotificationTarget(target: NotificationTarget): void {
   }
 }
 
-export function navigateToHome(): void {
-  void getRouterOrNull()?.navigate({ to: "/code/home" });
-}
-
 export function navigateToInbox(): void {
   void getRouterOrNull()?.navigate({ to: "/code/inbox" });
 }
@@ -214,10 +210,6 @@ export function navigateToMcpServers(): void {
 
 export function navigateToWebsiteNew(): void {
   void getRouterOrNull()?.navigate({ to: "/website/new" });
-}
-
-export function navigateToWebsiteHome(): void {
-  void getRouterOrNull()?.navigate({ to: "/website/home" });
 }
 
 // The Canvas workspace landing (the channels index, where canvases live).

@@ -3,7 +3,6 @@ import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
-import { HOME_TAB_FLAG } from "@posthog/shared/constants";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
@@ -19,11 +18,9 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
   navigateToActivity,
   navigateToCommandCenter,
-  navigateToHome,
   navigateToInbox,
   navigateToLoops,
   navigateToWebsiteCommandCenter,
-  navigateToWebsiteHome,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -36,7 +33,6 @@ import { ActivityItem } from "./items/ActivityItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
 import { ContextsItem } from "./items/ContextsItem";
-import { HomeItem } from "./items/HomeItem";
 import { InboxItem } from "./items/InboxItem";
 import { LoopsItem } from "./items/LoopsItem";
 import { NewTaskItem } from "./items/NewTaskItem";
@@ -57,7 +53,7 @@ interface SidebarNavSectionProps {
 // and the Channels pane. It is fully self-contained — every item's active
 // state, badge count, and click handler is wired here — so it can be dropped
 // into either layout. In the Channels space, destinations with a /website
-// mirror (Home and Command Center) stay in that space; Inbox and New task have
+// mirror (Command Center) stay in that space; Inbox and New task have
 // no mirror yet and jump back to Code.
 // Configure opens the shared settings UI. Search opens the command menu in
 // place and defaults to the collapsible More row; the Customize sidebar
@@ -66,7 +62,6 @@ export function SidebarNavSection({
   commandCenterActiveCount: providedActiveCount,
 }: SidebarNavSectionProps = {}) {
   const view = useAppView();
-  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
   // Loops stays behind the loops flag; default on in dev so local builds
   // keep the nav item. Also gates the per-channel Loops tab (see ChannelTabs).
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
@@ -89,7 +84,6 @@ export function SidebarNavSection({
   });
   const goNewTask = () =>
     openTaskInput(inChannels ? { space: "website" } : undefined);
-  const goHome = inChannels ? navigateToWebsiteHome : navigateToHome;
   const goCommandCenter = inChannels
     ? navigateToWebsiteCommandCenter
     : navigateToCommandCenter;
@@ -98,7 +92,6 @@ export function SidebarNavSection({
   // useSidebarData derives, without pulling in its task-loading.
   const isHomeActive =
     view.type === "task-input" || view.type === "task-pending";
-  const isHomeViewActive = view.type === "home";
   const isActivityActive = view.type === "activity";
   const isInboxActive = view.type === "inbox";
   const isLoopsActive = view.type === "loops";
@@ -247,15 +240,6 @@ export function SidebarNavSection({
           onClick={withNavTrack("new_task", goNewTask)}
         />
       </Box>
-
-      {homeTabEnabled && (
-        <Box>
-          <HomeItem
-            isActive={isHomeViewActive}
-            onClick={withNavTrack("home", goHome)}
-          />
-        </Box>
-      )}
 
       <Box>
         <SearchItem onClick={withNavTrack("search", openCommandMenu)} />
