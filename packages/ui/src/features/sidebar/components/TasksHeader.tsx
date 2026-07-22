@@ -109,16 +109,10 @@ function TaskFilterMenu() {
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
-  // Hold the sidebar's hover-peek open while this dropdown is open: it lives in
-  // a portal anchored to the trigger, so if the peek collapsed underneath it
-  // (pointer leaving the panel, e.g. toward the Environment flyout) the menu
-  // would be left floating over the content, chasing its vanished anchor.
   const handleOpenChange = (next: boolean): void => {
     if (next) holdSidebarPeek();
     else releaseSidebarPeek();
   };
-  // Release if we unmount while the menu is open (e.g. a route change) so the
-  // hold can't outlive it.
   useEffect(() => () => releaseSidebarPeek(), []);
 
   return (
