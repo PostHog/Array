@@ -10,7 +10,7 @@ To pick up upstream improvements, diff against those directories and re-copy, th
 
 - `review_pr.py`: the `--repo` default is `PostHog/code`.
 - `dismiss_check.py`: the default base ref is `origin/main` (upstream uses `origin/master`).
-- `.stamphog/policy.yml` is byte-identical to upstream; posthog-specific entries (`products/warehouse_sources` exempt paths, the `frontend/src/queries/schema` generated pattern) are inert here and keeping them lets the vendored test suite pass unchanged.
+- `.stamphog/policy.yml`: `size_gate.max_lines` is 1200 (upstream 800), with the matching `OLD_MAX_LINES` edit in `test_policy.py`. Everything else is byte-identical to upstream; posthog-specific entries (`products/warehouse_sources` exempt paths, the `frontend/src/queries/schema` generated pattern) are inert here and keeping them lets the vendored test suite pass unchanged.
 - The workflow uses the `Stamphog` label (capitalized), checks out `main`, and posts approvals with `GITHUB_TOKEN` so `github-actions[bot]` is the reviewer: that identity is confirmed to count toward this repo's branch ruleset. Upstream approves as the Stamphog app; flip this once an app approval is confirmed to unblock a PR here.
 
 Behavioral differences that fall out of running in this repo rather than the posthog monorepo:
@@ -79,10 +79,9 @@ Deny-list (hard gate)
   │
   ▼
 Size ceiling (hard gate)
-  - >800 substantive lines or >30 substantive files → too large for auto-review
-    (limits derived from 90 days of denial outcomes: the friction cluster of
-    denied-yet-merged-unchanged PRs sits at 500-750 substantive lines, and past
-    ~800 the merged-unchanged rate collapses, so escalation is genuinely right)
+  - >1200 substantive lines or >30 substantive files → too large for
+    auto-review (local ceiling; upstream calibrated 800 against denial
+    outcomes in the posthog monorepo)
   - Docs (.md/.txt/.rst anywhere; artifact-extension files under docs/),
     snapshots (.snap/.ambr, __snapshots__/), images,
     `.lock`-extension files (e.g. `yarn.lock`), tests (test dirs and

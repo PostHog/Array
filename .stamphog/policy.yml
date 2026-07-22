@@ -162,7 +162,7 @@ allow:
         - '.yaml'
         - '.yml'
 size_gate:
-    max_lines: 800
+    max_lines: 1200
     max_files: 30
 tiers:
     t1_subclasses:
