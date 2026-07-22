@@ -1,16 +1,26 @@
 import { ArrowLeftIcon, RepeatIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
-import { Switch } from "@posthog/quill";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Badge,
+  Button,
+  Switch,
+  Textarea,
+} from "@posthog/quill";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
-import { Badge } from "@posthog/ui/primitives/Badge";
-import { Button } from "@posthog/ui/primitives/Button";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToEditLoop,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
-import { AlertDialog, Flex, Text, TextArea } from "@radix-ui/themes";
-import { useEffect, useRef, useState } from "react";
+import { Flex, Text } from "@radix-ui/themes";
+import { useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
   useDeleteLoop,
@@ -101,24 +111,25 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
     <div className="mx-auto w-full max-w-5xl px-8 py-6">
       <Flex direction="column" gap="5">
         <Flex direction="column" gap="3">
-          <button
-            type="button"
+          <Button
+            variant="link-muted"
+            size="xs"
             onClick={navigateToLoops}
-            className="flex w-fit items-center gap-1.5 border-none bg-transparent p-0 text-[12px] text-gray-11 no-underline hover:text-gray-12"
+            className="w-fit px-0"
           >
             <ArrowLeftIcon size={13} />
             Loops
-          </button>
+          </Button>
 
           <Flex align="center" justify="between" gap="3" wrap="wrap">
             <Flex align="center" gap="2" wrap="wrap">
               <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
                 {loop.name}
               </Text>
-              <Badge color={loopStatusColor(loop)}>
+              <Badge variant={loopStatusBadgeVariant(loop)}>
                 {loopStatusLabel(loop)}
               </Badge>
-              <Badge color="gray">{loop.visibility}</Badge>
+              <Badge>{loop.visibility}</Badge>
             </Flex>
             <Flex align="center" gap="2">
               <Switch
@@ -128,9 +139,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
                 onCheckedChange={handleToggleEnabled}
               />
               <Button
-                variant="soft"
-                color="gray"
-                size="1"
+                variant="outline"
+                size="xs"
                 loading={runLoop.isPending}
                 disabled={runLoop.isPending}
                 onClick={handleRunNow}
@@ -138,17 +148,15 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
                 Run now
               </Button>
               <Button
-                variant="soft"
-                color="gray"
-                size="1"
+                variant="outline"
+                size="xs"
                 onClick={() => navigateToEditLoop(loop.id)}
               >
                 Edit
               </Button>
               <Button
-                variant="soft"
-                color="red"
-                size="1"
+                variant="destructive"
+                size="xs"
                 onClick={() => setDeleteOpen(true)}
               >
                 Delete
@@ -203,39 +211,49 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
         </Flex>
       </Flex>
 
-      <AlertDialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialog.Content maxWidth="420px" size="1">
-          <AlertDialog.Title className="text-sm">Delete loop</AlertDialog.Title>
-          <AlertDialog.Description className="text-[13px]">
-            <Text color="gray" className="text-[13px]">
-              Permanently delete{" "}
-              <Text className="font-medium text-[13px]">{loop.name}</Text>? This
-              stops every trigger and cannot be undone.
-            </Text>
-          </AlertDialog.Description>
-          <Flex justify="end" gap="3" mt="3">
-            <AlertDialog.Cancel>
-              <Button variant="soft" color="gray" size="1">
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button
-                variant="solid"
-                color="red"
-                size="1"
-                loading={deleteLoop.isPending}
-                disabled={deleteLoop.isPending}
-                onClick={handleDelete}
-              >
-                Delete
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete loop</AlertDialogTitle>
+            <AlertDialogDescription>
+              <Text color="gray" className="text-[13px]">
+                Permanently delete{" "}
+                <Text className="font-medium text-[13px]">{loop.name}</Text>?
+                This stops every trigger and cannot be undone.
+              </Text>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={
+                <Button variant="outline" size="sm">
+                  Cancel
+                </Button>
+              }
+            />
+            <Button
+              variant="destructive"
+              size="sm"
+              loading={deleteLoop.isPending}
+              disabled={deleteLoop.isPending}
+              onClick={handleDelete}
+            >
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+function loopStatusBadgeVariant(
+  loop: LoopSchemas.Loop,
+): "default" | "destructive" | "success" {
+  const color = loopStatusColor(loop);
+  if (color === "green") return "success";
+  if (color === "red") return "destructive";
+  return "default";
 }
 
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
@@ -287,23 +305,18 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
 
 function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
   const updateLoop = useUpdateLoop(loop.id);
-  const [draft, setDraft] = useState(loop.instructions);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Escape reverts and blurs; skip the resulting onBlur save.
   const skipCommit = useRef(false);
 
-  // Keep the box in sync when the loop is refetched or updated elsewhere.
-  useEffect(() => {
-    setDraft(loop.instructions);
-  }, [loop.instructions]);
-
-  const commit = () => {
+  const commit = (value: string) => {
     if (skipCommit.current) {
       skipCommit.current = false;
       return;
     }
-    const trimmed = draft.trim();
+    const trimmed = value.trim();
     if (!trimmed) {
-      setDraft(loop.instructions);
+      if (textareaRef.current) textareaRef.current.value = loop.instructions;
       return;
     }
     if (trimmed === loop.instructions.trim() || updateLoop.isPending) return;
@@ -312,7 +325,8 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
       {
         onSuccess: () => toast.success("Instructions updated"),
         onError: (error) => {
-          setDraft(loop.instructions);
+          if (textareaRef.current)
+            textareaRef.current.value = loop.instructions;
           toast.error("Failed to update instructions", {
             description: error.message,
           });
@@ -331,17 +345,18 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
           <Text className="text-[11px] text-gray-10">Saving…</Text>
         ) : null}
       </Flex>
-      <TextArea
-        value={draft}
+      <Textarea
+        key={loop.instructions}
+        ref={textareaRef}
+        defaultValue={loop.instructions}
         disabled={updateLoop.isPending}
         aria-label="Loop instructions"
-        className="min-h-[200px] text-[12.5px] leading-relaxed"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        className="min-h-[200px] bg-(--color-panel-solid) text-[12.5px] leading-relaxed"
+        onBlur={(e) => commit(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             skipCommit.current = true;
-            setDraft(loop.instructions);
+            e.currentTarget.value = loop.instructions;
             e.currentTarget.blur();
           }
         }}
