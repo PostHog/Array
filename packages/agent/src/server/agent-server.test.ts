@@ -952,6 +952,124 @@ describe("AgentServer HTTP Mode", () => {
       );
     });
 
+    // Sandbox teardown kills the exec'd agent-server without SIGTERM, so the
+    // trace's root span only exports if telemetry is shut down at the run's
+    // in-process terminal points.
+    it("shuts down telemetry after mirroring the terminal failure record", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: {
+          payload: { run_id: string };
+          logWriter: { flush: ReturnType<typeof vi.fn> };
+          telemetry: {
+            append: ReturnType<typeof vi.fn>;
+            shutdown: ReturnType<typeof vi.fn>;
+          };
+        };
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => ({})),
+      };
+      testServer.session = {
+        payload: { run_id: "run-1" },
+        logWriter: { flush: vi.fn(async () => {}) },
+        telemetry: {
+          append: vi.fn(() => {
+            order.push("append");
+          }),
+          shutdown: vi.fn(async () => {
+            order.push("shutdown");
+          }),
+        },
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "background",
+        },
+        "error",
+        "boom",
+      );
+
+      // The error mirror must land before shutdown so the root span exports
+      // with ERROR status.
+      expect(order).toEqual(["append", "shutdown"]);
+    });
+
+    it.each([
+      { mode: "background" as const, shutdownCalls: 1 },
+      { mode: "interactive" as const, shutdownCalls: 0 },
+    ])(
+      "finalizeRunTelemetry shuts down telemetry only for $mode runs",
+      async ({ mode, shutdownCalls }) => {
+        const testServer = new AgentServer({
+          port,
+          jwtPublicKey: TEST_PUBLIC_KEY,
+          repositoryPath: repo.path,
+          apiUrl: "http://localhost:8000",
+          apiKey: "test-api-key",
+          projectId: 1,
+          mode: "interactive",
+          taskId: "test-task-id",
+          runId: "test-run-id",
+        }) as unknown as {
+          session: { telemetry: { shutdown: ReturnType<typeof vi.fn> } };
+          finalizeRunTelemetry(payload: JwtPayload): Promise<void>;
+        };
+        testServer.session = {
+          telemetry: { shutdown: vi.fn(async () => {}) },
+        };
+
+        await testServer.finalizeRunTelemetry({
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode,
+        });
+
+        expect(testServer.session.telemetry.shutdown).toHaveBeenCalledTimes(
+          shutdownCalls,
+        );
+      },
+    );
+
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({

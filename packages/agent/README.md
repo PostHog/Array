@@ -179,6 +179,8 @@ Optional run telemetry (the logs pair must both be set, otherwise telemetry stay
 
 When set, `AgentServer` ships an allowlisted metadata subset of the session log (run/turn/tool lifecycle, usage, error provenance — never message content, tool arguments, or raw error text; see `src/otel-telemetry.ts`) to PostHog Logs, tagged with `service.name=posthog-code-agent` and `run_id`/`task_id`/`team_id`/`user_id`/`distinct_id` resource attributes so cloud runs are filterable per user. With the traces URL set, each run also produces an APM trace (`task_run` root span, a `turn` span per prompt, a `tool_call:<kind>` span per tool call; see `src/otel-trace-builder.ts`), and log records carry the matching trace/span ids so Logs and APM cross-link.
 
+The `task_run` root span is ended and exported at the run's in-process terminal point — a background run's prompt settling, a terminal failure, or session cleanup (`close`). It cannot wait for teardown: agent-server is an exec'd process inside the sandbox, so `docker stop` / Modal terminate kill it without SIGTERM ever arriving, and a span still open at that moment is lost. Interactive sessions that end via hard teardown (e.g. inactivity timeout) therefore lose the root span; turn/tool spans and logs still assemble under the same trace id.
+
 ## Agent SDK
 
 The `Agent` class (`src/agent.ts`) is the entrypoint for local/programmatic usage. It handles LLM gateway configuration, log writer setup, and model filtering — then delegates to `createAcpConnection()`.
