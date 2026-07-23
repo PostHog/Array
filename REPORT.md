@@ -23,11 +23,13 @@ Hard requirements:
 
 ## Architecture
 
-```
+```text
 sandbox (agentsh)
 └── agent-server (PostHog/code, packages/agent)
     ├── ACP streams (tapped) ──► SessionLogWriter ──► Django append_log ──► S3   (product log, unchanged)
-    │                                   │
+    │                                   │                    │
+    │                                   │                    └─ scout runs only: structured stdout line per entry
+    │                                   │                       └─► cluster OTel collector ──► internal project Logs
     │                                   └─ sink ──► OtelRunTelemetry
     │                                                ├─ log records ──► POST {POSTHOG_AGENT_OTEL_LOGS_URL}
     │                                                └─ RunTraceBuilder spans ──► POST {POSTHOG_AGENT_OTEL_TRACES_URL}
@@ -47,20 +49,20 @@ Resource attributes on every record: `service.name`, `service.version` (agent ve
 
 Exported events (allowlist, everything else is dropped):
 
-| Event | Severity | Notable attributes |
-| --- | --- | --- |
-| `_posthog/run_started` | info | `agent_version`, `session_id` |
-| `_posthog/sdk_session` | info | `adapter`, `session_id` |
-| `_posthog/usage_update` (and the `session/update` variant) | info | `tokens_input/output/cached_read/cached_write`, `cost_usd` |
-| `_posthog/turn_complete` | info | `stop_reason` |
-| `_posthog/task_complete` | info | `stop_reason` |
-| `_posthog/error` | **error** | `error_source`, `stop_reason`; body is the generic "run error" — the raw message is free text that can embed prompt/repo content, so it stays in the session log and the run's `error_message` |
-| `_posthog/progress` | info | `progress_group/step/status` |
-| `_posthog/git_checkpoint`, `_posthog/branch_created` | info | `branch` |
-| `_posthog/mode_change`, `_posthog/compact_boundary` | info | |
-| `_posthog/permission_request/response/resolved` | info | `request_id`, `tool_call_id` (identifiers only; tool content excluded) |
-| `session/update: tool_call` | info | `tool_call_id`, `tool_kind`, `tool_status` (no title, no rawInput) |
-| `session/update: tool_call_update` (terminal only) | info / warn on `failed` | `tool_call_id`, `tool_status` |
+| Event                                                      | Severity                | Notable attributes                                                                                                                                                                             |
+| ---------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_posthog/run_started`                                     | info                    | `agent_version`, `session_id`                                                                                                                                                                  |
+| `_posthog/sdk_session`                                     | info                    | `adapter`, `session_id`                                                                                                                                                                        |
+| `_posthog/usage_update` (and the `session/update` variant) | info                    | `tokens_input/output/cached_read/cached_write`, `cost_usd`                                                                                                                                     |
+| `_posthog/turn_complete`                                   | info                    | `stop_reason`                                                                                                                                                                                  |
+| `_posthog/task_complete`                                   | info                    | `stop_reason`                                                                                                                                                                                  |
+| `_posthog/error`                                           | **error**               | `error_source`, `stop_reason`; body is the generic "run error" — the raw message is free text that can embed prompt/repo content, so it stays in the session log and the run's `error_message` |
+| `_posthog/progress`                                        | info                    | `progress_group/step/status`                                                                                                                                                                   |
+| `_posthog/git_checkpoint`, `_posthog/branch_created`       | info                    | `branch`                                                                                                                                                                                       |
+| `_posthog/mode_change`, `_posthog/compact_boundary`        | info                    |                                                                                                                                                                                                |
+| `_posthog/permission_request/response/resolved`            | info                    | `request_id`, `tool_call_id` (identifiers only; tool content excluded)                                                                                                                         |
+| `session/update: tool_call`                                | info                    | `tool_call_id`, `tool_kind`, `tool_status` (no title, no rawInput)                                                                                                                             |
+| `session/update: tool_call_update` (terminal only)         | info / warn on `failed` | `tool_call_id`, `tool_status`                                                                                                                                                                  |
 
 Deliberately dropped: `agent_message`, `agent_message_chunk`, `agent_thought_chunk`, `user_message`, `session/prompt` bodies, in-progress `tool_call_update` snapshots (they re-send the growing tool input/output), `available_commands_update`, `_posthog/console` (free-text agent-server diagnostics interpolate arbitrary data — e.g. the prompt preview logged on user-message handling and stringified extension params — so exporting them would leak content; they stay in the S3 log and event-ingest stream), and any unknown method (fail-closed allowlist).
 Bodies are capped at 2000 chars; free-text attribute values at 200 chars (the `log_attributes` faceting table only indexes key/value pairs under 256 chars).
@@ -79,6 +81,22 @@ Telemetry is near-realtime, not end-of-turn: records are created the moment each
 Spans export when they end (tools mid-turn, turns at `turn_complete`, root at the run's terminal point).
 Sandbox teardown can NOT be a flush point: agent-server is an exec'd process inside the sandbox, so `docker stop` signals only the container's PID 1 and Modal terminate is immediate — the process's SIGTERM handler never runs and anything still queued (or a still-open root span) is lost. Telemetry is therefore ended eagerly at the in-process terminal points: `finalizeRunTelemetry` when a background run's prompt settles, a full shutdown after a terminal failure in `signalTaskComplete`, and `cleanupSession` for interactive `close`. Known limitation: an interactive session ended by hard teardown (e.g. inactivity timeout) loses the root span; its turn/tool spans and logs still assemble under the same trace id.
 Flush and shutdown are best-effort and per-signal independent (`Promise.allSettled`), and every export is capped at 5 s (`exportTimeoutMillis`, down from the SDK's 30 s default), so a rejecting or hanging traces endpoint can neither starve log delivery nor hold up session cleanup.
+
+### Companion pipeline: scout run log mirror (incorporated from PR #71094)
+
+This branch also carries the scout-run log mirror by Andrew Maguire ([#71094](https://github.com/PostHog/posthog/pull/71094)), a second, complementary delivery path with a different privacy posture and scope:
+
+|                | OTLP export (this work)                                                                     | Scout run log mirror (#71094)                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Emitter        | agent-server inside the sandbox                                                              | Django `TaskRun.append_log` (the S3 write choke point)                                                                 |
+| Transport      | direct OTLP HTTP to `capture-logs`                                                           | structured stdout line per entry (`event=task_run_log`); the per-cluster OTel collector already ships container stdout |
+| Destination    | chosen telemetry project (via `SANDBOX_AGENT_OTEL_*`)                                        | the region's internal PostHog project's Logs                                                                           |
+| Content        | metadata-only allowlist — never prompts, message text, tool args/output, or raw error text   | readable bodies (agent messages, tool calls, sandbox output), capped at 8k chars                                       |
+| Scope          | every cloud task run once the settings are set                                               | runs whose task `origin_product` is in `TASK_RUN_LOGS_MIRROR_ORIGIN_PRODUCTS` (default: `signals_scout` only)          |
+| Traces         | one APM trace per run (`task_run`/`turn`/`tool_call:*` spans)                                | `request_id` = run uuid becomes the record's trace id, grouping one run as one trace                                   |
+
+The privacy postures are compatible because the scopes differ: scout runs are PostHog-authored agents whose transcripts we already own end to end, so full bodies into the internal project are fine there, while the OTLP path covers customer-driven runs and therefore stays metadata-only.
+Mirroring is fire-and-forget — a mirror failure is logged and never breaks the run's S3 log write.
 
 ## Changes in PostHog/code (this branch)
 
@@ -104,6 +122,14 @@ Flush and shutdown are best-effort and per-signal independent (`Promise.allSettl
 - `products/tasks/backend/logic/services/docker_sandbox.py`: `POSTHOG_AGENT_OTEL_LOGS_URL`/`POSTHOG_AGENT_OTEL_TRACES_URL` added to `_DOCKER_URL_ENV_KEYS` so localhost URLs are rewritten to `host.docker.internal` for local Docker sandboxes.
 - Tests: parameterized gating matrix on `_build_environment_variables` (5 rows: full config, logs-only, partial configs, traces-without-logs all correctly gated) and a `SimpleTestCase` wiring guard on the snapshot-resume path.
 - `docs/internal/sandboxes-setup-guide.md`: local-dev setup section for the new settings.
+
+Incorporated from [#71094](https://github.com/PostHog/posthog/pull/71094) (scout run log mirror, credit Andrew Maguire):
+
+- `products/tasks/backend/logic/services/run_log_mirror.py` (new): translates each ACP JSONL entry into a `task_run_log` structlog stdout line — readable bodies for agent messages / tool calls / sandbox output / turn ends (8k char cap, entry-count cap per call), severity mapping (`_posthog/error` → error, console level passthrough), run-identity fields (`task_run_id`/`task_id`/`team_id`/`origin_product`/`acp_method`) as log attributes, and `request_id` = run uuid as the trace id.
+- `products/tasks/backend/models.py`: `TaskRun.append_log` calls `_mirror_logs_to_posthog_logs` after the S3 write, gated on the origin-product allowlist and wrapped so any failure is logged and never breaks the write.
+- `posthog/settings/temporal.py`: `TASK_RUN_LOGS_MIRROR_ORIGIN_PRODUCTS` (default `signals_scout`; empty disables).
+- `products/tasks/backend/tests/test_run_log_mirror.py` (new): severity/body mapping matrix, run-identity fields, truncation/batch caps, and `append_log` gating (allowlist, disabled, mirror-failure isolation).
+- `docs/internal/sandboxes-setup-guide.md`: mirroring section.
 
 ## Key design decisions
 
@@ -135,9 +161,10 @@ Flush and shutdown are best-effort and per-signal independent (`Promise.allSettl
 
 ## Configuration reference
 
-| Where | Name | Meaning |
-| --- | --- | --- |
-| Django settings | `SANDBOX_AGENT_OTEL_LOGS_URL` | Full OTLP logs ingest URL; unset = telemetry off |
-| Django settings | `SANDBOX_AGENT_OTEL_LOGS_TOKEN` | Project API key of the telemetry project; unset = telemetry off |
-| Django settings | `SANDBOX_AGENT_OTEL_TRACES_URL` | Full OTLP traces ingest URL; unset = spans off, logs unaffected |
+| Where                  | Name                                                                       | Meaning                                                                |
+| ---------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Django settings        | `SANDBOX_AGENT_OTEL_LOGS_URL`                                              | Full OTLP logs ingest URL; unset = telemetry off                       |
+| Django settings        | `SANDBOX_AGENT_OTEL_LOGS_TOKEN`                                            | Project API key of the telemetry project; unset = telemetry off        |
+| Django settings        | `SANDBOX_AGENT_OTEL_TRACES_URL`                                            | Full OTLP traces ingest URL; unset = spans off, logs unaffected        |
 | Sandbox env (injected) | `POSTHOG_AGENT_OTEL_LOGS_URL` / `_TOKEN` / `POSTHOG_AGENT_OTEL_TRACES_URL` | Read by `agent-server` (`bin.ts`); reserved keys, not user-overridable |
+| Django settings        | `TASK_RUN_LOGS_MIRROR_ORIGIN_PRODUCTS`                                     | Task origins whose run logs mirror to the internal project's Logs (default `signals_scout`; empty disables) |
