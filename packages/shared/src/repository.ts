@@ -10,8 +10,8 @@ export const parseRepository = (
   return { organization: result[0], repoName: result[1] };
 };
 
-export function getTaskRepository(task: {
-  repository?: string | null;
-}): string | null {
-  return task.repository ?? null;
+export function getTaskRepository(
+  task: { repository?: string | null } | null | undefined,
+): string | null {
+  return task?.repository ?? null;
 }

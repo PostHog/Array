@@ -9,5 +9,8 @@ export function useRefreshedTask(taskId: string, initialTask: Task): Task {
     refetchOnMount: "always",
   });
 
-  return data;
+  // Guard against `data` being undefined: another observer subscribing to the
+  // same query key without `initialData` can create the cache entry first while
+  // the fetch is in flight, causing React Query to drop this hook's initialData.
+  return data ?? initialTask;
 }
