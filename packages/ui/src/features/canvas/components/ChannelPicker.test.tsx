@@ -74,6 +74,34 @@ describe("ChannelPicker", () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(null));
   });
 
+  it("renders 'me' first, then the channels in the given order", async () => {
+    const user = userEvent.setup();
+    // Deliberately not alphabetical: the parent orders the list (me → starred →
+    // rest) and the picker must preserve that order rather than re-sorting.
+    render(
+      <Theme>
+        <ChannelPicker
+          value={null}
+          onChange={vi.fn()}
+          channels={[
+            { id: "z", name: "zulu", path: "/zulu" },
+            { id: "a", name: "alpha", path: "/alpha" },
+          ]}
+          isLoading={false}
+        />
+      </Theme>,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Channel" }));
+    await screen.findByRole("option", { name: "me" });
+
+    expect(screen.getAllByRole("option").map((el) => el.textContent)).toEqual([
+      "me",
+      "zulu",
+      "alpha",
+    ]);
+  });
+
   // Type-to-filter is the shared Combobox's own behavior (same as the repo
   // picker) and its popup search input doesn't mount as a queryable field in
   // jsdom, so it isn't asserted here — see BranchSelector.test.tsx, which drives

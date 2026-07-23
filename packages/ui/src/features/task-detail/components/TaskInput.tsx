@@ -40,6 +40,7 @@ import {
 import { toStageSelectOptions } from "../../autoresearch/stageModels";
 import { useAutoresearchEnabled } from "../../autoresearch/useAutoresearchEnabled";
 import { ChannelPicker } from "../../canvas/components/ChannelPicker";
+import { useChannelStars } from "../../canvas/hooks/useChannelStars";
 import { useChannels } from "../../canvas/hooks/useChannels";
 import { useFolderInstructions } from "../../canvas/hooks/useFolderInstructions";
 import {
@@ -279,9 +280,8 @@ export function TaskInput({
   const { channels: allChannels, isLoading: channelsLoading } = useChannels({
     enabled: channelSelectorEnabled,
   });
-  // Omit the personal #me channel: "No channel" already routes tasks to it via
-  // useTaskCreation's default, so listing it would be a duplicate way to say the
-  // same thing.
+  // Omit the personal #me channel: the picker always shows it as the default
+  // "me" option, so listing it again would just duplicate it.
   const selectableChannels = useMemo(
     () =>
       allChannels.filter(
@@ -289,6 +289,27 @@ export function TaskInput({
       ),
     [allChannels],
   );
+  // Order the list me → starred → the rest, mirroring the sidebar but as one
+  // flat list (the "me" default is prepended by the picker; here we just float
+  // the starred channels to the top, keeping each group's alphabetical order).
+  const { starredRefToShortcutId } = useChannelStars({
+    enabled: channelSelectorEnabled,
+  });
+  // The map is rebuilt every render, so key the ordering memo on a signature of
+  // its contents instead — it only re-sorts when the starred set changes.
+  const starredSignature = Array.from(starredRefToShortcutId.keys())
+    .sort()
+    .join("\n");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: starredRefToShortcutId's identity changes every render; starredSignature captures its contents
+  const orderedChannels = useMemo(() => {
+    const starred = selectableChannels.filter((c) =>
+      starredRefToShortcutId.has(c.path),
+    );
+    const rest = selectableChannels.filter(
+      (c) => !starredRefToShortcutId.has(c.path),
+    );
+    return [...starred, ...rest];
+  }, [selectableChannels, starredSignature]);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
     null,
   );
@@ -1218,7 +1239,7 @@ export function TaskInput({
                   <ChannelPicker
                     value={selectedChannelId}
                     onChange={setSelectedChannelId}
-                    channels={selectableChannels}
+                    channels={orderedChannels}
                     isLoading={channelsLoading}
                     disabled={isCreatingTask}
                     size="1"
