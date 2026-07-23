@@ -17,14 +17,15 @@ import { POSTHOG_NOTIFICATIONS } from "./acp-extensions";
 import {
   type Attributes,
   asRecord,
+  asString,
+  DEFAULT_FLUSH_INTERVAL_MS,
   EXPORT_TIMEOUT_MS,
   entryTime,
+  normalizeMethod,
   strAttr,
   usageAttributes,
 } from "./otel-attributes";
 import type { StoredNotification } from "./types";
-
-const DEFAULT_FLUSH_INTERVAL_MS = 2000;
 
 export interface RunTraceBuilderConfig {
   /** Full OTLP traces endpoint URL, e.g. "https://us.i.posthog.com/i/v1/traces" */
@@ -98,9 +99,7 @@ export class RunTraceBuilder {
     if (this.ended) return this.rootContext;
     const rawMethod = entry.notification.method;
     if (typeof rawMethod !== "string") return this.currentContext();
-    const method = rawMethod.startsWith("__posthog/")
-      ? rawMethod.slice(1)
-      : rawMethod;
+    const method = normalizeMethod(rawMethod);
     const params = asRecord(entry.notification.params) ?? {};
     const time = entryTime(entry.timestamp);
 
@@ -181,8 +180,7 @@ export class RunTraceBuilder {
 
   private endTurn(params: Record<string, unknown>, time: Date): Context {
     const context = this.turnContext ?? this.rootContext;
-    const stopReason =
-      typeof params.stopReason === "string" ? params.stopReason : undefined;
+    const stopReason = asString(params.stopReason);
     this.closeOpenTools(time);
     this.closeTurn({ stopReason, errored: stopReason === "error" }, time);
     // The sandbox never emits task_complete for successful runs (the terminal
@@ -232,12 +230,11 @@ export class RunTraceBuilder {
   }
 
   private startTool(update: Record<string, unknown>, time: Date): Context {
-    const toolCallId =
-      typeof update.toolCallId === "string" ? update.toolCallId : undefined;
+    const toolCallId = asString(update.toolCallId);
     const existing = toolCallId ? this.toolSpans.get(toolCallId) : undefined;
     if (existing) return existing.context;
 
-    const kind = typeof update.kind === "string" ? update.kind : "unknown";
+    const kind = asString(update.kind) ?? "unknown";
     const parentContext = this.turnContext ?? this.rootContext;
     const attributes: Attributes = { tool_kind: kind };
     if (toolCallId) attributes.tool_call_id = toolCallId;
@@ -263,8 +260,7 @@ export class RunTraceBuilder {
     update: Record<string, unknown>,
     time: Date,
   ): Context {
-    const toolCallId =
-      typeof update.toolCallId === "string" ? update.toolCallId : undefined;
+    const toolCallId = asString(update.toolCallId);
     const open = toolCallId ? this.toolSpans.get(toolCallId) : undefined;
     if (!open || !toolCallId) return this.currentContext();
 
@@ -283,8 +279,7 @@ export class RunTraceBuilder {
   private handleError(params: Record<string, unknown>, time: Date): Context {
     this.rootErrored = true;
     this.closeOpenTools(time, { interrupted: true });
-    const stopReason =
-      typeof params.stopReason === "string" ? params.stopReason : undefined;
+    const stopReason = asString(params.stopReason);
     this.closeTurn({ stopReason, errored: true }, time);
     // params.error is free text that can embed prompt or repo content, so
     // only the error's provenance is exported; the raw message stays in the

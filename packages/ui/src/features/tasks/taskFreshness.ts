@@ -12,21 +12,16 @@ export function getTaskFreshness(task: Task): number {
   );
 }
 
+export function pickFreshestTask(a: Task, b: Task | null | undefined): Task;
 export function pickFreshestTask(
-  ...tasks: Array<Task | null | undefined>
+  a: Task | null | undefined,
+  b: Task | null | undefined,
+): Task | undefined;
+export function pickFreshestTask(
+  a: Task | null | undefined,
+  b: Task | null | undefined,
 ): Task | undefined {
-  let selected: Task | undefined;
-  let selectedFreshness = Number.NEGATIVE_INFINITY;
-
-  for (const task of tasks) {
-    if (!task) continue;
-
-    const freshness = getTaskFreshness(task);
-    if (!selected || freshness > selectedFreshness) {
-      selected = task;
-      selectedFreshness = freshness;
-    }
-  }
-
-  return selected;
+  if (!a) return b ?? undefined;
+  if (!b) return a;
+  return getTaskFreshness(b) > getTaskFreshness(a) ? b : a;
 }

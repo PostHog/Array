@@ -5545,9 +5545,7 @@ export class SessionService {
             runState,
           );
         }
-        this.finalizeTerminalCloudTask(taskId, taskRunId, {
-          status: runStatus,
-        });
+        this.finalizeTerminalCloudTask(taskRunId, runStatus);
         this.stopCloudTaskWatch(taskId);
         return () => {};
       }
@@ -5744,9 +5742,7 @@ export class SessionService {
         runStatus,
         runState,
       );
-      this.finalizeTerminalCloudTask(taskId, taskRunId, {
-        status: runStatus,
-      });
+      this.finalizeTerminalCloudTask(taskRunId, runStatus);
       return () => {};
     }
 
@@ -6172,14 +6168,10 @@ export class SessionService {
         timestamp: Date.now(),
       });
     }
-    if (hasUserPrompt) {
-      // The real prompt has landed; the stash is no longer needed.
-      this.initialCloudOptimisticPrompt.delete(taskId);
-      this.d.store.clearTailOptimisticItems(taskRunId);
-    }
-    if (isTerminalRun) {
-      // A finished run gets no further echoes: any optimistic leftovers would
-      // otherwise linger as phantom tail items on the final transcript.
+    if (hasUserPrompt || isTerminalRun) {
+      // The stash is no longer needed once the real prompt lands - and a
+      // finished run gets no further echoes, so leftover optimistic items
+      // would otherwise linger as phantom tail items on the final transcript.
       this.initialCloudOptimisticPrompt.delete(taskId);
       this.d.store.clearTailOptimisticItems(taskRunId);
     }
@@ -6197,26 +6189,17 @@ export class SessionService {
     // Terminal hydration is different: it is the final transcript, so apply
     // it whenever the persisted chain has more lines than the local stream.
     const effectiveLineCount = Math.max(liveStreamLineCount, rawEntries.length);
-    if (isTerminalRun) {
-      if ((session.processedLineCount ?? 0) >= effectiveLineCount) {
-        this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
-        this.pendingPermissionHydratedRuns.add(taskRunId);
-        return {
-          historyEntryCount: rawEntries.length,
-          liveStreamLineCount:
-            session.processedLineCount ?? liveStreamLineCount,
-        };
-      }
-    } else if (
-      session.processedLineCount !== undefined &&
-      session.processedLineCount > 0 &&
-      !isResumeRun
-    ) {
+    const alreadyApplied = isTerminalRun
+      ? (session.processedLineCount ?? 0) >= effectiveLineCount
+      : session.processedLineCount !== undefined &&
+        session.processedLineCount > 0 &&
+        !isResumeRun;
+    if (alreadyApplied) {
       this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
       this.pendingPermissionHydratedRuns.add(taskRunId);
       return {
         historyEntryCount: rawEntries.length,
-        liveStreamLineCount: session.processedLineCount,
+        liveStreamLineCount: session.processedLineCount ?? liveStreamLineCount,
       };
     }
 
@@ -6247,7 +6230,7 @@ export class SessionService {
     // path otherwise sees delta <= 0 and never re-evaluates the tail.
     this.updatePromptStateFromEvents(taskRunId, events);
     if (isTerminalRun) {
-      this.clearTerminalCloudPromptState(taskId, taskRunId);
+      this.clearTerminalCloudPromptState(taskRunId);
     }
     return {
       historyEntryCount: rawEntries.length,
@@ -6256,28 +6239,18 @@ export class SessionService {
   }
 
   private finalizeTerminalCloudTask(
-    taskId: string,
     taskRunId: string,
-    fields: {
-      status?: TaskRunStatus;
-      stage?: string | null;
-      output?: Record<string, unknown> | null;
-      errorMessage?: string | null;
-      branch?: string | null;
-    },
+    status: TaskRunStatus | undefined,
   ): void {
-    this.d.store.updateCloudStatus(taskRunId, fields);
-    this.clearTerminalCloudPromptState(taskId, taskRunId);
+    this.d.store.updateCloudStatus(taskRunId, { status });
+    this.clearTerminalCloudPromptState(taskRunId);
   }
 
   /**
    * A terminal run can never flush its queue or answer a pending prompt;
    * leaving those set keeps the composer in a busy state forever.
    */
-  private clearTerminalCloudPromptState(
-    taskId: string,
-    taskRunId: string,
-  ): void {
+  private clearTerminalCloudPromptState(taskRunId: string): void {
     const session = this.d.store.getSessions()[taskRunId];
     if (
       !session ||
@@ -6286,7 +6259,7 @@ export class SessionService {
       return;
     }
 
-    this.d.store.clearMessageQueue(taskId);
+    this.d.store.clearMessageQueue(session.taskId);
     this.d.store.updateSession(taskRunId, {
       isPromptPending: false,
     });
@@ -7236,10 +7209,18 @@ export class SessionService {
       }
     }
 
-    if (update.kind === "snapshot" && !isTerminalStatus(update.status)) {
-      if (!this.isStaleNonTerminalCloudUpdate(taskRunId, update)) {
-        this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
-      }
+    // Evaluated once, before updateCloudStatus below can mutate cloudStatus.
+    const isStaleNonTerminalStatus = this.isStaleNonTerminalCloudUpdate(
+      taskRunId,
+      update,
+    );
+
+    if (
+      update.kind === "snapshot" &&
+      !isTerminalStatus(update.status) &&
+      !isStaleNonTerminalStatus
+    ) {
+      this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
     }
 
     // NOTE: Don't auto-flush on `!isPromptPending && queue.length > 0` here.
@@ -7252,7 +7233,7 @@ export class SessionService {
 
     // Update cloud status fields if present
     if (update.kind === "status" || update.kind === "snapshot") {
-      if (!this.isStaleNonTerminalCloudUpdate(taskRunId, update)) {
+      if (!isStaleNonTerminalStatus) {
         this.d.store.updateCloudStatus(taskRunId, {
           status: update.status,
           stage: update.stage,
@@ -7269,17 +7250,8 @@ export class SessionService {
       }
 
       if (isTerminalStatus(update.status)) {
-        // Clean up any pending resume messages that couldn't be sent
-        const session = this.d.store.getSessions()[taskRunId];
-        if (
-          session &&
-          (session.messageQueue.length > 0 || session.isPromptPending)
-        ) {
-          this.d.store.clearMessageQueue(session.taskId);
-          this.d.store.updateSession(taskRunId, {
-            isPromptPending: false,
-          });
-        }
+        // Pending resume messages can never be sent to a settled run.
+        this.clearTerminalCloudPromptState(taskRunId);
         this.stopCloudTaskWatch(update.taskId);
       }
     }

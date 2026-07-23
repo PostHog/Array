@@ -13,9 +13,12 @@ import { POSTHOG_NOTIFICATIONS } from "./acp-extensions";
 import {
   type Attributes,
   asRecord,
+  asString,
+  DEFAULT_FLUSH_INTERVAL_MS,
   EXPORT_TIMEOUT_MS,
   entryTime,
   MAX_BODY_CHARS,
+  normalizeMethod,
   strAttr,
   truncate,
   usageAttributes,
@@ -26,7 +29,6 @@ import type { StoredNotification } from "./types";
 import type { Logger } from "./utils/logger";
 
 const SERVICE_NAME = "posthog-code-agent";
-const DEFAULT_FLUSH_INTERVAL_MS = 2000;
 
 export interface OtelTelemetryConfig {
   /** Full OTLP logs endpoint URL, e.g. "https://us.i.posthog.com/i/v1/logs" */
@@ -146,11 +148,7 @@ export function mapNotificationToLogRecord(
 ): MappedLogRecord | null {
   const rawMethod = entry.notification.method;
   if (typeof rawMethod !== "string") return null;
-  // extNotification() can double-prefix custom methods (see matchesExt in
-  // acp-extensions.ts); normalize so both spellings map identically.
-  const method = rawMethod.startsWith("__posthog/")
-    ? rawMethod.slice(1)
-    : rawMethod;
+  const method = normalizeMethod(rawMethod);
   const params = asRecord(entry.notification.params) ?? {};
 
   if (method === "session/update") {
@@ -212,7 +210,7 @@ export function mapNotificationToLogRecord(
       strAttr(attrs, "progress_group", params.group);
       const step = strAttr(attrs, "progress_step", params.step);
       const status = strAttr(attrs, "progress_status", params.status);
-      const label = typeof params.label === "string" ? params.label : undefined;
+      const label = asString(params.label);
       return record(
         INFO,
         `progress: ${step ?? "step"} ${status ?? ""}${label ? ` (${label})` : ""}`.trim(),

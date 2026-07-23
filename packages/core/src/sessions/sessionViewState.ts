@@ -4,6 +4,7 @@ import {
   type Task,
   type TaskRunStatus,
 } from "@posthog/shared/domain-types";
+import { resolveEffectiveCloudStatus } from "../task-detail/cloudRunState";
 
 export interface SessionViewState {
   isCloudRunNotTerminal: boolean;
@@ -27,15 +28,7 @@ export function deriveSessionViewState(
   workspace: Workspace | null,
   isCloud: boolean,
 ): SessionViewState {
-  const taskRunId = task.latest_run?.id;
-  const taskRunStatus = task.latest_run?.status ?? null;
-  const sessionMatchesLatestRun =
-    !!taskRunId && session?.taskRunId === taskRunId;
-  const cloudStatus = sessionMatchesLatestRun
-    ? isTerminalStatus(taskRunStatus)
-      ? taskRunStatus
-      : (session?.cloudStatus ?? taskRunStatus)
-    : (taskRunStatus ?? session?.cloudStatus ?? null);
+  const cloudStatus = resolveEffectiveCloudStatus(task, session);
   const isCloudRunTerminal = isCloud && isTerminalStatus(cloudStatus);
   const isCloudRunNotTerminal = isCloud && !isCloudRunTerminal;
 

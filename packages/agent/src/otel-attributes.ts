@@ -6,10 +6,30 @@ const MAX_ATTR_CHARS = 200;
 // session cleanup (the sandbox can be torn down right after), so keep it short.
 const EXPORT_TIMEOUT_MS = 5000;
 
+// Batch flush cadence shared by the log and span processors.
+const DEFAULT_FLUSH_INTERVAL_MS = 2000;
+
 export type AttributeValue = string | number | boolean;
 export type Attributes = Record<string, AttributeValue>;
 
-export { EXPORT_TIMEOUT_MS, MAX_ATTR_CHARS, MAX_BODY_CHARS };
+export {
+  DEFAULT_FLUSH_INTERVAL_MS,
+  EXPORT_TIMEOUT_MS,
+  MAX_ATTR_CHARS,
+  MAX_BODY_CHARS,
+};
+
+/**
+ * extNotification() can double-prefix custom methods (see matchesExt in
+ * acp-extensions.ts); normalize so both spellings map identically.
+ */
+export function normalizeMethod(method: string): string {
+  return method.startsWith("__posthog/") ? method.slice(1) : method;
+}
+
+export function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
 
 export function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`;

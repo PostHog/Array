@@ -15,7 +15,7 @@ export function useCloudRunState(taskId: string, task: Task) {
       pickFreshestTask(
         task,
         tasks.find((t) => t.id === taskId),
-      ) ?? task,
+      ),
     [task, taskId, tasks],
   );
 
