@@ -3005,8 +3005,9 @@ describe("CodexAppServerAgent", () => {
           },
       )
       .filter((entry) => entry.update?.kind === "switch_mode");
-    expect(plans[0].update.rawInput).not.toHaveProperty("initiallyExpanded");
-    expect(plans[1].update.rawInput).toMatchObject({
+    expect(plans).toHaveLength(2);
+    expect(plans[0]?.update?.rawInput).not.toHaveProperty("initiallyExpanded");
+    expect(plans[1]?.update?.rawInput).toMatchObject({
       historical: true,
       initiallyExpanded: true,
     });
