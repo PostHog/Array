@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import { cloneStore } from "../../clone/cloneStore";
 import { useTasks } from "../../tasks/useTasks";
 import { useWorkspace } from "../../workspace/useWorkspace";
+import { useRefreshedTask } from "./useRefreshedTask";
 
 interface UseTaskDataParams {
   taskId: string;
@@ -20,10 +21,11 @@ interface UseTaskDataParams {
 export function useTaskData({ taskId, initialTask }: UseTaskDataParams) {
   const trpcReact = useWorkspaceTRPC();
   const { data: tasks = [] } = useTasks();
+  const refreshedTask = useRefreshedTask(taskId, initialTask);
 
   const task = useMemo(
-    () => tasks.find((t) => t.id === taskId) || initialTask,
-    [tasks, taskId, initialTask],
+    () => refreshedTask ?? tasks.find((t) => t.id === taskId) ?? initialTask,
+    [refreshedTask, tasks, taskId, initialTask],
   );
 
   const workspace = useWorkspace(taskId);
