@@ -1679,9 +1679,10 @@ describe("SessionService", () => {
           },
         } as AcpMessage,
       ];
-      mockAuthenticatedClient.getTaskRunSessionLogs.mockResolvedValue(
-        finalEntries,
-      );
+      mockAuthenticatedClient.getTaskRunSessionLogsResult.mockResolvedValue({
+        entries: finalEntries,
+        complete: true,
+      });
       mockConvertStoredEntriesToEvents.mockReturnValueOnce(finalEvents);
 
       service.watchCloudTask(
@@ -1716,7 +1717,7 @@ describe("SessionService", () => {
       expect(onStatusChange).not.toHaveBeenCalled();
       await vi.waitFor(() => {
         expect(
-          mockAuthenticatedClient.getTaskRunSessionLogs,
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
         ).toHaveBeenCalledWith("task-123", "run-123", { limit: 100000 });
       });
       expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
@@ -1862,17 +1863,19 @@ describe("SessionService", () => {
       mockSessionStoreSetters.getSessions.mockReturnValue({
         "run-123": session,
       });
-      let resolveFirstHydration!: (
-        entries: Array<{ timestamp: string; notification: object }>,
-      ) => void;
-      const firstHydration = new Promise<
-        Array<{ timestamp: string; notification: object }>
-      >((resolve) => {
+      let resolveFirstHydration!: (result: {
+        entries: Array<{ timestamp: string; notification: object }>;
+        complete: boolean;
+      }) => void;
+      const firstHydration = new Promise<{
+        entries: Array<{ timestamp: string; notification: object }>;
+        complete: boolean;
+      }>((resolve) => {
         resolveFirstHydration = resolve;
       });
-      mockAuthenticatedClient.getTaskRunSessionLogs
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
         .mockReturnValueOnce(firstHydration)
-        .mockResolvedValueOnce([]);
+        .mockResolvedValueOnce({ entries: [], complete: true });
 
       service.watchCloudTask(
         "task-123",
@@ -1891,10 +1894,12 @@ describe("SessionService", () => {
         { resume_from_run_id: "previous-run" },
       );
 
+      // Resume hydration fetches the ancestor and current run in parallel;
+      // the pending ancestor fetch keeps this first hydration in flight.
       await vi.waitFor(() => {
         expect(
-          mockAuthenticatedClient.getTaskRunSessionLogs,
-        ).toHaveBeenCalledTimes(1);
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
+        ).toHaveBeenCalledTimes(2);
       });
 
       service.watchCloudTask(
@@ -1914,12 +1919,14 @@ describe("SessionService", () => {
         { resume_from_run_id: "previous-run" },
       );
 
+      // The terminal hydration issues its own ancestor+current pair instead
+      // of being deduped onto the in-flight resume-chain hydration.
       await vi.waitFor(() => {
         expect(
-          mockAuthenticatedClient.getTaskRunSessionLogs,
-        ).toHaveBeenCalledTimes(2);
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
+        ).toHaveBeenCalledTimes(4);
       });
-      resolveFirstHydration([]);
+      resolveFirstHydration({ entries: [], complete: true });
     });
 
     it("does not re-subscribe across repeated calls for a hydrated terminal run", () => {

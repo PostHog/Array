@@ -1591,6 +1591,7 @@ export class SessionService {
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
   private pendingPermissionHydratedRuns = new Set<string>();
+  /** In-flight hydrations keyed by `${taskRunId}:${hydrationMode}` */
   private cloudHydrationPromises = new Map<
     string,
     Promise<CloudHydrationResult | undefined>
@@ -5901,7 +5902,16 @@ export class SessionService {
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
   ): Promise<CloudHydrationResult | undefined> {
-    const existing = this.cloudHydrationPromises.get(taskRunId);
+    // Key by hydration mode, not just run: a run going terminal must start
+    // its final-transcript hydration even while a resume-chain or single-run
+    // hydration for the same run is still in flight.
+    const hydrationMode = isTerminalStatus(runStatus)
+      ? "terminal-chain"
+      : runState?.resume_from_run_id
+        ? "resume-chain"
+        : "single";
+    const hydrationKey = `${taskRunId}:${hydrationMode}`;
+    const existing = this.cloudHydrationPromises.get(hydrationKey);
     if (existing) {
       return existing;
     }
@@ -5920,10 +5930,10 @@ export class SessionService {
       });
       return undefined;
     });
-    this.cloudHydrationPromises.set(taskRunId, hydration);
+    this.cloudHydrationPromises.set(hydrationKey, hydration);
     void hydration.finally(() => {
-      if (this.cloudHydrationPromises.get(taskRunId) === hydration) {
-        this.cloudHydrationPromises.delete(taskRunId);
+      if (this.cloudHydrationPromises.get(hydrationKey) === hydration) {
+        this.cloudHydrationPromises.delete(hydrationKey);
       }
     });
     return hydration;
@@ -6193,7 +6203,8 @@ export class SessionService {
         this.pendingPermissionHydratedRuns.add(taskRunId);
         return {
           historyEntryCount: rawEntries.length,
-          liveStreamLineCount: session.processedLineCount ?? liveStreamLineCount,
+          liveStreamLineCount:
+            session.processedLineCount ?? liveStreamLineCount,
         };
       }
     } else if (
@@ -6216,7 +6227,9 @@ export class SessionService {
       cloudTranscriptEntryCount: rawEntries.length,
       // Terminal hydration records the whole chain as processed so nothing
       // re-applies it; live resume runs keep the leaf-stream cursor.
-      processedLineCount: isTerminalRun ? effectiveLineCount : liveStreamLineCount,
+      processedLineCount: isTerminalRun
+        ? effectiveLineCount
+        : liveStreamLineCount,
     });
     this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
     this.pendingPermissionHydratedRuns.add(taskRunId);
