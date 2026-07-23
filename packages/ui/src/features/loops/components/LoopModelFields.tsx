@@ -100,6 +100,7 @@ export function LoopModelFields({
             onModelChange(value === DEFAULT_MODEL_VALUE ? "" : value)
           }
           disabled={disabled}
+          size="lg"
           ariaLabel="Model"
         />
       </Field>
@@ -113,6 +114,7 @@ export function LoopModelFields({
               onAdapterChange(value as LoopSchemas.LoopRuntimeAdapterEnum)
             }
             disabled={disabled}
+            size="lg"
             ariaLabel="Adapter"
           />
         </Field>
@@ -129,6 +131,7 @@ export function LoopModelFields({
               )
             }
             disabled={disabled}
+            size="lg"
             ariaLabel="Reasoning effort"
           />
         </Field>

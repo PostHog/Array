@@ -20,14 +20,14 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <Flex direction="column" gap="1" className={className}>
-      <Text as="label" className="font-medium text-[12px] text-gray-11">
+    <Flex direction="column" gap="2" className={className}>
+      <Text as="label" className="font-medium text-[13px] text-gray-12">
         {label}
         {required ? <span className="ml-0.5 text-(--accent-9)">*</span> : null}
       </Text>
       {children}
       {hint ? (
-        <Text className="text-[11px] text-gray-10 leading-snug">{hint}</Text>
+        <Text className="text-[12px] text-gray-10 leading-snug">{hint}</Text>
       ) : null}
     </Flex>
   );

@@ -108,6 +108,21 @@ export function defaultLoopScheduleTrigger(): LoopTriggerDraft {
   };
 }
 
+export function defaultLoopTriggerOfType(
+  type: LoopSchemas.LoopTriggerTypeEnum,
+): LoopTriggerDraft {
+  if (type === "schedule") return defaultLoopScheduleTrigger();
+  return {
+    key: nextDraftTriggerKey(),
+    type,
+    enabled: true,
+    config:
+      type === "github"
+        ? emptyLoopGithubTriggerConfig()
+        : emptyLoopApiTriggerConfig(),
+  };
+}
+
 export function emptyLoopFormValues(): LoopFormValues {
   return {
     name: "",

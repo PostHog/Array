@@ -22,6 +22,7 @@ interface TimezonePickerProps {
   onValueChange: (value: string) => void;
   disabled?: boolean;
   className?: string;
+  size?: "sm" | "default" | "lg";
 }
 
 export function TimezonePicker({
@@ -29,6 +30,7 @@ export function TimezonePicker({
   onValueChange,
   disabled,
   className,
+  size = "sm",
 }: TimezonePickerProps) {
   const options = timezoneOptions();
   const selectedOption =
@@ -61,10 +63,12 @@ export function TimezonePicker({
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size={size}
               disabled={disabled}
               aria-label="Schedule timezone"
-              className="w-full justify-between"
+              className={`w-full justify-between ${
+                size === "sm" ? "" : "text-[13px]"
+              }`}
             >
               <span className="min-w-0 truncate text-left">
                 {selectedOption?.label ?? value}

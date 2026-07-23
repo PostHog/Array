@@ -5,7 +5,10 @@ import {
   Check,
 } from "@phosphor-icons/react";
 import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
+import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -83,6 +86,17 @@ export function LoopForm({ loop }: LoopFormProps) {
     if (!loop) useLoopDraftStore.getState().setPrefill(null);
   }, [loop]);
 
+  // Contexts are a channels surface; hide the attachment UI when channels are
+  // off, unless this loop is already attached so the link stays visible and
+  // detachable.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
+  const showContextField = channelsEnabled || !!values.contextTarget;
+
   const createLoop = useCreateLoop();
   const updateLoop = useUpdateLoop(loop?.id ?? "");
   const isSubmitting = isEdit ? updateLoop.isPending : createLoop.isPending;
@@ -157,13 +171,13 @@ export function LoopForm({ loop }: LoopFormProps) {
     <Box className="flex h-full items-center justify-center p-6">
       <Flex
         direction="column"
-        className="max-h-full w-full max-w-[600px] overflow-hidden rounded-(--radius-3) border border-border bg-(--color-panel-solid) shadow-xl"
+        className="max-h-full w-full max-w-[640px] overflow-hidden rounded-(--radius-3) border border-border bg-(--color-panel-solid) shadow-xl"
       >
-        <Box className="border-border border-b px-5 pt-5 pb-4">
+        <Box className="border-border border-b px-6 pt-5 pb-4">
           <Stepper current={step} complete={stepComplete} onSelect={setStep} />
         </Box>
 
-        <Box className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <Box className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           {step === 0 ? (
             <Step
               title="What should this loop do?"
@@ -203,7 +217,7 @@ export function LoopForm({ loop }: LoopFormProps) {
           {step === 1 ? (
             <Step
               title="When should it run?"
-              description="Add one or more triggers. Leave empty to run it only on demand."
+              description="A loop can have several triggers, and any one of them starts a run. With no triggers, you run it yourself from the loop's page."
             >
               <LoopTriggerEditor
                 triggers={values.triggers}
@@ -224,7 +238,7 @@ export function LoopForm({ loop }: LoopFormProps) {
                 className="max-w-[340px]"
                 hint={
                   values.contextTarget
-                    ? "Loops attached to a context post runs to its shared feed, so they're visible to everyone on the project."
+                    ? "Loops attached to a channel post runs to its shared feed, so they're visible to everyone on the project."
                     : undefined
                 }
               >
@@ -232,6 +246,7 @@ export function LoopForm({ loop }: LoopFormProps) {
                   value={values.visibility}
                   options={VISIBILITY_OPTIONS}
                   disabled={isSubmitting || !!values.contextTarget}
+                  size="lg"
                   ariaLabel="Visibility"
                   onValueChange={(value) =>
                     patch({
@@ -243,27 +258,31 @@ export function LoopForm({ loop }: LoopFormProps) {
 
               <Divider />
 
-              <Field
-                label="Context"
-                hint="Attach this loop to a context to file its runs in the feed and keep its context.md or a canvas up to date."
-              >
-                <LoopContextFields
-                  value={values.contextTarget}
-                  disabled={isSubmitting}
-                  onChange={(contextTarget) =>
-                    patch(
-                      contextTarget
-                        ? { contextTarget, visibility: "team" }
-                        : { contextTarget },
-                    )
-                  }
-                />
-              </Field>
+              {showContextField ? (
+                <>
+                  <Field
+                    label="Context"
+                    hint="A context is one of the channels in your sidebar. Attach this loop to a channel and its runs show up in that channel's feed; it can also keep the channel's context.md or a canvas up to date."
+                  >
+                    <LoopContextFields
+                      value={values.contextTarget}
+                      disabled={isSubmitting}
+                      onChange={(contextTarget) =>
+                        patch(
+                          contextTarget
+                            ? { contextTarget, visibility: "team" }
+                            : { contextTarget },
+                        )
+                      }
+                    />
+                  </Field>
 
-              <Divider />
+                  <Divider />
+                </>
+              ) : null}
 
               <Field
-                label="Repository"
+                label="Base repository"
                 hint={
                   values.repositories.length > 1
                     ? `${values.repositories.length - 1} more ${
@@ -271,7 +290,7 @@ export function LoopForm({ loop }: LoopFormProps) {
                           ? "repository stays"
                           : "repositories stay"
                       } attached to this loop.`
-                    : "Optional. Leave empty for a report-only loop that works purely through connectors."
+                    : "The repository runs check out and work in. Optional. Leave empty for a report-only loop that works purely through connectors."
                 }
               >
                 <LoopRepositoryPicker
@@ -352,7 +371,7 @@ export function LoopForm({ loop }: LoopFormProps) {
               title="Review"
               description="Check everything before you create the loop."
             >
-              <ReviewList values={values} />
+              <ReviewList values={values} showContext={showContextField} />
             </Step>
           ) : null}
         </Box>
@@ -497,7 +516,13 @@ function Divider() {
   return <Box className="h-px bg-(--gray-4)" />;
 }
 
-function ReviewList({ values }: { values: LoopFormValues }) {
+function ReviewList({
+  values,
+  showContext,
+}: {
+  values: LoopFormValues;
+  showContext: boolean;
+}) {
   const reasoning = values.reasoningEffort ?? "auto";
   const channels = (["push", "email", "slack"] as const).filter(
     (channel) => values.notifications[channel]?.enabled,
@@ -524,12 +549,14 @@ function ReviewList({ values }: { values: LoopFormValues }) {
           values.model || "Default model"
         } · ${reasoning} reasoning`}
       />
+      {showContext ? (
+        <ReviewRow
+          label="Context"
+          value={describeContext(values.contextTarget)}
+        />
+      ) : null}
       <ReviewRow
-        label="Context"
-        value={describeContext(values.contextTarget)}
-      />
-      <ReviewRow
-        label="Repository"
+        label="Base repository"
         value={
           values.repositories.length > 0
             ? values.repositories.map((repo) => repo.full_name).join(", ")
@@ -580,7 +607,7 @@ function ReviewRow({
 }
 
 function describeContext(target: LoopContextTargetDraft | null): string {
-  if (!target) return "Not attached";
+  if (!target) return "Not attached to a channel";
   const outputs: string[] = [];
   if (target.outputs.post_to_feed) outputs.push("feed");
   if (target.outputs.update_context) outputs.push("context.md");
