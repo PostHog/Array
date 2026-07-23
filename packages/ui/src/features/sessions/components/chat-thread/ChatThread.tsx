@@ -48,11 +48,21 @@ import {
   type PromptRecallHandler,
 } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
-import {
-  ToolGroup,
-  type ToolGroupItem,
-} from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
+import { ToolGroup } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
+import {
+  type AgentTurn,
+  CHAT_THREAD_VIRTUALIZATION_THRESHOLD,
+  completedTurnTimestamp,
+  computeStickyAnchor,
+  countFlatRows,
+  type FlatThreadRow,
+  flattenTurnRows,
+  type StickyAnchorEntry,
+  type StickyAnchorState,
+  type ThreadItem,
+  type TurnRow,
+} from "@posthog/ui/features/sessions/components/chat-thread/threadVirtualization";
 import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
@@ -91,9 +101,11 @@ import {
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
 import { IconButton, Tooltip } from "@radix-ui/themes";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   memo,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -105,19 +117,13 @@ import {
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
-/** A row is either a parsed conversation item or a synthesized group of tool calls. */
-type ThreadItem = ConversationItem | ToolGroupItem;
+type SessionUpdateItem = Extract<ConversationItem, { type: "session_update" }>;
 
 /**
- * A contiguous run of non-user rows (assistant prose, tools, git actions, ...) shown as one
- * `bg-muted/30` block with tight internal spacing. Broken only by a user message.
+ * How far below the viewport top a user message may sit while still counting as the current
+ * anchor — shared by the engine (`scrollPreviousItemPeek`) and the virtualized sticky header.
  */
-type AgentTurn = { type: "agent_turn"; id: string; items: ThreadItem[] };
-
-/** Top-level row: a standalone user message, or a grouped agent turn. */
-type TurnRow = ThreadItem | AgentTurn;
-
-type SessionUpdateItem = Extract<ConversationItem, { type: "session_update" }>;
+const SCROLL_PREVIOUS_ITEM_PEEK = 64;
 
 function isToolCallItem(item: ConversationItem): item is SessionUpdateItem {
   return (
@@ -485,7 +491,6 @@ function MessageCopyButton({
 function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
   const { currentAnchorId } = useChatMessageScrollerVisibility();
   const { scrollToMessage } = useChatMessageScroller();
-  const shouldReduceMotion = useReducedMotion();
   const [dismissedId, setDismissedId] = useState<string | null>(null);
   const [offscreen, setOffscreen] = useState(false);
   // Anchor element used only to locate the enclosing scroller/viewport in the DOM.
@@ -546,43 +551,97 @@ function StickyHeaderOverlay({ items }: { items: ConversationItem[] }) {
       <span ref={probeRef} className="hidden" aria-hidden="true" />
       <AnimatePresence>
         {active != null && offscreen && active.id !== dismissedId && (
-          <motion.div
-            key="chat-sticky-header"
-            // Slide in slightly from the top + fade (ease-out-cubic). Exit a touch faster.
-            initial={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={
-              shouldReduceMotion
-                ? { opacity: 0 }
-                : { opacity: 0, y: -8, transition: { duration: 0.15 } }
-            }
-            transition={{ duration: 0.2, ease: [0.215, 0.61, 0.355, 1] }}
-            // pointer-events-none on the strip so only the button catches clicks — the rest stays
-            // transparent to the content scrolling underneath.
-            className="pointer-events-none absolute inset-x-0 top-2 z-10"
-          >
-            {/* Align to the content column's right edge (matches the message rows) rather than the
-                viewport edge, so the button reads in-context with the conversation. */}
-            <div
-              className="mx-auto flex w-full justify-end px-2"
-              style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
-            >
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                title="Jump to your message"
-                aria-label="Jump to your message"
-                onClick={() => dismiss(active.id)}
-                className="pointer-events-auto rounded-full bg-background shadow-md"
-              >
-                <ChatCircle />
-              </Button>
-            </div>
-          </motion.div>
+          <StickyHeaderJumpButton onClick={() => dismiss(active.id)} />
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+/**
+ * The floating "jump to your message" pill both sticky-header variants render. Must be a direct
+ * child of an `AnimatePresence` so its exit animation plays.
+ */
+function StickyHeaderJumpButton({ onClick }: { onClick: () => void }) {
+  const shouldReduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      key="chat-sticky-header"
+      // Slide in slightly from the top + fade (ease-out-cubic). Exit a touch faster.
+      initial={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={
+        shouldReduceMotion
+          ? { opacity: 0 }
+          : { opacity: 0, y: -8, transition: { duration: 0.15 } }
+      }
+      transition={{ duration: 0.2, ease: [0.215, 0.61, 0.355, 1] }}
+      // pointer-events-none on the strip so only the button catches clicks — the rest stays
+      // transparent to the content scrolling underneath.
+      className="pointer-events-none absolute inset-x-0 top-2 z-10"
+    >
+      {/* Align to the content column's right edge (matches the message rows) rather than the
+          viewport edge, so the button reads in-context with the conversation. */}
+      <div
+        className="mx-auto flex w-full justify-end px-2"
+        style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          title="Jump to your message"
+          aria-label="Jump to your message"
+          onClick={onClick}
+          className="pointer-events-auto rounded-full bg-background shadow-md"
+        >
+          <ChatCircle />
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
+/**
+ * Virtualized-mode sticky header. The engine's visibility state can't power it here — unmounted
+ * rows aren't observed — so the parent derives the anchor from the virtualizer's measurements
+ * (see {@link computeStickyAnchor}) and passes the result down. Dismissal semantics match
+ * {@link StickyHeaderOverlay}: hide immediately on click, return once the message has been back
+ * on screen.
+ */
+function VirtualStickyHeader({
+  items,
+  anchorId,
+  offscreen,
+  onJump,
+}: {
+  items: ConversationItem[];
+  anchorId: string | null;
+  offscreen: boolean;
+  onJump: (id: string) => void;
+}) {
+  const [dismissedId, setDismissedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!offscreen) setDismissedId(null);
+  }, [offscreen]);
+
+  const active = items.find(
+    (i): i is Extract<ConversationItem, { type: "user_message" }> =>
+      i.id === anchorId && i.type === "user_message",
+  );
+
+  return (
+    <AnimatePresence>
+      {active != null && offscreen && active.id !== dismissedId && (
+        <StickyHeaderJumpButton
+          onClick={() => {
+            setDismissedId(active.id);
+            onJump(active.id);
+          }}
+        />
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -663,21 +722,6 @@ function ThreadItemBody({
     );
   }
   return <>{renderItem(item)}</>;
-}
-
-/**
- * Completion time of an agent turn, taken from its last session-update item (tool groups count by
- * their last tool). Undefined while the turn is still streaming — the timestamp only appears once
- * the whole turn is done.
- */
-function completedTurnTimestamp(turn: AgentTurn): number | undefined {
-  for (let i = turn.items.length - 1; i >= 0; i--) {
-    const item = turn.items[i];
-    const last = item.type === "tool_group" ? item.tools.at(-1) : item;
-    if (last?.type !== "session_update") continue;
-    return last.turnContext.turnComplete ? last.timestamp : undefined;
-  }
-  return undefined;
 }
 
 /**
@@ -821,6 +865,7 @@ function ThreadKeyboardNav({
   keyboardFocusedMessageId,
   setKeyboardFocusedMessageId,
   promptRecallRef,
+  jumpToMessage,
 }: {
   items: ConversationItem[];
   jumpPickerOpen: boolean;
@@ -828,8 +873,15 @@ function ThreadKeyboardNav({
   keyboardFocusedMessageId: string | null;
   setKeyboardFocusedMessageId: (id: string | null) => void;
   promptRecallRef?: RefObject<PromptRecallHandler | null>;
+  /**
+   * Override for the engine's `scrollToMessage`. The virtualized body supplies one that jumps by
+   * row index — the engine can only scroll to mounted rows, and a windowed thread keeps most rows
+   * unmounted.
+   */
+  jumpToMessage?: (id: string) => void;
 }) {
   const { scrollToMessage } = useChatMessageScroller();
+  const jump = jumpToMessage ?? scrollToMessage;
 
   const userMessages = useMemo(
     () =>
@@ -875,13 +927,13 @@ function ThreadKeyboardNav({
 
       useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
       setKeyboardFocusedMessageId(nextId);
-      scrollToMessage(nextId);
+      jump(nextId);
     },
     [
       keyboardFocusedMessageId,
       userMessageIds,
       setKeyboardFocusedMessageId,
-      scrollToMessage,
+      jump,
     ],
   );
 
@@ -902,9 +954,9 @@ function ThreadKeyboardNav({
   const handleJumpToMessage = useCallback(
     (id: string) => {
       setKeyboardFocusedMessageId(id);
-      scrollToMessage(id);
+      jump(id);
     },
-    [scrollToMessage, setKeyboardFocusedMessageId],
+    [jump, setKeyboardFocusedMessageId],
   );
 
   return (
@@ -917,6 +969,47 @@ function ThreadKeyboardNav({
   );
 }
 
+/**
+ * Scroll state the non-virtualized body continuously records so the virtualized body can resume
+ * from roughly the same place when the thread crosses the virtualization threshold mid-session.
+ */
+type ThreadScrollResume = { atBottom: boolean; scrollTop: number };
+
+/**
+ * Keeps {@link ThreadScrollResume} current while the non-virtualized body is mounted. At-bottom
+ * comes from the engine's scrollable state (`end` is true while content extends below the fold);
+ * scrollTop comes from a passive listener on the engine viewport, located via the same hidden
+ * probe pattern the other engine-adjacent helpers use. Writes go to a ref — this must not
+ * re-render on scroll.
+ */
+function ThreadScrollStateRecorder({
+  stateRef,
+}: {
+  stateRef: RefObject<ThreadScrollResume>;
+}) {
+  const { end } = useChatMessageScrollerScrollable();
+  const probeRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    stateRef.current = { ...stateRef.current, atBottom: !end };
+  }, [end, stateRef]);
+
+  useEffect(() => {
+    const viewport = probeRef.current
+      ?.closest('[data-slot="chat-message-scroller"]')
+      ?.querySelector('[data-slot="chat-message-scroller-viewport"]');
+    if (!viewport) return;
+    const record = () => {
+      stateRef.current = { ...stateRef.current, scrollTop: viewport.scrollTop };
+    };
+    record();
+    viewport.addEventListener("scroll", record, { passive: true });
+    return () => viewport.removeEventListener("scroll", record);
+  }, [stateRef]);
+
+  return <span ref={probeRef} className="hidden" aria-hidden="true" />;
+}
+
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
 function ThreadScrollBody({
   items,
@@ -925,6 +1018,7 @@ function ThreadScrollBody({
   footer,
   keyboardFocusedMessageId,
   onUserInteract,
+  resumeStateRef,
 }: {
   items: ConversationItem[];
   rows: TurnRow[];
@@ -934,6 +1028,8 @@ function ThreadScrollBody({
   keyboardFocusedMessageId?: string | null;
   /** Clears keyboard-focused message state on any pointer interaction with the thread. */
   onUserInteract?: () => void;
+  /** Continuously updated so the virtualized body can take over mid-session (see {@link ThreadScrollResume}). */
+  resumeStateRef: RefObject<ThreadScrollResume>;
 }) {
   const keyedRows = useMemo(() => {
     let userTurn = 0;
@@ -952,6 +1048,7 @@ function ThreadScrollBody({
     >
       <StickyHeaderOverlay items={items} />
       <ThreadAutoFollow items={items} />
+      <ThreadScrollStateRecorder stateRef={resumeStateRef} />
       <ThreadScrollbarRail
         items={items}
         keyboardFocusedMessageId={keyboardFocusedMessageId}
@@ -1081,6 +1178,472 @@ function ThreadScrollbarRail({
   );
 }
 
+// Windowing geometry for the virtualized body. Estimate/overscan/drift values match the legacy
+// VirtualizedList, whose tuning these rows share (same item mix, same measure-then-settle churn).
+const VIRTUAL_ESTIMATED_ROW_SIZE = 80;
+const VIRTUAL_OVERSCAN = 12;
+/** Matches the Provider's `scrollEdgeThreshold` so "at bottom" agrees between engine and windowing. */
+const VIRTUAL_AT_BOTTOM_THRESHOLD = 100;
+// A real upward drift, not a 1-frame measure transient: the DOM bottom sits
+// this far below the viewport. Well above any single append's measure gap.
+const VIRTUAL_FAR_DRIFT_THRESHOLD = 400;
+/** Top of the virtual coordinate space — stands in for the non-virtualized content's `py-4`. */
+const VIRTUAL_PADDING_START = 16;
+
+const EMPTY_FLAT_ROWS: FlatThreadRow[] = [];
+
+/** Imperative surface the virtualized body hands to the nav layer rendered outside it. */
+interface VirtualJumpApi {
+  jumpToMessage: (id: string) => void;
+}
+
+/**
+ * One windowed row. Memoized against the row's *contents* rather than the row wrapper object —
+ * `flattenTurnRows` rebuilds wrappers on every streamed chunk, but the underlying conversation
+ * items are reused by reference for completed turns, so mounted rows outside the streaming tail
+ * skip re-rendering their markdown/diffs.
+ *
+ * `content-visibility` is forced off (the quill item class sets `auto`): the virtualizer already
+ * bounds the mounted set, and overscan rows must lay out for `measureElement` to size them before
+ * they scroll into view — skipped rendering would feed it the placeholder intrinsic size instead.
+ */
+const FlatRowView = memo(
+  function FlatRowView({
+    row,
+    renderItem,
+    keyboardFocused,
+  }: {
+    row: FlatThreadRow;
+    renderItem: (item: ConversationItem) => ReactNode;
+    keyboardFocused: boolean;
+  }) {
+    const { item } = row;
+    return (
+      <ChatMessageScrollerItem
+        messageId={item.id}
+        scrollAnchor={false}
+        className={cn(
+          // pb-4 stands in for the non-virtualized content's inter-row gap-4; an empty row
+          // collapses entirely (display:none hides the padding too), matching how flex gap
+          // skips hidden children there.
+          "mx-auto w-full pb-4 [content-visibility:visible] empty:hidden",
+          row.inTurn ? "group px-4" : "px-2.5 pt-1",
+        )}
+        style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+      >
+        <ThreadItemBody
+          item={item}
+          renderItem={renderItem}
+          isTrailing={row.isTrailingInTurn}
+          keyboardFocused={keyboardFocused}
+        />
+        {row.turnTimestamp != null && (
+          <RowTimestamp timestamp={row.turnTimestamp} />
+        )}
+      </ChatMessageScrollerItem>
+    );
+  },
+  (prev, next) =>
+    prev.row.item === next.row.item &&
+    prev.row.key === next.row.key &&
+    prev.row.inTurn === next.row.inTurn &&
+    prev.row.isTrailingInTurn === next.row.isTrailingInTurn &&
+    prev.row.turnTimestamp === next.row.turnTimestamp &&
+    prev.renderItem === next.renderItem &&
+    prev.keyboardFocused === next.keyboardFocused,
+);
+
+/**
+ * Windowed scroll body for long threads, following the upstream MessageScroller guidance:
+ * virtualization lives outside the primitive — the quill viewport stays the scroll element and a
+ * `@tanstack/react-virtual` virtualizer owns the rows inside `ChatMessageScrollerContent`.
+ *
+ * The engine still provides the chrome that only needs scroll geometry (the scroll-to-bottom
+ * button and edge state read real element measurements), while everything item-based gets a
+ * windowed implementation here: follow-bottom via `anchorTo: "end"` + `followOnAppend` (the
+ * legacy `VirtualizedList` recipe), message jumps via `scrollToIndex`, the sticky header via
+ * {@link computeStickyAnchor} over the virtualizer's measurements, and the scrollbar rail via its
+ * existing interpolate-unmounted-rows path.
+ */
+function VirtualThreadScrollBody({
+  items,
+  flatRows,
+  renderItem,
+  footer,
+  keyboardFocusedMessageId,
+  onUserInteract,
+  jumpApiRef,
+  resumeStateRef,
+}: {
+  items: ConversationItem[];
+  flatRows: FlatThreadRow[];
+  renderItem: (item: ConversationItem) => ReactNode;
+  /** Status row (duration / context usage) pinned as the last item in the thread. */
+  footer?: ReactNode;
+  keyboardFocusedMessageId?: string | null;
+  /** Clears keyboard-focused message state on any pointer interaction with the thread. */
+  onUserInteract?: () => void;
+  /** Filled with this body's jump implementation for the nav layer rendered outside it. */
+  jumpApiRef: RefObject<VirtualJumpApi | null>;
+  /** Scroll state recorded by the non-virtualized body, consumed once when this body takes over. */
+  resumeStateRef: RefObject<ThreadScrollResume>;
+}) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
+  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
+  const footerRef = useRef<HTMLDivElement | null>(null);
+  const initializedRef = useRef(false);
+  // Seeded from the handoff state so a mid-session flip while reading above the fold doesn't
+  // immediately re-pin to the bottom.
+  const isAtBottomRef = useRef(resumeStateRef.current?.atBottom ?? true);
+  const lastScrollTopRef = useRef(0);
+  const settleRafRef = useRef<number | null>(null);
+
+  // The footer is real trailing content, NOT a fake virtual row — as a virtual row its constant
+  // key would always be last and permanently kill tanstack's followOnAppend. Its height is
+  // reserved as `paddingEnd` instead so the virtual coordinate space includes it (the
+  // VirtualizedList recipe).
+  const hasFooter = footer != null;
+  const [footerHeight, setFooterHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = footerRef.current;
+    if (!hasFooter || !el) {
+      setFooterHeight(0);
+      return;
+    }
+    setFooterHeight(el.offsetHeight);
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight;
+      setFooterHeight((prev) => (prev === h ? prev : h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasFooter]);
+
+  const virtualizer = useVirtualizer({
+    count: flatRows.length,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: () => VIRTUAL_ESTIMATED_ROW_SIZE,
+    overscan: VIRTUAL_OVERSCAN,
+    anchorTo: "end",
+    followOnAppend: true,
+    scrollEndThreshold: VIRTUAL_AT_BOTTOM_THRESHOLD,
+    paddingStart: VIRTUAL_PADDING_START,
+    paddingEnd: footerHeight,
+    getItemKey: (index) => flatRows[index]?.key ?? index,
+  });
+
+  const cancelSettle = useCallback(() => {
+    if (settleRafRef.current !== null) {
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = null;
+    }
+  }, []);
+
+  // Pin to the true bottom, retrying across frames while rows measure taller than the estimate.
+  const settleAtEnd = useCallback(() => {
+    cancelSettle();
+    isAtBottomRef.current = true;
+    let attempts = 0;
+    const step = () => {
+      virtualizer.scrollToEnd();
+      if (virtualizer.isAtEnd(VIRTUAL_AT_BOTTOM_THRESHOLD) || ++attempts > 12) {
+        settleRafRef.current = null;
+        return;
+      }
+      settleRafRef.current = requestAnimationFrame(step);
+    };
+    step();
+  }, [virtualizer, cancelSettle]);
+
+  // Jump to a row, re-issuing across a few frames until the target offset stops drifting as the
+  // rows around it measure.
+  const settleToIndex = useCallback(
+    (index: number) => {
+      cancelSettle();
+      isAtBottomRef.current = false;
+      virtualizer.scrollToIndex(index, { align: "start" });
+      let attempts = 0;
+      const step = () => {
+        settleRafRef.current = null;
+        const viewport = viewportRef.current;
+        const target = virtualizer.getOffsetForIndex(index, "start")?.[0];
+        if (!viewport || target == null) return;
+        const maxScroll = Math.max(
+          0,
+          viewport.scrollHeight - viewport.clientHeight,
+        );
+        if (
+          Math.abs(viewport.scrollTop - Math.min(target, maxScroll)) <= 1 ||
+          ++attempts > 8
+        ) {
+          return;
+        }
+        virtualizer.scrollToIndex(index, { align: "start" });
+        settleRafRef.current = requestAnimationFrame(step);
+      };
+      settleRafRef.current = requestAnimationFrame(step);
+    },
+    [virtualizer, cancelSettle],
+  );
+
+  useEffect(() => cancelSettle, [cancelSettle]);
+
+  const userRows = useMemo(() => {
+    const result: Array<{ id: string; rowIndex: number; content: string }> = [];
+    flatRows.forEach((row, index) => {
+      if (row.item.type === "user_message") {
+        result.push({
+          id: row.item.id,
+          rowIndex: index,
+          content: row.item.content,
+        });
+      }
+    });
+    return result;
+  }, [flatRows]);
+
+  const rowIndexByMessageId = useMemo(() => {
+    const map = new Map<string, number>();
+    flatRows.forEach((row, index) => {
+      map.set(row.item.id, index);
+    });
+    return map;
+  }, [flatRows]);
+
+  const jumpToMessage = useCallback(
+    (id: string) => {
+      const index = rowIndexByMessageId.get(id);
+      if (index != null) settleToIndex(index);
+    },
+    [rowIndexByMessageId, settleToIndex],
+  );
+
+  useEffect(() => {
+    jumpApiRef.current = { jumpToMessage };
+    return () => {
+      jumpApiRef.current = null;
+    };
+  }, [jumpApiRef, jumpToMessage]);
+
+  // Initial position: resume near where the non-virtualized body left off (offsets are estimates
+  // until rows measure, so the landing is approximate and self-corrects), or settle at the bottom.
+  useLayoutEffect(() => {
+    if (initializedRef.current || flatRows.length === 0) return;
+    initializedRef.current = true;
+    const resume = resumeStateRef.current;
+    if (resume && !resume.atBottom) {
+      virtualizer.scrollToOffset(resume.scrollTop);
+      return;
+    }
+    settleAtEnd();
+  }, [flatRows.length, settleAtEnd, virtualizer, resumeStateRef]);
+
+  // Sticky-header anchor, derived from the virtualizer's measurements (estimated for rows that
+  // have never mounted; exact once measured). Recomputed at most once per frame on scroll and on
+  // content growth.
+  const [stickyState, setStickyState] = useState<StickyAnchorState>({
+    anchorId: null,
+    offscreen: false,
+  });
+  const recomputeSticky = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const cache = virtualizer.measurementsCache;
+    const entries: StickyAnchorEntry[] = userRows.map((user) => {
+      const measured = cache[user.rowIndex];
+      const start =
+        measured?.start ?? user.rowIndex * VIRTUAL_ESTIMATED_ROW_SIZE;
+      const end = measured?.end ?? start + VIRTUAL_ESTIMATED_ROW_SIZE;
+      return { id: user.id, start, end };
+    });
+    const next = computeStickyAnchor(
+      entries,
+      viewport.scrollTop,
+      SCROLL_PREVIOUS_ITEM_PEEK,
+    );
+    setStickyState((prev) =>
+      prev.anchorId === next.anchorId && prev.offscreen === next.offscreen
+        ? prev
+        : next,
+    );
+  }, [userRows, virtualizer]);
+
+  const stickyFrameRef = useRef<number | null>(null);
+  const scheduleStickyRecompute = useCallback(() => {
+    if (stickyFrameRef.current != null) return;
+    stickyFrameRef.current = requestAnimationFrame(() => {
+      stickyFrameRef.current = null;
+      recomputeSticky();
+    });
+  }, [recomputeSticky]);
+  useEffect(() => {
+    scheduleStickyRecompute();
+    return () => {
+      if (stickyFrameRef.current != null) {
+        cancelAnimationFrame(stickyFrameRef.current);
+        stickyFrameRef.current = null;
+      }
+    };
+  }, [scheduleStickyRecompute]);
+
+  const handleScroll = useCallback(() => {
+    const el = viewportRef.current;
+    const scrollTop = el?.scrollTop ?? 0;
+    // Tolerate sub-pixel jitter; only a real upward move counts as leaving end.
+    const scrolledUp = scrollTop < lastScrollTopRef.current - 1;
+    lastScrollTopRef.current = scrollTop;
+
+    const atEnd = virtualizer.isAtEnd(VIRTUAL_AT_BOTTOM_THRESHOLD);
+    // Genuine far drift (not a 1-frame measure transient): the DOM bottom sits well below the
+    // viewport, so follow can't get silently stuck mid-thread.
+    const farFromEnd = el
+      ? el.scrollHeight - el.clientHeight - scrollTop >
+        VIRTUAL_FAR_DRIFT_THRESHOLD
+      : false;
+    // Hysteresis: each append measures taller than the estimate, so for one frame isAtEnd reads
+    // false before followOnAppend/anchorTo re-pin. Re-arm at the end; only clear on a real
+    // upward scroll or a genuine drift.
+    if (atEnd) {
+      isAtBottomRef.current = true;
+    } else if (scrolledUp || farFromEnd) {
+      isAtBottomRef.current = false;
+    }
+    scheduleStickyRecompute();
+  }, [virtualizer, scheduleStickyRecompute]);
+
+  const totalSize = virtualizer.getTotalSize();
+
+  // Anything that changes the virtual height while following has to re-pin to the new bottom:
+  // rows remeasuring past the estimate, late async content (highlighting, diffs) growing rows,
+  // and the footer resize feeding paddingEnd. totalSize is the one value that moves for all of
+  // them. Layout effect so the re-pin lands before paint.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the trigger, not a body dependency
+  useLayoutEffect(() => {
+    if (!isAtBottomRef.current) return;
+    virtualizer.scrollToEnd();
+  }, [totalSize, virtualizer]);
+
+  // A prompt submitted from anywhere re-engages follow (same trigger ThreadAutoFollow uses in the
+  // non-virtualized body): settleAtEnd flips isAtBottomRef, and the totalSize re-pin plus
+  // followOnAppend keep the reply pinned from there.
+  const lastItem = items.at(-1);
+  const userMessageCount = useMemo(
+    () =>
+      items.reduce((n, item) => (item.type === "user_message" ? n + 1 : n), 0),
+    [items],
+  );
+  const prevUserCountRef = useRef(userMessageCount);
+  useLayoutEffect(() => {
+    const previous = prevUserCountRef.current;
+    prevUserCountRef.current = userMessageCount;
+    if (previous === 0 || userMessageCount <= previous) return;
+    if (lastItem?.type !== "user_message") return;
+    settleAtEnd();
+  }, [userMessageCount, lastItem, settleAtEnd]);
+
+  // Coming back to a backgrounded tab: ResizeObserver callbacks were throttled, so re-settle if
+  // we were following (the legacy view does the same).
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isAtBottomRef.current) settleAtEnd();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [settleAtEnd]);
+
+  const railUserMessages = useMemo(
+    () =>
+      userRows.map((user) => ({
+        id: user.id,
+        content: user.content,
+        index: user.rowIndex,
+      })),
+    [userRows],
+  );
+  const railMarkers = useMessageRailMarkers({
+    contentEl,
+    scrollEl: viewportEl,
+    userMessages: railUserMessages,
+    onJump: jumpToMessage,
+    activeId: keyboardFocusedMessageId,
+    rowAttribute: "data-message-id",
+  });
+
+  return (
+    <ChatMessageScroller
+      className="group/thread"
+      onPointerDownCapture={onUserInteract}
+    >
+      <VirtualStickyHeader
+        items={items}
+        anchorId={stickyState.anchorId}
+        offscreen={stickyState.offscreen}
+        onJump={jumpToMessage}
+      />
+      <MessageScrollbarRail markers={railMarkers} />
+      <ChatMessageScrollerViewport
+        ref={(el: HTMLDivElement | null) => {
+          viewportRef.current = el;
+          setViewportEl(el);
+        }}
+        onScroll={handleScroll}
+      >
+        {/* `block` overrides the content's flex+gap layout — spacing moves into the rows
+            (pb-4) and the virtual paddings, so translateY offsets are the whole layout. */}
+        <ChatMessageScrollerContent className="block" density="default">
+          <div
+            ref={setContentEl}
+            className="relative w-full"
+            style={{ height: totalSize }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const row = flatRows[virtualItem.index];
+              if (!row) return null;
+              return (
+                <div
+                  key={virtualItem.key}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualItem.index}
+                  className="absolute top-0 left-0 w-full"
+                  style={{ transform: `translateY(${virtualItem.start}px)` }}
+                >
+                  <FlatRowView
+                    row={row}
+                    renderItem={renderItem}
+                    keyboardFocused={row.item.id === keyboardFocusedMessageId}
+                  />
+                </div>
+              );
+            })}
+            {/* Footer occupies the reserved paddingEnd region at the very bottom of the virtual
+                space, so the DOM bottom == the virtual end. */}
+            {hasFooter && (
+              <div ref={footerRef} className="absolute bottom-0 left-0 w-full">
+                <div
+                  className="mx-auto w-full px-2.5 pb-8"
+                  style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
+                >
+                  {footer}
+                </div>
+              </div>
+            )}
+          </div>
+        </ChatMessageScrollerContent>
+      </ChatMessageScrollerViewport>
+      <ChatMessageScrollerButton
+        onClick={(event: ReactMouseEvent) => {
+          // The engine's own scroll-to-end targets the current scrollHeight, which is an
+          // estimate until every row between here and the bottom has measured — settle instead.
+          event.preventDefault();
+          settleAtEnd();
+        }}
+      />
+    </ChatMessageScroller>
+  );
+}
+
 /**
  * Thread renderer built on the ChatX (quill) primitives.
  *
@@ -1174,6 +1737,34 @@ function ChatThreadRenderer({
     [items],
   );
 
+  // Virtualization ratchet: past the threshold the thread switches to the windowed body and
+  // stays there for the life of this mount (see CHAT_THREAD_VIRTUALIZATION_THRESHOLD). Long
+  // sessions start virtualized from the first render; a live session flips once mid-stream,
+  // resuming from the scroll state the non-virtualized body recorded.
+  const flatCount = useMemo(() => countFlatRows(rows), [rows]);
+  const [virtualized, setVirtualized] = useState(
+    () => flatCount > CHAT_THREAD_VIRTUALIZATION_THRESHOLD,
+  );
+  if (!virtualized && flatCount > CHAT_THREAD_VIRTUALIZATION_THRESHOLD) {
+    setVirtualized(true);
+  }
+  const flatRows = useMemo(
+    () => (virtualized ? flattenTurnRows(rows) : EMPTY_FLAT_ROWS),
+    [virtualized, rows],
+  );
+  const virtualJumpApiRef = useRef<VirtualJumpApi | null>(null);
+  const threadResumeRef = useRef<ThreadScrollResume>({
+    atBottom: true,
+    scrollTop: 0,
+  });
+  const jumpToMessage = useMemo(
+    () =>
+      virtualized
+        ? (id: string) => virtualJumpApiRef.current?.jumpToMessage(id)
+        : undefined,
+    [virtualized],
+  );
+
   const [jumpPickerOpen, setJumpPickerOpen] = useState(false);
   const [keyboardFocusedMessageId, setKeyboardFocusedMessageId] = useState<
     string | null
@@ -1245,6 +1836,16 @@ function ChatThreadRenderer({
     [repoPath],
   );
 
+  const footer = (
+    <ChatThreadFooter
+      events={footerEvents}
+      isPromptPending={isPromptPending}
+      promptStartedAt={promptStartedAt}
+      task={task}
+      taskId={taskId}
+    />
+  );
+
   return (
     <WorkerPoolContextProvider
       poolOptions={diffsPoolOptions}
@@ -1253,31 +1854,39 @@ function ChatThreadRenderer({
       <SessionTaskIdProvider taskId={taskId}>
         <ChatThreadChromeProvider value={true}>
           <ChatMessageScrollerProvider
-            autoScroll
+            // The windowed body owns following itself (anchorTo end + followOnAppend) — the
+            // engine's own follow would fight it, so it only auto-scrolls when non-virtualized.
+            autoScroll={!virtualized}
             defaultScrollPosition="end"
             // Default is 8px: with the thread's bottom padding you're rarely that close, so
             // auto-follow ("following-bottom") would disengage on any stray trackpad wheel and
             // never re-engage. Within this band the engine recaptures follow on the next content
             // change; deliberate upward flicks travel past it and stay free-scrolling.
             scrollEdgeThreshold={100}
-            scrollPreviousItemPeek={64}
+            scrollPreviousItemPeek={SCROLL_PREVIOUS_ITEM_PEEK}
           >
-            <ThreadScrollBody
-              items={items}
-              rows={rows}
-              renderItem={renderItem}
-              keyboardFocusedMessageId={keyboardFocusedMessageId}
-              onUserInteract={clearKeyboardFocus}
-              footer={
-                <ChatThreadFooter
-                  events={footerEvents}
-                  isPromptPending={isPromptPending}
-                  promptStartedAt={promptStartedAt}
-                  task={task}
-                  taskId={taskId}
-                />
-              }
-            />
+            {virtualized ? (
+              <VirtualThreadScrollBody
+                items={items}
+                flatRows={flatRows}
+                renderItem={renderItem}
+                keyboardFocusedMessageId={keyboardFocusedMessageId}
+                onUserInteract={clearKeyboardFocus}
+                footer={footer}
+                jumpApiRef={virtualJumpApiRef}
+                resumeStateRef={threadResumeRef}
+              />
+            ) : (
+              <ThreadScrollBody
+                items={items}
+                rows={rows}
+                renderItem={renderItem}
+                keyboardFocusedMessageId={keyboardFocusedMessageId}
+                onUserInteract={clearKeyboardFocus}
+                footer={footer}
+                resumeStateRef={threadResumeRef}
+              />
+            )}
             <ThreadKeyboardNav
               items={items}
               jumpPickerOpen={jumpPickerOpen}
@@ -1285,6 +1894,7 @@ function ChatThreadRenderer({
               keyboardFocusedMessageId={keyboardFocusedMessageId}
               setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
               promptRecallRef={promptRecallRef}
+              jumpToMessage={jumpToMessage}
             />
           </ChatMessageScrollerProvider>
         </ChatThreadChromeProvider>
