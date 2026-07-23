@@ -847,7 +847,7 @@ describe("AgentService", () => {
   });
 
   describe("system prompt questions", () => {
-    it("requires blocking questions to use AskUserQuestion", () => {
+    it("requires blocking questions to use the adapter's question tool", () => {
       const prompt = (
         service as unknown as {
           buildSystemPrompt: (
@@ -861,7 +861,7 @@ describe("AgentService", () => {
       ).append;
 
       expect(prompt).toContain(
-        "When you need an answer from the user before you can continue, use the AskUserQuestion tool.",
+        "AskUserQuestion for Claude, or request_user_input in Codex Plan mode",
       );
       expect(prompt).toContain(
         "plain-text questions mark the task as finished",
