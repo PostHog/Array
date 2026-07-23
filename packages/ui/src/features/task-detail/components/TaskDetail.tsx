@@ -51,20 +51,9 @@ export function TaskDetail({
   channelId,
 }: TaskDetailProps) {
   const taskId = initialTask.id;
-  const selectedTaskRunRef = useRef({
-    taskId,
-    taskRunId: initialTask.latest_run?.id,
-  });
-  if (selectedTaskRunRef.current.taskId !== taskId) {
-    selectedTaskRunRef.current = {
-      taskId,
-      taskRunId: initialTask.latest_run?.id,
-    };
-  }
-  const selectedTaskRunId = selectedTaskRunRef.current.taskRunId;
-
   const { task } = useTaskData({ taskId, initialTask });
   const runtime = task.runtime === "pi" ? "pi" : "acp";
+  const selectedTaskRunId = task.latest_run?.id;
 
   const effectiveRepoPath = useCwd(taskId);
 

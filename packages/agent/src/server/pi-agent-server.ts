@@ -13,6 +13,7 @@ import {
 } from "../pi/rpc-transport";
 import { PiRuntime } from "../pi/runtime";
 import { PostHogAPIClient } from "../posthog-api";
+import { resolveLlmGatewayUrl } from "../utils/gateway";
 import { Logger } from "../utils/logger";
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
@@ -31,7 +32,6 @@ interface PiCloudSession {
   unsubscribe: () => void;
 }
 
-const SESSION_SYNC_INTERVAL_MS = 5_000;
 const COMPLETED_USER_MESSAGE_DELIVERY_LIMIT = 500;
 const emptySchema = z.object({});
 
@@ -65,7 +65,6 @@ export class PiAgentServer {
   private sessionFile: string | null = null;
   private lastSyncedSessionContent = "";
   private sessionRevision = 0;
-  private sessionSyncInterval: ReturnType<typeof setInterval> | null = null;
   private sessionSyncQueue: Promise<void> = Promise.resolve();
   private pendingLogEntries: StoredLogEntry[] = [];
   private logFlushQueue: Promise<void> = Promise.resolve();
@@ -117,10 +116,6 @@ export class PiAgentServer {
 
   async stop(): Promise<void> {
     const session = this.session;
-    if (this.sessionSyncInterval) {
-      clearInterval(this.sessionSyncInterval);
-      this.sessionSyncInterval = null;
-    }
     if (session) {
       await session.runtime.client.abort().catch(() => undefined);
       await session.runtime.client.waitForIdle(5_000).catch(() => undefined);
@@ -355,7 +350,10 @@ export class PiAgentServer {
       sessionFile: restoredSessionFile,
       providerOptions: {
         apiKey: this.config.apiKey,
-        baseUrl: this.posthogAPI.getLlmGatewayUrl(),
+        baseUrl: resolveLlmGatewayUrl(
+          process.env.LLM_GATEWAY_URL,
+          this.config.apiUrl,
+        ),
       },
     });
     const runtime = new PiRuntime(client);
@@ -382,11 +380,6 @@ export class PiAgentServer {
 
     this.session = { payload, runtime, sseController: null, unsubscribe };
     await this.syncTaskSession();
-    this.sessionSyncInterval = setInterval(() => {
-      void this.syncTaskSession().catch((error) =>
-        this.logger.error("Failed to sync active Pi session", error),
-      );
-    }, SESSION_SYNC_INTERVAL_MS);
     this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
     this.sessionInitMs = Date.now() - startedAt;
     await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
