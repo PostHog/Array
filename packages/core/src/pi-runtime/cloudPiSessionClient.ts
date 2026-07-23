@@ -12,7 +12,10 @@ import type {
 } from "@posthog/shared";
 import type { CloudTaskUpdatePayload } from "@posthog/shared/domain-types";
 import type { CloudTaskClient } from "../cloud-task/cloudTaskClient";
-import { isTerminalStatus } from "../cloud-task/schemas";
+import {
+  isTerminalStatus,
+  progressNotificationParams,
+} from "../cloud-task/schemas";
 import type { PiSession } from "./piSessionController";
 
 const readinessCommands = new Set<RpcCommand["type"]>([
@@ -155,7 +158,7 @@ export class CloudPiSessionClient implements PiSession {
     }
 
     if (update.kind === "snapshot") {
-      const events = this.getPiEvents(update.newEntries);
+      const events = this.getConversationEvents(update.newEntries);
       let unchangedEventCount = 0;
       while (
         unchangedEventCount < events.length &&
@@ -175,7 +178,7 @@ export class CloudPiSessionClient implements PiSession {
         onEvent(event);
       }
     } else if (update.kind === "logs") {
-      const events = this.getPiEvents(update.newEntries);
+      const events = this.getConversationEvents(update.newEntries);
       this.snapshotEvents = [...this.snapshotEvents, ...events];
       for (const event of events) {
         onEvent(event);
@@ -205,14 +208,47 @@ export class CloudPiSessionClient implements PiSession {
     return JSON.stringify(left) === JSON.stringify(right);
   }
 
-  private getPiEvents(entries: StoredLogEntry[]): AgentConversationEvent[] {
+  private getConversationEvents(
+    entries: StoredLogEntry[],
+  ): AgentConversationEvent[] {
     const events: AgentConversationEvent[] = [];
     for (const entry of entries) {
       if (entry.type === "pi_event" && entry.event) {
         events.push(entry.event);
+        continue;
+      }
+
+      const progress = this.getProgressEvent(entry);
+      if (progress) {
+        events.push(progress);
       }
     }
     return events;
+  }
+
+  private getProgressEvent(
+    entry: StoredLogEntry,
+  ): AgentConversationEvent | null {
+    if (
+      entry.notification?.method !== "_posthog/progress" &&
+      entry.notification?.method !== "__posthog/progress"
+    ) {
+      return null;
+    }
+
+    const params = progressNotificationParams.safeParse(
+      entry.notification.params,
+    );
+    const timestamp = Date.parse(entry.timestamp ?? "");
+    if (!params.success || Number.isNaN(timestamp)) {
+      return null;
+    }
+
+    return {
+      type: "progress",
+      timestamp,
+      ...params.data,
+    };
   }
 
   private async request(command: RpcCommand): Promise<unknown> {

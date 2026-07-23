@@ -22,6 +22,14 @@ export function isTerminalStatus(
 
 // --- Events ---
 
+export const progressNotificationParams = z.object({
+  step: z.string().min(1),
+  status: z.enum(["in_progress", "completed", "failed"]),
+  label: z.string().min(1),
+  group: z.string().min(1),
+  detail: z.string().optional(),
+});
+
 export const CloudTaskEvent = {
   Update: "cloud-task-update",
 } as const;

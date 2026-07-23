@@ -140,6 +140,55 @@ describe("buildAgentConversationItems", () => {
     );
   });
 
+  it("groups runtime-neutral provisioning progress", () => {
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "progress",
+          timestamp: 1,
+          step: "sandbox",
+          status: "completed",
+          label: "Set up sandbox",
+          group: "setup:run-1",
+        },
+        {
+          type: "progress",
+          timestamp: 2,
+          step: "clone",
+          status: "in_progress",
+          label: "Cloning repository",
+          group: "setup:run-1",
+          detail: "posthog/code",
+        },
+      ],
+      true,
+    );
+
+    expect(result.items).toContainEqual(
+      expect.objectContaining({
+        type: "session_update",
+        update: {
+          sessionUpdate: "progress_group",
+          isActive: true,
+          steps: [
+            {
+              key: "sandbox",
+              status: "completed",
+              label: "Set up sandbox",
+              detail: undefined,
+            },
+            {
+              key: "clone",
+              status: "in_progress",
+              label: "Cloning repository",
+              detail: "posthog/code",
+            },
+          ],
+        },
+      }),
+    );
+  });
+
   it("builds and completes a generic compaction status", () => {
     const result = buildAgentConversationItems(
       [

@@ -17,6 +17,8 @@ export type AgentToolCallStatus =
   | "completed"
   | "failed";
 
+export type AgentProgressStatus = "in_progress" | "completed" | "failed";
+
 export interface AgentTextContent {
   type: "text";
   text: string;
@@ -133,6 +135,15 @@ export type AgentConversationEvent =
       type: "tool_call_updated";
       timestamp: number;
       toolCall: Pick<AgentToolCall, "id"> & Partial<Omit<AgentToolCall, "id">>;
+    }
+  | {
+      type: "progress";
+      timestamp: number;
+      step: string;
+      status: AgentProgressStatus;
+      label: string;
+      group: string;
+      detail?: string;
     }
   | {
       type: "runtime_status";

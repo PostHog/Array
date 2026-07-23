@@ -188,8 +188,23 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     );
   }
 
-  if (!session || !status) {
+  if (!session || (!status && session.events.length === 0)) {
     return <TaskDetailSkeleton />;
+  }
+
+  if (!status) {
+    return (
+      <Flex direction="column" height="100%">
+        <Box className="min-h-0 flex-1">
+          <ChatThread
+            events={session.events}
+            isPromptPending
+            taskId={taskId}
+            repoPath={repoPath}
+          />
+        </Box>
+      </Flex>
+    );
   }
 
   const pending = isStreaming || isBashRunning;

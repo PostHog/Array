@@ -372,6 +372,11 @@ export function processAgentConversationEvent(
     return;
   }
 
+  if (event.type === "progress") {
+    handleProgress(b, event, event.timestamp);
+    return;
+  }
+
   if (event.type === "runtime_status") {
     handleRuntimeStatus(b, event, event.timestamp);
     return;

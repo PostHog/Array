@@ -166,6 +166,50 @@ describe("CloudPiSessionClient", () => {
     expect(onError).toHaveBeenCalledWith(error);
   });
 
+  it("streams provisioning progress before the Pi runtime is ready", () => {
+    const cloud = createCloudTaskClient();
+    const session = new CloudPiSessionClient(
+      cloud.client,
+      context("in_progress"),
+    );
+    const events: AgentConversationEvent[] = [];
+    session.onConversationEvent((event) => events.push(event), vi.fn());
+
+    cloud.sendUpdate({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "logs",
+      newEntries: [
+        {
+          type: "notification",
+          timestamp: "2026-07-23T12:00:00.000Z",
+          notification: {
+            method: "_posthog/progress",
+            params: {
+              step: "sandbox",
+              status: "in_progress",
+              label: "Setting up sandbox",
+              group: "setup:run-1",
+            },
+          },
+        },
+      ],
+      totalEntryCount: 1,
+    });
+
+    expect(events).toEqual([
+      {
+        type: "progress",
+        timestamp: Date.parse("2026-07-23T12:00:00.000Z"),
+        step: "sandbox",
+        status: "in_progress",
+        label: "Setting up sandbox",
+        group: "setup:run-1",
+      },
+    ]);
+    expect(cloud.client.sendCommand).not.toHaveBeenCalled();
+  });
+
   it("loads terminal history from the cloud snapshot without sandbox RPC", async () => {
     const cloud = createCloudTaskClient();
     const session = new CloudPiSessionClient(
