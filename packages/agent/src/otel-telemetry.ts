@@ -67,13 +67,6 @@ export interface MappedLogRecord {
   attributes: Attributes;
 }
 
-const CONSOLE_SEVERITIES: Record<string, [SeverityNumber, string]> = {
-  debug: [SeverityNumber.DEBUG, "DEBUG"],
-  info: [SeverityNumber.INFO, "INFO"],
-  warn: [SeverityNumber.WARN, "WARN"],
-  error: [SeverityNumber.ERROR, "ERROR"],
-};
-
 function record(
   severity: [SeverityNumber, string],
   body: string,
@@ -88,9 +81,9 @@ function record(
   };
 }
 
-const INFO = CONSOLE_SEVERITIES.info;
-const WARN = CONSOLE_SEVERITIES.warn;
-const ERROR = CONSOLE_SEVERITIES.error;
+const INFO: [SeverityNumber, string] = [SeverityNumber.INFO, "INFO"];
+const WARN: [SeverityNumber, string] = [SeverityNumber.WARN, "WARN"];
+const ERROR: [SeverityNumber, string] = [SeverityNumber.ERROR, "ERROR"];
 
 function mapSessionUpdate(
   method: string,
@@ -206,15 +199,11 @@ export function mapNotificationToLogRecord(
         typeof params.error === "string" ? params.error : "unknown error";
       return record(ERROR, `error: ${message}`, method, attrs);
     }
-    case POSTHOG_NOTIFICATIONS.CONSOLE: {
-      const severity =
-        (typeof params.level === "string" &&
-          CONSOLE_SEVERITIES[params.level]) ||
-        INFO;
-      const message =
-        typeof params.message === "string" ? params.message : "console output";
-      return record(severity, message, method, {});
-    }
+    // POSTHOG_NOTIFICATIONS.CONSOLE is deliberately NOT exported: those are
+    // free-text agent-server diagnostics that interpolate arbitrary data
+    // (prompt previews, stringified extension params), so shipping them would
+    // leak content the allowlist exists to keep in the sandbox. They remain
+    // in the S3 session log and the event-ingest stream.
     case POSTHOG_NOTIFICATIONS.PROGRESS: {
       const attrs: Attributes = {};
       strAttr(attrs, "progress_group", params.group);

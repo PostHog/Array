@@ -171,21 +171,6 @@ describe("OtelRunTelemetry", () => {
         attrs: { error_source: "agent_server" },
       },
       {
-        name: "console warn",
-        entry: makeEntry("_posthog/console", {
-          level: "warn",
-          message: "careful",
-        }),
-        severityText: "WARN",
-        body: "careful",
-      },
-      {
-        name: "console with unknown level",
-        entry: makeEntry("_posthog/console", { level: "silly", message: "m" }),
-        severityText: "INFO",
-        body: "m",
-      },
-      {
         name: "progress",
         entry: makeEntry("_posthog/progress", {
           group: "setup:run-1",
@@ -321,6 +306,19 @@ describe("OtelRunTelemetry", () => {
         "user_message",
         makeEntry("_posthog/user_message", { message: "SECRET" }),
       ],
+      // Console lines are free-text agent-server diagnostics; some interpolate
+      // content (e.g. the prompt preview logged on user_message handling).
+      [
+        "console with interpolated prompt preview",
+        makeEntry("_posthog/console", {
+          level: "debug",
+          message: "Processing user message (detectedPrUrl=none): SECRET...",
+        }),
+      ],
+      [
+        "console error",
+        makeEntry("_posthog/console", { level: "error", message: "SECRET" }),
+      ],
       ["unknown extension method", makeEntry("_posthog/some_new_event", {})],
     ])("drops %s", (_name, entry) => {
       expect(mapNotificationToLogRecord(entry)).toBeNull();
@@ -328,9 +326,9 @@ describe("OtelRunTelemetry", () => {
 
     it("caps body length", () => {
       const mapped = mapNotificationToLogRecord(
-        makeEntry("_posthog/console", {
-          level: "info",
-          message: "x".repeat(5000),
+        makeEntry("_posthog/error", {
+          source: "agent_server",
+          error: "x".repeat(5000),
         }),
       );
 
@@ -529,6 +527,27 @@ describe("OtelRunTelemetry", () => {
       );
       expect(surface).not.toContain("SECRET");
       expect(surface).not.toContain(".env");
+    });
+
+    it("does not leave root OK when a later turn ends non-clean", async () => {
+      driveSuccessfulRun();
+      // Second turn gets cancelled: the latest outcome wins, so the earlier
+      // clean turn must not leave the run marked OK.
+      telemetry.append(
+        RUN_ID,
+        makeEntry("session/prompt", {
+          prompt: [{ type: "text", text: "again" }],
+        }),
+      );
+      telemetry.append(
+        RUN_ID,
+        makeEntry("_posthog/turn_complete", { stopReason: "cancelled" }),
+      );
+
+      await telemetry.shutdown();
+
+      expect(spanByName("task_run").status.code).toBe(SpanStatusCode.UNSET);
+      expect(exportedSpans().filter((s) => s.name === "turn")).toHaveLength(2);
     });
 
     it("stamps log records with the span they belong to", async () => {

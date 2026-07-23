@@ -41,9 +41,12 @@ export interface RunTraceBuilderConfig {
  * the corresponding log record should be emitted under, so logs and spans
  * cross-link in the UI via trace_id/span_id.
  *
- * Root span status: OK once a turn ends cleanly (`end_turn`) or on
- * task_complete, ERROR on a run error (which always wins), unset when the run
- * ends without either (cancelled / timed out).
+ * Root span status is resolved at shutdown from the LATEST turn outcome (the
+ * root span only exports when it ends, so earlier turns must not leave a
+ * sticky OK): OK when the last turn ended cleanly (`end_turn`, or an explicit
+ * task_complete), ERROR on a run error (which always wins) or a last turn
+ * that stopped with `error`, unset otherwise (cancelled / refused / timed out
+ * / no completed turns).
  *
  * Spans carry the same allowlist stance as the log export: lifecycle, status,
  * usage, and identifiers only — never prompts, tool arguments, or output.
@@ -54,6 +57,8 @@ export class RunTraceBuilder {
   private rootSpan: Span;
   private rootContext: Context;
   private rootErrored = false;
+  /** stopReason of the most recent completed turn; drives root status at shutdown */
+  private lastStopReason?: string;
   private turnSpan?: Span;
   private turnContext?: Context;
   private turnIndex = 0;
@@ -109,9 +114,9 @@ export class RunTraceBuilder {
         return this.currentContext();
       }
       case POSTHOG_NOTIFICATIONS.TASK_COMPLETE:
-        if (!this.rootErrored) {
-          this.rootSpan.setStatus({ code: SpanStatusCode.OK });
-        }
+        // Explicit success signal (forward-compat; production decides the
+        // terminal status outside the sandbox) — treated as a clean outcome.
+        this.lastStopReason = "end_turn";
         return this.rootContext;
       case POSTHOG_NOTIFICATIONS.ERROR:
         return this.handleError(params, time);
@@ -126,13 +131,25 @@ export class RunTraceBuilder {
     await this.provider.forceFlush();
   }
 
-  /** Ends any open spans (status unset), then flushes and stops the provider. */
+  /**
+   * Ends any open spans (status unset), resolves the root status from the
+   * latest turn outcome, then flushes and stops the provider.
+   */
   async shutdown(): Promise<void> {
     if (this.ended) return;
     this.ended = true;
     const now = new Date();
     this.closeOpenTools(now);
     this.closeTurn(undefined, now);
+    if (!this.rootErrored) {
+      if (this.lastStopReason === "end_turn") {
+        this.rootSpan.setStatus({ code: SpanStatusCode.OK });
+      } else if (this.lastStopReason === "error") {
+        this.rootSpan.setStatus({ code: SpanStatusCode.ERROR });
+      }
+      // Any other latest outcome (cancelled, refusal, max_tokens, none)
+      // leaves the status unset: neither success nor failure.
+    }
     this.rootSpan.end(now);
     await this.provider.shutdown();
   }
@@ -167,12 +184,11 @@ export class RunTraceBuilder {
     this.closeOpenTools(time);
     this.closeTurn({ stopReason, errored: stopReason === "error" }, time);
     // The sandbox never emits task_complete for successful runs (the terminal
-    // "completed" status is decided by the workflow outside), so a cleanly
-    // finished turn is the success signal for the run. A later error still
-    // wins via rootErrored/handleError.
-    if (stopReason === "end_turn" && !this.rootErrored) {
-      this.rootSpan.setStatus({ code: SpanStatusCode.OK });
-    }
+    // "completed" status is decided by the workflow outside), so the latest
+    // turn outcome is the run's success signal — recorded here, resolved into
+    // the root span status at shutdown so an early clean turn can't leave a
+    // stale OK on a run whose last turn was cancelled.
+    this.lastStopReason = stopReason;
     return context;
   }
 
