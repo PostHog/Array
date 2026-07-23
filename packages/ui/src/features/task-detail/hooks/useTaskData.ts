@@ -7,9 +7,7 @@ import { getTaskRepository } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useWorkspaceTRPC } from "@posthog/workspace-client/trpc";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
 import { cloneStore } from "../../clone/cloneStore";
-import { useTasks } from "../../tasks/useTasks";
 import { useWorkspace } from "../../workspace/useWorkspace";
 import { useRefreshedTask } from "./useRefreshedTask";
 
@@ -20,13 +18,7 @@ interface UseTaskDataParams {
 
 export function useTaskData({ taskId, initialTask }: UseTaskDataParams) {
   const trpcReact = useWorkspaceTRPC();
-  const { data: tasks = [] } = useTasks();
-  const refreshedTask = useRefreshedTask(taskId, initialTask);
-
-  const task = useMemo(
-    () => refreshedTask ?? tasks.find((t) => t.id === taskId) ?? initialTask,
-    [refreshedTask, tasks, taskId, initialTask],
-  );
+  const task = useRefreshedTask(taskId, initialTask);
 
   const workspace = useWorkspace(taskId);
   const repoPath = workspace?.folderPath ?? null;
