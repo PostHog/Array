@@ -77,19 +77,8 @@ export type OnLogCallback = (
   data?: unknown,
 ) => void;
 
-export interface OtelTransportConfig {
-  /** PostHog ingest host, e.g., "https://us.i.posthog.com" */
-  host: string;
-  /** Project API key */
-  apiKey: string;
-  /** Override the logs endpoint path (default: /i/v1/logs) */
-  logsPath?: string;
-}
-
 export interface AgentConfig {
   posthog?: PostHogAPIConfig;
-  /** OTEL transport config for shipping logs to PostHog Logs */
-  otelTransport?: OtelTransportConfig;
   /** Skip session log persistence (e.g. for preview sessions with no real task) */
   skipLogPersistence?: boolean;
   /** Local cache path for instant log loading (e.g., ~/.posthog-code) */

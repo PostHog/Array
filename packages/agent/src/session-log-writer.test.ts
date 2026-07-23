@@ -104,6 +104,52 @@ describe("SessionLogWriter", () => {
     });
   });
 
+  describe("sinks", () => {
+    it("delivers non-chunk entries to sinks and keeps persistence when a sink throws", async () => {
+      const goodSink = { append: vi.fn() };
+      const badSink = {
+        append: vi.fn(() => {
+          throw new Error("sink down");
+        }),
+      };
+      const writer = new SessionLogWriter({
+        posthogAPI: mockPosthogAPI,
+        sinks: [badSink, goodSink],
+      });
+      writer.register("run-1", { taskId: "task-1", runId: "run-1" });
+
+      writer.appendRawLine(
+        "run-1",
+        makeSessionUpdate("agent_message_chunk", {
+          content: { type: "text", text: "chunk" },
+        }),
+      );
+      writer.appendRawLine(
+        "run-1",
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "_posthog/turn_complete",
+          params: { stopReason: "end_turn" },
+        }),
+      );
+
+      // Buffered message chunks never reach sinks; the non-chunk entry does,
+      // even after the sink listed first has thrown.
+      expect(goodSink.append).toHaveBeenCalledTimes(1);
+      expect(goodSink.append.mock.calls[0][0]).toBe("run-1");
+      expect(goodSink.append.mock.calls[0][1].notification.method).toBe(
+        "_posthog/turn_complete",
+      );
+
+      await writer.flush("run-1");
+
+      const persistedMethods = mockAppendLog.mock.calls
+        .flatMap((call) => call[2])
+        .map((entry: StoredNotification) => entry.notification.method);
+      expect(persistedMethods).toContain("_posthog/turn_complete");
+    });
+  });
+
   describe("agent_message_chunk coalescing", () => {
     it("coalesces consecutive chunks into a single agent_message", async () => {
       const sessionId = "s1";

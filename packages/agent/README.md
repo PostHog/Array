@@ -171,6 +171,14 @@ Required environment variables (validated by zod in `src/server/bin.ts`):
 - `POSTHOG_PERSONAL_API_KEY` — API key for PostHog requests
 - `POSTHOG_PROJECT_ID` — numeric project ID
 
+Optional run telemetry (the logs pair must both be set, otherwise telemetry stays off):
+
+- `POSTHOG_AGENT_OTEL_LOGS_URL` — full OTLP logs URL for run metadata, e.g. `https://us.i.posthog.com/i/v1/logs`
+- `POSTHOG_AGENT_OTEL_LOGS_TOKEN` — project API key of the telemetry project
+- `POSTHOG_AGENT_OTEL_TRACES_URL` — full OTLP traces URL, e.g. `https://us.i.posthog.com/i/v1/traces`; additionally enables one APM trace per run
+
+When set, `AgentServer` ships an allowlisted metadata subset of the session log (run/turn/tool lifecycle, usage, errors — never message content or tool arguments; see `src/otel-telemetry.ts`) to PostHog Logs, tagged with `service.name=posthog-code-agent` and `run_id`/`task_id`/`team_id`/`user_id`/`distinct_id` resource attributes so cloud runs are filterable per user. With the traces URL set, each run also produces an APM trace (`task_run` root span, a `turn` span per prompt, a `tool_call:<kind>` span per tool call; see `src/otel-trace-builder.ts`), and log records carry the matching trace/span ids so Logs and APM cross-link.
+
 ## Agent SDK
 
 The `Agent` class (`src/agent.ts`) is the entrypoint for local/programmatic usage. It handles LLM gateway configuration, log writer setup, and model filtering — then delegates to `createAcpConnection()`.
