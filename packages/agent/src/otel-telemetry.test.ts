@@ -11,17 +11,20 @@ const mockSpanExport = vi.fn((_spans, callback) => {
   callback({ code: 0 }); // Success
 });
 
+const mockLogShutdown = vi.fn(() => Promise.resolve());
+const mockSpanShutdown = vi.fn(() => Promise.resolve());
+
 vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
   OTLPLogExporter: class {
     export = mockLogExport;
-    shutdown = vi.fn().mockResolvedValue(undefined);
+    shutdown = mockLogShutdown;
   },
 }));
 
 vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
   OTLPTraceExporter: class {
     export = mockSpanExport;
-    shutdown = vi.fn().mockResolvedValue(undefined);
+    shutdown = mockSpanShutdown;
   },
 }));
 
@@ -88,6 +91,8 @@ describe("OtelRunTelemetry", () => {
   beforeEach(() => {
     mockLogExport.mockClear();
     mockSpanExport.mockClear();
+    mockLogShutdown.mockClear();
+    mockSpanShutdown.mockClear();
   });
 
   describe("mapNotificationToLogRecord", () => {
@@ -164,11 +169,12 @@ describe("OtelRunTelemetry", () => {
         name: "error",
         entry: makeEntry("_posthog/error", {
           source: "agent_server",
+          stopReason: "error",
           error: "boom",
         }),
         severityText: "ERROR",
-        body: "error: boom",
-        attrs: { error_source: "agent_server" },
+        body: "run error",
+        attrs: { error_source: "agent_server", stop_reason: "error" },
       },
       {
         name: "progress",
@@ -324,11 +330,29 @@ describe("OtelRunTelemetry", () => {
       expect(mapNotificationToLogRecord(entry)).toBeNull();
     });
 
-    it("caps body length", () => {
+    // Run errors export provenance only: the raw message is free text that
+    // can embed prompt or repo content (exception paths, provider errors).
+    it("never exports the raw error message", () => {
       const mapped = mapNotificationToLogRecord(
         makeEntry("_posthog/error", {
-          source: "agent_server",
-          error: "x".repeat(5000),
+          source: "agent_server_crash",
+          error: "Agent server crashed: ENOENT open '/repos/acme/SECRET/.env'",
+        }),
+      );
+
+      expect(mapped).not.toBeNull();
+      expect(JSON.stringify([mapped?.body, mapped?.attributes])).not.toContain(
+        "SECRET",
+      );
+    });
+
+    it("caps body length", () => {
+      const mapped = mapNotificationToLogRecord(
+        makeEntry("_posthog/progress", {
+          group: "setup:run-1",
+          step: "agent",
+          status: "completed",
+          label: "x".repeat(5000),
         }),
       );
 
@@ -574,7 +598,7 @@ describe("OtelRunTelemetry", () => {
       }
     });
 
-    it("marks failed tools, errored turns, and the errored run", async () => {
+    it("marks failed tools, interrupted tools, errored turns, and the errored run", async () => {
       telemetry.append(RUN_ID, makeEntry("session/prompt", {}));
       telemetry.append(
         RUN_ID,
@@ -592,11 +616,21 @@ describe("OtelRunTelemetry", () => {
           status: "failed",
         }),
       );
+      // Still open when the run error below lands.
+      telemetry.append(
+        RUN_ID,
+        sessionUpdate({
+          sessionUpdate: "tool_call",
+          toolCallId: "t2",
+          kind: "fetch",
+        }),
+      );
       telemetry.append(
         RUN_ID,
         makeEntry("_posthog/error", {
           source: "agent_server",
-          error: "gateway exploded",
+          stopReason: "error",
+          error: "gateway exploded reading SECRET",
         }),
       );
       // A turn completion arriving after the error must not flip the run
@@ -611,10 +645,37 @@ describe("OtelRunTelemetry", () => {
       expect(spanByName("tool_call:execute").status.code).toBe(
         SpanStatusCode.ERROR,
       );
-      expect(spanByName("turn").status.code).toBe(SpanStatusCode.ERROR);
+      const interrupted = spanByName("tool_call:fetch");
+      expect(interrupted.status.code).toBe(SpanStatusCode.ERROR);
+      expect(interrupted.attributes).toMatchObject({
+        tool_status: "interrupted",
+      });
+      const turn = spanByName("turn");
+      expect(turn.status.code).toBe(SpanStatusCode.ERROR);
+      expect(turn.attributes).toMatchObject({ stop_reason: "error" });
       const root = spanByName("task_run");
       expect(root.status.code).toBe(SpanStatusCode.ERROR);
-      expect(root.status.message).toBe("gateway exploded");
+      expect(root.attributes).toMatchObject({ error_source: "agent_server" });
+      // The raw error message is free text; it must not reach span status
+      // messages or attributes.
+      const surface = JSON.stringify(
+        exportedSpans().map((span) => [
+          span.name,
+          span.attributes,
+          span.status,
+        ]),
+      );
+      expect(surface).not.toContain("SECRET");
+    });
+
+    it("shuts down logs even when the traces endpoint fails", async () => {
+      mockSpanShutdown.mockRejectedValueOnce(new Error("traces endpoint down"));
+      telemetry.append(RUN_ID, makeEntry("_posthog/run_started", {}));
+
+      await expect(telemetry.shutdown()).resolves.toBeUndefined();
+
+      expect(mockLogShutdown).toHaveBeenCalled();
+      expect(exportedLogs().map((log) => log.body)).toContain("run started");
     });
 
     it("exports open spans on shutdown even without terminal events", async () => {

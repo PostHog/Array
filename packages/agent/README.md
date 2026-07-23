@@ -177,7 +177,7 @@ Optional run telemetry (the logs pair must both be set, otherwise telemetry stay
 - `POSTHOG_AGENT_OTEL_LOGS_TOKEN` — project API key of the telemetry project
 - `POSTHOG_AGENT_OTEL_TRACES_URL` — full OTLP traces URL, e.g. `https://us.i.posthog.com/i/v1/traces`; additionally enables one APM trace per run
 
-When set, `AgentServer` ships an allowlisted metadata subset of the session log (run/turn/tool lifecycle, usage, errors — never message content or tool arguments; see `src/otel-telemetry.ts`) to PostHog Logs, tagged with `service.name=posthog-code-agent` and `run_id`/`task_id`/`team_id`/`user_id`/`distinct_id` resource attributes so cloud runs are filterable per user. With the traces URL set, each run also produces an APM trace (`task_run` root span, a `turn` span per prompt, a `tool_call:<kind>` span per tool call; see `src/otel-trace-builder.ts`), and log records carry the matching trace/span ids so Logs and APM cross-link.
+When set, `AgentServer` ships an allowlisted metadata subset of the session log (run/turn/tool lifecycle, usage, error provenance — never message content, tool arguments, or raw error text; see `src/otel-telemetry.ts`) to PostHog Logs, tagged with `service.name=posthog-code-agent` and `run_id`/`task_id`/`team_id`/`user_id`/`distinct_id` resource attributes so cloud runs are filterable per user. With the traces URL set, each run also produces an APM trace (`task_run` root span, a `turn` span per prompt, a `tool_call:<kind>` span per tool call; see `src/otel-trace-builder.ts`), and log records carry the matching trace/span ids so Logs and APM cross-link.
 
 ## Agent SDK
 
@@ -219,7 +219,7 @@ Logs serve two purposes: real-time observability and session resume. Every ACP m
 
 `SessionLogWriter` (`src/session-log-writer.ts`) is a per-session multiplexer that buffers raw ndJson lines. On flush (auto-scheduled 500ms after writes, or explicit), it POSTs batched `StoredNotification` entries to the Django API via `PostHogAPIClient.appendTaskRunLog()`; the API stores them in S3 as the task run's `log_url`. This S3 log is the source of truth for the full transcript and for session resume.
 
-Independently of that flush cycle, the writer tees every parsed non-chunk entry to optional `SessionLogSink`s at append time. In cloud, `OtelRunTelemetry` (`src/otel-telemetry.ts`) is wired as a sink and exports an allowlisted metadata subset (run/turn/tool lifecycle, usage, errors — never message content or tool arguments) to PostHog Logs, plus an APM trace per run when configured. See "Optional run telemetry" above for the env vars and behavior. Sink failures can never break S3 log persistence.
+Independently of that flush cycle, the writer tees every parsed non-chunk entry to optional `SessionLogSink`s at append time. In cloud, `OtelRunTelemetry` (`src/otel-telemetry.ts`) is wired as a sink and exports an allowlisted metadata subset (run/turn/tool lifecycle, usage, error provenance — never message content, tool arguments, or raw error text) to PostHog Logs, plus an APM trace per run when configured. See "Optional run telemetry" above for the env vars and behavior. Sink failures can never break S3 log persistence.
 
 ### Resuming from logs
 

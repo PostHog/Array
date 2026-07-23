@@ -2,11 +2,14 @@ const MAX_BODY_CHARS = 2000;
 // PostHog Logs only facets attribute key/value pairs shorter than 256 chars,
 // so free-text attribute values are capped well below that.
 const MAX_ATTR_CHARS = 200;
+// The SDK default export timeout is 30s; a hanging endpoint must not hold up
+// session cleanup (the sandbox can be torn down right after), so keep it short.
+const EXPORT_TIMEOUT_MS = 5000;
 
 export type AttributeValue = string | number | boolean;
 export type Attributes = Record<string, AttributeValue>;
 
-export { MAX_ATTR_CHARS, MAX_BODY_CHARS };
+export { EXPORT_TIMEOUT_MS, MAX_ATTR_CHARS, MAX_BODY_CHARS };
 
 export function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`;

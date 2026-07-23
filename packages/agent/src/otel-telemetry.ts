@@ -13,6 +13,7 @@ import { POSTHOG_NOTIFICATIONS } from "./acp-extensions";
 import {
   type Attributes,
   asRecord,
+  EXPORT_TIMEOUT_MS,
   entryTime,
   MAX_BODY_CHARS,
   strAttr,
@@ -192,12 +193,14 @@ export function mapNotificationToLogRecord(
       return record(INFO, "task complete", method, attrs);
     }
     case POSTHOG_NOTIFICATIONS.ERROR: {
+      // params.error is free text that can embed prompt or repo content
+      // (exception messages, provider errors), so only its provenance is
+      // exported. The raw message stays in the session log and on the task
+      // run's error_message.
       const attrs: Attributes = {};
       strAttr(attrs, "error_source", params.source);
       strAttr(attrs, "stop_reason", params.stopReason);
-      const message =
-        typeof params.error === "string" ? params.error : "unknown error";
-      return record(ERROR, `error: ${message}`, method, attrs);
+      return record(ERROR, "run error", method, attrs);
     }
     // POSTHOG_NOTIFICATIONS.CONSOLE is deliberately NOT exported: those are
     // free-text agent-server diagnostics that interpolate arbitrary data
@@ -280,6 +283,7 @@ export class OtelRunTelemetry implements SessionLogSink {
 
     const processor = new BatchLogRecordProcessor(exporter, {
       scheduledDelayMillis: config.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
+      exportTimeoutMillis: EXPORT_TIMEOUT_MS,
     });
 
     const resourceAttributes: Attributes = {
@@ -337,18 +341,29 @@ export class OtelRunTelemetry implements SessionLogSink {
     }
   }
 
+  /**
+   * Best-effort: logs and traces flush independently, so a rejecting or
+   * hanging traces endpoint can never block or fail the log flush (and vice
+   * versa). Never rejects.
+   */
   async flush(): Promise<void> {
-    await Promise.all([
+    await Promise.allSettled([
       this.loggerProvider.forceFlush(),
       this.traceBuilder?.flush(),
     ]);
   }
 
-  /** Ends open spans, flushes batched records, then stops the providers. Idempotent. */
+  /**
+   * Ends open spans, flushes batched records, then stops the providers.
+   * Idempotent and best-effort: the two providers shut down independently
+   * and a failure in one never skips the other. Never rejects.
+   */
   async shutdown(): Promise<void> {
     if (this.shutdownStarted) return;
     this.shutdownStarted = true;
-    await this.traceBuilder?.shutdown();
-    await this.loggerProvider.shutdown();
+    await Promise.allSettled([
+      this.traceBuilder?.shutdown(),
+      this.loggerProvider.shutdown(),
+    ]);
   }
 }

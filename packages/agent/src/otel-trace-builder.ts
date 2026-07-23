@@ -17,8 +17,9 @@ import { POSTHOG_NOTIFICATIONS } from "./acp-extensions";
 import {
   type Attributes,
   asRecord,
+  EXPORT_TIMEOUT_MS,
   entryTime,
-  truncate,
+  strAttr,
   usageAttributes,
 } from "./otel-attributes";
 import type { StoredNotification } from "./types";
@@ -77,6 +78,7 @@ export class RunTraceBuilder {
         new BatchSpanProcessor(exporter, {
           scheduledDelayMillis:
             config.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
+          exportTimeoutMillis: EXPORT_TIMEOUT_MS,
         }),
       ],
     });
@@ -280,20 +282,32 @@ export class RunTraceBuilder {
 
   private handleError(params: Record<string, unknown>, time: Date): Context {
     this.rootErrored = true;
-    this.closeOpenTools(time);
-    this.closeTurn({ errored: true }, time);
-    this.rootSpan.setStatus({
-      code: SpanStatusCode.ERROR,
-      message:
-        typeof params.error === "string"
-          ? truncate(params.error, 200)
-          : undefined,
-    });
+    this.closeOpenTools(time, { interrupted: true });
+    const stopReason =
+      typeof params.stopReason === "string" ? params.stopReason : undefined;
+    this.closeTurn({ stopReason, errored: true }, time);
+    // params.error is free text that can embed prompt or repo content, so
+    // only the error's provenance is exported; the raw message stays in the
+    // session log and on the task run's error_message.
+    const attrs: Attributes = {};
+    strAttr(attrs, "error_source", params.source);
+    this.rootSpan.setAttributes(attrs);
+    this.rootSpan.setStatus({ code: SpanStatusCode.ERROR });
     return this.rootContext;
   }
 
-  private closeOpenTools(time: Date): void {
+  /**
+   * Ends every open tool span. Interrupted (a run error aborted the tool
+   * mid-flight) marks them errored so APM doesn't show a healthy-looking
+   * active tool under a failed run; otherwise the outcome is unknown and the
+   * status stays unset.
+   */
+  private closeOpenTools(time: Date, opts?: { interrupted?: boolean }): void {
     for (const { span } of this.toolSpans.values()) {
+      if (opts?.interrupted) {
+        span.setAttribute("tool_status", "interrupted");
+        span.setStatus({ code: SpanStatusCode.ERROR });
+      }
       span.end(time);
     }
     this.toolSpans.clear();
