@@ -20,6 +20,7 @@ import {
 } from "@posthog/core/archive/archiveListView";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { WorkspaceMode } from "@posthog/shared";
+import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import {
   AlertDialog,
@@ -32,7 +33,7 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
@@ -484,6 +485,7 @@ export function ArchivedTasksViewPresentation({
 
 export function ArchivedTasksView() {
   const trpc = useHostTRPC();
+  const queryClient = useQueryClient();
   const { data: archivedTasks = [], isLoading: isLoadingArchived } = useQuery({
     ...trpc.archive.list.queryOptions(),
     refetchInterval: (query) =>
@@ -518,16 +520,15 @@ export function ArchivedTasksView() {
 
   const applyRestoreOutcome = (taskId: string, outcome: RestoreOutcome) => {
     if (outcome.kind === "restored") {
-      const task =
-        outcome.navigateToTaskId === null
-          ? null
-          : (listedTasks.find((item) => item.id === outcome.navigateToTaskId) ??
-            null);
+      const navigateToTaskId = outcome.navigateToTaskId;
       toast.success("Task unarchived", {
-        action: task
+        action: navigateToTaskId
           ? {
               label: "View task",
-              onClick: () => void openTask(task),
+              onClick: () =>
+                void queryClient
+                  .fetchQuery(taskDetailQuery(navigateToTaskId))
+                  .then(openTask),
             }
           : undefined,
       });
