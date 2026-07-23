@@ -10,6 +10,7 @@ import {
   KanbanIcon,
   LifebuoyIcon,
   LightbulbIcon,
+  MagnifyingGlassIcon,
   MegaphoneIcon,
   ShieldIcon,
   StarIcon,
@@ -178,4 +179,9 @@ export const SOURCE_PRODUCT_META: Partial<
   },
   intercom: { Icon: ChatsIcon, color: "var(--blue-9)", label: "Intercom" },
   hubspot: { Icon: LifebuoyIcon, color: "var(--orange-9)", label: "HubSpot" },
+  google_search_console: {
+    Icon: MagnifyingGlassIcon,
+    color: "var(--sky-9)",
+    label: "Google Search Console",
+  },
 };

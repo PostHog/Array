@@ -11,7 +11,8 @@ export type SignalRecordKind =
   | "ticket"
   | "scanner_finding"
   | "feedback"
-  | "review";
+  | "review"
+  | "search_opportunity";
 
 /**
  * A warehouse data source the Self-driving inbox can watch. This is the single source of
@@ -48,6 +49,7 @@ const ERROR = "Surface new and reopened errors";
 const FINDING = "Surface new security and code-quality findings";
 const FEEDBACK = "Turn product feedback and feature requests into inputs";
 const REVIEW = "Monitor new app and product reviews";
+const SEARCH = "Fix pages that rank in Google but lose clicks";
 
 /** Registry of warehouse-backed inbox sources, alphabetical within each category. */
 export const EXTERNAL_INBOX_SOURCES = [
@@ -392,6 +394,16 @@ export const EXTERNAL_INBOX_SOURCES = [
     recordKind: "review",
     setup: "dynamic",
   },
+  // Search analytics
+  {
+    product: "google_search_console",
+    label: "Google Search Console",
+    description: SEARCH,
+    dwSourceType: "GoogleSearchConsole",
+    requiredTables: ["search_analytics_by_query_page"],
+    recordKind: "search_opportunity",
+    setup: "dynamic",
+  },
 ] as const satisfies readonly ExternalInboxSource[];
 
 /** Warehouse-backed source products, derived from the registry above. */
@@ -434,9 +446,13 @@ export type SourceType =
   | "session_analysis_cluster"
   | SignalRecordKind;
 
-/** Issue-like records mutate (status/votes change), so their table needs full-refresh sync. */
+/**
+ * Issue-like records mutate (status/votes change), so their table needs full-refresh sync.
+ * Tickets and search-analytics rows are append-only — existing rows never change once written —
+ * so they sync incrementally.
+ */
 export function sourceNeedsFullRefresh(recordKind: SignalRecordKind): boolean {
-  return recordKind !== "ticket";
+  return recordKind !== "ticket" && recordKind !== "search_opportunity";
 }
 
 export const EXTERNAL_INBOX_SOURCE_BY_PRODUCT: Partial<
