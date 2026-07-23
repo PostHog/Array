@@ -27,6 +27,7 @@ import {
   type SessionNotificationAttachment,
   type StoredLogEntry,
   type Task,
+  type TerminalStatus,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playbackRateForTaskDuration } from "../utils/playbackRate";
@@ -264,8 +265,8 @@ export interface TaskSession {
   // the log). Used to dedup the canonical copy against the echo.
   localUserEchoes?: Set<string>;
   // Terminal backend status for this run, populated by status updates so the
-  // UI can surface "Run failed" / "Run completed".
-  terminalStatus?: "failed" | "completed";
+  // UI can surface "Run failed" / "Run completed" / "Run stopped".
+  terminalStatus?: TerminalStatus;
   lastError?: string | null;
   // True when the user initiated work (new task, sendPrompt, resume) and
   // we should play a sound when control returns. False when reconnecting
@@ -362,11 +363,12 @@ const connectAttempts = new Set<string>();
 // queue twice.
 const flushingTasks = new Set<string>();
 
-function mapTerminalStatus(
+export function mapTerminalStatus(
   status: string | undefined | null,
-): "completed" | "failed" | undefined {
+): TerminalStatus | undefined {
   if (status === "completed") return "completed";
-  if (status === "failed" || status === "cancelled") return "failed";
+  if (status === "failed") return "failed";
+  if (status === "cancelled") return "stopped";
   return undefined;
 }
 

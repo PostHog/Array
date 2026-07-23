@@ -28,11 +28,13 @@ import type {
   SessionEvent,
   SessionNotification,
   SessionNotificationAttachment,
+  TerminalStatus,
 } from "../types";
 import { CloudMessageAttachment } from "./CloudMessageAttachment";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { QuestionCard } from "./QuestionCard";
+import { TerminalStatusBanner } from "./TerminalStatusBanner";
 
 interface PermissionResponseArgs {
   toolCallId: string;
@@ -57,7 +59,7 @@ interface TaskSessionViewProps {
   pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
   isConnecting?: boolean;
   isThinking?: boolean;
-  terminalStatus?: "failed" | "completed";
+  terminalStatus?: TerminalStatus;
   lastError?: string | null;
   onRetry?: () => void;
   onOpenTask?: (taskId: string) => void;
@@ -1033,46 +1035,11 @@ export function TaskSessionView({
         initialNumToRender={30}
         ListHeaderComponent={
           terminalStatus ? (
-            <View
-              className={`mx-4 mt-2 mb-4 rounded-lg px-4 py-3 ${
-                terminalStatus === "failed"
-                  ? "bg-status-error/10"
-                  : "bg-status-success/10"
-              }`}
-            >
-              <Text
-                className={`font-semibold text-sm ${
-                  terminalStatus === "failed"
-                    ? "text-status-error"
-                    : "text-status-success"
-                }`}
-              >
-                {terminalStatus === "failed" ? "Run failed" : "Run completed"}
-              </Text>
-              {lastError && (
-                <Text className="mt-1 text-gray-11 text-xs">{lastError}</Text>
-              )}
-              {onRetry && (
-                <Pressable
-                  onPress={onRetry}
-                  className={`mt-2 self-start rounded-md px-3 py-1.5 ${
-                    terminalStatus === "failed"
-                      ? "bg-status-error/20"
-                      : "bg-status-success/20"
-                  }`}
-                >
-                  <Text
-                    className={`font-medium text-xs ${
-                      terminalStatus === "failed"
-                        ? "text-status-error"
-                        : "text-status-success"
-                    }`}
-                  >
-                    {terminalStatus === "failed" ? "Retry" : "Continue"}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
+            <TerminalStatusBanner
+              terminalStatus={terminalStatus}
+              lastError={lastError}
+              onRetry={onRetry}
+            />
           ) : null
         }
       />
