@@ -18,13 +18,43 @@ import {
 } from "../cloud-task/schemas";
 import type { PiSession } from "./piSessionController";
 
-const readinessCommands = new Set<RpcCommand["type"]>([
-  "get_state",
-  "get_entries",
-  "get_available_models",
-  "get_available_thinking_levels",
-  "get_commands",
-]);
+function createTerminalPiRpcClient(
+  runId: string,
+  getRunStatus: () => TaskRunStatus,
+): PiRemoteRpcClient {
+  const rejectCommand = async (): Promise<never> => {
+    throw new Error(`Cloud task run ${runId} is ${getRunStatus()}`);
+  };
+
+  return {
+    prompt: rejectCommand,
+    steer: rejectCommand,
+    followUp: rejectCommand,
+    abort: rejectCommand,
+    getState: async () => ({
+      isStreaming: false,
+      isCompacting: false,
+      thinkingLevel: "off",
+      steeringMode: "all",
+      followUpMode: "all",
+      sessionId: runId,
+      autoCompactionEnabled: true,
+      messageCount: 0,
+      pendingMessageCount: 0,
+    }),
+    setModel: rejectCommand,
+    getAvailableModels: async () => [],
+    getAvailableThinkingLevels: async () => [],
+    setThinkingLevel: rejectCommand,
+    setSteeringMode: rejectCommand,
+    setFollowUpMode: rejectCommand,
+    compact: rejectCommand,
+    bash: rejectCommand,
+    abortBash: rejectCommand,
+    getEntries: async () => ({ entries: [], leafId: null }),
+    getCommands: async () => [],
+  };
+}
 
 export interface CloudPiSessionContext {
   taskId: string;
@@ -32,15 +62,13 @@ export interface CloudPiSessionContext {
   runStatus: TaskRunStatus;
   apiHost: string;
   teamId: number;
-  waitUntilReady?: () => Promise<TaskRunStatus>;
 }
 
 export class CloudPiSessionClient implements PiSession {
-  readonly client: PiRemoteRpcClient;
-
+  private readonly liveClient: PiRemoteRpcClient;
+  private readonly terminalClient: PiRemoteRpcClient;
   private runStatus: TaskRunStatus;
   private snapshotEvents: AgentConversationEvent[] = [];
-  private hasSnapshot = false;
   private resolveSnapshot: () => void = () => {};
   private rejectSnapshot: (error: unknown) => void = () => {};
   private readonly snapshotReceived = new Promise<void>((resolve, reject) => {
@@ -67,9 +95,19 @@ export class CloudPiSessionClient implements PiSession {
       this.resolveTerminalStatus();
     }
     void this.snapshotReceived.catch(() => {});
-    this.client = new RemotePiRpcClient({
+    this.liveClient = new RemotePiRpcClient({
       request: (command) => this.request(command),
     });
+    this.terminalClient = createTerminalPiRpcClient(
+      context.runId,
+      () => this.runStatus,
+    );
+  }
+
+  get client(): PiRemoteRpcClient {
+    return isTerminalStatus(this.runStatus)
+      ? this.terminalClient
+      : this.liveClient;
   }
 
   get resumeRequired(): boolean {
@@ -88,9 +126,15 @@ export class CloudPiSessionClient implements PiSession {
 
   async getConversation(): Promise<AgentConversationEvent[]> {
     if (!isTerminalStatus(this.runStatus)) {
-      const conversation = await getRemotePiConversation(this.client);
-      if (!isTerminalStatus(this.runStatus)) {
-        return conversation;
+      try {
+        const conversation = await getRemotePiConversation(this.liveClient);
+        if (!isTerminalStatus(this.runStatus)) {
+          return conversation;
+        }
+      } catch (error) {
+        if (!isTerminalStatus(this.runStatus)) {
+          throw error;
+        }
       }
     }
 
@@ -178,7 +222,6 @@ export class CloudPiSessionClient implements PiSession {
       }
 
       this.snapshotEvents = events;
-      this.hasSnapshot = true;
       this.resolveSnapshot();
       for (const event of events.slice(unchangedEventCount)) {
         onEvent(event);
@@ -258,52 +301,26 @@ export class CloudPiSessionClient implements PiSession {
   }
 
   private async request(command: RpcCommand): Promise<unknown> {
+    await this.waitForRuntimeReady();
     if (isTerminalStatus(this.runStatus)) {
-      return this.terminalResponseWhenReady(command);
+      throw new Error(
+        `Cloud task run ${this.context.runId} is ${this.runStatus}`,
+      );
     }
 
-    if (readinessCommands.has(command.type)) {
-      await this.waitForRuntimeReady();
-      if (isTerminalStatus(this.runStatus)) {
-        return this.terminalResponseWhenReady(command);
-      }
-    }
-
-    const input = {
+    const result = await this.cloudTaskClient.sendCommand({
       taskId: this.context.taskId,
       runId: this.context.runId,
       apiHost: this.context.apiHost,
       teamId: this.context.teamId,
-      method: "pi/rpc" as const,
+      method: "pi/rpc",
       params: { command },
-    };
-    const maxAttempts = readinessCommands.has(command.type) ? 3 : 1;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      if (isTerminalStatus(this.runStatus)) {
-        return this.terminalResponseWhenReady(command);
-      }
-
-      const result = await this.cloudTaskClient.sendCommand(input);
-      if (result.success) {
-        return result.result;
-      }
-      if (isTerminalStatus(this.runStatus)) {
-        return this.terminalResponseWhenReady(command);
-      }
-
-      const error = result.error ?? `Pi RPC command failed: ${command.type}`;
-      if (attempt === maxAttempts || !result.retryable) {
-        throw new Error(error);
-      }
-
-      await Promise.race([
-        new Promise((resolve) => setTimeout(resolve, 1_000)),
-        this.terminalStatusReceived,
-      ]);
+    });
+    if (!result.success) {
+      throw new Error(result.error ?? `Pi RPC command failed: ${command.type}`);
     }
 
-    throw new Error(`Pi RPC command failed: ${command.type}`);
+    return result.result;
   }
 
   private markRuntimeReady(): void {
@@ -319,95 +336,9 @@ export class CloudPiSessionClient implements PiSession {
       return;
     }
 
-    const readiness = await new Promise<"ready" | "terminal" | "fallback">(
-      (resolve) => {
-        let settled = false;
-        const settle = (value: "ready" | "terminal" | "fallback") => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timeout);
-          resolve(value);
-        };
-        const timeout = setTimeout(() => settle("fallback"), 10_000);
-        void this.runtimeReadyReceived.then(() => settle("ready"));
-        void this.terminalStatusReceived.then(() => settle("terminal"));
-      },
-    );
-    if (readiness !== "fallback" || !this.context.waitUntilReady) {
-      return;
-    }
-
-    this.runStatus = await this.context.waitUntilReady();
-    if (isTerminalStatus(this.runStatus) || this.runtimeReady) {
-      return;
-    }
-
-    const nativeReadiness = await new Promise<"ready" | "terminal" | "legacy">(
-      (resolve) => {
-        let settled = false;
-        const settle = (value: "ready" | "terminal" | "legacy") => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timeout);
-          resolve(value);
-        };
-        const timeout = setTimeout(() => settle("legacy"), 30_000);
-        void this.runtimeReadyReceived.then(() => settle("ready"));
-        void this.terminalStatusReceived.then(() => settle("terminal"));
-      },
-    );
-    if (nativeReadiness === "legacy") {
-      this.markRuntimeReady();
-    }
-  }
-
-  private async terminalResponseWhenReady(
-    command: RpcCommand,
-  ): Promise<unknown> {
-    if (command.type === "get_entries" && !this.hasSnapshot) {
-      await this.snapshotReceived;
-    }
-
-    return this.terminalResponse(command);
-  }
-
-  private terminalResponse(command: RpcCommand): unknown {
-    let data: unknown;
-    if (command.type === "get_state") {
-      data = {
-        isStreaming: false,
-        isCompacting: false,
-        thinkingLevel: "off",
-        steeringMode: "all",
-        followUpMode: "all",
-        sessionId: this.context.runId,
-        autoCompactionEnabled: true,
-        messageCount: 0,
-        pendingMessageCount: 0,
-      };
-    } else if (command.type === "get_available_models") {
-      data = { models: [] };
-    } else if (command.type === "get_available_thinking_levels") {
-      data = { levels: [] };
-    } else if (command.type === "get_commands") {
-      data = { commands: [] };
-    } else if (command.type === "get_entries" && this.hasSnapshot) {
-      data = { entries: [] };
-    } else {
-      throw new Error(
-        `Cloud task run ${this.context.runId} is ${this.runStatus}`,
-      );
-    }
-
-    return {
-      type: "response",
-      command: command.type,
-      success: true,
-      data,
-    };
+    await Promise.race([
+      this.runtimeReadyReceived,
+      this.terminalStatusReceived,
+    ]);
   }
 }

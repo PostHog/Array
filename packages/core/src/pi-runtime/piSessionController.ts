@@ -1,6 +1,6 @@
 import type { PiRemoteRpcClient } from "@posthog/agent/pi/remote-rpc-client";
 import type {
-  PiModelOption,
+  PiNativeModelInfo,
   PiQueueMode,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
@@ -20,12 +20,12 @@ import {
 } from "./piSessionStore";
 
 export type {
-  PiModelOption,
+  PiNativeModelInfo,
   PiQueueMode,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
 
-export type PiModelSelection = Pick<PiModelOption, "provider" | "id">;
+export type PiModelSelection = Pick<PiNativeModelInfo, "provider" | "id">;
 
 export const PI_SESSION_PROVIDER = Symbol.for("posthog.pi.sessionProvider");
 export const LOCAL_PI_SESSION_FACTORY = Symbol.for(

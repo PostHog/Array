@@ -126,36 +126,6 @@ describe("CloudPiSessionClient", () => {
     expect(cloud.client.sendCommand).toHaveBeenCalledOnce();
   });
 
-  it("falls back to task state readiness for older Pi servers", async () => {
-    vi.useFakeTimers();
-    try {
-      const cloud = createCloudTaskClient();
-      const waitUntilReady = vi.fn(async () => "in_progress" as const);
-      vi.mocked(cloud.client.sendCommand).mockResolvedValue({
-        success: true,
-        result: {
-          type: "response",
-          command: "get_state",
-          success: true,
-          data: { isStreaming: true },
-        },
-      });
-      const session = new CloudPiSessionClient(cloud.client, {
-        ...context("in_progress"),
-        waitUntilReady,
-      });
-
-      const state = session.client.getState();
-      await vi.advanceTimersByTimeAsync(40_000);
-
-      await expect(state).resolves.toMatchObject({ isStreaming: true });
-      expect(waitUntilReady).toHaveBeenCalledOnce();
-      expect(cloud.client.sendCommand).toHaveBeenCalledOnce();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("waits for subscription readiness before watching and only unsubscribes on cleanup", async () => {
     const cloud = createCloudTaskClient(false);
     vi.mocked(cloud.client.watch).mockImplementation(async () => {
@@ -360,7 +330,7 @@ describe("CloudPiSessionClient", () => {
     expect(controllerSession.status).toMatchObject({ isStreaming: false });
   });
 
-  it("switches readiness retries to terminal responses when the run finishes", async () => {
+  it("switches to terminal state when the run finishes during an RPC", async () => {
     const cloud = createCloudTaskClient();
     const session = new CloudPiSessionClient(
       cloud.client,

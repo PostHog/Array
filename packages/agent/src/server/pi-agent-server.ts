@@ -1,5 +1,5 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { AgentConversationEvent, StoredLogEntry } from "@posthog/shared";
@@ -134,8 +134,22 @@ export class PiAgentServer {
   async stop(): Promise<void> {
     const session = this.session;
     if (session) {
-      await session.runtime.client.abort().catch(() => undefined);
-      await session.runtime.client.waitForIdle(5_000).catch(() => undefined);
+      await session.runtime.client
+        .abort()
+        .catch((error) =>
+          this.logger.debug(
+            "Failed to abort Pi session during shutdown",
+            error,
+          ),
+        );
+      await session.runtime.client
+        .waitForIdle(5_000)
+        .catch((error) =>
+          this.logger.debug(
+            "Pi session did not become idle during shutdown",
+            error,
+          ),
+        );
       await this.syncTaskSession().catch((error) =>
         this.logger.error("Failed to sync Pi session during shutdown", error),
       );
@@ -174,7 +188,12 @@ export class PiAgentServer {
         status: "failed",
         error_message: `Pi agent server crashed: ${message}`,
       })
-      .catch(() => undefined);
+      .catch((updateError) =>
+        this.logger.error(
+          "Failed to mark crashed Pi run as failed",
+          updateError,
+        ),
+      );
     await this.eventStreamSender?.stop();
   }
 
@@ -348,12 +367,11 @@ export class PiAgentServer {
     );
     const persistedSessionContent =
       await this.posthogAPI.downloadTaskSession(sessionStorage);
-    const sessionDir = join("/tmp", "posthog-pi-sessions", sessionStorage.id);
-    await mkdir(sessionDir, { recursive: true });
     const restoredSessionFile = persistedSessionContent
-      ? join(sessionDir, "session.jsonl")
+      ? join("/tmp", "posthog-pi-sessions", sessionStorage.id, "session.jsonl")
       : undefined;
     if (restoredSessionFile) {
+      await mkdir(dirname(restoredSessionFile), { recursive: true });
       await writeFile(restoredSessionFile, persistedSessionContent, "utf8");
     }
     this.lastSyncedSessionContent = persistedSessionContent;
@@ -362,7 +380,6 @@ export class PiAgentServer {
     const client = createPiRpcClient({
       cliPath: this.config.piRpcHostPath,
       cwd,
-      sessionDir,
       model: this.config.model,
       sessionFile: restoredSessionFile,
       providerOptions: {

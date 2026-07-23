@@ -57,7 +57,6 @@ class SecurePiRpcClient extends RpcClient {
   constructor(
     private readonly secureOptions: RpcClientOptions,
     private readonly providerOptions: PiRpcProviderOptions,
-    private readonly sessionDir?: string,
   ) {
     super(secureOptions);
   }
@@ -130,10 +129,7 @@ class SecurePiRpcClient extends RpcClient {
 
     const bootstrapPipe = child.stdio[3] as Writable | null;
     bootstrapPipe?.end(
-      JSON.stringify({
-        providerOptions: this.providerOptions,
-        sessionDir: this.sessionDir,
-      }),
+      JSON.stringify({ providerOptions: this.providerOptions }),
     );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -156,13 +152,12 @@ export type PiRpcClientOptions = Pick<
   RpcClientOptions,
   "cliPath" | "cwd" | "model"
 > & {
-  sessionDir?: string;
   sessionFile?: string;
   providerOptions: PiRpcProviderOptions;
 };
 
 export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {
-  const { sessionDir, sessionFile, providerOptions, ...rpcOptions } = options;
+  const { sessionFile, providerOptions, ...rpcOptions } = options;
   const args = sessionFile ? ["--session-file", sessionFile] : [];
   const cliPath =
     rpcOptions.cliPath ??
@@ -175,6 +170,5 @@ export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {
       provider: "posthog",
     },
     providerOptions,
-    sessionDir,
   );
 }

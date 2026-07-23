@@ -1,10 +1,8 @@
-import type { TaskRunStatus } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   CLOUD_TASK_CLIENT,
   type CloudTaskClient,
 } from "../cloud-task/cloudTaskClient";
-import { isTerminalStatus } from "../cloud-task/schemas";
 import { TASK_SERVICE, type TaskService } from "../task-detail/taskService";
 import {
   CloudPiSessionClient,
@@ -53,33 +51,7 @@ export class RoutingPiSessionProvider implements PiSessionProvider {
       taskId,
       runId: run.id,
       runStatus: run.status,
-      waitUntilReady: () => this.waitUntilCloudRuntimeReady(taskId, run.id),
       ...context,
     };
-  }
-
-  private async waitUntilCloudRuntimeReady(
-    taskId: string,
-    runId: string,
-  ): Promise<TaskRunStatus> {
-    let delayMs = 1_000;
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      const task = await this.taskService.getTask(taskId, runId);
-      const run = task.latest_run;
-      if (!run || run.id !== runId) {
-        throw new Error(`Cloud task run ${runId} is unavailable`);
-      }
-      if (
-        isTerminalStatus(run.status) ||
-        typeof run.state?.sandbox_url === "string"
-      ) {
-        return run.status;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      delayMs = Math.min(delayMs * 2, 5_000);
-    }
-
-    throw new Error(`Cloud task run ${runId} did not become ready`);
   }
 }

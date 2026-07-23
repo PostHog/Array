@@ -237,7 +237,7 @@ export class PostHogAPIClient {
     const response = await fetch(access.download_url, {
       signal: AbortSignal.timeout(30_000),
     });
-    if (response.status === 404) {
+    if (response.status === 404 && access.revision === 0) {
       return "";
     }
     if (!response.ok) {

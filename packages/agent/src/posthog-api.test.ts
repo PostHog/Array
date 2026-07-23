@@ -190,6 +190,48 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("treats a missing initial task session object as empty", async () => {
+    const client = new PostHogAPIClient({
+      apiUrl: "https://app.posthog.com",
+      getApiKey: vi.fn().mockResolvedValue("token"),
+      projectId: 7,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    });
+
+    await expect(
+      client.downloadTaskSession({
+        id: "session-1",
+        download_url: "https://storage.example/session.jsonl",
+        revision: 0,
+      }),
+    ).resolves.toBe("");
+  });
+
+  it("rejects a missing promoted task session revision", async () => {
+    const client = new PostHogAPIClient({
+      apiUrl: "https://app.posthog.com",
+      getApiKey: vi.fn().mockResolvedValue("token"),
+      projectId: 7,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    });
+
+    await expect(
+      client.downloadTaskSession({
+        id: "session-1",
+        download_url: "https://storage.example/session.jsonl",
+        revision: 3,
+      }),
+    ).rejects.toThrow("Failed to download task session: [404] Not Found");
+  });
+
   it("recovers an ambiguous finalize only when its prepared object was promoted", async () => {
     const client = new PostHogAPIClient({
       apiUrl: "https://app.posthog.com",

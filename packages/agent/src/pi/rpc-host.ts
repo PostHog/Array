@@ -6,7 +6,6 @@ import { sanitizePiHostEnvironment } from "./rpc-environment";
 
 interface PiRpcBootstrap {
   providerOptions?: PosthogProviderOptions;
-  sessionDir?: string;
 }
 
 function argumentValue(name: string): string | undefined {
@@ -25,7 +24,7 @@ const cwd = process.cwd();
 const sessionFile = argumentValue("--session-file");
 const sessionManager = sessionFile
   ? SessionManager.open(sessionFile, undefined, cwd)
-  : SessionManager.create(cwd, bootstrap.sessionDir);
+  : SessionManager.create(cwd);
 const runtime = await createHarnessRuntime({
   cwd,
   sessionManager,

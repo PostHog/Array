@@ -149,6 +149,7 @@ export default defineConfig([
       "src/execution-mode.ts",
       "src/server/schemas.ts",
       "src/server/agent-server.ts",
+      "src/server/bin.ts",
     ],
     format: ["esm"],
     dts: false,
@@ -180,16 +181,6 @@ export default defineConfig([
         writeFileSync(triggerFile, `${Date.now()}`);
       }
     },
-  },
-  {
-    entry: { "server/bin": "src/server/bin.ts" },
-    format: ["esm"],
-    dts: false,
-    clean: false,
-    banner: {
-      js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
-    },
-    ...sharedOptions,
   },
   {
     entry: { "pi/rpc-host": "src/pi/rpc-host.ts" },

@@ -45,7 +45,16 @@ function cloudTaskClient(): CloudTaskClient {
     })),
     watch: vi.fn(async () => {}),
     unwatch: vi.fn(async () => {}),
-    subscribe: vi.fn(() => () => {}),
+    subscribe: vi.fn((taskId, runId, onUpdate) => {
+      onUpdate({
+        taskId,
+        runId,
+        kind: "logs",
+        newEntries: [{ type: "pi_run_started" }],
+        totalEntryCount: 1,
+      });
+      return () => {};
+    }),
     sendCommand: vi.fn(async (input) => ({
       success: true,
       result: {
@@ -83,6 +92,7 @@ describe("RoutingPiSessionProvider", () => {
     );
 
     const session = await provider.get("task-1");
+    session.onConversationEvent(vi.fn(), vi.fn());
     await session.client.steer("change direction");
 
     expect(cloudTasks.sendCommand).toHaveBeenCalledWith({
@@ -117,8 +127,10 @@ describe("RoutingPiSessionProvider", () => {
     );
 
     const historical = await provider.get("task-1", "run-old");
+    historical.onConversationEvent(vi.fn(), vi.fn());
     await historical.client.abort();
     const replacement = await provider.get("task-1", "run-new");
+    replacement.onConversationEvent(vi.fn(), vi.fn());
     await replacement.client.abort();
 
     expect(getTask).toHaveBeenNthCalledWith(1, "task-1", "run-old");

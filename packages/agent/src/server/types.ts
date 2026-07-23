@@ -48,7 +48,6 @@ export interface AgentServerConfig {
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];
-  protocol?: "acp" | "pi";
   piRpcHostPath?: string;
   runtimeAdapter?: Adapter;
   model?: string;
