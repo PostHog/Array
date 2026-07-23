@@ -51,6 +51,11 @@ vi.mock("./PlanApprovalCard", () => ({
     createElement("PlanApprovalCard", props),
 }));
 
+vi.mock("./CloudMessageAttachment", () => ({
+  CloudMessageAttachment: (props: Record<string, unknown>) =>
+    createElement("CloudMessageAttachment", props),
+}));
+
 function renderTaskSessionView(
   props: Parameters<typeof TaskSessionView>[0],
 ): ReturnType<typeof create> {
