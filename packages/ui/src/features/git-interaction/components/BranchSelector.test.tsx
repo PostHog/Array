@@ -326,7 +326,7 @@ describe("BranchSelector cloud mode", () => {
 
 describe("BranchSelector checkout context", () => {
   it("shows the checked-out branch after an in-place checkout succeeds", () => {
-    renderInTheme(
+    const { rerender } = renderInTheme(
       <BranchSelector
         repoPath="/repos/code"
         currentBranch="main"
@@ -347,6 +347,20 @@ describe("BranchSelector checkout context", () => {
 
     expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
       "feature/in-place",
+    );
+
+    rerender(
+      <Theme>
+        <BranchSelector
+          repoPath="/repos/code"
+          currentBranch="feature/external"
+          workspaceMode="local"
+        />
+      </Theme>,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
+      "feature/external",
     );
   });
 

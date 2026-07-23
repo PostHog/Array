@@ -234,7 +234,8 @@ export function BranchSelector({
 
   const checkedOutBranch =
     checkoutMutation.data &&
-    checkoutMutation.variables.directoryPath === repoPath
+    checkoutMutation.variables.directoryPath === repoPath &&
+    currentBranch === checkoutMutation.data.previousBranch
       ? checkoutMutation.data.currentBranch
       : currentBranch;
   const displayedBranch = isSelectionOnly ? selectedBranch : checkedOutBranch;
