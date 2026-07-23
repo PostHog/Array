@@ -2,10 +2,10 @@ import type { ArchivedTask } from "@posthog/shared";
 import { formatRelativeTimeLong } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 
-export type ArchivedTaskDetails = Pick<
-  Task,
-  "id" | "title" | "created_at" | "repository"
->;
+export interface ArchivedTaskDetails
+  extends Pick<Task, "id" | "title" | "repository"> {
+  created_at: Task["created_at"] | null;
+}
 
 export interface ArchivedTaskWithDetails {
   archived: ArchivedTask;
@@ -39,18 +39,20 @@ export function mergeArchivedWithTasks(
     archived,
     task:
       taskMap.get(archived.taskId) ??
-      (archived.title && archived.taskCreatedAt
+      (archived.title || archived.taskCreatedAt || archived.repository
         ? {
             id: archived.taskId,
-            title: archived.title,
-            created_at: archived.taskCreatedAt,
-            repository: archived.repository,
+            title:
+              archived.title ??
+              `Unknown task (${archived.branchName ?? archived.worktreeName ?? archived.taskId.slice(0, 8)})`,
+            created_at: archived.taskCreatedAt ?? null,
+            repository: archived.repository ?? null,
           }
         : null),
   }));
 }
 
-export function formatRelativeDate(isoDate: string | undefined): string {
+export function formatRelativeDate(isoDate: string | null | undefined): string {
   if (!isoDate) return "—";
   return formatRelativeTimeLong(isoDate);
 }
