@@ -1,4 +1,8 @@
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import {
+  getAuthIdentity,
+  useAuthStateValue,
+} from "@posthog/ui/features/auth/store";
 import { useTaskSummaries } from "@posthog/ui/features/tasks/useTasks";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -12,14 +16,24 @@ import {
 } from "../loopBuilderSessionStore";
 
 /**
- * The recorded builder sessions whose cloud run is still alive. Sessions whose
- * sandbox has shut down (run completed, failed, cancelled, or task archived or
- * deleted) are pruned from the persisted store as their status comes in, so the
- * "in progress" list never offers a resume into a dead session. The liveness
- * decision itself is the pure `isBuilderSessionEnded`.
+ * The current identity's builder sessions whose cloud run is still alive.
+ * Sessions whose sandbox has shut down (run completed, failed, cancelled, or
+ * task archived or deleted) are pruned from the persisted store as their status
+ * comes in, so the "in progress" list never offers a resume into a dead
+ * session. Other identities' sessions are never shown or pruned: the summaries
+ * this hook queries are only authoritative for the signed-in account. The
+ * liveness decision itself is the pure `isBuilderSessionEnded`.
  */
 export function useLoopBuilderSessions(): LoopBuilderSession[] {
-  const sessions = useLoopBuilderSessionStore((state) => state.sessions);
+  const identity = useAuthStateValue(getAuthIdentity);
+  const allSessions = useLoopBuilderSessionStore((state) => state.sessions);
+  const sessions = useMemo(
+    () =>
+      identity
+        ? allSessions.filter((session) => session.identity === identity)
+        : [],
+    [allSessions, identity],
+  );
   const archivedTaskIds = useArchivedTaskIds();
   const taskIds = useMemo(
     () => sessions.map((session) => session.taskId),
@@ -58,14 +72,15 @@ export function useLoopBuilderSessions(): LoopBuilderSession[] {
   }, [sessions, now]);
 
   useEffect(() => {
-    if (!summaries) return;
+    if (!summaries || !identity) return;
     const store = useLoopBuilderSessionStore.getState();
     for (const session of store.sessions) {
+      if (session.identity !== identity) continue;
       if (isBuilderSessionEnded(session, summaries, archivedTaskIds, now)) {
         store.removeSession(session.taskId);
       }
     }
-  }, [summaries, archivedTaskIds, now]);
+  }, [summaries, archivedTaskIds, now, identity]);
 
   return useMemo(() => {
     if (!summaries) {

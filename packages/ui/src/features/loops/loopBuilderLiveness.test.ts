@@ -9,7 +9,12 @@ import type { LoopBuilderSession } from "./loopBuilderSessionStore";
 const NOW = 1_752_000_000_000;
 
 function session(ageMs: number): LoopBuilderSession {
-  return { taskId: "task-1", prompt: "prompt", startedAt: NOW - ageMs };
+  return {
+    taskId: "task-1",
+    prompt: "prompt",
+    startedAt: NOW - ageMs,
+    identity: "us:1",
+  };
 }
 
 function summaries(

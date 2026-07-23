@@ -1,5 +1,6 @@
 import type { TaskCreationInput } from "@posthog/core/task-detail/taskService";
 import type { Task } from "@posthog/shared/domain-types";
+import { getAuthIdentity, useAuthStore } from "@posthog/ui/features/auth/store";
 import {
   type InboxCloudTaskInputContext,
   useInboxCloudTaskRunner,
@@ -77,10 +78,13 @@ export function useLoopBuilderTask(context?: {
   );
 
   const handleTaskCreated = useCallback((task: Task) => {
+    const identity = getAuthIdentity(useAuthStore.getState().authState);
+    if (!identity) return;
     useLoopBuilderSessionStore.getState().addSession({
       taskId: task.id,
       prompt: instructionsRef.current.trim() || "Build a loop",
       startedAt: Date.now(),
+      identity,
     });
   }, []);
 
