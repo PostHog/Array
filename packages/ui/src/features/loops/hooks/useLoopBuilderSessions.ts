@@ -1,21 +1,22 @@
-import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useTaskSummaries } from "@posthog/ui/features/tasks/useTasks";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  type BuilderRunSummaries,
+  FRESH_SESSION_GRACE_MS,
+  isBuilderSessionEnded,
+} from "../loopBuilderLiveness";
 import {
   type LoopBuilderSession,
   useLoopBuilderSessionStore,
 } from "../loopBuilderSessionStore";
 
-// A fresh task can briefly report no run (or a stale summary via
-// keepPreviousData) before the cloud run registers; don't treat that as ended.
-const FRESH_SESSION_GRACE_MS = 60_000;
-
 /**
  * The recorded builder sessions whose cloud run is still alive. Sessions whose
  * sandbox has shut down (run completed, failed, cancelled, or task archived or
  * deleted) are pruned from the persisted store as their status comes in, so the
- * "in progress" list never offers a resume into a dead session.
+ * "in progress" list never offers a resume into a dead session. The liveness
+ * decision itself is the pure `isBuilderSessionEnded`.
  */
 export function useLoopBuilderSessions(): LoopBuilderSession[] {
   const sessions = useLoopBuilderSessionStore((state) => state.sessions);
@@ -24,45 +25,55 @@ export function useLoopBuilderSessions(): LoopBuilderSession[] {
     () => sessions.map((session) => session.taskId),
     [sessions],
   );
-  const {
-    data: summaries,
-    isSuccess,
-    isPlaceholderData,
-  } = useTaskSummaries(taskIds);
+  const { data, isSuccess, isPlaceholderData } = useTaskSummaries(taskIds);
 
-  const liveTaskIds = useMemo(() => {
-    if (!isSuccess || isPlaceholderData) return null;
-    const live = new Set<string>();
-    for (const summary of summaries ?? []) {
-      const run = summary.latest_run;
-      if (run?.environment === "cloud" && !isTerminalStatus(run.status)) {
-        live.add(summary.id);
-      }
-    }
-    return live;
-  }, [isSuccess, isPlaceholderData, summaries]);
+  const summaries = useMemo<BuilderRunSummaries | null>(() => {
+    // Placeholder data is the previous id set's response; judging liveness on
+    // it would prune a just-added session that isn't in that response yet.
+    if (!isSuccess || isPlaceholderData || !data) return null;
+    return new Map(
+      data.map((summary) => [
+        summary.id,
+        summary.latest_run
+          ? {
+              environment: summary.latest_run.environment,
+              status: summary.latest_run.status,
+            }
+          : null,
+      ]),
+    );
+  }, [isSuccess, isPlaceholderData, data]);
+
+  // Grace expiry doesn't produce a re-render by itself (polled summaries keep
+  // their identity when nothing changed), so schedule one for the soonest
+  // boundary; `now` is otherwise only refreshed by real data changes.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const waits = sessions
+      .map((session) => session.startedAt + FRESH_SESSION_GRACE_MS - now)
+      .filter((wait) => wait > 0);
+    if (waits.length === 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(...waits) + 50);
+    return () => clearTimeout(timer);
+  }, [sessions, now]);
 
   useEffect(() => {
-    if (!liveTaskIds) return;
+    if (!summaries) return;
     const store = useLoopBuilderSessionStore.getState();
     for (const session of store.sessions) {
-      const dead =
-        !liveTaskIds.has(session.taskId) &&
-        Date.now() - session.startedAt >= FRESH_SESSION_GRACE_MS;
-      if (dead || archivedTaskIds.has(session.taskId)) {
+      if (isBuilderSessionEnded(session, summaries, archivedTaskIds, now)) {
         store.removeSession(session.taskId);
       }
     }
-  }, [liveTaskIds, archivedTaskIds]);
+  }, [summaries, archivedTaskIds, now]);
 
-  return useMemo(
-    () =>
-      sessions.filter((session) => {
-        if (archivedTaskIds.has(session.taskId)) return false;
-        if (!liveTaskIds) return true;
-        if (liveTaskIds.has(session.taskId)) return true;
-        return Date.now() - session.startedAt < FRESH_SESSION_GRACE_MS;
-      }),
-    [sessions, archivedTaskIds, liveTaskIds],
-  );
+  return useMemo(() => {
+    if (!summaries) {
+      return sessions.filter((session) => !archivedTaskIds.has(session.taskId));
+    }
+    return sessions.filter(
+      (session) =>
+        !isBuilderSessionEnded(session, summaries, archivedTaskIds, now),
+    );
+  }, [sessions, summaries, archivedTaskIds, now]);
 }

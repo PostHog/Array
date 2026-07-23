@@ -43,7 +43,7 @@ export function useLoopBuilderTask(context?: {
       return {
         content: taskContent,
         // Divergent on purpose: the description becomes the task's title, so
-        // the sidebar row reads as the builder instead of the raw prompt.
+        // the "Loop builder:" prefix marks the sidebar row as a builder session.
         taskDescription: hasSeed
           ? `Loop builder: ${userPrompt}`
           : "Loop builder",

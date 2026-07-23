@@ -11,6 +11,7 @@ import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
+import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToNewLoop,
   navigateToTaskDetail,
@@ -264,11 +265,11 @@ function BuilderSessionRow({
     <Flex
       align="center"
       gap="3"
-      className="rounded-(--radius-3) border border-border bg-(--color-panel-solid) px-3 py-2"
+      className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2"
     >
       <ChatCircleDotsIcon size={16} className="shrink-0 text-(--accent-11)" />
       <Flex direction="column" className="min-w-0 flex-1">
-        <Text className="font-medium text-[11px] text-gray-9 uppercase tracking-wide">
+        <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
           Builder in progress
         </Text>
         <Text className="truncate text-[13px] text-gray-12">
@@ -283,12 +284,12 @@ function BuilderSessionRow({
         Resume
       </Button>
       <Button
-        variant="ghost"
-        color="gray"
+        variant="soft"
+        color="red"
         size="1"
         onClick={() => setConfirmStop(true)}
       >
-        <StopIcon size={12} />
+        <StopIcon size={12} weight="bold" />
         Stop
       </Button>
       {confirmStop ? (
@@ -298,7 +299,10 @@ function BuilderSessionRow({
           title="Stop loop builder"
           buttonLabel="Stop builder"
           onOpenChange={setConfirmStop}
-          onStopped={() => onStopped?.(session.taskId)}
+          onStopped={() => {
+            toast.success("Builder stopped");
+            onStopped?.(session.taskId);
+          }}
         />
       ) : null}
     </Flex>
