@@ -20,6 +20,25 @@ function config(): AgentServerConfig {
 }
 
 describe("PiAgentServer", () => {
+  it.each([
+    ["task", { task_id: "task-2", run_id: "run-1", team_id: 1 }],
+    ["run", { task_id: "task-1", run_id: "run-2", team_id: 1 }],
+    ["team", { task_id: "task-1", run_id: "run-1", team_id: 2 }],
+  ])("rejects a token for a different %s", (_field, identity) => {
+    const server = new PiAgentServer(config()) as unknown as {
+      assertConfiguredRun(payload: Record<string, unknown>): void;
+    };
+
+    expect(() =>
+      server.assertConfiguredRun({
+        ...identity,
+        user_id: 1,
+        distinct_id: "user-1",
+        mode: "interactive",
+      }),
+    ).toThrow("Token does not match the configured task run");
+  });
+
   it("persists translated Pi events at the turn boundary", async () => {
     const appendTaskRunLog = vi.fn(async () => ({}));
     const server = new PiAgentServer(config()) as unknown as {

@@ -622,7 +622,22 @@ export class PiAgentServer {
         "invalid_token",
       );
     }
-    return validateJwt(authHeader.slice(7), this.config.jwtPublicKey);
+    const payload = validateJwt(authHeader.slice(7), this.config.jwtPublicKey);
+    this.assertConfiguredRun(payload);
+    return payload;
+  }
+
+  private assertConfiguredRun(payload: JwtPayload): void {
+    if (
+      payload.task_id !== this.config.taskId ||
+      payload.run_id !== this.config.runId ||
+      payload.team_id !== this.config.projectId
+    ) {
+      throw new JwtValidationError(
+        "Token does not match the configured task run",
+        "invalid_token",
+      );
+    }
   }
 
   private async waitForRepoReady(): Promise<void> {
