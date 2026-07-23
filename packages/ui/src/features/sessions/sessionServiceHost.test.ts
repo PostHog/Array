@@ -1929,6 +1929,93 @@ describe("SessionService", () => {
       resolveFirstHydration({ entries: [], complete: true });
     });
 
+    it("keeps the settled terminal cursor when a resume-chain hydration resolves late", async () => {
+      const service = getSessionService();
+      const session = createMockSession({
+        taskId: "task-123",
+        taskRunId: "run-123",
+        isCloud: true,
+        events: [],
+      });
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(session);
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-123": session,
+      });
+      mockTrpcLogs.readLocalLogs.query.mockResolvedValue("");
+      mockTrpcLogs.fetchS3Logs.query.mockResolvedValue("");
+      const entry = (text: string) => ({
+        timestamp: "2026-07-15T10:00:00+00:00",
+        notification: {
+          method: "session/update",
+          params: {
+            update: {
+              sessionUpdate: "agent_message",
+              content: { type: "text", text },
+            },
+          },
+        },
+      });
+      let resolveAncestor!: (r: {
+        entries: object[];
+        complete: boolean;
+      }) => void;
+      let resolveCurrent!: (r: {
+        entries: object[];
+        complete: boolean;
+      }) => void;
+      mockAuthenticatedClient.getTaskRunSessionLogsResult
+        .mockReturnValueOnce(
+          new Promise((r) => {
+            resolveAncestor = r;
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise((r) => {
+            resolveCurrent = r;
+          }),
+        );
+
+      service.watchCloudTask(
+        "task-123",
+        "run-123",
+        "https://api.anthropic.com",
+        123,
+        undefined,
+        "https://example.com/logs/run-123",
+        undefined,
+        "claude",
+        undefined,
+        undefined,
+        undefined,
+        "in_progress",
+        undefined,
+        { resume_from_run_id: "previous-run" },
+      );
+
+      await vi.waitFor(() => {
+        expect(
+          mockAuthenticatedClient.getTaskRunSessionLogsResult,
+        ).toHaveBeenCalledTimes(2);
+      });
+
+      // The run settles while the resume-chain fetches are still in flight,
+      // exactly as a concurrent terminal-chain hydration records it.
+      session.cloudStatus = "completed";
+      session.processedLineCount = 5;
+
+      resolveAncestor({ entries: [entry("a"), entry("b")], complete: true });
+      resolveCurrent({ entries: [entry("c")], complete: true });
+
+      // The late resume-chain write must not lower the settled cursor to its
+      // leaf-only count.
+      await vi.waitFor(() => {
+        expect(mockSessionStoreSetters.updateSession).toHaveBeenCalledWith(
+          "run-123",
+          expect.objectContaining({ processedLineCount: 5 }),
+        );
+      });
+    });
+
     it("does not re-subscribe across repeated calls for a hydrated terminal run", () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(

@@ -6220,6 +6220,15 @@ export class SessionService {
       };
     }
 
+    // A concurrent terminal-chain hydration (they memoize under different
+    // mode keys) may have already recorded the full chain as processed; a
+    // leaf-stream cursor from this older hydration must never lower it once
+    // the run has settled.
+    const settled = this.d.store.getSessions()[taskRunId];
+    const settledCursor = isTerminalStatus(settled?.cloudStatus)
+      ? (settled?.processedLineCount ?? 0)
+      : 0;
+
     this.d.store.updateSession(taskRunId, {
       events,
       isCloud: true,
@@ -6229,7 +6238,7 @@ export class SessionService {
       // re-applies it; live resume runs keep the leaf-stream cursor.
       processedLineCount: isTerminalRun
         ? effectiveLineCount
-        : liveStreamLineCount,
+        : Math.max(liveStreamLineCount, settledCursor),
     });
     this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
     this.pendingPermissionHydratedRuns.add(taskRunId);
