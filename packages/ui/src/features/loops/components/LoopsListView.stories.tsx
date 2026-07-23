@@ -173,3 +173,24 @@ export const LongMixedList: Story = {
     }),
   },
 };
+
+export const WithBuilderSessions: Story = {
+  args: {
+    builderSessions: [
+      {
+        taskId: "builder-task-1",
+        prompt: "Summarize my open PRs every weekday morning",
+        startedAt: 1752000000000,
+        identity: "us:2",
+      },
+      {
+        taskId: "builder-task-2",
+        prompt: "Build a loop",
+        startedAt: 1752000600000,
+        identity: "us:2",
+      },
+    ],
+    onResumeBuilderSession: () => {},
+    onBuilderSessionStopped: () => {},
+  },
+};

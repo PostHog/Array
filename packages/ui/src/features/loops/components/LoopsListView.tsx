@@ -1,13 +1,28 @@
-import { CloudIcon, PlusIcon, RepeatIcon } from "@phosphor-icons/react";
+import {
+  ChatCircleDotsIcon,
+  CloudIcon,
+  PlusIcon,
+  RepeatIcon,
+} from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
+import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
-import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
+import { toast } from "@posthog/ui/primitives/toast";
+import {
+  navigateToNewLoop,
+  navigateToTaskDetail,
+} from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
+import { useLoopBuilderSessions } from "../hooks/useLoopBuilderSessions";
 import { useLoopLimits, useLoops } from "../hooks/useLoops";
+import {
+  type LoopBuilderSession,
+  useLoopBuilderSessionStore,
+} from "../loopBuilderSessionStore";
 import { useLoopDraftStore } from "../loopDraftStore";
 import type { LoopTemplate } from "../loopTemplates";
 import { LoopBuilderComposer } from "./LoopBuilderComposer";
@@ -23,12 +38,21 @@ function loopLimitReason(max: number): string {
 }
 
 const EMPTY_MEMBERS: UserBasic[] = [];
+const EMPTY_BUILDER_SESSIONS: LoopBuilderSession[] = [];
 
 const SECTION_PREVIEW_COUNT = 5;
 
 function startBlankLoop(): void {
   useLoopDraftStore.getState().setPrefill(null);
   navigateToNewLoop();
+}
+
+function resumeBuilderSession(taskId: string): void {
+  navigateToTaskDetail(taskId);
+}
+
+function removeBuilderSession(taskId: string): void {
+  useLoopBuilderSessionStore.getState().removeSession(taskId);
 }
 
 function startLoopFromTemplate(template: LoopTemplate): void {
@@ -60,6 +84,8 @@ export function LoopsListView() {
   );
   useSetHeaderContent(headerContent);
 
+  const builderSessions = useLoopBuilderSessions();
+
   const allLoops = loops ?? [];
   const teamLoops = allLoops.filter((loop) => loop.visibility === "team");
   const {
@@ -79,8 +105,11 @@ export function LoopsListView() {
       membersLoading={membersLoading}
       membersError={membersError}
       membersComplete={membersComplete}
+      builderSessions={builderSessions}
       onStartBlank={startBlankLoop}
       onStartFromTemplate={startLoopFromTemplate}
+      onResumeBuilderSession={resumeBuilderSession}
+      onBuilderSessionStopped={removeBuilderSession}
     />
   );
 }
@@ -94,8 +123,11 @@ interface LoopsListViewPresentationProps {
   membersLoading?: boolean;
   membersError?: boolean;
   membersComplete?: boolean;
+  builderSessions?: LoopBuilderSession[];
   onStartBlank: () => void;
   onStartFromTemplate: (template: LoopTemplate) => void;
+  onResumeBuilderSession?: (taskId: string) => void;
+  onBuilderSessionStopped?: (taskId: string) => void;
 }
 
 export function LoopsListViewPresentation({
@@ -107,8 +139,11 @@ export function LoopsListViewPresentation({
   membersLoading = false,
   membersError = false,
   membersComplete = true,
+  builderSessions = EMPTY_BUILDER_SESSIONS,
   onStartBlank,
   onStartFromTemplate,
+  onResumeBuilderSession,
+  onBuilderSessionStopped,
 }: LoopsListViewPresentationProps) {
   const personalLoops = loops.filter((loop) => loop.visibility === "personal");
   const teamLoops = loops.filter((loop) => loop.visibility === "team");
@@ -199,9 +234,75 @@ export function LoopsListViewPresentation({
           gap="2"
           className="mx-auto w-full max-w-5xl px-8 pb-6"
         >
+          {builderSessions.map((session) => (
+            <BuilderSessionRow
+              key={session.taskId}
+              session={session}
+              onResume={onResumeBuilderSession}
+              onStopped={onBuilderSessionStopped}
+            />
+          ))}
           <LoopBuilderComposer disabledReason={limitReason} />
         </Flex>
       </div>
+    </Flex>
+  );
+}
+
+function BuilderSessionRow({
+  session,
+  onResume,
+  onStopped,
+}: {
+  session: LoopBuilderSession;
+  onResume?: (taskId: string) => void;
+  onStopped?: (taskId: string) => void;
+}) {
+  const [confirmStop, setConfirmStop] = useState(false);
+
+  return (
+    <Flex
+      align="center"
+      gap="3"
+      className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-3 py-2"
+    >
+      <ChatCircleDotsIcon size={16} className="shrink-0 text-(--accent-11)" />
+      <Flex direction="column" className="min-w-0 flex-1">
+        <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
+          Builder in progress
+        </Text>
+        <Text className="truncate text-[13px] text-gray-12">
+          {session.prompt}
+        </Text>
+      </Flex>
+      <Button
+        variant="soft"
+        color="red"
+        size="1"
+        onClick={() => setConfirmStop(true)}
+      >
+        Stop
+      </Button>
+      <Button
+        variant="soft"
+        size="1"
+        onClick={() => onResume?.(session.taskId)}
+      >
+        Resume
+      </Button>
+      {confirmStop ? (
+        <StopCloudRunDialog
+          open={confirmStop}
+          taskId={session.taskId}
+          title="Stop loop builder"
+          buttonLabel="Stop builder"
+          onOpenChange={setConfirmStop}
+          onStopped={() => {
+            toast.success("Builder stopped");
+            onStopped?.(session.taskId);
+          }}
+        />
+      ) : null}
     </Flex>
   );
 }

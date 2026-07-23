@@ -576,6 +576,10 @@ snapshots:
         hash: v1.k4693efd2.384486583f8d9b66a4bf1d9cc45036a07310cb9e1943ea5b52ff466f55a03d7b.F_sXrJ13XWHzAF8yhoKun_k4BY8Jcb3EDtT0L1I6nKw
     loops-loopslistview--long-mixed-list--light:
         hash: v1.k4693efd2.d80a0c55c4490276df53f781ac88ed9d9c6ec282bc14ddb80140b3ddcc44d32f.L6hw9ZixUiyTFKOybYzmjfUSIOayvmhueMTcmYt-IWo
+    loops-loopslistview--with-builder-sessions--dark:
+        hash: v1.k4693efd2.bc59812bf49ff161cf20e75dcf043367ae3d2817aa2c2cf91c91d9771c6b62f8.yOBz-llmwDVay7GIHlMwlMT3EuKjkoW0Vwmwvi4noCM
+    loops-loopslistview--with-builder-sessions--light:
+        hash: v1.k4693efd2.fb97e3fe3205ddf71d98c4e35446c73e394aaa9761d3bb35b146ddafc438df4d.UUEWc0G12NQibZTyskIHGS62mB36gKJ594GrJp1E9II
     scouts-scoutsfleetlist--filtered-to-you--dark:
         hash: v1.k4693efd2.a3af6e76ef36598eaa347bedc4430878ed62754660166398e0576a9978cd084b.x3Ky-O6HOw0srWdOmnnKJwFNpmGmQVWip0t7CwVaRXY
     scouts-scoutsfleetlist--filtered-to-you--light:

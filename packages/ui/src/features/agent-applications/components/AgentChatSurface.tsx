@@ -1,4 +1,4 @@
-import { ArrowUp, Stop } from "@phosphor-icons/react";
+import { ArrowUp, StopCircle } from "@phosphor-icons/react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -179,7 +179,7 @@ function Composer({
                   onClick={onCancel}
                   aria-label="Stop"
                 >
-                  <Stop size={14} weight="fill" />
+                  <StopCircle size={14} weight="fill" />
                 </InputGroupButton>
               </Tooltip>
             ) : (

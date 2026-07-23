@@ -5959,55 +5959,81 @@ export class SessionService {
         return;
       }
       if (resumeFromRunId) {
-        const [ancestorResult, currentRunResult] = await Promise.all([
-          authStatus.auth.client.getTaskRunSessionLogsResult(
-            taskId,
-            resumeFromRunId,
-            { limit: 100000 },
-          ),
-          authStatus.auth.client.getTaskRunSessionLogsResult(
-            taskId,
-            taskRunId,
-            { limit: 100000 },
-          ),
-        ]);
-        if (!ancestorResult.complete || !currentRunResult.complete) {
-          this.d.log.warn("Resume session log hydration was incomplete", {
-            taskId,
-            taskRunId,
-            resumeFromRunId,
-            ancestorComplete: ancestorResult.complete,
-            currentRunComplete: currentRunResult.complete,
-          });
-          return;
+        if (isTerminalStatus(runStatus)) {
+          const result =
+            await authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              taskRunId,
+              { limit: 100000 },
+            );
+          if (!result.complete) {
+            this.d.log.warn("Resume session log hydration was incomplete", {
+              taskId,
+              taskRunId,
+              resumeFromRunId,
+            });
+            return;
+          }
+          rawEntries = result.entries;
+          const markedLeafStart = rawEntries.findIndex(
+            (entry) => getEntryTaskRunMarker(entry) === taskRunId,
+          );
+          resumeLeafEntryStartIndex =
+            markedLeafStart >= 0 ? markedLeafStart : undefined;
+          liveStreamLineCount =
+            markedLeafStart >= 0
+              ? rawEntries.length - markedLeafStart
+              : rawEntries.length;
+        } else {
+          const [ancestorResult, currentRunResult] = await Promise.all([
+            authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              resumeFromRunId,
+              { limit: 100000 },
+            ),
+            authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              taskRunId,
+              { limit: 100000 },
+            ),
+          ]);
+          if (!ancestorResult.complete || !currentRunResult.complete) {
+            this.d.log.warn("Resume session log hydration was incomplete", {
+              taskId,
+              taskRunId,
+              resumeFromRunId,
+              ancestorComplete: ancestorResult.complete,
+              currentRunComplete: currentRunResult.complete,
+            });
+            return;
+          }
+          const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
+          const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
+          const ancestorKeys = ancestorEntries.map((entry) =>
+            JSON.stringify(entry),
+          );
+          const currentKeys = currentRunEntries.map((entry) =>
+            JSON.stringify(entry),
+          );
+          const overlap = suffixPrefixOverlap(ancestorKeys, currentKeys);
+          const persistedLeafEntries = currentRunEntries.slice(overlap);
+          const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
+          const leafKeys = new Set(
+            persistedLeafEntries.map((entry) => JSON.stringify(entry)),
+          );
+          rawEntries = [
+            ...ancestorEntries,
+            ...persistedLeafEntries,
+            ...leafLogs.rawEntries.filter(
+              (entry) => !leafKeys.has(JSON.stringify(entry)),
+            ),
+          ];
+          resumeLeafEntryStartIndex = ancestorEntries.length;
+          liveStreamLineCount = Math.max(
+            leafLogs.totalLineCount,
+            persistedLeafEntries.length,
+          );
         }
-        const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
-        const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
-
-        const ancestorKeys = ancestorEntries.map((entry) =>
-          JSON.stringify(entry),
-        );
-        const currentKeys = currentRunEntries.map((entry) =>
-          JSON.stringify(entry),
-        );
-        const overlap = suffixPrefixOverlap(ancestorKeys, currentKeys);
-        const persistedLeafEntries = currentRunEntries.slice(overlap);
-        const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
-        const leafKeys = new Set(
-          persistedLeafEntries.map((entry) => JSON.stringify(entry)),
-        );
-        rawEntries = [
-          ...ancestorEntries,
-          ...persistedLeafEntries,
-          ...leafLogs.rawEntries.filter(
-            (entry) => !leafKeys.has(JSON.stringify(entry)),
-          ),
-        ];
-        resumeLeafEntryStartIndex = ancestorEntries.length;
-        liveStreamLineCount = Math.max(
-          leafLogs.totalLineCount,
-          persistedLeafEntries.length,
-        );
       } else {
         const result = await authStatus.auth.client.getTaskRunSessionLogsResult(
           taskId,
