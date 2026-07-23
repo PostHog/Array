@@ -21,17 +21,18 @@ export function PlanApprovalView({
     turnCancelled,
     turnComplete,
   );
-  const [isPlanExpanded, setIsPlanExpanded] = useState(false);
+  const rawInput = toolCall.rawInput as
+    | { historical?: boolean; initiallyExpanded?: boolean; plan?: string }
+    | undefined;
+  const isHistoricalPlan = rawInput?.historical === true;
+  const [isPlanExpanded, setIsPlanExpanded] = useState(
+    isHistoricalPlan && rawInput?.initiallyExpanded === true,
+  );
   const taskId = useSessionTaskId();
   const modelOption = useModelConfigOptionForTask(taskId ?? undefined);
   const hasModelSelector =
     modelOption?.type === "select" &&
     flattenSelectOptions(modelOption.options).length > 0;
-  const rawInput = toolCall.rawInput as
-    | { historical?: boolean; plan?: string }
-    | undefined;
-  const isHistoricalPlan = rawInput?.historical === true;
-
   const planText = useMemo(() => {
     if (content?.length) {
       const textContent = content.find((c) => c.type === "content");

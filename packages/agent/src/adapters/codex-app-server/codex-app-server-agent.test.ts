@@ -2962,6 +2962,56 @@ describe("CodexAppServerAgent", () => {
     });
   });
 
+  it("expands a persisted plan only when it is the last replayed item", async () => {
+    const stub = makeStubRpc({
+      "thread/start": { thread: { id: "t1" } },
+      "thread/resume": {
+        thread: {
+          id: "t1",
+          turns: [
+            {
+              items: [
+                { type: "plan", id: "p1", text: "# Earlier plan" },
+                { type: "agentMessage", id: "a1", text: "More work" },
+                { type: "plan", id: "p2", text: "# Latest plan" },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const { client, sessionUpdates } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: { binaryPath: "/x/codex" },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    await agent.newSession({ cwd: "/r" } as unknown as NewSessionRequest);
+
+    await agent.loadSession({
+      sessionId: "t1",
+      cwd: "/r",
+      mcpServers: [],
+    } as unknown as Parameters<typeof agent.loadSession>[0]);
+
+    const plans = sessionUpdates
+      .map(
+        (entry) =>
+          entry as {
+            update?: {
+              kind?: string;
+              rawInput?: Record<string, unknown>;
+            };
+          },
+      )
+      .filter((entry) => entry.update?.kind === "switch_mode");
+    expect(plans[0].update.rawInput).not.toHaveProperty("initiallyExpanded");
+    expect(plans[1].update.rawInput).toMatchObject({
+      historical: true,
+      initiallyExpanded: true,
+    });
+  });
+
   it("restores subagent relationships from resumed thread history", async () => {
     const stub = makeStubRpc({
       initialize: {},

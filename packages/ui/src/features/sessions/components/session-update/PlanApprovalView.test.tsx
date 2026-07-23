@@ -110,6 +110,25 @@ describe("PlanApprovalView", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens a historical plan when replay marks it as the latest item", () => {
+    renderView({
+      toolCall: makeToolCall({
+        status: "completed",
+        rawInput: {
+          plan: PLAN_MARKER,
+          historical: true,
+          initiallyExpanded: true,
+        },
+      }),
+    });
+
+    expect(screen.getByText(PLAN_MARKER)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hide plan/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
   it("uses updated content instead of stale raw input while streaming", () => {
     renderView({
       toolCall: makeToolCall({

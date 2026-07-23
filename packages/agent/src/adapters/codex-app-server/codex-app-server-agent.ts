@@ -448,12 +448,28 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   /** Replay a resumed thread's persisted turns (from the thread/resume response) as session updates. */
   private replayHistory(thread: AppServerThread | undefined): void {
     if (!this.sessionId || !thread?.turns?.length) return;
+    const updates: SessionNotification[] = [];
     for (const turn of thread.turns) {
       for (const item of turn.items ?? []) {
-        for (const update of mapHistoryItem(this.sessionId, item)) {
-          void this.client.sessionUpdate(update).catch(() => undefined);
-        }
+        updates.push(...mapHistoryItem(this.sessionId, item));
       }
+    }
+
+    const lastUpdate = updates.at(-1)?.update;
+    if (
+      lastUpdate?.sessionUpdate === "tool_call" &&
+      lastUpdate.kind === "switch_mode" &&
+      lastUpdate.rawInput &&
+      typeof lastUpdate.rawInput === "object"
+    ) {
+      lastUpdate.rawInput = {
+        ...lastUpdate.rawInput,
+        initiallyExpanded: true,
+      };
+    }
+
+    for (const update of updates) {
+      void this.client.sessionUpdate(update).catch(() => undefined);
     }
   }
 
