@@ -31,13 +31,16 @@ export function useLoopBuilderTask(context?: {
   const buildInput = useCallback(
     (ctx: InboxCloudTaskInputContext): TaskCreationInput => {
       const userPrompt = instructionsRef.current.trim();
+      const hasSeed = !!userPrompt;
       const systemInstructions = buildLoopBuilderSystemInstructions({
-        hasSeed: !!userPrompt,
+        hasSeed,
         context: contextRef.current,
       });
+      // createTask rejects empty content and the saga drops customInstructions without message text
+      const taskContent = hasSeed ? userPrompt : "Build a loop";
       return {
-        content: userPrompt,
-        taskDescription: userPrompt,
+        content: taskContent,
+        taskDescription: taskContent,
         customInstructions: systemInstructions,
         // Building a loop is pure PostHog-MCP work (loops-list, integrations-list,
         // loops-create); it never touches a working tree. Run repo-less so the
