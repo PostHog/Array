@@ -61,4 +61,15 @@ describe("buildLoopBuilderPrompt", () => {
   it("omits the context block when no context is given", () => {
     expect(buildLoopBuilderPrompt({})).not.toContain("context_target");
   });
+
+  it("falls back to confirmed creation when the review card does not render", () => {
+    const prompt = buildLoopBuilderSystemInstructions({ hasSeed: true });
+
+    expect(prompt).toContain(
+      "Do not claim that the review card or Create button is visible",
+    );
+    expect(prompt).toContain("Call `loops-create-prepare`");
+    expect(prompt).toContain("call `loops-create-execute`");
+    expect(prompt).toContain("Only after I reply `confirm`");
+  });
 });

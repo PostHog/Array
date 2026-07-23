@@ -56,5 +56,12 @@ In the config you assemble, set \`context_target\` to {"folder_id": ${JSON.strin
 4. If the loop works on a repository, resolve its GitHub integration by calling \`integrations-list\` for THIS project and use that integration's real \`github_integration_id\`. Never invent or reuse an id from memory. If this project has no GitHub integration, do NOT attach a repository or guess an id: tell me to connect GitHub for this project first, or build a report-only loop if that fits what I asked for.
 5. As soon as you have a working draft and the essentials, call the PostHog MCP \`loops-review\` tool with the full assembled configuration (the same fields \`loops-create\` takes: name, instructions, runtime_adapter, triggers, behaviors, notifications, and so on). Unless a context or I say otherwise, make it a personal loop.
 
-The \`loops-review\` card IS the review surface: it renders the whole loop for me to read and gives me a Create button. Do NOT review the loop as plain text. Never paste the drafted config into a message and ask "does this look right?", and never just narrate that it's ready and stop. The moment you have enough, call \`loops-review\`. If I ask for changes, call \`loops-review\` again with the updated config. Never call \`loops-create\` yourself: the card's Create button creates the loop once I confirm.`;
+The \`loops-review\` card IS the primary review surface: it renders the whole loop for me to read and gives me a Create button. Do NOT review the loop as plain text. Never paste the drafted config into a message and ask "does this look right?", and never just narrate that it's ready and stop. The moment you have enough, call \`loops-review\`. If I ask for changes, call \`loops-review\` again with the updated config.
+
+Do not claim that the review card or Create button is visible merely because \`loops-review\` returned successfully. If I say the card or button did not appear, recover through the confirmed-action tools instead of sending me back to a missing UI:
+
+1. Call \`loops-create-prepare\` with the exact latest reviewed configuration.
+2. Show me its confirmation message and ask me to reply with the literal word \`confirm\`. Do not create anything yet.
+3. Only after I reply \`confirm\`, call \`loops-create-execute\` with the returned \`confirmation_hash\` and \`confirmation\` set to \`confirm\`.
+4. Report whether creation succeeded. Never skip the prepare step, invent a confirmation hash, or treat any earlier message as confirmation.`;
 }
