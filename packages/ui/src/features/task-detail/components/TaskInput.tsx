@@ -301,12 +301,12 @@ export function TaskInput({
   );
   // Drop the selection if the channel disappears (deleted/renamed elsewhere)
   // once the list has loaded, so the composer never sticks in repo-less mode
-  // pointing at a channel that no longer exists.
-  useEffect(() => {
-    if (selectedChannelId && !channelsLoading && !selectedChannel) {
-      setSelectedChannelId(null);
-    }
-  }, [selectedChannelId, channelsLoading, selectedChannel]);
+  // pointing at a channel that no longer exists. Adjusted inline during render
+  // (not via an effect) so the stale id never reaches a commit; the guard is
+  // self-terminating because clearing the id makes selectedChannel null too.
+  if (selectedChannelId && !channelsLoading && !selectedChannel) {
+    setSelectedChannelId(null);
+  }
   // Resolve the picked channel's backend feed id + CONTEXT.md. Both hooks no-op
   // (return undefined/null) until a channel is selected.
   const { channel: selectedBackendChannel } = useBackendChannel(
@@ -337,14 +337,17 @@ export function TaskInput({
   // Channel CONTEXT.md is included by default; the chip lets the user drop it
   // from this task's prompt. Re-include whenever the source context changes
   // (e.g. switching channels) so a dismissal doesn't stick across channels.
+  // Adjusted inline during render via a prev-value comparison (matching
+  // prevEffectiveRepoPath below) rather than an effect, so the chip never shows
+  // a stale dismissal for a commit.
   const [channelContextDismissed, setChannelContextDismissed] = useState(false);
-  const lastChannelContextRef = useRef(effectiveChannelContext);
-  useEffect(() => {
-    if (lastChannelContextRef.current !== effectiveChannelContext) {
-      lastChannelContextRef.current = effectiveChannelContext;
-      setChannelContextDismissed(false);
-    }
-  }, [effectiveChannelContext]);
+  const [prevChannelContext, setPrevChannelContext] = useState(
+    effectiveChannelContext,
+  );
+  if (effectiveChannelContext !== prevChannelContext) {
+    setPrevChannelContext(effectiveChannelContext);
+    setChannelContextDismissed(false);
+  }
   const includeChannelContext =
     !!effectiveChannelContext && !channelContextDismissed;
 
