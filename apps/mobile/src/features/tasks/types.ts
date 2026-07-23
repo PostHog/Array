@@ -45,6 +45,10 @@ export type TaskRunStatus =
 
 export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
+// UI-facing terminal outcome for a run. `cancelled` maps to `stopped` (the user
+// deliberately halted it) so the UI can distinguish it from a real failure.
+export type TerminalStatus = "completed" | "failed" | "stopped";
+
 export function isTerminalStatus(
   status: TaskRunStatus | string | null | undefined,
 ): boolean {
