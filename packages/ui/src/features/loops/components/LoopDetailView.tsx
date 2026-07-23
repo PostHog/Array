@@ -105,7 +105,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
 
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-8 py-6">
+      <div className="mx-auto w-full max-w-5xl px-8 py-8">
         <div className="h-24 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
       </div>
     );
@@ -116,16 +116,20 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-8 py-6">
-      <Flex direction="column" gap="5">
+    <div className="h-full min-h-0 overflow-y-auto">
+      <Flex
+        direction="column"
+        gap="5"
+        className="mx-auto w-full max-w-5xl px-8 py-8"
+      >
         <Flex direction="column" gap="3">
           <Button
             variant="link-muted"
-            size="xs"
+            size="sm"
             onClick={navigateToLoops}
             className="w-fit px-0"
           >
-            <ArrowLeftIcon size={13} />
+            <ArrowLeftIcon size={15} />
             Loops
           </Button>
 
@@ -148,7 +152,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               />
               <Button
                 variant="outline"
-                size="xs"
+                size="sm"
                 loading={runLoop.isPending}
                 disabled={runLoop.isPending}
                 onClick={handleRunNow}
@@ -157,14 +161,14 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               </Button>
               <Button
                 variant="outline"
-                size="xs"
+                size="sm"
                 onClick={() => navigateToEditLoop(loop.id)}
               >
                 Edit
               </Button>
               <Button
                 variant="destructive"
-                size="xs"
+                size="sm"
                 onClick={() => setDeleteOpen(true)}
               >
                 Delete
@@ -406,7 +410,7 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
         value={draft ?? loop.instructions}
         disabled={updateLoop.isPending}
         aria-label="Loop instructions"
-        className="min-h-[200px] bg-(--color-panel-solid) text-[12.5px] leading-relaxed"
+        className="max-h-[400px] min-h-[200px] bg-(--color-panel-solid) text-[12.5px] leading-relaxed"
         onChange={(e) => setDraft(e.currentTarget.value)}
         onBlur={(e) => commit(e.currentTarget.value)}
         onKeyDown={(e) => {
