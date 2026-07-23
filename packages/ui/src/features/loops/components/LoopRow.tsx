@@ -58,7 +58,7 @@ export function LoopRow({
     >
       <Flex align="center" gap="3" className="min-w-0">
         <RepeatIcon size={20} className="shrink-0 text-gray-11" />
-        <Flex direction="column" className="min-w-0 gap-0.5">
+        <Flex direction="column" gap="1" className="min-w-0">
           <Flex align="center" gap="2" className="min-w-0">
             <Text className="truncate font-medium text-[13px] text-gray-12">
               {loop.name}
@@ -72,7 +72,7 @@ export function LoopRow({
             </Text>
           ) : null}
           {metadata.length > 0 ? (
-            <Text className="text-(--accent-11) text-[11px] leading-snug">
+            <Text className="mt-0.5 text-(--accent-11) text-[11px] leading-snug">
               {metadata.join(" · ")}
             </Text>
           ) : null}
