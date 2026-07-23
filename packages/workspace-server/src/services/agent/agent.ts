@@ -652,6 +652,9 @@ When creating pull requests, add the following footer at the end of the PR descr
 
 When you mention a pull request in any reply or summary, always hyperlink it to its full URL (e.g. a Markdown link like [#123](https://github.com/org/repo/pull/123)) rather than plain text, so readers can open it directly.
 
+## Questions
+When you need an answer from the user before you can continue, use the structured user-input tool available in your current mode. Never end a turn with a blocking question in a normal assistant message because plain-text questions mark the task as finished instead of waiting for the user's response.
+
 ## Shell efficiency
 Optimize for the fewest shell round trips.
 - Batch related commands into one Bash invocation using \`&&\` (e.g. \`npm run typecheck && npm run lint && npm test\`).
