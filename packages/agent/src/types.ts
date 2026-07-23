@@ -77,6 +77,12 @@ export type OnLogCallback = (
   data?: unknown,
 ) => void;
 
+/**
+ * @deprecated Ignored. The in-process OTel log transport was removed; run
+ * telemetry is exported by the agent server, configured via the
+ * POSTHOG_AGENT_OTEL_LOGS_URL/_TOKEN environment variables. Kept only so
+ * existing consumers keep compiling; will be removed in a future major.
+ */
 export interface OtelTransportConfig {
   /** PostHog ingest host, e.g., "https://us.i.posthog.com" */
   host: string;
@@ -88,7 +94,7 @@ export interface OtelTransportConfig {
 
 export interface AgentConfig {
   posthog?: PostHogAPIConfig;
-  /** OTEL transport config for shipping logs to PostHog Logs */
+  /** @deprecated Ignored — see {@link OtelTransportConfig}. */
   otelTransport?: OtelTransportConfig;
   /** Skip session log persistence (e.g. for preview sessions with no real task) */
   skipLogPersistence?: boolean;

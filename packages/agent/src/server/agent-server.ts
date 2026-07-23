@@ -55,6 +55,7 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { OtelRunTelemetry } from "../otel-telemetry";
 import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
 import {
@@ -277,6 +278,8 @@ interface ActiveSession {
   sseController: SseController | null;
   deviceInfo: DeviceInfo;
   logWriter: SessionLogWriter;
+  /** Ships run telemetry (logs + spans) to PostHog; unset when the sandbox has no OTLP config */
+  telemetry?: OtelRunTelemetry;
   /** Current permission mode, tracked for relay decisions */
   permissionMode: PermissionMode;
   /** Whether a desktop client has ever connected via SSE during this session */
@@ -515,6 +518,47 @@ export class AgentServer {
 
   private getEffectiveMode(payload: JwtPayload): AgentMode {
     return payload.mode ?? this.config.mode;
+  }
+
+  /**
+   * Ships run telemetry to PostHog when the sandbox provides an OTLP endpoint
+   * + token (POSTHOG_AGENT_OTEL_LOGS_URL/_TOKEN): metadata log records, plus an
+   * APM trace per run when POSTHOG_AGENT_OTEL_TRACES_URL is also set. Resource
+   * attributes carry the run/user identifiers so cloud runs are filterable per
+   * user, task, and run in the Logs UI. Returns undefined when unconfigured or
+   * on failure — telemetry must never block session startup.
+   */
+  private createRunTelemetry(
+    payload: JwtPayload,
+    deviceInfo: DeviceInfo,
+    adapter: "claude" | "codex",
+  ): OtelRunTelemetry | undefined {
+    const { otelLogsUrl, otelLogsToken } = this.config;
+    if (!otelLogsUrl || !otelLogsToken) return undefined;
+    try {
+      return new OtelRunTelemetry(
+        {
+          url: otelLogsUrl,
+          token: otelLogsToken,
+          tracesUrl: this.config.otelTracesUrl,
+        },
+        {
+          taskId: payload.task_id,
+          runId: payload.run_id,
+          deviceType: deviceInfo.type,
+          teamId: payload.team_id,
+          userId: payload.user_id,
+          distinctId: payload.distinct_id,
+          adapter,
+          mode: this.getEffectiveMode(payload),
+          agentVersion: this.config.version ?? packageJson.version,
+        },
+        new Logger({ debug: false, prefix: "[OtelRunTelemetry]" }),
+      );
+    } catch (error) {
+      this.logger.warn("Failed to initialize OTel run telemetry", error);
+      return undefined;
+    }
   }
 
   private getSessionPermissionMode(): PermissionMode {
@@ -937,6 +981,33 @@ export class AgentServer {
       this.logger.error(
         "Failed to flush event stream after fatal error",
         stopError,
+      );
+    }
+
+    // Mirror the crash into run telemetry and shut it down (ends the root
+    // span as errored and flushes) - the process is about to die, so nothing
+    // else will get this record out.
+    try {
+      const session = this.session;
+      if (session?.telemetry) {
+        session.telemetry.append(session.payload.run_id, {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: {
+            jsonrpc: "2.0",
+            method: POSTHOG_NOTIFICATIONS.ERROR,
+            params: {
+              source: "agent_server_crash",
+              error: `Agent server crashed: ${errorMessage}`,
+            },
+          },
+        });
+        await session.telemetry.shutdown();
+      }
+    } catch (telemetryError) {
+      this.logger.error(
+        "Failed to flush telemetry after fatal error",
+        telemetryError,
       );
     }
   }
@@ -1523,9 +1594,16 @@ export class AgentServer {
       userAgent: `posthog/cloud.hog.dev; version: ${this.config.version ?? packageJson.version}`,
     });
 
+    const telemetry = this.createRunTelemetry(
+      payload,
+      deviceInfo,
+      runtimeAdapter,
+    );
+
     const logWriter = new SessionLogWriter({
       posthogAPI,
       logger: new Logger({ debug: true, prefix: "[SessionLogWriter]" }),
+      sinks: telemetry ? [telemetry] : undefined,
     });
 
     const acpConnection = createAcpConnection({
@@ -1733,6 +1811,7 @@ export class AgentServer {
       sseController,
       deviceInfo,
       logWriter,
+      telemetry,
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
@@ -2090,6 +2169,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -2312,6 +2393,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
@@ -3655,6 +3738,25 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
+  /**
+   * Ends the run's telemetry (root span + final flush) at the in-sandbox
+   * terminal point of a background run. Sandbox teardown cannot be relied on
+   * for this: agent-server is an exec'd process inside the sandbox, so
+   * `docker stop` signals only the container's PID 1 and Modal terminate is
+   * immediate — the SIGTERM handler (and thus cleanupSession) never runs, and
+   * an unended root span would never export. Once the background prompt
+   * settles the run is over in-sandbox; the workflow marks the terminal
+   * status and destroys the sandbox right after.
+   */
+  private async finalizeRunTelemetry(payload: JwtPayload): Promise<void> {
+    if (this.getEffectiveMode(payload) !== "background") return;
+    try {
+      await this.session?.telemetry?.shutdown();
+    } catch (error) {
+      this.logger.debug("Failed to finalize run telemetry", error);
+    }
+  }
+
   private async signalTaskComplete(
     payload: JwtPayload,
     stopReason: string,
@@ -3700,6 +3802,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } finally {
       await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
+      // The run is terminal and the sandbox is torn down right after — and
+      // teardown kills this exec'd process without SIGTERM, so this is the
+      // last chance to end the root span and drain the OTel queues. The
+      // error mirror was appended above, so the root span exports as ERROR.
+      await this.session?.telemetry?.shutdown().catch(() => {});
     }
   }
 
@@ -3709,15 +3816,20 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       | typeof POSTHOG_NOTIFICATIONS.ERROR,
     params: Record<string, unknown>,
   ): void {
-    this.eventStreamSender?.enqueue({
-      type: "notification",
+    const entry = {
+      type: "notification" as const,
       timestamp: new Date().toISOString(),
       notification: {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         method,
         params,
       },
-    });
+    };
+    this.eventStreamSender?.enqueue(entry);
+    // Terminal events bypass the SessionLogWriter (and its sinks), so mirror
+    // them onto the OTel writer directly — a failed run is exactly what the
+    // telemetry must record.
+    this.session?.telemetry?.append(this.session.payload.run_id, entry);
   }
 
   private configureEnvironment({
@@ -4363,6 +4475,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     if (this.mcpRelayServer) {
       await this.mcpRelayServer.stop();
       this.mcpRelayServer = null;
+    }
+
+    // Shutdown ends open spans and flushes batched records; without it,
+    // sandbox teardown races the OTel batch delay and drops the tail of the
+    // run's telemetry.
+    try {
+      await this.session.telemetry?.shutdown();
+    } catch (error) {
+      this.logger.error("Failed to shut down OTel run telemetry", error);
     }
 
     // Drain pending permissions before ACP cleanup to avoid deadlocks —

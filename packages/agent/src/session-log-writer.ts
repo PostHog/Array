@@ -2,11 +2,34 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { serializeError } from "@posthog/shared";
-import type { SessionContext } from "./otel-log-writer";
 import type { PostHogAPIClient } from "./posthog-api";
 import type { StoredNotification } from "./types";
 import { isEmptyContentBlock } from "./utils/acp-content";
 import { Logger } from "./utils/logger";
+
+/**
+ * Session context for a registered session.
+ * These are set once per session and shared by every persisted entry.
+ */
+export interface SessionContext {
+  /** Parent task grouping - all runs for a task share this */
+  taskId: string;
+  /** Primary conversation identifier - all events in a run share this */
+  runId: string;
+  /** Deployment environment - "local" for desktop, "cloud" for cloud sandbox */
+  deviceType?: "local" | "cloud";
+}
+
+/**
+ * Receives every parsed non-chunk notification the writer persists, in
+ * arrival order. Streamed agent message/thought chunks are not delivered
+ * (neither raw nor coalesced) - sinks carry run metadata, not transcript
+ * content. Sink failures are swallowed so they can never break session log
+ * persistence.
+ */
+export interface SessionLogSink {
+  append(sessionId: string, entry: StoredNotification): void;
+}
 
 export interface SessionLogWriterOptions {
   /** PostHog API client for log persistence */
@@ -15,6 +38,8 @@ export interface SessionLogWriterOptions {
   logger?: Logger;
   /** Local cache path for instant log loading (e.g., ~/.posthog-code) */
   localCachePath?: string;
+  /** Additional consumers of persisted entries (e.g. OTel telemetry) */
+  sinks?: SessionLogSink[];
 }
 
 interface ChunkBuffer {
@@ -72,6 +97,8 @@ export class SessionLogWriter {
   private retryCounts: Map<string, number> = new Map();
   private sessions: Map<string, SessionState> = new Map();
   private flushQueues: Map<string, Promise<void>> = new Map();
+  private sinks: SessionLogSink[];
+  private warnedSinks: Set<SessionLogSink> = new Set();
 
   private logger: Logger;
   private localCachePath?: string;
@@ -79,6 +106,7 @@ export class SessionLogWriter {
   constructor(options: SessionLogWriterOptions = {}) {
     this.posthogAPI = options.posthogAPI;
     this.localCachePath = options.localCachePath;
+    this.sinks = options.sinks ?? [];
     this.logger =
       options.logger ??
       new Logger({ debug: false, prefix: "[SessionLogWriter]" });
@@ -186,6 +214,8 @@ export class SessionLogWriter {
         timestamp,
         notification: message,
       };
+
+      this.emitToSinks(sessionId, entry);
 
       // Coalesce the local cache: buffer in-progress tool_call_update
       // snapshots (they re-send the full growing output) and write one merged
@@ -334,6 +364,24 @@ export class SessionLogWriter {
         const currentPending = this.pendingEntries.get(sessionId) ?? [];
         this.pendingEntries.set(sessionId, [...pending, ...currentPending]);
         this.scheduleFlush(sessionId);
+      }
+    }
+  }
+
+  private emitToSinks(sessionId: string, entry: StoredNotification): void {
+    for (const sink of this.sinks) {
+      try {
+        sink.append(sessionId, entry);
+      } catch (error) {
+        // Warn once per sink: a broken sink at streaming rate would otherwise
+        // flood the console without ever affecting persistence.
+        if (!this.warnedSinks.has(sink)) {
+          this.warnedSinks.add(sink);
+          this.logger.warn(
+            "Session log sink failed; suppressing further errors from this sink",
+            { error: serializeError(error) },
+          );
+        }
       }
     }
   }
