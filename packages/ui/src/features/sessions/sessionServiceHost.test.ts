@@ -1919,12 +1919,12 @@ describe("SessionService", () => {
         { resume_from_run_id: "previous-run" },
       );
 
-      // The terminal hydration issues its own ancestor+current pair instead
-      // of being deduped onto the in-flight resume-chain hydration.
+      // The terminal hydration issues its own single terminal-chain fetch
+      // instead of being deduped onto the in-flight resume-chain hydration.
       await vi.waitFor(() => {
         expect(
           mockAuthenticatedClient.getTaskRunSessionLogsResult,
-        ).toHaveBeenCalledTimes(4);
+        ).toHaveBeenCalledTimes(3);
       });
       resolveFirstHydration({ entries: [], complete: true });
     });
