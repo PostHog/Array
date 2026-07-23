@@ -3,6 +3,7 @@ import { useModelCatalog } from "@posthog/ui/features/agent-applications/hooks/u
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { Flex } from "@radix-ui/themes";
 import { useMemo } from "react";
+import { loopSupportedReasoningEfforts } from "../loopModelDefaults";
 import { Field } from "./LoopFormPrimitives";
 
 const ADAPTER_OPTIONS: {
@@ -16,17 +17,16 @@ const ADAPTER_OPTIONS: {
 const AUTO_REASONING_VALUE = "auto";
 const DEFAULT_MODEL_VALUE = "__default__";
 
-const REASONING_EFFORT_OPTIONS: {
-  value: LoopSchemas.LoopReasoningEffortEnum | typeof AUTO_REASONING_VALUE;
-  label: string;
-}[] = [
-  { value: AUTO_REASONING_VALUE, label: "Auto" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "Extra high" },
-  { value: "max", label: "Max" },
-];
+const REASONING_EFFORT_LABELS: Record<
+  LoopSchemas.LoopReasoningEffortEnum,
+  string
+> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
 
 interface LoopModelFieldsProps {
   adapter: LoopSchemas.LoopRuntimeAdapterEnum;
@@ -46,7 +46,9 @@ interface LoopModelFieldsProps {
  * `UnifiedModelSelector`/`ReasoningLevelSelector` (which read a session's
  * `SessionConfigOption`) don't apply here, so this presents the same choices
  * as a dropdown against the served model catalog instead. The server validates
- * the final value against the catalog in `process_task/utils.py`.
+ * the final value against the catalog in `process_task/utils.py`. The catalog
+ * is deliberately not filtered by the session composer's GLM feature flag:
+ * GLM is the loop fire-time default, so hiding it here would hide the default.
  */
 export function LoopModelFields({
   adapter,
@@ -86,6 +88,37 @@ export function LoopModelFields({
     ];
   }, [catalog, model]);
 
+  // The current effort stays selectable even when the effective model no longer
+  // supports it (a loop saved under an older default), same as the model list.
+  const reasoningEffortOptions = useMemo(() => {
+    const supported = loopSupportedReasoningEfforts(adapter, model);
+    const efforts =
+      reasoningEffort && !supported.includes(reasoningEffort)
+        ? [...supported, reasoningEffort]
+        : supported;
+    return [
+      { value: AUTO_REASONING_VALUE, label: "Auto" },
+      ...efforts.map((effort) => ({
+        value: effort,
+        label: REASONING_EFFORT_LABELS[effort],
+      })),
+    ];
+  }, [adapter, model, reasoningEffort]);
+
+  const clearUnsupportedEffort = (
+    nextAdapter: LoopSchemas.LoopRuntimeAdapterEnum,
+    nextModel: string,
+  ) => {
+    if (
+      reasoningEffort &&
+      !loopSupportedReasoningEfforts(nextAdapter, nextModel).includes(
+        reasoningEffort,
+      )
+    ) {
+      onReasoningEffortChange(null);
+    }
+  };
+
   return (
     <Flex direction="column" gap="4">
       <Field
@@ -96,9 +129,11 @@ export function LoopModelFields({
           value={model || DEFAULT_MODEL_VALUE}
           options={modelOptions}
           placeholder="Default (recommended)"
-          onValueChange={(value) =>
-            onModelChange(value === DEFAULT_MODEL_VALUE ? "" : value)
-          }
+          onValueChange={(value) => {
+            const nextModel = value === DEFAULT_MODEL_VALUE ? "" : value;
+            onModelChange(nextModel);
+            clearUnsupportedEffort(adapter, nextModel);
+          }}
           disabled={disabled}
           ariaLabel="Model"
         />
@@ -109,9 +144,11 @@ export function LoopModelFields({
           <SettingsOptionSelect
             value={adapter}
             options={ADAPTER_OPTIONS}
-            onValueChange={(value) =>
-              onAdapterChange(value as LoopSchemas.LoopRuntimeAdapterEnum)
-            }
+            onValueChange={(value) => {
+              const nextAdapter = value as LoopSchemas.LoopRuntimeAdapterEnum;
+              onAdapterChange(nextAdapter);
+              clearUnsupportedEffort(nextAdapter, model);
+            }}
             disabled={disabled}
             ariaLabel="Adapter"
           />
@@ -120,7 +157,7 @@ export function LoopModelFields({
         <Field label="Reasoning effort" className="min-w-[180px] flex-1">
           <SettingsOptionSelect
             value={reasoningEffort ?? AUTO_REASONING_VALUE}
-            options={REASONING_EFFORT_OPTIONS}
+            options={reasoningEffortOptions}
             onValueChange={(value) =>
               onReasoningEffortChange(
                 value === AUTO_REASONING_VALUE
