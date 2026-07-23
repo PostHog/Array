@@ -3,7 +3,7 @@ import type { Task } from "@posthog/shared/domain-types";
 import { Box, Flex } from "@radix-ui/themes";
 import { useCallback, useEffect } from "react";
 import { BackgroundWrapper } from "../../../primitives/BackgroundWrapper";
-import { ErrorBoundary } from "../../../primitives/ErrorBoundary";
+import { ErrorBoundary } from "../../../shell/ErrorBoundary";
 import { useHostCapabilities } from "../../../shell/useHostCapabilities";
 import { useFolders } from "../../folders/useFolders";
 import { useDraftStore } from "../../message-editor/draftStore";
@@ -162,7 +162,11 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     <BackgroundWrapper>
       <Flex direction="column" height="100%" width="100%">
         <Box className="min-h-0 flex-1">
-          <ErrorBoundary name="SessionView" resetKey={taskId}>
+          {/* The chat subtree has historically tripped a transient React #185
+              render loop (see issue #2165) that clears on remount — reported via
+              telemetry (shell wrapper) and auto-recovered so a re-viewed task
+              heals itself instead of stranding the user on the error fallback. */}
+          <ErrorBoundary name="SessionView" resetKey={taskId} autoRecover>
             <SessionView
               events={events}
               taskId={taskId}
