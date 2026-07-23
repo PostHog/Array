@@ -232,20 +232,21 @@ function CanvasArtifactCard({
   url: string | null;
 }) {
   const parsedUrl = url ? parseHttpsUrl(url) : null;
-  const open = parsedUrl
-    ? () => {
-        const target = parseShareLink(parsedUrl.href);
-        const currentPostHogUrl = getPostHogUrl("/");
-        const currentPostHogOrigin = currentPostHogUrl
-          ? parseHttpsUrl(currentPostHogUrl)?.origin
-          : null;
-        if (target && parsedUrl.origin === currentPostHogOrigin) {
-          navigateToShareTarget(target);
-        } else {
-          openExternalUrl(parsedUrl.href);
+  const target = parsedUrl ? parseShareLink(parsedUrl.href) : null;
+  const open =
+    parsedUrl && target
+      ? () => {
+          const currentPostHogUrl = getPostHogUrl("/");
+          const currentPostHogOrigin = currentPostHogUrl
+            ? parseHttpsUrl(currentPostHogUrl)?.origin
+            : null;
+          if (parsedUrl.origin === currentPostHogOrigin) {
+            navigateToShareTarget(target);
+          } else {
+            openExternalUrl(parsedUrl.href);
+          }
         }
-      }
-    : undefined;
+      : undefined;
   return (
     <ArtifactCardButton
       icon={iconForTemplate("", { size: 14, className: "text-violet-9" })}
@@ -256,7 +257,9 @@ function CanvasArtifactCard({
 }
 
 function PrArtifactCard({ url }: { url: string }) {
-  const safeUrl = parseHttpsUrl(url)?.href ?? null;
+  const parsedUrl = parseHttpsUrl(url);
+  const safeUrl =
+    parsedUrl?.origin === "https://github.com" ? parsedUrl.href : null;
   const {
     meta: { state, merged, draft },
   } = usePrDetails(safeUrl);

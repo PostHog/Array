@@ -171,4 +171,39 @@ describe("ThreadArtifactRow", () => {
       ).toBeNull();
     },
   );
+
+  it.each([
+    [
+      "canvas",
+      {
+        kind: "canvas",
+        name: "Spoofed canvas",
+        url: "https://posthog.com.attacker.example/code/canvas/channel-1/dash-1",
+      },
+      "Spoofed canvas",
+    ],
+    [
+      "pull request",
+      {
+        kind: "pr",
+        url: "https://github.com.attacker.example/org/repo/pull/123",
+      },
+      "Pull request",
+    ],
+  ] as const)(
+    "renders a %s artifact from a lookalike host without a link",
+    (_, artifact, title) => {
+      render(
+        <ThreadArtifactRow
+          artifact={artifact}
+          createdAt="2026-07-17T00:00:00Z"
+        />,
+      );
+
+      expect(screen.getAllByText(title).length).toBeGreaterThan(0);
+      expect(
+        screen.queryByRole("button", { name: new RegExp(title) }),
+      ).toBeNull();
+    },
+  );
 });
