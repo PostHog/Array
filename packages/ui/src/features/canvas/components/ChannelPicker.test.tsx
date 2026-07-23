@@ -29,57 +29,53 @@ function renderPicker(props?: Partial<Parameters<typeof ChannelPicker>[0]>): {
 }
 
 describe("ChannelPicker", () => {
-  it("shows 'No channel' when nothing is selected", () => {
+  it("defaults to the personal 'me' channel", () => {
     renderPicker();
-    expect(screen.getByText("No channel")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Channel" })).toHaveTextContent(
+      "me",
+    );
   });
 
-  it("shows the '#name' of the selected channel", () => {
+  it("shows the selected channel's name", () => {
     renderPicker({ value: "chan-1" });
-    expect(screen.getByText("#marketing")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Channel" })).toHaveTextContent(
+      "marketing",
+    );
+  });
+
+  it("lists 'me' plus the channels when opened", async () => {
+    const user = userEvent.setup();
+    renderPicker();
+
+    await user.click(screen.getByRole("combobox", { name: "Channel" }));
+
+    expect(await screen.findByRole("option", { name: "me" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "marketing" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "support" })).toBeVisible();
   });
 
   it("emits the channel id when a channel is picked", async () => {
     const user = userEvent.setup();
     const { onChange } = renderPicker();
 
-    await user.click(screen.getByRole("button", { name: "Channel" }));
-    await user.click(
-      await screen.findByRole("menuitemradio", { name: "support" }),
-    );
+    await user.click(screen.getByRole("combobox", { name: "Channel" }));
+    await user.click(await screen.findByRole("option", { name: "support" }));
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("chan-2"));
   });
 
-  it("maps the 'No channel' sentinel back to null", async () => {
+  it("emits null when the personal 'me' channel is picked", async () => {
     const user = userEvent.setup();
     const { onChange } = renderPicker({ value: "chan-1" });
 
-    await user.click(screen.getByRole("button", { name: "Channel" }));
-    await user.click(
-      await screen.findByRole("menuitemradio", {
-        name: "No channel · work in a repo",
-      }),
-    );
+    await user.click(screen.getByRole("combobox", { name: "Channel" }));
+    await user.click(await screen.findByRole("option", { name: "me" }));
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(null));
   });
 
-  it("lists exactly the channels it is given (filtering is the parent's job)", async () => {
-    const user = userEvent.setup();
-    // A "me" channel passed through renders like any other — the component does
-    // no #me filtering itself; TaskInput removes it upstream.
-    renderPicker({
-      channels: [...CHANNELS, { id: "me-id", name: "me", path: "/me" }],
-    });
-
-    await user.click(screen.getByRole("button", { name: "Channel" }));
-
-    expect(
-      await screen.findByRole("menuitemradio", { name: "me" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("menuitemradio", { name: "marketing" }),
-    ).toBeInTheDocument();
-  });
+  // Type-to-filter is the shared Combobox's own behavior (same as the repo
+  // picker) and its popup search input doesn't mount as a queryable field in
+  // jsdom, so it isn't asserted here — see BranchSelector.test.tsx, which drives
+  // that combobox via props for the same reason.
 });

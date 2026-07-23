@@ -1,21 +1,24 @@
 import { CaretDown, HashIcon } from "@phosphor-icons/react";
 import {
   Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-  MenuLabel,
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
 } from "@posthog/quill";
+import { useMemo, useRef, useState } from "react";
 import type { Channel } from "../hooks/useChannels";
 
-// Radio values must be non-empty strings, and `null` can't key a radio item, so
-// "No channel" gets a sentinel value that maps back to `null` on change.
-const NO_CHANNEL_VALUE = "__none__";
+// The default option: the user's personal channel. Selecting it maps to a null
+// id, which the composer treats as "no explicit channel" — the task still runs
+// in the normal repo flow and useTaskCreation routes it to the #me feed.
+const PERSONAL_CHANNEL_LABEL = "me";
 
 interface ChannelPickerProps {
-  /** Selected channel folder id, or `null` for "No channel" (work in a repo). */
+  /** Selected channel folder id, or `null` for the personal "me" channel. */
   value: string | null;
   onChange: (channelId: string | null) => void;
   /** Channels to list, already filtered by the parent (e.g. #me removed). */
@@ -26,11 +29,12 @@ interface ChannelPickerProps {
   size?: "1" | "2";
 }
 
-// A pill for choosing which channel a new task runs in, sitting alongside the
-// workspace-mode and repo pills on the new-task composer. Dumb + presentational:
-// the parent owns the channels query and the selected id. Picking a channel makes
-// the task run repo-less (the parent greys out the repo/branch pickers); "No
-// channel" restores the normal repo flow.
+// A searchable pill for choosing which channel a new task runs in, sitting
+// alongside the workspace-mode and repo pills on the new-task composer. Dumb +
+// presentational: the parent owns the channels query and the selected id.
+// Picking a named channel makes the task run repo-less (the parent greys out the
+// repo/branch pickers); the default "me" restores the normal repo flow. Built on
+// the same Combobox as the repo picker so you can type to filter a long list.
 export function ChannelPicker({
   value,
   onChange,
@@ -38,24 +42,56 @@ export function ChannelPicker({
   isLoading,
   disabled,
 }: ChannelPickerProps) {
-  const selected = value ? channels.find((c) => c.id === value) : undefined;
-  const triggerLabel = selected ? `#${selected.name}` : "No channel";
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  // "me" leads, then the real channels. The combobox filters on these names, so
+  // its value is a channel name (or "me") that we map back to an id on change.
+  const optionNames = useMemo(
+    () => [PERSONAL_CHANNEL_LABEL, ...channels.map((c) => c.name)],
+    [channels],
+  );
+  const selectedName = value
+    ? (channels.find((c) => c.id === value)?.name ?? PERSONAL_CHANNEL_LABEL)
+    : PERSONAL_CHANNEL_LABEL;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
+    <Combobox
+      items={optionNames}
+      value={selectedName}
+      onValueChange={(name) => {
+        if (!name || name === PERSONAL_CHANNEL_LABEL) {
+          onChange(null);
+          return;
+        }
+        onChange(channels.find((c) => c.name === name)?.id ?? null);
+      }}
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearch("");
+      }}
+      inputValue={search}
+      onInputValueChange={setSearch}
+      disabled={disabled}
+    >
+      <ComboboxTrigger
         render={
           <Button
+            ref={triggerRef}
             type="button"
             variant="outline"
             size="sm"
             disabled={disabled}
             aria-label="Channel"
           >
-            <span className="text-muted-foreground">
-              <HashIcon size={14} weight="regular" />
-            </span>
-            {triggerLabel}
+            <HashIcon
+              size={14}
+              weight="regular"
+              className="shrink-0 text-muted-foreground"
+            />
+            <span className="min-w-0 truncate">{selectedName}</span>
             <CaretDown
               size={10}
               weight="bold"
@@ -64,42 +100,29 @@ export function ChannelPicker({
           </Button>
         }
       />
-      <DropdownMenuContent
-        align="start"
+      <ComboboxContent
+        anchor={triggerRef}
         side="bottom"
         sideOffset={6}
-        className="w-auto min-w-[220px]"
+        className="min-w-[240px]"
       >
-        <MenuLabel>Channel</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={value ?? NO_CHANNEL_VALUE}
-          onValueChange={(next) =>
-            onChange(next === NO_CHANNEL_VALUE ? null : next)
-          }
-        >
-          <DropdownMenuRadioItem value={NO_CHANNEL_VALUE}>
-            <span className="text-muted-foreground">
-              <HashIcon size={14} weight="regular" />
-            </span>
-            <span className="whitespace-nowrap">
-              No channel · work in a repo
-            </span>
-          </DropdownMenuRadioItem>
-          {channels.map((channel) => (
-            <DropdownMenuRadioItem key={channel.id} value={channel.id}>
-              <span className="text-muted-foreground">
-                <HashIcon size={14} weight="regular" />
-              </span>
-              <span className="whitespace-nowrap">{channel.name}</span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        {isLoading && channels.length === 0 && (
-          <div className="px-2 py-1.5 text-muted-foreground text-xs">
-            Loading channels…
-          </div>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+        <ComboboxInput placeholder="Search channels..." />
+        <ComboboxEmpty>
+          {isLoading ? "Loading channels…" : "No channels found."}
+        </ComboboxEmpty>
+        <ComboboxList>
+          {(name: string) => (
+            <ComboboxItem key={name} value={name}>
+              <HashIcon
+                size={14}
+                weight="regular"
+                className="shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 truncate">{name}</span>
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }
