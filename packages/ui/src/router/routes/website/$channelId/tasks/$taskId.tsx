@@ -65,7 +65,10 @@ function ChannelTaskDetailRoute() {
 
   const task = pickFreshestTask(fetched, initialTask);
 
-  if (isTaskDetailNotFoundError(error)) {
+  // While a cached/list copy exists, a 404 is NOT authoritative (optimistic
+  // and cloud-pending tasks aren't returnable by the API yet — see the loader
+  // comment), so only treat the task as gone when nothing cached is usable.
+  if (!initialTask && isTaskDetailNotFoundError(error)) {
     return <Navigate replace to="/website/$channelId" params={{ channelId }} />;
   }
 
