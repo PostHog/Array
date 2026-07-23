@@ -28,6 +28,10 @@ is a different element with different behavior.
 3. **Question surface = same shell.** The message composer and the question surface must
    look and sit identically so the bottom input reads as continuous. They may be different
    React elements, but they render the same quill shell.
+4. **Motion is opt-out, never forced.** Quill ships a sensible *default* transition (e.g.
+   the box expanding upward when a question tool activates) but never mandates it. Consumers
+   can drop to `transition: none` — or any curve/duration — without fighting the library.
+   See §2c.
 
 ---
 
@@ -132,6 +136,7 @@ wrapper over an `InputGroup` slot so the box, grow, and focus states come for fr
 | --- | --- | --- |
 | `state` | `"default" \| "accent" \| "invalid"` | `accent` = the blue bash-mode ring; `invalid` = destructive ring. Default relies on `InputGroup` focus-within. |
 | `size` | `"default" \| "large"` | forwards to `ComposerBody` max-height |
+| `motion` | `"default" \| "none"` | ergonomic sugar for the grow/expand transition (§2c). `default` = quill's default curve; `none` = no transition. Never forces animation — just sets the underlying custom property / `data-motion` attribute, which the consumer can also set directly. |
 | `onFocusRequest` | `() => void` | click on empty chrome → code focuses its editor (quill has no editor ref) |
 | `className`, `...div` | | passthrough |
 
@@ -174,6 +179,55 @@ variant on `Item`) that renders the option row with a radio/checkbox slot, descr
 Open call for review: this may be light enough that we keep the whole `ActionSelector`
 option-row rendering in `code` and only ship `Composer`. See Open Questions Q2.
 
+### 2c. Motion policy — defaults, not mandates
+
+The most visible motion is the box **growing upward** when a question tool activates
+(default → question mode) and shrinking back. Quill should own a *good default* for this
+but must never impose it — a consumer that wants an instant, non-animated expand (or a
+different curve) must get there without `!important` battles or re-implementing the shell.
+
+**Mechanism (matches quill's existing tunable pattern, e.g. `--quill-shimmer-base`):**
+
+1. The transition is declared against a **CSS custom property with a built-in default**,
+   not a hardcoded literal:
+
+   ```css
+   .quill-composer {
+     /* grow/shrink of the block-addon stack; height:auto isn't natively animatable, so
+        the implementation uses the grid-rows 0fr↔1fr (or interpolate-size) technique on
+        the addon wrapper — the point here is the *transition* is overridable. */
+     transition: var(--quill-composer-motion, grid-template-rows 150ms ease, height 150ms ease);
+   }
+   ```
+
+2. Consumers override at any level, no library fork:
+
+   ```css
+   /* kill it everywhere */
+   :root { --quill-composer-motion: none; }
+   /* or per-instance */
+   <Composer motion="none" />                 /* sets --quill-composer-motion: none */
+   <Composer style={{ "--quill-composer-motion": "grid-template-rows 300ms ease-out" }} />
+   ```
+
+3. `prefers-reduced-motion: reduce` collapses the default to `none` automatically — but an
+   explicit consumer value still wins, so reduced-motion is a floor, not an override of intent.
+
+**Rules this encodes:**
+
+- Quill never writes a bare `transition:` the consumer can't reach. Every animated property
+  routes through a custom property with a default, so "go to `transition: none`" is a
+  one-line override, not a fight.
+- The `motion` prop is *only* sugar over that property — the CSS custom property and
+  `data-motion` attribute remain the source of truth, so app-wide theming (set the property
+  once at the root) and per-instance opt-out both work.
+- Same policy applies to any other Composer motion we add (submit-button state cross-fade,
+  focus ring). Default provided, always overridable, reduced-motion respected.
+- This does **not** change today's behavior on the InputGroup primitive itself, which only
+  transitions `color`/`background`/`border` and grows instantly — the Composer *adds* an
+  opt-out-able grow transition on top; leaving `motion` unset on a plain `InputGroup` keeps
+  the current instant grow.
+
 ---
 
 ## 3. The question surface — continuity at the bottom
@@ -204,6 +258,8 @@ Composer                                   ← same shell, same position, grows 
 
 - The **options render in `ComposerHeader`** (block-start addon) so the box grows upward
   from the pinned bottom — nothing below moves, the input appears to stay put and expand.
+  The grow uses the default, overridable transition from §2c (a consumer can set
+  `motion="none"` for an instant expand).
 - The **body stays a live editor** as the "talk about it" / free-text / "Other" answer.
   Typing + Enter there submits a discussion message (or the custom answer); the toolbar's
   **Submit answer** commits the selected option(s). This is exactly the "becomes the talk
@@ -299,6 +355,11 @@ Steps 3 and 4 are independently shippable; 4 depends on 3.
 - **Q5 — `onFocusRequest`.** Quill can't hold the editor ref, so click-on-chrome-to-focus is
   surfaced as a callback. Acceptable seam?
 - **Q6 — `EditorHandle`.** Stays entirely in `code`; quill exposes no imperative handle. Confirm.
+- **Q7 — shipped motion default.** The grow transition is always overridable (§2c); the
+  question is what quill ships as the *default* — a subtle animated expand, or `none` (motion
+  strictly opt-in per instance)? Recommendation: ship a subtle default expand + honor
+  reduced-motion, since the continuity effect is the point; `code` can still set `motion="none"`
+  anywhere it wants instant. Confirm.
 
 ---
 
