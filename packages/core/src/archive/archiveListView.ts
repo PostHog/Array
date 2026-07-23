@@ -2,9 +2,14 @@ import type { ArchivedTask } from "@posthog/shared";
 import { formatRelativeTimeLong } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 
+export type ArchivedTaskDetails = Pick<
+  Task,
+  "id" | "title" | "created_at" | "repository"
+>;
+
 export interface ArchivedTaskWithDetails {
   archived: ArchivedTask;
-  task: Task | null;
+  task: ArchivedTaskDetails | null;
 }
 
 export interface ArchivedTaskWithRepo extends ArchivedTaskWithDetails {
@@ -27,12 +32,21 @@ export interface ArchiveFilterSortInput {
 
 export function mergeArchivedWithTasks(
   archivedTasks: ArchivedTask[],
-  tasks: Task[],
+  tasks: ArchivedTaskDetails[],
 ): ArchivedTaskWithDetails[] {
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   return archivedTasks.map((archived) => ({
     archived,
-    task: taskMap.get(archived.taskId) ?? null,
+    task:
+      taskMap.get(archived.taskId) ??
+      (archived.title && archived.taskCreatedAt
+        ? {
+            id: archived.taskId,
+            title: archived.title,
+            created_at: archived.taskCreatedAt,
+            repository: archived.repository,
+          }
+        : null),
   }));
 }
 
@@ -81,7 +95,9 @@ export function filterAndSortArchivedTasks(
   const query = searchQuery.trim().toLowerCase();
   if (query) {
     result = result.filter((item) =>
-      (item.task?.title?.toLowerCase() ?? "").includes(query),
+      [item.task?.title, item.archived.taskId].some((value) =>
+        value?.toLowerCase().includes(query),
+      ),
     );
   }
 

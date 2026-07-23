@@ -16,6 +16,7 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import { useHostTRPC } from "@posthog/host-router/react";
+import type { Task } from "@posthog/shared/domain-types";
 import { useReviewViewedStore } from "@posthog/ui/features/code-review/reviewViewedStore";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFocusStore } from "@posthog/ui/features/focus/focusStore";
@@ -126,8 +127,22 @@ function makeOrchestrationDeps(
       resolveService<SessionService>(SESSION_SERVICE).disconnectFromTask(
         taskId,
       ),
-    archive: (taskId) =>
-      hostClient.archive.archive.mutate({ taskId }).then(() => undefined),
+    archive: (taskId) => {
+      const task = queryClient
+        .getQueriesData<Task[]>({
+          queryKey: ["tasks", "list"],
+        })
+        .flatMap(([, tasks]) => tasks ?? [])
+        .find((item) => item.id === taskId);
+      return hostClient.archive.archive
+        .mutate({
+          taskId,
+          title: task?.title,
+          taskCreatedAt: task?.created_at,
+          repository: task?.repository,
+        })
+        .then(() => undefined);
+    },
     clearViewedState: (taskId) =>
       useReviewViewedStore.getState().clearTasks([taskId]),
     logError: (message, error) => log.error(message, error),

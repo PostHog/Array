@@ -6,6 +6,7 @@ import {
   deriveUniqueRepos,
   filterAndSortArchivedTasks,
   getRepoName,
+  mergeArchivedWithTasks,
   withRepoNames,
 } from "./archiveListView";
 
@@ -58,6 +59,17 @@ describe("deriveUniqueRepos", () => {
   });
 });
 
+describe("mergeArchivedWithTasks", () => {
+  it("resolves details fetched directly for an archived task", () => {
+    const archived = makeArchived("older-task", "2024-01-02T00:00:00.000Z");
+    const task = makeTask("older-task", { title: "Recover me" });
+
+    expect(mergeArchivedWithTasks([archived], [task])).toEqual([
+      { archived, task },
+    ]);
+  });
+});
+
 describe("filterAndSortArchivedTasks", () => {
   const items: ArchivedTaskWithDetails[] = [
     {
@@ -79,6 +91,15 @@ describe("filterAndSortArchivedTasks", () => {
     expect(result.map((i) => i.archived.taskId)).toEqual(["b"]);
   });
 
+  it("filters by task id when the original title is unavailable", () => {
+    const result = filterAndSortArchivedTasks(withRepoNames(items), {
+      searchQuery: "b",
+      repoFilter: null,
+      sort: { column: "archived", direction: "desc" },
+    });
+    expect(result.map((i) => i.archived.taskId)).toEqual(["b"]);
+  });
+
   it("filters by repo name", () => {
     const result = filterAndSortArchivedTasks(withRepoNames(items), {
       searchQuery: "",
@@ -86,6 +107,15 @@ describe("filterAndSortArchivedTasks", () => {
       sort: { column: "archived", direction: "desc" },
     });
     expect(result.map((i) => i.archived.taskId)).toEqual(["a"]);
+  });
+
+  it("does not include repository names in the title and task ID search", () => {
+    const result = filterAndSortArchivedTasks(withRepoNames(items), {
+      searchQuery: "two",
+      repoFilter: null,
+      sort: { column: "archived", direction: "desc" },
+    });
+    expect(result).toEqual([]);
   });
 
   it("sorts by archivedAt descending", () => {
