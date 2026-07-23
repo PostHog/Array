@@ -17,6 +17,10 @@ vi.mock("@posthog/ui/utils/shareLinks", () => ({
   navigateToShareTarget: (target: unknown) => navigateToShareTarget(target),
 }));
 
+vi.mock("@posthog/ui/utils/urls", () => ({
+  getPostHogUrl: (path: string) => `https://us.posthog.com${path}`,
+}));
+
 vi.mock("@posthog/ui/features/git-interaction/usePrDetails", () => ({
   usePrDetails: () => ({
     meta: { state: "open", merged: false, draft: false },
@@ -106,6 +110,22 @@ describe("ThreadArtifactRow", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("opens a canvas from another PostHog instance externally", () => {
+    const url = "https://eu.posthog.com/code/canvas/channel-1/dash-1";
+
+    render(
+      <ThreadArtifactRow
+        artifact={{ kind: "canvas", name: "Signups overview", url }}
+        createdAt="2026-07-17T00:00:00Z"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Signups overview/ }));
+
+    expect(openExternalUrl).toHaveBeenCalledWith(url);
+    expect(navigateToShareTarget).not.toHaveBeenCalled();
+  });
+
   it("renders a pull request artifact and opens it externally", () => {
     render(
       <ThreadArtifactRow
@@ -123,4 +143,32 @@ describe("ThreadArtifactRow", () => {
     );
     expect(navigateToShareTarget).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      "canvas",
+      { kind: "canvas", name: "Unsafe canvas", url: "file:///tmp/canvas" },
+      "Unsafe canvas",
+    ],
+    [
+      "pull request",
+      { kind: "pr", url: "javascript:alert(1)" },
+      "Pull request",
+    ],
+  ] as const)(
+    "renders an unsafe %s artifact without a link",
+    (_, artifact, title) => {
+      render(
+        <ThreadArtifactRow
+          artifact={artifact}
+          createdAt="2026-07-17T00:00:00Z"
+        />,
+      );
+
+      expect(screen.getAllByText(title).length).toBeGreaterThan(0);
+      expect(
+        screen.queryByRole("button", { name: new RegExp(title) }),
+      ).toBeNull();
+    },
+  );
 });

@@ -82,6 +82,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -214,6 +215,15 @@ function ArtifactCardButton({
   );
 }
 
+function parseHttpsUrl(url: string): URL | null {
+  try {
+    const parsedUrl = new URL(url);
+    return parsedUrl.protocol === "https:" ? parsedUrl : null;
+  } catch {
+    return null;
+  }
+}
+
 function CanvasArtifactCard({
   name,
   url,
@@ -221,13 +231,18 @@ function CanvasArtifactCard({
   name: string;
   url: string | null;
 }) {
-  const open = url
+  const parsedUrl = url ? parseHttpsUrl(url) : null;
+  const open = parsedUrl
     ? () => {
-        const target = parseShareLink(url);
-        if (target) {
+        const target = parseShareLink(parsedUrl.href);
+        const currentPostHogUrl = getPostHogUrl("/");
+        const currentPostHogOrigin = currentPostHogUrl
+          ? parseHttpsUrl(currentPostHogUrl)?.origin
+          : null;
+        if (target && parsedUrl.origin === currentPostHogOrigin) {
           navigateToShareTarget(target);
         } else {
-          openExternalUrl(url);
+          openExternalUrl(parsedUrl.href);
         }
       }
     : undefined;
@@ -241,12 +256,13 @@ function CanvasArtifactCard({
 }
 
 function PrArtifactCard({ url }: { url: string }) {
+  const safeUrl = parseHttpsUrl(url)?.href ?? null;
   const {
     meta: { state, merged, draft },
-  } = usePrDetails(url);
+  } = usePrDetails(safeUrl);
   const config = getPrVisualConfig(state ?? "open", merged, draft);
   const PrIcon = getPrVisualIcon(config.icon);
-  const prNumber = parsePrNumber(url);
+  const prNumber = safeUrl ? parsePrNumber(safeUrl) : null;
   return (
     <ArtifactCardButton
       icon={
@@ -260,7 +276,7 @@ function PrArtifactCard({ url }: { url: string }) {
       title={prNumber ? `Pull request #${prNumber}` : "Pull request"}
       // Only show the resolved state once we have it, to avoid a flash of "Open".
       detail={state ? config.label : null}
-      onOpen={() => openExternalUrl(url)}
+      onOpen={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
     />
   );
 }
