@@ -170,6 +170,13 @@ program
 
     const env = envResult.data;
 
+    // The telemetry token is only ever consumed here (into the server config);
+    // drop it from the process environment so tool subprocesses spawned by the
+    // agent don't inherit it and `env` dumps in persisted transcripts or PR
+    // bodies can't leak it. Defense in depth, not a boundary: same-UID
+    // processes can still read the container's initial env via /proc.
+    delete process.env.POSTHOG_AGENT_OTEL_LOGS_TOKEN;
+
     const mode = options.mode === "background" ? "background" : "interactive";
     const createPr = parseBooleanOption(options.createPr, "--createPr");
     const autoPublish = parseBooleanOption(
