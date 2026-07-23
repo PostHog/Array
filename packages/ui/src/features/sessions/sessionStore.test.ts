@@ -116,6 +116,47 @@ describe("dequeueMessages", () => {
   });
 });
 
+describe("updateCloudStatus", () => {
+  beforeEach(() => {
+    useSessionStore.setState((state) => {
+      state.sessions = {};
+      state.taskIdIndex = {};
+    });
+  });
+
+  it("does not downgrade a terminal run when a stale non-terminal status arrives", () => {
+    sessionStoreSetters.setSession({
+      taskRunId: "run-123",
+      taskId: "task-123",
+      taskTitle: "Test",
+      channel: "agent-event:run-123",
+      events: [],
+      startedAt: 0,
+      status: "connected",
+      isPromptPending: false,
+      isCompacting: false,
+      promptStartedAt: null,
+      pendingPermissions: new Map(),
+      pausedDurationMs: 0,
+      messageQueue: [],
+      optimisticItems: [],
+      cloudStatus: "completed",
+    });
+
+    sessionStoreSetters.updateCloudStatus("run-123", {
+      status: "in_progress",
+      branch: "stale-branch",
+    });
+
+    expect(useSessionStore.getState().sessions["run-123"].cloudStatus).toBe(
+      "completed",
+    );
+    expect(useSessionStore.getState().sessions["run-123"].cloudBranch).toBe(
+      undefined,
+    );
+  });
+});
+
 describe("dequeueMessagesAsText", () => {
   beforeEach(() => {
     useSessionStore.setState((state) => {

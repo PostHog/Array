@@ -26,6 +26,10 @@ export function taskDetailQuery(taskId: string) {
   });
 }
 
+export function isTaskDetailNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("[404]");
+}
+
 // Read a task from the already-loaded sidebar list cache without fetching.
 // Lets the task-detail route loader resolve synchronously from cache.
 export function getCachedTask(taskId: string): Task | undefined {
