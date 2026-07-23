@@ -53,6 +53,8 @@ export function TimezonePicker({
             setSearch("");
           }
         }}
+        inputValue={search}
+        onInputValueChange={(next) => setSearch(next ?? "")}
       >
         <ComboboxTrigger
           render={
@@ -85,14 +87,12 @@ export function TimezonePicker({
           <ComboboxInput
             placeholder="Search timezones..."
             showTrigger={false}
-            value={search}
-            onValueChange={setSearch}
           />
           <ComboboxEmpty>
             {canUseCustomTimezone ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="link"
                 size="sm"
                 onClick={() => {
                   onValueChange(customTimezone);
