@@ -845,6 +845,29 @@ describe("AgentService", () => {
       expect(prompt).toContain("If the user names a folder or path");
     });
   });
+
+  describe("system prompt questions", () => {
+    it("requires blocking questions to use a structured user-input tool", () => {
+      const prompt = (
+        service as unknown as {
+          buildSystemPrompt: (
+            credentials: { apiHost: string; projectId: number },
+            taskId: string,
+          ) => { append: string };
+        }
+      ).buildSystemPrompt(
+        { apiHost: "https://app.posthog.com", projectId: 1 },
+        "task-1",
+      ).append;
+
+      expect(prompt).toContain(
+        "use the structured user-input tool available in your current mode",
+      );
+      expect(prompt).toContain(
+        "plain-text questions mark the task as finished",
+      );
+    });
+  });
 });
 
 describe("buildAutoApproveOutcome", () => {
