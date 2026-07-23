@@ -6,17 +6,20 @@ import {
   type Icon,
   Lightning,
   Play,
+  Stop,
   Timer,
   Warning,
   X,
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { cn } from "@posthog/quill";
+import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
+import { toast } from "@posthog/ui/primitives/toast";
 import { navigateToTaskDetail } from "@posthog/ui/router/navigationBridge";
 import { Flex, Text } from "@radix-ui/themes";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 function statusColor(
   status: LoopSchemas.LoopRunStatusEnum,
@@ -109,10 +112,25 @@ function MetaItem({
   );
 }
 
-export function LoopRunRow({ run }: { run: LoopSchemas.LoopRun }) {
+function isStoppable(run: LoopSchemas.LoopRun): boolean {
+  return (
+    run.environment === "cloud" &&
+    (run.status === "queued" || run.status === "in_progress")
+  );
+}
+
+export function LoopRunRow({
+  run,
+  onStopped,
+}: {
+  run: LoopSchemas.LoopRun;
+  onStopped?: () => void;
+}) {
   const StatusIcon = statusIcon(run.status);
   const duration = runDuration(run);
   const triggered = Boolean(run.loop_trigger_id);
+  const stoppable = isStoppable(run);
+  const [stopOpen, setStopOpen] = useState(false);
 
   return (
     <Flex
@@ -162,15 +180,41 @@ export function LoopRunRow({ run }: { run: LoopSchemas.LoopRun }) {
           </Flex>
         ) : null}
       </Flex>
-      <Button
-        variant="soft"
-        color="gray"
-        size="1"
-        className="shrink-0"
-        onClick={() => navigateToTaskDetail(run.task_id)}
-      >
-        View run
-      </Button>
+      <Flex align="center" gap="2" className="shrink-0">
+        {stoppable ? (
+          <Button
+            variant="soft"
+            color="red"
+            size="1"
+            onClick={() => setStopOpen(true)}
+          >
+            <Stop size={12} weight="bold" />
+            Stop run
+          </Button>
+        ) : null}
+        <Button
+          variant="soft"
+          color="gray"
+          size="1"
+          onClick={() => navigateToTaskDetail(run.task_id)}
+        >
+          View run
+        </Button>
+      </Flex>
+      {stoppable || stopOpen ? (
+        <StopCloudRunDialog
+          open={stopOpen}
+          taskId={run.task_id}
+          runId={run.id}
+          title="Stop run"
+          buttonLabel="Stop run"
+          onOpenChange={setStopOpen}
+          onStopped={() => {
+            toast.success("Run stopped");
+            onStopped?.();
+          }}
+        />
+      ) : null}
     </Flex>
   );
 }

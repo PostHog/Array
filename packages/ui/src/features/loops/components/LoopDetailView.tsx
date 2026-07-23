@@ -212,7 +212,11 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           ) : (
             <Flex direction="column" gap="2">
               {runs.map((run) => (
-                <LoopRunRow key={run.id} run={run} />
+                <LoopRunRow
+                  key={run.id}
+                  run={run}
+                  onStopped={() => void runsQuery.refetch()}
+                />
               ))}
             </Flex>
           )}
