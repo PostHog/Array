@@ -40,6 +40,7 @@ import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
 import { LoopTriggerEditor } from "./LoopTriggerEditor";
+import { canNavigateToLoopStep } from "./loopStepNavigation";
 
 const VISIBILITY_OPTIONS: {
   value: LoopSchemas.LoopVisibilityEnum;
@@ -446,8 +447,7 @@ function Stepper({
       {STEPS.map((label, index) => {
         const isCurrent = index === current;
         const isDone = index < current && complete[index];
-        // Steps navigate freely in both directions; skipping ahead is safe
-        // because Next stays gated per step and Create on the whole form.
+        const canSelect = canNavigateToLoopStep(current, index, complete);
         return (
           <Flex
             key={label}
@@ -456,8 +456,11 @@ function Stepper({
           >
             <button
               type="button"
-              onClick={() => onSelect(index)}
-              className="flex min-w-0 cursor-pointer items-center gap-2"
+              disabled={!canSelect}
+              onClick={() => {
+                if (canSelect) onSelect(index);
+              }}
+              className="flex min-w-0 cursor-pointer items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Flex
                 align="center"
