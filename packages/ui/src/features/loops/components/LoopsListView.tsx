@@ -6,7 +6,7 @@ import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLoopLimits, useLoops } from "../hooks/useLoops";
 import { useLoopDraftStore } from "../loopDraftStore";
 import type { LoopTemplate } from "../loopTemplates";
@@ -23,6 +23,8 @@ function loopLimitReason(max: number): string {
 }
 
 const EMPTY_MEMBERS: UserBasic[] = [];
+
+const SECTION_PREVIEW_COUNT = 5;
 
 function startBlankLoop(): void {
   useLoopDraftStore.getState().setPrefill(null);
@@ -219,13 +221,16 @@ function LoopListSection({
   membersError?: boolean;
   membersComplete?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleLoops = expanded ? loops : loops.slice(0, SECTION_PREVIEW_COUNT);
+
   return (
     <Flex direction="column" gap="3">
       <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
         {title}
       </Text>
       <Flex direction="column" gap="2">
-        {loops.map((loop) => (
+        {visibleLoops.map((loop) => (
           <LoopRow
             key={loop.id}
             loop={loop}
@@ -236,6 +241,17 @@ function LoopListSection({
           />
         ))}
       </Flex>
+      {loops.length > SECTION_PREVIEW_COUNT ? (
+        <Button
+          variant="ghost"
+          color="gray"
+          size="1"
+          className="w-fit"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "Show fewer" : `Show all ${loops.length}`}
+        </Button>
+      ) : null}
     </Flex>
   );
 }
