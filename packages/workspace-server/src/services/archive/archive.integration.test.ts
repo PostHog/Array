@@ -3,7 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { WorktreeManager } from "@posthog/git/worktree";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { recoverArchiveDetailsFromLogs } = vi.hoisted(() => ({
+  recoverArchiveDetailsFromLogs: vi.fn(),
+}));
+
+vi.mock("./archive-recovery", () => ({ recoverArchiveDetailsFromLogs }));
 
 vi.mock("electron", () => ({
   app: {
@@ -237,6 +243,101 @@ async function withTestContext(
 }
 
 describe("ArchiveService integration", () => {
+  beforeEach(() => {
+    recoverArchiveDetailsFromLogs.mockReset();
+    recoverArchiveDetailsFromLogs.mockResolvedValue([]);
+  });
+
+  it("keeps task details after the cloud task is no longer available", () =>
+    withTestContext({ mode: "local" }, async (ctx) => {
+      await ctx.service.archiveTask({
+        taskId: TASK_ID,
+        title: "Recoverable task",
+        taskCreatedAt: "2026-07-23T10:00:00.000Z",
+        repository: "posthog/code",
+      });
+
+      expect(ctx.service.getArchivedTasks()[0]).toMatchObject({
+        taskId: TASK_ID,
+        title: "Recoverable task",
+        taskCreatedAt: "2026-07-23T10:00:00.000Z",
+        repository: "posthog/code",
+      });
+    }));
+
+  it("keeps an archive identifiable when no original title can be recovered", () =>
+    withTestContext({ mode: "local" }, async (ctx) => {
+      await ctx.service.archiveTask({ taskId: TASK_ID });
+
+      expect(ctx.service.getArchivedTasks()[0]).toMatchObject({
+        taskId: TASK_ID,
+        title: `Unknown task (${TASK_ID.slice(0, 8)})`,
+        repository: ctx.repoPath,
+      });
+    }));
+
+  it("recovers legacy workspace details in the background and keeps the canonical repository", () =>
+    withTestContext({ mode: "local", isArchived: true }, async (ctx) => {
+      recoverArchiveDetailsFromLogs.mockResolvedValue([
+        {
+          taskId: TASK_ID,
+          title: "Recovered task",
+          taskCreatedAt: "2026-07-22T10:00:00.000Z",
+          repository: "/tmp/worktrees/code/task-1",
+        },
+      ]);
+
+      const initial = await ctx.service.listArchivedTasks();
+
+      expect(initial[0]).toMatchObject({ recoveryPending: true });
+      await vi.waitFor(() =>
+        expect(ctx.archiveRepo.findAll()[0]).toMatchObject({
+          title: "Recovered task",
+          repository: ctx.repoPath,
+        }),
+      );
+      await expect(ctx.service.listArchivedTasks()).resolves.toEqual([
+        expect.objectContaining({
+          recoveryPending: false,
+          repository: ctx.repoPath,
+        }),
+      ]);
+    }));
+
+  it("persists an honest fallback when rowless details cannot be recovered", () =>
+    withTestContext({ hasWorkspace: false }, async (ctx) => {
+      await ctx.service.archiveTask({ taskId: "rowless-task" });
+
+      expect(await ctx.service.listArchivedTasks()).toEqual([
+        expect.objectContaining({ recoveryPending: true }),
+      ]);
+      await vi.waitFor(() =>
+        expect(ctx.taskMetadataRepo.findByTaskId("rowless-task")).toMatchObject(
+          {
+            archivedTitle: "Unknown task (rowless-)",
+          },
+        ),
+      );
+      await expect(ctx.service.listArchivedTasks()).resolves.toEqual([
+        expect.objectContaining({ recoveryPending: false }),
+      ]);
+    }));
+
+  it("restarts recovery after a later incomplete archive", () =>
+    withTestContext({ mode: "local", isArchived: true }, async (ctx) => {
+      await ctx.service.listArchivedTasks();
+      await vi.waitFor(() =>
+        expect(recoverArchiveDetailsFromLogs).toHaveBeenCalledTimes(1),
+      );
+
+      await ctx.service.archiveTask({ taskId: "rowless-task" });
+      await ctx.service.listArchivedTasks();
+
+      await vi.waitFor(() =>
+        expect(recoverArchiveDetailsFromLogs).toHaveBeenCalledTimes(2),
+      );
+    }));
+
   describe("worktree mode", () => {
     it("archive and unarchive preserves uncommitted changes", () =>
       withTestContext({}, async (ctx) => {

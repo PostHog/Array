@@ -51,7 +51,7 @@ export function LoopRepositoryPicker({
       isRefreshing={isRefreshingRepos}
       onRefresh={() => void refreshRepositories()}
       placeholder="Select repository…"
-      size="1"
+      size="2"
       disabled={disabled || !hasGithubIntegration}
     />
   );

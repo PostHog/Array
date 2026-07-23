@@ -18,7 +18,7 @@ export function LoopBehaviorFields({
     <Flex
       direction="column"
       gap="2"
-      className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) p-3"
+      className="rounded-(--radius-2) border border-border bg-(--gray-1) p-3"
     >
       <Flex align="center" justify="between" gap="2">
         <Flex direction="column" gap="0">

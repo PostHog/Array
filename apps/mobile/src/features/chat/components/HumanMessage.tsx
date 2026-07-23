@@ -2,7 +2,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { CaretDown, CaretUp, File as FileIcon } from "phosphor-react-native";
-import { useCallback, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import {
   Alert,
   type LayoutChangeEvent,
@@ -12,7 +12,6 @@ import {
 } from "react-native";
 import { formatRelativeTime } from "@/lib/format";
 import { toRgba, useThemeColors } from "@/lib/theme";
-import { MarkdownImage } from "./MarkdownImage";
 import { MarkdownText } from "./MarkdownText";
 
 export interface HumanMessageAttachment {
@@ -20,12 +19,31 @@ export interface HumanMessageAttachment {
   uri: string;
   fileName: string;
   mimeType?: string;
+  // Bytes stored as a cloud run artifact rather than on this device. When set,
+  // the preview must be resolved through a presigned URL — the raw `uri` points
+  // at the sandbox filesystem and is not fetchable here.
+  cloudArtifact?: { runId: string; artifactId: string };
 }
 
 interface HumanMessageProps {
   content: string;
   timestamp?: number;
   attachments?: HumanMessageAttachment[];
+  // Lets a host (e.g. tasks) resolve cloud-backed image previews. Without one,
+  // attachments render as plain file chips.
+  renderAttachment?: (attachment: HumanMessageAttachment) => ReactNode;
+}
+
+export function MessageFileChip({ fileName }: { fileName: string }) {
+  const themeColors = useThemeColors();
+  return (
+    <View className="flex-row items-center gap-2 self-start rounded-md border border-gray-6 bg-gray-3 px-2 py-1.5">
+      <FileIcon size={14} color={themeColors.gray[11]} />
+      <Text className="font-mono text-[12px] text-gray-12" numberOfLines={1}>
+        {fileName}
+      </Text>
+    </View>
+  );
 }
 
 const COLLAPSED_MAX_HEIGHT = 160;
@@ -34,6 +52,7 @@ export function HumanMessage({
   content,
   timestamp,
   attachments,
+  renderAttachment,
 }: HumanMessageProps) {
   const themeColors = useThemeColors();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -109,28 +128,15 @@ export function HumanMessage({
           )}
           {hasAttachments && (
             <View className={hasContent ? "mt-2 gap-2" : "gap-2"}>
-              {attachments?.map((att) =>
-                att.kind === "image" ? (
-                  <MarkdownImage
-                    key={`${att.uri}-${att.fileName}`}
-                    url={att.uri}
-                    alt={att.fileName}
-                  />
-                ) : (
-                  <View
-                    key={`${att.uri}-${att.fileName}`}
-                    className="flex-row items-center gap-2 self-start rounded-md border border-gray-6 bg-gray-3 px-2 py-1.5"
-                  >
-                    <FileIcon size={14} color={themeColors.gray[11]} />
-                    <Text
-                      className="font-mono text-[12px] text-gray-12"
-                      numberOfLines={1}
-                    >
-                      {att.fileName}
-                    </Text>
-                  </View>
-                ),
-              )}
+              {attachments?.map((att) => (
+                <View key={`${att.uri}-${att.fileName}`}>
+                  {renderAttachment ? (
+                    renderAttachment(att)
+                  ) : (
+                    <MessageFileChip fileName={att.fileName} />
+                  )}
+                </View>
+              ))}
             </View>
           )}
         </View>

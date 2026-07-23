@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { createRecordStore } from "./web-local-store";
+
 // Per-device archived-task registry for the web host, backed by localStorage.
 //
 // On desktop, archiving is a LOCAL operation: it trashes the task's local
@@ -6,44 +9,30 @@
 // archiving is purely "hide this task from my sidebar on this device", which
 // this store persists. Shape mirrors the workspace store (web-workspace-store).
 
-export interface WebArchivedTask {
-  taskId: string;
-  archivedAt: string;
-  folderId: string;
-  mode: "worktree" | "local" | "cloud";
-  worktreeName: string | null;
-  branchName: string | null;
-  checkpointId: string | null;
-}
+const webArchivedTaskSchema = z.object({
+  taskId: z.string(),
+  archivedAt: z.string(),
+  folderId: z.string(),
+  mode: z.enum(["worktree", "local", "cloud"]),
+  worktreeName: z.string().nullable(),
+  branchName: z.string().nullable(),
+  checkpointId: z.string().nullable(),
+});
 
-const STORAGE_KEY = "posthog-code:web-archived-tasks";
+export type WebArchivedTask = z.infer<typeof webArchivedTaskSchema>;
 
-function load(): Record<string, WebArchivedTask> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, WebArchivedTask>) : {};
-  } catch {
-    return {};
-  }
-}
-
-let archived: Record<string, WebArchivedTask> = load();
-
-function persist(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(archived));
-  } catch {
-    // Best-effort persistence.
-  }
-}
+const store = createRecordStore(
+  "posthog-code:web-archived-tasks",
+  webArchivedTaskSchema,
+);
 
 export const webArchiveStore = {
   list(): WebArchivedTask[] {
-    return Object.values(archived);
+    return Object.values(store.get());
   },
 
   ids(): string[] {
-    return Object.keys(archived);
+    return Object.keys(store.get());
   },
 
   add(taskId: string, archivedAt: string): WebArchivedTask {
@@ -56,15 +45,14 @@ export const webArchiveStore = {
       branchName: null,
       checkpointId: null,
     };
-    archived = { ...archived, [taskId]: entry };
-    persist();
+    store.set({ ...store.get(), [taskId]: entry });
     return entry;
   },
 
   remove(taskId: string): void {
-    if (!(taskId in archived)) return;
-    const { [taskId]: _removed, ...rest } = archived;
-    archived = rest;
-    persist();
+    const current = store.get();
+    if (!(taskId in current)) return;
+    const { [taskId]: _removed, ...rest } = current;
+    store.set(rest);
   },
 };

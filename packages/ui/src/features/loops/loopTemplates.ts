@@ -13,6 +13,7 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import {
   type LoopFormValues,
   type LoopTriggerDraft,
@@ -49,7 +50,7 @@ function scheduleDraft(cron: string): LoopTriggerDraft {
     key: nextDraftTriggerKey(),
     type: "schedule",
     enabled: true,
-    config: { cron_expression: cron, timezone: "UTC" },
+    config: { cron_expression: cron, timezone: systemTimezone() },
   };
 }
 

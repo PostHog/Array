@@ -591,7 +591,6 @@ interface CloudRunOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
-  homeQuickAction?: string;
   /**
    * Local url-based MCP servers to make available inside the sandbox. The
    * backend merges these into the agent server's `--mcpServers` at spawn.
@@ -688,9 +687,6 @@ function buildCloudRunRequestBody(
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.homeQuickAction) {
-    body.home_quick_action = options.homeQuickAction;
   }
   if (options?.importedMcpServers?.length) {
     body.imported_mcp_servers = options.importedMcpServers;
@@ -1839,82 +1835,6 @@ export class PostHogAPIClient {
     return data as Schemas.Team;
   }
 
-  async getHomeSnapshot(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch home snapshot: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async refreshHomeSnapshot(): Promise<void> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/refresh/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to request home refresh: ${response.status}`);
-    }
-  }
-
-  async getCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  // 409/422 carry a structured save-result body the caller validates.
-  async saveCodeWorkflow(body: {
-    config: unknown;
-    expectedVersion: number;
-  }): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/save/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-      overrides: {
-        body: JSON.stringify(body),
-      },
-    });
-    if (!response.ok && response.status !== 409 && response.status !== 422) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async resetCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/reset/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
   async listSignalSourceConfigs(
     projectId: number,
   ): Promise<SignalSourceConfig[]> {
@@ -2669,6 +2589,14 @@ export class PostHogAPIClient {
   // Everyone in the current organization — the pool of taggable teammates for
   // thread @-mentions. Membership churn is slow, so callers cache aggressively.
   async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {
+    const result = await this.listOrganizationMembersWithStatus();
+    return result.members;
+  }
+
+  async listOrganizationMembersWithStatus(): Promise<{
+    members: OrganizationMemberBasic[];
+    isComplete: boolean;
+  }> {
     const ORG_MEMBERS_MAX_PAGES = 20;
     const ORG_MEMBERS_PAGE_SIZE = 200;
     const all: OrganizationMemberBasic[] = [];
@@ -2689,7 +2617,7 @@ export class PostHogAPIClient {
         next: string | null;
       };
       all.push(...page.results);
-      if (!page.next) return all;
+      if (!page.next) return { members: all, isComplete: true };
       const nextUrl = new URL(page.next);
       urlPath = `${nextUrl.pathname}${nextUrl.search}`;
     }
@@ -2697,7 +2625,7 @@ export class PostHogAPIClient {
       `listOrganizationMembers hit MAX_PAGES (${ORG_MEMBERS_MAX_PAGES}); returning partial results`,
       { returned: all.length },
     );
-    return all;
+    return { members: all, isComplete: false };
   }
 
   async sendRunCommand(
@@ -2978,6 +2906,34 @@ export class PostHogAPIClient {
       artifacts?: FinalizedTaskArtifactUpload[];
     };
     return data.artifacts ?? [];
+  }
+
+  async presignTaskRunArtifact(
+    taskId: string,
+    runId: string,
+    storagePath: string,
+  ): Promise<string> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+      overrides: {
+        body: JSON.stringify({ storage_path: storagePath }),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to generate artifact preview URL: ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as { url: string };
+    return data.url;
   }
 
   async resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun> {

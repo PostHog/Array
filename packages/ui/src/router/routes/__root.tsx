@@ -7,7 +7,6 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button, ButtonGroup } from "@posthog/quill";
 import {
   BILLING_FLAG,
-  HOME_TAB_FLAG,
   PROJECT_BLUEBIRD_FLAG,
   SYNC_CLOUD_TASKS_FLAG,
 } from "@posthog/shared";
@@ -184,7 +183,6 @@ function RootLayout() {
   const reconcilingTaskIds = useRef<Set<string>>(new Set());
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const syncCloudTasksEnabled = useFeatureFlag(SYNC_CLOUD_TASKS_FLAG);
-  const homeTabEnabled = useFeatureFlag(HOME_TAB_FLAG);
   // "PostHog Web" is a channels-world affordance — show it only while the user
   // is actually seeing channels (toggle on, which itself requires the flag).
   const bluebirdEnabled = useFeatureFlag(
@@ -263,17 +261,10 @@ function RootLayout() {
     trpc,
   ]);
 
-  // The /code/home route is only reachable while the home-tab flag is on, but
-  // flags resolve asynchronously – a restored route (or a flag flipping off
-  // mid-session) can leave us on home without access. Redirect to the new-task
-  // screen once flags have loaded and home is gated off.
+  // Flags resolve asynchronously — flag-gated routes below wait for this
+  // before redirecting away from a restored route the user can't access.
   const [flagsLoaded, setFlagsLoaded] = useState(false);
   useEffect(() => onFeatureFlagsLoaded(() => setFlagsLoaded(true)), []);
-  useEffect(() => {
-    if (flagsLoaded && !homeTabEnabled && view.type === "home") {
-      openTaskInput();
-    }
-  }, [flagsLoaded, homeTabEnabled, view.type]);
 
   // Settings is a full-page route — drop the app chrome (header/sidebar/
   // space-switcher) so the panel occupies the full window.

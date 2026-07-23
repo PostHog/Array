@@ -7,6 +7,7 @@ import { StatusNotificationView } from "@posthog/ui/features/sessions/components
 import { TaskNotificationView } from "@posthog/ui/features/sessions/components/session-update/TaskNotificationView";
 import { ThoughtView } from "@posthog/ui/features/sessions/components/session-update/ThoughtView";
 import type {
+  CompactBoundaryUpdate,
   ConversationSessionUpdate,
   ToolCall,
 } from "@posthog/ui/features/sessions/types";
@@ -23,12 +24,7 @@ export type RenderItem =
       message: string;
       timestamp?: string;
     }
-  | {
-      sessionUpdate: "compact_boundary";
-      trigger: "manual" | "auto";
-      preTokens: number;
-      contextSize?: number;
-    }
+  | CompactBoundaryUpdate
   | {
       sessionUpdate: "status";
       status: string;

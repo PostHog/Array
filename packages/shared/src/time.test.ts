@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  formatClockTime,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
   getLocalDayDiff,
@@ -10,6 +11,17 @@ const NOW = new Date("2026-06-15T12:00:00.000Z").getTime();
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
+
+describe("formatClockTime", () => {
+  it.each([
+    ["00:00", "12:00 AM"],
+    ["08:15", "8:15 AM"],
+    ["11:00", "11:00 AM"],
+    ["17:30", "5:30 PM"],
+  ])("formats %s as %s", (time, expected) => {
+    expect(formatClockTime(time)).toBe(expected);
+  });
+});
 
 beforeEach(() => {
   vi.useFakeTimers();

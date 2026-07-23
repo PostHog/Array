@@ -59,6 +59,9 @@ export const taskMetadata = sqliteTable("task_metadata", {
   // row, so this timestamp is their only home — without it, archiving them is a
   // silent no-op and they reappear on the next refetch.
   archivedAt: text(),
+  archivedTitle: text(),
+  archivedTaskCreatedAt: text(),
+  archivedRepository: text(),
   piSessionFile: text(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -102,6 +105,9 @@ export const archives = sqliteTable("archives", {
     .references(() => workspaces.id, { onDelete: "cascade" }),
   branchName: text(),
   checkpointId: text(),
+  title: text(),
+  taskCreatedAt: text(),
+  repository: text(),
   archivedAt: text().notNull(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

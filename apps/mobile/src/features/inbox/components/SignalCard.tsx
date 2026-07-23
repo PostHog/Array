@@ -1,5 +1,9 @@
 import { Text } from "@components/text";
 import {
+  EXTERNAL_INBOX_SOURCE_BY_PRODUCT,
+  type SourceProduct,
+} from "@posthog/shared";
+import {
   ArrowSquareOut,
   Bug,
   CaretDown,
@@ -11,6 +15,7 @@ import {
   FirstAid,
   GithubLogo,
   LinkSimple,
+  Plug,
   Question,
   Robot,
   WarningCircle,
@@ -22,44 +27,9 @@ import { formatRelativeTime } from "@/lib/format";
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 import type { Signal, SignalFindingContent } from "../types";
+import { sourceLine } from "../utils";
 
 const COLLAPSE_THRESHOLD = 280;
-
-const ERROR_TRACKING_TYPE_LABELS: Record<string, string> = {
-  issue_created: "New issue",
-  issue_reopened: "Issue reopened",
-  issue_spiking: "Volume spike",
-};
-
-function sourceLine(signal: Signal): string {
-  const { source_product, source_type } = signal;
-  if (source_product === "error_tracking") {
-    const label =
-      ERROR_TRACKING_TYPE_LABELS[source_type] ?? source_type.replace(/_/g, " ");
-    return `Error tracking · ${label}`;
-  }
-  if (source_product === "session_replay" && source_type === "session_problem")
-    return "Session replay · Session problem";
-  if (source_product === "llm_analytics" && source_type === "evaluation")
-    return "AI observability · Evaluation";
-  if (source_product === "zendesk" && source_type === "ticket")
-    return "Zendesk · Ticket";
-  if (source_product === "github" && source_type === "issue")
-    return "GitHub · Issue";
-  if (source_product === "linear" && source_type === "issue")
-    return "Linear · Issue";
-  if (
-    source_product === "signals_scout" &&
-    source_type === "cross_source_issue"
-  )
-    return "Scout · Cross-source issue";
-  if (source_product === "signals_scout") return "Scout";
-  if (source_product === "health_checks" && source_type === "health_issue")
-    return "Health checks · Issue";
-  const product = source_product.replace(/_/g, " ");
-  const type = source_type.replace(/_/g, " ");
-  return `${product} · ${type}`;
-}
 
 function SourceIcon({
   product,
@@ -88,6 +58,8 @@ function SourceIcon({
     case "health_checks":
       return <FirstAid size={size} color={color} />;
     default:
+      if (EXTERNAL_INBOX_SOURCE_BY_PRODUCT[product as SourceProduct])
+        return <Plug size={size} color={color} />;
       return <WarningCircle size={size} color={color} />;
   }
 }

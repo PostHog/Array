@@ -22,7 +22,6 @@ export interface CreateTaskRunClientOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;
-  homeQuickAction?: string;
   importedMcpServers?: CloudMcpServerImport[];
   relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }

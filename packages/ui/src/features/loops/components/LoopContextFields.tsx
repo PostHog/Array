@@ -50,7 +50,7 @@ export function LoopContextFields({
   };
 
   const contextOptions = [
-    { value: NOT_ATTACHED_VALUE, label: "Not attached" },
+    { value: NOT_ATTACHED_VALUE, label: "Not attached to a channel" },
     ...channels.map((channel) => ({
       value: channel.id,
       label: `#${channel.name}`,
@@ -63,7 +63,8 @@ export function LoopContextFields({
         value={value?.folderId ?? NOT_ATTACHED_VALUE}
         options={contextOptions}
         disabled={disabled}
-        ariaLabel="Context"
+        size="lg"
+        ariaLabel="Context channel"
         onValueChange={selectContext}
       />
 
@@ -71,7 +72,7 @@ export function LoopContextFields({
         <Flex
           direction="column"
           gap="3"
-          className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) p-3"
+          className="rounded-(--radius-2) border border-border bg-(--gray-1) p-3"
         >
           <ToggleRow
             title="Show runs in the feed"
@@ -110,6 +111,7 @@ export function LoopContextFields({
                 label: dashboard.name,
               }))}
               disabled={disabled}
+              size="lg"
               ariaLabel="Canvas"
               onValueChange={(canvasId) =>
                 patchOutputs({ canvas_id: canvasId })

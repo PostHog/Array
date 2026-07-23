@@ -1,11 +1,15 @@
-import type { SessionEvent, SessionNotification } from "../types";
+import type {
+  SessionEvent,
+  SessionNotification,
+  TerminalStatus,
+} from "../types";
 
 export type SessionActivityPhase = "idle" | "connecting" | "working";
 
 interface SessionActivityState {
   isPromptPending?: boolean;
   awaitingAgentOutput?: boolean;
-  terminalStatus?: "failed" | "completed";
+  terminalStatus?: TerminalStatus;
   events?: SessionEvent[];
 }
 

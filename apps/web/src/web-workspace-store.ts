@@ -1,4 +1,5 @@
-import type { Workspace } from "@posthog/shared";
+import { type Workspace, workspaceSchema } from "@posthog/shared";
+import { createRecordStore } from "./web-local-store";
 
 // Per-device cloud-workspace registry for the web host, backed by localStorage.
 //
@@ -10,36 +11,20 @@ import type { Workspace } from "@posthog/shared";
 // survives reloads via localStorage. Scope matches desktop: cloud tasks created
 // in THIS browser appear in the sidebar.
 
-const STORAGE_KEY = "posthog-code:web-cloud-workspaces";
-
-function load(): Record<string, Workspace> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, Workspace>) : {};
-  } catch {
-    return {};
-  }
-}
-
-let workspaces: Record<string, Workspace> = load();
-
-function persist(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaces));
-  } catch {
-    // Best-effort: a storage failure only costs sidebar persistence, not the task.
-  }
-}
+const store = createRecordStore(
+  "posthog-code:web-cloud-workspaces",
+  workspaceSchema,
+);
 
 export const webWorkspaceStore = {
   getAll(): Record<string, Workspace> {
-    return workspaces;
+    return store.get();
   },
 
   /** Register (or overwrite) a cloud workspace for a task. */
   addCloud(taskId: string, branch: string | null, createdAt: string): void {
-    workspaces = {
-      ...workspaces,
+    store.set({
+      ...store.get(),
       [taskId]: {
         taskId,
         folderId: "",
@@ -52,14 +37,13 @@ export const webWorkspaceStore = {
         linkedBranch: null,
         createdAt,
       },
-    };
-    persist();
+    });
   },
 
   remove(taskId: string): void {
-    if (!(taskId in workspaces)) return;
-    const { [taskId]: _removed, ...rest } = workspaces;
-    workspaces = rest;
-    persist();
+    const current = store.get();
+    if (!(taskId in current)) return;
+    const { [taskId]: _removed, ...rest } = current;
+    store.set(rest);
   },
 };

@@ -10,7 +10,9 @@ import {
   type TabsSnapshot,
   type TabTarget,
   TypedEventEmitter,
+  tabsSnapshotSchema,
 } from "@posthog/shared";
+import { readValidated, writeJson } from "./web-local-store";
 
 // Per-device browser-tab strip for the web host, backed by localStorage.
 //
@@ -33,12 +35,7 @@ const EMPTY_SNAPSHOT: TabsSnapshot = { windows: [], tabs: [] };
 type SnapshotChangeEvents = { snapshotChange: TabsSnapshot };
 
 function load(): TabsSnapshot {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as TabsSnapshot) : EMPTY_SNAPSHOT;
-  } catch {
-    return EMPTY_SNAPSHOT;
-  }
+  return readValidated(STORAGE_KEY, tabsSnapshotSchema, () => EMPTY_SNAPSHOT);
 }
 
 class WebBrowserTabsStore extends TypedEventEmitter<SnapshotChangeEvents> {
@@ -158,11 +155,7 @@ class WebBrowserTabsStore extends TypedEventEmitter<SnapshotChangeEvents> {
   }
 
   private persist(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.snapshot));
-    } catch {
-      // Best-effort: a storage failure only costs tab persistence across reloads.
-    }
+    writeJson(STORAGE_KEY, this.snapshot);
   }
 }
 

@@ -1,17 +1,33 @@
 import { ArrowLeftIcon, RepeatIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
-import { Switch } from "@posthog/quill";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Badge,
+  Button,
+  Switch,
+  Textarea,
+} from "@posthog/quill";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
+import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
-import { Badge } from "@posthog/ui/primitives/Badge";
-import { Button } from "@posthog/ui/primitives/Button";
+import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToEditLoop,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
-import { AlertDialog, Flex, Text } from "@radix-ui/themes";
-import { useState } from "react";
+import { Flex, Text } from "@radix-ui/themes";
+import { useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
+import { useLoopDisplayModel } from "../hooks/useLoopDisplayModel";
 import {
   useDeleteLoop,
   useRunLoop,
@@ -22,6 +38,8 @@ import {
   describeTrigger,
   loopStatusColor,
   loopStatusLabel,
+  nextScheduleRun,
+  summarizeNotificationDestinations,
 } from "../loopDisplay";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
@@ -87,7 +105,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
 
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-8 py-6">
+      <div className="mx-auto w-full max-w-5xl px-8 py-8">
         <div className="h-24 animate-pulse rounded-(--radius-2) border border-border bg-(--gray-2)" />
       </div>
     );
@@ -98,27 +116,32 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-8 py-6">
-      <Flex direction="column" gap="5">
+    <div className="h-full min-h-0 overflow-y-auto">
+      <Flex
+        direction="column"
+        gap="5"
+        className="mx-auto w-full max-w-5xl px-8 py-8"
+      >
         <Flex direction="column" gap="3">
-          <button
-            type="button"
+          <Button
+            variant="link-muted"
+            size="sm"
             onClick={navigateToLoops}
-            className="flex w-fit items-center gap-1.5 border-none bg-transparent p-0 text-[12px] text-gray-11 no-underline hover:text-gray-12"
+            className="w-fit px-0"
           >
-            <ArrowLeftIcon size={13} />
+            <ArrowLeftIcon size={15} />
             Loops
-          </button>
+          </Button>
 
           <Flex align="center" justify="between" gap="3" wrap="wrap">
             <Flex align="center" gap="2" wrap="wrap">
               <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
                 {loop.name}
               </Text>
-              <Badge color={loopStatusColor(loop)}>
+              <Badge variant={loopStatusBadgeVariant(loop)}>
                 {loopStatusLabel(loop)}
               </Badge>
-              <Badge color="gray">{loop.visibility}</Badge>
+              <Badge>{loop.visibility}</Badge>
             </Flex>
             <Flex align="center" gap="2">
               <Switch
@@ -128,9 +151,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
                 onCheckedChange={handleToggleEnabled}
               />
               <Button
-                variant="soft"
-                color="gray"
-                size="1"
+                variant="outline"
+                size="sm"
                 loading={runLoop.isPending}
                 disabled={runLoop.isPending}
                 onClick={handleRunNow}
@@ -138,17 +160,15 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
                 Run now
               </Button>
               <Button
-                variant="soft"
-                color="gray"
-                size="1"
+                variant="outline"
+                size="sm"
                 onClick={() => navigateToEditLoop(loop.id)}
               >
                 Edit
               </Button>
               <Button
-                variant="soft"
-                color="red"
-                size="1"
+                variant="destructive"
+                size="sm"
                 onClick={() => setDeleteOpen(true)}
               >
                 Delete
@@ -164,6 +184,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
         </Flex>
 
         <ConfigSummarySection loop={loop} />
+
+        <InstructionsSection loop={loop} />
 
         <Flex direction="column" gap="2">
           <Flex align="center" gap="2">
@@ -194,49 +216,92 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           ) : (
             <Flex direction="column" gap="2">
               {runs.map((run) => (
-                <LoopRunRow key={run.id} run={run} />
+                <LoopRunRow
+                  key={run.id}
+                  run={run}
+                  onStopped={() => void runsQuery.refetch()}
+                />
               ))}
             </Flex>
           )}
         </Flex>
       </Flex>
 
-      <AlertDialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialog.Content maxWidth="420px" size="1">
-          <AlertDialog.Title className="text-sm">Delete loop</AlertDialog.Title>
-          <AlertDialog.Description className="text-[13px]">
-            <Text color="gray" className="text-[13px]">
-              Permanently delete{" "}
-              <Text className="font-medium text-[13px]">{loop.name}</Text>? This
-              stops every trigger and cannot be undone.
-            </Text>
-          </AlertDialog.Description>
-          <Flex justify="end" gap="3" mt="3">
-            <AlertDialog.Cancel>
-              <Button variant="soft" color="gray" size="1">
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button
-                variant="solid"
-                color="red"
-                size="1"
-                loading={deleteLoop.isPending}
-                disabled={deleteLoop.isPending}
-                onClick={handleDelete}
-              >
-                Delete
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete loop</AlertDialogTitle>
+            <AlertDialogDescription>
+              <Text color="gray" className="text-[13px]">
+                Permanently delete{" "}
+                <Text className="font-medium text-[13px]">{loop.name}</Text>?
+                This stops every trigger and cannot be undone.
+              </Text>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={
+                <Button variant="outline" size="sm">
+                  Cancel
+                </Button>
+              }
+            />
+            <Button
+              variant="destructive"
+              size="sm"
+              loading={deleteLoop.isPending}
+              disabled={deleteLoop.isPending}
+              onClick={handleDelete}
+            >
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
+function loopStatusBadgeVariant(
+  loop: LoopSchemas.Loop,
+): "default" | "destructive" | "success" {
+  const color = loopStatusColor(loop);
+  if (color === "green") return "success";
+  if (color === "red") return "destructive";
+  return "default";
+}
+
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
+  const displayModel = useLoopDisplayModel(loop.runtime_adapter, loop.model);
+  const {
+    members,
+    isLoading: membersLoading,
+    isError: membersError,
+    isComplete: membersComplete,
+  } = useOrgMembers({ enabled: loop.visibility === "team" });
+  const creator = members.find((member) => member.id === loop.created_by_id);
+  let creatorContent: React.ReactNode = null;
+  if (loop.visibility === "team" && membersError) {
+    creatorContent = "Creator unavailable";
+  } else if (loop.visibility === "team" && membersLoading) {
+    creatorContent = "Loading…";
+  } else if (loop.visibility === "team" && creator) {
+    creatorContent = (
+      <Flex align="center" gap="2">
+        <UserAvatar user={creator} size="xs" />
+        {userDisplayName(creator)}
+      </Flex>
+    );
+  } else if (loop.visibility === "team" && membersComplete) {
+    creatorContent = "Former organization member";
+  } else if (loop.visibility === "team") {
+    creatorContent = "Creator unavailable";
+  }
+  const notificationDestinations = summarizeNotificationDestinations(
+    loop.notifications,
+  );
+
   return (
     <Flex direction="column" gap="3">
       <Text className="font-medium text-[13px] text-gray-12">
@@ -251,7 +316,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         <SummaryRow label="Model">
           {[
             loop.runtime_adapter,
-            loop.model,
+            displayModel,
             loop.reasoning_effort ? `${loop.reasoning_effort} reasoning` : null,
           ]
             .filter(Boolean)
@@ -264,6 +329,10 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             : "None (connector-only loop)"}
         </SummaryRow>
 
+        {loop.visibility === "team" ? (
+          <SummaryRow label="Created by">{creatorContent}</SummaryRow>
+        ) : null}
+
         <SummaryRow label="Triggers">
           {loop.triggers.length === 0 ? (
             "No triggers configured"
@@ -271,7 +340,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             <Flex direction="column" gap="1">
               {loop.triggers.map((trigger) => (
                 <Text key={trigger.id} className="text-[12.5px] text-gray-12">
-                  {describeTrigger(trigger)}
+                  <TriggerDescription trigger={trigger} />
                   {!trigger.enabled ? " (disabled)" : ""}
                 </Text>
               ))}
@@ -279,13 +348,106 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
           )}
         </SummaryRow>
 
-        <SummaryRow label="Instructions">
-          <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap text-[12px] text-gray-12 [font-family:var(--font-mono)]">
-            {loop.instructions}
-          </pre>
-        </SummaryRow>
+        {notificationDestinations.length > 0 ? (
+          <SummaryRow label="Notifications">
+            {notificationDestinations.join(", ")}
+          </SummaryRow>
+        ) : null}
       </Flex>
     </Flex>
+  );
+}
+
+function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
+  const updateLoop = useUpdateLoop(loop.id);
+  const [draft, setDraft] = useState<string | null>(null);
+  // Escape reverts and blurs; skip the resulting onBlur save.
+  const skipCommit = useRef(false);
+
+  const commit = (value: string) => {
+    if (skipCommit.current) {
+      skipCommit.current = false;
+      return;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setDraft(null);
+      return;
+    }
+    if (updateLoop.isPending) return;
+    if (trimmed === loop.instructions.trim()) {
+      setDraft(null);
+      return;
+    }
+    updateLoop.mutate(
+      { instructions: trimmed },
+      {
+        onSuccess: () => {
+          setDraft(null);
+          toast.success("Instructions updated");
+        },
+        onError: (error) => {
+          setDraft(null);
+          toast.error("Failed to update instructions", {
+            description: error.message,
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <Flex direction="column" gap="3">
+      <Flex align="center" gap="2">
+        <Text className="font-medium text-[13px] text-gray-12">
+          Instructions
+        </Text>
+        {updateLoop.isPending ? (
+          <Text className="text-[11px] text-gray-10">Saving…</Text>
+        ) : null}
+      </Flex>
+      <Textarea
+        value={draft ?? loop.instructions}
+        disabled={updateLoop.isPending}
+        aria-label="Loop instructions"
+        className="max-h-[400px] min-h-[200px] bg-(--color-panel-solid) text-[12.5px] leading-relaxed"
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={(e) => commit(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            skipCommit.current = true;
+            setDraft(null);
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    </Flex>
+  );
+}
+
+function TriggerDescription({ trigger }: { trigger: LoopSchemas.LoopTrigger }) {
+  const description = describeTrigger(trigger);
+  if (trigger.type !== "schedule") return description;
+
+  const config = trigger.config as LoopSchemas.LoopScheduleTriggerConfig;
+  const nextRun = nextScheduleRun(config);
+  if (!nextRun) return description;
+  const nextRunSeparator = " · Next run ";
+  const [scheduleDescription, nextRunDescription] =
+    description.split(nextRunSeparator);
+  const timezone =
+    config.timezone ?? (config.run_at ? systemTimezone() : "UTC");
+
+  return (
+    <>
+      {scheduleDescription}
+      {nextRunSeparator}
+      <TimezoneTimestamp
+        timestamp={nextRun}
+        timezone={timezone}
+        label={nextRunDescription}
+      />
+    </>
   );
 }
 

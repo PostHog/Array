@@ -32,7 +32,11 @@ import type {
   TaskRun,
 } from "../types";
 import { useMessageQueueStore } from "./messageQueueStore";
-import { type TaskSession, useTaskSessionStore } from "./taskSessionStore";
+import {
+  mapTerminalStatus,
+  type TaskSession,
+  useTaskSessionStore,
+} from "./taskSessionStore";
 import { useTaskStore } from "./taskStore";
 
 function seedSession(overrides: Partial<TaskSession> = {}): void {
@@ -46,6 +50,20 @@ function seedSession(overrides: Partial<TaskSession> = {}): void {
   };
   useTaskSessionStore.setState({ sessions: { "run-1": session } });
 }
+
+describe("mapTerminalStatus", () => {
+  it.each([
+    { status: "completed", expected: "completed" },
+    { status: "failed", expected: "failed" },
+    { status: "cancelled", expected: "stopped" },
+    { status: "in_progress", expected: undefined },
+    { status: "queued", expected: undefined },
+    { status: undefined, expected: undefined },
+    { status: null, expected: undefined },
+  ] as const)("maps $status to $expected", ({ status, expected }) => {
+    expect(mapTerminalStatus(status)).toBe(expected);
+  });
+});
 
 describe("steerQueuedMessage", () => {
   beforeEach(() => {

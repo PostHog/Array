@@ -3,7 +3,7 @@ import {
   Microphone,
   Play,
   Scissors,
-  Stop,
+  StopCircle,
   Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
@@ -66,7 +66,7 @@ export function AddCustomSoundDialog({
             <Flex gap="2" align="center" wrap="wrap">
               {sound.isRecording ? (
                 <Button color="red" onClick={sound.stopRecording}>
-                  <Stop weight="fill" /> Stop ({sound.elapsedLabel})
+                  <StopCircle weight="fill" /> Stop ({sound.elapsedLabel})
                 </Button>
               ) : (
                 <Button

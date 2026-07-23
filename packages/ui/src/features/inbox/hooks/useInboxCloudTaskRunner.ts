@@ -16,6 +16,7 @@ import {
   defaultEligibleModel,
   getCloudUrlFromRegion,
 } from "@posthog/shared";
+import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
@@ -90,6 +91,8 @@ export interface UseInboxCloudTaskRunnerOptions {
   buildInput: (ctx: InboxCloudTaskInputContext) => TaskCreationInput;
   /** Telemetry extras merged into the TASK_CREATED event when the run succeeds. */
   analyticsExtras?: Record<string, unknown>;
+  /** Called with the created task record, before any navigation happens. */
+  onTaskCreated?: (task: Task) => void;
   /**
    * When false, the runner does not navigate to the created task. The task is
    * still added to the sidebar via `invalidateTasks`, and a success toast with a
@@ -120,6 +123,7 @@ export function useInboxCloudTaskRunner({
   loggerScope,
   buildInput,
   analyticsExtras,
+  onTaskCreated,
   redirectOnSuccess = true,
 }: UseInboxCloudTaskRunnerOptions): UseInboxCloudTaskRunnerReturn {
   const [isRunning, setIsRunning] = useState(false);
@@ -225,6 +229,7 @@ export function useInboxCloudTaskRunner({
       const result = await taskService.createTask(input, (output) => {
         createdTask = output.task;
         invalidateTasks(output.task);
+        onTaskCreated?.(output.task);
         if (redirectOnSuccess) {
           void openTask(output.task);
         }
@@ -299,6 +304,7 @@ export function useInboxCloudTaskRunner({
     buildInput,
     copy,
     analyticsExtras,
+    onTaskCreated,
     modelResolver,
     taskService,
     redirectOnSuccess,

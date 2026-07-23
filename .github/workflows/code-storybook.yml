@@ -115,8 +115,13 @@ jobs:
           restore-keys: |
             playwright-chromium-${{ runner.os }}-
 
+      - name: Restore turbo cache
+        uses: ./.github/actions/restore-turbo-cache
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          SKIP_ELECTRON_REBUILD: "1"
 
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
@@ -130,38 +135,7 @@ jobs:
         run: pnpm exec playwright install-deps chromium
 
       - name: Build workspace packages
-        # Bare `wait` returns the exit status of only the last job passed to
-        # it, silently swallowing failures from the others. `wait_all` waits
-        # on each PID individually and checks its own status so any failed
-        # build fails the step.
-        run: |
-          wait_all() {
-            status=0
-            for pid in "$@"; do
-              wait "$pid" || status=$?
-            done
-            [ "$status" -eq 0 ]
-          }
-
-          pnpm --filter @posthog/electron-trpc build &
-          pid1=$!
-          (pnpm --filter @posthog/shared build && pnpm --filter @posthog/platform build) &
-          pid2=$!
-          wait_all "$pid1" "$pid2"
-
-          # @posthog/agent imports the dist of @posthog/git and
-          # @posthog/harness, so both must finish before the last group starts.
-          pnpm --filter @posthog/git build &
-          pid3=$!
-          pnpm --filter @posthog/harness build &
-          pid4=$!
-          wait_all "$pid3" "$pid4"
-
-          pnpm --filter @posthog/enricher build &
-          pid5=$!
-          pnpm --filter @posthog/agent build &
-          pid6=$!
-          wait_all "$pid5" "$pid6"
+        run: pnpm run build:deps
 
       - name: Build Storybook
         working-directory: apps/code

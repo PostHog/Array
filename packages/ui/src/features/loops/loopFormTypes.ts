@@ -1,4 +1,5 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 
 /**
  * A trigger row in the create/edit form. `key` is a client-only stable
@@ -45,7 +46,7 @@ export interface LoopFormValues {
 }
 
 export function emptyLoopScheduleTriggerConfig(): LoopSchemas.LoopScheduleTriggerConfig {
-  return { cron_expression: "0 9 * * *", timezone: "UTC" };
+  return { cron_expression: "0 9 * * 1", timezone: systemTimezone() };
 }
 
 export function emptyLoopGithubTriggerConfig(): LoopSchemas.LoopGithubTriggerConfig {
@@ -98,6 +99,30 @@ export function nextDraftTriggerKey(): string {
   return `draft-trigger-${draftKeySeq}`;
 }
 
+export function defaultLoopScheduleTrigger(): LoopTriggerDraft {
+  return {
+    key: nextDraftTriggerKey(),
+    type: "schedule",
+    enabled: true,
+    config: emptyLoopScheduleTriggerConfig(),
+  };
+}
+
+export function defaultLoopTriggerOfType(
+  type: LoopSchemas.LoopTriggerTypeEnum,
+): LoopTriggerDraft {
+  if (type === "schedule") return defaultLoopScheduleTrigger();
+  return {
+    key: nextDraftTriggerKey(),
+    type,
+    enabled: true,
+    config:
+      type === "github"
+        ? emptyLoopGithubTriggerConfig()
+        : emptyLoopApiTriggerConfig(),
+  };
+}
+
 export function emptyLoopFormValues(): LoopFormValues {
   return {
     name: "",
@@ -108,7 +133,7 @@ export function emptyLoopFormValues(): LoopFormValues {
     model: "",
     reasoningEffort: null,
     repositories: [],
-    triggers: [],
+    triggers: [defaultLoopScheduleTrigger()],
     behaviors: defaultLoopBehaviors(),
     notifications: defaultLoopNotifications(),
     contextTarget: null,

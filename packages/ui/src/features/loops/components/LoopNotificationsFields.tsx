@@ -7,7 +7,7 @@ import {
 import { Switch } from "@posthog/quill";
 import { useIntegrationSelectors } from "@posthog/ui/features/integrations/store";
 import { useSlackConnect } from "@posthog/ui/features/integrations/useSlackConnect";
-import { SlackChannelCombobox } from "@posthog/ui/features/settings/components/SlackChannelCombobox";
+import { SlackWorkspaceChannelPicker } from "@posthog/ui/features/settings/components/SlackWorkspaceChannelPicker";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Checkbox, Flex, Text } from "@radix-ui/themes";
 
@@ -46,16 +46,20 @@ export function LoopNotificationsFields({
 
   return (
     <Flex direction="column" gap="3">
+      <Text className="text-[12.5px] text-gray-10 leading-snug">
+        Each run and its full output live on this loop's page. Notifications
+        only send a short summary with a link when something happens.
+      </Text>
       <NotificationChannelRow
         title="Push"
-        description="Notify the loop owner's devices."
+        description="Sends a push notification to the loop owner's devices with PostHog installed."
         channel={notifications.push}
         disabled={disabled}
         onChange={(patch) => updateChannel("push", patch)}
       />
       <NotificationChannelRow
         title="Email"
-        description="Send a run summary to the loop owner's email."
+        description="Emails a run summary to the loop owner's account email."
         channel={notifications.email}
         disabled={disabled}
         onChange={(patch) => updateChannel("email", patch)}
@@ -88,7 +92,7 @@ function NotificationChannelRow({
     <Flex
       direction="column"
       gap="2"
-      className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) p-3"
+      className="rounded-(--radius-2) border border-border bg-(--gray-1) p-3"
     >
       <Flex align="center" justify="between" gap="2">
         <Flex direction="column" gap="0">
@@ -142,24 +146,27 @@ function EventFilterCheckboxes({
   };
 
   return (
-    <Flex gap="3" wrap="wrap">
-      {EVENT_OPTIONS.map((option) => (
-        <Text
-          key={option.value}
-          as="label"
-          className="flex items-center gap-1.5 text-[12px] text-gray-11"
-        >
-          <Checkbox
-            size="1"
-            checked={events.includes(option.value)}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              toggle(option.value, checked === true)
-            }
-          />
-          {option.label}
-        </Text>
-      ))}
+    <Flex direction="column" gap="1.5">
+      <Text className="font-medium text-[12px] text-gray-11">Notify on</Text>
+      <Flex gap="3" wrap="wrap">
+        {EVENT_OPTIONS.map((option) => (
+          <Text
+            key={option.value}
+            as="label"
+            className="flex items-center gap-1.5 text-[12.5px] text-gray-12"
+          >
+            <Checkbox
+              size="1"
+              checked={events.includes(option.value)}
+              disabled={disabled}
+              onCheckedChange={(checked) =>
+                toggle(option.value, checked === true)
+              }
+            />
+            {option.label}
+          </Text>
+        ))}
+      </Flex>
     </Flex>
   );
 }
@@ -194,7 +201,7 @@ function SlackNotificationRow({
   return (
     <NotificationChannelRow
       title="Slack"
-      description="Post a run summary to a Slack channel."
+      description="Posts a run summary to the channel you pick, through this project's Slack connection."
       channel={channel}
       disabled={disabled}
       onChange={onChange}
@@ -211,13 +218,22 @@ function SlackNotificationRow({
             : "Connect Slack workspace"}
         </Button>
       ) : (
-        <SlackChannelCombobox
+        <SlackWorkspaceChannelPicker
+          integrations={slackIntegrations}
           integrationId={integrationId}
-          value={channelTarget}
-          ariaLabel="Slack channel"
-          offLabel="No channel selected"
+          channelValue={channelTarget}
+          channelAriaLabel="Slack channel"
           disabled={disabled}
-          onChange={(target) => {
+          onIntegrationChange={(nextIntegrationId) => {
+            const next: SlackChannelParams = {
+              ...params,
+              integration_id: nextIntegrationId,
+            };
+            delete next.channel_id;
+            delete next.channel_name;
+            onChange({ params: next });
+          }}
+          onChannelChange={(target) => {
             if (!target || !integrationId) {
               const next: SlackChannelParams = { ...params };
               delete next.channel_id;

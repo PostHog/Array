@@ -1,4 +1,5 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { describe, expect, it } from "vitest";
 import {
   defaultLoopBehaviors,
@@ -98,7 +99,7 @@ describe("isTriggerDraftValid", () => {
 
 describe("isLoopFormValid", () => {
   it("accepts a named form with instructions and no triggers", () => {
-    expect(isLoopFormValid(validFormValues())).toBe(true);
+    expect(isLoopFormValid({ ...validFormValues(), triggers: [] })).toBe(true);
   });
 
   it.each([
@@ -125,6 +126,22 @@ describe("isLoopFormValid", () => {
     },
   ])("rejects $name", ({ patch }) => {
     expect(isLoopFormValid({ ...validFormValues(), ...patch })).toBe(false);
+  });
+});
+
+describe("emptyLoopFormValues", () => {
+  it("starts new loops with an enabled weekly schedule trigger", () => {
+    expect(emptyLoopFormValues().triggers).toEqual([
+      {
+        key: expect.any(String),
+        type: "schedule",
+        enabled: true,
+        config: {
+          cron_expression: "0 9 * * 1",
+          timezone: systemTimezone(),
+        },
+      },
+    ]);
   });
 });
 

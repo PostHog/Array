@@ -62,14 +62,18 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
+      # Only dependency builds are cached, tests themselves always run.
+      - name: Restore turbo cache
+        uses: ./.github/actions/restore-turbo-cache
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # The Electron-ABI rebuild would be undone by the Node rebuild below.
+          SKIP_ELECTRON_REBUILD: "1"
 
       - name: Rebuild native modules for Node
         run: node scripts/rebuild-better-sqlite3-node.mjs
-
-      - name: Build dependencies
-        run: pnpm --filter @posthog/electron-trpc build
 
       - name: Run tests
         run: pnpm test
@@ -127,22 +131,16 @@ jobs:
           restore-keys: |
             electron-${{ runner.os }}-
 
+      # Seeded on Linux; turbo artifacts are plain JS, so cross-OS restore is fine.
+      - name: Restore turbo cache
+        uses: ./.github/actions/restore-turbo-cache
+
+      # apps/code's postinstall rebuilds better-sqlite3 for Electron here.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Rebuild better-sqlite3 for Electron
-        run: node scripts/rebuild-better-sqlite3-electron.mjs
-
       - name: Build packages
-        run: |
-          pnpm --filter @posthog/electron-trpc build &
-          pnpm --filter @posthog/platform build &
-          pnpm --filter @posthog/shared build
-          pnpm --filter @posthog/git build
-          pnpm --filter @posthog/enricher build
-          wait
-          pnpm --filter @posthog/harness build
-          pnpm --filter agent build
+        run: pnpm run build:deps
 
       - name: Package Electron app
         run: pnpm --filter code run package
@@ -230,22 +228,24 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: "pnpm"
 
+      - name: Restore turbo cache
+        uses: ./.github/actions/restore-turbo-cache
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          SKIP_ELECTRON_REBUILD: "1"
 
       - name: Build agent dependencies
-        run: |
-          pnpm --filter @posthog/shared run build
-          pnpm --filter @posthog/git run build
-          pnpm --filter @posthog/enricher run build
+        run: pnpm exec turbo build --filter='@posthog/agent^...'
 
       - name: Download native codex binary
         # Non-fatal at the STEP so a failure surfaces as the fail-loud binary guard

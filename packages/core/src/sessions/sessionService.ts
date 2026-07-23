@@ -1595,6 +1595,11 @@ export class SessionService {
     string,
     Promise<CloudHydrationResult | undefined>
   >();
+  /** Deduplicates concurrent manifest reads when a message renders many images. */
+  private cloudAttachmentManifestRequests = new Map<
+    string,
+    Promise<Array<{ id?: string; storage_path?: string }>>
+  >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -2863,6 +2868,16 @@ export class SessionService {
         if (session && session.currentPromptId !== msg.id) {
           continue;
         }
+        if (session?.isCloud) {
+          // Cloud logs carry both this response and `_posthog/turn_complete`,
+          // in either order (they race in the agent's log stream). Only
+          // turn_complete may disarm the turn; disarming here would make the
+          // completion notification fire or vanish based on log line order.
+          this.d.store.updateSession(taskRunId, {
+            isPromptPending: false,
+          });
+          continue;
+        }
         this.d.store.updateSession(taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
@@ -2874,13 +2889,15 @@ export class SessionService {
       }
       if (isTurnCompleteEvent(acpMsg)) {
         // Local sessions use the JSON-RPC response as the canonical turn-done
-        // signal; clearing currentPromptId here would race the id-match guard
-        // above. Cloud sessions never see that response.
+        // signal; turn_complete is the cloud one, so only cloud disarms here.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
           const completedActiveTurn =
             session.currentPromptId !== null &&
             session.currentPromptId !== undefined;
+          const stopReason =
+            (msg as { params?: { stopReason?: string } }).params?.stopReason ??
+            "end_turn";
           const turnStartedAtTs =
             this.liveTurnContent.get(taskRunId)?.startedAtTs ??
             session.promptStartedAt;
@@ -2891,10 +2908,14 @@ export class SessionService {
           });
           if (isLive) {
             // Queued messages will start a new turn — suppress the "done" notification in that case.
-            if (completedActiveTurn && session.messageQueue.length === 0) {
+            if (
+              completedActiveTurn &&
+              stopReason === "end_turn" &&
+              session.messageQueue.length === 0
+            ) {
               this.d.notifyPromptComplete(
                 session.taskTitle,
-                "end_turn",
+                stopReason,
                 session.taskId,
                 turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
@@ -5938,55 +5959,81 @@ export class SessionService {
         return;
       }
       if (resumeFromRunId) {
-        const [ancestorResult, currentRunResult] = await Promise.all([
-          authStatus.auth.client.getTaskRunSessionLogsResult(
-            taskId,
-            resumeFromRunId,
-            { limit: 100000 },
-          ),
-          authStatus.auth.client.getTaskRunSessionLogsResult(
-            taskId,
-            taskRunId,
-            { limit: 100000 },
-          ),
-        ]);
-        if (!ancestorResult.complete || !currentRunResult.complete) {
-          this.d.log.warn("Resume session log hydration was incomplete", {
-            taskId,
-            taskRunId,
-            resumeFromRunId,
-            ancestorComplete: ancestorResult.complete,
-            currentRunComplete: currentRunResult.complete,
-          });
-          return;
+        if (isTerminalStatus(runStatus)) {
+          const result =
+            await authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              taskRunId,
+              { limit: 100000 },
+            );
+          if (!result.complete) {
+            this.d.log.warn("Resume session log hydration was incomplete", {
+              taskId,
+              taskRunId,
+              resumeFromRunId,
+            });
+            return;
+          }
+          rawEntries = result.entries;
+          const markedLeafStart = rawEntries.findIndex(
+            (entry) => getEntryTaskRunMarker(entry) === taskRunId,
+          );
+          resumeLeafEntryStartIndex =
+            markedLeafStart >= 0 ? markedLeafStart : undefined;
+          liveStreamLineCount =
+            markedLeafStart >= 0
+              ? rawEntries.length - markedLeafStart
+              : rawEntries.length;
+        } else {
+          const [ancestorResult, currentRunResult] = await Promise.all([
+            authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              resumeFromRunId,
+              { limit: 100000 },
+            ),
+            authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              taskRunId,
+              { limit: 100000 },
+            ),
+          ]);
+          if (!ancestorResult.complete || !currentRunResult.complete) {
+            this.d.log.warn("Resume session log hydration was incomplete", {
+              taskId,
+              taskRunId,
+              resumeFromRunId,
+              ancestorComplete: ancestorResult.complete,
+              currentRunComplete: currentRunResult.complete,
+            });
+            return;
+          }
+          const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
+          const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
+          const ancestorKeys = ancestorEntries.map((entry) =>
+            JSON.stringify(entry),
+          );
+          const currentKeys = currentRunEntries.map((entry) =>
+            JSON.stringify(entry),
+          );
+          const overlap = suffixPrefixOverlap(ancestorKeys, currentKeys);
+          const persistedLeafEntries = currentRunEntries.slice(overlap);
+          const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
+          const leafKeys = new Set(
+            persistedLeafEntries.map((entry) => JSON.stringify(entry)),
+          );
+          rawEntries = [
+            ...ancestorEntries,
+            ...persistedLeafEntries,
+            ...leafLogs.rawEntries.filter(
+              (entry) => !leafKeys.has(JSON.stringify(entry)),
+            ),
+          ];
+          resumeLeafEntryStartIndex = ancestorEntries.length;
+          liveStreamLineCount = Math.max(
+            leafLogs.totalLineCount,
+            persistedLeafEntries.length,
+          );
         }
-        const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
-        const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
-
-        const ancestorKeys = ancestorEntries.map((entry) =>
-          JSON.stringify(entry),
-        );
-        const currentKeys = currentRunEntries.map((entry) =>
-          JSON.stringify(entry),
-        );
-        const overlap = suffixPrefixOverlap(ancestorKeys, currentKeys);
-        const persistedLeafEntries = currentRunEntries.slice(overlap);
-        const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
-        const leafKeys = new Set(
-          persistedLeafEntries.map((entry) => JSON.stringify(entry)),
-        );
-        rawEntries = [
-          ...ancestorEntries,
-          ...persistedLeafEntries,
-          ...leafLogs.rawEntries.filter(
-            (entry) => !leafKeys.has(JSON.stringify(entry)),
-          ),
-        ];
-        resumeLeafEntryStartIndex = ancestorEntries.length;
-        liveStreamLineCount = Math.max(
-          leafLogs.totalLineCount,
-          persistedLeafEntries.length,
-        );
       } else {
         const result = await authStatus.auth.client.getTaskRunSessionLogsResult(
           taskId,
@@ -7070,6 +7117,69 @@ export class SessionService {
         this.stopCloudTaskWatch(update.taskId);
       }
     }
+  }
+
+  async getCloudAttachmentPreviewUrl(
+    taskId: string,
+    runId: string,
+    artifactId: string,
+  ): Promise<string | null> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") return null;
+
+    try {
+      const artifacts = await this.getCloudAttachmentManifest(
+        authStatus.auth.client,
+        `${authStatus.auth.apiHost}:${authStatus.auth.projectId}`,
+        taskId,
+        runId,
+      );
+      const artifact = artifacts.find(
+        (candidate) => candidate.id === artifactId,
+      );
+      if (!artifact?.storage_path) return null;
+
+      return await authStatus.auth.client.presignTaskRunArtifact(
+        taskId,
+        runId,
+        artifact.storage_path,
+      );
+    } catch (error) {
+      this.d.log.warn("Failed to resolve cloud attachment preview", {
+        taskId,
+        runId,
+        artifactId,
+        error: String(error),
+      });
+      return null;
+    }
+  }
+
+  private getCloudAttachmentManifest(
+    client: AuthClient,
+    authIdentity: string,
+    taskId: string,
+    runId: string,
+  ): Promise<Array<{ id?: string; storage_path?: string }>> {
+    const key = `${authIdentity}:${taskId}:${runId}`;
+    const existing = this.cloudAttachmentManifestRequests.get(key);
+    if (existing) return existing;
+
+    const request = client
+      .getTaskRun(taskId, runId)
+      .then(
+        (run: { artifacts?: Array<{ id?: string; storage_path?: string }> }) =>
+          run.artifacts ?? [],
+      );
+    this.cloudAttachmentManifestRequests.set(key, request);
+
+    const clear = () => {
+      if (this.cloudAttachmentManifestRequests.get(key) === request) {
+        this.cloudAttachmentManifestRequests.delete(key);
+      }
+    };
+    void request.then(clear, clear);
+    return request;
   }
 
   // --- Helper Methods ---

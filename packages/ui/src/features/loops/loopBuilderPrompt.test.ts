@@ -1,15 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { buildLoopBuilderPrompt } from "./loopBuilderPrompt";
+import {
+  buildLoopBuilderPrompt,
+  buildLoopBuilderSystemInstructions,
+} from "./loopBuilderPrompt";
 
 describe("buildLoopBuilderPrompt", () => {
   it("embeds the seed instructions when provided", () => {
     const prompt = buildLoopBuilderPrompt({
       instructions: "Summarize failing CI runs",
     });
+    expect(prompt).toContain("Summarize failing CI runs");
     expect(prompt).toContain(
-      "Here's what I want automated:\n\nSummarize failing CI runs",
+      "The user's message describes what they want automated.",
     );
     expect(prompt).not.toContain("Start by asking me");
+  });
+
+  it("keeps the user prompt out of system instructions", () => {
+    const instructions = buildLoopBuilderSystemInstructions({
+      hasSeed: true,
+    });
+
+    expect(instructions).toContain(
+      "The user's message describes what they want automated.",
+    );
+    expect(instructions).not.toContain("Summarize failing CI runs");
   });
 
   it.each([
@@ -45,5 +60,16 @@ describe("buildLoopBuilderPrompt", () => {
 
   it("omits the context block when no context is given", () => {
     expect(buildLoopBuilderPrompt({})).not.toContain("context_target");
+  });
+
+  it("falls back to confirmed creation when the review card does not render", () => {
+    const prompt = buildLoopBuilderSystemInstructions({ hasSeed: true });
+
+    expect(prompt).toContain(
+      "Do not claim that the review card or Create button is visible",
+    );
+    expect(prompt).toContain("Call `loops-create-prepare`");
+    expect(prompt).toContain("call `loops-create-execute`");
+    expect(prompt).toContain("Only after I reply `confirm`");
   });
 });
