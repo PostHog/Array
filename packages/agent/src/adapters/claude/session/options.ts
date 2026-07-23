@@ -14,6 +14,7 @@ import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
 import { buildGatewayPropertyHeaders } from "../../../utils/gateway";
 import type { Logger } from "../../../utils/logger";
+import { resolveRtkPrefix } from "../../rtk";
 import type { TaskState } from "../conversion/task-state";
 import {
   createPostToolUseHook,
@@ -31,7 +32,7 @@ import type { EffortLevel } from "../types";
 import { buildAppendedInstructions } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
-import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
+import { createRtkRewriteHook } from "./rtk";
 import type { SettingsManager } from "./settings";
 
 export interface ProcessSpawnedInfo {

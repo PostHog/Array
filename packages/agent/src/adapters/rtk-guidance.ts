@@ -1,9 +1,4 @@
-import {
-  GIT_COMPRESSIBLE_SUBCOMMANDS,
-  RTK_PLAIN_COMMANDS,
-  resolveRtkPrefix,
-  shQuote,
-} from "./claude/session/rtk";
+import { resolveRtkPrefix, shQuote } from "./rtk";
 
 /**
  * Instruction-level RTK integration for Codex sessions.
@@ -15,30 +10,19 @@ import {
  * only integration point is the developer instructions: tell the model to
  * prefix eligible commands itself.
  *
- * The advertised command set and rules mirror the Claude hook exactly
- * (RTK_PLAIN_COMMANDS + GIT_COMPRESSIBLE_SUBCOMMANDS, bare invocations only,
- * never commit/push), so token-usage cohorts stay comparable across adapters.
+ * The advertised rule mirrors the Claude hook: only recognized bare test
+ * commands use RTK's dedicated failure-focused test mode.
  */
 export function buildRtkGuidance(rtkPrefix: string): string {
-  // Same quoting as the Claude rewrite hook: a resolved path containing
-  // spaces must stay one shell token in the commands the model copies.
   const prefix = shQuote(rtkPrefix);
-  const plainCommands = [...RTK_PLAIN_COMMANDS].join("`, `");
-  const gitSubcommands = [...GIT_COMPRESSIBLE_SUBCOMMANDS].join(", ");
 
-  return `## rtk command-output compression
+  return `## rtk output compression
 
-\`${prefix}\` is installed. It runs a command unchanged and compresses its output before you read it, so prefixed commands cost far less context. When you execute one of these as a single, bare command, prefix it with \`${prefix}\`:
+For recognized bare test commands, prefix the original command with \`${prefix} test\` so passing test noise is removed while failures remain. Supported commands are pnpm and npm tests, plus Python pytest and unittest forms.
 
-- \`${plainCommands}\`
-- these git subcommands: ${gitSubcommands}
+Examples: \`${prefix} test pnpm test\`, \`${prefix} test python -m pytest\`.
 
-Examples: \`${prefix} git status\`, \`${prefix} grep -rn "foo" src\`, \`${prefix} ls -la\`.
-
-Rules:
-- Only prefix a single bare invocation. Never use it when the command is part of a pipe, uses \`&&\`, \`;\`, or redirection, or when another program parses the output — compression would corrupt what the consumer reads.
-- Never prefix \`git commit\`, \`git push\`, or any other command not listed above.
-- Skip the prefix when you need the exact, complete output (for example, copying a diff verbatim).`;
+Do not use RTK for machine-readable test output, other commands, or commands containing pipes, shell chains, or redirection.`;
 }
 
 /**

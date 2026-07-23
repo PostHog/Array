@@ -2,10 +2,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import {
-  GIT_COMPRESSIBLE_SUBCOMMANDS,
-  RTK_PLAIN_COMMANDS,
-} from "./claude/session/rtk";
 import { appendRtkGuidanceForCodex, buildRtkGuidance } from "./rtk-guidance";
 
 describe("rtk guidance for codex", () => {
@@ -15,7 +11,8 @@ describe("rtk guidance for codex", () => {
   beforeAll(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "rtk-guidance-test-"));
     binary = path.join(dir, "rtk");
-    fs.writeFileSync(binary, "#!/bin/sh\n");
+    fs.writeFileSync(binary, "#!/bin/sh\necho 'rtk 0.43.0'\n");
+    fs.chmodSync(binary, 0o755);
   });
 
   afterAll(() => {
@@ -23,36 +20,22 @@ describe("rtk guidance for codex", () => {
   });
 
   describe("buildRtkGuidance", () => {
-    // The guidance must advertise exactly the Claude hook's eligibility sets,
-    // so the token-usage cohorts stay comparable across adapters.
-    test("advertises every command the Claude hook rewrites", () => {
+    test("advertises only dedicated test modes", () => {
       const guidance = buildRtkGuidance("/usr/local/bin/rtk");
-      for (const command of RTK_PLAIN_COMMANDS) {
-        expect(guidance).toContain(command);
-      }
-      for (const sub of GIT_COMPRESSIBLE_SUBCOMMANDS) {
-        expect(guidance).toContain(sub);
-      }
-    });
-
-    test("uses the resolved binary path in the examples", () => {
-      const guidance = buildRtkGuidance("/usr/local/bin/rtk");
-      expect(guidance).toContain("`/usr/local/bin/rtk git status`");
+      expect(guidance).toContain("`/usr/local/bin/rtk test pnpm test`");
+      expect(guidance).toContain("`/usr/local/bin/rtk test python -m pytest`");
+      expect(guidance).not.toContain("cargo test");
+      expect(guidance).toContain("Do not use RTK for machine-readable");
+      expect(guidance).not.toContain("git status");
+      expect(guidance).not.toContain("rg --heading");
+      expect(guidance).not.toContain("jq -c");
     });
 
     // A desktop install can resolve a path with spaces; unquoted it would
     // split into multiple shell tokens and every guided command would fail.
     test("shell-quotes a binary path containing spaces", () => {
       const guidance = buildRtkGuidance("/Apps/My Tools/rtk");
-      expect(guidance).toContain("`'/Apps/My Tools/rtk' git status`");
-      expect(guidance).not.toContain("`/Apps/My Tools/rtk git status`");
-    });
-
-    // Parity with the Claude hook's exclusion: prefixing commit/push would
-    // hide the leading `git` token from the cloud signed-commit guard.
-    test("forbids prefixing git commit and git push", () => {
-      const guidance = buildRtkGuidance("rtk");
-      expect(guidance).toContain("Never prefix `git commit`, `git push`");
+      expect(guidance).toContain("`'/Apps/My Tools/rtk' test pnpm test`");
     });
   });
 
@@ -62,7 +45,7 @@ describe("rtk guidance for codex", () => {
         PATH: dir,
       });
       expect(result.startsWith("base instructions\n\n")).toBe(true);
-      expect(result).toContain("rtk command-output compression");
+      expect(result).toContain("rtk output compression");
       expect(result).toContain(binary);
     });
 

@@ -1,6 +1,5 @@
-// Pure git command-line parsing, shared by the signed-commit guard (hooks.ts)
-// and the RTK rewrite (session/rtk.ts). Kept dependency-free so importers don't
-// drag in the hooks module's heavier import chain.
+// Pure git command-line parsing used by the signed-commit guard. Kept
+// dependency-free so importers don't drag in the hooks module's heavier chain.
 
 // git global options that consume the following token as their value, so the
 // subcommand detector must skip both (mirrors the sandbox `git` PATH shim).

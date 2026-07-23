@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { resolveRtkPrefix } from "../adapters/claude/session/rtk";
+import { resolveRtkPrefix } from "../adapters/rtk";
 
 const execFileAsync = promisify(execFile);
 

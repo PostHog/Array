@@ -210,7 +210,7 @@ describe("buildSessionOptions", () => {
     expect(healSpy).not.toHaveBeenCalled();
   });
 
-  describe("rtk and signed-commit guard ordering", () => {
+  describe("rtk hook registration", () => {
     const originalRtk = process.env.POSTHOG_RTK;
     let dir: string;
     let binary: string;
@@ -218,7 +218,8 @@ describe("buildSessionOptions", () => {
     beforeEach(() => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), "rtk-order-"));
       binary = path.join(dir, "rtk");
-      fs.writeFileSync(binary, "#!/bin/sh\n");
+      fs.writeFileSync(binary, "#!/bin/sh\necho 'rtk 0.43.0'\n");
+      fs.chmodSync(binary, 0o755);
       process.env.POSTHOG_RTK = binary;
     });
 
@@ -244,7 +245,7 @@ describe("buildSessionOptions", () => {
       };
     };
 
-    it("registers the signed-commit guard before the rtk rewrite so the guard evaluates raw commands (cloud)", async () => {
+    it("keeps the signed-commit guard and pnpm test rewrite active in cloud mode", async () => {
       const options = buildSessionOptions({
         ...makeParams(),
         cloudMode: true,
@@ -254,9 +255,6 @@ describe("buildSessionOptions", () => {
       );
       const opts = { signal: new AbortController().signal };
 
-      // Identify each hook behaviorally: the guard denies `git commit`, the
-      // rtk hook rewrites `git status`. Their registration order is the
-      // defense-in-depth guarantee that the guard always sees the raw command.
       let guardIndex = -1;
       let rtkIndex = -1;
       for (const [index, hook] of hooks.entries()) {
@@ -273,14 +271,14 @@ describe("buildSessionOptions", () => {
         }
 
         const rewriteResult = (await hook(
-          bashInput("git status"),
+          bashInput("pnpm test"),
           undefined,
           opts,
         )) as PreToolUseOutput;
         if (
           rtkIndex === -1 &&
           rewriteResult.hookSpecificOutput?.updatedInput?.command ===
-            `${binary} git status`
+            `${binary} test pnpm test`
         ) {
           rtkIndex = index;
         }
@@ -288,7 +286,31 @@ describe("buildSessionOptions", () => {
 
       expect(guardIndex).toBeGreaterThanOrEqual(0);
       expect(rtkIndex).toBeGreaterThanOrEqual(0);
-      expect(guardIndex).toBeLessThan(rtkIndex);
+    });
+
+    it("applies the shared pnpm test policy through the Claude hook", async () => {
+      const options = buildSessionOptions({
+        ...makeParams(),
+        cloudMode: false,
+      });
+      const hooks = (options.hooks?.PreToolUse ?? []).flatMap(
+        (entry) => entry.hooks ?? [],
+      );
+      const opts = { signal: new AbortController().signal };
+
+      const results = await Promise.all(
+        hooks.map((hook) => hook(bashInput("pnpm test"), undefined, opts)),
+      );
+
+      expect(results).toContainEqual(
+        expect.objectContaining({
+          hookSpecificOutput: expect.objectContaining({
+            updatedInput: {
+              command: `${binary} test pnpm test`,
+            },
+          }),
+        }),
+      );
     });
   });
 

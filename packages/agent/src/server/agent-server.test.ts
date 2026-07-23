@@ -3206,6 +3206,65 @@ describe("AgentServer HTTP Mode", () => {
         (s as unknown as TestableServer).buildCodexInstructions(sessionPrompt),
       ).toContain("Cloud Task Execution");
     });
+
+    describe("RTK provider integration", () => {
+      const originalRtk = process.env.POSTHOG_RTK;
+      let rtkDir: string;
+
+      beforeEach(async () => {
+        rtkDir = await mkdtemp(join(tmpdir(), "codex-rtk-guidance-"));
+        const binary = join(rtkDir, "rtk");
+        await writeFile(binary, "#!/bin/sh\necho 'rtk 0.43.0'\n", {
+          mode: 0o755,
+        });
+        process.env.POSTHOG_RTK = binary;
+      });
+
+      afterEach(async () => {
+        if (originalRtk === undefined) {
+          delete process.env.POSTHOG_RTK;
+        } else {
+          process.env.POSTHOG_RTK = originalRtk;
+        }
+        await rm(rtkDir, { recursive: true, force: true });
+      });
+
+      it("adds shared RTK policy to Codex instructions without changing the Claude prompt", () => {
+        const s = createServer();
+        const sessionPrompt = (
+          s as unknown as TestableServer
+        ).buildSessionSystemPrompt();
+        const claudePrompt =
+          typeof sessionPrompt === "string"
+            ? sessionPrompt
+            : sessionPrompt.append;
+
+        expect(claudePrompt).not.toContain("rtk output compression");
+
+        const codexInstructions = (
+          s as unknown as TestableServer
+        ).buildCodexInstructions(sessionPrompt);
+        expect(codexInstructions).toContain("rtk output compression");
+        expect(codexInstructions).toContain("test pnpm");
+        expect(codexInstructions).toContain(
+          "Do not use RTK for machine-readable",
+        );
+      });
+
+      it("omits RTK guidance from Codex instructions when explicitly disabled", () => {
+        process.env.POSTHOG_RTK = "0";
+        const s = createServer();
+        const sessionPrompt = (
+          s as unknown as TestableServer
+        ).buildSessionSystemPrompt();
+
+        expect(
+          (s as unknown as TestableServer).buildCodexInstructions(
+            sessionPrompt,
+          ),
+        ).not.toContain("rtk output compression");
+      });
+    });
   });
 
   describe("buildClaudeCodeSessionMeta", () => {
