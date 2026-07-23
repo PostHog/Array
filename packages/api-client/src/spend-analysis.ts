@@ -20,6 +20,9 @@ export interface SpendAnalysisToolRow {
   cost_usd: number;
   share_of_scoped: number;
   avg_input_tokens: number;
+  // Optional until the backend honest-attribution rollout reaches every deployment.
+  cost_attributed_usd?: number;
+  share_attributed?: number;
 }
 
 export interface SpendAnalysisModelRow {
@@ -36,6 +39,15 @@ export interface SpendAnalysisDayRow {
   cost_usd: number;
 }
 
+export interface SpendAnalysisInputSizeRow {
+  bucket: string;
+  min_input_tokens: number;
+  generation_count: number;
+  cost_usd: number;
+  share_of_scoped: number;
+  avg_cost_per_generation: number;
+}
+
 export interface SpendAnalysisBreakdown<TRow> {
   items: TRow[];
   truncated: boolean;
@@ -48,6 +60,8 @@ export interface SpendAnalysisResponse {
   by_model: SpendAnalysisBreakdown<SpendAnalysisModelRow>;
   // Optional until the backend by_day rollout reaches every deployment.
   by_day?: SpendAnalysisBreakdown<SpendAnalysisDayRow>;
+  // Optional until the backend by_input_size rollout reaches every deployment.
+  by_input_size?: SpendAnalysisBreakdown<SpendAnalysisInputSizeRow>;
   // `top_traces` is still in the backend response shape (always empty) per
   // posthog/posthog#59796. Renderer code does not consume it; left out of the
   // TS type so future readers see only what we actually use.

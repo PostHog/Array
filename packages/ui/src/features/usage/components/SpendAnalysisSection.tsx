@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { useSpendAnalysis } from "../useSpendAnalysis";
 import { ModelBreakdownCards } from "./ModelBreakdownCards";
 import {
+  InputSizeBreakdownCard,
   ProductBreakdownCard,
   ToolBreakdownCard,
 } from "./SpendBreakdownTables";
@@ -95,6 +96,9 @@ export function SpendAnalysisSection() {
             <ToolBreakdownCard rows={data.by_tool.items} />
             <ProductBreakdownCard rows={data.by_product.items} />
           </div>
+          {data.by_input_size && (
+            <InputSizeBreakdownCard rows={data.by_input_size.items} />
+          )}
           <SpendInsights data={data} />
         </>
       ) : null}
