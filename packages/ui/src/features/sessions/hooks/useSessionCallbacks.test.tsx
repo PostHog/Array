@@ -163,6 +163,24 @@ describe("useSessionCallbacks.handleSendPrompt while editing a queued message", 
   });
 });
 
+describe("useSessionCallbacks.handleSendPrompt", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionState.editingQueuedId = undefined;
+    sessionState.messageQueue = [];
+  });
+
+  it("reports a failed send so the composer keeps its content", async () => {
+    sessionService.sendPrompt.mockRejectedValue(new Error("fetch failed"));
+
+    const { result } = renderCallbacks();
+    const sent = await result.current.handleSendPrompt("keep this message");
+
+    expect(sent).toBe(false);
+    expect(toastError).toHaveBeenCalledWith("fetch failed");
+  });
+});
+
 describe("useSessionCallbacks.handleCancelPrompt", () => {
   beforeEach(() => {
     vi.clearAllMocks();

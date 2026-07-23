@@ -1,4 +1,5 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
+import { contentToXml } from "@posthog/core/message-editor/content";
 import {
   createLatestPlanTracker,
   SESSION_SERVICE,
@@ -68,7 +69,7 @@ interface SessionViewProps {
   isPromptPending?: boolean | null;
   promptStartedAt?: number | null;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
-  onSendPrompt: (text: string) => void;
+  onSendPrompt: (text: string) => Promise<boolean>;
   onBashCommand?: (command: string) => void;
   onCancelPrompt: () => void;
   repoPath?: string | null;
@@ -299,6 +300,9 @@ export function SessionView({
   ]);
 
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
+  const editorRef = useRef<PromptInputHandle>(null);
+  const sendInFlightRef = useRef(false);
+  const [isSendingPrompt, setIsSendingPrompt] = useState(false);
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -309,11 +313,22 @@ export function SessionView({
     (): Plan | null => latestPlanTracker.update(events) as Plan | null,
     [events, latestPlanTracker],
   );
-
   const handleSubmit = useCallback(
-    (text: string) => {
-      if (text.trim()) {
-        onSendPrompt(text);
+    async (text: string): Promise<void> => {
+      if (!text.trim() || sendInFlightRef.current) return;
+
+      sendInFlightRef.current = true;
+      setIsSendingPrompt(true);
+      try {
+        if (await onSendPrompt(text)) {
+          const editor = editorRef.current;
+          if (editor && contentToXml(editor.getContent()) === text) {
+            editor.clear();
+          }
+        }
+      } finally {
+        sendInFlightRef.current = false;
+        setIsSendingPrompt(false);
       }
     },
     [onSendPrompt],
@@ -337,7 +352,6 @@ export function SessionView({
   const cancelQueuedEdit = useCancelQueuedMessageEdit(taskId);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const editorRef = useRef<PromptInputHandle>(null);
   const promptRecallRef = useRef<PromptRecallHandler | null>(null);
   const handlePromptRecall = useCallback<PromptRecallHandler>(
     (direction) => promptRecallRef.current?.(direction) ?? null,
@@ -678,8 +692,9 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline
+                            handoffInProgress || !isOnline || isSendingPrompt
                           }
+                          clearOnSubmit={false}
                           submitTooltipOverride={
                             !isOnline ? "No internet connection" : undefined
                           }
