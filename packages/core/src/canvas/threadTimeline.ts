@@ -1,76 +1,77 @@
-export interface ThreadAgentMessage {
-  id: string;
-  text: string;
-  timestamp?: number;
-}
-
-export interface ThreadHumanMessage<T = unknown> {
+/**
+ * Minimal shape of a task thread message the timeline needs — structurally
+ * satisfied by `TaskThreadMessage` without coupling to the full domain type.
+ */
+export interface ThreadMessageLike {
   id: string;
   content: string;
-  createdAt: string;
-  forwardedToAgent?: boolean;
-  value?: T;
+  created_at: string;
+  author_kind?: "human" | "system" | "agent";
+  event?: string;
+  payload?: Record<string, unknown>;
 }
 
-export type ThreadTimelineRow<T = unknown> =
-  | { kind: "prompt"; timestamp: number; message: ThreadAgentMessage }
-  | { kind: "agent"; timestamp: number; message: ThreadAgentMessage }
-  | { kind: "human"; timestamp: number; message: ThreadHumanMessage<T> };
+export type ThreadArtifact =
+  | { kind: "canvas"; name: string; url: string | null }
+  | { kind: "pr"; url: string };
 
-function validTimestamp(timestamp: number | undefined): number {
-  return timestamp !== undefined && Number.isFinite(timestamp)
-    ? timestamp
-    : Number.MAX_SAFE_INTEGER;
-}
+export type ThreadTimelineRow<T extends ThreadMessageLike = ThreadMessageLike> =
+  | { kind: "human"; timestamp: number; message: T }
+  | {
+      kind: "artifact";
+      timestamp: number;
+      message: T;
+      artifact: ThreadArtifact;
+    };
 
 function parsedTimestamp(timestamp: string): number {
   const parsed = Date.parse(timestamp);
   return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
 }
 
-export function buildThreadTimeline<T>({
-  prompts,
-  agentMessages,
-  humanMessages,
-}: {
-  prompts: ThreadAgentMessage[];
-  agentMessages: ThreadAgentMessage[];
-  humanMessages: ThreadHumanMessage<T>[];
-}): ThreadTimelineRow<T>[] {
-  const forwardedHumanContent = new Set(
-    humanMessages
-      .filter((message) => message.forwardedToAgent)
-      .map((message) => normalizeAgentPromptText(message.content)),
-  );
-  const visiblePrompts = prompts.filter(
-    (message) =>
-      !isThreadCommentPrompt(message.text) ||
-      !forwardedHumanContent.has(normalizeAgentPromptText(message.text)),
-  );
+/**
+ * The artifact an agent-authored thread message announces, or `null` when the
+ * message isn't an artifact announcement (e.g. `turn_complete`).
+ */
+export function threadMessageArtifact(
+  message: ThreadMessageLike,
+): ThreadArtifact | null {
+  const payload = message.payload ?? {};
+  if (message.event === "canvas_created") {
+    const name =
+      typeof payload.canvas_name === "string" && payload.canvas_name.trim()
+        ? payload.canvas_name
+        : "Canvas";
+    const url =
+      typeof payload.canvas_url === "string" ? payload.canvas_url : null;
+    return { kind: "canvas", name, url };
+  }
+  if (message.event === "pr_created") {
+    const url = typeof payload.pr_url === "string" ? payload.pr_url : null;
+    return url ? { kind: "pr", url } : null;
+  }
+  return null;
+}
 
-  return [
-    ...visiblePrompts.map(
-      (message): ThreadTimelineRow<T> => ({
-        kind: "prompt",
-        timestamp: validTimestamp(message.timestamp),
-        message,
-      }),
-    ),
-    ...humanMessages.map(
-      (message): ThreadTimelineRow<T> => ({
-        kind: "human",
-        timestamp: parsedTimestamp(message.createdAt),
-        message,
-      }),
-    ),
-    ...agentMessages.map(
-      (message): ThreadTimelineRow<T> => ({
-        kind: "agent",
-        timestamp: validTimestamp(message.timestamp),
-        message,
-      }),
-    ),
-  ].sort((left, right) => left.timestamp - right.timestamp);
+/**
+ * The thread is a human-to-human surface: only human messages and the
+ * artifacts the agent produced (canvases, pull requests) appear. Agent turn
+ * messages and forwarded prompts are omitted.
+ */
+export function buildThreadTimeline<T extends ThreadMessageLike>(
+  messages: T[],
+): ThreadTimelineRow<T>[] {
+  const rows: ThreadTimelineRow<T>[] = [];
+  for (const message of messages) {
+    const timestamp = parsedTimestamp(message.created_at);
+    const artifact = threadMessageArtifact(message);
+    if (artifact) {
+      rows.push({ kind: "artifact", timestamp, message, artifact });
+    } else if ((message.author_kind ?? "human") === "human") {
+      rows.push({ kind: "human", timestamp, message });
+    }
+  }
+  return rows.sort((left, right) => left.timestamp - right.timestamp);
 }
 
 export type ThreadAgentPhase = "active" | "needs_input" | "error";
@@ -81,24 +82,9 @@ export interface ThreadAgentStatus {
 }
 
 const AGENT_MENTION_PATTERN = /(^|\s)@agent\b/i;
-const THREAD_COMMENT_ATTRIBUTION_PATTERN =
-  /^\[Thread comment from [^\]\r\n]+\]\s*/i;
-const LEADING_AGENT_MENTION_PATTERN = /^@agent\b[\s:]*/i;
 
 export function hasAgentMention(content: string): boolean {
   return AGENT_MENTION_PATTERN.test(content);
-}
-
-export function normalizeAgentPromptText(content: string): string {
-  return content
-    .trim()
-    .replace(THREAD_COMMENT_ATTRIBUTION_PATTERN, "")
-    .replace(LEADING_AGENT_MENTION_PATTERN, "")
-    .trim();
-}
-
-function isThreadCommentPrompt(content: string): boolean {
-  return THREAD_COMMENT_ATTRIBUTION_PATTERN.test(content.trim());
 }
 
 export function deriveThreadAgentStatus({
