@@ -33,6 +33,18 @@ export function createMockTaskMetadataRepository(): MockTaskMetadataRepository {
         "archivedAt" in patch
           ? (patch.archivedAt ?? null)
           : (existing?.archivedAt ?? null),
+      archivedTitle:
+        "archivedTitle" in patch
+          ? (patch.archivedTitle ?? null)
+          : (existing?.archivedTitle ?? null),
+      archivedTaskCreatedAt:
+        "archivedTaskCreatedAt" in patch
+          ? (patch.archivedTaskCreatedAt ?? null)
+          : (existing?.archivedTaskCreatedAt ?? null),
+      archivedRepository:
+        "archivedRepository" in patch
+          ? (patch.archivedRepository ?? null)
+          : (existing?.archivedRepository ?? null),
       piSessionFile:
         "piSessionFile" in patch
           ? (patch.piSessionFile ?? null)

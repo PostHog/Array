@@ -58,7 +58,7 @@ export function resolveSandboxPosthogApi(
   return { apiUrl, apiKey, projectId };
 }
 
-function createSandboxPosthogClient(
+export function createSandboxPosthogClient(
   env?: Record<string, string | undefined>,
   envFilePath?: string,
 ): PostHogAPIClient | undefined {

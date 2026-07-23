@@ -52,6 +52,7 @@ import {
 } from "../worktree-checkpoint/worktree-checkpoint";
 import { deriveWorktreePath as deriveWorktreePathFromBase } from "../worktree-path/worktree-path";
 import { getCurrentBranchName } from "../worktree-query/worktree-query";
+import { recoverArchiveDetailsFromLogs } from "./archive-recovery";
 import { ARCHIVE_FILE_WATCHER, ARCHIVE_SESSION_CANCELLER } from "./identifiers";
 import type { ArchiveFileWatcher, SessionCanceller } from "./ports";
 import type { ArchivedTask, ArchiveTaskInput } from "./schemas";
@@ -90,6 +91,7 @@ export class ArchiveService {
   }
 
   private readonly log: ScopedLogger;
+  private recoveryStarted = false;
 
   async archiveTask(input: ArchiveTaskInput): Promise<ArchivedTask> {
     this.log.info(`Archiving task ${input.taskId}`);
@@ -105,6 +107,9 @@ export class ArchiveService {
 
     try {
       const result = await this.executeArchive(input, runWithRollback);
+      if (!input.title) {
+        this.recoveryStarted = false;
+      }
       this.log.info(`Task ${input.taskId} archived successfully`);
       return result;
     } catch (error) {
@@ -137,7 +142,12 @@ export class ArchiveService {
       const archivedAt = new Date().toISOString();
       await step(
         async () => {
-          this.taskMetadataRepo.upsert(taskId, { archivedAt });
+          this.taskMetadataRepo.upsert(taskId, {
+            archivedAt,
+            archivedTitle: input.title ?? null,
+            archivedTaskCreatedAt: input.taskCreatedAt ?? null,
+            archivedRepository: input.repository ?? null,
+          });
         },
         async () => {
           this.taskMetadataRepo.upsert(taskId, { archivedAt: null });
@@ -151,6 +161,9 @@ export class ArchiveService {
         worktreeName: null,
         branchName: null,
         checkpointId: null,
+        title: input.title ?? null,
+        taskCreatedAt: input.taskCreatedAt ?? null,
+        repository: input.repository ?? null,
       };
     }
 
@@ -179,6 +192,9 @@ export class ArchiveService {
             workspaceId: workspace.id,
             branchName: archivedTask.branchName,
             checkpointId: archivedTask.checkpointId,
+            title: input.title ?? null,
+            taskCreatedAt: input.taskCreatedAt ?? null,
+            repository: input.repository ?? null,
           });
         },
         async () => {
@@ -339,6 +355,9 @@ export class ArchiveService {
           workspaceId: workspace.id,
           branchName: archivedTask.branchName,
           checkpointId: archivedTask.checkpointId,
+          title: input.title ?? null,
+          taskCreatedAt: input.taskCreatedAt ?? null,
+          repository: input.repository ?? null,
         });
       },
       async () => {
@@ -479,6 +498,9 @@ export class ArchiveService {
           workspaceId: workspace.id,
           branchName: archive.branchName,
           checkpointId: archive.checkpointId,
+          title: archive.title,
+          taskCreatedAt: archive.taskCreatedAt,
+          repository: archive.repository,
         });
       },
     );
@@ -492,7 +514,12 @@ export class ArchiveService {
         archive.workspaceId,
       ) as Workspace;
       const worktree = this.worktreeRepo.findByWorkspaceId(workspace.id);
-      return this.toArchivedTask(workspace, archive, worktree?.name ?? null);
+      return this.toArchivedTask(
+        workspace,
+        archive,
+        worktree?.name ?? null,
+        worktree?.path ?? null,
+      );
     });
     const rowless = this.rowlessArchived().map(
       (meta): ArchivedTask => ({
@@ -504,9 +531,81 @@ export class ArchiveService {
         worktreeName: null,
         branchName: null,
         checkpointId: null,
+        title:
+          meta.archivedTitle ?? `Unknown task (${meta.taskId.slice(0, 8)})`,
+        taskCreatedAt: meta.archivedTaskCreatedAt ?? meta.createdAt,
+        repository: meta.archivedRepository,
+        recoveryPending: !meta.archivedTitle,
       }),
     );
     return [...fromWorkspaces, ...rowless];
+  }
+
+  async listArchivedTasks(): Promise<ArchivedTask[]> {
+    if (!this.recoveryStarted) {
+      this.recoveryStarted = true;
+      void this.recoverArchivedTaskDetails().catch((error) => {
+        this.recoveryStarted = false;
+        this.log.warn("Failed to recover archived task details", { error });
+      });
+    }
+    return this.getArchivedTasks();
+  }
+
+  private async recoverArchivedTaskDetails(): Promise<void> {
+    const missing = this.archiveRepo
+      .findAll()
+      .filter((archive) => !archive.title)
+      .map((archive) => ({
+        archive,
+        workspace: this.workspaceRepo.findById(archive.workspaceId),
+      }))
+      .filter(
+        (item): item is { archive: Archive; workspace: Workspace } =>
+          item.workspace !== null,
+      );
+    const rowlessMissing = this.rowlessArchived().filter(
+      (metadata) => !metadata.archivedTitle,
+    );
+    const recovered = await recoverArchiveDetailsFromLogs(
+      new Set([
+        ...missing.map(({ workspace }) => workspace.taskId),
+        ...rowlessMissing.map((metadata) => metadata.taskId),
+      ]),
+    );
+    const byTaskId = new Map(
+      recovered.map((details) => [details.taskId, details]),
+    );
+    for (const { archive, workspace } of missing) {
+      const details = byTaskId.get(workspace.taskId);
+      const worktree = this.worktreeRepo.findByWorkspaceId(workspace.id);
+      const repository = workspace.repositoryId
+        ? this.repositoryRepo.findById(workspace.repositoryId)
+        : null;
+      const recoveredTitle = details?.title;
+      const title =
+        recoveredTitle && !recoveredTitle.startsWith("Unknown task (")
+          ? recoveredTitle
+          : this.unknownTaskTitle(
+              workspace.taskId,
+              archive.branchName,
+              worktree?.name ?? null,
+            );
+      this.archiveRepo.updateDetailsByWorkspaceId(archive.workspaceId, {
+        title,
+        taskCreatedAt: details?.taskCreatedAt ?? workspace.createdAt,
+        repository: repository?.path ?? details?.repository ?? worktree?.path,
+      });
+    }
+    for (const metadata of rowlessMissing) {
+      const details = byTaskId.get(metadata.taskId);
+      this.taskMetadataRepo.upsert(metadata.taskId, {
+        archivedTitle:
+          details?.title ?? this.unknownTaskTitle(metadata.taskId, null, null),
+        archivedTaskCreatedAt: details?.taskCreatedAt ?? metadata.createdAt,
+        archivedRepository: details?.repository ?? metadata.archivedRepository,
+      });
+    }
   }
 
   // Tasks archived via `task_metadata` (no `workspaces` row). A task that has a
@@ -590,7 +689,12 @@ export class ArchiveService {
     workspace: Workspace,
     archive: Archive,
     worktreeName: string | null,
+    worktreePath: string | null,
   ): ArchivedTask {
+    const repository =
+      !archive.repository && workspace.repositoryId
+        ? this.repositoryRepo.findById(workspace.repositoryId)
+        : null;
     return {
       taskId: workspace.taskId,
       archivedAt: archive.archivedAt,
@@ -599,7 +703,25 @@ export class ArchiveService {
       worktreeName,
       branchName: archive.branchName,
       checkpointId: archive.checkpointId,
+      title:
+        archive.title ??
+        this.unknownTaskTitle(
+          workspace.taskId,
+          archive.branchName,
+          worktreeName,
+        ),
+      taskCreatedAt: archive.taskCreatedAt ?? workspace.createdAt,
+      repository: archive.repository ?? repository?.path ?? worktreePath,
+      recoveryPending: !archive.title,
     };
+  }
+
+  private unknownTaskTitle(
+    taskId: string,
+    branchName: string | null,
+    worktreeName: string | null,
+  ): string {
+    return `Unknown task (${branchName ?? worktreeName ?? taskId.slice(0, 8)})`;
   }
 
   private deriveWorktreePath(folderPath: string, worktreeName: string): string {
