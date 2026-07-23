@@ -40,7 +40,6 @@ import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
 import { LoopTriggerEditor } from "./LoopTriggerEditor";
-import { canNavigateToLoopStep } from "./loopStepNavigation";
 
 const VISIBILITY_OPTIONS: {
   value: LoopSchemas.LoopVisibilityEnum;
@@ -447,7 +446,8 @@ function Stepper({
       {STEPS.map((label, index) => {
         const isCurrent = index === current;
         const isDone = index < current && complete[index];
-        const canSelect = canNavigateToLoopStep(current, index, complete);
+        const canSelect =
+          index <= current || complete.slice(current, index).every(Boolean);
         return (
           <Flex
             key={label}
