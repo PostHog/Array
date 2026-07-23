@@ -3,7 +3,6 @@ import {
   CloudIcon,
   PlusIcon,
   RepeatIcon,
-  StopIcon,
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import type { UserBasic } from "@posthog/shared/domain-types";
@@ -278,19 +277,18 @@ function BuilderSessionRow({
       </Flex>
       <Button
         variant="soft"
-        size="1"
-        onClick={() => onResume?.(session.taskId)}
-      >
-        Resume
-      </Button>
-      <Button
-        variant="soft"
         color="red"
         size="1"
         onClick={() => setConfirmStop(true)}
       >
-        <StopIcon size={12} weight="bold" />
         Stop
+      </Button>
+      <Button
+        variant="soft"
+        size="1"
+        onClick={() => onResume?.(session.taskId)}
+      >
+        Resume
       </Button>
       {confirmStop ? (
         <StopCloudRunDialog

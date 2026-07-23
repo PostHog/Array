@@ -6,7 +6,6 @@ import {
   type Icon,
   Lightning,
   Play,
-  Stop,
   Timer,
   Warning,
   X,
@@ -188,7 +187,6 @@ export function LoopRunRow({
             size="1"
             onClick={() => setStopOpen(true)}
           >
-            <Stop size={12} weight="bold" />
             Stop run
           </Button>
         ) : null}
