@@ -41,6 +41,10 @@ export interface RunTraceBuilderConfig {
  * the corresponding log record should be emitted under, so logs and spans
  * cross-link in the UI via trace_id/span_id.
  *
+ * Root span status: OK once a turn ends cleanly (`end_turn`) or on
+ * task_complete, ERROR on a run error (which always wins), unset when the run
+ * ends without either (cancelled / timed out).
+ *
  * Spans carry the same allowlist stance as the log export: lifecycle, status,
  * usage, and identifiers only — never prompts, tool arguments, or output.
  */
@@ -162,6 +166,13 @@ export class RunTraceBuilder {
       typeof params.stopReason === "string" ? params.stopReason : undefined;
     this.closeOpenTools(time);
     this.closeTurn({ stopReason, errored: stopReason === "error" }, time);
+    // The sandbox never emits task_complete for successful runs (the terminal
+    // "completed" status is decided by the workflow outside), so a cleanly
+    // finished turn is the success signal for the run. A later error still
+    // wins via rootErrored/handleError.
+    if (stopReason === "end_turn" && !this.rootErrored) {
+      this.rootSpan.setStatus({ code: SpanStatusCode.OK });
+    }
     return context;
   }
 

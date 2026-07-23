@@ -983,6 +983,33 @@ export class AgentServer {
         stopError,
       );
     }
+
+    // Mirror the crash into run telemetry and shut it down (ends the root
+    // span as errored and flushes) - the process is about to die, so nothing
+    // else will get this record out.
+    try {
+      const session = this.session;
+      if (session?.telemetry) {
+        session.telemetry.append(session.payload.run_id, {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: {
+            jsonrpc: "2.0",
+            method: POSTHOG_NOTIFICATIONS.ERROR,
+            params: {
+              source: "agent_server_crash",
+              error: `Agent server crashed: ${errorMessage}`,
+            },
+          },
+        });
+        await session.telemetry.shutdown();
+      }
+    } catch (telemetryError) {
+      this.logger.error(
+        "Failed to flush telemetry after fatal error",
+        telemetryError,
+      );
+    }
   }
 
   private authenticateRequest(

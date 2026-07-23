@@ -483,7 +483,9 @@ describe("OtelRunTelemetry", () => {
         RUN_ID,
         makeEntry("_posthog/turn_complete", { stopReason: "end_turn" }),
       );
-      telemetry.append(RUN_ID, makeEntry("_posthog/task_complete", {}));
+      // Deliberately no task_complete: production never emits it (the
+      // terminal "completed" status is decided outside the sandbox), so the
+      // root span's OK must come from the clean end_turn above.
     }
 
     it("builds a run trace: root span, turn span, tool span", async () => {
@@ -577,6 +579,12 @@ describe("OtelRunTelemetry", () => {
           source: "agent_server",
           error: "gateway exploded",
         }),
+      );
+      // A turn completion arriving after the error must not flip the run
+      // back to OK.
+      telemetry.append(
+        RUN_ID,
+        makeEntry("_posthog/turn_complete", { stopReason: "end_turn" }),
       );
 
       await telemetry.shutdown();

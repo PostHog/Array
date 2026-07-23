@@ -217,12 +217,9 @@ Logs serve two purposes: real-time observability and session resume. Every ACP m
 
 ### Writing logs
 
-`SessionLogWriter` (`src/session-log-writer.ts`) is a per-session multiplexer that buffers raw ndJson lines. On flush (auto-scheduled 500ms after writes, or explicit), it dispatches to whichever backend is configured:
+`SessionLogWriter` (`src/session-log-writer.ts`) is a per-session multiplexer that buffers raw ndJson lines. On flush (auto-scheduled 500ms after writes, or explicit), it POSTs batched `StoredNotification` entries to the Django API via `PostHogAPIClient.appendTaskRunLog()`; the API stores them in S3 as the task run's `log_url`. This S3 log is the source of truth for the full transcript and for session resume.
 
-- **OTEL** (`src/otel-log-writer.ts`) — preferred path. Creates an OpenTelemetry `LoggerProvider` per session with resource attributes (`task_id`, `run_id`, `device_type`) set once and indexed via `resource_fingerprint`. Each ndJson line is emitted as an OTEL log record with an `event_type` attribute (the ACP method name) and exported via OTLP HTTP to PostHog's `/i/v1/agent-logs` endpoint. Batch flush interval defaults to 500ms.
-- **Legacy S3** — falls back to `PostHogAPIClient.appendTaskRunLog()`, which POSTs batched `StoredNotification` entries to the Django API. The API stores them as the task run's `log_url`.
-
-Both backends can be active simultaneously — OTEL for fast indexed queries, S3 for full log download.
+Independently of that flush cycle, the writer tees every parsed non-chunk entry to optional `SessionLogSink`s at append time. In cloud, `OtelRunTelemetry` (`src/otel-telemetry.ts`) is wired as a sink and exports an allowlisted metadata subset (run/turn/tool lifecycle, usage, errors — never message content or tool arguments) to PostHog Logs, plus an APM trace per run when configured. See "Optional run telemetry" above for the env vars and behavior. Sink failures can never break S3 log persistence.
 
 ### Resuming from logs
 
