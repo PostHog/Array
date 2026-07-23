@@ -1,40 +1,31 @@
-import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentStatusLine,
+  ThreadArtifactRow,
   ThreadMessageRow,
-  UserPromptRow,
 } from "./ThreadPanel";
-import { agentTurns } from "./threadAgentTurns";
 
-describe("agentTurns", () => {
-  it("accumulates every text chunk in one agent turn", () => {
-    const items = [
-      {
-        type: "session_update",
-        id: "first",
-        timestamp: 10,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: "Hello" },
-        },
-      },
-      {
-        type: "session_update",
-        id: "second",
-        timestamp: 20,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: " there" },
-        },
-      },
-    ] as ConversationItem[];
+const openExternalUrl = vi.fn();
+const navigateToShareTarget = vi.fn();
 
-    expect(agentTurns(items)).toEqual([
-      { id: "first", text: "Hello there", timestamp: 10 },
-    ]);
-  });
+vi.mock("@posthog/ui/shell/openExternal", () => ({
+  openExternalUrl: (url: string) => openExternalUrl(url),
+}));
+
+vi.mock("@posthog/ui/utils/shareLinks", () => ({
+  navigateToShareTarget: (target: unknown) => navigateToShareTarget(target),
+}));
+
+vi.mock("@posthog/ui/features/git-interaction/usePrDetails", () => ({
+  usePrDetails: () => ({
+    meta: { state: "open", merged: false, draft: false },
+  }),
+}));
+
+beforeEach(() => {
+  openExternalUrl.mockClear();
+  navigateToShareTarget.mockClear();
 });
 
 describe("AgentStatusLine", () => {
@@ -50,58 +41,6 @@ describe("AgentStatusLine", () => {
 });
 
 describe("ThreadMessageRow", () => {
-  it("renders backend-authored agent announcements as Agent", () => {
-    render(
-      <ThreadMessageRow
-        message={{
-          id: "announcement",
-          task: "task",
-          author_kind: "agent",
-          event: "canvas_created",
-          payload: {},
-          content: "Canvas created",
-          created_at: "2026-07-17T00:00:00Z",
-          author: null,
-        }}
-        isTaskAuthor={false}
-        isOwnMessage={false}
-        canForward={false}
-        onSendToAgent={() => {}}
-        onDelete={() => {}}
-      />,
-    );
-
-    expect(screen.getByText("Agent")).toBeInTheDocument();
-    expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
-  });
-
-  it("renders system announcements as System without human actions", () => {
-    render(
-      <ThreadMessageRow
-        message={{
-          id: "system-announcement",
-          task: "task",
-          author_kind: "system",
-          event: "status_changed",
-          payload: {},
-          content: "Status changed",
-          created_at: "2026-07-17T00:00:00Z",
-          author: null,
-        }}
-        isTaskAuthor
-        isOwnMessage={false}
-        canForward
-        onSendToAgent={() => {}}
-        onDelete={() => {}}
-      />,
-    );
-
-    expect(screen.getByText("System")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Message actions" }),
-    ).not.toBeInTheDocument();
-  });
-
   it("keeps legacy authorless rows as human messages", () => {
     render(
       <ThreadMessageRow
@@ -127,33 +66,61 @@ describe("ThreadMessageRow", () => {
   });
 });
 
-describe("UserPromptRow", () => {
-  it("prefixes direct task prompts with @agent", () => {
+describe("ThreadArtifactRow", () => {
+  it("renders a canvas artifact and navigates in-app to a shareable canvas", () => {
     render(
-      <UserPromptRow
-        message={{ id: "prompt", text: "Investigate this", timestamp: 1 }}
-        author={{ id: 1, uuid: "user", email: "user@example.com" }}
+      <ThreadArtifactRow
+        artifact={{
+          kind: "canvas",
+          name: "Signups overview",
+          url: "https://us.posthog.com/code/canvas/channel-1/dash-1",
+        }}
+        createdAt="2026-07-17T00:00:00Z"
       />,
     );
 
-    expect(screen.getByText("@agent")).toBeInTheDocument();
-    expect(screen.getByText("Investigate this")).toBeInTheDocument();
+    expect(screen.getByText("Signups overview")).toBeInTheDocument();
+    expect(screen.getByText(/Canvas/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Signups overview/ }));
+
+    expect(navigateToShareTarget).toHaveBeenCalledWith({
+      kind: "canvas",
+      channelId: "channel-1",
+      dashboardId: "dash-1",
+    });
+    expect(openExternalUrl).not.toHaveBeenCalled();
   });
 
-  it("hides forwarded thread attribution and duplicate agent mentions", () => {
+  it("renders a canvas artifact without a link as plain text", () => {
     render(
-      <UserPromptRow
-        message={{
-          id: "prompt",
-          text: "[Thread comment from Peter Kirkham] @agent which model are you?",
-          timestamp: 1,
-        }}
-        author={{ id: 1, uuid: "user", email: "user@example.com" }}
+      <ThreadArtifactRow
+        artifact={{ kind: "canvas", name: "Signups overview", url: null }}
+        createdAt="2026-07-17T00:00:00Z"
       />,
     );
 
-    expect(screen.getAllByText("@agent")).toHaveLength(1);
-    expect(screen.getByText("which model are you?")).toBeInTheDocument();
-    expect(screen.queryByText(/Thread comment from/)).not.toBeInTheDocument();
+    expect(screen.getByText("Signups overview")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Signups overview/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a pull request artifact and opens it externally", () => {
+    render(
+      <ThreadArtifactRow
+        artifact={{ kind: "pr", url: "https://github.com/org/repo/pull/123" }}
+        createdAt="2026-07-17T00:00:00Z"
+      />,
+    );
+
+    expect(screen.getByText("Pull request #123")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Pull request #123/ }));
+
+    expect(openExternalUrl).toHaveBeenCalledWith(
+      "https://github.com/org/repo/pull/123",
+    );
+    expect(navigateToShareTarget).not.toHaveBeenCalled();
   });
 });
