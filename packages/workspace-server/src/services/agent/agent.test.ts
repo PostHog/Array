@@ -847,7 +847,7 @@ describe("AgentService", () => {
   });
 
   describe("system prompt questions", () => {
-    it("requires blocking questions to use the adapter's question tool", () => {
+    it("requires blocking questions to use a structured user-input tool", () => {
       const prompt = (
         service as unknown as {
           buildSystemPrompt: (
@@ -861,7 +861,7 @@ describe("AgentService", () => {
       ).append;
 
       expect(prompt).toContain(
-        "AskUserQuestion for Claude, or request_user_input in Codex Plan mode",
+        "use the structured user-input tool available in your current mode",
       );
       expect(prompt).toContain(
         "plain-text questions mark the task as finished",
