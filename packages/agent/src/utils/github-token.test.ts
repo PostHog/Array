@@ -66,6 +66,12 @@ describe("github-token", () => {
       expect(readGithubTokenFromSandboxEnvFile(path)).toBe("");
     });
 
+    it("returns '' (logout) when the managed file is truncated to zero bytes", () => {
+      // The backend logs the sandbox out by writing an empty file, not emptied vars.
+      expect(readGithubTokenFromSandboxEnvFile(writeEnvFile(""))).toBe("");
+      expect(readGithubTokenFromSandboxEnvFile(writeEnvFile("   \n"))).toBe("");
+    });
+
     it("returns undefined when the file carries no token var at all", () => {
       const path = writeEnvFile("PATH=/usr/bin\0HOME=/root\0");
       expect(readGithubTokenFromSandboxEnvFile(path)).toBeUndefined();
@@ -97,6 +103,13 @@ describe("github-token", () => {
       vi.stubEnv("GH_TOKEN", "ghs_previous_actor");
       const path = writeEnvFile("GH_TOKEN=\0GITHUB_TOKEN=\0");
       expect(resolveGithubToken(path)).toBe("");
+    });
+
+    it("does not resurrect the process-env token when the file is zero bytes (logout)", () => {
+      // The backend's actual logout truncates the file to zero bytes; resolving
+      // must treat that as logout, not fall back to the frozen process env.
+      vi.stubEnv("GH_TOKEN", "ghs_previous_actor");
+      expect(resolveGithubToken(writeEnvFile(""))).toBe("");
     });
 
     it("falls back to the process env when the file carries no token var", () => {

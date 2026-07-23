@@ -28,6 +28,13 @@ export function readGithubTokenFromSandboxEnvFile(
     }
     return "";
   }
+  // The backend logs the sandbox out by truncating this file to zero bytes, so a
+  // successfully-read but empty (or whitespace-only) managed file is an explicit
+  // logout — return "" so the caller does NOT resurrect the previous actor's token
+  // from the frozen launch-time process env. Only an absent file is "unmanaged".
+  if (raw.trim() === "") {
+    return "";
+  }
   const env: Record<string, string> = {};
   for (const entry of raw.split("\0")) {
     const eq = entry.indexOf("=");
