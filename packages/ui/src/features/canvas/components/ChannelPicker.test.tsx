@@ -2,13 +2,10 @@ import { Theme } from "@radix-ui/themes";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { Channel } from "../hooks/useChannels";
 import { ChannelPicker } from "./ChannelPicker";
 
-const CHANNELS: Channel[] = [
-  { id: "chan-1", name: "marketing", path: "/marketing" },
-  { id: "chan-2", name: "support", path: "/support" },
-];
+// Parent-ordered: me first, then the rest.
+const CHANNEL_NAMES = ["me", "marketing", "support"];
 
 function renderPicker(props?: Partial<Parameters<typeof ChannelPicker>[0]>): {
   onChange: ReturnType<typeof vi.fn>;
@@ -19,7 +16,7 @@ function renderPicker(props?: Partial<Parameters<typeof ChannelPicker>[0]>): {
       <ChannelPicker
         value={null}
         onChange={onChange}
-        channels={CHANNELS}
+        channelNames={CHANNEL_NAMES}
         isLoading={false}
         {...props}
       />
@@ -29,77 +26,55 @@ function renderPicker(props?: Partial<Parameters<typeof ChannelPicker>[0]>): {
 }
 
 describe("ChannelPicker", () => {
-  it("defaults to the personal 'me' channel", () => {
+  it("defaults to 'No channel'", () => {
     renderPicker();
+    expect(screen.getByRole("combobox", { name: "Channel" })).toHaveTextContent(
+      "No channel",
+    );
+  });
+
+  it("shows the selected channel's name (incl. the personal 'me')", () => {
+    renderPicker({ value: "me" });
     expect(screen.getByRole("combobox", { name: "Channel" })).toHaveTextContent(
       "me",
     );
   });
 
-  it("shows the selected channel's name", () => {
-    renderPicker({ value: "chan-1" });
-    expect(screen.getByRole("combobox", { name: "Channel" })).toHaveTextContent(
-      "marketing",
-    );
-  });
-
-  it("lists 'me' plus the channels when opened", async () => {
+  it("lists 'No channel' first, then the channels in the given order", async () => {
     const user = userEvent.setup();
-    renderPicker();
+    // Deliberately not alphabetical: the parent orders the list and the picker
+    // must preserve that order (No channel → me → starred → rest).
+    renderPicker({ channelNames: ["me", "zulu", "alpha"] });
 
     await user.click(screen.getByRole("combobox", { name: "Channel" }));
+    await screen.findByRole("option", { name: "No channel" });
 
-    expect(await screen.findByRole("option", { name: "me" })).toBeVisible();
-    expect(screen.getByRole("option", { name: "marketing" })).toBeVisible();
-    expect(screen.getByRole("option", { name: "support" })).toBeVisible();
+    expect(screen.getAllByRole("option").map((el) => el.textContent)).toEqual([
+      "No channel",
+      "me",
+      "zulu",
+      "alpha",
+    ]);
   });
 
-  it("emits the channel id when a channel is picked", async () => {
+  it("emits the channel name when a channel is picked", async () => {
     const user = userEvent.setup();
     const { onChange } = renderPicker();
 
     await user.click(screen.getByRole("combobox", { name: "Channel" }));
     await user.click(await screen.findByRole("option", { name: "support" }));
 
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith("chan-2"));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith("support"));
   });
 
-  it("emits null when the personal 'me' channel is picked", async () => {
+  it("emits null when 'No channel' is picked", async () => {
     const user = userEvent.setup();
-    const { onChange } = renderPicker({ value: "chan-1" });
+    const { onChange } = renderPicker({ value: "me" });
 
     await user.click(screen.getByRole("combobox", { name: "Channel" }));
-    await user.click(await screen.findByRole("option", { name: "me" }));
+    await user.click(await screen.findByRole("option", { name: "No channel" }));
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(null));
-  });
-
-  it("renders 'me' first, then the channels in the given order", async () => {
-    const user = userEvent.setup();
-    // Deliberately not alphabetical: the parent orders the list (me → starred →
-    // rest) and the picker must preserve that order rather than re-sorting.
-    render(
-      <Theme>
-        <ChannelPicker
-          value={null}
-          onChange={vi.fn()}
-          channels={[
-            { id: "z", name: "zulu", path: "/zulu" },
-            { id: "a", name: "alpha", path: "/alpha" },
-          ]}
-          isLoading={false}
-        />
-      </Theme>,
-    );
-
-    await user.click(screen.getByRole("combobox", { name: "Channel" }));
-    await screen.findByRole("option", { name: "me" });
-
-    expect(screen.getAllByRole("option").map((el) => el.textContent)).toEqual([
-      "me",
-      "zulu",
-      "alpha",
-    ]);
   });
 
   // Type-to-filter is the shared Combobox's own behavior (same as the repo

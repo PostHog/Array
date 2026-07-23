@@ -44,7 +44,6 @@ import { useChannelStars } from "../../canvas/hooks/useChannelStars";
 import { useChannels } from "../../canvas/hooks/useChannels";
 import { useFolderInstructions } from "../../canvas/hooks/useFolderInstructions";
 import {
-  normalizeChannelName,
   PERSONAL_CHANNEL_NAME,
   useBackendChannel,
 } from "../../canvas/hooks/useTaskChannels";
@@ -280,18 +279,6 @@ export function TaskInput({
   const { channels: allChannels, isLoading: channelsLoading } = useChannels({
     enabled: channelSelectorEnabled,
   });
-  // Omit the personal #me channel: the picker always shows it as the default
-  // "me" option, so listing it again would just duplicate it.
-  const selectableChannels = useMemo(
-    () =>
-      allChannels.filter(
-        (c) => normalizeChannelName(c.name) !== PERSONAL_CHANNEL_NAME,
-      ),
-    [allChannels],
-  );
-  // Order the list me → starred → the rest, mirroring the sidebar but as one
-  // flat list (the "me" default is prepended by the picker; here we just float
-  // the starred channels to the top, keeping each group's alphabetical order).
   const { starredRefToShortcutId } = useChannelStars({
     enabled: channelSelectorEnabled,
   });
@@ -300,45 +287,61 @@ export function TaskInput({
   const starredSignature = Array.from(starredRefToShortcutId.keys())
     .sort()
     .join("\n");
+  // The picker's channel list, ordered me → starred → the rest. The picker
+  // prepends a "No channel" option, giving No channel → me → starred → rest as
+  // one flat list. "me" (the personal channel) is listed first and always —
+  // even before its folder is provisioned — so it's reliably pickable.
+  // Alphabetical order within each group comes from useChannels.
   // biome-ignore lint/correctness/useExhaustiveDependencies: starredRefToShortcutId's identity changes every render; starredSignature captures its contents
-  const orderedChannels = useMemo(() => {
-    const starred = selectableChannels.filter((c) =>
-      starredRefToShortcutId.has(c.path),
-    );
-    const rest = selectableChannels.filter(
-      (c) => !starredRefToShortcutId.has(c.path),
-    );
-    return [...starred, ...rest];
-  }, [selectableChannels, starredSignature]);
-  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
+  const orderedChannelNames = useMemo(() => {
+    const others = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
+    const starred = others
+      .filter((c) => starredRefToShortcutId.has(c.path))
+      .map((c) => c.name);
+    const rest = others
+      .filter((c) => !starredRefToShortcutId.has(c.path))
+      .map((c) => c.name);
+    return [PERSONAL_CHANNEL_NAME, ...starred, ...rest];
+  }, [allChannels, starredSignature]);
+
+  // null = "No channel" (normal repo flow); any other value is a channel name
+  // (repo-less), including the personal "me".
+  const [selectedChannelName, setSelectedChannelName] = useState<string | null>(
     null,
   );
-  const selectedChannel = useMemo(
-    () =>
-      selectedChannelId
-        ? (selectableChannels.find((c) => c.id === selectedChannelId) ?? null)
-        : null,
-    [selectedChannelId, selectableChannels],
-  );
-  // Drop the selection if the channel disappears (deleted/renamed elsewhere)
-  // once the list has loaded, so the composer never sticks in repo-less mode
-  // pointing at a channel that no longer exists. Adjusted inline during render
-  // (not via an effect) so the stale id never reaches a commit; the guard is
-  // self-terminating because clearing the id makes selectedChannel null too.
-  if (selectedChannelId && !channelsLoading && !selectedChannel) {
-    setSelectedChannelId(null);
+  // Drop a stale selection if a (non-personal) channel disappears once the list
+  // has loaded — "me" always stays valid. Inline during render so the stale
+  // name never reaches a commit; self-terminating.
+  if (
+    selectedChannelName &&
+    selectedChannelName !== PERSONAL_CHANNEL_NAME &&
+    !channelsLoading &&
+    !allChannels.some((c) => c.name === selectedChannelName)
+  ) {
+    setSelectedChannelName(null);
   }
-  // Resolve the picked channel's backend feed id + CONTEXT.md. Both hooks no-op
-  // (return undefined/null) until a channel is selected.
+
+  const channelChosen = channelSelectorEnabled && selectedChannelName !== null;
+  // The picked channel's folder (for its CONTEXT.md + folder id), if one exists.
+  // "me" can be picked before its folder is provisioned, in which case there's
+  // simply no CONTEXT.md to attach — the task still runs in the #me feed.
+  const selectedFolder = useMemo(
+    () =>
+      selectedChannelName
+        ? (allChannels.find((c) => c.name === selectedChannelName) ?? null)
+        : null,
+    [selectedChannelName, allChannels],
+  );
+  // Resolve the picked channel's backend feed id (by name) + CONTEXT.md. Both
+  // hooks no-op until a channel is chosen.
   const { channel: selectedBackendChannel } = useBackendChannel(
-    selectedChannel?.name,
+    channelChosen ? (selectedChannelName ?? undefined) : undefined,
   );
   const { data: selectedChannelInstructions } = useFolderInstructions(
-    selectedChannel?.id ?? null,
-    { enabled: !!selectedChannel },
+    selectedFolder?.id ?? null,
+    { enabled: !!selectedFolder },
   );
 
-  const channelChosen = channelSelectorEnabled && !!selectedChannel;
   // Props (per-channel screen) win over an in-composer pick, so those flows stay
   // unaffected and channel context is never injected twice.
   const effectiveAllowNoRepo = allowNoRepo || channelChosen;
@@ -346,10 +349,10 @@ export function TaskInput({
     ? selectedChannelInstructions?.content
     : channelContext;
   const effectiveChannelName = channelChosen
-    ? selectedChannel?.name
+    ? (selectedChannelName ?? undefined)
     : channelName;
   const effectiveChannelContextId = channelChosen
-    ? selectedChannel?.id
+    ? selectedFolder?.id
     : channelContextId;
   const effectiveChannelId = channelChosen
     ? selectedBackendChannel?.id
@@ -1237,9 +1240,9 @@ export function TaskInput({
                 />
                 {channelSelectorEnabled && (
                   <ChannelPicker
-                    value={selectedChannelId}
-                    onChange={setSelectedChannelId}
-                    channels={orderedChannels}
+                    value={selectedChannelName}
+                    onChange={setSelectedChannelName}
+                    channelNames={orderedChannelNames}
                     isLoading={channelsLoading}
                     disabled={isCreatingTask}
                     size="1"

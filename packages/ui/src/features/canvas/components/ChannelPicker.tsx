@@ -1,4 +1,4 @@
-import { CaretDown, HashIcon } from "@phosphor-icons/react";
+import { CaretDown, HashIcon, Prohibit } from "@phosphor-icons/react";
 import {
   Button,
   Combobox,
@@ -9,20 +9,22 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@posthog/quill";
-import { useMemo, useRef, useState } from "react";
-import type { Channel } from "../hooks/useChannels";
+import { useRef, useState } from "react";
 
-// The default option: the user's personal channel. Selecting it maps to a null
-// id, which the composer treats as "no explicit channel" — the task still runs
-// in the normal repo flow and useTaskCreation routes it to the #me feed.
-const PERSONAL_CHANNEL_LABEL = "me";
+// The opt-out option: run the task in the normal repo flow, not bound to a
+// channel. Maps to a null value. The label can't collide with a channel name —
+// those are lowercase/hyphen with no spaces.
+const NO_CHANNEL_LABEL = "No channel";
 
 interface ChannelPickerProps {
-  /** Selected channel folder id, or `null` for the personal "me" channel. */
+  /** Selected channel name, or `null` for "No channel" (normal repo flow). */
   value: string | null;
-  onChange: (channelId: string | null) => void;
-  /** Channels to list, already filtered by the parent (e.g. #me removed). */
-  channels: Channel[];
+  onChange: (channelName: string | null) => void;
+  /**
+   * Channel names to list, already ordered by the parent (me → starred → rest).
+   * The "No channel" option is prepended here.
+   */
+  channelNames: string[];
   isLoading: boolean;
   disabled?: boolean;
   // Accepted for API parity with the sibling pills; the button renders size="sm".
@@ -31,14 +33,14 @@ interface ChannelPickerProps {
 
 // A searchable pill for choosing which channel a new task runs in, sitting
 // alongside the workspace-mode and repo pills on the new-task composer. Dumb +
-// presentational: the parent owns the channels query and the selected id.
-// Picking a named channel makes the task run repo-less (the parent greys out the
-// repo/branch pickers); the default "me" restores the normal repo flow. Built on
-// the same Combobox as the repo picker so you can type to filter a long list.
+// presentational: the parent owns the channels query, ordering, and selection.
+// "No channel" keeps the normal repo flow; picking any channel (including the
+// personal "me") makes the task run repo-less. Built on the same Combobox as the
+// repo picker so you can type to filter a long list.
 export function ChannelPicker({
   value,
   onChange,
-  channels,
+  channelNames,
   isLoading,
   disabled,
 }: ChannelPickerProps) {
@@ -46,27 +48,16 @@ export function ChannelPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  // "me" leads, then the real channels. The combobox filters on these names, so
-  // its value is a channel name (or "me") that we map back to an id on change.
-  const optionNames = useMemo(
-    () => [PERSONAL_CHANNEL_LABEL, ...channels.map((c) => c.name)],
-    [channels],
-  );
-  const selectedName = value
-    ? (channels.find((c) => c.id === value)?.name ?? PERSONAL_CHANNEL_LABEL)
-    : PERSONAL_CHANNEL_LABEL;
+  const items = [NO_CHANNEL_LABEL, ...channelNames];
+  const selectedLabel = value ?? NO_CHANNEL_LABEL;
 
   return (
     <Combobox
-      items={optionNames}
-      value={selectedName}
-      onValueChange={(name) => {
-        if (!name || name === PERSONAL_CHANNEL_LABEL) {
-          onChange(null);
-          return;
-        }
-        onChange(channels.find((c) => c.name === name)?.id ?? null);
-      }}
+      items={items}
+      value={selectedLabel}
+      onValueChange={(name) =>
+        onChange(!name || name === NO_CHANNEL_LABEL ? null : name)
+      }
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
@@ -86,12 +77,20 @@ export function ChannelPicker({
             disabled={disabled}
             aria-label="Channel"
           >
-            <HashIcon
-              size={14}
-              weight="regular"
-              className="shrink-0 text-muted-foreground"
-            />
-            <span className="min-w-0 truncate">{selectedName}</span>
+            {value === null ? (
+              <Prohibit
+                size={14}
+                weight="regular"
+                className="shrink-0 text-muted-foreground"
+              />
+            ) : (
+              <HashIcon
+                size={14}
+                weight="regular"
+                className="shrink-0 text-muted-foreground"
+              />
+            )}
+            <span className="min-w-0 truncate">{selectedLabel}</span>
             <CaretDown
               size={10}
               weight="bold"
@@ -113,11 +112,19 @@ export function ChannelPicker({
         <ComboboxList>
           {(name: string) => (
             <ComboboxItem key={name} value={name}>
-              <HashIcon
-                size={14}
-                weight="regular"
-                className="shrink-0 text-muted-foreground"
-              />
+              {name === NO_CHANNEL_LABEL ? (
+                <Prohibit
+                  size={14}
+                  weight="regular"
+                  className="shrink-0 text-muted-foreground"
+                />
+              ) : (
+                <HashIcon
+                  size={14}
+                  weight="regular"
+                  className="shrink-0 text-muted-foreground"
+                />
+              )}
               <span className="min-w-0 truncate">{name}</span>
             </ComboboxItem>
           )}
