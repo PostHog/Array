@@ -30,8 +30,8 @@ import {
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playbackRateForTaskDuration } from "../utils/playbackRate";
+import { reinjectPromptAttachments } from "../utils/promptAttachments";
 import { playCompletionSound } from "../utils/sounds";
-import { useAttachmentEchoStore } from "./attachmentEchoStore";
 import {
   combineQueuedMessages,
   useMessageQueueStore,
@@ -48,36 +48,6 @@ function completionPlaybackRate(promptStartedAt?: number): number {
     return 1;
   }
   return playbackRateForTaskDuration(Date.now() - promptStartedAt);
-}
-
-// Match historical `user_message_chunk` events (text-only, as the cloud
-// stores them) against locally-cached attachment echoes by position+text.
-// Echoes are written in send-order; we walk user messages in receive-order
-// and zip them up. Drift (text mismatch at the same index) is treated as a
-// no-op rather than a misattribution.
-function reinjectAttachmentEchoes(
-  taskRunId: string,
-  events: SessionEvent[],
-): void {
-  const echoes = useAttachmentEchoStore.getState().getEchoes(taskRunId);
-  if (echoes.length === 0) return;
-
-  let echoIdx = 0;
-  for (const event of events) {
-    if (echoIdx >= echoes.length) return;
-    if (event.type !== "session_update") continue;
-    const update = event.notification?.update;
-    if (update?.sessionUpdate !== "user_message_chunk") continue;
-    if (update.attachments && update.attachments.length > 0) {
-      echoIdx++;
-      continue;
-    }
-    const echo = echoes[echoIdx];
-    echoIdx++;
-    if (echo.text === (update.content?.text ?? "")) {
-      update.attachments = echo.attachments;
-    }
-  }
 }
 
 type LocalNotificationKind =
@@ -521,12 +491,6 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         },
       },
     };
-    if (echoAttachments.length > 0) {
-      useAttachmentEchoStore
-        .getState()
-        .recordEcho(session.taskRunId, prompt, echoAttachments);
-    }
-
     set((state) => {
       const current = state.sessions[session.taskRunId];
       const nextLocalEchoes = new Set(current.localUserEchoes ?? []);
@@ -1024,10 +988,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         : dedupAgainstLocalEchoes(update.newEntries, echoSet);
 
       const events = convertStoredEntriesToEvents(dedupedEntries);
-      // Snapshots are S3-backed and lose attachment metadata; reattach from
-      // the local echo store so historical user messages keep their images.
+      // Snapshots are S3-backed and replay user turns as text-only chunks;
+      // reattach the images from the `session/prompt` entries in the same log.
       if (isSnapshot) {
-        reinjectAttachmentEchoes(taskRunId, events);
+        reinjectPromptAttachments(events);
       }
 
       const analysis = analyzeEntries(

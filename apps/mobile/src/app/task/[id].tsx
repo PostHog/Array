@@ -704,6 +704,7 @@ export default function TaskDetailScreen() {
             small visual buffer at the bottom. */}
         <TaskSessionView
           events={session?.events ?? []}
+          taskId={taskId}
           pendingPermissions={session?.pendingPermissions}
           isConnecting={isConnecting}
           isThinking={isThinking}

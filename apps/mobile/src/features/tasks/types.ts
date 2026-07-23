@@ -55,6 +55,11 @@ export function isTerminalStatus(
   );
 }
 
+export interface TaskRunArtifact {
+  id?: string;
+  storage_path?: string;
+}
+
 export interface TaskRun {
   id: string;
   task: string;
@@ -68,6 +73,7 @@ export interface TaskRun {
   reasoning_effort?: string | null;
   output: Record<string, unknown> | null;
   state: Record<string, unknown>;
+  artifacts?: TaskRunArtifact[];
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -86,11 +92,20 @@ export interface StoredLogEntry {
   direction?: "client" | "agent";
 }
 
+export interface CloudArtifactRef {
+  runId: string;
+  artifactId: string;
+}
+
 export interface SessionNotificationAttachment {
   kind: "image" | "document";
   uri: string;
   fileName: string;
   mimeType?: string;
+  // Set when the attachment was resolved from a cloud `session/prompt` entry.
+  // Its bytes live in S3 as a run artifact; the preview is fetched by presigning
+  // rather than read off the local device.
+  cloudArtifact?: CloudArtifactRef;
 }
 
 export interface SessionNotification {

@@ -29,6 +29,7 @@ import type {
   SessionNotification,
   SessionNotificationAttachment,
 } from "../types";
+import { CloudMessageAttachment } from "./CloudMessageAttachment";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { QuestionCard } from "./QuestionCard";
@@ -52,6 +53,7 @@ interface OptimisticUserMessage {
 
 interface TaskSessionViewProps {
   events: SessionEvent[];
+  taskId?: string;
   pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
   isConnecting?: boolean;
   isThinking?: boolean;
@@ -797,6 +799,7 @@ function ConnectingIndicator() {
 
 export function TaskSessionView({
   events,
+  taskId,
   pendingPermissions,
   isConnecting,
   isThinking,
@@ -929,6 +932,13 @@ export function TaskSessionView({
     [],
   );
 
+  const renderAttachment = useCallback(
+    (attachment: SessionNotificationAttachment) => (
+      <CloudMessageAttachment attachment={attachment} taskId={taskId} />
+    ),
+    [taskId],
+  );
+
   const renderMessage = useCallback(
     ({ item }: { item: ParsedMessage }) => {
       switch (item.type) {
@@ -938,6 +948,7 @@ export function TaskSessionView({
               content={item.content}
               timestamp={item.ts}
               attachments={item.attachments}
+              renderAttachment={renderAttachment}
             />
           );
         case "agent":
@@ -994,7 +1005,12 @@ export function TaskSessionView({
           return null;
       }
     },
-    [onOpenTask, onSendPermissionResponse, pendingPermissions],
+    [
+      onOpenTask,
+      onSendPermissionResponse,
+      pendingPermissions,
+      renderAttachment,
+    ],
   );
 
   return (
