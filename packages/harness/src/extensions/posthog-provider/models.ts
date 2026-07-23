@@ -210,14 +210,10 @@ export function fallbackModelConfigs(
   return FALLBACK_GATEWAY_MODELS.map((model) => toModelConfig(model, region));
 }
 
-async function fetchGatewayModels(
-  region: CloudRegion,
-  baseUrl = getLlmGatewayUrl(region),
+export async function fetchPosthogGatewayModels(
+  baseUrl: string,
   apiKey?: string,
 ): Promise<GatewayModel[]> {
-  if (process.env.PI_OFFLINE || process.env.HARNESS_STATIC_MODELS) {
-    return [];
-  }
   try {
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/models`, {
       headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
@@ -233,20 +229,33 @@ async function fetchGatewayModels(
   }
 }
 
+export function resolveModelConfigsFromGatewayModels(
+  models: GatewayModel[],
+  region: CloudRegion,
+): ProviderModelConfig[] {
+  if (models.length === 0) {
+    return fallbackModelConfigs(region);
+  }
+
+  const withIds = models.filter((model) => Boolean(model.id));
+  const usable = withIds.filter((model) => model.allowed !== false);
+  return (usable.length > 0 ? usable : withIds).map((model) =>
+    toModelConfig(model, region),
+  );
+}
+
 export async function resolveModelConfigs(
   region: CloudRegion,
   baseUrl?: string,
   apiKey?: string,
 ): Promise<ProviderModelConfig[]> {
-  const live = await fetchGatewayModels(region, baseUrl, apiKey);
-  if (live.length === 0) {
+  if (process.env.PI_OFFLINE || process.env.HARNESS_STATIC_MODELS) {
     return fallbackModelConfigs(region);
   }
-  const withIds = live.filter((model) => Boolean(model.id));
-  // pi has no locked-model rendering, so restricted models are dropped. The
-  // free tier always includes a servable model; guard against empty anyway.
-  const usable = withIds.filter((model) => model.allowed !== false);
-  return (usable.length > 0 ? usable : withIds).map((model) =>
-    toModelConfig(model, region),
+
+  const models = await fetchPosthogGatewayModels(
+    baseUrl ?? getLlmGatewayUrl(region),
+    apiKey,
   );
+  return resolveModelConfigsFromGatewayModels(models, region);
 }

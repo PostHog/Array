@@ -124,6 +124,32 @@ describe("PiSessionController", () => {
     );
   });
 
+  it("resumes a terminal cloud run only when a message is submitted", async () => {
+    const terminalSession = {
+      ...createSession(),
+      resumeRequired: true,
+    };
+    const resumedSession = createSession();
+    const provider = {
+      get: vi
+        .fn()
+        .mockResolvedValueOnce(terminalSession)
+        .mockResolvedValue(resumedSession),
+    } as PiSessionProvider;
+    const resumeCloudPiRun = vi.fn(async () => ({ id: "run-1" }));
+    const taskService = { resumeCloudPiRun } as unknown as TaskService;
+    const controller = new PiSessionController(provider, taskService);
+
+    await controller.connect("task-1", "run-1");
+
+    expect(resumeCloudPiRun).not.toHaveBeenCalled();
+
+    await controller.submit("task-1", "continue", false, "steer");
+
+    expect(resumeCloudPiRun).toHaveBeenCalledWith("task-1", "run-1");
+    expect(resumedSession.client.prompt).toHaveBeenCalledWith("continue");
+  });
+
   it("keeps a connected transcript usable when a command fails", async () => {
     const initialEvent: AgentConversationEvent = {
       type: "user_message",
@@ -236,8 +262,6 @@ describe("PiSessionController", () => {
     await controller.setModel("task-1", {
       provider: "posthog",
       id: "model-2",
-      contextWindow: 200_000,
-      reasoning: true,
     });
 
     const state = controller.store.getState().sessions["task-1"];

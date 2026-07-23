@@ -124,6 +124,57 @@ describe("selectPiPoolEvictionCandidate", () => {
   });
 });
 
+describe("PiSessionService start", () => {
+  it("sets the selected thinking level before the initial prompt", async () => {
+    const setThinkingLevel = vi.fn().mockResolvedValue(undefined);
+    const prompt = vi.fn().mockResolvedValue(undefined);
+    const client = {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      getState: vi.fn().mockResolvedValue({
+        isStreaming: false,
+        sessionFile: "/tmp/session.jsonl",
+        sessionId: "session-1",
+      }),
+      setThinkingLevel,
+      prompt,
+    } as unknown as PiRpcClient;
+    const runtimeFactory = {
+      create: vi.fn(async () => ({
+        client,
+        process: undefined,
+        onRuntimeEvent: vi.fn(),
+        onConversationEvent: vi.fn(),
+      })),
+    } as unknown as PiRuntimeFactory;
+    const taskMetadataRepository = {
+      upsert: vi.fn(),
+    } as unknown as ITaskMetadataRepository;
+    const processTracking = {
+      register: vi.fn(),
+      unregister: vi.fn(),
+    } as unknown as ProcessTrackingService;
+    const service = new PiSessionService(
+      runtimeFactory,
+      taskMetadataRepository,
+      processTracking,
+      rootLogger,
+    );
+
+    await service.start({
+      taskId: "task-1",
+      cwd: "/tmp",
+      prompt: "hello",
+      thinkingLevel: "high",
+    });
+
+    expect(setThinkingLevel).toHaveBeenCalledWith("high");
+    expect(setThinkingLevel.mock.invocationCallOrder[0]).toBeLessThan(
+      prompt.mock.invocationCallOrder[0],
+    );
+  });
+});
+
 describe("PiSessionService RPC request pinning", () => {
   it("keeps a session pinned until every concurrent generic command settles", async () => {
     vi.stubEnv("POSTHOG_CODE_PI_HOT_POOL_SIZE", "1");

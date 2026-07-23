@@ -580,6 +580,7 @@ export interface FinalizedTaskArtifactUpload {
 
 interface CloudRunOptions {
   adapter?: Adapter;
+  piRuntime?: boolean;
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
@@ -628,35 +629,35 @@ function buildCloudRunRequestBody(
   }
   if (options?.adapter) {
     body.runtime_adapter = options.adapter;
-    if (options.model) {
-      body.model = options.model;
-    }
-    if (options.reasoningLevel) {
-      if (!options.model) {
-        throw new Error(
-          "A cloud reasoning level requires a model to be selected.",
-        );
-      }
-      if (
-        !isSupportedReasoningEffort(
-          options.adapter,
-          options.model,
-          options.reasoningLevel,
-        )
-      ) {
-        throw new Error(
-          `Reasoning effort '${options.reasoningLevel}' is not supported for ${options.adapter} model '${options.model}'.`,
-        );
-      }
-      body.reasoning_effort = options.reasoningLevel;
-    }
-    // The API rejects initial_permission_mode without runtime_adapter and validates it per adapter.
-    if (options.initialPermissionMode) {
-      body.initial_permission_mode = resolveCloudInitialPermissionMode(
-        options.adapter,
-        options.initialPermissionMode,
+  }
+  if (options?.model && (options.adapter || options.piRuntime)) {
+    body.model = options.model;
+  }
+  if (options?.reasoningLevel && (options.adapter || options.piRuntime)) {
+    if (!options.model) {
+      throw new Error(
+        "A cloud reasoning level requires a model to be selected.",
       );
     }
+    if (
+      options.adapter &&
+      !isSupportedReasoningEffort(
+        options.adapter,
+        options.model,
+        options.reasoningLevel,
+      )
+    ) {
+      throw new Error(
+        `Reasoning effort '${options.reasoningLevel}' is not supported for ${options.adapter} model '${options.model}'.`,
+      );
+    }
+    body.reasoning_effort = options.reasoningLevel;
+  }
+  if (options?.adapter && options.initialPermissionMode) {
+    body.initial_permission_mode = resolveCloudInitialPermissionMode(
+      options.adapter,
+      options.initialPermissionMode,
+    );
   }
   if (options?.resumeFromRunId) {
     body.resume_from_run_id = options.resumeFromRunId;

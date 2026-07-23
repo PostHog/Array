@@ -39,7 +39,7 @@ function createCloudTaskClient(autoStart = true) {
   };
 }
 
-function context(status: "in_progress" | "completed") {
+function context(status: "queued" | "in_progress" | "completed") {
   return {
     taskId: "task-1",
     runId: "run-1",
@@ -85,6 +85,44 @@ describe("CloudPiSessionClient", () => {
     });
 
     await expect(state).resolves.toMatchObject({ isStreaming: true });
+    expect(cloud.client.sendCommand).toHaveBeenCalledOnce();
+  });
+
+  it("ignores historical readiness events when resuming the same run", async () => {
+    const cloud = createCloudTaskClient();
+    vi.mocked(cloud.client.sendCommand).mockResolvedValue({
+      success: true,
+      result: {
+        type: "response",
+        command: "get_state",
+        success: true,
+        data: { isStreaming: false },
+      },
+    });
+    const session = new CloudPiSessionClient(cloud.client, context("queued"));
+    session.onConversationEvent(vi.fn(), vi.fn());
+
+    const state = session.client.getState();
+    cloud.sendUpdate({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "snapshot",
+      status: "in_progress",
+      newEntries: [{ type: "pi_run_started" }],
+      totalEntryCount: 1,
+    });
+
+    expect(cloud.client.sendCommand).not.toHaveBeenCalled();
+
+    cloud.sendUpdate({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "logs",
+      newEntries: [{ type: "pi_run_started" }],
+      totalEntryCount: 2,
+    });
+
+    await expect(state).resolves.toMatchObject({ isStreaming: false });
     expect(cloud.client.sendCommand).toHaveBeenCalledOnce();
   });
 
@@ -230,6 +268,7 @@ describe("CloudPiSessionClient", () => {
     });
 
     await expect(conversation).resolves.toEqual([snapshotEvent]);
+    expect(session.resumeRequired).toBe(true);
     await expect(session.health()).resolves.toEqual({ state: "cold" });
     await expect(session.client.getState()).resolves.toMatchObject({
       isStreaming: false,

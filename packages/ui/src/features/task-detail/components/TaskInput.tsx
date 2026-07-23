@@ -5,11 +5,19 @@ import { buildKickoffPreamble } from "@posthog/core/autoresearch/prompts";
 import { buildFileLineReferencePrompt } from "@posthog/core/code-review/reviewPrompts";
 import type { EditorContent } from "@posthog/core/message-editor/content";
 import { xmlToContent } from "@posthog/core/message-editor/content";
+import type {
+  PiModelSelection,
+  PiThinkingLevel,
+} from "@posthog/core/pi-runtime/piSessionController";
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { ButtonGroup } from "@posthog/quill";
-import { type AgentRuntime, ANALYTICS_EVENTS } from "@posthog/shared";
+import {
+  type AgentRuntime,
+  ANALYTICS_EVENTS,
+  getCloudUrlFromRegion,
+} from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
@@ -69,6 +77,10 @@ import type { EditorHandle } from "../../message-editor/types";
 import { useAutoFocusOnTyping } from "../../message-editor/useAutoFocusOnTyping";
 import { resolveAndAttachDroppedFiles } from "../../message-editor/utils/persistFile";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
+import {
+  PiModelSelector,
+  PiThinkingLevelSelector,
+} from "../../pi-sessions/PiSessionControls";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
 import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
@@ -206,6 +218,7 @@ export function TaskInput({
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
     setLastUsedReasoningEffort,
+    lastUsedModel,
     setLastUsedModel,
     _hasHydrated: settingsHydrated,
   } = useSettingsStore();
@@ -237,6 +250,22 @@ export function TaskInput({
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<AgentRuntime>("acp");
+  const [selectedPiModelId, setSelectedPiModelId] = useState<string | null>(
+    null,
+  );
+  const [selectedPiThinkingLevel, setSelectedPiThinkingLevel] =
+    useState<PiThinkingLevel | null>(null);
+  const piApiHost = useMemo(
+    () => (cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null),
+    [cloudRegion],
+  );
+  const { data: piModelCatalog = [], isPending: isPiConfigLoading } = useQuery({
+    ...trpc.agent.getPiModelCatalog.queryOptions({
+      apiHost: piApiHost ?? "",
+      region: cloudRegion ?? "us",
+    }),
+    enabled: runtime === "pi" && piApiHost !== null,
+  });
   const [cloudRepoSearchQuery, setCloudRepoSearchQuery] = useState("");
   const [isCloudRepoPickerOpen, setIsCloudRepoPickerOpen] = useState(false);
   const [cloudBranchSearchQuery, setCloudBranchSearchQuery] = useState("");
@@ -713,6 +742,16 @@ export function TaskInput({
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+  const currentPiModel =
+    piModelCatalog.find((model) => model.id === selectedPiModelId) ??
+    piModelCatalog.find((model) => model.id === lastUsedModel) ??
+    piModelCatalog[0];
+  const piThinkingLevels = currentPiModel?.thinkingLevels ?? [];
+  const currentPiThinkingLevel = piThinkingLevels.includes(
+    selectedPiThinkingLevel ?? "high",
+  )
+    ? (selectedPiThinkingLevel ?? "high")
+    : piThinkingLevels[0];
 
   const autoresearchEnabled = useAutoresearchEnabled();
   const armedAutoresearchDraft = useAutoresearchDraftStore(
@@ -731,6 +770,9 @@ export function TaskInput({
   const effectiveReasoningLevel = autoresearchDraft
     ? (autoresearchDraft.measureEffort ?? currentReasoningLevel)
     : currentReasoningLevel;
+  const taskModel = runtime === "pi" ? currentPiModel?.id : effectiveModel;
+  const taskReasoningLevel =
+    runtime === "pi" ? currentPiThinkingLevel : effectiveReasoningLevel;
 
   useWarmTask({
     workspaceMode,
@@ -860,9 +902,9 @@ export function TaskInput({
     editorIsEmpty,
     adapter,
     runtime,
-    executionMode: currentExecutionMode,
-    model: effectiveModel,
-    reasoningLevel: effectiveReasoningLevel,
+    executionMode: runtime === "pi" ? undefined : currentExecutionMode,
+    model: taskModel,
+    reasoningLevel: taskReasoningLevel,
     onTaskCreated,
     onTaskCreatedEffect: handleAutoresearchTaskCreated,
     environmentId: selectedEnvironment,
@@ -978,6 +1020,28 @@ export function TaskInput({
     },
     [thoughtOption, setConfigOption, setLastUsedReasoningEffort],
   );
+
+  const handleRuntimeChange = useCallback(
+    (nextRuntime: AgentRuntime) => {
+      setRuntime(nextRuntime);
+      if (nextRuntime === "pi") {
+        useAutoresearchDraftStore.getState().clearDraft(sessionId);
+      }
+    },
+    [sessionId],
+  );
+
+  const handlePiModelChange = useCallback(
+    (model: PiModelSelection) => {
+      setSelectedPiModelId(model.id);
+      setLastUsedModel(model.id);
+    },
+    [setLastUsedModel],
+  );
+
+  const handlePiThinkingLevelChange = useCallback((level: PiThinkingLevel) => {
+    setSelectedPiThinkingLevel(level);
+  }, []);
 
   const { isOnline } = useConnectivity();
   const promptSessionId = sessionId;
@@ -1108,7 +1172,7 @@ export function TaskInput({
                 {piHarnessEnabled && (
                   <AgentRuntimeSelect
                     value={runtime}
-                    onChange={setRuntime}
+                    onChange={handleRuntimeChange}
                     disabled={isCreatingTask}
                   />
                 )}
@@ -1282,15 +1346,18 @@ export function TaskInput({
                     !canSubmit ||
                     isCreatingTask ||
                     !isOnline ||
-                    isPreviewLoading
+                    (runtime === "pi" ? isPiConfigLoading : isPreviewLoading) ||
+                    (runtime === "pi" && !currentPiModel)
                   }
                   tourTarget="task-input"
                   repoPath={selectedDirectory}
-                  modeOption={modeOption}
-                  onModeChange={handleModeChange}
+                  modeOption={runtime === "pi" ? undefined : modeOption}
+                  onModeChange={runtime === "pi" ? undefined : handleModeChange}
                   allowBypassPermissions={allowBypassPermissions}
                   autoresearch={
-                    autoresearchService && autoresearchEnabled
+                    runtime !== "pi" &&
+                    autoresearchService &&
+                    autoresearchEnabled
                       ? {
                           active: !!autoresearchDraft,
                           onToggle: handleAutoresearchToggle,
@@ -1300,7 +1367,14 @@ export function TaskInput({
                   enableCommands
                   enableBashMode={false}
                   modelSelector={
-                    autoresearchDraft ? null : (
+                    autoresearchDraft ? null : runtime === "pi" ? (
+                      <PiModelSelector
+                        models={piModelCatalog}
+                        currentModel={currentPiModel}
+                        disabled={isCreatingTask || isPiConfigLoading}
+                        onChange={handlePiModelChange}
+                      />
+                    ) : (
                       <UnifiedModelSelector
                         modelOption={modelOption}
                         adapter={adapter ?? "claude"}
@@ -1319,7 +1393,16 @@ export function TaskInput({
                     />
                   }
                   reasoningSelector={
-                    autoresearchDraft ? null : (
+                    autoresearchDraft ? null : runtime === "pi" ? (
+                      currentPiThinkingLevel ? (
+                        <PiThinkingLevelSelector
+                          level={currentPiThinkingLevel}
+                          levels={piThinkingLevels}
+                          disabled={isCreatingTask || isPiConfigLoading}
+                          onChange={handlePiThinkingLevelChange}
+                        />
+                      ) : null
+                    ) : (
                       <ReasoningLevelSelector
                         thoughtOption={thoughtOption}
                         adapter={adapter}

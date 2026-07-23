@@ -1,3 +1,4 @@
+import { PI_THINKING_LEVELS } from "@posthog/agent/pi/types";
 import {
   buildChannelContextBlock,
   buildChannelContextText,
@@ -395,15 +396,15 @@ export class TaskCreationSaga extends Saga<
               pendingUserMessage,
             );
           }
-          // A cloud run always needs an explicit runtime adapter — the API rejects
-          // `initial_permission_mode` unless `runtime_adapter` is set. Callers that don't pick one
-          // (e.g. canvas generation) default to claude, matching the local-connect default below.
-          const cloudAdapter = input.adapter ?? "claude";
+          const cloudAdapter = isPiRuntime
+            ? undefined
+            : (input.adapter ?? "claude");
           const taskRun = await this.deps.posthogClient.createTaskRun(task.id, {
             environment: "cloud",
             mode: "interactive",
             branch,
             adapter: cloudAdapter,
+            ...(isPiRuntime ? { piRuntime: true } : {}),
             model: input.model,
             reasoningLevel: input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
@@ -415,9 +416,10 @@ export class TaskCreationSaga extends Saga<
             signalReportId: input.signalReportId,
             importedMcpServers: input.importedMcpServers,
             relayedMcpServers: input.relayedMcpServers,
-            initialPermissionMode:
-              input.executionMode ??
-              (cloudAdapter === "codex" ? "auto" : "plan"),
+            initialPermissionMode: cloudAdapter
+              ? (input.executionMode ??
+                (cloudAdapter === "codex" ? "auto" : "plan"))
+              : undefined,
           });
           if (!taskRun?.id) {
             throw new Error("Failed to create cloud run");
@@ -516,11 +518,16 @@ export class TaskCreationSaga extends Saga<
         name: "agent_session",
         execute: async () => {
           if (isPiRuntime) {
+            const thinkingLevel = PI_THINKING_LEVELS.find(
+              (level) => level === input.reasoningLevel,
+            );
+
             await this.deps.piRunner.create({
               taskId: task.id,
               cwd: agentCwd ?? "",
               prompt: input.content ?? "",
               model: input.model,
+              thinkingLevel,
             });
             return { taskId: task.id };
           }

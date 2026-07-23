@@ -1,6 +1,6 @@
 import { Brain, CaretDown, Lightning, Stack } from "@phosphor-icons/react";
 import type {
-  PiModelOption,
+  PiModelSelection,
   PiQueueMode,
   PiThinkingLevel,
 } from "@posthog/core/pi-runtime/piSessionController";
@@ -18,13 +18,13 @@ import type { MessagingMode } from "@posthog/ui/features/sessions/messagingModeS
 import { Fragment } from "react";
 
 interface PiModelSelectorProps {
-  models: PiModelOption[];
-  currentModel?: Pick<PiModelOption, "provider" | "id">;
+  models: PiModelSelection[];
+  currentModel?: PiModelSelection;
   disabled?: boolean;
-  onChange: (model: PiModelOption) => void;
+  onChange: (model: PiModelSelection) => void;
 }
 
-function modelKey(model: Pick<PiModelOption, "provider" | "id">): string {
+function modelKey(model: PiModelSelection): string {
   return JSON.stringify([model.provider, model.id]);
 }
 
@@ -38,7 +38,7 @@ export function PiModelSelector({
     return null;
   }
 
-  const modelsByProvider = new Map<string, PiModelOption[]>();
+  const modelsByProvider = new Map<string, PiModelSelection[]>();
   for (const model of models) {
     const providerModels = modelsByProvider.get(model.provider) ?? [];
     providerModels.push(model);

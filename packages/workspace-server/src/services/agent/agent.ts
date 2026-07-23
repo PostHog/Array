@@ -33,12 +33,12 @@ import {
   formatGatewayModelName,
   type GatewayModel,
   getClaudeModelRecency,
-  getProviderName,
   isAnthropicModel,
   isCloudflareModel,
   isOpenAIModel,
   pickAllowedModel,
 } from "@posthog/agent/gateway-models";
+import { fetchPosthogPiModelCatalog } from "@posthog/agent/pi/model-catalog";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import {
   findPrUrls,
@@ -68,6 +68,7 @@ import {
 import {
   type AcpMessage,
   type Adapter,
+  type CloudRegion,
   type ExecutionMode,
   isAuthError,
   resolveCloudInitialPermissionMode,
@@ -2274,33 +2275,13 @@ For git operations while detached:
       });
   }
 
-  async getGatewayModels(apiHost: string) {
+  async getPiModelCatalog(apiHost: string, region: CloudRegion) {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    const models = await fetchGatewayModels({
+    return fetchPosthogPiModelCatalog(
       gatewayUrl,
-      authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
-    });
-
-    const mapped = models.map((model) => ({
-      modelId: model.id,
-      name: formatGatewayModelName(model),
-      description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      provider: getProviderName(model.owned_by),
-    }));
-
-    return mapped.sort((a, b) => {
-      const providerOrder = ["Anthropic", "OpenAI", "Gemini"];
-      const aProviderIdx = providerOrder.indexOf(a.provider ?? "");
-      const bProviderIdx = providerOrder.indexOf(b.provider ?? "");
-      if (aProviderIdx !== bProviderIdx) {
-        const aIdx = aProviderIdx === -1 ? 999 : aProviderIdx;
-        const bIdx = bProviderIdx === -1 ? 999 : bProviderIdx;
-        return aIdx - bIdx;
-      }
-      return (
-        getClaudeModelRecency(a.modelId) - getClaudeModelRecency(b.modelId)
-      );
-    });
+      region,
+      (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
+    );
   }
 
   async getPreviewConfigOptions(

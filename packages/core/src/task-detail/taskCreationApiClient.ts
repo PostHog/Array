@@ -12,6 +12,7 @@ export interface CreateTaskRunClientOptions {
   mode?: "interactive" | "background";
   branch?: string | null;
   adapter?: Adapter;
+  piRuntime?: boolean;
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;

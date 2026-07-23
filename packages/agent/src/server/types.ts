@@ -52,6 +52,13 @@ export interface AgentServerConfig {
   piRpcHostPath?: string;
   runtimeAdapter?: Adapter;
   model?: string;
-  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  reasoningEffort?:
+    | "off"
+    | "minimal"
+    | "low"
+    | "medium"
+    | "high"
+    | "xhigh"
+    | "max";
   resolveRtkSavings?: () => Promise<RtkSavingsSummary | null>;
 }

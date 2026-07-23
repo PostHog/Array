@@ -72,6 +72,10 @@ export class CloudPiSessionClient implements PiSession {
     });
   }
 
+  get resumeRequired(): boolean {
+    return isTerminalStatus(this.runStatus);
+  }
+
   health(): Promise<PiRuntimeHealth> {
     if (this.runStatus === "in_progress") {
       return Promise.resolve({ state: "streaming" });
@@ -141,10 +145,12 @@ export class CloudPiSessionClient implements PiSession {
     onEvent: (event: AgentConversationEvent) => void,
     onError: (error: unknown) => void,
   ): void {
-    if (
-      (update.kind === "snapshot" || update.kind === "logs") &&
-      update.newEntries.some((entry) => entry.type === "pi_run_started")
-    ) {
+    const snapshotCanProveReadiness =
+      update.kind === "snapshot" && this.context.runStatus === "in_progress";
+    const hasCurrentReadinessEvent =
+      (update.kind === "logs" || snapshotCanProveReadiness) &&
+      update.newEntries.some((entry) => entry.type === "pi_run_started");
+    if (hasCurrentReadinessEvent) {
       this.markRuntimeReady();
     }
 

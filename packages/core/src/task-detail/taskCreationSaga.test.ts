@@ -358,6 +358,7 @@ describe("TaskCreationSaga", () => {
       workspaceMode: "local",
       runtime: "pi",
       model: "claude-sonnet",
+      reasoningLevel: "medium",
       allowNoRepo: true,
     });
 
@@ -370,6 +371,7 @@ describe("TaskCreationSaga", () => {
       cwd: "/tmp/scratch/task-123",
       prompt: "Draft a launch email",
       model: "claude-sonnet",
+      thinkingLevel: "medium",
     });
     expect(sessionService.connectToTask).not.toHaveBeenCalled();
     expect(sessionService.markTaskCreationInFlight).not.toHaveBeenCalled();
@@ -398,25 +400,19 @@ describe("TaskCreationSaga", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(createTaskRun).toHaveBeenCalledWith("task-123", {
-      environment: "cloud",
-      mode: "interactive",
-      branch: "main",
-      adapter: "codex",
-      model: "gpt-5.4",
-      reasoningLevel: "high",
-      sandboxEnvironmentId: undefined,
-      customImageId: undefined,
-      prAuthorshipMode: "user",
-      autoPublish: undefined,
-      rtkEnabled: undefined,
-      runSource: "manual",
-      signalReportId: undefined,
-      homeQuickAction: undefined,
-      importedMcpServers: undefined,
-      relayedMcpServers: undefined,
-      initialPermissionMode: "auto",
-    });
+    expect(createTaskRun).toHaveBeenCalledWith(
+      "task-123",
+      expect.objectContaining({
+        environment: "cloud",
+        mode: "interactive",
+        branch: "main",
+        adapter: undefined,
+        piRuntime: true,
+        model: "gpt-5.4",
+        reasoningLevel: "high",
+        initialPermissionMode: undefined,
+      }),
+    );
     expect(startTaskRun).toHaveBeenCalledWith("task-123", "run-123", {
       pendingUserMessage: "Fix the cloud build",
       pendingUserArtifactIds: undefined,

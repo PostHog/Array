@@ -9,7 +9,7 @@ import type {
   TaskCreationInput,
   TaskCreationOutput,
 } from "@posthog/shared";
-import type { Task } from "@posthog/shared/domain-types";
+import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
 import { PI_RUNNER } from "../pi-runtime/identifiers";
 import type { PiRunner } from "../pi-runtime/piRunner";
@@ -142,6 +142,18 @@ export class TaskService {
     return task;
   }
 
+  public async resumeCloudPiRun(
+    taskId: string,
+    taskRunId: string,
+  ): Promise<TaskRun> {
+    const posthogClient = await this.host.getAuthenticatedClient();
+    if (!posthogClient) {
+      throw new Error("Not authenticated");
+    }
+
+    return posthogClient.resumeRunInCloud(taskId, taskRunId);
+  }
+
   public async openTask(
     taskId: string,
     taskRunId?: string,
@@ -175,32 +187,10 @@ export class TaskService {
     const runtime = task.runtime === "pi" ? "pi" : "acp";
     const existingWorkspace = await this.host.getWorkspace(taskId);
     if (runtime === "pi" && task.latest_run?.environment === "cloud") {
-      try {
-        if (
-          task.latest_run.status === "completed" ||
-          task.latest_run.status === "failed" ||
-          task.latest_run.status === "cancelled"
-        ) {
-          task.latest_run = await posthogClient.resumeRunInCloud(
-            taskId,
-            task.latest_run.id,
-          );
-        }
-
-        return {
-          success: true,
-          data: { task, workspace: existingWorkspace },
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to resume cloud Pi session",
-          failedStep: "pi_session",
-        };
-      }
+      return {
+        success: true,
+        data: { task, workspace: existingWorkspace },
+      };
     }
 
     if (existingWorkspace) {

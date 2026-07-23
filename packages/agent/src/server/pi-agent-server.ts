@@ -48,6 +48,23 @@ const commandSchemas = {
 
 type PiCommandMethod = keyof typeof commandSchemas;
 
+export function resolveInitialPiPrompt(input: {
+  pendingMessage: string | null;
+  taskDescription: string | null | undefined;
+  restoredSessionFile: string | null | undefined;
+  prewarmed: boolean;
+  resumed: boolean;
+}): string | null {
+  const pendingMessage = input.pendingMessage?.trim();
+  if (pendingMessage) {
+    return pendingMessage;
+  }
+  if (input.restoredSessionFile || input.prewarmed || input.resumed) {
+    return null;
+  }
+  return input.taskDescription?.trim() || null;
+}
+
 export class PiAgentServer {
   private readonly app: Hono;
   private readonly logger = new Logger({
@@ -371,6 +388,9 @@ export class PiAgentServer {
       }
     });
     await client.start();
+    if (this.config.reasoningEffort) {
+      await client.setThinkingLevel(this.config.reasoningEffort);
+    }
     const runtimeState = await client.getState();
     this.sessionFile = runtimeState.sessionFile ?? restoredSessionFile ?? null;
     const unsubscribe = () => {
@@ -396,9 +416,14 @@ export class PiAgentServer {
       typeof state.pending_user_message === "string"
         ? state.pending_user_message
         : null;
-    const prompt = pendingMessage?.trim() || task.description?.trim();
-    const prewarmed = state.prewarmed === true;
-    if (prompt && (!prewarmed || pendingMessage)) {
+    const prompt = resolveInitialPiPrompt({
+      pendingMessage,
+      taskDescription: task.description,
+      restoredSessionFile,
+      prewarmed: state.prewarmed === true,
+      resumed: state.handoff_resumed === true,
+    });
+    if (prompt) {
       await client.prompt(prompt);
     }
   }

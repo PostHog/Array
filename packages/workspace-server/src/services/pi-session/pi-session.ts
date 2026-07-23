@@ -114,6 +114,9 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
     const session = this.registerSession(input.taskId, runtime);
 
     return this.startSession(input.taskId, client, session, async () => {
+      if (input.thinkingLevel) {
+        await client.setThinkingLevel(input.thinkingLevel);
+      }
       const state = await client.getState();
 
       if (!state.sessionFile) {

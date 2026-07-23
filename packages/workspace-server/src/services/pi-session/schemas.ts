@@ -11,6 +11,9 @@ export const startPiSessionInput = z.object({
   cwd: z.string(),
   prompt: z.string(),
   model: z.string().optional(),
+  thinkingLevel: z
+    .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+    .optional(),
 });
 
 export type StartPiSessionInput = z.infer<typeof startPiSessionInput>;

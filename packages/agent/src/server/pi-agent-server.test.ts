@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { PiAgentServer } from "./pi-agent-server";
+import { PiAgentServer, resolveInitialPiPrompt } from "./pi-agent-server";
 import type { AgentServerConfig } from "./types";
 
 function config(): AgentServerConfig {
@@ -20,6 +20,55 @@ function config(): AgentServerConfig {
 }
 
 describe("PiAgentServer", () => {
+  it.each([
+    {
+      name: "new session",
+      input: {
+        pendingMessage: null,
+        taskDescription: "initial task",
+        restoredSessionFile: null,
+        prewarmed: false,
+        resumed: false,
+      },
+      expected: "initial task",
+    },
+    {
+      name: "restored session",
+      input: {
+        pendingMessage: null,
+        taskDescription: "initial task",
+        restoredSessionFile: "/tmp/session.jsonl",
+        prewarmed: false,
+        resumed: true,
+      },
+      expected: null,
+    },
+    {
+      name: "explicit pending message on a restored session",
+      input: {
+        pendingMessage: "continue",
+        taskDescription: "initial task",
+        restoredSessionFile: "/tmp/session.jsonl",
+        prewarmed: false,
+        resumed: true,
+      },
+      expected: "continue",
+    },
+    {
+      name: "resumed session without persisted JSONL",
+      input: {
+        pendingMessage: null,
+        taskDescription: "initial task",
+        restoredSessionFile: null,
+        prewarmed: false,
+        resumed: true,
+      },
+      expected: null,
+    },
+  ])("selects the initial prompt for a $name", ({ input, expected }) => {
+    expect(resolveInitialPiPrompt(input)).toBe(expected);
+  });
+
   it.each([
     ["task", { task_id: "task-2", run_id: "run-1", team_id: 1 }],
     ["run", { task_id: "task-1", run_id: "run-2", team_id: 1 }],

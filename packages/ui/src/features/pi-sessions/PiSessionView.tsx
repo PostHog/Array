@@ -1,6 +1,6 @@
 import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
 import type {
-  PiModelOption,
+  PiModelSelection,
   PiQueueMode,
   PiSessionController,
   PiThinkingLevel,
@@ -130,7 +130,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   );
 
   const setModel = useCallback(
-    (model: PiModelOption) => {
+    (model: PiModelSelection) => {
       void piSessionController
         .setModel(taskId, model)
         .catch(() => toast.error("Failed to change Pi model"));

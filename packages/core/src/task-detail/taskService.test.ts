@@ -55,12 +55,7 @@ function makeService(): TaskService {
 }
 
 describe("TaskService.openTask", () => {
-  it("resumes a completed cloud Pi run without starting a local runtime", async () => {
-    const resumedRun = {
-      id: "run-1",
-      environment: "cloud",
-      status: "queued",
-    };
+  it("opens a completed cloud Pi run without resuming it", async () => {
     const completedRun = {
       id: "run-1",
       environment: "cloud",
@@ -73,7 +68,7 @@ describe("TaskService.openTask", () => {
         latest_run: completedRun,
       })),
       getTaskRun: vi.fn(async () => completedRun),
-      resumeRunInCloud: vi.fn(async () => resumedRun),
+      resumeRunInCloud: vi.fn(),
     };
     const workspace = { folderPath: "/repo" };
     const host = {
@@ -96,10 +91,10 @@ describe("TaskService.openTask", () => {
     const result = await service.openTask("task-1", "run-1");
 
     expect(result.success).toBe(true);
-    expect(api.resumeRunInCloud).toHaveBeenCalledWith("task-1", "run-1");
+    expect(api.resumeRunInCloud).not.toHaveBeenCalled();
     expect(piRunner.resume).not.toHaveBeenCalled();
     if (result.success) {
-      expect(result.data.task.latest_run).toBe(resumedRun);
+      expect(result.data.task.latest_run).toBe(completedRun);
       expect(result.data.workspace).toBe(workspace);
     }
   });

@@ -102,14 +102,17 @@ export const startSessionInput = z.object({
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
 
-export const modelOptionSchema = z.object({
-  modelId: z.string(),
+export const piModelCatalogEntrySchema = z.object({
+  provider: z.literal("posthog"),
+  id: z.string(),
   name: z.string(),
-  description: z.string().nullish(),
-  provider: z.string().optional(),
+  contextWindow: z.number(),
+  thinkingLevels: z.array(
+    z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]),
+  ),
 });
 
-export type ModelOption = z.infer<typeof modelOptionSchema>;
+export type PiModelCatalogEntry = z.infer<typeof piModelCatalogEntrySchema>;
 
 const sessionConfigSelectOptionSchema = z.looseObject({
   value: z.string(),
@@ -355,11 +358,12 @@ export const sessionInfoSchema = z.object({
 
 export const listSessionsOutput = z.array(sessionInfoSchema);
 
-export const getGatewayModelsInput = z.object({
+export const getPiModelCatalogInput = z.object({
   apiHost: z.string(),
+  region: z.enum(["us", "eu", "dev"]),
 });
 
-export const getGatewayModelsOutput = z.array(modelOptionSchema);
+export const getPiModelCatalogOutput = z.array(piModelCatalogEntrySchema);
 
 export const getPreviewConfigOptionsInput = z.object({
   apiHost: z.string(),

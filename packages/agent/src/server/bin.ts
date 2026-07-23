@@ -42,7 +42,7 @@ const envSchema = z.object({
   POSTHOG_CODE_RUNTIME_ADAPTER: z.enum(["claude", "codex"]).optional(),
   POSTHOG_CODE_MODEL: z.string().optional(),
   POSTHOG_CODE_REASONING_EFFORT: z
-    .enum(["low", "medium", "high", "xhigh", "max"])
+    .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
     .optional(),
   POSTHOG_AGENT_STATE_DIR: z.string().startsWith("/").optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),

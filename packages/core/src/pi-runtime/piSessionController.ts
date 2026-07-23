@@ -25,6 +25,8 @@ export type {
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
 
+export type PiModelSelection = Pick<PiModelOption, "provider" | "id">;
+
 export const PI_SESSION_PROVIDER = Symbol.for("posthog.pi.sessionProvider");
 export const LOCAL_PI_SESSION_FACTORY = Symbol.for(
   "posthog.pi.localSessionFactory",
@@ -32,6 +34,7 @@ export const LOCAL_PI_SESSION_FACTORY = Symbol.for(
 
 export interface PiSession {
   client: PiRemoteRpcClient;
+  readonly resumeRequired?: boolean;
   health(): Promise<PiRuntimeHealth>;
   getConversation(): Promise<AgentConversationEvent[]>;
   onConversationEvent(
@@ -164,7 +167,7 @@ export class PiSessionController {
     const message = text.trim();
     const action = this.getSubmitAction(message, isStreaming, messagingMode);
 
-    const session = await this.getPiSession(taskId);
+    const session = await this.getWritablePiSession(taskId);
     if (action === "compact") {
       const command = parseCommandLine(message);
       const customInstructions = command?.args?.trim() || undefined;
@@ -182,7 +185,7 @@ export class PiSessionController {
     return action;
   }
 
-  async setModel(taskId: string, model: PiModelOption): Promise<void> {
+  async setModel(taskId: string, model: PiModelSelection): Promise<void> {
     const session = await this.getPiSession(taskId);
     await session.client.setModel(model.provider, model.id);
     await this.refreshStatus(taskId);
@@ -494,6 +497,22 @@ export class PiSessionController {
     const session = await this.getPiSession(taskId);
     const status = await session.client.getState();
     this.updateSession(taskId, { status });
+  }
+
+  private async getWritablePiSession(taskId: string): Promise<PiSession> {
+    const session = await this.getPiSession(taskId);
+    const taskRunId = this.taskRunIds.get(taskId);
+    if (!session.resumeRequired || !taskRunId) {
+      return session;
+    }
+
+    const resumedRun = await this.taskService.resumeCloudPiRun(
+      taskId,
+      taskRunId,
+    );
+    this.disconnect(taskId);
+    await this.ensureConnected(taskId, resumedRun.id);
+    return this.getPiSession(taskId);
   }
 
   private bindTaskRun(taskId: string, taskRunId?: string): void {

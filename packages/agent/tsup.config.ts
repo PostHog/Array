@@ -131,6 +131,7 @@ export default defineConfig([
       "src/pi/rpc-client.ts",
       "src/pi/runtime.ts",
       "src/pi/types.ts",
+      "src/pi/model-catalog.ts",
       "src/pi/conversation/translatePiConversation.ts",
       "src/resume.ts",
       "src/types.ts",
