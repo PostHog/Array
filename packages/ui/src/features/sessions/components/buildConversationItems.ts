@@ -373,7 +373,7 @@ export function processAgentConversationEvent(
   }
 
   if (event.type === "progress") {
-    handleProgress(b, event, event.timestamp);
+    handleProgress(b, event, event.timestamp, false);
     return;
   }
 
@@ -800,9 +800,15 @@ function ensureProgressCardForGroup(
   return card;
 }
 
-function syncProgressCard(card: ProgressCardState, b: ItemBuilder) {
+function syncProgressCard(
+  card: ProgressCardState,
+  b: ItemBuilder,
+  waitForRunStarted = true,
+) {
   const gateAgentStep =
-    card.runId !== "" && !b.runStartedRunIds.has(card.runId);
+    waitForRunStarted &&
+    card.runId !== "" &&
+    !b.runStartedRunIds.has(card.runId);
   const ordered: Step[] = Array.from(card.steps.values()).map((step) =>
     step.key === "agent" && step.status === "completed" && gateAgentStep
       ? { ...step, status: "in_progress" as StepStatus }
@@ -812,7 +818,12 @@ function syncProgressCard(card: ProgressCardState, b: ItemBuilder) {
   card.renderItem.isActive = ordered.some((s) => s.status === "in_progress");
 }
 
-function handleProgress(b: ItemBuilder, rawParams: unknown, ts: number) {
+function handleProgress(
+  b: ItemBuilder,
+  rawParams: unknown,
+  ts: number,
+  waitForRunStarted = true,
+) {
   const params = rawParams as
     | {
         step?: string;
@@ -836,7 +847,7 @@ function handleProgress(b: ItemBuilder, rawParams: unknown, ts: number) {
     label: params.label,
     detail: params.detail,
   });
-  syncProgressCard(card, b);
+  syncProgressCard(card, b, waitForRunStarted);
 }
 
 function normalizeStepStatus(raw: string | undefined): StepStatus {

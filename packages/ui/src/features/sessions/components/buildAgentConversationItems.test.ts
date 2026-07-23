@@ -189,6 +189,48 @@ describe("buildAgentConversationItems", () => {
     );
   });
 
+  it("settles a completed runtime-neutral agent step", () => {
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "progress",
+          timestamp: 1,
+          step: "agent",
+          status: "in_progress",
+          label: "Starting agent",
+          group: "setup:run-1",
+        },
+        {
+          type: "progress",
+          timestamp: 2,
+          step: "agent",
+          status: "completed",
+          label: "Started agent",
+          group: "setup:run-1",
+        },
+      ],
+      true,
+    );
+
+    expect(result.items).toContainEqual(
+      expect.objectContaining({
+        type: "session_update",
+        update: {
+          sessionUpdate: "progress_group",
+          isActive: false,
+          steps: [
+            {
+              key: "agent",
+              status: "completed",
+              label: "Started agent",
+              detail: undefined,
+            },
+          ],
+        },
+      }),
+    );
+  });
+
   it("builds and completes a generic compaction status", () => {
     const result = buildAgentConversationItems(
       [
