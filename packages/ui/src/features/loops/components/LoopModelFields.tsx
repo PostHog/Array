@@ -88,22 +88,17 @@ export function LoopModelFields({
     ];
   }, [catalog, model]);
 
-  // The current effort stays selectable even when the effective model no longer
-  // supports it (a loop saved under an older default), same as the model list.
+  // An unsupported saved effort can't reach this select: `normalizeLoopFormValues`
+  // clamps it to auto when the form hydrates.
   const reasoningEffortOptions = useMemo(() => {
-    const supported = loopSupportedReasoningEfforts(adapter, model);
-    const efforts =
-      reasoningEffort && !supported.includes(reasoningEffort)
-        ? [...supported, reasoningEffort]
-        : supported;
     return [
       { value: AUTO_REASONING_VALUE, label: "Auto" },
-      ...efforts.map((effort) => ({
+      ...loopSupportedReasoningEfforts(adapter, model).map((effort) => ({
         value: effort,
         label: REASONING_EFFORT_LABELS[effort],
       })),
     ];
-  }, [adapter, model, reasoningEffort]);
+  }, [adapter, model]);
 
   const clearUnsupportedEffort = (
     nextAdapter: LoopSchemas.LoopRuntimeAdapterEnum,

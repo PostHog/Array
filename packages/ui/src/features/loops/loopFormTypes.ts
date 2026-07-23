@@ -1,5 +1,6 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { systemTimezone } from "@posthog/ui/primitives/timezone";
+import { loopSupportedReasoningEfforts } from "./loopModelDefaults";
 
 /**
  * A trigger row in the create/edit form. `key` is a client-only stable
@@ -131,10 +132,22 @@ export function emptyLoopFormValues(): LoopFormValues {
 export function normalizeLoopFormValues(
   values: LoopFormValues,
 ): LoopFormValues {
-  if (values.contextTarget && values.visibility !== "team") {
-    return { ...values, visibility: "team" };
+  let normalized = values;
+  if (normalized.contextTarget && normalized.visibility !== "team") {
+    normalized = { ...normalized, visibility: "team" };
   }
-  return values;
+  // A stored effort can predate a fire-time default change; carrying it into
+  // the form would make every save 400. It fires as auto anyway, so show that.
+  if (
+    normalized.reasoningEffort &&
+    !loopSupportedReasoningEfforts(
+      normalized.runtimeAdapter,
+      normalized.model,
+    ).includes(normalized.reasoningEffort)
+  ) {
+    normalized = { ...normalized, reasoningEffort: null };
+  }
+  return normalized;
 }
 
 export function loopToFormValues(loop: LoopSchemas.Loop): LoopFormValues {

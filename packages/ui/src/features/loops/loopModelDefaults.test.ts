@@ -27,6 +27,8 @@ describe("loopSupportedReasoningEfforts", () => {
     ["codex", "", ["low", "medium", "high"]],
     ["codex", "gpt-5.5", ["low", "medium", "high", "xhigh"]],
     ["codex", "gpt-5.6-sol", ["low", "medium", "high", "xhigh", "max"]],
+    ["codex", "gpt-unknown", ["low", "medium", "high"]],
+    ["claude", "claude-unknown", ["low", "medium", "high", "xhigh", "max"]],
   ] as const)(
     "adapter %s with model %j supports %j",
     (adapter, model, expected) => {

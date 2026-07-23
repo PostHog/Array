@@ -163,6 +163,39 @@ describe("normalizeLoopFormValues", () => {
     const values = validFormValues();
     expect(normalizeLoopFormValues(values)).toBe(values);
   });
+
+  it.each([
+    {
+      name: "unpinned claude with an effort the default model lacks",
+      overrides: { model: "", reasoningEffort: "medium" },
+      expected: null,
+    },
+    {
+      name: "unpinned claude with an effort the default model supports",
+      overrides: { model: "", reasoningEffort: "high" },
+      expected: "high",
+    },
+    {
+      name: "pinned model supporting the effort",
+      overrides: { model: "claude-sonnet-5", reasoningEffort: "medium" },
+      expected: "medium",
+    },
+    {
+      name: "unpinned codex with an effort the default model lacks",
+      overrides: {
+        runtimeAdapter: "codex",
+        model: "",
+        reasoningEffort: "max",
+      },
+      expected: null,
+    },
+  ] as const)(
+    "clamps an unsupported effort to auto: $name",
+    ({ overrides, expected }) => {
+      const values = { ...validFormValues(), ...overrides };
+      expect(normalizeLoopFormValues(values).reasoningEffort).toBe(expected);
+    },
+  );
 });
 
 describe("formValuesToLoopWrite", () => {

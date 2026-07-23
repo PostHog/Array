@@ -29,6 +29,9 @@ const EFFORTS_BY_MODEL: Record<string, LoopSchemas.LoopReasoningEffortEnum[]> =
     "claude-sonnet-4-6": LOW_TO_HIGH,
     "gpt-5": LOW_TO_HIGH,
     "gpt-5.5": ["low", "medium", "high", "xhigh"],
+    "gpt-5.6-sol": ALL_EFFORTS,
+    "gpt-5.6-terra": ALL_EFFORTS,
+    "gpt-5.6-luna": ALL_EFFORTS,
   };
 
 export function loopEffectiveModel(
@@ -42,5 +45,7 @@ export function loopSupportedReasoningEfforts(
   adapter: LoopSchemas.LoopRuntimeAdapterEnum,
   model: string,
 ): LoopSchemas.LoopReasoningEffortEnum[] {
-  return EFFORTS_BY_MODEL[loopEffectiveModel(adapter, model)] ?? ALL_EFFORTS;
+  const efforts = EFFORTS_BY_MODEL[loopEffectiveModel(adapter, model)];
+  if (efforts) return efforts;
+  return adapter === "codex" ? LOW_TO_HIGH : ALL_EFFORTS;
 }
