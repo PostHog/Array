@@ -21,7 +21,6 @@ import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTe
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { useSpaces } from "@posthog/ui/features/canvas/hooks/useSpaces";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -31,7 +30,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { navigateToChannelNewTask } from "@posthog/ui/router/navigationBridge";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { type ReactNode, useMemo, useRef } from "react";
+import { type ReactNode, useMemo } from "react";
 
 interface SpaceItem {
   key: string;
@@ -90,23 +89,16 @@ function SpaceItemRow({ item }: { item: SpaceItem }) {
 
 const RECENTS_CAP = 30;
 
-// How much horizontal trackpad travel counts as a space swipe, and how long
-// the switcher stays locked afterwards so one gesture moves one space.
-const SWIPE_THRESHOLD = 90;
-const SWIPE_LOCK_MS = 500;
-const SWIPE_RESET_MS = 300;
-
 /**
  * The sidebar body while a space (channel) is active — the Arc-style layout:
  * New task, the channel header, the channel's sections (Context / Loops /
  * Artifacts) as nav rows, then pinned and recent tasks & canvases. Slides in
- * on space switches; horizontal trackpad swipes cycle spaces.
+ * on space switches; the sidebar-wide swipe handler lives in ChannelsSidebar.
  */
 export function SpaceSidebar({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const direction = useSpaceStore((s) => s.direction);
-  const { cycle } = useSpaces();
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
 
   const { channels } = useChannels();
@@ -184,27 +176,6 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
   const pinnedItems = items.filter((i) => i.pinned);
   const recentItems = items.filter((i) => !i.pinned).slice(0, RECENTS_CAP);
 
-  // Horizontal trackpad swipe cycles spaces, Arc-style. Accumulate deltaX and
-  // fire once past the threshold; ignore mostly-vertical wheel events so list
-  // scrolling never switches spaces.
-  const swipeAccum = useRef(0);
-  const swipeLockUntil = useRef(0);
-  const swipeLastEvent = useRef(0);
-  const onWheel = (event: React.WheelEvent) => {
-    if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
-    const now = Date.now();
-    if (now < swipeLockUntil.current) return;
-    if (now - swipeLastEvent.current > SWIPE_RESET_MS) swipeAccum.current = 0;
-    swipeLastEvent.current = now;
-    swipeAccum.current += event.deltaX;
-    if (Math.abs(swipeAccum.current) >= SWIPE_THRESHOLD) {
-      const delta = swipeAccum.current > 0 ? 1 : -1;
-      swipeAccum.current = 0;
-      swipeLockUntil.current = now + SWIPE_LOCK_MS;
-      cycle(delta);
-    }
-  };
-
   const sectionRow = (
     label: string,
     icon: ReactNode,
@@ -227,7 +198,6 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
       className="flex h-full min-h-0 flex-col"
-      onWheel={onWheel}
     >
       <div className="flex flex-col gap-px px-2 pt-2">
         <SidebarItem

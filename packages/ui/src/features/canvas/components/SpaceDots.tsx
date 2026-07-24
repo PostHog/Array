@@ -1,5 +1,10 @@
-import { HashIcon, PlusIcon, UserIcon } from "@phosphor-icons/react";
+import { HashIcon, PlusIcon, UserIcon, XIcon } from "@phosphor-icons/react";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
   cn,
   Tooltip,
   TooltipContent,
@@ -8,12 +13,18 @@ import {
 } from "@posthog/quill";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
+  useChannelStarMutations,
+  useChannelStars,
+} from "@posthog/ui/features/canvas/hooks/useChannelStars";
+import {
+  type Channel,
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useSpaces } from "@posthog/ui/features/canvas/hooks/useSpaces";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
+import { useSpaceEmojiStore } from "@posthog/ui/features/canvas/stores/spaceEmojiStore";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { motion } from "framer-motion";
@@ -22,12 +33,159 @@ import { useEffect } from "react";
 const RAIL_BUTTON_CLASS =
   "flex size-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12";
 
+// Curated emoji choices for a space's dot (Arc-style space icons).
+const SPACE_EMOJIS = [
+  "🦔",
+  "🚀",
+  "🔥",
+  "⭐",
+  "🎨",
+  "📊",
+  "🧪",
+  "🔧",
+  "📦",
+  "🤖",
+  "💬",
+  "🧠",
+  "📈",
+  "🐛",
+  "🎯",
+  "⚡",
+  "🌊",
+  "📝",
+  "🔒",
+  "❤️",
+] as const;
+
+// One space in the dot row: an emoji (if set), the person glyph for "#me", or
+// a plain dot. Right-click offers emoji selection and, for starred channels,
+// removing the space.
+function SpaceDot({
+  channel,
+  active,
+  unread,
+  onSelect,
+}: {
+  channel: Channel;
+  active: boolean;
+  unread: boolean;
+  onSelect: () => void;
+}) {
+  const isMe = channel.name === PERSONAL_CHANNEL_NAME;
+  const emoji = useSpaceEmojiStore((s) => s.emojiByChannelId[channel.id]);
+  const setEmoji = useSpaceEmojiStore((s) => s.setEmoji);
+  const { starredRefToShortcutId } = useChannelStars();
+  const { unstar } = useChannelStarMutations();
+  const shortcutId = starredRefToShortcutId.get(channel.path);
+
+  const removeSpace = () => {
+    if (!shortcutId) return;
+    unstar(shortcutId).catch((error: unknown) => {
+      toast.error("Couldn't remove space", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
+
+  const glyph = emoji ? (
+    <motion.span
+      animate={{ scale: active ? 1.25 : 1 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      className={cn(
+        "block text-[11px] leading-none transition-opacity",
+        active ? "opacity-100" : "opacity-60 group-hover:opacity-90",
+      )}
+    >
+      {emoji}
+    </motion.span>
+  ) : isMe ? (
+    <UserIcon
+      size={12}
+      weight={active ? "fill" : "regular"}
+      className={cn(
+        "transition-colors",
+        active ? "text-gray-12" : "text-gray-9 group-hover:text-gray-11",
+      )}
+    />
+  ) : (
+    <motion.span
+      animate={{ scale: active ? 1.4 : 1 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      className={cn(
+        "block size-1.5 rounded-full transition-colors",
+        active
+          ? "bg-gray-12"
+          : unread
+            ? "bg-blue-9 group-hover:bg-blue-10"
+            : "bg-gray-7 group-hover:bg-gray-10",
+      )}
+    />
+  );
+
+  return (
+    <ContextMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ContextMenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`# ${channel.name}`}
+                  onClick={onSelect}
+                  className="group flex size-4 shrink-0 items-center justify-center"
+                >
+                  {glyph}
+                </button>
+              }
+            />
+          }
+        />
+        <TooltipContent side="top"># {channel.name}</TooltipContent>
+      </Tooltip>
+      <ContextMenuContent className="w-48">
+        {/* Emoji grid — plain buttons inside the menu, not menu items, so a
+            pick doesn't need per-emoji rows. */}
+        <div className="grid grid-cols-5 gap-0.5 p-1">
+          {SPACE_EMOJIS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-label={`Set emoji ${option}`}
+              onClick={() => setEmoji(channel.id, option)}
+              className={cn(
+                "flex size-7 items-center justify-center rounded text-[14px] transition-colors hover:bg-gray-3",
+                emoji === option && "bg-gray-4",
+              )}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        {(emoji || (!isMe && shortcutId)) && <ContextMenuSeparator />}
+        {emoji && (
+          <ContextMenuItem onClick={() => setEmoji(channel.id, null)}>
+            <XIcon size={14} />
+            Remove emoji
+          </ContextMenuItem>
+        )}
+        {!isMe && shortcutId && (
+          <ContextMenuItem onClick={removeSpace}>
+            <XIcon size={14} />
+            Remove space
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 /**
- * The Arc-style space switcher pinned above the sidebar footer. The personal
- * "#me" space is always first; then one dot per space. The "#" toggles the
- * sidebar body into the all-channels list; the "+" opens a draft new space
- * (choose a channel or create one) with its own temporary dot. Ctrl+Alt+←/→
- * cycles spaces.
+ * The Arc-style space switcher pinned above the sidebar footer. "#me" is
+ * always the first space in the row; added spaces append to the right. The
+ * "#" toggles the sidebar body into the all-channels list; the "+" opens a
+ * draft new space with its own temporary dot. Ctrl+Alt+←/→ and horizontal
+ * swipes cycle spaces.
  */
 export function SpaceDots() {
   const { spaces, currentChannelId, switchTo, cycle } = useSpaces();
@@ -54,15 +212,11 @@ export function SpaceDots() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [cycle]);
 
-  const meChannel = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
-  const meActive =
-    !!meChannel &&
-    meChannel.id === currentChannelId &&
-    !browsing &&
-    !draftSpace;
-  const dotSpaces = spaces.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
+  const hasMe = spaces.some((c) => c.name === PERSONAL_CHANNEL_NAME);
+  const overrideOpen = browsing || draftSpace;
 
-  // Open (creating on first use) the personal space.
+  // Open (creating on first use) the personal space — only needed while the
+  // "#me" channel doesn't exist yet; afterwards it's a regular dot.
   const openPersonalSpace = () => {
     ensurePersonalChannel(channels, createChannel)
       .then((me) => switchTo(me))
@@ -98,63 +252,37 @@ export function SpaceDots() {
           <TooltipContent side="top">All channels</TooltipContent>
         </Tooltip>
 
-        {/* The personal space — always present, always first. */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label="# me (personal space)"
-                onClick={openPersonalSpace}
-                className={cn(
-                  RAIL_BUTTON_CLASS,
-                  meActive && "bg-gray-3 text-gray-12",
-                )}
-              >
-                <UserIcon size={12} weight={meActive ? "fill" : "regular"} />
-              </button>
-            }
-          />
-          <TooltipContent side="top"># me</TooltipContent>
-        </Tooltip>
-
         <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden">
-          {dotSpaces.map((channel) => {
-            const active =
-              channel.id === currentChannelId && !browsing && !draftSpace;
-            return (
-              <Tooltip key={channel.id}>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`# ${channel.name}`}
-                      onClick={() => switchTo(channel)}
-                      className="group flex size-4 shrink-0 items-center justify-center"
-                    >
-                      <motion.span
-                        animate={{ scale: active ? 1.4 : 1 }}
-                        transition={{
-                          type: "spring",
-                          stiffness: 500,
-                          damping: 30,
-                        }}
-                        className={cn(
-                          "block size-1.5 rounded-full transition-colors",
-                          active
-                            ? "bg-gray-12"
-                            : isUnread(channel.name)
-                              ? "bg-blue-9 group-hover:bg-blue-10"
-                              : "bg-gray-7 group-hover:bg-gray-10",
-                        )}
-                      />
-                    </button>
-                  }
-                />
-                <TooltipContent side="top"># {channel.name}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+          {/* "#me" not provisioned yet: show its slot anyway, first. */}
+          {!hasMe && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="# me (personal space)"
+                    onClick={openPersonalSpace}
+                    className="group flex size-4 shrink-0 items-center justify-center"
+                  >
+                    <UserIcon
+                      size={12}
+                      className="text-gray-9 transition-colors group-hover:text-gray-11"
+                    />
+                  </button>
+                }
+              />
+              <TooltipContent side="top"># me</TooltipContent>
+            </Tooltip>
+          )}
+          {spaces.map((channel) => (
+            <SpaceDot
+              key={channel.id}
+              channel={channel}
+              active={channel.id === currentChannelId && !overrideOpen}
+              unread={isUnread(channel.name)}
+              onSelect={() => switchTo(channel)}
+            />
+          ))}
           {/* The draft space's temporary dot — a hollow placeholder until a
               channel is chosen or created. */}
           {draftSpace && (
