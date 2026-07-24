@@ -1,4 +1,4 @@
-import { Kanban, ListBullets, User } from "@phosphor-icons/react";
+import { Kanban, ListBullets, Plus, User } from "@phosphor-icons/react";
 import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
 import { Button } from "@posthog/quill";
@@ -9,6 +9,7 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { ChannelBoardView } from "@posthog/ui/features/canvas/components/ChannelBoardView";
+import { ChannelCreateTaskDialog } from "@posthog/ui/features/canvas/components/ChannelCreateTaskDialog";
 import {
   ChannelFeedView,
   type PendingKickoff,
@@ -180,6 +181,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // The "Create your context.md" dialog, opened from the welcome message's
   // onboarding checklist. Describe-mode: seeds a plan session for this context.
   const [contextMdDialogOpen, setContextMdDialogOpen] = useState(false);
+  const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false);
   const [previewTask, setPreviewTask] = useState<Task | null>(null);
 
   const threadTaskId = useThreadPanelStore(
@@ -349,23 +351,35 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
               Me
             </Button>
           </div>
-          <div className="ml-auto flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
-            <Button
-              size="sm"
-              variant={viewMode === "feed" ? "primary" : "link-muted"}
-              onClick={() => setViewMode("feed")}
-            >
-              <ListBullets size={14} />
-              Feed
-            </Button>
-            <Button
-              size="sm"
-              variant={viewMode === "board" ? "primary" : "link-muted"}
-              onClick={() => setViewMode("board")}
-            >
-              <Kanban size={14} />
-              Board
-            </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {viewMode === "board" ? (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => setCreateTaskDialogOpen(true)}
+              >
+                <Plus size={14} />
+                New task
+              </Button>
+            ) : null}
+            <div className="flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
+              <Button
+                size="sm"
+                variant={viewMode === "feed" ? "primary" : "link-muted"}
+                onClick={() => setViewMode("feed")}
+              >
+                <ListBullets size={14} />
+                Feed
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === "board" ? "primary" : "link-muted"}
+                onClick={() => setViewMode("board")}
+              >
+                <Kanban size={14} />
+                Board
+              </Button>
+            </div>
           </div>
         </div>
         {viewMode === "board" ? (
@@ -391,18 +405,20 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             onOpenThread={handleOpenThread}
           />
         )}
-        <div className="mx-auto w-full px-4 pb-4">
-          <ChannelHomeComposer
-            ref={composerRef}
-            channelId={channelId}
-            channelName={channelName}
-            channelContext={channelContext}
-            backendChannelId={backendChannel?.id}
-            onTaskCreated={onTaskCreated}
-            onPendingStart={addPending}
-            onPendingEnd={removePending}
-          />
-        </div>
+        {viewMode === "feed" ? (
+          <div className="mx-auto w-full px-4 pb-4">
+            <ChannelHomeComposer
+              ref={composerRef}
+              channelId={channelId}
+              channelName={channelName}
+              channelContext={channelContext}
+              backendChannelId={backendChannel?.id}
+              onTaskCreated={onTaskCreated}
+              onPendingStart={addPending}
+              onPendingEnd={removePending}
+            />
+          </div>
+        ) : null}
       </div>
 
       {threadTaskId && (
@@ -431,6 +447,14 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           setPreviewTask(null);
           handleOpenFull(task.id);
         }}
+      />
+      <ChannelCreateTaskDialog
+        open={createTaskDialogOpen}
+        channelId={channelId}
+        channelName={channelName}
+        channelContext={channelContext}
+        onOpenChange={setCreateTaskDialogOpen}
+        onTaskCreated={onTaskCreated}
       />
     </div>
   );
