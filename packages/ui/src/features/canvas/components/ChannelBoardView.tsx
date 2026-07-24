@@ -6,6 +6,11 @@ import {
   GitPullRequest,
   XCircle,
 } from "@phosphor-icons/react";
+import {
+  getPrVisualConfig,
+  type PrVisualConfig,
+  parsePrNumber,
+} from "@posthog/core/git-interaction/prStatus";
 import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import {
   TASK_BOARD_STATUSES,
@@ -22,7 +27,7 @@ import {
 import type { ChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { PRBadgeLink } from "@posthog/ui/features/git-interaction/components/PRBadgeLink";
+import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
 import {
   WorkBoard,
   type WorkBoardColumn,
@@ -34,6 +39,12 @@ import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
+const PR_BUTTON_COLOR_CLASSES: Record<PrVisualConfig["color"], string> = {
+  gray: "border-(--gray-6) text-(--gray-11) hover:bg-(--gray-3)",
+  green: "border-(--green-6) text-(--green-11) hover:bg-(--green-3)",
+  red: "border-(--red-6) text-(--red-11) hover:bg-(--red-3)",
+  purple: "border-(--purple-6) text-(--purple-11) hover:bg-(--purple-3)",
+};
 const STATUS_VISUAL: Record<
   TaskBoardStatus,
   {
@@ -216,14 +227,7 @@ function ChannelBoardCard({
         </span>
       ) : null}
       {prUrl && prState ? (
-        <div className="w-fit">
-          <PRBadgeLink
-            prUrl={prUrl}
-            prState={prState === "merged" ? "closed" : prState}
-            merged={prState === "merged"}
-            draft={prState === "draft"}
-          />
-        </div>
+        <BoardPrButton prUrl={prUrl} prState={prState} />
       ) : prUrl ? (
         <Button
           variant="outline"
@@ -258,5 +262,37 @@ function ChannelBoardCard({
         </button>
       </div>
     </Box>
+  );
+}
+
+function BoardPrButton({
+  prUrl,
+  prState,
+}: {
+  prUrl: string;
+  prState: Exclude<SidebarPrState, null>;
+}) {
+  const config = getPrVisualConfig(
+    prState === "merged" ? "closed" : prState,
+    prState === "merged",
+    prState === "draft",
+  );
+  const PrIcon = getPrVisualIcon(config.icon);
+  const prNumber = parsePrNumber(prUrl);
+
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      className={`w-fit ${PR_BUTTON_COLOR_CLASSES[config.color]}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        void openUrlInBrowser(prUrl);
+      }}
+    >
+      <PrIcon size={11} weight="bold" />
+      {config.label}
+      {prNumber ? ` #${prNumber}` : null}
+    </Button>
   );
 }
