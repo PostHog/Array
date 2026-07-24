@@ -24,6 +24,31 @@ function isGlmModelId(modelId: string): boolean {
   return modelId.toLowerCase().includes("glm");
 }
 
+// Served-catalog stand-in while the preview config loads or when the request
+// fails, so the picker never collapses to "Default" alone. Matches the
+// backend's per-adapter catalogs in process_task/utils.py minus client-blocked
+// models; the served catalog stays authoritative once it arrives.
+const FALLBACK_MODEL_OPTIONS: Record<
+  LoopSchemas.LoopRuntimeAdapterEnum,
+  LoopModelOption[]
+> = {
+  claude: [
+    { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    { value: "claude-opus-4-7", label: "Claude Opus 4.7" },
+    { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
+    { value: "claude-sonnet-5", label: "Claude Sonnet 5" },
+    { value: "claude-fable-5", label: "Claude Fable 5" },
+    { value: "@cf/zai-org/glm-5.2", label: "GLM-5.2" },
+  ],
+  codex: [
+    { value: "gpt-5", label: "GPT-5" },
+    { value: "gpt-5.5", label: "GPT-5.5" },
+    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+    { value: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+    { value: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+  ],
+};
+
 /** The model a loop's runs use, for display: the pinned id, or the adapter's
  * loop default (which differs from the live-session default the
  * ReportModelResolver serves, so it can't be resolved from there). */
@@ -42,6 +67,7 @@ export function formatLoopModel(
  * model always stays selectable so an existing loop's model never drops out.
  */
 export function loopModelOptions(
+  adapter: LoopSchemas.LoopRuntimeAdapterEnum,
   configOptions: SessionConfigOption[],
   { glmEnabled, pinnedModel }: { glmEnabled: boolean; pinnedModel: string },
 ): LoopModelOption[] {
@@ -51,19 +77,18 @@ export function loopModelOptions(
   const served =
     modelOption?.type === "select"
       ? flattenSelectOptions(modelOption.options)
+          .filter((option) => !isRestrictedModelOption(option._meta))
+          .map((option) => ({
+            value: option.value,
+            label: option.name ?? option.value,
+          }))
       : [];
-  const options = served
-    .filter((option) => !isRestrictedModelOption(option._meta))
-    .filter(
-      (option) =>
-        glmEnabled ||
-        option.value === pinnedModel ||
-        !isGlmModelId(option.value),
-    )
-    .map((option) => ({
-      value: option.value,
-      label: option.name ?? option.value,
-    }));
+  const options = (
+    served.length > 0 ? served : FALLBACK_MODEL_OPTIONS[adapter]
+  ).filter(
+    (option) =>
+      glmEnabled || option.value === pinnedModel || !isGlmModelId(option.value),
+  );
   if (pinnedModel && !options.some((option) => option.value === pinnedModel)) {
     options.push({ value: pinnedModel, label: pinnedModel });
   }

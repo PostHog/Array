@@ -60,9 +60,12 @@ export function LoopModelFields({
   const modelOptions = useMemo(
     () => [
       { value: DEFAULT_MODEL_VALUE, label: "Default (recommended)" },
-      ...loopModelOptions(configOptions, { glmEnabled, pinnedModel: model }),
+      ...loopModelOptions(adapter, configOptions, {
+        glmEnabled,
+        pinnedModel: model,
+      }),
     ],
-    [configOptions, glmEnabled, model],
+    [adapter, configOptions, glmEnabled, model],
   );
 
   const reasoningOptions = useMemo(

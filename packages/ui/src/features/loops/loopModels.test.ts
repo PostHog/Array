@@ -35,7 +35,10 @@ const claudeOptions = modelConfigOption([
 describe("loopModelOptions", () => {
   it("maps served model options to value/label pairs", () => {
     expect(
-      loopModelOptions(claudeOptions, { glmEnabled: true, pinnedModel: "" }),
+      loopModelOptions("claude", claudeOptions, {
+        glmEnabled: true,
+        pinnedModel: "",
+      }),
     ).toEqual([
       { value: "claude-sonnet-5", label: "Claude Sonnet 5" },
       { value: "@cf/zai-org/glm-5.2", label: "GLM-5.2" },
@@ -51,7 +54,10 @@ describe("loopModelOptions", () => {
       },
     ]);
     expect(
-      loopModelOptions(grouped, { glmEnabled: true, pinnedModel: "" }),
+      loopModelOptions("claude", grouped, {
+        glmEnabled: true,
+        pinnedModel: "",
+      }),
     ).toEqual([{ value: "claude-sonnet-5", label: "Claude Sonnet 5" }]);
   });
 
@@ -65,7 +71,10 @@ describe("loopModelOptions", () => {
       },
     ]);
     expect(
-      loopModelOptions(withRestricted, { glmEnabled: true, pinnedModel: "" }),
+      loopModelOptions("claude", withRestricted, {
+        glmEnabled: true,
+        pinnedModel: "",
+      }),
     ).toEqual([{ value: "claude-sonnet-5", label: "Claude Sonnet 5" }]);
   });
 
@@ -89,7 +98,7 @@ describe("loopModelOptions", () => {
       expectedValues: ["claude-sonnet-5", "@cf/zai-org/glm-5.2"],
     },
   ])("$name", ({ glmEnabled, pinnedModel, expectedValues }) => {
-    const values = loopModelOptions(claudeOptions, {
+    const values = loopModelOptions("claude", claudeOptions, {
       glmEnabled,
       pinnedModel,
     }).map((option) => option.value);
@@ -98,17 +107,62 @@ describe("loopModelOptions", () => {
 
   it("keeps a pinned model that the catalog no longer serves", () => {
     expect(
-      loopModelOptions(claudeOptions, {
+      loopModelOptions("claude", claudeOptions, {
         glmEnabled: true,
         pinnedModel: "claude-opus-4-6",
       }),
     ).toContainEqual({ value: "claude-opus-4-6", label: "claude-opus-4-6" });
   });
 
-  it("returns no options when the config has no model select", () => {
-    expect(loopModelOptions([], { glmEnabled: true, pinnedModel: "" })).toEqual(
-      [],
-    );
+  it.each<{
+    name: string;
+    adapter: LoopSchemas.LoopRuntimeAdapterEnum;
+    glmEnabled: boolean;
+    expectedValues: string[];
+  }>([
+    {
+      name: "falls back to the known claude models when the config has no model select",
+      adapter: "claude",
+      glmEnabled: true,
+      expectedValues: [
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "claude-fable-5",
+        "@cf/zai-org/glm-5.2",
+      ],
+    },
+    {
+      name: "falls back to the known codex models when the config has no model select",
+      adapter: "codex",
+      glmEnabled: true,
+      expectedValues: [
+        "gpt-5",
+        "gpt-5.5",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+      ],
+    },
+    {
+      name: "applies the GLM flag to the fallback list",
+      adapter: "claude",
+      glmEnabled: false,
+      expectedValues: [
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "claude-fable-5",
+      ],
+    },
+  ])("$name", ({ adapter, glmEnabled, expectedValues }) => {
+    const values = loopModelOptions(adapter, [], {
+      glmEnabled,
+      pinnedModel: "",
+    }).map((option) => option.value);
+    expect(values).toEqual(expectedValues);
   });
 });
 
