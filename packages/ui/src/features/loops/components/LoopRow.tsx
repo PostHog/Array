@@ -1,5 +1,6 @@
 import { CaretRightIcon, RepeatIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { formatRelativeTimeLong } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { Badge } from "@posthog/ui/primitives/Badge";
@@ -71,11 +72,19 @@ export function LoopRow({
               {description}
             </Text>
           ) : null}
-          {metadata.length > 0 ? (
-            <Text className="mt-0.5 text-(--accent-11) text-[11px] leading-snug">
-              {metadata.join(" · ")}
+          <Flex align="center" gap="1" wrap="wrap" className="mt-0.5">
+            {metadata.length > 0 ? (
+              <Text className="text-(--accent-11) text-[11px] leading-snug">
+                {metadata.join(" · ")}
+              </Text>
+            ) : null}
+            {metadata.length > 0 ? (
+              <Text className="text-[11px] text-gray-9">·</Text>
+            ) : null}
+            <Text className="text-[11px] text-gray-9">
+              Created {formatRelativeTimeLong(loop.created_at)}
             </Text>
-          ) : null}
+          </Flex>
         </Flex>
       </Flex>
       <Flex align="center" gap="3" className="shrink-0">

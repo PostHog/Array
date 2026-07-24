@@ -81,11 +81,15 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
         <Flex
           direction="column"
           gap="6"
-          className="mx-auto w-full max-w-3xl px-8 py-8"
+          className="@container mx-auto w-full max-w-3xl px-8 py-8"
         >
-          <Flex align="center" justify="between" gap="3">
-            <Flex direction="column" gap="1" className="min-w-0 max-w-[70%]">
-              <Flex align="center" gap="2">
+          <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
+            <Flex
+              direction="column"
+              gap="1"
+              className="w-full min-w-0 @min-[640px]:max-w-[70%]"
+            >
+              <Flex align="center" gap="2" wrap="wrap">
                 <Heading className="font-bold text-2xl">
                   Automate #{contextName}
                 </Heading>
@@ -119,7 +123,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               <PlusIcon size={14} />
               Create manually
             </Button>
-          </Flex>
+          </div>
 
           {isLoading ? (
             <LoopsSkeleton />
@@ -140,7 +144,11 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Flex>
             </Flex>
           ) : (
-            <LoopsEmptyState contextName={contextName} />
+            <LoopsEmptyState
+              contextName={contextName}
+              onCreate={startBlank}
+              disabledReason={limitReason}
+            />
           )}
         </Flex>
       </div>
