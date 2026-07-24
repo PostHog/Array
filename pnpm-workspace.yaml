@@ -27,8 +27,8 @@ catalog:
   '@types/react-dom': ^19.2.3
   hono: ^4.6.14
   inversify: ^7.10.6
-  react: 19.2.6
-  react-dom: 19.2.6
+  react: 19.1.0
+  react-dom: 19.1.0
   reflect-metadata: ^0.2.2
   superjson: ^2.2.2
   tsup: ^8.5.1
@@ -83,11 +83,11 @@ overrides:
   # Dedupe the zod 4.x line to one version so cross-package schema types stay
   # nameable (TS2742). Scoped to 4.x; 3.x consumers are untouched.
   'zod@^4.0.0': 4.4.3
-  # Keep one React across the monorepo so apps/code and apps/mobile share an
-  # instance (react-test-renderer must match react).
-  react: 19.2.6
-  react-dom: 19.2.6
-  react-test-renderer: 19.2.6
+  # Keep one React across the monorepo so shared packages resolve one runtime;
+  # Expo 54 and React Native 0.81 embed the React 19.1 renderer.
+  react: 19.1.0
+  react-dom: 19.1.0
+  react-test-renderer: 19.1.0
   # Dedupe @types/react so shared UI Ref types unify across apps (a second copy
   # makes nominally-distinct Ref types and breaks ref props in packages/ui).
   '@types/react': ^19.2.15
