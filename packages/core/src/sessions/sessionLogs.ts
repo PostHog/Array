@@ -1,4 +1,5 @@
 import type { Adapter, StoredLogEntry } from "@posthog/shared";
+import { capStoredEntryPayloads } from "./sessionEntryCaps";
 
 export interface ParsedSessionLogs {
   rawEntries: StoredLogEntry[];
@@ -21,7 +22,7 @@ export function parseSessionLogContent(
   for (const line of lines) {
     try {
       const stored = JSON.parse(line) as StoredLogEntry;
-      rawEntries.push(stored);
+      rawEntries.push(capStoredEntryPayloads(stored));
 
       if (
         stored.type === "notification" &&

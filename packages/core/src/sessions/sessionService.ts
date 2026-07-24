@@ -81,6 +81,7 @@ import {
   type PermissionSelectionPlan,
   planPermissionResponse,
 } from "./permissionResponse";
+import { capStoredEntries } from "./sessionEntryCaps";
 import {
   convertStoredEntriesToEvents,
   createUserShellExecuteEvent,
@@ -6039,7 +6040,7 @@ export class SessionService {
             });
             return;
           }
-          rawEntries = result.entries;
+          rawEntries = capStoredEntries(result.entries);
           const markedLeafStart = rawEntries.findIndex(
             (entry) => getEntryTaskRunMarker(entry) === taskRunId,
           );
@@ -6072,8 +6073,12 @@ export class SessionService {
             });
             return;
           }
-          const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
-          const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
+          const ancestorEntries: StoredLogEntry[] = capStoredEntries(
+            ancestorResult.entries,
+          );
+          const currentRunEntries: StoredLogEntry[] = capStoredEntries(
+            currentRunResult.entries,
+          );
           const ancestorKeys = ancestorEntries.map((entry) =>
             JSON.stringify(entry),
           );
@@ -6123,7 +6128,7 @@ export class SessionService {
           });
           return;
         }
-        rawEntries = result.entries;
+        rawEntries = capStoredEntries(result.entries);
         liveStreamLineCount = rawEntries.length;
         // A terminal run whose persisted chain comes back empty can still
         // have a complete S3 session log (persistence raced teardown); fall

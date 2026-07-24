@@ -16,6 +16,10 @@ import {
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { inject, injectable, optional, preDestroy } from "inversify";
+import {
+  capStoredEntries,
+  capStoredEntryPayloads,
+} from "../sessions/sessionEntryCaps";
 import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
 import {
   CLOUD_TASK_AUTH,
@@ -1617,7 +1621,9 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       return null;
     }
 
-    watcher.pendingLogEntries.push(event.data as StoredLogEntry);
+    watcher.pendingLogEntries.push(
+      capStoredEntryPayloads(event.data as StoredLogEntry),
+    );
     if (watcher.pendingLogEntries.length >= EVENT_BATCH_MAX_SIZE) {
       this.flushLogBatch(key);
       return null;
@@ -2095,7 +2101,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
 
       const raw = await authedResponse.text();
       return {
-        entries: JSON.parse(raw) as StoredLogEntry[],
+        entries: capStoredEntries(JSON.parse(raw) as StoredLogEntry[]),
         hasMore: authedResponse.headers.get("X-Has-More") === "true",
       };
     } catch (error) {
