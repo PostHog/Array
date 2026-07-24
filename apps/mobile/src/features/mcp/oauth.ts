@@ -1,13 +1,13 @@
-import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
-import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import type {
   InstallCustomMcpServerOptions,
   InstallMcpTemplateOptions,
   McpInstallResponse,
   McpServerInstallation,
-} from "./types";
-import { isOAuthRedirect } from "./types";
+} from "@posthog/api-client/types";
+import { isMcpOAuthRedirect } from "@posthog/core/mcp-servers/presentation";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 
 /** Custom URL scheme registered via app.json (`scheme: "posthog"`). The cloud
  *  bounces the OAuth redirect back to this URL once the provider completes
@@ -54,7 +54,7 @@ export async function installTemplateWithOAuth(
       posthog_code_callback_url: OAUTH_CALLBACK_URL,
     });
 
-  if (!isOAuthRedirect(response)) return response;
+  if (!isMcpOAuthRedirect(response)) return response;
 
   const outcome = await waitForOAuthCallback(response.redirect_url);
   if (outcome === "cancelled") return "cancelled";
@@ -79,7 +79,7 @@ export async function installCustomWithOAuth(
       posthog_code_callback_url: OAUTH_CALLBACK_URL,
     });
 
-  if (!isOAuthRedirect(response)) return response;
+  if (!isMcpOAuthRedirect(response)) return response;
   const outcome = await waitForOAuthCallback(response.redirect_url);
   return outcome === "cancelled" ? "cancelled" : "cancelled";
 }

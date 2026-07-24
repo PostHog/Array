@@ -1,11 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import type {
   InstallCustomMcpServerOptions,
   InstallMcpTemplateOptions,
   McpApprovalState,
   UpdateMcpServerInstallationOptions,
-} from "./types";
+} from "@posthog/api-client/types";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 
 const mcpKeys = {
   all: ["mcp"] as const,

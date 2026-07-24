@@ -1,4 +1,6 @@
 import { Text } from "@components/text";
+import type { McpApprovalState } from "@posthog/api-client/types";
+import { isStdioMcpServer } from "@posthog/core/mcp-servers/presentation";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowsClockwise,
@@ -28,8 +30,6 @@ import {
 } from "@/features/mcp/hooks";
 import { reauthorizeInstallation } from "@/features/mcp/oauth";
 import { getMcpConnectionManager } from "@/features/mcp/service";
-import type { McpApprovalState } from "@/features/mcp/types";
-import { isStdioServer } from "@/features/mcp/types";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
@@ -75,7 +75,7 @@ export default function McpInstallationDetailScreen() {
     );
   }
 
-  const stdio = isStdioServer(installation);
+  const stdio = isStdioMcpServer(installation);
 
   const handleEnabledChange = (enabled: boolean) => {
     updateMutation.mutate({
