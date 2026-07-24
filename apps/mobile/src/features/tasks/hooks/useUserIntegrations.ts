@@ -1,8 +1,13 @@
+import { combineUserGithubRepositories } from "@posthog/core/integrations/repositories";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
-import type { RepositoryOption, UserGithubIntegration } from "../types";
+import type { RepositoryOption } from "../types";
+import {
+  buildUserRepositoryOptions,
+  repositoryLoadWarning,
+} from "../utils/repositorySelection";
 
 /**
  * User-scoped sibling of {@link useIntegrations}. Reads the authenticated
@@ -27,10 +32,6 @@ export const userIntegrationKeys = {
 
 interface UseUserIntegrationsOptions {
   enabled?: boolean;
-}
-
-function integrationLabel(integration: UserGithubIntegration): string {
-  return integration.account?.name ?? `GitHub ${integration.installation_id}`;
 }
 
 export function useUserIntegrations(options: UseUserIntegrationsOptions = {}) {
@@ -62,7 +63,6 @@ export function useUserIntegrations(options: UseUserIntegrationsOptions = {}) {
       integrations.map((i) => i.installation_id),
     ),
     queryFn: async () => {
-      const byInstallation: Record<string, string[]> = {};
       const results = await Promise.allSettled(
         integrations.map(async (integration) => ({
           installationId: integration.installation_id,
@@ -72,47 +72,48 @@ export function useUserIntegrations(options: UseUserIntegrationsOptions = {}) {
             )
           )
             .map((repository) => repository.toLowerCase())
-            .filter((repository) => repository.length > 0),
+            .filter(Boolean),
         })),
       );
 
-      let failedCount = 0;
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          byInstallation[result.value.installationId] =
-            result.value.repositories;
-        } else {
-          failedCount += 1;
-        }
-      }
+      const combined = combineUserGithubRepositories(
+        results.map((result) => ({
+          data:
+            result.status === "fulfilled"
+              ? {
+                  userIntegrationId:
+                    integrations.find(
+                      (integration) =>
+                        integration.installation_id ===
+                        result.value.installationId,
+                    )?.id ?? "",
+                  installationId: result.value.installationId,
+                  repos: result.value.repositories,
+                }
+              : undefined,
+          isPending: false,
+          isError: result.status === "rejected",
+          isRefetching: false,
+        })),
+        integrations.map((integration) => integration.installation_id),
+      );
 
       return {
-        byInstallation,
-        partialError:
-          failedCount === 0
-            ? null
-            : failedCount === integrations.length
-              ? "Could not load GitHub repositories. Pull to retry."
-              : "Some GitHub repositories could not be loaded. Pull to retry.",
+        byInstallation: combined.reposByInstallationId,
+        partialError: repositoryLoadWarning(
+          combined.failedInstallationIds.length,
+          integrations.length,
+        ),
       };
     },
     enabled: enabled && integrations.length > 0,
   });
 
   const repositoryOptions = useMemo<RepositoryOption[]>(() => {
-    const byInstallation = repositoriesQuery.data?.byInstallation ?? {};
-    return integrations
-      .flatMap((integration) => {
-        const repositories = byInstallation[integration.installation_id] ?? [];
-        return repositories.map((repository) => ({
-          // GitHub installation ids fit in a JS number; use it as the numeric
-          // key the picker/RepositoryOption already expect.
-          integrationId: Number(integration.installation_id),
-          integrationLabel: integrationLabel(integration),
-          repository,
-        }));
-      })
-      .sort((left, right) => left.repository.localeCompare(right.repository));
+    return buildUserRepositoryOptions(
+      integrations,
+      repositoriesQuery.data?.byInstallation ?? {},
+    );
   }, [integrations, repositoriesQuery.data]);
 
   /** Resolve the `UserIntegration` UUID for a selected installation id, to send
