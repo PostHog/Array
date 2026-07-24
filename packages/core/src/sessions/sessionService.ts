@@ -1591,6 +1591,7 @@ export class SessionService {
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
   private pendingPermissionHydratedRuns = new Set<string>();
+  /** In-flight hydrations keyed by `${taskRunId}:${hydrationMode}` */
   private cloudHydrationPromises = new Map<
     string,
     Promise<CloudHydrationResult | undefined>
@@ -5529,6 +5530,25 @@ export class SessionService {
       if (onStatusChange) {
         existingWatcher.onStatusChange = onStatusChange;
       }
+      // The run finished while a live watcher was still attached: apply the
+      // final transcript, mark the terminal status, and tear the watcher down
+      // instead of leaving a live stream on a dead run.
+      if (isTerminalStatus(runStatus)) {
+        const terminalSession = this.d.store.getSessionByTaskId(taskId);
+        if (terminalSession?.taskRunId === taskRunId) {
+          void this.hydrateCloudTaskSessionFromLogs(
+            taskId,
+            taskRunId,
+            logUrl,
+            taskDescription,
+            runStatus,
+            runState,
+          );
+        }
+        this.finalizeTerminalCloudTask(taskRunId, runStatus);
+        this.stopCloudTaskWatch(taskId);
+        return () => {};
+      }
       // Ensure configOptions is populated on revisit
       const existing = this.d.store.getSessionByTaskId(taskId);
       if (existing) {
@@ -5708,6 +5728,24 @@ export class SessionService {
       initialReasoningEffort,
     );
 
+    // A run that is already terminal has no live stream to subscribe to:
+    // hydrate the final transcript, settle the terminal status, and return
+    // without registering a watcher. Plain hydration already fetches the
+    // full resume chain for terminal runs, and the resume wrapper only
+    // exists to buffer a live stream that does not exist here.
+    if (isTerminalStatus(runStatus)) {
+      void this.hydrateCloudTaskSessionFromLogs(
+        taskId,
+        taskRunId,
+        logUrl,
+        taskDescription,
+        runStatus,
+        runState,
+      );
+      this.finalizeTerminalCloudTask(taskRunId, runStatus);
+      return () => {};
+    }
+
     const processCloudUpdate = (update: CloudTaskUpdatePayload): void => {
       if (update.kind === "logs" || update.kind === "snapshot") {
         this.d.store.updateSession(taskRunId, {
@@ -5728,11 +5766,18 @@ export class SessionService {
               ),
             }
           : update;
+      // Evaluate staleness before handleCloudTaskUpdate mutates cloudStatus:
+      // a late non-terminal update must not re-notify after the run settled.
+      const isStaleNonTerminalStatus = this.isStaleNonTerminalCloudUpdate(
+        taskRunId,
+        normalizedUpdate,
+      );
       this.handleCloudTaskUpdate(taskRunId, normalizedUpdate);
       if (
         (update.kind === "status" ||
           update.kind === "snapshot" ||
           update.kind === "error") &&
+        !isStaleNonTerminalStatus &&
         watcher?.onStatusChange
       ) {
         watcher.onStatusChange();
@@ -5853,7 +5898,16 @@ export class SessionService {
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
   ): Promise<CloudHydrationResult | undefined> {
-    const existing = this.cloudHydrationPromises.get(taskRunId);
+    // Key by hydration mode, not just run: a run going terminal must start
+    // its final-transcript hydration even while a resume-chain or single-run
+    // hydration for the same run is still in flight.
+    const hydrationMode = isTerminalStatus(runStatus)
+      ? "terminal-chain"
+      : runState?.resume_from_run_id
+        ? "resume-chain"
+        : "single";
+    const hydrationKey = `${taskRunId}:${hydrationMode}`;
+    const existing = this.cloudHydrationPromises.get(hydrationKey);
     if (existing) {
       return existing;
     }
@@ -5872,10 +5926,10 @@ export class SessionService {
       });
       return undefined;
     });
-    this.cloudHydrationPromises.set(taskRunId, hydration);
+    this.cloudHydrationPromises.set(hydrationKey, hydration);
     void hydration.finally(() => {
-      if (this.cloudHydrationPromises.get(taskRunId) === hydration) {
-        this.cloudHydrationPromises.delete(taskRunId);
+      if (this.cloudHydrationPromises.get(hydrationKey) === hydration) {
+        this.cloudHydrationPromises.delete(hydrationKey);
       }
     });
     return hydration;
@@ -5949,7 +6003,8 @@ export class SessionService {
         ? runState.resume_from_run_id
         : undefined;
     const isResumeRun = Boolean(resumeFromRunId);
-    if (isTerminalStatus(runStatus) || isResumeRun) {
+    const isTerminalRun = isTerminalStatus(runStatus);
+    if (isTerminalRun || isResumeRun) {
       // Resume chains need the full history even while the leaf run is still
       // active; otherwise a renderer restart hydrates only the final run.
       // Non-resume in-progress runs keep using the single-run log so hydrate
@@ -6049,6 +6104,16 @@ export class SessionService {
         }
         rawEntries = result.entries;
         liveStreamLineCount = rawEntries.length;
+        // A terminal run whose persisted chain comes back empty can still
+        // have a complete S3 session log (persistence raced teardown); fall
+        // back to it rather than hydrating an empty final transcript.
+        if (rawEntries.length === 0 && logUrl) {
+          const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+          if (parsed.rawEntries.length > 0) {
+            rawEntries = parsed.rawEntries;
+            liveStreamLineCount = parsed.totalLineCount;
+          }
+        }
       }
     } else {
       const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
@@ -6096,15 +6161,17 @@ export class SessionService {
     // its chip renders right away) over the bare task description.
     const seedContent =
       this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
-    if (!hasUserPrompt && seedContent?.trim()) {
+    if (!isTerminalRun && !hasUserPrompt && seedContent?.trim()) {
       this.d.store.appendOptimisticItem(taskRunId, {
         type: "user_message",
         content: seedContent,
         timestamp: Date.now(),
       });
     }
-    if (hasUserPrompt) {
-      // The real prompt has landed; the stash is no longer needed.
+    if (hasUserPrompt || isTerminalRun) {
+      // The stash is no longer needed once the real prompt lands - and a
+      // finished run gets no further echoes, so leftover optimistic items
+      // would otherwise linger as phantom tail items on the final transcript.
       this.initialCloudOptimisticPrompt.delete(taskId);
       this.d.store.clearTailOptimisticItems(taskRunId);
     }
@@ -6119,25 +6186,42 @@ export class SessionService {
 
     // If live updates already populated a processed count, don't overwrite
     // that newer state with the persisted baseline fetched during startup.
-    if (
-      session.processedLineCount !== undefined &&
-      session.processedLineCount > 0 &&
-      !isResumeRun
-    ) {
+    // Terminal hydration is different: it is the final transcript, so apply
+    // it whenever the persisted chain has more lines than the local stream.
+    const effectiveLineCount = Math.max(liveStreamLineCount, rawEntries.length);
+    const alreadyApplied = isTerminalRun
+      ? (session.processedLineCount ?? 0) >= effectiveLineCount
+      : session.processedLineCount !== undefined &&
+        session.processedLineCount > 0 &&
+        !isResumeRun;
+    if (alreadyApplied) {
       this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
       this.pendingPermissionHydratedRuns.add(taskRunId);
       return {
         historyEntryCount: rawEntries.length,
-        liveStreamLineCount: session.processedLineCount,
+        liveStreamLineCount: session.processedLineCount ?? liveStreamLineCount,
       };
     }
+
+    // A concurrent terminal-chain hydration (they memoize under different
+    // mode keys) may have already recorded the full chain as processed; a
+    // leaf-stream cursor from this older hydration must never lower it once
+    // the run has settled.
+    const settled = this.d.store.getSessions()[taskRunId];
+    const settledCursor = isTerminalStatus(settled?.cloudStatus)
+      ? (settled?.processedLineCount ?? 0)
+      : 0;
 
     this.d.store.updateSession(taskRunId, {
       events,
       isCloud: true,
       logUrl: logUrl ?? session.logUrl,
       cloudTranscriptEntryCount: rawEntries.length,
-      processedLineCount: liveStreamLineCount,
+      // Terminal hydration records the whole chain as processed so nothing
+      // re-applies it; live resume runs keep the leaf-stream cursor.
+      processedLineCount: isTerminalRun
+        ? effectiveLineCount
+        : Math.max(liveStreamLineCount, settledCursor),
     });
     this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
     this.pendingPermissionHydratedRuns.add(taskRunId);
@@ -6145,10 +6229,61 @@ export class SessionService {
     // baseline already contains an in-flight session/prompt — the live delta
     // path otherwise sees delta <= 0 and never re-evaluates the tail.
     this.updatePromptStateFromEvents(taskRunId, events);
+    if (isTerminalRun) {
+      this.clearTerminalCloudPromptState(taskRunId);
+    }
     return {
       historyEntryCount: rawEntries.length,
       liveStreamLineCount,
     };
+  }
+
+  private finalizeTerminalCloudTask(
+    taskRunId: string,
+    status: TaskRunStatus | undefined,
+  ): void {
+    this.d.store.updateCloudStatus(taskRunId, { status });
+    this.clearTerminalCloudPromptState(taskRunId);
+  }
+
+  /**
+   * A terminal run can never flush its queue or answer a pending prompt;
+   * leaving those set keeps the composer in a busy state forever.
+   */
+  private clearTerminalCloudPromptState(taskRunId: string): void {
+    const session = this.d.store.getSessions()[taskRunId];
+    if (
+      !session ||
+      (!session.isPromptPending && session.messageQueue.length === 0)
+    ) {
+      return;
+    }
+
+    this.d.store.clearMessageQueue(session.taskId);
+    this.d.store.updateSession(taskRunId, {
+      isPromptPending: false,
+    });
+  }
+
+  /**
+   * SSE replays and out-of-order bursts can deliver a non-terminal status
+   * after the run already settled; applying it would revive a finished run.
+   */
+  private isStaleNonTerminalCloudUpdate(
+    taskRunId: string,
+    update: CloudTaskUpdatePayload,
+  ): boolean {
+    if (update.kind !== "status" && update.kind !== "snapshot") {
+      return false;
+    }
+    if (update.status === undefined) {
+      return false;
+    }
+    const currentCloudStatus =
+      this.d.store.getSessions()[taskRunId]?.cloudStatus;
+    return (
+      isTerminalStatus(currentCloudStatus) && !isTerminalStatus(update.status)
+    );
   }
 
   private isCurrentCloudTaskWatcher(
@@ -7074,7 +7209,17 @@ export class SessionService {
       }
     }
 
-    if (update.kind === "snapshot" && !isTerminalStatus(update.status)) {
+    // Evaluated once, before updateCloudStatus below can mutate cloudStatus.
+    const isStaleNonTerminalStatus = this.isStaleNonTerminalCloudUpdate(
+      taskRunId,
+      update,
+    );
+
+    if (
+      update.kind === "snapshot" &&
+      !isTerminalStatus(update.status) &&
+      !isStaleNonTerminalStatus
+    ) {
       this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
     }
 
@@ -7088,32 +7233,25 @@ export class SessionService {
 
     // Update cloud status fields if present
     if (update.kind === "status" || update.kind === "snapshot") {
-      this.d.store.updateCloudStatus(taskRunId, {
-        status: update.status,
-        stage: update.stage,
-        output: update.output,
-        errorMessage: update.errorMessage,
-        branch: update.branch,
-      });
-
-      if (update.status === "in_progress") {
-        this.tryRecoverIdleCloudQueue(taskRunId, {
-          serverSandboxAlive: update.sandboxAlive,
+      if (!isStaleNonTerminalStatus) {
+        this.d.store.updateCloudStatus(taskRunId, {
+          status: update.status,
+          stage: update.stage,
+          output: update.output,
+          errorMessage: update.errorMessage,
+          branch: update.branch,
         });
+
+        if (update.status === "in_progress") {
+          this.tryRecoverIdleCloudQueue(taskRunId, {
+            serverSandboxAlive: update.sandboxAlive,
+          });
+        }
       }
 
       if (isTerminalStatus(update.status)) {
-        // Clean up any pending resume messages that couldn't be sent
-        const session = this.d.store.getSessions()[taskRunId];
-        if (
-          session &&
-          (session.messageQueue.length > 0 || session.isPromptPending)
-        ) {
-          this.d.store.clearMessageQueue(session.taskId);
-          this.d.store.updateSession(taskRunId, {
-            isPromptPending: false,
-          });
-        }
+        // Pending resume messages can never be sent to a settled run.
+        this.clearTerminalCloudPromptState(taskRunId);
         this.stopCloudTaskWatch(update.taskId);
       }
     }

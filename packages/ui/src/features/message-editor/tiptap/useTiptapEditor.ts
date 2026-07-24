@@ -837,11 +837,21 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   }, [editor, draft]);
   const getText = useCallback(() => editor?.getText() ?? "", [editor]);
   const setContent = useCallback(
-    (text: string) => {
+    (content: string | EditorContent) => {
       if (!editor) return;
-      editor.commands.setContent(text);
+      editor.commands.setContent(
+        typeof content === "string"
+          ? content
+          : editorContentToTiptapJson(content),
+      );
+      if (typeof content !== "string") {
+        setAttachments(content.attachments ?? []);
+      }
       editor.commands.focus("end", { scrollIntoView: false });
-      draft.saveDraft(editor, attachments);
+      draft.saveDraft(
+        editor,
+        typeof content === "string" ? attachments : (content.attachments ?? []),
+      );
     },
     [editor, draft, attachments],
   );

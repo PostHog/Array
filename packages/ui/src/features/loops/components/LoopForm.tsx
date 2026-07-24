@@ -5,7 +5,7 @@ import {
   Check,
 } from "@phosphor-icons/react";
 import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -16,10 +16,12 @@ import {
   navigateToLoopDetail,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { useCreateLoop, useUpdateLoop } from "../hooks/useLoopMutations";
+import { buildLoopSavedProps } from "../loopAnalytics";
 import { summarizeTrigger } from "../loopDisplay";
 import { useLoopDraftStore } from "../loopDraftStore";
 import {
@@ -33,6 +35,7 @@ import {
   loopToFormValues,
   normalizeLoopFormValues,
 } from "../loopFormTypes";
+import { formatLoopModel } from "../loopModels";
 import { LoopBehaviorFields } from "./LoopBehaviorFields";
 import { LoopContextFields } from "./LoopContextFields";
 import { Field } from "./LoopFormPrimitives";
@@ -140,9 +143,11 @@ export function LoopForm({ loop }: LoopFormProps) {
     try {
       if (isEdit) {
         const updated = await updateLoop.mutateAsync(body);
+        track(ANALYTICS_EVENTS.LOOP_UPDATED, buildLoopSavedProps(updated));
         navigateToLoopDetail(updated.id);
       } else {
         const created = await createLoop.mutateAsync(body);
+        track(ANALYTICS_EVENTS.LOOP_CREATED, buildLoopSavedProps(created));
         navigateToLoopDetail(created.id);
       }
     } catch (error) {
@@ -446,8 +451,8 @@ function Stepper({
       {STEPS.map((label, index) => {
         const isCurrent = index === current;
         const isDone = index < current && complete[index];
-        // Steps navigate freely in both directions; skipping ahead is safe
-        // because Next stays gated per step and Create on the whole form.
+        const canSelect =
+          index <= current || complete.slice(current, index).every(Boolean);
         return (
           <Flex
             key={label}
@@ -456,8 +461,11 @@ function Stepper({
           >
             <button
               type="button"
-              onClick={() => onSelect(index)}
-              className="flex min-w-0 cursor-pointer items-center gap-2"
+              disabled={!canSelect}
+              onClick={() => {
+                if (canSelect) onSelect(index);
+              }}
+              className="flex min-w-0 cursor-pointer items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Flex
                 align="center"
@@ -545,9 +553,10 @@ function ReviewList({
       />
       <ReviewRow
         label="Model"
-        value={`${ADAPTER_LABELS[values.runtimeAdapter]} · ${
-          values.model || "Default model"
-        } · ${reasoning} reasoning`}
+        value={`${ADAPTER_LABELS[values.runtimeAdapter]} · ${formatLoopModel(
+          values.runtimeAdapter,
+          values.model,
+        )} · ${reasoning} reasoning`}
       />
       {showContext ? (
         <ReviewRow

@@ -1,3 +1,4 @@
+import { requestErrorStatus } from "@posthog/api-client/fetcher";
 import { resolveService } from "@posthog/di/container";
 import { NotAuthenticatedError } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
@@ -23,7 +24,15 @@ export function taskDetailQuery(taskId: string) {
       return (await client.getTask(taskId)) as unknown as Task;
     },
     meta: AUTH_SCOPED_QUERY_META,
+    // A 404 is a definitive answer (optimistic/cloud-pending tasks aren't
+    // returnable by the API yet) - retrying it only multiplies the miss.
+    retry: (failureCount, error) =>
+      !isTaskDetailNotFoundError(error) && failureCount < 3,
   });
+}
+
+export function isTaskDetailNotFoundError(error: unknown): boolean {
+  return requestErrorStatus(error) === 404;
 }
 
 // Read a task from the already-loaded sidebar list cache without fetching.

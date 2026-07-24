@@ -5,6 +5,7 @@ import {
   RepeatIcon,
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
@@ -15,8 +16,9 @@ import {
   navigateToNewLoop,
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Heading, Text } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLoopBuilderSessions } from "../hooks/useLoopBuilderSessions";
 import { useLoopLimits, useLoops } from "../hooks/useLoops";
 import {
@@ -84,9 +86,13 @@ export function LoopsListView() {
   );
   useSetHeaderContent(headerContent);
 
-  const builderSessions = useLoopBuilderSessions();
+  const { sessions: builderSessions, isSettled: builderSessionsSettled } =
+    useLoopBuilderSessions();
 
   const allLoops = loops ?? [];
+  const personalLoops = allLoops.filter(
+    (loop) => loop.visibility === "personal",
+  );
   const teamLoops = allLoops.filter((loop) => loop.visibility === "team");
   const {
     members,
@@ -94,6 +100,35 @@ export function LoopsListView() {
     isError: membersError,
     isComplete: membersComplete,
   } = useOrgMembers({ enabled: teamLoops.length > 0 });
+
+  const hasTrackedListViewedRef = useRef(false);
+  useEffect(() => {
+    if (
+      isLoading ||
+      isError ||
+      !builderSessionsSettled ||
+      hasTrackedListViewedRef.current
+    )
+      return;
+    hasTrackedListViewedRef.current = true;
+    track(ANALYTICS_EVENTS.LOOP_LIST_VIEWED, {
+      loop_count: allLoops.length,
+      personal_loop_count: personalLoops.length,
+      team_loop_count: teamLoops.length,
+      is_at_limit: limits?.atLimit ?? false,
+      loop_limit: limits?.max,
+      builder_session_count: builderSessions.length,
+    });
+  }, [
+    isLoading,
+    isError,
+    builderSessionsSettled,
+    allLoops.length,
+    personalLoops.length,
+    teamLoops.length,
+    limits,
+    builderSessions.length,
+  ]);
 
   return (
     <LoopsListViewPresentation

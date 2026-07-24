@@ -39,7 +39,9 @@ export namespace LoopSchemas {
     | "rate_capped"
     | "team_rate_capped"
     | "disabled"
-    | "gate_blocked";
+    | "gate_blocked"
+    | "owner_inactive"
+    | "owner_changed";
   export type LoopRunStatusEnum =
     | "not_started"
     | "queued"
@@ -180,8 +182,9 @@ export namespace LoopSchemas {
     sandbox_environment_id: string | null;
     enabled: boolean;
     /** Why the loop was paused when it wasn't the owner who paused it (e.g.
-     * "owner_deactivated", "github_integration_disconnected"), or null for a normal pause.
-     * Cleared when the loop is re-enabled. Read-only. */
+     * "owner_deactivated", "github_integration_disconnected", "usage_limited",
+     * "repeated_failures"), or null for a normal pause. Cleared when the loop is
+     * re-enabled. Read-only. */
     disabled_reason: string | null;
     overlap_policy: LoopOverlapPolicyEnum;
     behaviors: LoopBehaviors;
