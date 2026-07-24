@@ -5,7 +5,8 @@ describe("taskBoardStatus", () => {
   it.each([
     [{}, "working"],
     [{ runStatus: "in_progress" }, "working"],
-    [{ runStatus: "completed" }, "working"],
+    [{ runStatus: "completed" }, "done"],
+    [{ runStatus: "completed", prState: "draft" }, "working"],
     [{ prState: "draft" }, "working"],
     [{ prState: "open" }, "in_review"],
     [{ prState: "merged", runStatus: "failed" }, "done"],

@@ -23,6 +23,8 @@ export function taskBoardStatus(input: {
     return "cancelled";
   }
   if (input.prState === "open") return "in_review";
+  if (input.prState === "draft") return "working";
+  if (input.runStatus === "completed") return "done";
   return "working";
 }
 

@@ -1,12 +1,11 @@
-import { useHostTRPC } from "@posthog/host-router/react";
+import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import type { Task } from "@posthog/shared/domain-types";
-import type { PrStateDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
+import {
+  type PrStateDetails,
+  usePrDetailsQueries,
+} from "@posthog/ui/features/git-interaction/usePrDetails";
 import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
-import { keepPreviousData, useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
-
-const PR_STALE_TIME_MS = 60_000;
-const PR_CACHE_TIME_MS = 30 * 60_000;
 
 export function prDetailsToState(
   details: PrStateDetails | undefined,
@@ -21,10 +20,10 @@ export function prDetailsToState(
 
 export function taskPrUrl(
   task: Task,
-  prUrlByTaskId: ReadonlyMap<string, string>,
+  prSnapshotByTaskId: ReadonlyMap<string, Pick<PrSnapshot, "url">>,
 ): string | null {
   return (
-    prUrlByTaskId.get(task.id) ??
+    prSnapshotByTaskId.get(task.id)?.url ??
     (typeof task.latest_run?.output?.pr_url === "string"
       ? task.latest_run.output.pr_url
       : null)
@@ -40,29 +39,20 @@ export interface ChannelTaskPrStates {
 
 export function useChannelTaskPrStates(
   tasks: Task[],
-  prUrlByTaskId: ReadonlyMap<string, string>,
+  prSnapshotByTaskId: ReadonlyMap<string, PrSnapshot>,
 ): ChannelTaskPrStates {
-  const trpc = useHostTRPC();
   const prUrls = useMemo(
     () => [
       ...new Set(
         tasks.flatMap((task) => {
-          const prUrl = taskPrUrl(task, prUrlByTaskId);
+          const prUrl = taskPrUrl(task, prSnapshotByTaskId);
           return prUrl ? [prUrl] : [];
         }),
       ),
     ],
-    [prUrlByTaskId, tasks],
+    [prSnapshotByTaskId, tasks],
   );
-  const results = useQueries({
-    queries: prUrls.map((prUrl) => ({
-      ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl }),
-      staleTime: PR_STALE_TIME_MS,
-      gcTime: PR_CACHE_TIME_MS,
-      placeholderData: keepPreviousData,
-      retry: 1,
-    })),
-  });
+  const results = usePrDetailsQueries(prUrls);
 
   return useMemo(() => {
     const resultByUrl = new Map(
@@ -73,7 +63,7 @@ export function useChannelTaskPrStates(
     let isRefreshing = false;
 
     for (const task of tasks) {
-      const prUrl = taskPrUrl(task, prUrlByTaskId);
+      const prUrl = taskPrUrl(task, prSnapshotByTaskId);
       const result = prUrl ? resultByUrl.get(prUrl) : undefined;
       if (prUrl && result && !result.data && result.isPending) {
         pendingTaskIds.add(task.id);
@@ -93,5 +83,5 @@ export function useChannelTaskPrStates(
       isResolving: pendingTaskIds.size > 0,
       isRefreshing,
     };
-  }, [prUrlByTaskId, prUrls, results, tasks]);
+  }, [prSnapshotByTaskId, prUrls, results, tasks]);
 }

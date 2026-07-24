@@ -12,7 +12,7 @@ import { ChannelPrButton } from "./ChannelPrButton";
 
 describe("ChannelPrButton", () => {
   it.each([
-    ["open", "Ready #123"],
+    ["open", "Open #123"],
     ["merged", "Merged #123"],
   ] as const)("renders the %s lifecycle caption", (prState, label) => {
     render(
@@ -34,7 +34,7 @@ describe("ChannelPrButton", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Ready #123" }));
+    await user.click(screen.getByRole("button", { name: "Open #123" }));
 
     expect(openUrlInBrowser).toHaveBeenCalledWith(
       "https://github.com/PostHog/code/pull/123",

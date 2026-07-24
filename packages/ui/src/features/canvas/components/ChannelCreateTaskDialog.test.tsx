@@ -22,8 +22,8 @@ describe("ChannelCreateTaskDialog", () => {
     render(
       <ChannelCreateTaskDialog
         open
-        channelId="folder-channel-id"
-        backendChannelId="feed-channel-id"
+        channelId="feed-channel-id"
+        channelContextId="folder-channel-id"
         channelName="code"
         channelContext="# code"
         onOpenChange={onOpenChange}

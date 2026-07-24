@@ -1,3 +1,7 @@
+import {
+  getPrDetailsByUrlInput,
+  getPrDetailsByUrlOutput,
+} from "@posthog/core/git/router-schemas";
 import { TEAM_SKILLS_SERVICE } from "@posthog/core/skills/identifiers";
 import type { TeamSkillsService } from "@posthog/core/skills/teamSkillsService";
 import { resolveService } from "@posthog/di/container";
@@ -222,6 +226,21 @@ const fsStubRouter = router({
   readFileAsBase64: publicProcedure
     .input(z.object({ filePath: z.string() }))
     .query(({ input }) => getWebAttachmentBase64(input.filePath)),
+});
+
+// The browser has no local `gh` process. Return the host-router's canonical
+// unknown shape so shared PR consumers can fall back without request errors.
+const gitStubRouter = router({
+  getPrDetailsByUrl: publicProcedure
+    .input(getPrDetailsByUrlInput)
+    .output(getPrDetailsByUrlOutput)
+    .query(() => ({
+      state: "unknown",
+      merged: false,
+      draft: false,
+      headRefName: null,
+      title: null,
+    })),
 });
 
 const skillsStubRouter = router({
@@ -480,6 +499,7 @@ export const webHostRouter = router({
   deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
   fs: fsStubRouter,
+  git: gitStubRouter,
   githubIntegration: githubIntegrationRouter,
   logs: logsStubRouter,
   os: osStubRouter,

@@ -18,7 +18,10 @@ import {
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { ChannelPrButton } from "@posthog/ui/features/canvas/components/ChannelPrButton";
-import type { ChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
+import {
+  type ChannelTaskPrStates,
+  taskPrUrl,
+} from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
@@ -27,10 +30,20 @@ import {
 } from "@posthog/ui/features/home/components/WorkBoard";
 import type { SituationColor } from "@posthog/ui/features/home/utils/situationDisplay";
 import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
+import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
+const PR_BADGE_STATE_BY_STATUS: Record<
+  TaskBoardStatus,
+  Exclude<SidebarPrState, null>
+> = {
+  working: "draft",
+  in_review: "open",
+  done: "merged",
+  cancelled: "closed",
+};
 const STATUS_VISUAL: Record<
   TaskBoardStatus,
   {
@@ -70,7 +83,6 @@ export function ChannelBoardView({
   tasks,
   isLoading,
   prSnapshotByTaskId,
-  prUrlByTaskId,
   taskPrStates,
   onOpenTask,
   onOpenThread,
@@ -78,7 +90,6 @@ export function ChannelBoardView({
   tasks: Task[];
   isLoading: boolean;
   prSnapshotByTaskId: ReadonlyMap<string, PrSnapshot>;
-  prUrlByTaskId: ReadonlyMap<string, string>;
   taskPrStates: ChannelTaskPrStates;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
@@ -88,6 +99,7 @@ export function ChannelBoardView({
       task: Task;
       status: TaskBoardStatus;
       prState: SidebarPrState;
+      badgePrState: SidebarPrState;
     }>[]
   >(() => {
     const grouped = new Map<
@@ -96,6 +108,7 @@ export function ChannelBoardView({
         task: Task;
         status: TaskBoardStatus;
         prState: SidebarPrState;
+        badgePrState: SidebarPrState;
       }>
     >(TASK_BOARD_STATUSES.map((status) => [status, []]));
     for (const task of tasks) {
@@ -109,10 +122,13 @@ export function ChannelBoardView({
         resolvedPrState,
         prSnapshot: snapshot,
       });
+      const prState = resolvedPrState ?? snapshot?.state ?? null;
       grouped.get(status)?.push({
         task,
         status,
-        prState: resolvedPrState ?? snapshot?.state ?? null,
+        prState,
+        badgePrState:
+          prState === PR_BADGE_STATE_BY_STATUS[status] ? prState : null,
       });
     }
     return TASK_BOARD_STATUSES.map((status) => ({
@@ -131,17 +147,13 @@ export function ChannelBoardView({
       columns={columns}
       isLoading={taskPrStates.isResolving}
       getKey={(item) => item.task.id}
-      renderCard={({ task, status, prState }) => (
+      renderCard={({ task, status, prState, badgePrState }) => (
         <ChannelBoardCard
           task={task}
           status={status}
           prState={prState}
-          prUrl={
-            prUrlByTaskId.get(task.id) ??
-            (typeof task.latest_run?.output?.pr_url === "string"
-              ? task.latest_run.output.pr_url
-              : undefined)
-          }
+          badgePrState={badgePrState}
+          prUrl={taskPrUrl(task, prSnapshotByTaskId) ?? undefined}
           onOpenTask={onOpenTask}
           onOpenThread={onOpenThread}
         />
@@ -154,6 +166,7 @@ function ChannelBoardCard({
   task,
   status,
   prState,
+  badgePrState,
   prUrl,
   onOpenTask,
   onOpenThread,
@@ -161,21 +174,25 @@ function ChannelBoardCard({
   task: Task;
   status: TaskBoardStatus;
   prState: SidebarPrState;
+  badgePrState: SidebarPrState;
   prUrl?: string;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
   const taskDisplay = useTaskStatusDisplay(task);
-  const display =
-    prState &&
-    ((status === "done" && prState === "merged") ||
-      (status === "cancelled" && prState === "closed") ||
-      (status === "in_review" && prState === "open") ||
-      (status === "working" && prState === "draft"))
-      ? { base: null, prState, isMerged: prState === "merged" }
-      : taskDisplay;
+  const display = badgePrState
+    ? {
+        base: null,
+        prState: badgePrState,
+        isMerged: badgePrState === "merged",
+      }
+    : taskDisplay;
+  const [cardRef, inView] = useInView<HTMLDivElement>({
+    rootMargin: "1200px 0px",
+  });
   const { messages } = useTaskThread(task.id, {
     pollIntervalMs: BOARD_REPLIES_POLL_INTERVAL_MS,
+    enabled: inView,
   });
   const creatorName = userDisplayName(task.created_by);
   const visual = STATUS_VISUAL[status];
@@ -183,6 +200,7 @@ function ChannelBoardCard({
 
   return (
     <Box
+      ref={cardRef}
       role="button"
       tabIndex={0}
       aria-label={`Open ${task.title || "Untitled task"}`}

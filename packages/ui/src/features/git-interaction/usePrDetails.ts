@@ -1,6 +1,6 @@
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { PrReviewThread } from "@posthog/shared";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { PrCommentThread } from "../code-review/prCommentAnnotations";
 
@@ -20,6 +20,23 @@ export interface PrStateDetails {
   draft: boolean;
 }
 
+const PR_DETAILS_STALE_TIME_MS = 60_000;
+const PR_DETAILS_CACHE_TIME_MS = 30 * 60_000;
+
+/** Shared per-URL PR queries used by task actions and channel boards. */
+export function usePrDetailsQueries(prUrls: string[]) {
+  const trpc = useHostTRPC();
+  return useQueries({
+    queries: prUrls.map((prUrl) => ({
+      ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl }),
+      staleTime: PR_DETAILS_STALE_TIME_MS,
+      gcTime: PR_DETAILS_CACHE_TIME_MS,
+      placeholderData: keepPreviousData,
+      retry: 1,
+    })),
+  });
+}
+
 /**
  * Fetch lifecycle state for a set of PRs at once (the "Other PRs" submenu).
  * Also serves as a prefetch: it warms the same `getPrDetailsByUrl` cache
@@ -29,14 +46,9 @@ export interface PrStateDetails {
 export function usePrDetailsMap(
   prUrls: string[],
 ): Record<string, PrStateDetails> {
-  const trpc = useHostTRPC();
-  return useQueries({
-    queries: prUrls.map((prUrl) => ({
-      ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl }),
-      staleTime: 60_000,
-      retry: 1,
-    })),
-    combine: (results) =>
+  const results = usePrDetailsQueries(prUrls);
+  return useMemo(
+    () =>
       Object.fromEntries(
         results.flatMap((result, i) =>
           result.data && result.data.state !== "unknown"
@@ -44,7 +56,8 @@ export function usePrDetailsMap(
             : [],
         ),
       ),
-  });
+    [prUrls, results],
+  );
 }
 
 export function usePrDetails(
@@ -57,7 +70,8 @@ export function usePrDetails(
   const metaQuery = useQuery({
     ...trpc.git.getPrDetailsByUrl.queryOptions({ prUrl: prUrl as string }),
     enabled: !!prUrl,
-    staleTime: 60_000,
+    staleTime: PR_DETAILS_STALE_TIME_MS,
+    gcTime: PR_DETAILS_CACHE_TIME_MS,
     placeholderData: (prev) => prev,
     retry: 1,
   });

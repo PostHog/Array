@@ -37,7 +37,10 @@ import {
   useChannelFeedMessages,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
+import {
+  taskPrUrl,
+  useChannelTaskPrStates,
+} from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import {
@@ -142,24 +145,9 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     }
     return result;
   }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
-  const prUrlByTaskId = useMemo(() => {
-    const result = new Map<string, string>();
-    for (const workstream of [
-      ...homeSnapshot.needsAttention,
-      ...homeSnapshot.inProgress,
-    ]) {
-      if (!workstream.prUrl) continue;
-      for (const task of workstream.tasks) {
-        result.set(task.id, workstream.prUrl);
-      }
-    }
-    return result;
-  }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
-  // Resolve PR state even while the feed is visible so switching to the board
-  // can use the shared React Query cache instead of briefly misplacing cards.
   const taskPrStates = useChannelTaskPrStates(
-    boardEnabled ? visibleTasks : [],
-    prUrlByTaskId,
+    boardEnabled && effectiveViewMode === "board" ? visibleTasks : [],
+    prSnapshotByTaskId,
   );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
@@ -261,6 +249,16 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [backendChannel?.id, channelId, fileTask, handleOpenFull, queryClient],
   );
   const handleOpenTask = useCallback((task: Task) => setPreviewTask(task), []);
+  const handleOpenFeedTask = useCallback(
+    (task: Task) => {
+      if (boardEnabled) {
+        setPreviewTask(task);
+      } else {
+        handleOpenFull(task.id);
+      }
+    },
+    [boardEnabled, handleOpenFull],
+  );
 
   const handleOpenThread = useCallback(
     (task: Task) => openThread(channelId, task.id),
@@ -401,7 +399,6 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             tasks={visibleTasks}
             isLoading={isLoading}
             prSnapshotByTaskId={prSnapshotByTaskId}
-            prUrlByTaskId={prUrlByTaskId}
             taskPrStates={taskPrStates}
             onOpenTask={handleOpenTask}
             onOpenThread={handleOpenThread}
@@ -415,7 +412,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             isLoading={isLoading}
             emptyState={emptyState}
             intro={intro}
-            onOpenTask={handleOpenTask}
+            onOpenTask={handleOpenFeedTask}
             onOpenThread={handleOpenThread}
           />
         )}
@@ -453,35 +450,34 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         />
       )}
 
-      <ChannelTaskPreviewDialog
-        task={previewTask}
-        channelId={channelId}
-        prUrl={
-          previewTask
-            ? (prUrlByTaskId.get(previewTask.id) ??
-              (typeof previewTask.latest_run?.output?.pr_url === "string"
-                ? previewTask.latest_run.output.pr_url
-                : undefined))
-            : undefined
-        }
-        prState={
-          previewTask
-            ? (taskPrStates.states.get(previewTask.id) ??
-              prSnapshotByTaskId.get(previewTask.id)?.state ??
-              null)
-            : null
-        }
-        onClose={() => setPreviewTask(null)}
-        onOpenFull={(task) => {
-          setPreviewTask(null);
-          handleOpenFull(task.id);
-        }}
-      />
+      {boardEnabled ? (
+        <ChannelTaskPreviewDialog
+          task={previewTask}
+          channelId={channelId}
+          prUrl={
+            previewTask
+              ? (taskPrUrl(previewTask, prSnapshotByTaskId) ?? undefined)
+              : undefined
+          }
+          prState={
+            previewTask
+              ? (taskPrStates.states.get(previewTask.id) ??
+                prSnapshotByTaskId.get(previewTask.id)?.state ??
+                null)
+              : null
+          }
+          onClose={() => setPreviewTask(null)}
+          onOpenFull={(task) => {
+            setPreviewTask(null);
+            handleOpenFull(task.id);
+          }}
+        />
+      ) : null}
       {boardEnabled && backendChannel ? (
         <ChannelCreateTaskDialog
           open={createTaskDialogOpen}
-          channelId={channelId}
-          backendChannelId={backendChannel.id}
+          channelId={backendChannel.id}
+          channelContextId={channelId}
           channelName={channelName}
           channelContext={channelContext}
           onOpenChange={setCreateTaskDialogOpen}
