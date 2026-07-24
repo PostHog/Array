@@ -5,6 +5,7 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMarkChannelSeen } from "@posthog/ui/features/canvas/hooks/useMarkChannelSeen";
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 
 // The shared channel header: a clickable "# channel" that doubles as the Home
 // item — it routes to the channel home (`/website/$channelId`, like the sidebar
@@ -12,7 +13,13 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 // pathname-driven active state the rest of the channel tab strip uses. Followed
 // by that strip (Artifacts / Recents / CONTEXT.md), rendered into the
 // header bar by every channel view so the tabs stay in view.
-export function ChannelHeader({ channelId }: { channelId: string }) {
+export function ChannelHeader({
+  channelId,
+  trailing,
+}: {
+  channelId: string;
+  trailing?: ReactNode;
+}) {
   const navigate = useNavigate();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
@@ -39,6 +46,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
         </Text>
       </Button>
       <ChannelTabs channelId={channelId} />
+      {trailing}
     </div>
   );
 }

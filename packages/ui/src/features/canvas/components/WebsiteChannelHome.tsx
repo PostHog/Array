@@ -1,8 +1,11 @@
+import { Kanban, ListBullets } from "@phosphor-icons/react";
 import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
+import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
+import { ChannelBoardView } from "@posthog/ui/features/canvas/components/ChannelBoardView";
 import {
   ChannelFeedView,
   type PendingKickoff,
@@ -34,6 +37,7 @@ import {
   PERSONAL_CHANNEL_NAME,
   useBackendChannel,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useChannelHomeUiStore } from "@posthog/ui/features/canvas/stores/channelHomeUiStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
@@ -55,6 +59,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const { channels, isLoading: isLoadingChannels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const { fileTask } = useChannelTaskMutations();
+  const viewMode = useChannelHomeUiStore((state) => state.viewMode);
+  const setViewMode = useChannelHomeUiStore((state) => state.setViewMode);
 
   // Poll while empty so the intro's context.md card flips to "created" when
   // the agent publishes mid plan-session, without a manual reload.
@@ -93,8 +99,35 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     return creation ? [creation, ...feedMessages] : feedMessages;
   }, [backendChannel, feedMessages]);
 
+  const viewToggle = useMemo(
+    () => (
+      <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
+        <Button
+          size="sm"
+          variant={viewMode === "feed" ? "primary" : "link-muted"}
+          onClick={() => setViewMode("feed")}
+        >
+          <ListBullets size={14} />
+          Feed
+        </Button>
+        <Button
+          size="sm"
+          variant={viewMode === "board" ? "primary" : "link-muted"}
+          onClick={() => setViewMode("board")}
+        >
+          <Kanban size={14} />
+          Board
+        </Button>
+      </div>
+    ),
+    [setViewMode, viewMode],
+  );
+
   useSetHeaderContent(
-    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
+    useMemo(
+      () => <ChannelHeader channelId={channelId} trailing={viewToggle} />,
+      [channelId, viewToggle],
+    ),
   );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
@@ -276,17 +309,26 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   return (
     <div className="flex h-full min-w-0 bg-gray-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <ChannelFeedView
-          channelId={channelId}
-          tasks={tasks}
-          pending={visiblePending}
-          systemMessages={systemMessages}
-          isLoading={isLoading}
-          emptyState={emptyState}
-          intro={intro}
-          onOpenTask={handleOpenTask}
-          onOpenThread={handleOpenThread}
-        />
+        {viewMode === "board" ? (
+          <ChannelBoardView
+            tasks={tasks}
+            isLoading={isLoading}
+            onOpenTask={handleOpenTask}
+            onOpenThread={handleOpenThread}
+          />
+        ) : (
+          <ChannelFeedView
+            channelId={channelId}
+            tasks={tasks}
+            pending={visiblePending}
+            systemMessages={systemMessages}
+            isLoading={isLoading}
+            emptyState={emptyState}
+            intro={intro}
+            onOpenTask={handleOpenTask}
+            onOpenThread={handleOpenThread}
+          />
+        )}
         <div className="mx-auto w-full px-4 pb-4">
           <ChannelHomeComposer
             ref={composerRef}
