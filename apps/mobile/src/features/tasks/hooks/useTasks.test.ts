@@ -28,12 +28,17 @@ vi.mock("@/lib/logger", () => {
 });
 
 vi.mock("../api", () => ({
-  createTask: vi.fn(),
-  deleteTask: vi.fn(),
-  getTask: vi.fn(),
-  getTasks: vi.fn(),
   runTaskInCloud: vi.fn(),
-  updateTask: vi.fn(),
+}));
+
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({
+    createTask: vi.fn(),
+    deleteTask: vi.fn(),
+    getTask: vi.fn(),
+    getTasks: vi.fn(),
+    updateTask: vi.fn(),
+  }),
 }));
 
 vi.mock("../stores/taskStore", () => ({

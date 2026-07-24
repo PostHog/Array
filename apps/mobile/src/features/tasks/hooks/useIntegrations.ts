@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
-import { getGithubRepositories, getIntegrations } from "../api";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useRepositoryCacheStore } from "../stores/repositoryCacheStore";
-import type { RepositoryOption } from "../types";
+import type { Integration, RepositoryOption } from "../types";
 import { buildRepositoryOptions } from "../utils/repositorySelection";
 
 /** Cheap content-equality check for repository option lists. Lets the cache
@@ -59,8 +59,27 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
   const integrationsQuery = useQuery({
     queryKey: integrationKeys.github(),
     queryFn: async () => {
-      const data = await getIntegrations();
-      return data.filter((i) => i.kind === "github");
+      const data = await getPostHogApiClient().getIntegrations();
+      return data.flatMap((integration): Integration[] => {
+        if (
+          integration.kind !== "github" ||
+          typeof integration.id !== "number"
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            id: integration.id,
+            kind: integration.kind,
+            display_name:
+              typeof integration.display_name === "string"
+                ? integration.display_name
+                : undefined,
+            config: integration.config as Integration["config"],
+          },
+        ];
+      });
     },
     enabled: enabled && !!projectId && !!oauthAccessToken,
   });
@@ -78,7 +97,9 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
       const results = await Promise.allSettled(
         githubIntegrations.map(async (integration) => ({
           integrationId: integration.id,
-          repositories: await getGithubRepositories(integration.id),
+          repositories: await getPostHogApiClient().getGithubRepositories(
+            integration.id,
+          ),
         })),
       );
 

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
-import { getUserGithubIntegrations, getUserGithubRepositories } from "../api";
-import type { RepositoryOption, UserGithubIntegration } from "../types";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
+import type { RepositoryOption } from "../types";
 
 /**
  * User-scoped sibling of {@link useIntegrations}. Reads the authenticated
@@ -29,7 +29,10 @@ interface UseUserIntegrationsOptions {
   enabled?: boolean;
 }
 
-function integrationLabel(integration: UserGithubIntegration): string {
+function integrationLabel(integration: {
+  installation_id: string;
+  account?: { name?: string | null } | null;
+}): string {
   return integration.account?.name ?? `GitHub ${integration.installation_id}`;
 }
 
@@ -39,7 +42,7 @@ export function useUserIntegrations(options: UseUserIntegrationsOptions = {}) {
 
   const integrationsQuery = useQuery({
     queryKey: userIntegrationKeys.github(),
-    queryFn: getUserGithubIntegrations,
+    queryFn: () => getPostHogApiClient().getGithubUserIntegrations(),
     enabled: enabled && !!oauthAccessToken,
   });
 
@@ -54,7 +57,7 @@ export function useUserIntegrations(options: UseUserIntegrationsOptions = {}) {
       const results = await Promise.allSettled(
         integrations.map(async (integration) => ({
           installationId: integration.installation_id,
-          repositories: await getUserGithubRepositories(
+          repositories: await getPostHogApiClient().getGithubUserRepositories(
             integration.installation_id,
           ),
         })),

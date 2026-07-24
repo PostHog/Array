@@ -8,8 +8,8 @@ const flagState = vi.hoisted(() => ({ enabled: true as boolean }));
 vi.mock("posthog-react-native", () => ({
   useFeatureFlag: () => flagState.enabled,
 }));
-vi.mock("@/features/tasks/api", () => ({
-  warmTask: mockWarmTask,
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({ warmTask: mockWarmTask }),
 }));
 vi.mock("@/lib/logger", () => {
   const mockLogger = {

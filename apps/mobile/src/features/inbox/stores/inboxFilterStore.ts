@@ -1,3 +1,4 @@
+import { INBOX_PIPELINE_STATUSES } from "@posthog/core/inbox/reportFiltering";
 import type { SourceProduct } from "@posthog/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
@@ -18,12 +19,7 @@ type SortDirection = "asc" | "desc";
 export type { SourceProduct };
 
 export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
-  "ready",
-  "pending_input",
-  "in_progress",
-  "failed",
-  "candidate",
-  "potential",
+  ...INBOX_PIPELINE_STATUSES,
 ];
 
 interface InboxFilterState {

@@ -1,19 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@/features/auth";
-import { logger } from "@/lib/logger";
-import {
-  createTaskAutomation,
-  deleteTaskAutomation,
-  getTaskAutomation,
-  getTaskAutomations,
-  runTaskAutomation,
-  updateTaskAutomation,
-} from "../api";
 import type {
   CreateTaskAutomationOptions,
   TaskAutomation,
   UpdateTaskAutomationOptions,
-} from "../types";
+} from "@posthog/api-client/posthog-client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuthStore } from "@/features/auth";
+import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { taskKeys } from "./useTasks";
 
 const log = logger.scope("automations-mutations");
@@ -59,7 +52,7 @@ export function useAutomations() {
 
   const query = useQuery({
     queryKey: automationKeys.list(),
-    queryFn: getTaskAutomations,
+    queryFn: () => getPostHogApiClient().listTaskAutomations(),
     enabled: !!projectId && !!oauthAccessToken,
     refetchInterval: (query) =>
       getAutomationPollingInterval(
@@ -80,7 +73,7 @@ export function useAutomation(automationId: string) {
 
   return useQuery({
     queryKey: automationKeys.detail(automationId),
-    queryFn: () => getTaskAutomation(automationId),
+    queryFn: () => getPostHogApiClient().getTaskAutomation(automationId),
     enabled: !!projectId && !!oauthAccessToken && !!automationId,
     refetchInterval: (query) =>
       getAutomationPollingInterval(
@@ -94,7 +87,7 @@ export function useCreateTaskAutomation() {
 
   return useMutation({
     mutationFn: (options: CreateTaskAutomationOptions) =>
-      createTaskAutomation(options),
+      getPostHogApiClient().createTaskAutomation(options),
     onSuccess: (automation) => {
       queryClient.setQueryData(
         automationKeys.detail(automation.id),
@@ -118,7 +111,7 @@ export function useUpdateTaskAutomation() {
     }: {
       automationId: string;
       updates: UpdateTaskAutomationOptions;
-    }) => updateTaskAutomation(automationId, updates),
+    }) => getPostHogApiClient().updateTaskAutomation(automationId, updates),
     onSuccess: (automation, { automationId }) => {
       queryClient.setQueryData<TaskAutomation>(
         automationKeys.detail(automationId),
@@ -136,7 +129,8 @@ export function useDeleteTaskAutomation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (automationId: string) => deleteTaskAutomation(automationId),
+    mutationFn: (automationId: string) =>
+      getPostHogApiClient().deleteTaskAutomation(automationId),
     onSuccess: (_, automationId) => {
       queryClient.removeQueries({
         queryKey: automationKeys.detail(automationId),
@@ -153,7 +147,8 @@ export function useRunTaskAutomation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (automationId: string) => runTaskAutomation(automationId),
+    mutationFn: (automationId: string) =>
+      getPostHogApiClient().runTaskAutomation(automationId),
     onSuccess: (automation, automationId) => {
       queryClient.setQueryData<TaskAutomation>(
         automationKeys.detail(automationId),

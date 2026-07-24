@@ -1,4 +1,12 @@
+import type {
+  CloudTaskUpdatePayload,
+  StoredLogEntry,
+  Task,
+  TaskRun,
+} from "@posthog/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockGetTask } = vi.hoisted(() => ({ mockGetTask: vi.fn() }));
 
 vi.mock("expo-haptics", () => ({
   impactAsync: vi.fn(),
@@ -18,19 +26,16 @@ vi.mock("@/features/notifications/lib/notifications", () => ({
 }));
 vi.mock("../api", () => ({
   CloudCommandError: class CloudCommandError extends Error {},
-  getTask: vi.fn(),
   runTaskInCloud: vi.fn(),
   sendCloudCommand: vi.fn(),
 }));
 
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({ getTask: mockGetTask }),
+}));
+
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { getTask, runTaskInCloud } from "../api";
-import type {
-  CloudTaskUpdatePayload,
-  StoredLogEntry,
-  Task,
-  TaskRun,
-} from "../types";
+import { runTaskInCloud } from "../api";
 import { useMessageQueueStore } from "./messageQueueStore";
 import {
   mapTerminalStatus,
@@ -234,7 +239,6 @@ describe("flushQueuedMessagesIfIdle", () => {
 });
 
 describe("_resumeCloudRun", () => {
-  const mockGetTask = vi.mocked(getTask);
   const mockRunTaskInCloud = vi.mocked(runTaskInCloud);
 
   function previousTask(latestRun: Partial<TaskRun>): Task {
