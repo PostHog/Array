@@ -2,6 +2,7 @@ import { Kanban, ListBullets, Plus, User } from "@phosphor-icons/react";
 import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
 import { Button } from "@posthog/quill";
+import { CHANNEL_TASK_BOARD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
@@ -45,6 +46,7 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useChannelHomeUiStore } from "@posthog/ui/features/canvas/stores/channelHomeUiStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useHomeSnapshot } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
@@ -70,6 +72,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const setViewMode = useChannelHomeUiStore((state) => state.setViewMode);
   const taskScope = useChannelHomeUiStore((state) => state.taskScope);
   const setTaskScope = useChannelHomeUiStore((state) => state.setTaskScope);
+  const boardEnabled = useFeatureFlag(CHANNEL_TASK_BOARD_FLAG);
+  const effectiveViewMode = boardEnabled ? viewMode : "feed";
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const { snapshot: homeSnapshot } = useHomeSnapshot();
@@ -117,13 +121,13 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
 
   const visibleTasks = useMemo(
     () =>
-      taskScope === "me"
+      boardEnabled && taskScope === "me"
         ? tasks.filter(
             (task) =>
               !!currentUser?.uuid && task.created_by?.uuid === currentUser.uuid,
           )
         : tasks,
-    [currentUser?.uuid, taskScope, tasks],
+    [boardEnabled, currentUser?.uuid, taskScope, tasks],
   );
   const prSnapshotByTaskId = useMemo(() => {
     const result = new Map<string, PrSnapshot>();
@@ -153,7 +157,10 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
   // Resolve PR state even while the feed is visible so switching to the board
   // can use the shared React Query cache instead of briefly misplacing cards.
-  const taskPrStates = useChannelTaskPrStates(visibleTasks, prUrlByTaskId);
+  const taskPrStates = useChannelTaskPrStates(
+    boardEnabled ? visibleTasks : [],
+    prUrlByTaskId,
+  );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
@@ -333,56 +340,62 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   return (
     <div className="flex h-full min-w-0 bg-gray-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-(--gray-4) border-b px-4">
-          <div className="flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
-            <Button
-              size="sm"
-              variant={taskScope === "all" ? "primary" : "link-muted"}
-              onClick={() => setTaskScope("all")}
-            >
-              All
-            </Button>
-            <Button
-              size="sm"
-              variant={taskScope === "me" ? "primary" : "link-muted"}
-              onClick={() => setTaskScope("me")}
-            >
-              <User size={14} />
-              Me
-            </Button>
-          </div>
-          {viewMode === "board" ? (
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => setCreateTaskDialogOpen(true)}
-            >
-              <Plus size={14} />
-              New task
-            </Button>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2">
+        {boardEnabled ? (
+          <div className="flex h-11 shrink-0 items-center gap-2 border-(--gray-4) border-b px-4">
             <div className="flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
               <Button
                 size="sm"
-                variant={viewMode === "feed" ? "primary" : "link-muted"}
-                onClick={() => setViewMode("feed")}
+                variant={taskScope === "all" ? "primary" : "link-muted"}
+                onClick={() => setTaskScope("all")}
               >
-                <ListBullets size={14} />
-                Feed
+                All
               </Button>
               <Button
                 size="sm"
-                variant={viewMode === "board" ? "primary" : "link-muted"}
-                onClick={() => setViewMode("board")}
+                variant={taskScope === "me" ? "primary" : "link-muted"}
+                onClick={() => setTaskScope("me")}
               >
-                <Kanban size={14} />
-                Board
+                <User size={14} />
+                Me
               </Button>
             </div>
+            {effectiveViewMode === "board" ? (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => setCreateTaskDialogOpen(true)}
+              >
+                <Plus size={14} />
+                New task
+              </Button>
+            ) : null}
+            <div className="ml-auto flex items-center gap-2">
+              <div className="flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
+                <Button
+                  size="sm"
+                  variant={
+                    effectiveViewMode === "feed" ? "primary" : "link-muted"
+                  }
+                  onClick={() => setViewMode("feed")}
+                >
+                  <ListBullets size={14} />
+                  Feed
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    effectiveViewMode === "board" ? "primary" : "link-muted"
+                  }
+                  onClick={() => setViewMode("board")}
+                >
+                  <Kanban size={14} />
+                  Board
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-        {viewMode === "board" ? (
+        ) : null}
+        {effectiveViewMode === "board" ? (
           <ChannelBoardView
             tasks={visibleTasks}
             isLoading={isLoading}
@@ -405,7 +418,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             onOpenThread={handleOpenThread}
           />
         )}
-        {viewMode === "feed" ? (
+        {effectiveViewMode === "feed" ? (
           <div className="mx-auto w-full px-4 pb-4">
             <ChannelHomeComposer
               ref={composerRef}
@@ -448,14 +461,16 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           handleOpenFull(task.id);
         }}
       />
-      <ChannelCreateTaskDialog
-        open={createTaskDialogOpen}
-        channelId={channelId}
-        channelName={channelName}
-        channelContext={channelContext}
-        onOpenChange={setCreateTaskDialogOpen}
-        onTaskCreated={onTaskCreated}
-      />
+      {boardEnabled ? (
+        <ChannelCreateTaskDialog
+          open={createTaskDialogOpen}
+          channelId={channelId}
+          channelName={channelName}
+          channelContext={channelContext}
+          onOpenChange={setCreateTaskDialogOpen}
+          onTaskCreated={onTaskCreated}
+        />
+      ) : null}
     </div>
   );
 }
