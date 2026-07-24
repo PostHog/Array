@@ -49,7 +49,7 @@ const STATUS_VISUAL: Record<
   },
   in_review: {
     label: "In review",
-    description: "Open PR with passing CI",
+    description: "Open, non-draft PR ready for review",
     color: "blue",
     Icon: Eye,
   },

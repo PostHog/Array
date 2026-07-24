@@ -6,11 +6,8 @@ describe("taskBoardStatus", () => {
     [{}, "working"],
     [{ runStatus: "in_progress" }, "working"],
     [{ runStatus: "completed" }, "working"],
-    [{ prState: "draft", ciStatus: "passing" }, "working"],
-    [{ prState: "open", ciStatus: "failing" }, "working"],
-    [{ prState: "open", ciStatus: "pending" }, "working"],
-    [{ prState: "open", ciStatus: null }, "working"],
-    [{ prState: "open", ciStatus: "passing" }, "in_review"],
+    [{ prState: "draft" }, "working"],
+    [{ prState: "open" }, "in_review"],
     [{ prState: "merged", runStatus: "failed" }, "done"],
     [{ prState: "closed" }, "cancelled"],
     [{ runStatus: "failed" }, "cancelled"],
@@ -26,7 +23,7 @@ it("prefers a directly resolved merged PR over a stale open Home snapshot", () =
       resolvedPrState: "merged",
       prSnapshot: {
         state: "open",
-        ciStatus: "passing",
+        ciStatus: "failing",
       } as never,
     }),
   ).toBe("done");
