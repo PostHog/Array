@@ -248,11 +248,14 @@ export function ChannelsSidebar() {
             whenever channels are on so the landing shows the dot row too. */}
         {channelsEnabled && <SpaceDots />}
 
-        {/* Workspace switcher pinned to the bottom. Its dropdown carries the
-            Settings entry, so there's no separate Settings row. */}
-        <Box className="shrink-0 px-2 pb-2">
-          <ProjectSwitcher />
-        </Box>
+        {/* Workspace switcher pinned to the bottom in the Code layout. In the
+            spaces layout it moves to the title bar (compact avatar) so the
+            sidebar's bottom is freed for the space's content. */}
+        {!channelsEnabled && (
+          <Box className="shrink-0 px-2 pb-2">
+            <ProjectSwitcher />
+          </Box>
+        )}
       </Flex>
     </ResizableSidebar>
   );

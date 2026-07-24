@@ -54,7 +54,7 @@ The single biggest input to this plan: **most of the mockup's nouns already exis
 
 ### Shell & top bar
 - When `spacesLayout` is on (and inside `/website`), the title bar center swaps the browser-tab strip for a **search field** that opens the existing ⌘K `CommandMenu` on click/focus (no new search engine; the palette already finds tasks, channels, files, actions).
-- Right side of the title bar gains two icon buttons: **Activity** (bell, unread-mention dot from `useUnreadChannels`/`activitySeenStore`) → navigates to `/website/activity`; **Inbox** → navigates to a new `/website/inbox` mirror route rendering the existing `InboxView` (same pattern as the existing `/website/activity|command-center|skills|mcp-servers` mirrors), so opening it doesn't eject you from the space.
+- Right side of the title bar gains: **Activity** (bell, unread-mention dot from `useUnreadChannels`/`activitySeenStore`) → `/website/activity`; **Inbox** → a new `/website/inbox` mirror route rendering the existing `InboxView`; and the **account menu** as a compact avatar (`ProjectSwitcher variant="compact"`) — the same rich project/org/settings/logout menu, moved out of the sidebar's bottom card so that space is freed for the space's content (same pattern as the existing `/website/activity|command-center|skills|mcp-servers` mirrors), so opening it doesn't eject you from the space.
 - Open question tracked below: the mockup has no global tab strip (tabs move *inside* the task). The prototype hides `BrowserTabStrip` in spaces mode to match; if that feels bad we re-show it.
 
 ### Sidebar in space mode
