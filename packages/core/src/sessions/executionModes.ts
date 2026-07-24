@@ -1,10 +1,12 @@
-import { CODEX_MODE_PRESETS } from "@posthog/shared";
+import { CODEX_MODE_PRESETS, type ExecutionMode } from "@posthog/shared";
 
 export interface ModeInfo {
   id: string;
   name: string;
   description: string;
 }
+
+export const DEFAULT_CLAUDE_EXECUTION_MODE: ExecutionMode = "plan";
 
 const availableModes: ModeInfo[] = [
   {
