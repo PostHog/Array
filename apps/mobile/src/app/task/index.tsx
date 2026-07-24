@@ -3,6 +3,7 @@ import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
   getAvailableModes,
 } from "@posthog/core/sessions/executionModes";
+import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
@@ -56,10 +57,10 @@ import {
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
-  getMobileModelOptions,
+  getComposerModelOptions,
+  getConfigOptionLabel,
+  getMobileExecutionModes,
   getModelConfigOption,
-  getModelLabel,
-  resolveAvailableModel,
 } from "@/features/tasks/composer/options";
 import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
@@ -88,7 +89,7 @@ import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
-const EXECUTION_MODES = getAvailableModes();
+const EXECUTION_MODES = getMobileExecutionModes(getAvailableModes());
 
 const SUGGESTIONS = [
   "Create or update my CLAUDE.md file",
@@ -129,9 +130,10 @@ export default function NewTaskScreen() {
   const { insets, bottom } = useScreenInsets();
   const keyboard = useReanimatedKeyboardAnimation();
   const restingBottom = bottom("compact");
-  const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
+  const { configOptions, hasLiveConfig, isConfigReady } =
+    useCloudTaskConfigOptions("claude");
   const modelConfigOption = getModelConfigOption(configOptions);
-  const mobileModelOptions = getMobileModelOptions(modelConfigOption);
+  const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const {
     error,
     hasGithubIntegration,
@@ -214,12 +216,14 @@ export default function NewTaskScreen() {
 
   useEffect(() => {
     if (!hasLiveConfig) return;
-    const availableModel = resolveAvailableModel(modelConfigOption, model);
-    if (availableModel === model) return;
-    setModel(availableModel);
-    if (!isSupportedReasoningEffort("claude", availableModel, reasoning)) {
-      setReasoning(DEFAULT_REASONING_EFFORT);
-    }
+    const next = resolveCloudComposerModelChange({
+      adapter: "claude",
+      modelOption: modelConfigOption,
+      requestedModel: model,
+      reasoning,
+    });
+    if (next.model !== model) setModel(next.model);
+    if (next.reasoning !== reasoning) setReasoning(next.reasoning);
   }, [hasLiveConfig, model, modelConfigOption, reasoning]);
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
@@ -411,7 +415,7 @@ export default function NewTaskScreen() {
 
   const hasContent = !!prompt.trim() || attachments.length > 0;
   const canSubmit =
-    hasLiveConfig &&
+    isConfigReady &&
     hasContent &&
     isRepositorySelectionComplete(selection) &&
     !creating;
@@ -424,7 +428,7 @@ export default function NewTaskScreen() {
   useWarmTask({
     repository: selection.repository,
     githubIntegrationId: selection.integrationId,
-    composerIsEmpty: !hasContent || !hasLiveConfig,
+    composerIsEmpty: !hasContent || !isConfigReady,
     runtimeAdapter: "claude",
     model,
     reasoningEffort: showReasoningPill ? reasoning : null,
@@ -649,7 +653,12 @@ export default function NewTaskScreen() {
 
                     <Pill
                       icon={<Robot size={14} color={themeColors.gray[11]} />}
-                      label={getModelLabel(modelConfigOption, model)}
+                      label={
+                        getConfigOptionLabel(
+                          modelConfigOption.options,
+                          model,
+                        ) ?? model
+                      }
                       onPress={() => setModelSheetOpen(true)}
                     />
 
@@ -769,10 +778,14 @@ export default function NewTaskScreen() {
         title="Model"
         value={model}
         onChange={(value) => {
-          setModel(value);
-          if (!isSupportedReasoningEffort("claude", value, reasoning)) {
-            setReasoning(DEFAULT_REASONING_EFFORT);
-          }
+          const next = resolveCloudComposerModelChange({
+            adapter: "claude",
+            modelOption: modelConfigOption,
+            requestedModel: value,
+            reasoning,
+          });
+          setModel(next.model);
+          setReasoning(next.reasoning);
         }}
         onClose={() => setModelSheetOpen(false)}
         options={mobileModelOptions.map((modelOption) => ({

@@ -1,10 +1,6 @@
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import {
-  authorizeMcpInstallation,
-  installCustomMcpServer,
-  installMcpTemplate,
-} from "./api";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import type {
   InstallCustomMcpServerOptions,
   InstallMcpTemplateOptions,
@@ -51,11 +47,12 @@ export async function installTemplateWithOAuth(
     "install_source" | "posthog_code_callback_url"
   >,
 ): Promise<McpServerInstallation | "cancelled"> {
-  const response: McpInstallResponse = await installMcpTemplate({
-    ...options,
-    install_source: INSTALL_SOURCE,
-    posthog_code_callback_url: OAUTH_CALLBACK_URL,
-  });
+  const response: McpInstallResponse =
+    await getPostHogApiClient().installMcpTemplate({
+      ...options,
+      install_source: INSTALL_SOURCE,
+      posthog_code_callback_url: OAUTH_CALLBACK_URL,
+    });
 
   if (!isOAuthRedirect(response)) return response;
 
@@ -75,11 +72,12 @@ export async function installCustomWithOAuth(
     "install_source" | "posthog_code_callback_url"
   >,
 ): Promise<McpServerInstallation | "cancelled"> {
-  const response: McpInstallResponse = await installCustomMcpServer({
-    ...options,
-    install_source: INSTALL_SOURCE,
-    posthog_code_callback_url: OAUTH_CALLBACK_URL,
-  });
+  const response: McpInstallResponse =
+    await getPostHogApiClient().installCustomMcpServer({
+      ...options,
+      install_source: INSTALL_SOURCE,
+      posthog_code_callback_url: OAUTH_CALLBACK_URL,
+    });
 
   if (!isOAuthRedirect(response)) return response;
   const outcome = await waitForOAuthCallback(response.redirect_url);
@@ -94,11 +92,13 @@ export async function installCustomWithOAuth(
 export async function reauthorizeInstallation(
   installationId: string,
 ): Promise<"completed" | "cancelled"> {
-  const { redirect_url } = await authorizeMcpInstallation({
-    installation_id: installationId,
-    install_source: INSTALL_SOURCE,
-    posthog_code_callback_url: OAUTH_CALLBACK_URL,
-  });
+  const { redirect_url } = await getPostHogApiClient().authorizeMcpInstallation(
+    {
+      installation_id: installationId,
+      install_source: INSTALL_SOURCE,
+      posthog_code_callback_url: OAUTH_CALLBACK_URL,
+    },
+  );
   return waitForOAuthCallback(redirect_url);
 }
 
