@@ -1,5 +1,5 @@
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
-import type { PrSnapshot, PrSnapshotState } from "./prSnapshot";
+import type { PrSnapshot, PrSnapshotState } from "../home/prSnapshot";
 
 export const TASK_BOARD_STATUSES = [
   "working",

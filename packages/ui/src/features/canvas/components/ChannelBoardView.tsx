@@ -10,7 +10,7 @@ import {
   TASK_BOARD_STATUSES,
   type TaskBoardStatus,
   taskBoardStatusFromSources,
-} from "@posthog/core/home/taskBoardStatus";
+} from "@posthog/core/tasks/taskBoardStatus";
 import type { Task } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import {
@@ -24,13 +24,13 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import {
-  WorkBoard,
-  type WorkBoardColumn,
-} from "@posthog/ui/features/home/components/WorkBoard";
-import type { SituationColor } from "@posthog/ui/features/home/utils/situationDisplay";
 import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
+import {
+  WorkBoard,
+  type WorkBoardColor,
+  type WorkBoardColumn,
+} from "@posthog/ui/primitives/WorkBoard";
 import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
@@ -49,7 +49,7 @@ const STATUS_VISUAL: Record<
   {
     label: string;
     description: string;
-    color: SituationColor;
+    color: WorkBoardColor;
     Icon: typeof GitCommit;
   }
 > = {

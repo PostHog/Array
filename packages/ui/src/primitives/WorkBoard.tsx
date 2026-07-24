@@ -1,18 +1,31 @@
 import type { Icon } from "@phosphor-icons/react";
-import {
-  type SituationColor,
-  situationCss,
-} from "@posthog/ui/features/home/utils/situationDisplay";
 import { ScrollArea } from "@radix-ui/themes";
 import type { ReactNode } from "react";
+
+export type WorkBoardColor =
+  | "red"
+  | "orange"
+  | "amber"
+  | "green"
+  | "blue"
+  | "purple"
+  | "gray";
 
 export interface WorkBoardColumn<T> {
   id: string;
   label: string;
   description: string;
-  color: SituationColor;
+  color: WorkBoardColor;
   Icon: Icon;
   items: T[];
+}
+
+function columnColors(color: WorkBoardColor) {
+  return {
+    foreground: `var(--${color}-11)`,
+    tint: `var(--${color}-a3)`,
+    wash: `var(--${color}-a2)`,
+  };
 }
 
 export function WorkBoard<T>({
@@ -29,7 +42,7 @@ export function WorkBoard<T>({
   return (
     <div className="flex h-full min-h-0 gap-3 overflow-x-auto p-4">
       {columns.map((column) => {
-        const c = situationCss(column.color);
+        const colors = columnColors(column.color);
         const count = column.items.length;
         return (
           <div
@@ -40,7 +53,7 @@ export function WorkBoard<T>({
               className="mb-2 flex items-center gap-2 px-1"
               title={column.description}
             >
-              <span style={{ color: c.fg }}>
+              <span style={{ color: colors.foreground }}>
                 <column.Icon size={14} weight="bold" />
               </span>
               <span className="font-semibold text-[12px] text-gray-12">
@@ -48,14 +61,17 @@ export function WorkBoard<T>({
               </span>
               <span
                 className="rounded-full px-1.5 py-px font-semibold text-[10.5px] tabular-nums"
-                style={{ color: c.fg, backgroundColor: c.tint }}
+                style={{
+                  color: colors.foreground,
+                  backgroundColor: colors.tint,
+                }}
               >
                 {count}
               </span>
             </div>
             <div
               className="min-h-0 flex-1 rounded-xl border border-(--gray-3)"
-              style={{ backgroundColor: c.wash }}
+              style={{ backgroundColor: colors.wash }}
             >
               <ScrollArea scrollbars="vertical" className="h-full min-h-0">
                 <div className="flex flex-col gap-2 p-2">
@@ -85,7 +101,7 @@ export function WorkBoard<T>({
 function WorkBoardCardSkeleton() {
   return (
     <output
-      aria-label="Loading tasks"
+      aria-label="Loading items"
       className="flex h-[112px] animate-pulse flex-col gap-3 rounded-lg border border-(--gray-4) bg-(--color-panel-solid) p-3"
     >
       <div className="h-3 w-4/5 rounded bg-(--gray-5)" />
