@@ -35,9 +35,6 @@ import { Box, Flex } from "@radix-ui/themes";
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useRef } from "react";
 
-// The unified app sidebar. Top to bottom: global nav, then the body — the task
-// list, the channel tree, or (spaces layout) the active space — and the
-// account switcher pinned to the bottom.
 export function ChannelsSidebar() {
   const width = useChannelsSidebarStore((state) => state.width);
   const setWidth = useChannelsSidebarStore((state) => state.setWidth);
@@ -117,7 +114,6 @@ export function ChannelsSidebar() {
   const inSpace =
     spacesOn && currentChannelId != null && !browsing && !draftSpace;
 
-  // Navigating to a non-channel route closes the browse/draft pickers.
   const historyIndex = useRouterState({
     select: (s) => s.location.state.__TSR_index,
   });
@@ -154,8 +150,6 @@ export function ChannelsSidebar() {
     setCurrentChannel,
   ]);
 
-  // Horizontal trackpad swipe anywhere on the sidebar cycles spaces — from a
-  // space, the channel list, or the draft view alike. One space per gesture.
   const handleSpaceSwipe = useSpaceSwipe(spacesOn);
 
   return (
@@ -177,15 +171,12 @@ export function ChannelsSidebar() {
         className="h-full bg-chrome"
         onWheel={handleSpaceSwipe}
       >
-        {/* In spaces, the title bar owns search/inbox/activity, so the nav
-            only shows on the pre-scope landing; flag off keeps it always on. */}
         {(!spacesOn ||
           (currentChannelId == null && !browsing && !draftSpace)) && (
           <SidebarNavSection />
         )}
 
-        {/* Body precedence: draft chooser → active space (spaces only) →
-            channel list (browse / landing / old alpha) → task list. */}
+        {/* draft chooser → active space (spaces only) → channel list → tasks */}
         {bodyChannelsWorld && spacesOn && draftSpace ? (
           <Box className="min-h-0 flex-1 overflow-hidden">
             <NewSpaceDraft />
@@ -197,7 +188,6 @@ export function ChannelsSidebar() {
         ) : bodyChannelsWorld ? (
           <>
             <Separator />
-            {/* Fab is a sibling of the scroll region so it stays pinned. */}
             <Box className="relative min-h-0 flex-1">
               <Box className="scroll-mask-4 h-full overflow-y-auto">
                 <ChannelsList />
@@ -213,7 +203,6 @@ export function ChannelsSidebar() {
 
         <UpdateBanner />
 
-        {/* Archived is a task-list affordance — hidden when the body isn't tasks. */}
         {!channelsWorld && archivedTaskIds.size > 0 && (
           <Box className="shrink-0 border-border border-t">
             <button
@@ -231,10 +220,9 @@ export function ChannelsSidebar() {
 
         <LoopsPromoCard />
 
-        {/* Space switcher: one dot per starred channel. Spaces layout only. */}
         {spacesOn && <SpaceDots />}
 
-        {/* Account switcher — moves to the title bar in the spaces layout. */}
+        {/* In the spaces layout the account switcher moves to the title bar. */}
         {!spacesOn && (
           <Box className="shrink-0 px-2 pb-2">
             <ProjectSwitcher />
