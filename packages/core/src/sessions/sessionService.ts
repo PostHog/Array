@@ -550,6 +550,10 @@ function entriesScopedToTaskRun(
   });
 }
 
+function sumChars(values: string[]): number {
+  return values.reduce((total, value) => total + value.length, 0);
+}
+
 function suffixPrefixOverlap(left: string[], right: string[]): number {
   if (left.length === 0 || right.length === 0) return 0;
 
@@ -1938,6 +1942,12 @@ export class SessionService {
     const { rawEntries, sessionId, adapter } =
       prefetchedLogs ?? (await this.fetchSessionLogs(logUrl, taskRunId));
     const events = convertStoredEntriesToEvents(rawEntries);
+    this.d.log.info("Rebuilt local session events from transcript", {
+      taskId,
+      taskRunId,
+      entryCount: rawEntries.length,
+      eventCount: events.length,
+    });
 
     const storedAdapter = this.d.adapterStore.getAdapter(taskRunId);
     const resolvedAdapter = adapter ?? storedAdapter;
@@ -6083,6 +6093,17 @@ export class SessionService {
               (entry) => !leafKeys.has(JSON.stringify(entry)),
             ),
           ];
+          this.d.log.info("Merged resume transcripts", {
+            taskId,
+            taskRunId,
+            ancestorEntryCount: ancestorEntries.length,
+            currentRunEntryCount: currentRunEntries.length,
+            leafLogEntryCount: leafLogs.rawEntries.length,
+            overlap,
+            mergedEntryCount: rawEntries.length,
+            approxChars:
+              sumChars(ancestorKeys) + sumChars(currentKeys.slice(overlap)),
+          });
           resumeLeafEntryStartIndex = ancestorEntries.length;
           liveStreamLineCount = Math.max(
             leafLogs.totalLineCount,
@@ -6148,6 +6169,14 @@ export class SessionService {
         );
       }
     }
+    this.d.log.info("Hydrated cloud session transcript", {
+      taskId,
+      taskRunId,
+      isResumeRun,
+      isTerminalRun,
+      entryCount: rawEntries.length,
+      eventCount: events.length,
+    });
     const hasUserPrompt = events.some(
       (e: AcpMessage) =>
         isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
@@ -7486,6 +7515,13 @@ export class SessionService {
             !options.minEntryCount ||
             localResult.totalLineCount >= options.minEntryCount
           ) {
+            this.d.log.info("Loaded session transcript", {
+              taskRunId,
+              source: "local",
+              contentChars: content.length,
+              entryCount: localResult.rawEntries.length,
+              totalLineCount: localResult.totalLineCount,
+            });
             return localResult;
           }
         }
@@ -7503,6 +7539,13 @@ export class SessionService {
       if (!content?.trim()) return localResult ?? empty;
 
       const result = this.parseLogContent(content);
+      this.d.log.info("Loaded session transcript", {
+        taskRunId,
+        source: "s3",
+        contentChars: content.length,
+        entryCount: result.rawEntries.length,
+        totalLineCount: result.totalLineCount,
+      });
 
       if (taskRunId && result.rawEntries.length > 0) {
         this.d.trpc.logs.writeLocalLogs
