@@ -53,23 +53,25 @@ export function SpacesTitleBarActions() {
     <>
       <Button
         variant="outline"
-        size="icon-sm"
+        size="sm"
         aria-label={unseen > 0 ? `Activity (${unseen} new)` : "Activity"}
         className="relative"
         onClick={navigateToActivity}
       >
         <BellIcon size={14} />
+        Activity
         {unseen > 0 && (
-          <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-blue-9" />
+          <span className="absolute top-1 right-1 size-1.5 rounded-full bg-blue-9" />
         )}
       </Button>
       <Button
         variant="outline"
-        size="icon-sm"
+        size="sm"
         aria-label="Inbox"
         onClick={navigateToInbox}
       >
         <TrayIcon size={14} />
+        Inbox
       </Button>
     </>
   );
