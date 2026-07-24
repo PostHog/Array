@@ -1,6 +1,7 @@
 import {
   ArrowSquareOutIcon,
   CaretRightIcon,
+  ChatCircleIcon,
   DotsThreeIcon,
   GitBranchIcon,
   PaperPlaneRightIcon,
@@ -58,7 +59,6 @@ import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import {
   TaskCard,
   TaskStatusBadge,
@@ -399,29 +399,23 @@ function ThreadHeaderTaskSummary({ task }: { task: Task }) {
       : undefined;
 
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 pr-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <TaskTabIcon task={task} size={14} />
-        <span className="truncate font-medium text-sm">
-          {task.title || "Untitled task"}
+    <div className="flex min-w-0 items-center gap-2 pr-2">
+      <ChatCircleIcon size={14} className="shrink-0 text-muted-foreground" />
+      <span className="truncate font-medium text-sm">
+        {task.title || "Untitled task"}
+      </span>
+      <TaskStatusBadge display={display} />
+      {prUrl ? (
+        <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+          <ArrowSquareOutIcon size={12} />
+          PR
         </span>
-        <TaskStatusBadge display={display} />
-      </div>
-      {task.repository || prUrl ? (
-        <div className="flex min-w-0 items-center gap-3 pl-[22px] text-muted-foreground text-xs">
-          {task.repository ? (
-            <span className="inline-flex min-w-0 items-center gap-1">
-              <GitBranchIcon size={12} className="shrink-0" />
-              <span className="truncate">{task.repository}</span>
-            </span>
-          ) : null}
-          {prUrl ? (
-            <span className="inline-flex shrink-0 items-center gap-1">
-              <ArrowSquareOutIcon size={12} />
-              PR
-            </span>
-          ) : null}
-        </div>
+      ) : null}
+      {task.repository ? (
+        <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground text-xs">
+          <GitBranchIcon size={12} className="shrink-0" />
+          <span className="truncate">{task.repository}</span>
+        </span>
       ) : null}
     </div>
   );
