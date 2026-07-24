@@ -898,6 +898,34 @@ importers:
         specifier: ^4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@25.2.0)(@vitest/ui@4.1.8)(jsdom@26.1.0)(msw@2.12.8(@types/node@25.2.0)(typescript@5.9.3))(vite@7.3.5(@types/node@25.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/cli:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 1.1.0
+        version: 1.1.0(zod@4.4.3)
+      '@posthog/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@posthog/shared':
+        specifier: workspace:*
+        version: link:../shared
+      commander:
+        specifier: ^14.0.2
+        version: 14.0.3
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.41
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(@swc/core@1.15.43)(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@20.19.41)(@vitest/ui@4.1.8)(jsdom@26.1.0)(msw@2.12.8(@types/node@20.19.41)(typescript@5.9.3))(vite@7.3.5(@types/node@20.19.41)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/core:
     dependencies:
       '@json-render/core':
