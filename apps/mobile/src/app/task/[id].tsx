@@ -844,6 +844,7 @@ export default function TaskDetailScreen() {
             />
           ) : null}
           <TaskChatComposer
+            key={taskId}
             adapter={composerAdapter}
             canChangeAdapter={!!session?.terminalStatus}
             onSend={handleSendPrompt}

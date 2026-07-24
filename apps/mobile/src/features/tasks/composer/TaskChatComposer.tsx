@@ -28,17 +28,9 @@ import {
   Stack,
   Stop,
 } from "phosphor-react-native";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
   Keyboard,
   Pressable,
   ScrollView,
@@ -122,60 +114,6 @@ function modeIcon(mode: ExecutionMode, color: string, size = 14): ReactNode {
     case "auto":
       return <Sparkle size={size} color={color} weight="fill" />;
   }
-}
-
-function PulsingBorder({ active, color }: { active: boolean; color: string }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const animRef = useRef<Animated.CompositeAnimation | null>(null);
-
-  useEffect(() => {
-    if (active) {
-      opacity.setValue(0);
-      animRef.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(opacity, {
-            toValue: 1,
-            duration: 1500,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacity, {
-            toValue: 0,
-            duration: 1500,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-      );
-      animRef.current.start();
-    } else {
-      animRef.current?.stop();
-      animRef.current = null;
-      opacity.setValue(0);
-    }
-    return () => {
-      animRef.current?.stop();
-    };
-  }, [active, opacity]);
-
-  if (!active) return null;
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        opacity,
-        borderWidth: 2,
-        borderColor: color,
-        borderRadius: 16,
-      }}
-    />
-  );
 }
 
 export function TaskChatComposer({
@@ -352,10 +290,9 @@ export function TaskChatComposer({
 
   return (
     <>
-      <View className="px-3">
-        <View className="relative">
-          <PulsingBorder active={isUserTurn} color={themeColors.accent[9]} />
-          <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
+      <View className="px-4">
+        <View style={{ width: "100%", maxWidth: 600, alignSelf: "center" }}>
+          <View className="overflow-hidden rounded-lg border border-gray-6 bg-card">
             {editing ? (
               <View className="flex-row items-center gap-2 border-gray-6 border-b bg-accent-2 px-3 py-2">
                 <PencilIcon size={14} color={themeColors.accent[11]} />
@@ -381,7 +318,7 @@ export function TaskChatComposer({
             />
             <TextInput
               className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
-              style={{ minHeight: 56, maxHeight: 200 }}
+              style={{ minHeight: 64, maxHeight: 200 }}
               placeholder={
                 isRecording
                   ? "Recording..."
@@ -429,23 +366,6 @@ export function TaskChatComposer({
                 }}
               >
                 <Pill
-                  icon={
-                    isSteer ? (
-                      <Lightning
-                        size={14}
-                        color={themeColors.accent[11]}
-                        weight="fill"
-                      />
-                    ) : (
-                      <Stack size={14} color={themeColors.gray[11]} />
-                    )
-                  }
-                  label={messagingModeLabel}
-                  accent={isSteer}
-                  onPress={handleToggleMessagingMode}
-                />
-
-                <Pill
                   icon={modeIcon(
                     mode,
                     mode === "plan"
@@ -486,6 +406,23 @@ export function TaskChatComposer({
                     onPress={() => setReasoningSheetOpen(true)}
                   />
                 ) : null}
+
+                <Pill
+                  icon={
+                    isSteer ? (
+                      <Lightning
+                        size={14}
+                        color={themeColors.accent[11]}
+                        weight="fill"
+                      />
+                    ) : (
+                      <Stack size={14} color={themeColors.gray[11]} />
+                    )
+                  }
+                  label={messagingModeLabel}
+                  accent={isSteer}
+                  onPress={handleToggleMessagingMode}
+                />
               </ScrollView>
 
               <Pressable
