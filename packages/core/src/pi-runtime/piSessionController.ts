@@ -60,8 +60,6 @@ export class PiSessionController {
   private readonly liveEvents = new Map<string, AgentConversationEvent[]>();
   private readonly connections = new Map<string, Promise<void>>();
   private readonly readiness = new Map<string, Promise<void>>();
-  private readonly conversationRequestVersions = new Map<string, number>();
-  private readonly conversationAppliedVersions = new Map<string, number>();
   private readonly sessionVersions = new Map<string, number>();
   private readonly taskRunIds = new Map<string, string>();
 
@@ -137,8 +135,6 @@ export class PiSessionController {
     this.liveEvents.delete(taskId);
     this.connections.delete(taskId);
     this.readiness.delete(taskId);
-    this.conversationRequestVersions.delete(taskId);
-    this.conversationAppliedVersions.delete(taskId);
   }
 
   getSubmitAction(
@@ -172,7 +168,6 @@ export class PiSessionController {
       const command = parseCommandLine(message);
       const customInstructions = command?.args?.trim() || undefined;
       await session.client.compact(customInstructions);
-      await this.refreshConversation(taskId);
     } else if (action === "prompt") {
       await session.client.prompt(message);
     } else if (action === "steer") {
@@ -221,7 +216,6 @@ export class PiSessionController {
     try {
       const session = await this.getPiSession(taskId);
       await session.client.bash(command);
-      await this.refreshConversation(taskId);
     } finally {
       this.updateSession(taskId, { isBashRunning: false });
     }
@@ -295,7 +289,6 @@ export class PiSessionController {
 
   private async loadSession(taskId: string): Promise<void> {
     const connectedSessionVersion = this.getSessionVersion(taskId);
-    const conversationVersion = this.nextConversationVersion(taskId);
     try {
       const session = await this.getPiSession(taskId);
       const events = await session.getConversation();
@@ -305,13 +298,10 @@ export class PiSessionController {
       }
 
       const currentSession = this.getSession(taskId);
-      let reconciledEvents = currentSession.events;
-      if (this.shouldApplyConversation(taskId, conversationVersion)) {
-        const liveEvents = this.liveEvents.get(taskId) ?? [];
-        const newLiveEvents = this.reconcileLiveEvents(events, liveEvents);
-        this.liveEvents.set(taskId, newLiveEvents);
-        reconciledEvents = [...events, ...newLiveEvents];
-      }
+      const liveEvents = this.liveEvents.get(taskId) ?? [];
+      const newLiveEvents = this.reconcileLiveEvents(events, liveEvents);
+      this.liveEvents.set(taskId, newLiveEvents);
+      const reconciledEvents = [...events, ...newLiveEvents];
 
       this.setSession(taskId, {
         connectionState: "connected",
@@ -362,46 +352,6 @@ export class PiSessionController {
       events: [...session.events, event],
       status,
     });
-
-    if (event.type === "turn_completed") {
-      void this.refreshConversation(taskId).catch(() => {});
-    }
-  }
-
-  private async refreshConversation(taskId: string): Promise<void> {
-    const conversationVersion = this.nextConversationVersion(taskId);
-    const sessionVersion = this.getSessionVersion(taskId);
-    const session = await this.getPiSession(taskId);
-    const events = await session.getConversation();
-    if (
-      this.getSessionVersion(taskId) !== sessionVersion ||
-      !this.shouldApplyConversation(taskId, conversationVersion)
-    ) {
-      return;
-    }
-
-    const liveEvents = this.liveEvents.get(taskId) ?? [];
-    const remainingEvents = this.reconcileLiveEvents(events, liveEvents);
-    this.liveEvents.set(taskId, remainingEvents);
-    this.updateSession(taskId, {
-      events: [...events, ...remainingEvents],
-    });
-  }
-
-  private nextConversationVersion(taskId: string): number {
-    const version = (this.conversationRequestVersions.get(taskId) ?? 0) + 1;
-    this.conversationRequestVersions.set(taskId, version);
-    return version;
-  }
-
-  private shouldApplyConversation(taskId: string, version: number): boolean {
-    const appliedVersion = this.conversationAppliedVersions.get(taskId) ?? 0;
-    if (version < appliedVersion) {
-      return false;
-    }
-
-    this.conversationAppliedVersions.set(taskId, version);
-    return true;
   }
 
   private reconcileLiveEvents(
@@ -529,8 +479,6 @@ export class PiSessionController {
       this.liveEvents.delete(taskId);
       this.connections.delete(taskId);
       this.readiness.delete(taskId);
-      this.conversationRequestVersions.delete(taskId);
-      this.conversationAppliedVersions.delete(taskId);
     }
     this.taskRunIds.set(taskId, taskRunId);
   }

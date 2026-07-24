@@ -122,6 +122,17 @@ describe("PiSessionController", () => {
     expect(client.client[input.method]).toHaveBeenCalledWith(
       ...input.expectedArgs,
     );
+    expect(client.getConversation).not.toHaveBeenCalled();
+  });
+
+  it("uses the live bash operation without reloading native history", async () => {
+    const session = createSession();
+    const controller = createController(session);
+
+    await controller.bash("task-1", "printf hello");
+
+    expect(session.client.bash).toHaveBeenCalledWith("printf hello");
+    expect(session.getConversation).not.toHaveBeenCalled();
   });
 
   it("resumes a terminal cloud run only when a message is submitted", async () => {
@@ -394,55 +405,6 @@ describe("PiSessionController", () => {
     ]);
   });
 
-  it("does not let an older load overwrite a newer live refresh", async () => {
-    const nativeEvent: AgentConversationEvent = {
-      type: "user_message",
-      id: "message-1",
-      timestamp: 1,
-      content: [{ type: "text", text: "newer history" }],
-    };
-    const turnCompleted: AgentConversationEvent = {
-      type: "turn_completed",
-      timestamp: 2,
-    };
-    let resolveInitialConversation: (events: AgentConversationEvent[]) => void =
-      () => {};
-    const initialConversation = new Promise<AgentConversationEvent[]>(
-      (resolve) => {
-        resolveInitialConversation = resolve;
-      },
-    );
-    let onEvent: (event: AgentConversationEvent) => void = () => {};
-    let subscribed = false;
-    const session = createSession();
-    vi.mocked(session.getConversation)
-      .mockReturnValueOnce(initialConversation)
-      .mockResolvedValueOnce([nativeEvent, turnCompleted]);
-    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
-      onEvent = handler;
-      subscribed = true;
-      return () => {};
-    });
-    const controller = createController(session);
-
-    const connection = controller.connect("task-1");
-    await vi.waitFor(() => expect(subscribed).toBe(true));
-    onEvent(turnCompleted);
-    await vi.waitFor(() =>
-      expect(controller.store.getState().sessions["task-1"].events).toEqual([
-        nativeEvent,
-        turnCompleted,
-      ]),
-    );
-    resolveInitialConversation([]);
-    await connection;
-
-    expect(controller.store.getState().sessions["task-1"].events).toEqual([
-      nativeEvent,
-      turnCompleted,
-    ]);
-  });
-
   it("drops retained live events when reconnecting after disconnect", async () => {
     const liveEvent: AgentConversationEvent = {
       type: "assistant_message_chunk",
@@ -465,7 +427,7 @@ describe("PiSessionController", () => {
     expect(controller.store.getState().sessions["task-1"].events).toEqual([]);
   });
 
-  it("catches conversation refresh failures triggered by live events", async () => {
+  it("uses live turn completion without reloading native history", async () => {
     const turnCompleted: AgentConversationEvent = {
       type: "turn_completed",
       timestamp: 1,
@@ -479,14 +441,9 @@ describe("PiSessionController", () => {
     const controller = createController(session);
 
     await controller.connect("task-1");
-    vi.mocked(session.getConversation).mockRejectedValueOnce(
-      new Error("refresh failed"),
-    );
     onEvent(turnCompleted);
-    await vi.waitFor(() =>
-      expect(session.getConversation).toHaveBeenCalledTimes(2),
-    );
 
+    expect(session.getConversation).toHaveBeenCalledOnce();
     expect(controller.store.getState().sessions["task-1"].events).toEqual([
       turnCompleted,
     ]);

@@ -185,8 +185,8 @@ describe("PiAgentServer", () => {
     expect(server.session?.sseController).toBeNull();
   });
 
-  it("forwards native Pi RPC commands without redefining operations", async () => {
-    const send = vi.fn(async () => ({
+  it("forwards native Pi RPC commands through the runtime", async () => {
+    const sendCommand = vi.fn(async () => ({
       type: "response",
       command: "set_follow_up_mode",
       success: true,
@@ -198,7 +198,7 @@ describe("PiAgentServer", () => {
         params: Record<string, unknown>,
       ): Promise<unknown>;
     };
-    server.session = { runtime: { client: { send } } };
+    server.session = { runtime: { client: {}, sendCommand } };
     const command = {
       type: "set_follow_up_mode",
       mode: "one-at-a-time",
@@ -206,7 +206,7 @@ describe("PiAgentServer", () => {
 
     const response = await server.executeCommand("pi/rpc", { command });
 
-    expect(send).toHaveBeenCalledWith(command);
+    expect(sendCommand).toHaveBeenCalledWith(command);
     expect(response).toEqual({
       type: "response",
       command: "set_follow_up_mode",

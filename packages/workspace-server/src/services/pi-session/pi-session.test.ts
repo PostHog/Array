@@ -1,5 +1,5 @@
 import type { PiRpcClient } from "@posthog/agent/pi/rpc-client";
-import type { RpcResponse } from "@posthog/agent/pi/rpc-transport";
+import type { RpcCommand, RpcResponse } from "@posthog/agent/pi/rpc-transport";
 import type { PiRuntime } from "@posthog/agent/pi/runtime";
 import type { RootLogger } from "@posthog/di/logger";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -221,6 +221,13 @@ describe("PiSessionService RPC request pinning", () => {
         return {
           client,
           process: undefined,
+          sendCommand: vi.fn((command) =>
+            (
+              client as unknown as {
+                send(command: RpcCommand): Promise<RpcResponse>;
+              }
+            ).send(command),
+          ),
           onRuntimeEvent: vi.fn(),
           onConversationEvent: vi.fn(),
         } as unknown as PiRuntime;

@@ -1,9 +1,5 @@
 import type { PiRpcClient } from "@posthog/agent/pi/rpc-client";
-import {
-  type RpcCommand,
-  type RpcResponse,
-  sendPiRpcCommand,
-} from "@posthog/agent/pi/rpc-transport";
+import type { RpcCommand, RpcResponse } from "@posthog/agent/pi/rpc-transport";
 import type { PiRuntime } from "@posthog/agent/pi/runtime";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
@@ -178,7 +174,7 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
     session.activeRequestCount += 1;
 
     try {
-      const response = await sendPiRpcCommand(session.client, command);
+      const response = await session.runtime.sendCommand(command);
 
       if (
         response.success &&

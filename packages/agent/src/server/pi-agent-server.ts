@@ -6,11 +6,7 @@ import type { AgentConversationEvent, StoredLogEntry } from "@posthog/shared";
 import { Hono } from "hono";
 import { z } from "zod/v4";
 import { createPiRpcClient, type PiRpcClient } from "../pi/rpc-client";
-import {
-  piRpcCommandSchema,
-  type RpcCommand,
-  sendPiRpcCommand,
-} from "../pi/rpc-transport";
+import { piRpcCommandSchema, type RpcCommand } from "../pi/rpc-transport";
 import { PiRuntime } from "../pi/runtime";
 import { PostHogAPIClient } from "../posthog-api";
 import { resolveLlmGatewayUrl } from "../utils/gateway";
@@ -423,7 +419,7 @@ export class PiAgentServer {
       case "cancel":
         return client.abort();
       case "pi/rpc":
-        return sendPiRpcCommand(client, params.command as RpcCommand);
+        return runtime.sendCommand(params.command as RpcCommand);
     }
   }
 

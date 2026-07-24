@@ -90,7 +90,16 @@ function isAssistantMessage(
   return message.role === "assistant";
 }
 
+export interface PiDirectBashResult {
+  cancelled: boolean;
+  exitCode: number | null;
+  output: string;
+}
+
 export interface PiConversationTranslator {
+  beginDirectBash(command: string): AgentConversationEvent[];
+  completeDirectBash(result: PiDirectBashResult): AgentConversationEvent[];
+  failDirectBash(message: string): AgentConversationEvent[];
   translateHistoryMessage(message: AgentMessage): AgentConversationEvent[];
   translateEvent(event: AgentSessionEvent): AgentConversationEvent[];
 }
@@ -102,6 +111,76 @@ export function createPiConversationTranslator(): PiConversationTranslator {
   let latestRuntimeTimestamp = 0;
   let latestConversationTimestamp = 0;
   let pendingRuntimeError: AgentConversationEvent | undefined;
+  let directBashSequence = 0;
+  let activeDirectBash:
+    | {
+        output: string;
+        startedAt: number;
+        toolCallId: string;
+      }
+    | undefined;
+
+  function beginDirectBash(command: string): AgentConversationEvent[] {
+    const startedAt = Date.now();
+    const toolCallId = `pi-bash-live-${startedAt}-${++directBashSequence}`;
+    activeDirectBash = { output: "", startedAt, toolCallId };
+
+    return [
+      {
+        type: "tool_call_started",
+        timestamp: startedAt,
+        toolCall: {
+          id: toolCallId,
+          title: command,
+          kind: "execute",
+          status: "in_progress",
+          rawInput: { command },
+        },
+      },
+    ];
+  }
+
+  function finishDirectBash(
+    status: "completed" | "failed",
+    output: string,
+  ): AgentConversationEvent[] {
+    const directBash = activeDirectBash;
+    activeDirectBash = undefined;
+    if (!directBash) {
+      return [];
+    }
+
+    return [
+      {
+        type: "tool_call_updated",
+        timestamp: Date.now(),
+        toolCall: {
+          id: directBash.toolCallId,
+          status,
+          rawOutput: output,
+          content: output
+            ? [
+                {
+                  type: "content",
+                  content: { type: "text", text: output },
+                },
+              ]
+            : [],
+        },
+      },
+    ];
+  }
+
+  function completeDirectBash(
+    result: PiDirectBashResult,
+  ): AgentConversationEvent[] {
+    const failed = result.cancelled || (result.exitCode ?? 0) !== 0;
+    return finishDirectBash(failed ? "failed" : "completed", result.output);
+  }
+
+  function failDirectBash(message: string): AgentConversationEvent[] {
+    return finishDirectBash("failed", message);
+  }
 
   function translateHistoryMessage(
     message: AgentMessage,
@@ -210,6 +289,32 @@ export function createPiConversationTranslator(): PiConversationTranslator {
         event.isError,
         latestRuntimeTimestamp,
       );
+    }
+
+    if (event.type === "bash_execution_update") {
+      const directBash = activeDirectBash;
+      if (!directBash) {
+        return [];
+      }
+
+      directBash.output += event.delta;
+      return [
+        {
+          type: "tool_call_updated",
+          timestamp: directBash.startedAt,
+          toolCall: {
+            id: directBash.toolCallId,
+            content: directBash.output
+              ? [
+                  {
+                    type: "content",
+                    content: { type: "text", text: directBash.output },
+                  },
+                ]
+              : [],
+          },
+        },
+      ];
     }
 
     if (event.type === "message_end") {
@@ -322,14 +427,26 @@ export function createPiConversationTranslator(): PiConversationTranslator {
         ];
       }
 
-      return [
+      const timestamp = event.result?.summary
+        ? Math.max(Date.now(), latestConversationTimestamp + 1)
+        : latestConversationTimestamp;
+      const events: AgentConversationEvent[] = [
         {
           type: "runtime_status",
-          timestamp: latestConversationTimestamp,
+          timestamp,
           status: "compacting",
           isComplete: true,
         },
       ];
+      if (event.result?.summary) {
+        events.push({
+          type: "assistant_message_chunk",
+          timestamp,
+          content: { type: "text", text: event.result.summary },
+        });
+      }
+
+      return events;
     }
 
     if (event.type === "agent_settled") {
@@ -344,5 +461,11 @@ export function createPiConversationTranslator(): PiConversationTranslator {
     return [];
   }
 
-  return { translateHistoryMessage, translateEvent };
+  return {
+    beginDirectBash,
+    completeDirectBash,
+    failDirectBash,
+    translateHistoryMessage,
+    translateEvent,
+  };
 }

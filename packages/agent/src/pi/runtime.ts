@@ -1,10 +1,16 @@
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  RpcCommand,
+  RpcResponse,
+} from "@earendil-works/pi-coding-agent";
 import type { AgentConversationEvent } from "@posthog/shared";
 import {
   createPiConversationTranslator,
   type PiConversationTranslator,
+  type PiDirectBashResult,
 } from "./conversation/translatePiConversation";
 import { getPiRpcClientProcess, type PiRpcClient } from "./rpc-client";
+import { sendPiRpcCommand } from "./rpc-transport";
 
 export class PiRuntime {
   readonly client: PiRpcClient;
@@ -39,15 +45,44 @@ export class PiRuntime {
     return () => this.conversationListeners.delete(listener);
   }
 
+  async sendCommand(command: RpcCommand): Promise<RpcResponse> {
+    if (command.type !== "bash") {
+      return sendPiRpcCommand(this.client, command);
+    }
+
+    this.emitConversationEvents(
+      this.translator.beginDirectBash(command.command),
+    );
+    try {
+      const response = await sendPiRpcCommand(this.client, command);
+      if (response.success) {
+        const result = (response as { data: PiDirectBashResult }).data;
+        this.emitConversationEvents(this.translator.completeDirectBash(result));
+      } else {
+        this.emitConversationEvents(
+          this.translator.failDirectBash(response.error),
+        );
+      }
+      return response;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emitConversationEvents(this.translator.failDirectBash(message));
+      throw error;
+    }
+  }
+
   private handleEvent(event: AgentSessionEvent): void {
     for (const listener of this.runtimeListeners) {
       listener(event);
     }
 
-    const conversationEvents = this.translator.translateEvent(event);
-    for (const conversationEvent of conversationEvents) {
+    this.emitConversationEvents(this.translator.translateEvent(event));
+  }
+
+  private emitConversationEvents(events: AgentConversationEvent[]): void {
+    for (const event of events) {
       for (const listener of this.conversationListeners) {
-        listener(conversationEvent);
+        listener(event);
       }
     }
   }

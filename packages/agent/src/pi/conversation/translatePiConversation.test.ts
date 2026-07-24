@@ -237,6 +237,34 @@ describe("createPiConversationTranslator", () => {
     ]);
   });
 
+  it("emits the completed compaction summary without reloading history", () => {
+    const translator = createPiConversationTranslator();
+
+    expect(
+      translator.translateEvent({
+        type: "compaction_end",
+        reason: "manual",
+        result: {
+          summary: "Earlier work was compacted.",
+          firstKeptEntryId: "entry-1",
+          tokensBefore: 1000,
+        },
+        aborted: false,
+        willRetry: false,
+      }),
+    ).toMatchObject([
+      {
+        type: "runtime_status",
+        status: "compacting",
+        isComplete: true,
+      },
+      {
+        type: "assistant_message_chunk",
+        content: { type: "text", text: "Earlier work was compacted." },
+      },
+    ]);
+  });
+
   it("translates compaction failures with their error", () => {
     const translator = createPiConversationTranslator();
 
@@ -295,6 +323,87 @@ describe("createPiConversationTranslator", () => {
             {
               type: "content",
               content: { type: "text", text: "/tmp/project" },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("streams direct RPC bash output into one execute tool call", () => {
+    const translator = createPiConversationTranslator();
+    const [started] = translator.beginDirectBash("printf hello");
+    expect(started).toMatchObject({
+      type: "tool_call_started",
+      toolCall: {
+        title: "printf hello",
+        status: "in_progress",
+      },
+    });
+    if (started?.type !== "tool_call_started") {
+      throw new Error("Expected a direct bash tool call");
+    }
+    const toolCallId = started.toolCall.id;
+
+    expect(
+      translator.translateEvent({
+        type: "bash_execution_update",
+        id: "req_1",
+        delta: "hel",
+      }),
+    ).toMatchObject([
+      {
+        type: "tool_call_updated",
+        toolCall: {
+          id: toolCallId,
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "hel" },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(
+      translator.translateEvent({
+        type: "bash_execution_update",
+        id: "req_1",
+        delta: "lo",
+      }),
+    ).toMatchObject([
+      {
+        type: "tool_call_updated",
+        toolCall: {
+          id: toolCallId,
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "hello" },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(
+      translator.completeDirectBash({
+        output: "hello",
+        exitCode: 0,
+        cancelled: false,
+      }),
+    ).toMatchObject([
+      {
+        type: "tool_call_updated",
+        toolCall: {
+          id: toolCallId,
+          status: "completed",
+          rawOutput: "hello",
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "hello" },
             },
           ],
         },
