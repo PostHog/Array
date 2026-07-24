@@ -20,7 +20,10 @@ export function ChannelTaskPreviewDialog({
 }) {
   return (
     <Dialog open={!!task} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="h-[min(820px,calc(100vh-48px))] w-[min(960px,calc(100vw-48px))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent
+        showCloseButton={false}
+        className="h-[min(820px,calc(100vh-48px))] w-[min(960px,calc(100vw-48px))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none"
+      >
         <DialogTitle className="sr-only">
           {task?.title || "Task preview"}
         </DialogTitle>

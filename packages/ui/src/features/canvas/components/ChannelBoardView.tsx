@@ -7,27 +7,17 @@ import {
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import { channelBoardStatus } from "@posthog/ui/features/canvas/utils/channelBoardStatus";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
   WorkBoard,
   type WorkBoardColumn,
 } from "@posthog/ui/features/home/components/WorkBoard";
+import { HOME_BOARD_COLUMN_IDS } from "@posthog/ui/features/home/utils/boardColumns";
 import { SITUATION_VISUAL } from "@posthog/ui/features/home/utils/situationDisplay";
 import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
-const CHANNEL_COLUMN_IDS: SituationId[] = [
-  "working",
-  "in_review",
-  "ci_failing",
-  "changes_requested",
-  "comments_waiting",
-  "ready_to_merge",
-  "done",
-];
-
 export function ChannelBoardView({
   tasks,
   isLoading,
@@ -43,22 +33,15 @@ export function ChannelBoardView({
 }) {
   const columns = useMemo<WorkBoardColumn<Task>[]>(() => {
     const grouped = new Map<SituationId, Task[]>(
-      CHANNEL_COLUMN_IDS.map((id) => [id, []]),
+      HOME_BOARD_COLUMN_IDS.map((id) => [id, []]),
     );
     for (const task of tasks) {
-      const prUrl = task.latest_run?.output?.pr_url;
-      const situation = channelBoardStatus({
-        status: task.latest_run?.status,
-        prState: typeof prUrl === "string" ? "open" : null,
-        needsPermission: false,
-        isGenerating: task.latest_run?.status === "in_progress",
-        homeSituation: situationByTaskId.get(task.id),
-      });
-      grouped.get(situation)?.push(task);
+      const situation = situationByTaskId.get(task.id);
+      if (situation) grouped.get(situation)?.push(task);
     }
-    return CHANNEL_COLUMN_IDS.map((id) => ({
+    return HOME_BOARD_COLUMN_IDS.map((id) => ({
       id,
-      label: id === "in_review" ? "Needs feedback" : SITUATION_VISUAL[id].label,
+      label: SITUATION_VISUAL[id].label,
       description: SITUATION_VISUAL[id].description,
       color: SITUATION_VISUAL[id].color,
       Icon: SITUATION_VISUAL[id].Icon,
@@ -97,12 +80,12 @@ function ChannelBoardCard({
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  const display = useTaskStatusDisplay(task, homeSituation);
+  const display = useTaskStatusDisplay(task);
   const { messages } = useTaskThread(task.id, {
     pollIntervalMs: BOARD_REPLIES_POLL_INTERVAL_MS,
   });
   const creatorName = userDisplayName(task.created_by);
-  const visual = SITUATION_VISUAL[display.boardStatus];
+  const visual = SITUATION_VISUAL[homeSituation ?? "working"];
   const replyLabel = `${messages.length} ${messages.length === 1 ? "reply" : "replies"}`;
 
   return (

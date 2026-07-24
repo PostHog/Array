@@ -652,7 +652,7 @@ function ThreadConversation({
   const isReady = !isInitializing && !isLoading;
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-gray-1">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-gray-1">
       <ThreadHeader
         onOpenFull={onOpenFull}
         onToggleCollapsed={onToggleCollapsed}
@@ -664,7 +664,7 @@ function ThreadConversation({
           <TaskCard task={task} channelId={channelId} inThread />
         </div>
       )}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <ThreadTimeline
           timeline={timeline}
           isReady={isReady}

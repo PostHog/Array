@@ -44,6 +44,7 @@ import {
 import { useChannelHomeUiStore } from "@posthog/ui/features/canvas/stores/channelHomeUiStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { useHomeSnapshot } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
+import { columnForWorkstream } from "@posthog/ui/features/home/utils/boardColumns";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -129,9 +130,10 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       ...homeSnapshot.needsAttention,
       ...homeSnapshot.inProgress,
     ]) {
-      if (!workstream.primarySituation) continue;
+      const column = columnForWorkstream(workstream);
+      if (!column) continue;
       for (const task of workstream.tasks) {
-        result.set(task.id, workstream.primarySituation);
+        result.set(task.id, column);
       }
     }
     return result;
