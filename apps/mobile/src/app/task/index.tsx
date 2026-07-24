@@ -2,6 +2,7 @@ import { Text } from "@components/text";
 import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
   getAvailableModesForAdapter,
+  getDefaultExecutionModeForAdapter,
 } from "@posthog/core/sessions/executionModes";
 import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
@@ -803,7 +804,7 @@ export default function NewTaskScreen() {
             const nextAdapter: Adapter =
               adapter === "claude" ? "codex" : "claude";
             setAdapter(nextAdapter);
-            setMode(DEFAULT_CLAUDE_EXECUTION_MODE);
+            setMode(getDefaultExecutionModeForAdapter(nextAdapter));
             setModel(
               nextAdapter === "codex"
                 ? DEFAULT_CODEX_MODEL

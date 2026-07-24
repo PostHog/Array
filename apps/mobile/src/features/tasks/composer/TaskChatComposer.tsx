@@ -2,6 +2,7 @@ import { Text } from "@components/text";
 import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
   getAvailableModesForAdapter,
+  getDefaultExecutionModeForAdapter,
 } from "@posthog/core/sessions/executionModes";
 import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
@@ -485,7 +486,9 @@ export function TaskChatComposer({
         value={model}
         onChange={(v) => {
           if (v === SWITCH_ADAPTER_VALUE) {
-            onAdapterChange(adapter === "claude" ? "codex" : "claude");
+            const nextAdapter = adapter === "claude" ? "codex" : "claude";
+            onAdapterChange(nextAdapter);
+            onModeChange(getDefaultExecutionModeForAdapter(nextAdapter));
             return;
           }
           const next = resolveCloudComposerModelChange({

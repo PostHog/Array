@@ -1,5 +1,8 @@
 import { Text } from "@components/text";
-import { DEFAULT_CLAUDE_EXECUTION_MODE } from "@posthog/core/sessions/executionModes";
+import {
+  DEFAULT_CLAUDE_EXECUTION_MODE,
+  getDefaultExecutionModeForAdapter,
+} from "@posthog/core/sessions/executionModes";
 import {
   countUserMessages,
   getSessionActivityPhase,
@@ -172,6 +175,7 @@ export default function TaskDetailScreen() {
   >();
   const composerAdapter: Adapter =
     task?.latest_run?.runtime_adapter &&
+    !session?.terminalStatus &&
     composerConfig?.adapter !== task.latest_run.runtime_adapter
       ? task.latest_run.runtime_adapter
       : (composerConfig?.adapter ??
@@ -541,7 +545,7 @@ export default function TaskDetailScreen() {
       if (!taskId) return;
       setComposerConfig(taskId, {
         adapter: value,
-        mode: DEFAULT_CLAUDE_EXECUTION_MODE,
+        mode: getDefaultExecutionModeForAdapter(value),
         model: value === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_GATEWAY_MODEL,
         reasoning: DEFAULT_REASONING_EFFORT,
       });

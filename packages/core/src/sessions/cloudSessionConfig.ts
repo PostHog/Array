@@ -1,9 +1,8 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { Adapter, StoredLogEntry } from "@posthog/shared";
 import {
-  DEFAULT_CLAUDE_EXECUTION_MODE,
-  getAvailableCodexModes,
-  getAvailableModes,
+  getAvailableModesForAdapter,
+  getDefaultExecutionModeForAdapter,
 } from "./executionModes";
 
 /**
@@ -56,10 +55,8 @@ export function buildCloudDefaultConfigOptions(
   adapter: Adapter = "claude",
   extra: SessionConfigOption[] = [],
 ): SessionConfigOption[] {
-  const modes =
-    adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
-  const fallbackMode =
-    adapter === "codex" ? "auto" : DEFAULT_CLAUDE_EXECUTION_MODE;
+  const modes = getAvailableModesForAdapter(adapter);
+  const fallbackMode = getDefaultExecutionModeForAdapter(adapter);
   const currentMode =
     typeof initialMode === "string" &&
     modes.some((mode) => mode.id === initialMode)

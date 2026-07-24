@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getAvailableModesForAdapter } from "./executionModes";
+import {
+  getAvailableModesForAdapter,
+  getDefaultExecutionModeForAdapter,
+} from "./executionModes";
 
 describe("getAvailableModesForAdapter", () => {
   it.each([
@@ -9,5 +12,14 @@ describe("getAvailableModesForAdapter", () => {
     expect(getAvailableModesForAdapter(adapter).map((mode) => mode.id)).toEqual(
       expected,
     );
+  });
+});
+
+describe("getDefaultExecutionModeForAdapter", () => {
+  it.each([
+    ["claude", "plan"],
+    ["codex", "auto"],
+  ] as const)("returns the desktop default for %s", (adapter, expected) => {
+    expect(getDefaultExecutionModeForAdapter(adapter)).toBe(expected);
   });
 });

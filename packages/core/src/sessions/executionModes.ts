@@ -7,7 +7,6 @@ export interface ModeInfo {
 }
 
 export const DEFAULT_CLAUDE_EXECUTION_MODE: ExecutionMode = "plan";
-export const DEFAULT_CODEX_EXECUTION_MODE: ExecutionMode = "plan";
 
 const availableModes: ModeInfo[] = [
   {
@@ -52,4 +51,10 @@ export function getAvailableModesForAdapter(
   adapter: "claude" | "codex",
 ): ModeInfo[] {
   return adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
+}
+
+export function getDefaultExecutionModeForAdapter(
+  adapter: "claude" | "codex",
+): ExecutionMode {
+  return adapter === "codex" ? "auto" : DEFAULT_CLAUDE_EXECUTION_MODE;
 }
