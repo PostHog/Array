@@ -1,5 +1,4 @@
 import "./generated.augment";
-import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type {
   Adapter,
   CloudMcpServerImport,
@@ -15,6 +14,7 @@ import type {
 import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  isSupportedReasoningEffort,
   resolveCloudInitialPermissionMode,
 } from "@posthog/shared";
 import type {
