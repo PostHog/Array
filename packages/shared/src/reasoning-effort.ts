@@ -20,44 +20,46 @@ const BASE_OPTIONS: ReasoningEffortOption[] = [
   { value: "high", name: "High" },
 ];
 
-const CLAUDE_MODELS_WITH_EFFORT = new Set([
-  "claude-opus-4-7",
-  "claude-opus-4-8",
-  "claude-sonnet-4-6",
-  "claude-sonnet-5",
-  "claude-fable-5",
-]);
+const CLAUDE_MODEL_EFFORTS: Readonly<
+  Record<string, readonly SupportedReasoningEffort[]>
+> = {
+  "claude-opus-4-7": ["low", "medium", "high", "xhigh", "max"],
+  "claude-opus-4-8": ["low", "medium", "high", "xhigh", "max"],
+  "claude-sonnet-4-6": ["low", "medium", "high"],
+  "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
+  "claude-fable-5": ["low", "medium", "high", "xhigh", "max"],
+  "@cf/zai-org/glm-5.2": ["high", "max"],
+};
 
-const CLAUDE_MODELS_WITH_XHIGH_EFFORT = new Set([
-  "claude-opus-4-7",
-  "claude-opus-4-8",
-  "claude-sonnet-5",
-  "claude-fable-5",
-]);
+const EFFORT_NAMES: Record<SupportedReasoningEffort, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+};
 
 export function getReasoningEffortOptions(
   adapter: Adapter,
   modelId: string,
 ): ReasoningEffortOption[] | null {
-  if (adapter === "claude" && !CLAUDE_MODELS_WITH_EFFORT.has(modelId)) {
-    return null;
+  if (adapter === "claude") {
+    const efforts = CLAUDE_MODEL_EFFORTS[modelId];
+    return (
+      efforts?.map((value) => ({ value, name: EFFORT_NAMES[value] })) ?? null
+    );
   }
 
   const options = [...BASE_OPTIONS];
   const normalizedModelId = modelId.toLowerCase();
   const supportsXhigh =
-    adapter === "claude"
-      ? CLAUDE_MODELS_WITH_XHIGH_EFFORT.has(modelId)
-      : normalizedModelId.includes("gpt-5.5") ||
-        normalizedModelId.includes("gpt-5.6");
+    normalizedModelId.includes("gpt-5.5") ||
+    normalizedModelId.includes("gpt-5.6");
 
   if (supportsXhigh) {
     options.push({ value: "xhigh", name: "Extra High" });
   }
-  if (
-    (adapter === "claude" && supportsXhigh) ||
-    (adapter === "codex" && normalizedModelId.includes("gpt-5.6"))
-  ) {
+  if (adapter === "codex" && normalizedModelId.includes("gpt-5.6")) {
     options.push({ value: "max", name: "Max" });
   }
 

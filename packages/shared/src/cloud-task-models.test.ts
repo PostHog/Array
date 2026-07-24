@@ -164,8 +164,17 @@ describe("buildCloudTaskConfigOptions", () => {
           { value: "@cf/zai-org/glm-5.2" },
         ],
       },
+      {
+        id: "effort",
+        currentValue: "high",
+        options: [{ value: "high" }, { value: "max" }],
+      },
     ]);
-    expect(options.map((option) => option.id)).toEqual(["mode", "model"]);
+    expect(options.map((option) => option.id)).toEqual([
+      "mode",
+      "model",
+      "effort",
+    ]);
   });
 
   it("builds Codex options with the shared default and reasoning levels", () => {
