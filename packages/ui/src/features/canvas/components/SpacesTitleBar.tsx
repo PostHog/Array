@@ -20,7 +20,7 @@ import { useMemo } from "react";
 export function SpacesSearchField() {
   const toggleCommandMenu = useCommandMenuStore((s) => s.toggle);
   return (
-    <Flex align="center" justify="center" className="min-w-0 flex-1 px-4">
+    <Flex align="center" justify="start" className="min-w-0 flex-1 px-3">
       <button
         type="button"
         onClick={toggleCommandMenu}
