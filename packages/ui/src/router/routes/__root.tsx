@@ -34,6 +34,7 @@ import {
 } from "@posthog/ui/features/canvas/components/SpacesTitleBar";
 import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { useChannelDeepLink } from "@posthog/ui/features/canvas/hooks/useChannelDeepLink";
+import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { GlobalFilePicker } from "@posthog/ui/features/command/GlobalFilePicker";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
@@ -196,6 +197,9 @@ function RootLayout() {
   );
   const channelsToggleOn = useSidebarStore((s) => s.channelsEnabled);
   const channelsEnabled = channelsToggleOn && bluebirdEnabled;
+  // The Spaces layout has exactly one gate: its feature flag (no sidebar
+  // toggle). When on it subsumes the channels world entirely.
+  const spacesOn = useSpacesLayout();
   // When the sidebar is collapsed (Cmd+B) the title bar's left block shrinks to
   // fit its own controls so the tab strip flushes left with the content pane.
   const sidebarOpen = useSidebarStore((s) => s.open);
@@ -414,19 +418,19 @@ function RootLayout() {
               </Flex>
             )}
           </Flex>
-          {/* Spaces layout (prototype): with channels on, the title-bar center
-              is a persistent search pill (tabs live inside the task view
-              instead of a global strip). Otherwise the browser-tab strip works
-              as before: channel tabs under /website, plain task tabs in Code. */}
-          {channelsEnabled ? <SpacesSearchField /> : <BrowserTabStrip />}
+          {/* Spaces layout: the title-bar center is a persistent search pill
+              (tabs live inside the task view instead of a global strip).
+              Flag off keeps the browser-tab strip exactly as before: channel
+              tabs under /website, plain task tabs in Code. */}
+          {spacesOn ? <SpacesSearchField /> : <BrowserTabStrip />}
           {/* Gated so an empty right-side group can't claim a no-drag rect
               in the title bar for nothing — every pixel without controls
               should drag the window. */}
-          {(billingEnabled || channelsEnabled) && (
+          {(billingEnabled || channelsEnabled || spacesOn) && (
             <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
-              {channelsEnabled && <SpacesTitleBarActions />}
+              {spacesOn && <SpacesTitleBarActions />}
               <UsageButton />
-              {channelsEnabled && (
+              {(channelsEnabled || spacesOn) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -438,8 +442,8 @@ function RootLayout() {
                 </Button>
               )}
               {/* Account / project / org menu, moved out of the sidebar into a
-                  compact avatar here in the spaces layout. */}
-              {channelsEnabled && <ProjectSwitcher variant="compact" />}
+                  compact avatar in the spaces layout. */}
+              {spacesOn && <ProjectSwitcher variant="compact" />}
             </Flex>
           )}
         </Flex>
