@@ -110,7 +110,7 @@ describe("PlanApprovalView", () => {
     ).toBeInTheDocument();
   });
 
-  it("uses updated content instead of stale raw input while streaming", () => {
+  it("uses updated content instead of stale raw input while streaming", async () => {
     renderView({
       toolCall: makeToolCall({
         status: "in_progress",
@@ -124,7 +124,7 @@ describe("PlanApprovalView", () => {
       }),
     });
 
-    expect(screen.getByText("Updated plan")).toBeInTheDocument();
+    expect(await screen.findByText("Updated plan")).toBeInTheDocument();
     expect(screen.queryByText("Initial plan")).not.toBeInTheDocument();
   });
 
