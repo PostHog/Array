@@ -8,7 +8,7 @@ import { Box, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
-const EMPTY_CONFIG = '{\n  "mcpServers": {}\n}\n';
+const EMPTY_CONFIG = "{}\n";
 
 function validationMessage(content: string): string | null {
   try {

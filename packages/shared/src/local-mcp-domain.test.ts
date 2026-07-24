@@ -65,6 +65,11 @@ describe("parsePostHogMcpServers", () => {
 });
 
 describe("validatePostHogMcpConfig", () => {
+  it("accepts an empty object as an empty configuration", () => {
+    expect(validatePostHogMcpConfig({})).toEqual([]);
+    expect(parsePostHogMcpServers({})).toEqual([]);
+  });
+
   it("reports invalid roots and named server entries", () => {
     expect(validatePostHogMcpConfig(null)).toEqual([
       "Configuration must be a JSON object",

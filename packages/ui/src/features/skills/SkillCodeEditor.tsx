@@ -1,4 +1,10 @@
-import { EditorView } from "@codemirror/view";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+} from "@codemirror/commands";
+import { EditorView, keymap } from "@codemirror/view";
 import { useMemo, useRef } from "react";
 import { useCodeMirror } from "../code-editor/hooks/useCodeMirror";
 import { useEditorExtensions } from "../code-editor/hooks/useEditorExtensions";
@@ -23,6 +29,8 @@ export function SkillCodeEditor({
   const extensions = useMemo(
     () => [
       ...baseExtensions,
+      history(),
+      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           onDocChangedRef.current(update.state.doc.toString());

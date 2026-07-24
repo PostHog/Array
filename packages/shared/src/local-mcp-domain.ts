@@ -101,6 +101,9 @@ export function validatePostHogMcpConfig(value: unknown): string[] {
     return ["Configuration must be a JSON object"];
   }
   const servers = (value as { mcpServers?: unknown }).mcpServers;
+  if (servers === undefined) {
+    return [];
+  }
   if (!servers || typeof servers !== "object" || Array.isArray(servers)) {
     return ["mcpServers must be an object"];
   }
