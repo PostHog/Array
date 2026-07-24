@@ -1,6 +1,8 @@
 import { convertStoredEntriesToPortableSessionEvents } from "@posthog/core/sessions/portableSessionEvents";
 import {
+  type Adapter,
   type CloudTaskUpdatePayload,
+  isSupportedReasoningEffort,
   isTerminalStatus,
   type StoredLogEntry,
   serializeCloudPrompt,
@@ -1187,9 +1189,18 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
     const composerConfig =
       useTaskStore.getState().composerConfigByTaskId[taskId];
+    const adapter: Adapter =
+      composerConfig?.adapter ?? previousRun?.runtime_adapter ?? "claude";
+    const model = composerConfig?.model ?? previousRun?.model ?? undefined;
     const previousPermissionMode = previousRun?.state?.initial_permission_mode;
-    const reasoningEffort =
+    const requestedReasoning =
       composerConfig?.reasoning ?? previousRun?.reasoning_effort ?? undefined;
+    const reasoningEffort =
+      model &&
+      requestedReasoning &&
+      isSupportedReasoningEffort(adapter, model, requestedReasoning)
+        ? requestedReasoning
+        : undefined;
     const initialPermissionMode =
       composerConfig?.mode ??
       (typeof previousPermissionMode === "string"
@@ -1198,7 +1209,8 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
     const updatedTask = await runTaskInCloud(taskId, {
       branch: previousBranch,
-      runtimeAdapter: "claude",
+      runtimeAdapter: adapter,
+      model,
       resumeFromRunId: previousRunId,
       pendingUserMessage: prompt,
       reasoningEffort,
