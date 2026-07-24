@@ -11,6 +11,7 @@ import {
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
+  Skeleton,
 } from "@posthog/quill";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
@@ -22,7 +23,7 @@ import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
 import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
 import { Box, Flex } from "@radix-ui/themes";
-import { useCallback, useEffect } from "react";
+import { type ReactElement, useCallback, useEffect } from "react";
 import { useStore } from "zustand";
 import {
   PiMessagingModeSelector,
@@ -64,7 +65,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     draftActions.setContext(taskId, {
       taskId,
       repoPath,
-      disabled: !sessionAvailable || isCompacting,
+      disabled: isCompacting,
       isLoading: isStreaming || isBashRunning,
     });
   }, [
@@ -73,7 +74,6 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     isCompacting,
     isStreaming,
     repoPath,
-    sessionAvailable,
     taskId,
   ]);
 
@@ -192,27 +192,47 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     return <TaskDetailSkeleton />;
   }
 
-  if (!status) {
-    return (
-      <Flex direction="column" height="100%">
-        <Box className="min-h-0 flex-1">
-          <ChatThread
-            events={session.events}
-            isPromptPending
-            taskId={taskId}
-            repoPath={repoPath}
-          />
-        </Box>
-      </Flex>
+  const pending = status ? isStreaming || isBashRunning : false;
+  let modelSelector = <Skeleton className="h-7 w-32" />;
+  let reasoningSelector: ReactElement | null = (
+    <Skeleton className="h-7 w-20" />
+  );
+  let messagingModeToggle = <Skeleton className="h-7 w-24" />;
+
+  if (status) {
+    const supportsThinking = session.thinkingLevels.some(
+      (level) => level !== "off",
+    );
+    const queueMode =
+      messagingMode === "steer" ? status.steeringMode : status.followUpMode;
+
+    modelSelector = (
+      <PiModelSelector
+        models={session.models}
+        currentModel={status.model}
+        disabled={pending || isCompacting}
+        onChange={setModel}
+      />
+    );
+    reasoningSelector = supportsThinking ? (
+      <PiThinkingLevelSelector
+        level={status.thinkingLevel}
+        levels={session.thinkingLevels}
+        disabled={pending || isCompacting}
+        onChange={setThinkingLevel}
+      />
+    ) : null;
+    messagingModeToggle = (
+      <PiMessagingModeSelector
+        mode={messagingMode}
+        queueMode={queueMode}
+        queuedCount={status.pendingMessageCount}
+        disabled={isBashRunning}
+        onModeChange={(mode) => setMessagingMode(taskId, mode)}
+        onQueueModeChange={setQueueMode}
+      />
     );
   }
-
-  const pending = isStreaming || isBashRunning;
-  const supportsThinking = session.thinkingLevels.some(
-    (level) => level !== "off",
-  );
-  const queueMode =
-    messagingMode === "steer" ? status.steeringMode : status.followUpMode;
 
   return (
     <Flex direction="column" height="100%">
@@ -233,38 +253,14 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
           taskId={taskId}
           repoPath={repoPath}
           placeholder="Type a message..."
-          disabled={!sessionAvailable || isCompacting}
+          disabled={isCompacting}
           isLoading={pending}
+          submitDisabledExternal={!sessionAvailable || !status}
           enableBashMode
           enableCommands
-          modelSelector={
-            <PiModelSelector
-              models={session.models}
-              currentModel={status.model}
-              disabled={pending || isCompacting}
-              onChange={setModel}
-            />
-          }
-          reasoningSelector={
-            supportsThinking ? (
-              <PiThinkingLevelSelector
-                level={status.thinkingLevel}
-                levels={session.thinkingLevels}
-                disabled={pending || isCompacting}
-                onChange={setThinkingLevel}
-              />
-            ) : null
-          }
-          messagingModeToggle={
-            <PiMessagingModeSelector
-              mode={messagingMode}
-              queueMode={queueMode}
-              queuedCount={status.pendingMessageCount}
-              disabled={isBashRunning}
-              onModeChange={(mode) => setMessagingMode(taskId, mode)}
-              onQueueModeChange={setQueueMode}
-            />
-          }
+          modelSelector={modelSelector}
+          reasoningSelector={reasoningSelector}
+          messagingModeToggle={messagingModeToggle}
           onToggleMessagingMode={toggleMessagingMode}
           onSubmit={sendPrompt}
           onBashCommand={runBashCommand}
