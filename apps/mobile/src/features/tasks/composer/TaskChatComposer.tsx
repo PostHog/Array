@@ -59,11 +59,19 @@ import {
 } from "./options";
 import { Pill } from "./Pill";
 import { SelectSheet } from "./SelectSheet";
+import {
+  type ComposerContent,
+  isComposerEmpty,
+  submitComposerMessage,
+} from "./submitComposerMessage";
 
 const log = logger.scope("task-chat-composer");
 
 interface TaskChatComposerProps {
-  onSend: (message: string, attachments: PendingAttachment[]) => void;
+  onSend: (
+    message: string,
+    attachments: PendingAttachment[],
+  ) => Promise<boolean>;
   onStop?: () => void;
   disabled?: boolean;
   placeholder?: string;
@@ -179,6 +187,14 @@ export function TaskChatComposer({
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
+  // Mirror composer state into refs so a failed send can read the current
+  // value after awaiting, rather than the value captured when it was sent.
+  const messageRef = useRef(message);
+  messageRef.current = message;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const submissionRef = useRef(0);
+
   useEffect(() => {
     if (!initialMessage) return;
     setMessage(initialMessage);
@@ -206,18 +222,33 @@ export function TaskChatComposer({
 
   const showReasoningPill = modelSupportsReasoning(model);
 
-  const hasContent = message.trim().length > 0 || attachments.length > 0;
+  const hasContent = !isComposerEmpty({ text: message, attachments });
   const canSend = hasContent && !disabled && !isRecording;
   const showStop =
     !isUserTurn && !canSend && !isRecording && !isTranscribing && !!onStop;
 
+  const applyContent = (content: ComposerContent) => {
+    setMessage(content.text);
+    setAttachments(content.attachments);
+  };
+
   const handleSend = () => {
-    const trimmed = message.trim();
     if (!hasContent || disabled) return;
-    setMessage("");
-    setAttachments([]);
+    const submitted: ComposerContent = { text: message.trim(), attachments };
+    const submissionId = ++submissionRef.current;
     Keyboard.dismiss();
-    onSend(trimmed, attachments);
+    void submitComposerMessage({
+      submitted,
+      clear: () => applyContent({ text: "", attachments: [] }),
+      send: () => onSend(submitted.text, submitted.attachments),
+      isLatestSubmission: () => submissionId === submissionRef.current,
+      isEmpty: () =>
+        isComposerEmpty({
+          text: messageRef.current,
+          attachments: attachmentsRef.current,
+        }),
+      restore: applyContent,
+    });
   };
 
   const addAttachment = async (
