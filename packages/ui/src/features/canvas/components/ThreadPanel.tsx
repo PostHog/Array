@@ -25,6 +25,7 @@ import {
   AvatarFallback,
   Badge,
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -61,6 +62,7 @@ import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import { TaskArtifactsList } from "@posthog/ui/features/canvas/components/TaskArtifactsList";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
@@ -332,6 +334,42 @@ function ThreadLoadingState() {
   );
 }
 
+// The Activity panel's sub-views: Timeline is the task thread as before (the
+// mockup renames it), Artifacts lists the task's outputs, Comments filters the
+// thread to the human conversation.
+type ActivityTab = "timeline" | "artifacts" | "comments";
+
+const ACTIVITY_TABS: readonly { key: ActivityTab; label: string }[] = [
+  { key: "timeline", label: "Timeline" },
+  { key: "artifacts", label: "Artifacts" },
+  { key: "comments", label: "Comments" },
+] as const;
+
+function ActivityTabsRow({
+  tab,
+  onTabChange,
+}: {
+  tab: ActivityTab;
+  onTabChange: (tab: ActivityTab) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-px border-border border-b px-2 py-1.5">
+      {ACTIVITY_TABS.map((t) => (
+        <Button
+          key={t.key}
+          variant="default"
+          size="sm"
+          data-selected={tab === t.key || undefined}
+          className={cn(tab === t.key && "bg-fill-selected")}
+          onClick={() => onTabChange(t.key)}
+        >
+          {t.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 function ThreadHeader({
   onClose,
   onToggleCollapsed,
@@ -344,7 +382,7 @@ function ThreadHeader({
   return (
     <div className="flex items-center gap-1 border-border border-b px-3 py-2">
       <div className="min-w-0 flex-1">
-        <span className="block font-medium text-sm">Thread</span>
+        <span className="block font-medium text-sm">Activity</span>
       </div>
       {onOpenFull && (
         <Button
@@ -572,6 +610,14 @@ function ThreadConversation({
 
   const timeline = useMemo(() => buildThreadTimeline(messages), [messages]);
 
+  const [tab, setTab] = useState<ActivityTab>("timeline");
+  // Comments = the human conversation without the agent's artifact
+  // announcements (those live in the Artifacts tab).
+  const commentRows = useMemo(
+    () => timeline.filter((row) => row.kind === "human"),
+    [timeline],
+  );
+
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -658,36 +704,47 @@ function ThreadConversation({
         onToggleCollapsed={onToggleCollapsed}
         onClose={onClose}
       />
+      <ActivityTabsRow tab={tab} onTabChange={setTab} />
 
       {showTaskSummary && (
         <div className="z-10 px-2">
           <TaskCard task={task} channelId={channelId} inThread />
         </div>
       )}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <ThreadTimeline
-          timeline={timeline}
-          isReady={isReady}
-          currentUserUuid={currentUser?.uuid}
-          currentUserEmail={currentUser?.email}
-          isTaskAuthor={isTaskAuthor}
-          canForward={canForward}
-          onSendToAgent={handleSendToAgent}
-          onDelete={handleDelete}
+      {tab === "artifacts" ? (
+        <div className="flex-1 overflow-y-auto">
+          <TaskArtifactsList task={task} timeline={timeline} />
+        </div>
+      ) : (
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          <ThreadTimeline
+            timeline={tab === "comments" ? commentRows : timeline}
+            isReady={isReady}
+            currentUserUuid={currentUser?.uuid}
+            currentUserEmail={currentUser?.email}
+            isTaskAuthor={isTaskAuthor}
+            canForward={canForward}
+            onSendToAgent={handleSendToAgent}
+            onDelete={handleDelete}
+          />
+        </div>
+      )}
+
+      {tab !== "artifacts" && agentStatus && (
+        <AgentStatusLine status={agentStatus} />
+      )}
+
+      {tab !== "artifacts" && (
+        <ThreadReplyComposer
+          draft={draft}
+          onDraftChange={setDraft}
+          onSubmit={submit}
+          members={members}
+          allowAgentMention={isTaskAuthor && canForward}
+          onMentionInsert={handleMentionInsert}
+          disabled={!draft.trim() || isPosting || isSendingToAgent}
         />
-      </div>
-
-      {agentStatus && <AgentStatusLine status={agentStatus} />}
-
-      <ThreadReplyComposer
-        draft={draft}
-        onDraftChange={setDraft}
-        onSubmit={submit}
-        members={members}
-        allowAgentMention={isTaskAuthor && canForward}
-        onMentionInsert={handleMentionInsert}
-        disabled={!draft.trim() || isPosting || isSendingToAgent}
-      />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 # Plan: "Spaces" Layout Prototype
 
-Status: draft — for team discussion; scoped as a shareable prototype, not a final architecture.
-Surface: Channels space (`/website/*`), behind the existing `project-bluebird` alpha plus one new layout toggle. The default Code experience is untouched.
+Status: implemented (one shot, prototype quality) — this doc is the design rationale and the map of what's real vs deferred.
+Surface: Channels space (`/website/*`), gated by the existing `project-bluebird` alpha + Channels toggle. Turning Channels on now gets the spaces layout directly (no extra toggle — prototype, no backward-compat layer). The default Code experience is untouched.
 
 ## The idea (from the mockup)
 
@@ -45,7 +45,7 @@ The single biggest input to this plan: **most of the mockup's nouns already exis
 
 ## Prototype principles
 
-1. **One switch to flip.** Everything lands behind a `spacesLayout` view-state toggle in `sidebarStore` (persisted, dev-default off), surfaced next to the existing "Channels" alpha switch. Flipping it swaps the chrome inside the Channels space only. Anyone on the team can try it and flip back; the Code space and the current Channels layout keep working unchanged.
+1. **One switch to flip.** The existing "Channels" alpha switch is the gate — turning it on gets the spaces layout (prototype: no second toggle, no backward-compat layer for the old channels chrome). Flipping it off returns to the unchanged Code experience.
 2. **No new backend or domain models.** Every panel is fed by data that already exists (task thread messages, run output/state, dashboards, GitHub PR data). Where the mockup wants data we don't have (canvas comments, comment replies, multi-session), the UI shows what exists and omits or disables the rest — exactly as the mockup allows ("for now we can do what is available").
 3. **Renames are cheap, do them properly.** "Thread" → "Timeline" and "CONTEXT.md" → "Context" are label changes in the new chrome only; no store/schema renames during the prototype.
 4. **Navigation reuses existing routes.** Sidebar entries and top-bar icons navigate to routes that already exist (`/website/$channelId/*`, `/website/activity`); the only new route is an inbox mirror.
@@ -85,24 +85,13 @@ Replace the docked `ThreadPanel` (in spaces mode) with an `ActivityPanel` in the
 - **Artifacts** — new task-scoped list derived with no new backend: PRs from `latest_run.output.pr_url` + `pr_created` thread events (state + comment count via `usePrInfo`/`usePrComments`/`usePrReviewThreads`), canvases from `canvas_created` thread events / `generationTaskId`, and the Slack thread from `latest_run.state.slack_thread_url` rendered as an external link. Canvas/Slack rows render without counts (no data yet — acknowledged in the mockup).
 - **Comments** — the human-authored subset of the same task thread (`TaskThreadMessage` where `author_kind: "human"` and no `event`), plus the existing composer as `+ Add new`. Flat list for the prototype: no replies, no artifact anchoring (needs a data model — deferred). If a message payload carries a source, show it as a badge.
 
-## Build plan
+## What was built (single pass)
 
-**Phase 1 — Shell (the part you can *feel* first).**
-Toggle in `sidebarStore` + settings row; `SpaceSidebar` (nav entries, pinned, recents); space dots + keyboard cycling; top bar swap (search field, bell, inbox icons); `/website/inbox` mirror route.
-Touches: `features/sidebar/sidebarStore.ts`, `features/canvas/components/ChannelsSidebar.tsx` (+ new `SpaceSidebar.tsx`, `SpaceDots.tsx`), `router/routes/__root.tsx` (title bar), new `router/routes/website/inbox.tsx`.
+**Shell.** With Channels on: the all-channels list is the landing; entering a channel scopes the sidebar to that space (`SpaceSidebar.tsx`: New task, `#channel` header, Context/Loops/Artifacts rows, Pinned, Recent). `SpaceDots.tsx` renders the Arc-style dot row above the account footer (starred channels = spaces, `#` = back to landing, `+` = create channel); switching slides the sidebar in the travel direction (framer-motion), horizontal trackpad swipe and `Ctrl+Alt+←/→` cycle spaces. The current space persists across channel-less routes (inbox, activity) via `stores/spaceStore.ts`. Title bar (`SpacesTitleBar.tsx` + `__root.tsx`): the browser-tab strip is replaced by a centered search pill (opens the ⌘K palette) plus Activity-bell (unread-mention dot) and Inbox icons.
 
-**Phase 2 — Activity panel.**
-`ActivityPanel.tsx` with the three tabs inside `ThreadSidebar`; `TaskArtifactsTab.tsx` (derived artifact list + PR comment counts); `TaskCommentsTab.tsx` (filtered thread + composer); Timeline = existing `ThreadPanel`.
-Touches: `features/canvas/components/` (new files), reuses `threadTimeline.ts`, `useTaskThread.ts`, `features/pr-review/usePr*`.
+**Activity panel.** `ThreadPanel.tsx` is now the Activity panel: header renamed, with Timeline / Artifacts / Comments tabs. Timeline = the existing thread untouched; Comments = the human rows of the same thread + the existing composer; Artifacts = `TaskArtifactsList.tsx`, derived with no new backend (thread `pr_created`/`canvas_created` events + run output PR + `slack_thread_url`), with live PR state + comment counts from GitHub. PR rows open the diff in the review pane; canvas rows open the canvas; Slack opens externally.
 
-**Phase 3 — Task tabs.**
-`+` dropdown on the panel tab strip (terminal live; chat/canvas disabled); `canvas` tab type in `panelTypes.ts`/`TabContentRenderer.tsx`; wire artifact clicks → open review tab / canvas tab / external link.
-Touches: `packages/core/src/panels/panelTypes.ts` + `panelLayoutTransforms.ts`, `features/panels/components/TabbedPanel.tsx`, `TabContentRenderer.tsx`, `features/task-detail/`.
-
-**Phase 4 — Polish & demo.**
-Empty states (quill `<Empty>`), unread dots on space dots, transition animation between spaces (simple slide; Arc-grade springs later), a short demo script in this doc, then a team walkthrough build.
-
-Phases 1 and 2 are independent and can land in either order; 3 depends on 2 (artifact clicks) only for wiring.
+**Task tabs.** The panel tab strip's `+` is a dropdown: New terminal (works), New chat / New canvas disabled with a "Soon" hint (`TabbedPanel.tsx`) — per the mockup's "only what's available" note.
 
 ## Explicitly deferred (needs real data-model work)
 
@@ -128,5 +117,6 @@ Phases 1 and 2 are independent and can land in either order; 3 depends on 2 (art
 ## How to try it
 
 1. Enable the **Channels** alpha switch in the sidebar (Bluebird flag is default-on in dev).
-2. Enable **Spaces layout** next to it.
-3. Star two or three channels → they appear as dots. Enter one, run a task, open the Activity panel tabs, click a PR artifact to get the diff tab.
+2. Star two or three channels → they appear as dots at the bottom of the sidebar. Enter one to scope the sidebar to that space.
+3. Switch spaces by clicking dots, swiping horizontally on the sidebar, or `Ctrl+Alt+←/→`. The `#` in the dot row returns to the all-channels landing.
+4. Open a task in the space: the right Activity panel has Timeline / Artifacts / Comments; clicking a PR artifact opens its diff. The `+` on the task tab strip shows the new chat/terminal/canvas menu.
