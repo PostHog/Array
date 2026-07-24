@@ -138,6 +138,19 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     }
     return result;
   }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
+  const prUrlByTaskId = useMemo(() => {
+    const result = new Map<string, string>();
+    for (const workstream of [
+      ...homeSnapshot.needsAttention,
+      ...homeSnapshot.inProgress,
+    ]) {
+      if (!workstream.prUrl) continue;
+      for (const task of workstream.tasks) {
+        result.set(task.id, workstream.prUrl);
+      }
+    }
+    return result;
+  }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
@@ -358,6 +371,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             tasks={visibleTasks}
             isLoading={isLoading}
             situationByTaskId={situationByTaskId}
+            prUrlByTaskId={prUrlByTaskId}
             onOpenTask={handleOpenTask}
             onOpenThread={handleOpenThread}
           />

@@ -1,5 +1,6 @@
-import { ChatCircleIcon } from "@phosphor-icons/react";
+import { ChatCircleIcon, GitPullRequest } from "@phosphor-icons/react";
 import type { SituationId } from "@posthog/core/workflow/schemas";
+import { Button } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@posthog/ui/features/home/components/WorkBoard";
 import { HOME_BOARD_COLUMN_IDS } from "@posthog/ui/features/home/utils/boardColumns";
 import { SITUATION_VISUAL } from "@posthog/ui/features/home/utils/situationDisplay";
+import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
@@ -22,12 +24,14 @@ export function ChannelBoardView({
   tasks,
   isLoading,
   situationByTaskId,
+  prUrlByTaskId,
   onOpenTask,
   onOpenThread,
 }: {
   tasks: Task[];
   isLoading: boolean;
   situationByTaskId: ReadonlyMap<string, SituationId>;
+  prUrlByTaskId: ReadonlyMap<string, string>;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
@@ -61,6 +65,12 @@ export function ChannelBoardView({
         <ChannelBoardCard
           task={task}
           homeSituation={situationByTaskId.get(task.id)}
+          prUrl={
+            prUrlByTaskId.get(task.id) ??
+            (typeof task.latest_run?.output?.pr_url === "string"
+              ? task.latest_run.output.pr_url
+              : undefined)
+          }
           onOpenTask={onOpenTask}
           onOpenThread={onOpenThread}
         />
@@ -72,11 +82,13 @@ export function ChannelBoardView({
 function ChannelBoardCard({
   task,
   homeSituation,
+  prUrl,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
   homeSituation?: SituationId;
+  prUrl?: string;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
@@ -118,6 +130,20 @@ function ChannelBoardCard({
         <span className="truncate text-(--gray-10) text-[11px]">
           {task.repository}
         </span>
+      ) : null}
+      {prUrl ? (
+        <Button
+          variant="outline"
+          size="xs"
+          className="w-fit"
+          onClick={(event) => {
+            event.stopPropagation();
+            void openUrlInBrowser(prUrl);
+          }}
+        >
+          <GitPullRequest size={11} />
+          View PR
+        </Button>
       ) : null}
       <div className="mt-1.5 flex items-center justify-between gap-2 border-(--gray-3) border-t pt-2.5">
         <div className="flex min-w-0 items-center gap-1.5" title={creatorName}>
