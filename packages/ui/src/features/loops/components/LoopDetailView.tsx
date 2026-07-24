@@ -29,7 +29,6 @@ import {
 import { Flex, Text } from "@radix-ui/themes";
 import { useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
-import { useLoopDisplayModel } from "../hooks/useLoopDisplayModel";
 import {
   useDeleteLoop,
   useRunLoop,
@@ -45,6 +44,7 @@ import {
   nextScheduleRun,
   summarizeNotificationDestinations,
 } from "../loopDisplay";
+import { formatLoopModel } from "../loopModels";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
@@ -320,7 +320,7 @@ function PausedNotice({ loop }: { loop: LoopSchemas.Loop }) {
 }
 
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
-  const displayModel = useLoopDisplayModel(loop.runtime_adapter, loop.model);
+  const displayModel = formatLoopModel(loop.runtime_adapter, loop.model);
   const {
     members,
     isLoading: membersLoading,
