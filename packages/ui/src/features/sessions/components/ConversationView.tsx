@@ -16,6 +16,7 @@ import type {
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
+import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
 import {
   PROMPT_RECALL_HINT_KEY,
   type PromptRecallHandler,
@@ -452,6 +453,7 @@ export function ConversationView({
 
   const footer = (
     <div className={compact ? "pb-1" : "pb-16"}>
+      <CloudArtifactDownloads taskId={taskId} task={task} />
       <SessionFooter
         task={task}
         isPromptPending={isPromptPending}

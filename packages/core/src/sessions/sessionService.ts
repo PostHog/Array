@@ -4673,6 +4673,7 @@ export class SessionService {
         cloudStatus: run.status,
         cloudStage: run.stage ?? null,
         cloudOutput: run.output ?? null,
+        cloudArtifacts: run.artifacts ?? [],
         cloudErrorMessage: run.error_message,
         logUrl: run.log_url ?? session.logUrl,
       });
