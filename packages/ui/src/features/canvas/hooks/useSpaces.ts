@@ -94,6 +94,16 @@ const SWIPE_FIRE_PX = 50;
 const REARM_MIN_PX = 15;
 const REARM_FACTOR = 2.5;
 const RECENT_SAMPLES = 4;
+// A fired session may only re-arm after this much time: within it, a single
+// fling is still ramping/peaking and its own deltas can spike past the burst
+// test — which read as one swipe moving several spaces. A human re-swipe
+// (lift, reposition, swipe) always takes longer than this.
+const REARM_COOLDOWN_MS = 250;
+// After a fire, a sparse inertia tail can pause longer than GESTURE_GAP_MS
+// and come back — a technically "new" session that would crawl back to the
+// threshold. Within this window a new session opening on a small delta is
+// parked (treated as leftover noise) until a real burst re-arms it.
+const POST_FIRE_GUARD_MS = 800;
 
 interface SwipeSession {
   lastEventAt: number;
@@ -101,6 +111,7 @@ interface SwipeSession {
   totalY: number;
   axis: "x" | "y" | null;
   fired: boolean;
+  firedAt: number;
   /** Recent |deltaX| samples — the stream level re-arm bursts are judged against. */
   recentX: number[];
 }
@@ -131,6 +142,7 @@ export function useSpaceSwipe(
     totalY: 0,
     axis: null,
     fired: false,
+    firedAt: 0,
     recentX: [],
   });
 
@@ -150,12 +162,22 @@ export function useSpaceSwipe(
         s.recentX = [];
       };
 
+      // A spent session (fired, past its cooldown) or one committed to
+      // vertical scrolling can re-open when a horizontal burst far above the
+      // recent level shows up — that's the user swiping again right now.
+      const canRearm =
+        (s.fired && now - s.firedAt >= REARM_COOLDOWN_MS) ||
+        (!s.fired && s.axis === "y");
+
       if (now - s.lastEventAt > GESTURE_GAP_MS) {
         resetSession();
-      } else if (s.fired || s.axis === "y") {
-        // The session is spent (fired) or committed to vertical scrolling —
-        // but a horizontal burst far above the recent level means the user is
-        // swiping again right now. Re-open for it.
+        // Leftover inertia shortly after a fire opens weak — park the session
+        // on the vertical axis so only a genuine burst (via re-arm below, on
+        // a later event) can turn it into a swipe.
+        if (now - s.firedAt < POST_FIRE_GUARD_MS && magnitudeX < REARM_MIN_PX) {
+          s.axis = "y";
+        }
+      } else if (canRearm) {
         const recent = s.recentX.slice(-RECENT_SAMPLES);
         const average = recent.length
           ? recent.reduce((sum, value) => sum + value, 0) / recent.length
@@ -187,6 +209,7 @@ export function useSpaceSwipe(
       if (s.axis !== "x") return;
       if (Math.abs(s.totalX) >= SWIPE_FIRE_PX) {
         s.fired = true;
+        s.firedAt = now;
         cycle(s.totalX > 0 ? 1 : -1);
       }
     },
