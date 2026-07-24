@@ -403,6 +403,8 @@ export class AgentServer {
   private pendingCompactContinuationMessageIds = new Set<string>();
   private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
   private activeOwnedTurnCount = 0;
+  private ownedTurnsSettled: Promise<void> | null = null;
+  private resolveOwnedTurnsSettled: (() => void) | null = null;
   private pendingPermissions = new Map<
     string,
     {
@@ -1918,11 +1920,38 @@ export class AgentServer {
   }
 
   private async runOwnedTurn<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.activeOwnedTurnCount === 0) {
+      this.ownedTurnsSettled = new Promise<void>((resolve) => {
+        this.resolveOwnedTurnsSettled = resolve;
+      });
+    }
     this.activeOwnedTurnCount += 1;
     try {
       return await operation();
     } finally {
       this.activeOwnedTurnCount -= 1;
+      if (this.activeOwnedTurnCount === 0) {
+        this.resolveOwnedTurnsSettled?.();
+        this.resolveOwnedTurnsSettled = null;
+        this.ownedTurnsSettled = null;
+      }
+    }
+  }
+
+  private async waitForOwnedTurnsToSettle(): Promise<void> {
+    if (this.activeOwnedTurnCount === 0 || !this.ownedTurnsSettled) return;
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      this.ownedTurnsSettled.then(() => true),
+      new Promise<false>((resolve) => {
+        timeout = setTimeout(() => resolve(false), 1_000);
+      }),
+    ]).finally(() => clearTimeout(timeout));
+    if (!settled) {
+      this.logger.warn("Timed out waiting for active turns during shutdown", {
+        activeOwnedTurnCount: this.activeOwnedTurnCount,
+      });
     }
   }
 
@@ -4495,6 +4524,12 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       });
     }
     this.pendingPermissions.clear();
+
+    // A plan handoff keeps the original prompt RPC open while it waits for the
+    // approval above. Give that prompt a chance to return before closing ACP;
+    // otherwise the SDK rejects it with "ACP connection closed" and the
+    // intentional inactivity shutdown is persisted as a user-visible error.
+    await this.waitForOwnedTurnsToSettle();
 
     try {
       await this.session.acpConnection.cleanup();

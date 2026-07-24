@@ -578,6 +578,45 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).not.toHaveBeenCalled();
     });
 
+    it("settles a plan prompt before closing ACP during cleanup", async () => {
+      const testServer = stubSessionCleanup(createServer()) as ReturnType<
+        typeof stubSessionCleanup
+      > & {
+        activeOwnedTurnCount: number;
+        pendingPermissions: Map<
+          string,
+          {
+            resolve: (response: {
+              outcome: { outcome: "selected"; optionId: string };
+            }) => void;
+          }
+        >;
+        runOwnedTurn<T>(operation: () => Promise<T>): Promise<T>;
+      };
+      const session = testServer.session as {
+        acpConnection: { cleanup: ReturnType<typeof vi.fn> };
+      };
+      let settlePrompt!: () => void;
+      const prompt = testServer.runOwnedTurn(
+        () =>
+          new Promise<void>((resolve) => {
+            settlePrompt = resolve;
+          }),
+      );
+      testServer.pendingPermissions.set("plan-approval", {
+        resolve: () => queueMicrotask(settlePrompt),
+      });
+      session.acpConnection.cleanup.mockImplementation(async () => {
+        expect(testServer.activeOwnedTurnCount).toBe(0);
+      });
+
+      await testServer.cleanupSession();
+      await prompt;
+
+      expect(session.acpConnection.cleanup).toHaveBeenCalledOnce();
+      expect(testServer.pendingPermissions).toHaveLength(0);
+    });
+
     it("stops event ingest for terminal session cleanup without fake task completion", async () => {
       const testServer = stubSessionCleanup(createServer());
 
