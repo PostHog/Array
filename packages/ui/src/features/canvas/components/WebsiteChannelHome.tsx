@@ -351,17 +351,17 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
               Me
             </Button>
           </div>
+          {viewMode === "board" ? (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => setCreateTaskDialogOpen(true)}
+            >
+              <Plus size={14} />
+              New task
+            </Button>
+          ) : null}
           <div className="ml-auto flex items-center gap-2">
-            {viewMode === "board" ? (
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => setCreateTaskDialogOpen(true)}
-              >
-                <Plus size={14} />
-                New task
-              </Button>
-            ) : null}
             <div className="flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
               <Button
                 size="sm"

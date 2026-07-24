@@ -5,7 +5,6 @@ import {
   DialogTitle,
 } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
-import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 
 export function ChannelCreateTaskDialog({
@@ -25,7 +24,7 @@ export function ChannelCreateTaskDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[min(760px,calc(100vh-48px))] w-[min(960px,calc(100vw-48px))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent className="h-[min(380px,calc(100vh-48px))] w-[min(720px,calc(100vw-48px))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
         <DialogTitle className="sr-only">Create task</DialogTitle>
         <DialogDescription className="sr-only">
           Create a task in {channelName ?? "this channel"}.
@@ -39,7 +38,7 @@ export function ChannelCreateTaskDialog({
           channelName={channelName}
           channelContextId={channelId}
           allowNoRepo
-          suggestions={CHANNEL_TASK_SUGGESTIONS}
+          suggestions={[]}
         />
       </DialogContent>
     </Dialog>
