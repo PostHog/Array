@@ -11,7 +11,6 @@ import {
   PushPin,
   RepeatIcon,
 } from "@phosphor-icons/react";
-import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import {
   Avatar,
@@ -35,19 +34,21 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { useChannelFeed } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   useDashboardMutations,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import {
+  PERSONAL_CHANNEL_NAME,
+  useBackendChannel,
+} from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
-import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -147,7 +148,7 @@ function SpaceItemRow({ item }: { item: SpaceItem }) {
               icon={item.icon}
               // A non-string label opts out of SidebarItem's built-in
               // truncation tooltip — the hover card carries the full title.
-              label={<>{item.title}</>}
+              label={<span>{item.title}</span>}
               isActive={item.isActive}
               onClick={item.onClick}
               // At rest: the relative time. On hover: pin + archive, like the
@@ -260,11 +261,12 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
     channels.find((c) => c.id === channelId)?.name ?? "channel";
 
   const { dashboards } = useDashboards(channelId);
-  const { tasks: filedTasks } = useChannelTasks(channelId);
-  // All users' tasks, not just mine: a channel's filed tasks belong to the
-  // whole team, and rows are dropped when the task can't be resolved — the
-  // default mine-only list silently hid everyone else's work.
-  const { data: tasks } = useTasks({ showAllUsers: true });
+  // The channel's full task feed (server-side `getTasks({ channel })`) — every
+  // filed task with its full object, regardless of author. Joining the id-only
+  // channelTasks list against the mine-only task query silently dropped every
+  // teammate's task; the feed is the same source the channel home renders.
+  const { channel: backendChannel } = useBackendChannel(channelName);
+  const { tasks: feedTasks } = useChannelFeed(backendChannel?.id);
   const archivedTaskIds = useArchivedTaskIds();
   const { pinnedTaskIds, togglePin } = usePinnedTasks();
   const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
@@ -315,44 +317,38 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
       },
     }));
 
-    const taskById = new Map(tasks?.map((t) => [t.id, t]) ?? []);
-    const taskItems: SpaceItem[] = filedTasks.flatMap(
-      (f: ChannelTaskRecord) => {
-        const task = taskById.get(f.taskId);
-        if (archivedTaskIds.has(f.taskId) || !task) return [];
-        return [
-          {
-            key: `task:${f.id}`,
-            kind: "task" as const,
-            title: task.title || "Untitled task",
-            ts: Date.parse(task.updated_at) || 0,
-            pinned: pinnedTaskIds.has(f.taskId),
-            icon: <FileTextIcon size={15} className="text-blue-9" />,
-            status: humanizeStatus(task.latest_run?.status),
-            rawStatus: task.latest_run?.status ?? null,
-            statusVariant: statusVariantFor(task.latest_run?.status),
-            authorUser: task.created_by ?? null,
-            authorName: task.created_by
-              ? userDisplayName(task.created_by)
-              : null,
-            isActive: pathname === `${base}/tasks/${f.taskId}`,
-            onClick: () =>
-              void navigate({
-                to: "/website/$channelId/tasks/$taskId",
-                params: { channelId, taskId: f.taskId },
-              }),
-            onTogglePin: () => {
-              togglePin(f.taskId).catch(() => {
-                toast.error("Couldn't update pin");
-              });
-            },
-            onArchive: () => {
-              void archiveTask({ taskId: f.taskId });
-            },
+    const taskItems: SpaceItem[] = feedTasks.flatMap((task) => {
+      if (archivedTaskIds.has(task.id)) return [];
+      return [
+        {
+          key: `task:${task.id}`,
+          kind: "task" as const,
+          title: task.title || "Untitled task",
+          ts: Date.parse(task.updated_at) || 0,
+          pinned: pinnedTaskIds.has(task.id),
+          icon: <FileTextIcon size={15} className="text-blue-9" />,
+          status: humanizeStatus(task.latest_run?.status),
+          rawStatus: task.latest_run?.status ?? null,
+          statusVariant: statusVariantFor(task.latest_run?.status),
+          authorUser: task.created_by ?? null,
+          authorName: task.created_by ? userDisplayName(task.created_by) : null,
+          isActive: pathname === `${base}/tasks/${task.id}`,
+          onClick: () =>
+            void navigate({
+              to: "/website/$channelId/tasks/$taskId",
+              params: { channelId, taskId: task.id },
+            }),
+          onTogglePin: () => {
+            togglePin(task.id).catch(() => {
+              toast.error("Couldn't update pin");
+            });
           },
-        ];
-      },
-    );
+          onArchive: () => {
+            void archiveTask({ taskId: task.id });
+          },
+        },
+      ];
+    });
 
     const all = [...canvasItems, ...taskItems].sort((a, b) => b.ts - a.ts);
 
@@ -368,8 +364,7 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
     });
   }, [
     dashboards,
-    filedTasks,
-    tasks,
+    feedTasks,
     archivedTaskIds,
     pinnedTaskIds,
     pathname,
