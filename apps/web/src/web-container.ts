@@ -86,6 +86,8 @@ import {
   type GithubConnectClient as OnboardingGithubConnectContract,
 } from "@posthog/core/onboarding/identifiers";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
+import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
+import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import { piRuntimeModule } from "@posthog/core/pi-runtime/pi-runtime.module";
 import {
   PI_SESSION_CLIENT,
@@ -304,6 +306,7 @@ import {
   webTitleGeneratorLogger,
 } from "./web-sessions-clients";
 import { webSetupStore } from "./web-setup-store";
+import { webPiRunner } from "./web-pi-runner";
 import { webShellClient } from "./web-shell-client";
 import {
   webTaskDeletionHost,
@@ -313,6 +316,7 @@ import { hostTrpcClient } from "./web-trpc";
 
 interface WebBindings {
   [HOST_TRPC_CLIENT]: HostTrpcClient;
+  [PI_RUNNER]: PiRunner;
   [PI_SESSION_CLIENT]: PiSessionClient;
   [ROOT_LOGGER]: RootLogger;
   [HOST_LOGGER]: HostLogger;
@@ -395,6 +399,7 @@ export const container = new TypedContainer<WebBindings>({
 // here (web-trpc.ts) instead of over Electron IPC.
 container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
 container.bind(PI_SESSION_CLIENT).to(TrpcPiSessionClient);
+container.bind(PI_RUNNER).toConstantValue(webPiRunner);
 container.load(piRuntimeModule);
 
 // Logger: web uses console; electron uses electron-log. Same RootLogger shape.
