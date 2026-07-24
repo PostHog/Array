@@ -18,12 +18,12 @@ describe("extractPlanText", () => {
     expect(extractPlanText(toolCall)).toBe(expected);
   });
 
-  it("prefers the canonical raw plan over rendered content", () => {
+  it("prefers streamed content over stale raw input", () => {
     expect(
       extractPlanText({
         rawInput: { plan: "Canonical" },
         content: [{ text: "Rendered" }],
       }),
-    ).toBe("Canonical");
+    ).toBe("Rendered");
   });
 });

@@ -12,12 +12,12 @@ export function extractPlanText(toolCall: {
   rawInput?: { plan?: unknown } | null;
   content?: readonly unknown[] | null;
 }): string | null {
-  const rawPlan = toolCall.rawInput?.plan;
-  if (typeof rawPlan === "string" && rawPlan.trim()) return rawPlan;
-
   for (const item of toolCall.content ?? []) {
     const text = extractTextContent(item);
     if (text?.trim()) return text;
   }
+
+  const rawPlan = toolCall.rawInput?.plan;
+  if (typeof rawPlan === "string" && rawPlan.trim()) return rawPlan;
   return null;
 }
