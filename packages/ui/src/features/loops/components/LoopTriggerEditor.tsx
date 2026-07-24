@@ -421,7 +421,7 @@ function ScheduleTriggerFields({
               type="time"
               disabled={disabled}
               value={time}
-              className="h-8 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 text-[13px] text-gray-12"
+              className="h-8 rounded-(--radius-2) border border-border bg-transparent px-2.5 text-[13px] text-gray-12"
               onChange={(e) => {
                 if (!e.target.value) return;
                 setRecurring(frequency, e.target.value, weekday);
@@ -448,7 +448,7 @@ function ScheduleTriggerFields({
             <input
               type="datetime-local"
               disabled={disabled}
-              className="h-8 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-2.5 text-[13px] text-gray-12"
+              className="h-8 rounded-(--radius-2) border border-border bg-transparent px-2.5 text-[13px] text-gray-12"
               value={config.run_at ? toDatetimeLocal(config.run_at) : ""}
               onChange={(e) =>
                 onChange({

@@ -37,6 +37,7 @@ import { useSmoothedText } from "@posthog/ui/features/editor/components/useSmoot
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
 import {
   ChatMarkdown,
   ChatStreamingMarkdown,
@@ -1166,13 +1167,16 @@ function ChatThreadRenderer({
               keyboardFocusedMessageId={keyboardFocusedMessageId}
               onUserInteract={clearKeyboardFocus}
               footer={
-                <ChatThreadFooter
-                  events={footerEvents}
-                  isPromptPending={isPromptPending}
-                  promptStartedAt={promptStartedAt}
-                  task={task}
-                  taskId={taskId}
-                />
+                <>
+                  <CloudArtifactDownloads taskId={taskId} task={task} />
+                  <ChatThreadFooter
+                    events={footerEvents}
+                    isPromptPending={isPromptPending}
+                    promptStartedAt={promptStartedAt}
+                    task={task}
+                    taskId={taskId}
+                  />
+                </>
               }
             />
             <ThreadKeyboardNav

@@ -3,6 +3,7 @@ import type { Adapter } from "./adapter";
 import type { AgentRuntime } from "./agent-runtime";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
+import type { TaskRunArtifact } from "./task";
 
 // Execution mode schema and type - shared between main and renderer
 export const executionModeSchema = z.enum([
@@ -180,6 +181,7 @@ export interface TaskRun {
   error_message: string | null;
   output: Record<string, unknown> | null; // Structured output (PR URL, commit SHA, etc.)
   state: Record<string, unknown>; // Intermediate run state (defaults to {}, never null)
+  artifacts?: TaskRunArtifact[];
   created_at: string;
   updated_at: string;
   completed_at: string | null;
