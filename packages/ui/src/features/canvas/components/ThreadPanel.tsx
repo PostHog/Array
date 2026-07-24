@@ -127,7 +127,7 @@ export function ThreadMessageRow({
       <ThreadItemContent>
         <ThreadItemHeader>
           <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
-          <ThreadTimestamp dateTime={message.created_at} />
+          <RightTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
         <ThreadItemBody>
           <MentionText
@@ -318,7 +318,7 @@ export function ThreadArtifactRow({
           <ThreadItemAuthor>
             {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
           </ThreadItemAuthor>
-          <ThreadTimestamp dateTime={createdAt} />
+          <RightTimestamp dateTime={createdAt} />
         </ThreadItemHeader>
         <ThreadItemBody>
           {artifact.kind === "canvas" ? (
@@ -333,43 +333,58 @@ export function ThreadArtifactRow({
 }
 
 // A lifecycle event in the Activity timeline (task created / run finished) —
-// the same ThreadItem shape as message and artifact rows (gutter avatar +
-// header) so every row in the timeline reads alike. `action` is the muted
-// suffix after the bold title ("created this task").
+// Timestamp pinned to the right edge of a row header. `ml-auto` pushes it past
+// the flexible title; `self-baseline` keeps it on the author's baseline.
+function RightTimestamp({ dateTime }: { dateTime: string }) {
+  return (
+    <span className="ml-auto shrink-0 self-baseline pl-2">
+      <ThreadTimestamp dateTime={dateTime} />
+    </span>
+  );
+}
+
+// The x-offset of the avatar column's center within a ThreadItem row: row
+// padding-inline (0.5rem) + gutter width (2.5rem) − half the lg avatar
+// (2.35rem). The timeline rail and event nodes sit on this line so a slim
+// event row lines up with the avatars above and below it.
+const RAIL_LEFT = "1.825rem";
+
+// A slim lifecycle event on the timeline rail (task created / run finished):
+// a small node sitting on the rail, a one-line label, and the time on the
+// right. Deliberately lighter than a message row — GitHub/Linear-style — so
+// events read as markers on the spine rather than empty chunky rows.
 function ActivityEventRow({
-  avatar,
+  node,
   title,
   action,
   timestamp,
 }: {
-  avatar: ReactNode;
+  node: ReactNode;
   title: string;
   action?: string;
   timestamp: string;
 }) {
   return (
-    <ThreadItem>
-      <ThreadItemGutter>{avatar}</ThreadItemGutter>
-      <ThreadItemContent>
-        <ThreadItemHeader>
-          <ThreadItemAuthor>{title}</ThreadItemAuthor>
-          {action && (
-            <span className="text-[13px] text-muted-foreground">{action}</span>
-          )}
-          <ThreadTimestamp dateTime={timestamp} />
-        </ThreadItemHeader>
-      </ThreadItemContent>
-    </ThreadItem>
+    <div className="flex items-center gap-2 py-1.5 pr-2 pl-2">
+      <div className="flex w-10 shrink-0 justify-end">
+        <div className="flex w-[2.35rem] justify-center">{node}</div>
+      </div>
+      <span className="min-w-0 truncate text-[13px]">
+        <span className="font-medium text-gray-12">{title}</span>
+        {action && <span className="text-muted-foreground"> {action}</span>}
+      </span>
+      <RightTimestamp dateTime={timestamp} />
+    </div>
   );
 }
 
-// The gutter avatar for a system lifecycle event (no person): an icon on the
-// same neutral avatar the artifact rows use, so its size matches every row.
-function SystemAvatar({ icon }: { icon: ReactNode }) {
+// A neutral chip node for a system event with no person (run finished). Opaque
+// so it masks the rail behind it, reading as a node on the spine.
+function EventNode({ icon }: { icon: ReactNode }) {
   return (
-    <Avatar size="lg" className="sticky top-2">
-      <AvatarFallback>{icon}</AvatarFallback>
-    </Avatar>
+    <span className="relative z-10 flex size-6 items-center justify-center rounded-full bg-gray-3">
+      {icon}
+    </span>
   );
 }
 
@@ -394,7 +409,7 @@ function UserMessageRow({
           <ThreadItemAuthor>
             {author ? userDisplayName(author) : "You"}
           </ThreadItemAuthor>
-          <ThreadTimestamp dateTime={timestamp} />
+          <RightTimestamp dateTime={timestamp} />
         </ThreadItemHeader>
         <ThreadItemBody>
           <span className="line-clamp-4 whitespace-pre-wrap break-words text-[13px]">
@@ -805,11 +820,11 @@ function ThreadConversation({
       ts: createdTs,
       node: (
         <ActivityEventRow
-          avatar={
+          node={
             <UserAvatar
               user={task.created_by}
-              size="lg"
-              className="sticky top-2"
+              size="sm"
+              className="relative z-10"
             />
           }
           title={task.created_by ? userDisplayName(task.created_by) : "Someone"}
@@ -890,18 +905,18 @@ function ThreadConversation({
         ts: updatedTs + 1,
         node: (
           <ActivityEventRow
-            avatar={
-              <SystemAvatar
+            node={
+              <EventNode
                 icon={
                   succeeded ? (
                     <CheckCircleIcon
-                      size={16}
+                      size={14}
                       weight="fill"
                       className="text-green-9"
                     />
                   ) : (
                     <XCircleIcon
-                      size={16}
+                      size={14}
                       weight="fill"
                       className="text-red-9"
                     />
@@ -965,11 +980,23 @@ function ThreadConversation({
           {!isReady ? (
             <ThreadLoadingState />
           ) : (
-            <ThreadItemGroup>
-              {activityNodes.map((entry) => (
-                <Fragment key={entry.key}>{entry.node}</Fragment>
-              ))}
-            </ThreadItemGroup>
+            <div className="relative">
+              {/* The timeline spine: a continuous rail down the avatar column
+                  that every row's avatar/node sits on, so slim event rows and
+                  chunky message rows read as one timeline. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute top-4 bottom-4 w-px bg-border"
+                style={{ left: RAIL_LEFT }}
+              />
+              <div className="relative z-10">
+                <ThreadItemGroup>
+                  {activityNodes.map((entry) => (
+                    <Fragment key={entry.key}>{entry.node}</Fragment>
+                  ))}
+                </ThreadItemGroup>
+              </div>
+            </div>
           )}
         </div>
       )}
