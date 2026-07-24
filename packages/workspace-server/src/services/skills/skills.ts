@@ -499,11 +499,39 @@ export class SkillsService {
     input: BundleLocalSkillInput,
   ): Promise<BundleLocalSkillOutput> {
     const skillDir = await this.resolveKnownSkillDir(input.path);
+    await this.assertRepoSkillStaysInRepo(skillDir);
     return bundleLocalSkill({
       name: input.name,
       source: input.source,
       skillPath: skillDir,
     });
+  }
+
+  /**
+   * A repository can commit any ancestor of its skills (`.claude` or
+   * `.claude/skills`) as a symlink pointing outside the repo, which passes the
+   * lexical known-root check and the bundler's leaf-symlink check yet bundles
+   * an external directory. Uploads must stay inside the real repository, so
+   * anchor the check on the workspace folder itself — the one path segment a
+   * repo author cannot control.
+   */
+  private async assertRepoSkillStaysInRepo(skillDir: string): Promise<void> {
+    const parent = path.dirname(skillDir);
+    const folders = await this.folders.getFolders();
+    const owningFolder = folders.find(
+      (folder) =>
+        path.resolve(path.join(folder.path, ".claude", "skills")) === parent,
+    );
+    if (!owningFolder) return;
+    const [realSkill, realFolder] = await Promise.all([
+      fs.promises.realpath(skillDir),
+      fs.promises.realpath(path.resolve(owningFolder.path)),
+    ]);
+    if (!realSkill.startsWith(realFolder + path.sep)) {
+      throw new Error(
+        "Access denied: repository skill resolves outside its repository",
+      );
+    }
   }
 
   /**

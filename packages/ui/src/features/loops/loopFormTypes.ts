@@ -1,5 +1,11 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { systemTimezone } from "@posthog/ui/primitives/timezone";
+import {
+  buildSkillInstructions,
+  type LoopSkillDraft,
+  parseSkillContext,
+  primaryLoopSkillBundle,
+} from "./loopSkill";
 
 /**
  * A trigger row in the create/edit form. `key` is a client-only stable
@@ -30,6 +36,12 @@ export interface LoopFormValues {
   description: string;
   visibility: LoopSchemas.LoopVisibilityEnum;
   instructions: string;
+  /** When set, the loop runs this skill instead of free-form instructions;
+   * `instructions` is derived as `/skill-name` plus `skillContext` on save. */
+  skill: LoopSkillDraft | null;
+  /** Optional free text appended after the skill invocation. Only meaningful
+   * when `skill` is set. */
+  skillContext: string;
   runtimeAdapter: LoopSchemas.LoopRuntimeAdapterEnum;
   model: string;
   reasoningEffort: LoopSchemas.LoopReasoningEffortEnum | null;
@@ -129,6 +141,8 @@ export function emptyLoopFormValues(): LoopFormValues {
     description: "",
     visibility: "personal",
     instructions: "",
+    skill: null,
+    skillContext: "",
     runtimeAdapter: "claude",
     model: "",
     reasoningEffort: null,
@@ -153,11 +167,22 @@ export function normalizeLoopFormValues(
 }
 
 export function loopToFormValues(loop: LoopSchemas.Loop): LoopFormValues {
+  const primaryBundle = primaryLoopSkillBundle(loop);
   return {
     name: loop.name,
     description: loop.description,
     visibility: loop.visibility,
     instructions: loop.instructions,
+    skill: primaryBundle
+      ? {
+          kind: "attached",
+          name: primaryBundle.skill_name,
+          source: primaryBundle.skill_source,
+        }
+      : null,
+    skillContext: primaryBundle
+      ? parseSkillContext(loop.instructions, primaryBundle.skill_name)
+      : "",
     runtimeAdapter: loop.runtime_adapter,
     model: loop.model,
     reasoningEffort: loop.reasoning_effort,
@@ -188,7 +213,9 @@ export function formValuesToLoopWrite(
     name: values.name.trim(),
     description: values.description.trim(),
     visibility: values.visibility,
-    instructions: values.instructions,
+    instructions: values.skill
+      ? buildSkillInstructions(values.skill.name, values.skillContext)
+      : values.instructions,
     runtime_adapter: values.runtimeAdapter,
     model: values.model.trim(),
     reasoning_effort: values.reasoningEffort,
@@ -212,7 +239,10 @@ export function formValuesToLoopWrite(
 }
 
 export function isLoopFormValid(values: LoopFormValues): boolean {
-  if (!values.name.trim() || !values.instructions.trim()) {
+  if (!values.name.trim()) {
+    return false;
+  }
+  if (!values.skill && !values.instructions.trim()) {
     return false;
   }
   if (values.contextTarget && values.visibility !== "team") {

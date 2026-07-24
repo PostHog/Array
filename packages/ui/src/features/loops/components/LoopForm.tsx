@@ -17,10 +17,18 @@ import {
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
-import { Box, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
+import { Box, Flex, Text, TextField } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
-import { useCreateLoop, useUpdateLoop } from "../hooks/useLoopMutations";
+import {
+  useCreateLoop,
+  useDeleteLoop,
+  useUpdateLoop,
+} from "../hooks/useLoopMutations";
+import {
+  useBundleLocalSkill,
+  useReplaceLoopSkillBundles,
+} from "../hooks/useLoopSkillBundles";
 import { buildLoopSavedProps } from "../loopAnalytics";
 import { summarizeTrigger } from "../loopDisplay";
 import { useLoopDraftStore } from "../loopDraftStore";
@@ -36,12 +44,14 @@ import {
   normalizeLoopFormValues,
 } from "../loopFormTypes";
 import { formatLoopModel } from "../loopModels";
+import { buildSkillInstructions, loopSkillBundles } from "../loopSkill";
 import { LoopBehaviorFields } from "./LoopBehaviorFields";
 import { LoopContextFields } from "./LoopContextFields";
 import { Field } from "./LoopFormPrimitives";
 import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
+import { LoopInstructionsFields } from "./LoopSkillFields";
 import { LoopTriggerEditor } from "./LoopTriggerEditor";
 
 const VISIBILITY_OPTIONS: {
@@ -102,13 +112,21 @@ export function LoopForm({ loop }: LoopFormProps) {
 
   const createLoop = useCreateLoop();
   const updateLoop = useUpdateLoop(loop?.id ?? "");
-  const isSubmitting = isEdit ? updateLoop.isPending : createLoop.isPending;
+  const deleteLoop = useDeleteLoop();
+  const bundleSkill = useBundleLocalSkill();
+  const replaceSkillBundles = useReplaceLoopSkillBundles();
+  const isSubmitting =
+    (isEdit ? updateLoop.isPending : createLoop.isPending) ||
+    bundleSkill.isPending ||
+    replaceSkillBundles.isPending ||
+    deleteLoop.isPending;
   const canSubmit = isLoopFormValid(values) && !isSubmitting;
 
   // Per-step gate for the Next button. The final Create button is gated on the
   // whole form being valid, so jumping between steps can't submit a bad loop.
   const stepComplete = [
-    !!values.name.trim() && !!values.instructions.trim(),
+    !!values.name.trim() &&
+      (values.skill !== null || !!values.instructions.trim()),
     values.triggers.every(isTriggerDraftValid),
     true,
     isLoopFormValid(values),
@@ -140,16 +158,72 @@ export function LoopForm({ loop }: LoopFormProps) {
   const handleSubmit = async () => {
     if (!canSubmit) return;
     const body = formValuesToLoopWrite(values);
-    try {
-      if (isEdit) {
-        const updated = await updateLoop.mutateAsync(body);
-        track(ANALYTICS_EVENTS.LOOP_UPDATED, buildLoopSavedProps(updated));
-        navigateToLoopDetail(updated.id);
-      } else {
-        const created = await createLoop.mutateAsync(body);
-        track(ANALYTICS_EVENTS.LOOP_CREATED, buildLoopSavedProps(created));
-        navigateToLoopDetail(created.id);
+
+    // Bundling runs before anything is persisted: a missing or broken local
+    // skill fails here with no partial state, instead of leaving a saved loop
+    // whose `/skill-name` instructions have no matching bundle.
+    let uploads: LoopSchemas.LoopSkillBundleUpload[] | null = null;
+    if (values.skill?.kind === "local") {
+      try {
+        uploads = await bundleSkill.mutateAsync(values.skill);
+      } catch (error) {
+        toast.error("Failed to bundle the skill", {
+          description: error instanceof Error ? error.message : undefined,
+        });
+        return;
       }
+    }
+
+    try {
+      const saved = isEdit
+        ? await updateLoop.mutateAsync(body)
+        : await createLoop.mutateAsync(body);
+      track(
+        isEdit ? ANALYTICS_EVENTS.LOOP_UPDATED : ANALYTICS_EVENTS.LOOP_CREATED,
+        buildLoopSavedProps(saved),
+      );
+      const needsDetach =
+        values.skill === null && loopSkillBundles(saved).length > 0;
+      if (uploads || needsDetach) {
+        try {
+          await replaceSkillBundles.mutateAsync({
+            loopId: saved.id,
+            uploads: uploads ?? [],
+          });
+        } catch (error) {
+          const description =
+            error instanceof Error ? error.message : undefined;
+          if (!isEdit) {
+            // Roll the just-created loop back rather than leaving one that
+            // fires `/skill-name` with no bundle behind it. If the rollback
+            // itself fails, an orphaned loop exists — say so instead of
+            // pretending nothing was created.
+            try {
+              await deleteLoop.mutateAsync(saved.id);
+              toast.error("Failed to create loop", { description });
+            } catch {
+              toast.error("Loop created, but attaching its skill failed", {
+                description: [
+                  description,
+                  `Delete "${saved.name}" or re-save it from Edit.`,
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+              });
+            }
+            return;
+          }
+          // Keep the form open with its state intact: saving again retries
+          // both the loop write and the skill upload.
+          toast.error("Loop saved, but updating its skill failed", {
+            description: [description, "Save again to retry."]
+              .filter(Boolean)
+              .join(" "),
+          });
+          return;
+        }
+      }
+      navigateToLoopDetail(saved.id);
     } catch (error) {
       const safetyLimit =
         error instanceof LoopsApiError ? error.safetyLimit : null;
@@ -207,15 +281,11 @@ export function LoopForm({ loop }: LoopFormProps) {
                   onChange={(e) => patch({ description: e.target.value })}
                 />
               </Field>
-              <Field label="Instructions" required>
-                <TextArea
-                  value={values.instructions}
-                  placeholder="Summarize failing CI runs from the last 24 hours and post the summary to #eng-standup."
-                  disabled={isSubmitting}
-                  className="min-h-[220px] text-[13px] leading-relaxed"
-                  onChange={(e) => patch({ instructions: e.target.value })}
-                />
-              </Field>
+              <LoopInstructionsFields
+                values={values}
+                disabled={isSubmitting}
+                onPatch={patch}
+              />
             </Step>
           ) : null}
 
@@ -548,7 +618,11 @@ function ReviewList({
       />
       <ReviewRow
         label="Prompt"
-        value={values.instructions.trim() || "No prompt"}
+        value={
+          values.skill
+            ? buildSkillInstructions(values.skill.name, values.skillContext)
+            : values.instructions.trim() || "No prompt"
+        }
         multiline
       />
       <ReviewRow

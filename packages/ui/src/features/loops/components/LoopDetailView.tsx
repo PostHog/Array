@@ -1,5 +1,7 @@
 import { ArrowLeftIcon, RepeatIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { isUploadableSkillSource } from "@posthog/core/message-editor/skillTags";
+import { useHostTRPC } from "@posthog/host-router/react";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -20,6 +22,7 @@ import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import { Button as ActionButton } from "@posthog/ui/primitives/Button";
 import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
 import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -28,7 +31,9 @@ import {
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Flex, Text } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
@@ -37,6 +42,7 @@ import {
   useUpdateLoop,
 } from "../hooks/useLoopMutations";
 import { RECENT_RUNS_LIMIT, useLoopRuns } from "../hooks/useLoopRuns";
+import { useSyncLoopSkillBundles } from "../hooks/useLoopSkillBundles";
 import {
   buildLoopEnabledToggledProps,
   buildLoopViewedProps,
@@ -51,6 +57,7 @@ import {
   summarizeNotificationDestinations,
 } from "../loopDisplay";
 import { formatLoopModel } from "../loopModels";
+import { loopSkillBundles, primaryLoopSkillBundle } from "../loopSkill";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
@@ -430,6 +437,12 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             .join(" · ")}
         </SummaryRow>
 
+        {loopSkillBundles(loop).length > 0 ? (
+          <SummaryRow label="Skill">
+            <LoopSkillSummary loop={loop} />
+          </SummaryRow>
+        ) : null}
+
         <SummaryRow label="Repository">
           {loop.repositories.length > 0
             ? loop.repositories.map((repo) => repo.full_name).join(", ")
@@ -465,8 +478,91 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
   );
 }
 
+function LoopSkillSummary({ loop }: { loop: LoopSchemas.Loop }) {
+  const { localWorkspaces } = useHostCapabilities();
+  const trpc = useHostTRPC();
+  const { data: localSkillData } = useQuery({
+    ...trpc.skills.list.queryOptions(),
+    enabled: localWorkspaces,
+  });
+  const syncSkillBundles = useSyncLoopSkillBundles();
+
+  const primary = primaryLoopSkillBundle(loop);
+  if (!primary) return null;
+  const dependencyCount = loopSkillBundles(loop).length - 1;
+
+  // The one-click refresh must be unambiguous about which skill it snapshots: it
+  // requires exactly one local skill matching the stored name AND source, so a
+  // same-named skill from another source (say, an opened repo) can never silently
+  // replace the loop's snapshot. Ambiguous cases go through the edit form, where
+  // the picker shows each candidate.
+  const candidates = (localSkillData ?? []).filter(
+    (skill) =>
+      skill.name === primary.skill_name &&
+      skill.source === primary.skill_source,
+  );
+  const localMatch = candidates.length === 1 ? candidates[0] : undefined;
+  const updateDisabledReason = !localWorkspaces
+    ? "updating the snapshot needs the desktop app"
+    : localMatch
+      ? null
+      : candidates.length > 1
+        ? `several local skills are named ${primary.skill_name}; pick the right one from the edit form`
+        : `no local ${primary.skill_source} skill named ${primary.skill_name} was found on this machine`;
+
+  const handleUpdate = () => {
+    if (!localMatch || !isUploadableSkillSource(localMatch.source)) return;
+    syncSkillBundles.mutate(
+      {
+        loopId: loop.id,
+        skill: {
+          name: localMatch.name,
+          source: localMatch.source,
+          path: localMatch.path,
+        },
+      },
+      {
+        onSuccess: () => toast.success("Skill snapshot updated"),
+        onError: (error) =>
+          toast.error("Failed to update the skill snapshot", {
+            description: error.message,
+          }),
+      },
+    );
+  };
+
+  return (
+    <Flex align="center" gap="2" wrap="wrap">
+      <Text className="text-[12.5px] text-gray-12">
+        {primary.skill_name}
+        {dependencyCount > 0
+          ? ` (+${dependencyCount} ${dependencyCount === 1 ? "dependency" : "dependencies"})`
+          : ""}
+      </Text>
+      <Text
+        className="text-[11px] text-gray-10"
+        title={new Date(primary.uploaded_at).toLocaleString()}
+      >
+        Snapshot {primary.content_sha256.slice(0, 8)}
+      </Text>
+      <ActionButton
+        variant="soft"
+        color="gray"
+        size="1"
+        loading={syncSkillBundles.isPending}
+        disabled={syncSkillBundles.isPending || !!updateDisabledReason}
+        disabledReason={updateDisabledReason}
+        onClick={handleUpdate}
+      >
+        Update from local skill
+      </ActionButton>
+    </Flex>
+  );
+}
+
 function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
   const updateLoop = useUpdateLoop(loop.id);
+  const primarySkill = primaryLoopSkillBundle(loop);
   const [draft, setDraft] = useState<string | null>(null);
   // Escape reverts and blurs; skip the resulting onBlur save.
   const skipCommit = useRef(false);
@@ -528,6 +624,13 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
           }
         }}
       />
+      {primarySkill ? (
+        <Text className="text-[11px] text-gray-10 leading-snug">
+          This loop runs the {primarySkill.skill_name} skill: the leading /
+          {primarySkill.skill_name} line invokes its attached snapshot. Editing
+          here changes only the text; use Edit to change or detach the skill.
+        </Text>
+      ) : null}
     </Flex>
   );
 }
