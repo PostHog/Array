@@ -1197,6 +1197,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
     const updatedTask = await runTaskInCloud(taskId, {
       branch: previousBranch,
+      runtimeAdapter: "claude",
       resumeFromRunId: previousRunId,
       pendingUserMessage: prompt,
       reasoningEffort,

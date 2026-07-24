@@ -274,6 +274,7 @@ describe("_resumeCloudRun", () => {
 
     expect(mockRunTaskInCloud).toHaveBeenCalledWith("t1", {
       branch: "feature",
+      runtimeAdapter: "claude",
       resumeFromRunId: "prev-run",
       pendingUserMessage: "hi",
       reasoningEffort: "low",
