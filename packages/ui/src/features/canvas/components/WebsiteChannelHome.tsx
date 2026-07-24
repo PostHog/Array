@@ -204,11 +204,15 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     [],
   );
 
-  const invalidateFeed = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: channelFeedQueryKey(backendChannel?.id),
-    });
-  }, [queryClient, backendChannel?.id]);
+  const handleOpenFull = useCallback(
+    (taskId: string) => {
+      void navigate({
+        to: "/website/$channelId/tasks/$taskId",
+        params: { channelId, taskId },
+      });
+    },
+    [channelId, navigate],
+  );
 
   // Slack behavior: submitting keeps you in the channel; the new card appears
   // in the feed and updates live. Filing into the folder keeps the Artifacts /
@@ -224,7 +228,13 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         channelFeedQueryKey(backendChannel?.id),
         (old) => (old ? insertTaskDedup(old, task) : [task]),
       );
-      invalidateFeed();
+      toast.success("Task started", {
+        description: task.title || undefined,
+        action: {
+          label: "View task",
+          onClick: () => handleOpenFull(task.id),
+        },
+      });
       void fileTask(channelId, task.id, task.title)
         .then(() =>
           track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -248,17 +258,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           });
         });
     },
-    [backendChannel?.id, channelId, fileTask, invalidateFeed, queryClient],
-  );
-
-  const handleOpenFull = useCallback(
-    (taskId: string) => {
-      void navigate({
-        to: "/website/$channelId/tasks/$taskId",
-        params: { channelId, taskId },
-      });
-    },
-    [channelId, navigate],
+    [backendChannel?.id, channelId, fileTask, handleOpenFull, queryClient],
   );
   const handleOpenTask = useCallback((task: Task) => setPreviewTask(task), []);
 
@@ -363,6 +363,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
               <Button
                 size="sm"
                 variant="primary"
+                disabled={!backendChannel}
                 onClick={() => setCreateTaskDialogOpen(true)}
               >
                 <Plus size={14} />
@@ -461,10 +462,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           handleOpenFull(task.id);
         }}
       />
-      {boardEnabled ? (
+      {boardEnabled && backendChannel ? (
         <ChannelCreateTaskDialog
           open={createTaskDialogOpen}
           channelId={channelId}
+          backendChannelId={backendChannel.id}
           channelName={channelName}
           channelContext={channelContext}
           onOpenChange={setCreateTaskDialogOpen}

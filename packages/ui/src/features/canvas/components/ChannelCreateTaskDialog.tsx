@@ -10,6 +10,7 @@ import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput
 export function ChannelCreateTaskDialog({
   open,
   channelId,
+  backendChannelId,
   channelName,
   channelContext,
   onOpenChange,
@@ -17,6 +18,7 @@ export function ChannelCreateTaskDialog({
 }: {
   open: boolean;
   channelId: string;
+  backendChannelId: string;
   channelName?: string;
   channelContext?: string;
   onOpenChange: (open: boolean) => void;
@@ -36,6 +38,7 @@ export function ChannelCreateTaskDialog({
           }}
           channelContext={channelContext}
           channelName={channelName}
+          channelId={backendChannelId}
           channelContextId={channelId}
           allowNoRepo
           suggestions={[]}
