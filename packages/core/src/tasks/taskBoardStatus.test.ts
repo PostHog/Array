@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { taskBoardStatus, taskBoardStatusFromSources } from "./taskBoardStatus";
+import { taskBoardStatus } from "./taskBoardStatus";
 
 describe("taskBoardStatus", () => {
   it.each([
@@ -16,16 +16,4 @@ describe("taskBoardStatus", () => {
   ] as const)("maps %o to %s", (input, expected) => {
     expect(taskBoardStatus(input)).toBe(expected);
   });
-});
-
-it("prefers a directly resolved merged PR over a stale open Home snapshot", () => {
-  expect(
-    taskBoardStatusFromSources({
-      resolvedPrState: "merged",
-      prSnapshot: {
-        state: "open",
-        ciStatus: "failing",
-      } as never,
-    }),
-  ).toBe("done");
 });

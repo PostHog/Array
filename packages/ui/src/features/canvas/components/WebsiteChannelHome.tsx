@@ -1,5 +1,4 @@
 import { Kanban, ListBullets, Plus, User } from "@phosphor-icons/react";
-import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
 import { Button } from "@posthog/quill";
 import { CHANNEL_TASK_BOARD_FLAG } from "@posthog/shared";
@@ -50,7 +49,6 @@ import {
 import { useChannelHomeUiStore } from "@posthog/ui/features/canvas/stores/channelHomeUiStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
-import { useHomeSnapshot } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -79,7 +77,6 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const effectiveViewMode = boardEnabled ? viewMode : "feed";
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { snapshot: homeSnapshot } = useHomeSnapshot();
 
   // Poll while empty so the intro's context.md card flips to "created" when
   // the agent publishes mid plan-session, without a manual reload.
@@ -132,22 +129,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         : tasks,
     [boardEnabled, currentUser?.uuid, taskScope, tasks],
   );
-  const prSnapshotByTaskId = useMemo(() => {
-    const result = new Map<string, PrSnapshot>();
-    for (const workstream of [
-      ...homeSnapshot.needsAttention,
-      ...homeSnapshot.inProgress,
-    ]) {
-      if (!workstream.pr) continue;
-      for (const task of workstream.tasks) {
-        result.set(task.id, workstream.pr);
-      }
-    }
-    return result;
-  }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
   const taskPrStates = useChannelTaskPrStates(
     boardEnabled && effectiveViewMode === "board" ? visibleTasks : [],
-    prSnapshotByTaskId,
   );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
@@ -250,14 +233,8 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   );
   const handleOpenTask = useCallback((task: Task) => setPreviewTask(task), []);
   const handleOpenFeedTask = useCallback(
-    (task: Task) => {
-      if (boardEnabled) {
-        setPreviewTask(task);
-      } else {
-        handleOpenFull(task.id);
-      }
-    },
-    [boardEnabled, handleOpenFull],
+    (task: Task) => handleOpenFull(task.id),
+    [handleOpenFull],
   );
 
   const handleOpenThread = useCallback(
@@ -398,7 +375,6 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           <ChannelBoardView
             tasks={visibleTasks}
             isLoading={isLoading}
-            prSnapshotByTaskId={prSnapshotByTaskId}
             taskPrStates={taskPrStates}
             onOpenTask={handleOpenTask}
             onOpenThread={handleOpenThread}
@@ -455,15 +431,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           task={previewTask}
           channelId={channelId}
           prUrl={
-            previewTask
-              ? (taskPrUrl(previewTask, prSnapshotByTaskId) ?? undefined)
-              : undefined
+            previewTask ? (taskPrUrl(previewTask) ?? undefined) : undefined
           }
           prState={
             previewTask
-              ? (taskPrStates.states.get(previewTask.id) ??
-                prSnapshotByTaskId.get(previewTask.id)?.state ??
-                null)
+              ? (taskPrStates.states.get(previewTask.id) ?? null)
               : null
           }
           onClose={() => setPreviewTask(null)}

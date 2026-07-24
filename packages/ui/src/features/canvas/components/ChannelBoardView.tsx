@@ -5,11 +5,10 @@ import {
   GitCommit,
   XCircle,
 } from "@phosphor-icons/react";
-import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import {
   TASK_BOARD_STATUSES,
   type TaskBoardStatus,
-  taskBoardStatusFromSources,
+  taskBoardStatus,
 } from "@posthog/core/tasks/taskBoardStatus";
 import type { Task } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
@@ -82,14 +81,12 @@ const STATUS_VISUAL: Record<
 export function ChannelBoardView({
   tasks,
   isLoading,
-  prSnapshotByTaskId,
   taskPrStates,
   onOpenTask,
   onOpenThread,
 }: {
   tasks: Task[];
   isLoading: boolean;
-  prSnapshotByTaskId: ReadonlyMap<string, PrSnapshot>;
   taskPrStates: ChannelTaskPrStates;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
@@ -115,14 +112,12 @@ export function ChannelBoardView({
       // A task with a PR cannot be classified until its first PR response.
       // Omitting it temporarily avoids showing it as Working and then moving it.
       if (taskPrStates.pendingTaskIds.has(task.id)) continue;
-      const snapshot = prSnapshotByTaskId.get(task.id);
       const resolvedPrState = taskPrStates.states.get(task.id);
-      const status = taskBoardStatusFromSources({
+      const status = taskBoardStatus({
         runStatus: task.latest_run?.status,
-        resolvedPrState,
-        prSnapshot: snapshot,
+        prState: resolvedPrState,
       });
-      const prState = resolvedPrState ?? snapshot?.state ?? null;
+      const prState = resolvedPrState ?? null;
       grouped.get(status)?.push({
         task,
         status,
@@ -136,7 +131,7 @@ export function ChannelBoardView({
       ...STATUS_VISUAL[status],
       items: grouped.get(status) ?? [],
     }));
-  }, [prSnapshotByTaskId, taskPrStates, tasks]);
+  }, [taskPrStates, tasks]);
 
   if (isLoading) {
     return <div className="min-h-0 flex-1" />;
@@ -153,7 +148,7 @@ export function ChannelBoardView({
           status={status}
           prState={prState}
           badgePrState={badgePrState}
-          prUrl={taskPrUrl(task, prSnapshotByTaskId) ?? undefined}
+          prUrl={taskPrUrl(task) ?? undefined}
           onOpenTask={onOpenTask}
           onOpenThread={onOpenThread}
         />

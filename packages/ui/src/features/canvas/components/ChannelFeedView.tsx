@@ -148,7 +148,7 @@ function dayLabel(iso: string, now: Date): string {
   return `${weekday}, ${month} ${day}${year}`;
 }
 
-interface TaskStatusDisplay {
+export interface TaskStatusDisplay {
   // The run/environment badge ("Local", "Completed", "In progress", …).
   base: ReactNode;
   // The PR's GitHub state, shown alongside the run badge when a PR exists.
@@ -168,7 +168,7 @@ interface TaskStatusDisplay {
 // shipped task never reads "Ready + Merged" or a stale "In progress + PR
 // ready". A failed/cancelled run suppresses the PR badge instead — that is a
 // deliberate end state we should not soften with a PR.
-function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
+export function useTaskStatusDisplay(task: Task): TaskStatusDisplay {
   const data = useChannelTaskData(task);
   const { prState } = useTaskPrStatus({
     id: task.id,
@@ -247,7 +247,7 @@ function PrStateBadge({ prState }: { prState: Exclude<SidebarPrState, null> }) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
+export function TaskStatusBadge({ display }: { display: TaskStatusDisplay }) {
   return (
     <div className="flex shrink-0 items-center gap-1">
       {display.base}

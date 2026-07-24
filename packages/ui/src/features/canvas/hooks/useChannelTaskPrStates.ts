@@ -1,4 +1,3 @@
-import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import type { Task } from "@posthog/shared/domain-types";
 import {
   type PrStateDetails,
@@ -18,16 +17,10 @@ export function prDetailsToState(
   return null;
 }
 
-export function taskPrUrl(
-  task: Task,
-  prSnapshotByTaskId: ReadonlyMap<string, Pick<PrSnapshot, "url">>,
-): string | null {
-  return (
-    prSnapshotByTaskId.get(task.id)?.url ??
-    (typeof task.latest_run?.output?.pr_url === "string"
-      ? task.latest_run.output.pr_url
-      : null)
-  );
+export function taskPrUrl(task: Task): string | null {
+  return typeof task.latest_run?.output?.pr_url === "string"
+    ? task.latest_run.output.pr_url
+    : null;
 }
 
 export interface ChannelTaskPrStates {
@@ -37,20 +30,17 @@ export interface ChannelTaskPrStates {
   isRefreshing: boolean;
 }
 
-export function useChannelTaskPrStates(
-  tasks: Task[],
-  prSnapshotByTaskId: ReadonlyMap<string, PrSnapshot>,
-): ChannelTaskPrStates {
+export function useChannelTaskPrStates(tasks: Task[]): ChannelTaskPrStates {
   const prUrls = useMemo(
     () => [
       ...new Set(
         tasks.flatMap((task) => {
-          const prUrl = taskPrUrl(task, prSnapshotByTaskId);
+          const prUrl = taskPrUrl(task);
           return prUrl ? [prUrl] : [];
         }),
       ),
     ],
-    [prSnapshotByTaskId, tasks],
+    [tasks],
   );
   const results = usePrDetailsQueries(prUrls);
 
@@ -63,7 +53,7 @@ export function useChannelTaskPrStates(
     let isRefreshing = false;
 
     for (const task of tasks) {
-      const prUrl = taskPrUrl(task, prSnapshotByTaskId);
+      const prUrl = taskPrUrl(task);
       const result = prUrl ? resultByUrl.get(prUrl) : undefined;
       if (prUrl && result && !result.data && result.isPending) {
         pendingTaskIds.add(task.id);
@@ -83,5 +73,5 @@ export function useChannelTaskPrStates(
       isResolving: pendingTaskIds.size > 0,
       isRefreshing,
     };
-  }, [prSnapshotByTaskId, prUrls, results, tasks]);
+  }, [prUrls, results, tasks]);
 }

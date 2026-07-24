@@ -1,5 +1,6 @@
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
-import type { PrSnapshot, PrSnapshotState } from "../home/prSnapshot";
+
+export type TaskBoardPrState = "open" | "draft" | "merged" | "closed";
 
 export const TASK_BOARD_STATUSES = [
   "working",
@@ -15,7 +16,7 @@ export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
  */
 export function taskBoardStatus(input: {
   runStatus?: TaskRunStatus | null;
-  prState?: PrSnapshotState | null;
+  prState?: TaskBoardPrState | null;
 }): TaskBoardStatus {
   if (input.prState === "merged") return "done";
   if (input.prState === "closed") return "cancelled";
@@ -26,16 +27,4 @@ export function taskBoardStatus(input: {
   if (input.prState === "draft") return "working";
   if (input.runStatus === "completed") return "done";
   return "working";
-}
-
-export function taskBoardStatusFromSources(input: {
-  runStatus?: TaskRunStatus | null;
-  resolvedPrState?: PrSnapshotState | null;
-  prSnapshot?: PrSnapshot | null;
-}): TaskBoardStatus {
-  return taskBoardStatus({
-    runStatus: input.runStatus,
-    // Direct PR resolution is fresher than the periodically rebuilt Home row.
-    prState: input.resolvedPrState ?? input.prSnapshot?.state,
-  });
 }
