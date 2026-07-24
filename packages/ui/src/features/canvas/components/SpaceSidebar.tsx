@@ -1,33 +1,59 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
 import {
+  Archive,
   BookOpenTextIcon,
+  CheckIcon,
   FileTextIcon,
+  FunnelSimple as FunnelSimpleIcon,
   HashIcon,
+  MagnifyingGlass,
   PackageIcon,
   PlusIcon,
+  PushPin,
   RepeatIcon,
 } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
-import { Avatar, AvatarFallback, Badge, MenuLabel } from "@posthog/quill";
+import {
+  Avatar,
+  AvatarFallback,
+  Badge,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Input,
+  MenuLabel,
+} from "@posthog/quill";
 import { formatRelativeTimeShort, LOOPS_FLAG } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
-import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import {
+  useDashboardMutations,
+  useDashboards,
+} from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { NestedButton } from "@posthog/ui/primitives/NestedButton";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
+import { toast } from "@posthog/ui/primitives/toast";
 import { navigateToChannelNewTask } from "@posthog/ui/router/navigationBridge";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 type StatusVariant = "default" | "destructive" | "info" | "success" | "warning";
 
@@ -41,12 +67,47 @@ interface SpaceItem {
   isActive: boolean;
   /** Run status ("In progress", …) for the hover card; tasks only. */
   status: string | null;
+  /** Raw run status value, for the status filter. */
+  rawStatus: string | null;
   statusVariant: StatusVariant;
   /** Who created it — the full user when known (tasks), else a name. */
   authorUser: UserBasic | null;
   authorName: string | null;
   onClick: () => void;
+  onTogglePin: () => void;
+  /** Tasks only — canvases can't be archived. */
+  onArchive?: () => void;
 }
+
+type CreatedByFilter = "anyone" | "me" | "others";
+
+const STATUS_FILTER_OPTIONS: readonly {
+  value: string | null;
+  label: string;
+}[] = [
+  { value: null, label: "Any status" },
+  { value: "in_progress", label: "In progress" },
+  { value: "completed", label: "Completed" },
+  { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
+] as const;
+
+const CREATED_BY_OPTIONS: readonly {
+  value: CreatedByFilter;
+  label: string;
+}[] = [
+  { value: "anyone", label: "Anyone" },
+  { value: "me", label: "Me" },
+  { value: "others", label: "Other people" },
+] as const;
+
+const HEADER_ICON_BUTTON_CLASS =
+  "flex size-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12";
+const HOVER_ACTION_CLASS =
+  "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12";
+
+const cnHeaderButton = (active: boolean) =>
+  cn(HEADER_ICON_BUTTON_CLASS, active && "bg-gray-3 text-gray-12");
 
 function humanizeStatus(status: string | null | undefined): string | null {
   if (!status) return null;
@@ -88,6 +149,40 @@ function SpaceItemRow({ item }: { item: SpaceItem }) {
               label={<>{item.title}</>}
               isActive={item.isActive}
               onClick={item.onClick}
+              // At rest: the relative time. On hover: pin + archive, like the
+              // old task rows.
+              endContent={
+                <>
+                  <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
+                    {formatRelativeTimeShort(item.ts)}
+                  </span>
+                  <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                    <Tooltip content={item.pinned ? "Unpin" : "Pin"} side="top">
+                      <NestedButton
+                        aria-label={item.pinned ? "Unpin" : "Pin"}
+                        className={HOVER_ACTION_CLASS}
+                        onActivate={item.onTogglePin}
+                      >
+                        <PushPin
+                          size={12}
+                          weight={item.pinned ? "fill" : "regular"}
+                        />
+                      </NestedButton>
+                    </Tooltip>
+                    {item.onArchive && (
+                      <Tooltip content="Archive task" side="top">
+                        <NestedButton
+                          aria-label="Archive task"
+                          className={HOVER_ACTION_CLASS}
+                          onActivate={item.onArchive}
+                        >
+                          <Archive size={12} />
+                        </NestedButton>
+                      </Tooltip>
+                    )}
+                  </span>
+                </>
+              }
             />
           </div>
         }
@@ -167,7 +262,20 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
   const { tasks: filedTasks } = useChannelTasks(channelId);
   const { data: tasks } = useTasks();
   const archivedTaskIds = useArchivedTaskIds();
-  const { pinnedTaskIds } = usePinnedTasks();
+  const { pinnedTaskIds, togglePin } = usePinnedTasks();
+  const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
+  const { setPinned: setCanvasPinned } = useDashboardMutations();
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
+
+  // Recent-section controls: title search plus created-by / status filters,
+  // mirroring the old task list's header (minus "Add folder").
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [createdByFilter, setCreatedByFilter] =
+    useState<CreatedByFilter>("anyone");
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const filtersActive = createdByFilter !== "anyone" || statusFilter !== null;
 
   const base = `/website/${channelId}`;
 
@@ -183,6 +291,7 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
         className: "text-violet-9",
       }),
       status: null,
+      rawStatus: null,
       statusVariant: "default" as const,
       authorUser: null,
       authorName: d.createdBy ?? null,
@@ -192,6 +301,11 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
           to: "/website/$channelId/dashboards/$dashboardId",
           params: { channelId, dashboardId: d.id },
         }),
+      onTogglePin: () => {
+        setCanvasPinned(d.id, d.pinnedAt == null).catch(() => {
+          toast.error("Couldn't update pin");
+        });
+      },
     }));
 
     const taskById = new Map(tasks?.map((t) => [t.id, t]) ?? []);
@@ -208,6 +322,7 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
             pinned: pinnedTaskIds.has(f.taskId),
             icon: <FileTextIcon size={15} className="text-blue-9" />,
             status: humanizeStatus(task.latest_run?.status),
+            rawStatus: task.latest_run?.status ?? null,
             statusVariant: statusVariantFor(task.latest_run?.status),
             authorUser: task.created_by ?? null,
             authorName: task.created_by
@@ -219,6 +334,14 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
                 to: "/website/$channelId/tasks/$taskId",
                 params: { channelId, taskId: f.taskId },
               }),
+            onTogglePin: () => {
+              togglePin(f.taskId).catch(() => {
+                toast.error("Couldn't update pin");
+              });
+            },
+            onArchive: () => {
+              void archiveTask({ taskId: f.taskId });
+            },
           },
         ];
       },
@@ -235,10 +358,35 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
     base,
     channelId,
     navigate,
+    togglePin,
+    archiveTask,
+    setCanvasPinned,
   ]);
 
   const pinnedItems = items.filter((i) => i.pinned);
-  const recentItems = items.filter((i) => !i.pinned).slice(0, RECENTS_CAP);
+
+  // The Recent list honors the header's search + filters; Pinned stays as-is.
+  const meUuid = currentUser?.uuid ?? null;
+  const meName = currentUser ? userDisplayName(currentUser) : null;
+  const normalizedQuery = query.trim().toLowerCase();
+  const recentItems = items
+    .filter((i) => !i.pinned)
+    .filter((i) => {
+      if (normalizedQuery && !i.title.toLowerCase().includes(normalizedQuery)) {
+        return false;
+      }
+      if (createdByFilter !== "anyone") {
+        // Tasks carry the author's uuid; canvases only a display name.
+        const isMine = i.authorUser
+          ? i.authorUser.uuid === meUuid
+          : i.authorName != null && meName != null && i.authorName === meName;
+        if (createdByFilter === "me" && !isMine) return false;
+        if (createdByFilter === "others" && isMine) return false;
+      }
+      if (statusFilter && i.rawStatus !== statusFilter) return false;
+      return true;
+    })
+    .slice(0, RECENTS_CAP);
 
   const sectionRow = (
     label: string,
@@ -336,18 +484,90 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
           </>
         )}
 
-        {recentItems.length > 0 && (
+        {(items.some((i) => !i.pinned) || filtersActive || searchOpen) && (
           <>
-            <MenuLabel>Recent</MenuLabel>
-            <div className="flex flex-col gap-px">
-              {recentItems.map((item) => (
-                <SpaceItemRow key={item.key} item={item} />
-              ))}
+            <div className="flex items-center gap-0.5 pr-1">
+              <div className="min-w-0 flex-1">
+                <MenuLabel>Recent</MenuLabel>
+              </div>
+              <button
+                type="button"
+                aria-label="Search"
+                aria-pressed={searchOpen}
+                onClick={() => {
+                  if (searchOpen) setQuery("");
+                  setSearchOpen(!searchOpen);
+                }}
+                className={cnHeaderButton(searchOpen)}
+              >
+                <MagnifyingGlass size={12} />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Filter"
+                      className={cnHeaderButton(filtersActive)}
+                    >
+                      <FunnelSimpleIcon size={12} />
+                    </button>
+                  }
+                />
+                <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+                  <MenuLabel>Created by</MenuLabel>
+                  {CREATED_BY_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onClick={() => setCreatedByFilter(option.value)}
+                    >
+                      <span className="min-w-0 flex-1">{option.label}</span>
+                      {createdByFilter === option.value && (
+                        <CheckIcon size={14} />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <MenuLabel>Status</MenuLabel>
+                  {STATUS_FILTER_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value ?? "any"}
+                      onClick={() => setStatusFilter(option.value)}
+                    >
+                      <span className="min-w-0 flex-1">{option.label}</span>
+                      {statusFilter === option.value && <CheckIcon size={14} />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+            {searchOpen && (
+              <div className="px-1 pb-1">
+                <Input
+                  autoFocus
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search…"
+                  aria-label="Search recent items"
+                  className="h-6 text-[12px]"
+                />
+              </div>
+            )}
+            {recentItems.length > 0 ? (
+              <div className="flex flex-col gap-px">
+                {recentItems.map((item) => (
+                  <SpaceItemRow key={item.key} item={item} />
+                ))}
+              </div>
+            ) : (
+              <p className="px-2 py-2 text-[12px] text-gray-10">
+                Nothing matches the current search or filters.
+              </p>
+            )}
           </>
         )}
 
-        {pinnedItems.length === 0 && recentItems.length === 0 && (
+        {items.length === 0 && (
           <p className="px-2 py-3 text-[12px] text-gray-10">
             Tasks and canvases you create in this space show up here.
           </p>
