@@ -4,6 +4,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CloudArtifactDownloads } from "./CloudArtifactDownloads";
 
 const getCloudAttachmentPreviewUrl = vi.fn();
+const fetchedArtifacts = [
+  {
+    id: "output-1",
+    name: "report.pdf",
+    type: "output",
+    size: 12_000,
+    storage_path: "tasks/run-1/report.pdf",
+  },
+  {
+    id: "internal-1",
+    name: "handoff.pack",
+    type: "artifact",
+    storage_path: "tasks/run-1/handoff.pack",
+  },
+];
 
 vi.mock("@posthog/core/sessions/sessionService", () => ({
   SESSION_SERVICE: Symbol("SESSION_SERVICE"),
@@ -17,25 +32,20 @@ vi.mock("@posthog/ui/features/sessions/sessionStore", () => ({
   useSessionSelector: () => undefined,
 }));
 
+vi.mock("@posthog/ui/features/auth/store", () => ({
+  getAuthIdentity: () => "auth-1",
+  useAuthStateValue: () => "auth-1",
+}));
+
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: () => ({ data: fetchedArtifacts }),
+}));
+
 const task = {
   id: "task-1",
   latest_run: {
     id: "run-1",
-    artifacts: [
-      {
-        id: "output-1",
-        name: "report.pdf",
-        type: "output",
-        size: 12_000,
-        storage_path: "tasks/run-1/report.pdf",
-      },
-      {
-        id: "internal-1",
-        name: "handoff.pack",
-        type: "artifact",
-        storage_path: "tasks/run-1/handoff.pack",
-      },
-    ],
+    status: "completed",
   },
 } as never;
 

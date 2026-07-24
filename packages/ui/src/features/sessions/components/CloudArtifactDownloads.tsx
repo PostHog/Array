@@ -6,11 +6,16 @@ import {
 import { useService } from "@posthog/di/react";
 import { Button } from "@posthog/quill";
 import type { TaskRunArtifact } from "@posthog/shared";
-import type { Task } from "@posthog/shared/domain-types";
+import { isTerminalStatus, type Task } from "@posthog/shared/domain-types";
+import {
+  getAuthIdentity,
+  useAuthStateValue,
+} from "@posthog/ui/features/auth/store";
 import { useSessionSelector } from "@posthog/ui/features/sessions/sessionStore";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text } from "@radix-ui/themes";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 
 function formatFileSize(size: number | undefined): string | null {
@@ -32,14 +37,34 @@ export function CloudArtifactDownloads({
     taskId,
     (session) => session?.cloudArtifacts,
   );
+  const cloudStatus = useSessionSelector(
+    taskId,
+    (session) => session?.cloudStatus,
+  );
+  const authIdentity = useAuthStateValue(getAuthIdentity);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const runId = task?.latest_run?.id;
+  const { data: fetchedArtifacts } = useQuery({
+    queryKey: ["cloudRunArtifacts", authIdentity, taskId, runId],
+    queryFn: () =>
+      sessionService.getCloudRunArtifacts(taskId ?? "", runId ?? ""),
+    enabled:
+      authIdentity !== null &&
+      taskId !== undefined &&
+      runId !== undefined &&
+      isTerminalStatus(cloudStatus ?? task?.latest_run?.status),
+    retry: false,
+    staleTime: Infinity,
+  });
   const artifacts = useMemo(
     () =>
-      (sessionArtifacts ?? task?.latest_run?.artifacts ?? []).filter(
-        (artifact) => artifact.type === "output",
-      ),
-    [sessionArtifacts, task?.latest_run?.artifacts],
+      (
+        fetchedArtifacts ??
+        sessionArtifacts ??
+        task?.latest_run?.artifacts ??
+        []
+      ).filter((artifact) => artifact.type === "output"),
+    [fetchedArtifacts, sessionArtifacts, task?.latest_run?.artifacts],
   );
 
   const downloadArtifact = useCallback(
