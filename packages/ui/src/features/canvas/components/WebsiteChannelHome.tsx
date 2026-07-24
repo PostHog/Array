@@ -35,6 +35,7 @@ import {
   useChannelFeedMessages,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import {
@@ -149,6 +150,9 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     }
     return result;
   }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
+  // Resolve PR state even while the feed is visible so switching to the board
+  // can use the shared React Query cache instead of briefly misplacing cards.
+  const taskPrStates = useChannelTaskPrStates(visibleTasks, prUrlByTaskId);
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
@@ -370,6 +374,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             isLoading={isLoading}
             prSnapshotByTaskId={prSnapshotByTaskId}
             prUrlByTaskId={prUrlByTaskId}
+            taskPrStates={taskPrStates}
             onOpenTask={handleOpenTask}
             onOpenThread={handleOpenThread}
           />

@@ -19,7 +19,7 @@ import {
   TaskStatusBadge,
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
-import { useChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
+import type { ChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
@@ -28,7 +28,7 @@ import {
 } from "@posthog/ui/features/home/components/WorkBoard";
 import type { SituationColor } from "@posthog/ui/features/home/utils/situationDisplay";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
-import { Box } from "@radix-ui/themes";
+import { Box, Spinner } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
@@ -72,6 +72,7 @@ export function ChannelBoardView({
   isLoading,
   prSnapshotByTaskId,
   prUrlByTaskId,
+  taskPrStates,
   onOpenTask,
   onOpenThread,
 }: {
@@ -79,10 +80,10 @@ export function ChannelBoardView({
   isLoading: boolean;
   prSnapshotByTaskId: ReadonlyMap<string, PrSnapshot>;
   prUrlByTaskId: ReadonlyMap<string, string>;
+  taskPrStates: ChannelTaskPrStates;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  const prStates = useChannelTaskPrStates(tasks, prUrlByTaskId);
   const columns = useMemo<
     WorkBoardColumn<{ task: Task; status: TaskBoardStatus }>[]
   >(() => {
@@ -91,8 +92,11 @@ export function ChannelBoardView({
       Array<{ task: Task; status: TaskBoardStatus }>
     >(TASK_BOARD_STATUSES.map((status) => [status, []]));
     for (const task of tasks) {
+      // A task with a PR cannot be classified until its first PR response.
+      // Omitting it temporarily avoids showing it as Working and then moving it.
+      if (taskPrStates.pendingTaskIds.has(task.id)) continue;
       const snapshot = prSnapshotByTaskId.get(task.id);
-      const resolvedPrState = prStates.get(task.id);
+      const resolvedPrState = taskPrStates.states.get(task.id);
       const status = taskBoardStatusFromSources({
         runStatus: task.latest_run?.status,
         resolvedPrState,
@@ -105,31 +109,41 @@ export function ChannelBoardView({
       ...STATUS_VISUAL[status],
       items: grouped.get(status) ?? [],
     }));
-  }, [prSnapshotByTaskId, prStates, tasks]);
+  }, [prSnapshotByTaskId, taskPrStates, tasks]);
 
   if (isLoading) {
     return <div className="min-h-0 flex-1" />;
   }
 
   return (
-    <WorkBoard
-      columns={columns}
-      getKey={(item) => item.task.id}
-      renderCard={({ task, status }) => (
-        <ChannelBoardCard
-          task={task}
-          status={status}
-          prUrl={
-            prUrlByTaskId.get(task.id) ??
-            (typeof task.latest_run?.output?.pr_url === "string"
-              ? task.latest_run.output.pr_url
-              : undefined)
-          }
-          onOpenTask={onOpenTask}
-          onOpenThread={onOpenThread}
-        />
-      )}
-    />
+    <div className="flex min-h-0 flex-1 flex-col">
+      {taskPrStates.isResolving || taskPrStates.isRefreshing ? (
+        <div className="flex shrink-0 items-center gap-2 px-4 py-2 text-(--gray-10) text-xs">
+          <Spinner size="1" />
+          {taskPrStates.isResolving
+            ? `Updating ${taskPrStates.pendingTaskIds.size} task ${taskPrStates.pendingTaskIds.size === 1 ? "status" : "statuses"}…`
+            : "Refreshing statuses…"}
+        </div>
+      ) : null}
+      <WorkBoard
+        columns={columns}
+        getKey={(item) => item.task.id}
+        renderCard={({ task, status }) => (
+          <ChannelBoardCard
+            task={task}
+            status={status}
+            prUrl={
+              prUrlByTaskId.get(task.id) ??
+              (typeof task.latest_run?.output?.pr_url === "string"
+                ? task.latest_run.output.pr_url
+                : undefined)
+            }
+            onOpenTask={onOpenTask}
+            onOpenThread={onOpenThread}
+          />
+        )}
+      />
+    </div>
   );
 }
 
