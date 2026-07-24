@@ -68,7 +68,7 @@ export function resolveComposerPrimaryAction({
   allowSendWhileRunning: boolean;
 }): ComposerPrimaryAction {
   if (disabled || isTranscribing) return "disabled";
+  if (isRecording) return "mic-stop";
   if (canStop && (!allowSendWhileRunning || !hasContent)) return "stop";
-  if (hasContent && !isRecording) return "send";
-  return isRecording ? "mic-stop" : "mic";
+  return hasContent ? "send" : "mic";
 }

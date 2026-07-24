@@ -537,7 +537,9 @@ export function TaskChatComposer({
             reasoning,
           });
           onModelChange(next.model);
-          onReasoningChange(next.reasoning);
+          if (next.reasoning !== reasoning) {
+            onReasoningChange(next.reasoning);
+          }
         }}
         onClose={() => setModelSheetOpen(false)}
         options={mobileModelOptions.map((m) => ({

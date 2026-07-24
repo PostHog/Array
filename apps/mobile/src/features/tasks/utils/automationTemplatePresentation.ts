@@ -1,23 +1,10 @@
 import type { TaskAutomation } from "@posthog/api-client/posthog-client";
-
-export const SKILL_TEMPLATE_ID_PREFIX = "llm-skill:";
-
-export function formatSkillTemplateId(skillName: string): string {
-  return `${SKILL_TEMPLATE_ID_PREFIX}${skillName.trim()}`;
-}
-
-export function parseSkillTemplateId(
-  templateId: string | null | undefined,
-): string | null {
-  if (!templateId?.startsWith(SKILL_TEMPLATE_ID_PREFIX)) return null;
-  const skillName = templateId.slice(SKILL_TEMPLATE_ID_PREFIX.length).trim();
-  return skillName || null;
-}
+import { parseSkillTemplateId } from "../skills/skillTemplateIds";
 
 export interface AutomationTemplatePresentation {
   templateName: string | null;
-  repositoryLabel: string | null;
   contextLabel: string | null;
+  repositoryLabel: string | null;
   secondaryLabel: string;
 }
 
@@ -30,8 +17,8 @@ export function getAutomationTemplatePresentation(
   return {
     templateName:
       skillName ?? (automation.template_id ? "Template automation" : null),
-    repositoryLabel,
     contextLabel,
+    repositoryLabel,
     secondaryLabel: repositoryLabel ?? contextLabel ?? "No repository context",
   };
 }

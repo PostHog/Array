@@ -67,6 +67,7 @@ describe("mobile composer options", () => {
     [{ hasContent: true }, "send"],
     [{ canStop: true }, "stop"],
     [{ isRecording: true }, "mic-stop"],
+    [{ isRecording: true, canStop: true }, "mic-stop"],
     [{}, "mic"],
   ])("derives the mobile primary action", (overrides, expected) => {
     expect(

@@ -41,17 +41,6 @@ export function isRestorableReport(
   return report.status === "suppressed";
 }
 
-export function getImmediatelyActionableReports(
-  reports: SignalReport[],
-): SignalReport[] {
-  return reports.filter(
-    (report) =>
-      report.status === "ready" &&
-      report.actionability === "immediately_actionable" &&
-      !report.already_addressed,
-  );
-}
-
 export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;
 
 export const INBOX_SCOPE_FOR_YOU: InboxScope = "for-you";

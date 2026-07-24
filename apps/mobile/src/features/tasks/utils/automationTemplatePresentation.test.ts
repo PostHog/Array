@@ -1,5 +1,5 @@
-import { getAutomationTemplatePresentation } from "@posthog/core/automations/automationTemplatePresentation";
 import { describe, expect, it } from "vitest";
+import { getAutomationTemplatePresentation } from "./automationTemplatePresentation";
 
 describe("automationTemplatePresentation", () => {
   it("prefers repository context when one exists for skill-backed automations", () => {

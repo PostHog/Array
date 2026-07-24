@@ -1,5 +1,4 @@
 import { TaskAutomationValidationError } from "@posthog/api-client/posthog-client";
-import { formatSkillTemplateId } from "@posthog/core/automations/automationTemplatePresentation";
 import { getCalendars } from "expo-localization";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useRef, useState } from "react";
@@ -15,6 +14,7 @@ import { Text } from "@/components/text";
 import { AutomationForm } from "@/features/tasks/components/AutomationForm";
 import { useCreateTaskAutomation } from "@/features/tasks/hooks/useAutomations";
 import { useSkillStoreSkill } from "@/features/tasks/skills/hooks";
+import { formatSkillTemplateId } from "@/features/tasks/skills/skillTemplateIds";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 

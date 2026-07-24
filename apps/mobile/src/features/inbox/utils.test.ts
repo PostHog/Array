@@ -44,7 +44,7 @@ function buildMobileInboxViewedProperties(
   return buildInboxViewedProperties({
     visibleReports: reports,
     totalCount,
-    filters,
+    filters: { surface: "mobile", ...filters },
   });
 }
 

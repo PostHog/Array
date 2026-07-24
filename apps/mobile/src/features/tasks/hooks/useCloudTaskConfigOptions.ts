@@ -4,6 +4,7 @@ import {
   type CloudTaskConfigOption,
   GLM_MODEL_FLAG,
   isGlmModelId,
+  isRestrictedModelOption,
 } from "@posthog/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useFeatureFlag } from "posthog-react-native";
@@ -35,12 +36,21 @@ export function useCloudTaskConfigOptions(adapter: Adapter = "claude") {
     ? configOptions
     : configOptions.map((option) =>
         option.category === "model"
-          ? {
-              ...option,
-              options: option.options.filter(
+          ? (() => {
+              const options = option.options.filter(
                 (model) => !isGlmModelId(model.value),
-              ),
-            }
+              );
+              const currentValue = options.some(
+                (model) =>
+                  model.value === option.currentValue &&
+                  !isRestrictedModelOption(model._meta),
+              )
+                ? option.currentValue
+                : (options.find(
+                    (model) => !isRestrictedModelOption(model._meta),
+                  )?.value ?? option.currentValue);
+              return { ...option, currentValue, options };
+            })()
           : option,
       );
 
@@ -48,5 +58,7 @@ export function useCloudTaskConfigOptions(adapter: Adapter = "claude") {
     ...query,
     configOptions: visibleConfigOptions,
     hasLiveConfig: query.data !== undefined,
+    isConfigReady:
+      !oauthAccessToken || query.data !== undefined || query.isError,
   };
 }

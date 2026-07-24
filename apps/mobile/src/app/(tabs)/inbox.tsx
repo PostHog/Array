@@ -71,6 +71,7 @@ export default function InboxScreen() {
         visibleReports: reports,
         totalCount,
         filters: {
+          surface: "mobile",
           sourceProductFilter,
           statusFilter,
           suggestedReviewerFilter,
