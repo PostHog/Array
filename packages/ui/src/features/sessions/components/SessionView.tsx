@@ -1,5 +1,4 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
-import { contentToXml } from "@posthog/core/message-editor/content";
 import {
   createLatestPlanTracker,
   SESSION_SERVICE,
@@ -32,7 +31,11 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
-import { submitComposerPrompt } from "@posthog/ui/features/sessions/components/submitComposerPrompt";
+import {
+  isSubmittedContentUnchanged,
+  shouldSubmitComposerOptimistically,
+  submitComposerPrompt,
+} from "@posthog/ui/features/sessions/components/submitComposerPrompt";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/useEditQueuedMessage";
@@ -322,10 +325,8 @@ export function SessionView({
       const editor = editorRef.current;
       const submittedContent = editor?.getContent() ?? null;
       if (
-        !isCloudRun &&
         editor &&
-        submittedContent &&
-        contentToXml(submittedContent) === text
+        shouldSubmitComposerOptimistically(isCloudRun, submittedContent, text)
       ) {
         const sendPromise = submitComposerPrompt(editor, submittedContent, () =>
           onSendPrompt(text),
@@ -341,7 +342,7 @@ export function SessionView({
           const currentEditor = editorRef.current;
           if (
             currentEditor &&
-            contentToXml(currentEditor.getContent()) === text
+            isSubmittedContentUnchanged(currentEditor.getContent(), text)
           ) {
             currentEditor.clear();
           }

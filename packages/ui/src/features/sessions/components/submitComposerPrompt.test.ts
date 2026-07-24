@@ -1,6 +1,9 @@
 import type { EditorContent } from "@posthog/core/message-editor/content";
 import { expect, it, vi } from "vitest";
-import { submitComposerPrompt } from "./submitComposerPrompt";
+import {
+  shouldSubmitComposerOptimistically,
+  submitComposerPrompt,
+} from "./submitComposerPrompt";
 
 function createEditor() {
   return {
@@ -13,6 +16,18 @@ function createEditor() {
 const content: EditorContent = {
   segments: [{ type: "text", text: "queued message" }],
 };
+
+it.each([
+  { isCloudRun: false, expected: true },
+  { isCloudRun: true, expected: false },
+])(
+  "returns $expected for optimistic submission when isCloudRun is $isCloudRun",
+  ({ isCloudRun, expected }) => {
+    expect(
+      shouldSubmitComposerOptimistically(isCloudRun, content, "queued message"),
+    ).toBe(expected);
+  },
+);
 
 it("clears the submitted message before sending completes", async () => {
   const editor = createEditor();
