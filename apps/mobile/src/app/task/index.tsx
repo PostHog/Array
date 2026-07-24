@@ -2,12 +2,10 @@ import { Text } from "@components/text";
 import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
   getAvailableModesForAdapter,
-  getDefaultExecutionModeForAdapter,
 } from "@posthog/core/sessions/executionModes";
 import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
   type Adapter,
-  DEFAULT_CODEX_MODEL,
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
@@ -20,17 +18,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowUp,
-  BrainIcon,
   CaretDown,
-  Cpu,
   GithubLogo,
   MicrophoneIcon,
   PaperclipIcon,
-  PauseIcon,
-  PencilIcon,
-  Robot,
-  ShieldCheck,
-  Sparkle,
   StopIcon,
 } from "phosphor-react-native";
 import { useCallback, useEffect, useState } from "react";
@@ -50,6 +41,7 @@ import { useVoiceRecording } from "@/features/chat";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
+import { AgentConfigControls } from "@/features/tasks/composer/AgentConfigControls";
 import { AttachmentSheet } from "@/features/tasks/composer/attachments/AttachmentSheet";
 import { AttachmentsBar } from "@/features/tasks/composer/attachments/AttachmentsBar";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
@@ -61,14 +53,10 @@ import {
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
-  getComposerModelOptions,
-  getConfigOptionLabel,
   getMobileExecutionModes,
   getModelConfigOption,
 } from "@/features/tasks/composer/options";
-import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
-import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
 import { useCloudTaskConfigOptions } from "@/features/tasks/hooks/useCloudTaskConfigOptions";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
 import { useWarmTask } from "@/features/tasks/hooks/useWarmTask";
@@ -82,6 +70,7 @@ import type {
   CreateTaskOptions,
   RepositorySelection,
 } from "@/features/tasks/types";
+import { buildCloudTaskRunConfig } from "@/features/tasks/utils/cloudTaskRunConfig";
 import {
   findRepositoryOption,
   isRepositorySelectionComplete,
@@ -93,30 +82,11 @@ import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
-const SWITCH_ADAPTER_VALUE = "__switch_adapter__";
 const SUGGESTIONS = [
   "Create or update my CLAUDE.md file",
   "Search for a TODO comment and fix it",
   "Recommend areas to improve our tests",
 ] as const;
-
-function modeIcon(mode: ExecutionMode, color: string, size = 14) {
-  switch (mode) {
-    case "plan":
-      return <PauseIcon size={size} color={color} weight="bold" />;
-    case "default":
-      return <PencilIcon size={size} color={color} />;
-    case "acceptEdits":
-      return <ShieldCheck size={size} color={color} />;
-    case "bypassPermissions":
-    case "full-access":
-      return <ShieldCheck size={size} color={color} weight="fill" />;
-    case "read-only":
-      return <PauseIcon size={size} color={color} />;
-    case "auto":
-      return <Sparkle size={size} color={color} weight="fill" />;
-  }
-}
 
 export default function NewTaskScreen() {
   const {
@@ -136,11 +106,7 @@ export default function NewTaskScreen() {
   const [adapter, setAdapter] = useState<Adapter>("claude");
   const { configOptions, hasLiveConfig, isConfigReady } =
     useCloudTaskConfigOptions(adapter);
-  const executionModes = getMobileExecutionModes(
-    getAvailableModesForAdapter(adapter),
-  );
   const modelConfigOption = getModelConfigOption(configOptions);
-  const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const {
     error,
     hasGithubIntegration,
@@ -236,9 +202,6 @@ export default function NewTaskScreen() {
   }, [adapter, hasLiveConfig, model, modelConfigOption, reasoning]);
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
-  const [modeSheetOpen, setModeSheetOpen] = useState(false);
-  const [modelSheetOpen, setModelSheetOpen] = useState(false);
-  const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
@@ -381,15 +344,9 @@ export default function NewTaskScreen() {
             )
           : trimmedPrompt;
 
-      const supportsReasoning =
-        getReasoningEffortOptions(adapter, model) !== null;
-
       await client.runTaskInCloud(task.id, undefined, {
         pendingUserMessage,
-        adapter,
-        model,
-        reasoningLevel: supportsReasoning ? reasoning : undefined,
-        initialPermissionMode: mode,
+        ...buildCloudTaskRunConfig({ adapter, mode, model, reasoning }),
         autoPublish: usePreferencesStore.getState().autoPublishCloudRuns,
         rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         ...(signalReport
@@ -618,51 +575,27 @@ export default function NewTaskScreen() {
                         paddingRight: 16,
                       }}
                     >
-                      <Pill
-                        icon={modeIcon(
-                          mode,
-                          mode === "plan"
-                            ? themeColors.accent[11]
-                            : themeColors.gray[11],
-                        )}
-                        label={
-                          executionModes.find((option) => option.id === mode)
-                            ?.name ?? mode
-                        }
-                        accent={mode === "plan"}
-                        onPress={() => setModeSheetOpen(true)}
+                      <AgentConfigControls
+                        adapter={adapter}
+                        mode={mode}
+                        model={model}
+                        reasoning={reasoning}
+                        configOptions={configOptions}
+                        onAdapterChange={setAdapter}
+                        onModeChange={(next) => {
+                          setMode(next);
+                          usePreferencesStore
+                            .getState()
+                            .setLastNewTaskMode(next);
+                        }}
+                        onModelChange={setModel}
+                        onReasoningChange={(next) => {
+                          setReasoning(next);
+                          usePreferencesStore
+                            .getState()
+                            .setLastUsedReasoningEffort(next);
+                        }}
                       />
-
-                      <Pill
-                        icon={
-                          adapter === "codex" ? (
-                            <Cpu size={14} color={themeColors.gray[11]} />
-                          ) : (
-                            <Robot size={14} color={themeColors.gray[11]} />
-                          )
-                        }
-                        label={
-                          getConfigOptionLabel(
-                            modelConfigOption.options,
-                            model,
-                          ) ?? model
-                        }
-                        onPress={() => setModelSheetOpen(true)}
-                      />
-
-                      {showReasoningPill ? (
-                        <Pill
-                          icon={
-                            <BrainIcon size={14} color={themeColors.gray[11]} />
-                          }
-                          label={
-                            reasoningOptions.find(
-                              (option) => option.value === reasoning,
-                            )?.name ?? reasoning
-                          }
-                          onPress={() => setReasoningSheetOpen(true)}
-                        />
-                      ) : null}
                     </ScrollView>
                     {/* Right-edge fade hints that more pills exist when the row
                       overflows. Non-interactive so taps fall through. */}
@@ -770,98 +703,6 @@ export default function NewTaskScreen() {
           </View>
         </Animated.View>
       </View>
-
-      <SelectSheet
-        open={modeSheetOpen}
-        title="Execution mode"
-        value={mode}
-        onChange={(value) => {
-          const next = value as ExecutionMode;
-          setMode(next);
-          usePreferencesStore.getState().setLastNewTaskMode(next);
-        }}
-        onClose={() => setModeSheetOpen(false)}
-        options={executionModes.map((executionMode) => ({
-          value: executionMode.id,
-          label: executionMode.name,
-          description: executionMode.description,
-          icon: modeIcon(
-            executionMode.id as ExecutionMode,
-            executionMode.id === "plan"
-              ? themeColors.accent[11]
-              : themeColors.gray[11],
-            16,
-          ),
-        }))}
-      />
-
-      <SelectSheet
-        open={modelSheetOpen}
-        title="Model"
-        value={model}
-        onChange={(value) => {
-          if (value === SWITCH_ADAPTER_VALUE) {
-            const nextAdapter: Adapter =
-              adapter === "claude" ? "codex" : "claude";
-            setAdapter(nextAdapter);
-            setMode(getDefaultExecutionModeForAdapter(nextAdapter));
-            setModel(
-              nextAdapter === "codex"
-                ? DEFAULT_CODEX_MODEL
-                : DEFAULT_GATEWAY_MODEL,
-            );
-            setReasoning(DEFAULT_REASONING_EFFORT);
-            return;
-          }
-          const next = resolveCloudComposerModelChange({
-            adapter,
-            modelOption: modelConfigOption,
-            requestedModel: value,
-            reasoning,
-          });
-          setModel(next.model);
-          setReasoning(next.reasoning);
-        }}
-        onClose={() => setModelSheetOpen(false)}
-        options={[
-          ...mobileModelOptions.map((modelOption) => ({
-            value: modelOption.value,
-            label: modelOption.label,
-            description: modelOption.description,
-            disabled: modelOption.disabled,
-            icon:
-              adapter === "codex" ? (
-                <Cpu size={16} color={themeColors.gray[11]} />
-              ) : (
-                <Robot size={16} color={themeColors.gray[11]} />
-              ),
-          })),
-          {
-            value: SWITCH_ADAPTER_VALUE,
-            label: `Switch to ${adapter === "claude" ? "Codex" : "Claude Code"}`,
-            description: "Change coding agent",
-            disabled: false,
-            icon: <Cpu size={16} color={themeColors.accent[11]} />,
-          },
-        ]}
-      />
-
-      <SelectSheet
-        open={reasoningSheetOpen}
-        title="Reasoning"
-        value={reasoning}
-        onChange={(value) => {
-          const next = value as SupportedReasoningEffort;
-          setReasoning(next);
-          usePreferencesStore.getState().setLastUsedReasoningEffort(next);
-        }}
-        onClose={() => setReasoningSheetOpen(false)}
-        options={reasoningOptions.map((reasoningLevel) => ({
-          value: reasoningLevel.value,
-          label: reasoningLevel.name,
-          icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
-        }))}
-      />
 
       <AttachmentSheet
         open={attachmentSheetOpen}

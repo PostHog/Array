@@ -12,7 +12,6 @@ import {
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
-  getReasoningEffortOptions,
   isSupportedReasoningEffort,
   type SupportedReasoningEffort,
   serializeCloudPrompt,
@@ -61,6 +60,7 @@ import {
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import { confirmStopRun } from "@/features/tasks/utils/archiveGuard";
+import { buildCloudTaskRunConfig } from "@/features/tasks/utils/cloudTaskRunConfig";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
   ANALYTICS_EVENTS,
@@ -344,18 +344,18 @@ export default function TaskDetailScreen() {
               )
             : text;
 
-        const supportsReasoning =
-          getReasoningEffortOptions(composerAdapter, composerModel) !== null;
         const updatedTask = await getPostHogApiClient().runTaskInCloud(
           taskId,
           undefined,
           {
             resumeFromRunId: task.latest_run?.id,
             pendingUserMessage,
-            adapter: composerAdapter,
-            model: composerModel,
-            reasoningLevel: supportsReasoning ? composerReasoning : undefined,
-            initialPermissionMode: composerMode,
+            ...buildCloudTaskRunConfig({
+              adapter: composerAdapter,
+              mode: composerMode,
+              model: composerModel,
+              reasoning: composerReasoning,
+            }),
             rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
           },
         );
@@ -623,13 +623,12 @@ export default function TaskDetailScreen() {
         undefined,
         {
           resumeFromRunId: task.latest_run?.id,
-          adapter: composerAdapter,
-          model: composerModel,
-          reasoningLevel:
-            getReasoningEffortOptions(composerAdapter, composerModel) !== null
-              ? composerReasoning
-              : undefined,
-          initialPermissionMode: composerMode,
+          ...buildCloudTaskRunConfig({
+            adapter: composerAdapter,
+            mode: composerMode,
+            model: composerModel,
+            reasoning: composerReasoning,
+          }),
           rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         },
       );
