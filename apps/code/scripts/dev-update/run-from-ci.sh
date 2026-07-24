@@ -20,8 +20,8 @@ command -v gh >/dev/null || {
   exit 1
 }
 
-if pgrep -x "PostHog Code" >/dev/null; then
-  echo "PostHog Code is already running. Quit it first; the test build shares its single-instance lock and data dir." >&2
+if pgrep -x "PostHog Code|PostHog" >/dev/null; then
+  echo "PostHog is already running. Quit it first; the test build shares its single-instance lock and data dir." >&2
   exit 1
 fi
 
@@ -57,7 +57,7 @@ FEED_YML="$(find "$TMP/new" -name latest-mac.yml | head -1)"
 echo "==> old 1.0.0 app -> out/mac-arm64"
 rm -rf out/mac-arm64 && mkdir -p out/mac-arm64
 ditto -x -k "$OLD_ZIP" out/mac-arm64
-xattr -dr com.apple.quarantine "out/mac-arm64/PostHog Code.app" 2>/dev/null || true
+xattr -dr com.apple.quarantine "out/mac-arm64/PostHog.app" 2>/dev/null || true
 
 echo "==> new 2.0.0 feed -> out/dev-update-feed"
 rm -rf out/dev-update-feed && mkdir -p out/dev-update-feed
@@ -75,12 +75,12 @@ SERVE_PID=$!
 
 APP_LOG="out/run-from-ci-app.log"
 echo
-echo "==> launching PostHog Code 1.0.0 (feed http://127.0.0.1:$PORT)"
+echo "==> launching PostHog 1.0.0 (feed http://127.0.0.1:$PORT)"
 echo "    In the app: open the update banner, click Download, then Restart."
 echo "    It swaps and relaunches into 2.0.0. Quit the app (or Ctrl+C) to finish."
 echo "    App output: $APP_LOG   update log: ~/.posthog-code/logs/main.log"
 echo
 POSTHOG_E2E_UPDATE_FEED="http://127.0.0.1:$PORT" \
-  "out/mac-arm64/PostHog Code.app/Contents/MacOS/PostHog Code" >"$APP_LOG" 2>&1 || true
+  "out/mac-arm64/PostHog.app/Contents/MacOS/PostHog" >"$APP_LOG" 2>&1 || true
 
 echo "==> app exited; cleaning up"

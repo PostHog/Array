@@ -32,7 +32,7 @@ export type DiffOpenMode = "auto" | "split" | "same-pane" | "last-active-pane";
 // When spoken notifications are allowed to talk, relative to what's on screen:
 //   - always: speak regardless of what the user is looking at
 //   - unviewed_task: stay quiet for the task currently on screen
-//   - app_unfocused: only speak when PostHog Code isn't the focused app
+//   - app_unfocused: only speak when PostHog isn't the focused app
 // (needs-input lines ignore this so a blocker is never missed.)
 export type SpokenFocusMode = "always" | "unviewed_task" | "app_unfocused";
 

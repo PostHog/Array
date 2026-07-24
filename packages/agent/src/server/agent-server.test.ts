@@ -44,6 +44,7 @@ import {
   SSE_KEEPALIVE_INTERVAL_MS,
 } from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
+import type { ExistingPrCheckoutResult } from "./pr-checkout";
 
 const mockedClaudeSdk = vi.hoisted(() => {
   const createSuccessResult = () => ({
@@ -232,6 +233,13 @@ interface TestableServer {
     inboxReportUrl?: string | null,
   ): string;
   buildDetectedPrContext(prUrl: string): string;
+  buildExistingPrCheckoutPromise(
+    prUrl: string | null,
+  ): Promise<ExistingPrCheckoutResult> | null;
+  logExistingPrCheckoutResult(
+    prUrl: string | null,
+    result: ExistingPrCheckoutResult,
+  ): void;
   buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
@@ -943,6 +951,124 @@ describe("AgentServer HTTP Mode", () => {
         },
       );
     });
+
+    // Sandbox teardown kills the exec'd agent-server without SIGTERM, so the
+    // trace's root span only exports if telemetry is shut down at the run's
+    // in-process terminal points.
+    it("shuts down telemetry after mirroring the terminal failure record", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: {
+          payload: { run_id: string };
+          logWriter: { flush: ReturnType<typeof vi.fn> };
+          telemetry: {
+            append: ReturnType<typeof vi.fn>;
+            shutdown: ReturnType<typeof vi.fn>;
+          };
+        };
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => ({})),
+      };
+      testServer.session = {
+        payload: { run_id: "run-1" },
+        logWriter: { flush: vi.fn(async () => {}) },
+        telemetry: {
+          append: vi.fn(() => {
+            order.push("append");
+          }),
+          shutdown: vi.fn(async () => {
+            order.push("shutdown");
+          }),
+        },
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "background",
+        },
+        "error",
+        "boom",
+      );
+
+      // The error mirror must land before shutdown so the root span exports
+      // with ERROR status.
+      expect(order).toEqual(["append", "shutdown"]);
+    });
+
+    it.each([
+      { mode: "background" as const, shutdownCalls: 1 },
+      { mode: "interactive" as const, shutdownCalls: 0 },
+    ])(
+      "finalizeRunTelemetry shuts down telemetry only for $mode runs",
+      async ({ mode, shutdownCalls }) => {
+        const testServer = new AgentServer({
+          port,
+          jwtPublicKey: TEST_PUBLIC_KEY,
+          repositoryPath: repo.path,
+          apiUrl: "http://localhost:8000",
+          apiKey: "test-api-key",
+          projectId: 1,
+          mode: "interactive",
+          taskId: "test-task-id",
+          runId: "test-run-id",
+        }) as unknown as {
+          session: { telemetry: { shutdown: ReturnType<typeof vi.fn> } };
+          finalizeRunTelemetry(payload: JwtPayload): Promise<void>;
+        };
+        testServer.session = {
+          telemetry: { shutdown: vi.fn(async () => {}) },
+        };
+
+        await testServer.finalizeRunTelemetry({
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode,
+        });
+
+        expect(testServer.session.telemetry.shutdown).toHaveBeenCalledTimes(
+          shutdownCalls,
+        );
+      },
+    );
 
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
@@ -4342,6 +4468,78 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).toContain("stop with local changes ready for review");
       expect(context).not.toContain("gh pr checkout");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+  });
+
+  describe("buildExistingPrCheckoutPromise", () => {
+    const prUrl = "https://github.com/org/repo/pull/1";
+
+    afterEach(() => {
+      delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+
+    // Guards the gating condition: a review-first run (no auto-publish) must
+    // not silently check out a PR branch the prompt told the agent to leave
+    // alone. Regressing the guard to always-checkout would fail here.
+    it("does not check out when auto-publish is off", () => {
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when there is no prUrl", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(null);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when createPr is false, even on a Slack-origin run", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer({ createPr: false });
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when no repository is connected", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer({ repositoryPath: undefined });
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("starts a checkout when auto-publish is on for a Slack-origin run", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeInstanceOf(Promise);
+      // Sanity: the promise resolves to a checkout result shape (it will fail
+      // against the synthetic URL with no real gh, which is fine — we only
+      // assert the promise was actually kicked off).
+      expect(typeof promise).toBe("object");
+    });
+
+    // Guards the failure fallback: a transient gh failure must surface as a
+    // warn, never throw or abort startup. Regressing the failed branch to
+    // `throw` would fail here.
+    it("logs a warning for a failed checkout result without throwing", () => {
+      const s = createServer();
+      expect(() =>
+        (s as unknown as TestableServer).logExistingPrCheckoutResult(prUrl, {
+          status: "failed",
+          error: "gh unavailable",
+        }),
+      ).not.toThrow();
     });
   });
 });

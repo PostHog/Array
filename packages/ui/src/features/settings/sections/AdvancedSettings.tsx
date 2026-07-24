@@ -1,6 +1,7 @@
 import { useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { useLoopsPromoStore } from "@posthog/ui/features/loops/loopsPromoStore";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import {
   DEV_MODE_CLIENT,
@@ -100,6 +101,7 @@ export function AdvancedSettings() {
             useOnboardingStore.getState().resetOnboarding();
             useSetupStore.getState().resetSetup();
             useTourStore.getState().resetTours();
+            useLoopsPromoStore.getState().reset();
           }}
         >
           Reset

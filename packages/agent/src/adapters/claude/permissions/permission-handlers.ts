@@ -756,7 +756,7 @@ export async function canUseTool(
 
     if (approvalState === "do_not_use") {
       const message =
-        "This tool has been blocked. To re-enable it, go to Settings > MCP Servers in PostHog Code.";
+        "This tool has been blocked. To re-enable it, go to Settings > MCP Servers in PostHog.";
       await emitToolDenial(context, message);
       return { behavior: "deny", message, interrupt: false };
     }

@@ -1,5 +1,10 @@
 import type { AcpMessage, AgentSession, Workspace } from "@posthog/shared";
-import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
+import {
+  isTerminalStatus,
+  type Task,
+  type TaskRunStatus,
+} from "@posthog/shared/domain-types";
+import { resolveEffectiveCloudStatus } from "../task-detail/cloudRunState";
 
 export interface SessionViewState {
   isCloudRunNotTerminal: boolean;
@@ -23,11 +28,9 @@ export function deriveSessionViewState(
   workspace: Workspace | null,
   isCloud: boolean,
 ): SessionViewState {
-  const cloudStatus = session?.cloudStatus ?? null;
-  const isCloudRunNotTerminal =
-    isCloud &&
-    (!cloudStatus || cloudStatus === "queued" || cloudStatus === "in_progress");
-  const isCloudRunTerminal = isCloud && !isCloudRunNotTerminal;
+  const cloudStatus = resolveEffectiveCloudStatus(task, session);
+  const isCloudRunTerminal = isCloud && isTerminalStatus(cloudStatus);
+  const isCloudRunNotTerminal = isCloud && !isCloudRunTerminal;
 
   const hasError = session?.status === "error" && !session?.idleKilled;
   const handoffInProgress = session?.handoffInProgress ?? false;

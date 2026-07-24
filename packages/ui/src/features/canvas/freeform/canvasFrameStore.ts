@@ -30,7 +30,6 @@ export interface CanvasFrameRect {
 export interface CanvasFrameInputs {
   code: string;
   analytics?: CanvasAnalyticsConfig;
-  refreshKey: number;
   onDataRequest: (method: string, payload: unknown) => Promise<unknown>;
   onError?: (message: string, stack?: string) => void;
   onRendered?: () => void;
@@ -49,11 +48,18 @@ interface CanvasFrameStore {
   slots: (CanvasFrameSlot | null)[];
   activeDashboardId: string | null;
   maxWarmFrames: number;
+  // Per-slot remount generation. Folded into the frame's React key by the host,
+  // so bumping it tears down and recreates that slot's iframe element (a true
+  // remount, unlike a code-swap). Keyed by SLOT INDEX, not canvas, and only ever
+  // bumped by an explicit user refresh — so reassigning a slot to another canvas
+  // (navigation) leaves it untouched and still reuses the warm iframe.
+  frameKeys: Record<number, number>;
 
   register: (dashboardId: string, inputs: CanvasFrameInputs) => void;
   setRect: (dashboardId: string, rect: CanvasFrameRect) => void;
   activate: (dashboardId: string) => void;
   deactivate: (dashboardId: string) => void;
+  remount: (dashboardId: string) => void;
   setMaxWarmFrames: (n: number) => void;
 }
 
@@ -118,6 +124,7 @@ export const useCanvasFrameStore = create<CanvasFrameStore>()((set) => ({
   slots: [],
   activeDashboardId: null,
   maxWarmFrames: DEFAULT_MAX_WARM_FRAMES,
+  frameKeys: {},
 
   register: (dashboardId, inputs) =>
     set((s) => ({
@@ -167,6 +174,18 @@ export const useCanvasFrameStore = create<CanvasFrameStore>()((set) => ({
     set((s) =>
       s.activeDashboardId === dashboardId ? { activeDashboardId: null } : s,
     ),
+
+  // Force a full remount of the canvas's mounted iframe (recreate the element +
+  // its sandboxed document), for a manual "Refresh" that must recover from a
+  // wedged frame, not just reload the document. No-op if the canvas has no slot.
+  remount: (dashboardId) =>
+    set((s) => {
+      const idx = findSlot(s.slots, dashboardId);
+      if (idx < 0) return s;
+      return {
+        frameKeys: { ...s.frameKeys, [idx]: (s.frameKeys[idx] ?? 0) + 1 },
+      };
+    }),
 
   setMaxWarmFrames: (n) =>
     set((s) => ({

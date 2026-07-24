@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   AvailableSuggestedReviewer,
+  Signal,
   SignalReport,
   SignalReportOrderingField,
   SignalReportStatus,
@@ -17,8 +18,22 @@ import {
   isRestorableReport,
   orderSuggestedReviewers,
   reviewerMatchesAvailable,
+  sourceLine,
   toSuggestedReviewerWriteContent,
 } from "./utils";
+
+function signal(source_product: string, source_type: string): Signal {
+  return {
+    signal_id: "s1",
+    content: "",
+    source_product,
+    source_type,
+    source_id: "id",
+    weight: 1,
+    timestamp: "",
+    extra: {},
+  };
+}
 
 function reviewer(login: string, uuid?: string): SuggestedReviewer {
   return {
@@ -435,6 +450,24 @@ describe("dismissalReasonLabel", () => {
     { value: "totally_unknown_code", expected: "totally_unknown_code" },
   ])("maps $value", ({ value, expected }) => {
     expect(dismissalReasonLabel(value)).toBe(expected);
+  });
+});
+
+describe("sourceLine", () => {
+  it.each([
+    {
+      product: "error_tracking",
+      type: "issue_created",
+      expected: "Error tracking · New issue",
+    },
+    { product: "sentry", type: "issue", expected: "Sentry · issue" },
+    {
+      product: "mystery_source",
+      type: "thing",
+      expected: "mystery source · thing",
+    },
+  ])("labels $product", ({ product, type, expected }) => {
+    expect(sourceLine(signal(product, type))).toBe(expected);
   });
 });
 

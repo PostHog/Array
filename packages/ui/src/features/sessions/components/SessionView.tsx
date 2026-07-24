@@ -31,6 +31,11 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import {
+  isSubmittedContentUnchanged,
+  shouldSubmitComposerOptimistically,
+  submitComposerPrompt,
+} from "@posthog/ui/features/sessions/components/submitComposerPrompt";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/useEditQueuedMessage";
@@ -68,7 +73,7 @@ interface SessionViewProps {
   isPromptPending?: boolean | null;
   promptStartedAt?: number | null;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
-  onSendPrompt: (text: string) => void;
+  onSendPrompt: (text: string) => Promise<boolean>;
   onBashCommand?: (command: string) => void;
   onCancelPrompt: () => void;
   repoPath?: string | null;
@@ -137,7 +142,13 @@ function ComposerSlot({
   children: React.ReactNode;
 }) {
   return (
-    <Box className="min-h-0 shrink-0 overflow-y-auto">
+    <Box
+      className={
+        compact
+          ? "max-h-[50%] min-h-0 overflow-y-auto"
+          : "min-h-0 shrink-0 overflow-y-auto"
+      }
+    >
       <ComposerWidth compact={compact}>{children}</ComposerWidth>
     </Box>
   );
@@ -293,6 +304,9 @@ export function SessionView({
   ]);
 
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
+  const editorRef = useRef<PromptInputHandle>(null);
+  const sendInFlightRef = useRef(false);
+  const composerSubmissionRef = useRef(0);
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -303,11 +317,41 @@ export function SessionView({
     (): Plan | null => latestPlanTracker.update(events) as Plan | null,
     [events, latestPlanTracker],
   );
-
   const handleSubmit = useCallback(
-    (text: string) => {
-      if (text.trim()) {
-        onSendPrompt(text);
+    async (text: string): Promise<void> => {
+      if (!text.trim() || sendInFlightRef.current) return;
+
+      sendInFlightRef.current = true;
+      const submissionId = ++composerSubmissionRef.current;
+      const editor = editorRef.current;
+      const submittedContent = editor?.getContent() ?? null;
+      if (
+        editor &&
+        shouldSubmitComposerOptimistically(submittedContent, text)
+      ) {
+        const sendPromise = submitComposerPrompt(
+          editor,
+          submittedContent,
+          () => onSendPrompt(text),
+          () => submissionId === composerSubmissionRef.current,
+        );
+        sendInFlightRef.current = false;
+        await sendPromise;
+        return;
+      }
+
+      try {
+        if (await onSendPrompt(text)) {
+          const currentEditor = editorRef.current;
+          if (
+            currentEditor &&
+            isSubmittedContentUnchanged(currentEditor.getContent(), text)
+          ) {
+            currentEditor.clear();
+          }
+        }
+      } finally {
+        sendInFlightRef.current = false;
       }
     },
     [onSendPrompt],
@@ -331,7 +375,6 @@ export function SessionView({
   const cancelQueuedEdit = useCancelQueuedMessageEdit(taskId);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const editorRef = useRef<PromptInputHandle>(null);
   const promptRecallRef = useRef<PromptRecallHandler | null>(null);
   const handlePromptRecall = useCallback<PromptRecallHandler>(
     (direction) => promptRecallRef.current?.(direction) ?? null,
@@ -674,6 +717,7 @@ export function SessionView({
                           submitDisabledExternal={
                             handoffInProgress || !isOnline
                           }
+                          clearOnSubmit={false}
                           submitTooltipOverride={
                             !isOnline ? "No internet connection" : undefined
                           }

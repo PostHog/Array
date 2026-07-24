@@ -30,6 +30,8 @@ export interface AgentMcpServerConnectionConfig {
 export interface AgentMcpApps {
   handleDiscovery(serverNames: string[]): Promise<void>;
   setServerConfigs(configs: AgentMcpServerConnectionConfig[]): void;
+  addServerConfigs(configs: AgentMcpServerConnectionConfig[]): void;
+  setConfigResolver(resolver: (serverName: string) => Promise<void>): void;
   notifyToolCancelled(toolKey: string, toolCallId: string): void;
   notifyToolInput(toolKey: string, toolCallId: string, args: unknown): void;
   notifyToolResult(
@@ -64,6 +66,7 @@ export interface AgentAuth {
     region: CloudRegion;
   } | null>;
   refreshAccessToken(): Promise<{ accessToken: string; apiHost: string }>;
+  getState(): { currentProjectId: number | null };
   authenticatedFetch(
     fetchImpl: AgentFetchLike,
     input: string | Request,

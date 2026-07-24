@@ -564,6 +564,38 @@ export async function getTaskRun(
   return await response.json();
 }
 
+/**
+ * Exchanges an artifact's storage path for a short-lived presigned S3 URL used
+ * to render image attachment previews.
+ */
+export async function presignTaskRunArtifact(
+  taskId: string,
+  runId: string,
+  storagePath: string,
+): Promise<string> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ storage_path: storagePath }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to generate artifact preview URL",
+    );
+  }
+
+  const data = (await response.json()) as { url: string };
+  return data.url;
+}
+
 export async function cancelRun(
   taskId: string,
   runId: string,

@@ -55,6 +55,7 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { OtelRunTelemetry } from "../otel-telemetry";
 import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
 import {
@@ -102,6 +103,10 @@ import {
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
 import { type McpRelayResponse, McpRelayServer } from "./mcp-relay-server";
+import {
+  checkoutExistingPullRequest,
+  type ExistingPrCheckoutResult,
+} from "./pr-checkout";
 import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
@@ -273,6 +278,8 @@ interface ActiveSession {
   sseController: SseController | null;
   deviceInfo: DeviceInfo;
   logWriter: SessionLogWriter;
+  /** Ships run telemetry (logs + spans) to PostHog; unset when the sandbox has no OTLP config */
+  telemetry?: OtelRunTelemetry;
   /** Current permission mode, tracked for relay decisions */
   permissionMode: PermissionMode;
   /** Whether a desktop client has ever connected via SSE during this session */
@@ -511,6 +518,47 @@ export class AgentServer {
 
   private getEffectiveMode(payload: JwtPayload): AgentMode {
     return payload.mode ?? this.config.mode;
+  }
+
+  /**
+   * Ships run telemetry to PostHog when the sandbox provides an OTLP endpoint
+   * + token (POSTHOG_AGENT_OTEL_LOGS_URL/_TOKEN): metadata log records, plus an
+   * APM trace per run when POSTHOG_AGENT_OTEL_TRACES_URL is also set. Resource
+   * attributes carry the run/user identifiers so cloud runs are filterable per
+   * user, task, and run in the Logs UI. Returns undefined when unconfigured or
+   * on failure — telemetry must never block session startup.
+   */
+  private createRunTelemetry(
+    payload: JwtPayload,
+    deviceInfo: DeviceInfo,
+    adapter: "claude" | "codex",
+  ): OtelRunTelemetry | undefined {
+    const { otelLogsUrl, otelLogsToken } = this.config;
+    if (!otelLogsUrl || !otelLogsToken) return undefined;
+    try {
+      return new OtelRunTelemetry(
+        {
+          url: otelLogsUrl,
+          token: otelLogsToken,
+          tracesUrl: this.config.otelTracesUrl,
+        },
+        {
+          taskId: payload.task_id,
+          runId: payload.run_id,
+          deviceType: deviceInfo.type,
+          teamId: payload.team_id,
+          userId: payload.user_id,
+          distinctId: payload.distinct_id,
+          adapter,
+          mode: this.getEffectiveMode(payload),
+          agentVersion: this.config.version ?? packageJson.version,
+        },
+        new Logger({ debug: false, prefix: "[OtelRunTelemetry]" }),
+      );
+    } catch (error) {
+      this.logger.warn("Failed to initialize OTel run telemetry", error);
+      return undefined;
+    }
   }
 
   private getSessionPermissionMode(): PermissionMode {
@@ -837,7 +885,7 @@ export class AgentServer {
     }
 
     try {
-      const hasSession = await hydrateSessionJsonl({
+      const { hasSession } = await hydrateSessionJsonl({
         sessionId: priorSessionId,
         cwd,
         taskId: payload.task_id,
@@ -933,6 +981,33 @@ export class AgentServer {
       this.logger.error(
         "Failed to flush event stream after fatal error",
         stopError,
+      );
+    }
+
+    // Mirror the crash into run telemetry and shut it down (ends the root
+    // span as errored and flushes) - the process is about to die, so nothing
+    // else will get this record out.
+    try {
+      const session = this.session;
+      if (session?.telemetry) {
+        session.telemetry.append(session.payload.run_id, {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: {
+            jsonrpc: "2.0",
+            method: POSTHOG_NOTIFICATIONS.ERROR,
+            params: {
+              source: "agent_server_crash",
+              error: `Agent server crashed: ${errorMessage}`,
+            },
+          },
+        });
+        await session.telemetry.shutdown();
+      }
+    } catch (telemetryError) {
+      this.logger.error(
+        "Failed to flush telemetry after fatal error",
+        telemetryError,
       );
     }
   }
@@ -1519,9 +1594,16 @@ export class AgentServer {
       userAgent: `posthog/cloud.hog.dev; version: ${this.config.version ?? packageJson.version}`,
     });
 
+    const telemetry = this.createRunTelemetry(
+      payload,
+      deviceInfo,
+      runtimeAdapter,
+    );
+
     const logWriter = new SessionLogWriter({
       posthogAPI,
       logger: new Logger({ debug: true, prefix: "[SessionLogWriter]" }),
+      sinks: telemetry ? [telemetry] : undefined,
     });
 
     const acpConnection = createAcpConnection({
@@ -1613,6 +1695,7 @@ export class AgentServer {
       taskRunId: payload.run_id,
       taskId: payload.task_id,
       environment: "cloud",
+      mode: this.getEffectiveMode(payload),
       systemPrompt: sessionSystemPrompt,
       ...(this.config.model && { model: this.config.model }),
       allowedDomains: this.config.allowedDomains,
@@ -1624,28 +1707,55 @@ export class AgentServer {
     };
 
     await this.waitForRepoReady();
-    await this.installSkillBundleArtifacts(
-      payload.task_id,
-      payload.run_id,
-      this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
-    );
-
-    const nativeResume = await this.prepareNativeResume(
-      payload,
-      posthogAPI,
-      preTaskRun,
-      runtimeAdapter,
-      sessionCwd,
-      initialPermissionMode,
-    );
+    const existingPrCheckoutPromise =
+      this.buildExistingPrCheckoutPromise(prUrl);
+    // Overlap the best-effort PR checkout with the rest of session setup. The
+    // checkout promise is always awaited in `finally` so a throw from
+    // installSkillBundleArtifacts / prepareNativeResume / startMcpRelayServer
+    // can never abandon an in-flight `gh pr checkout` that would keep mutating
+    // the working tree after session start has been abandoned — the awaited
+    // settle (plus the checkout's own abort-on-return) cancels it. The overlap
+    // is safe despite both touching repositoryPath: skill bundles install under
+    // `.posthog/skills/<runId>/...`, which is gitignored (untracked) in target
+    // repos, so `git checkout` — which only updates tracked files — cannot
+    // conflict with those writes or leave them associated with the wrong branch.
+    let nativeResume: { sessionId: string; warm: boolean } | null;
     let effectiveSessionMeta: typeof sessionMeta & {
       nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
     } = sessionMeta;
+    let sessionMcpServers: RemoteMcpServer[];
+    try {
+      await this.installSkillBundleArtifacts(
+        payload.task_id,
+        payload.run_id,
+        this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
+      );
 
-    const sessionMcpServers = [
-      ...(this.config.mcpServers ?? []),
-      ...(await this.startMcpRelayServer()),
-    ];
+      nativeResume = await this.prepareNativeResume(
+        payload,
+        posthogAPI,
+        preTaskRun,
+        runtimeAdapter,
+        sessionCwd,
+        initialPermissionMode,
+      );
+
+      sessionMcpServers = [
+        ...(this.config.mcpServers ?? []),
+        ...(await this.startMcpRelayServer()),
+      ];
+    } finally {
+      // Always consume the checkout result — on the success path this is the
+      // intended await; on a throw it ensures the in-flight checkout settles
+      // (and aborts its children) instead of mutating the tree in the
+      // background. checkoutExistingPullRequest never rejects.
+      if (existingPrCheckoutPromise) {
+        this.logExistingPrCheckoutResult(
+          prUrl,
+          await existingPrCheckoutPromise,
+        );
+      }
+    }
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
@@ -1701,6 +1811,7 @@ export class AgentServer {
       sseController,
       deviceInfo,
       logWriter,
+      telemetry,
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
@@ -2058,6 +2169,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -2280,6 +2393,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
@@ -3284,6 +3399,54 @@ export class AgentServer {
     return `Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.`;
   }
 
+  /**
+   * Fire-and-overlap: starts the best-effort PR-branch checkout so it runs
+   * concurrently with the rest of session setup, returning the promise (or
+   * null when there is nothing to check out). Only runs when auto-publishing,
+   * matching the system-prompt fallback's gate: a review-first run must not
+   * silently check out a branch the prompt told the agent to leave alone.
+   */
+  private buildExistingPrCheckoutPromise(
+    prUrl: string | null,
+  ): Promise<ExistingPrCheckoutResult> | null {
+    if (!prUrl || !this.config.repositoryPath) {
+      return null;
+    }
+    if (!this.shouldAutoPublishCloudChanges()) {
+      return null;
+    }
+    return checkoutExistingPullRequest({
+      repositoryPath: this.config.repositoryPath,
+      prUrl,
+    });
+  }
+
+  /**
+   * Consume a pre-checkout result without throwing — a transient `gh` failure
+   * must fall back to the agent's own checkout (via the system-prompt
+   * instruction), never abort session start.
+   */
+  private logExistingPrCheckoutResult(
+    prUrl: string | null,
+    result: ExistingPrCheckoutResult,
+  ): void {
+    if (result.status === "failed") {
+      this.logger.warn(
+        "Existing PR pre-checkout failed; agent will retry if needed",
+        {
+          prUrl,
+          error: result.error,
+        },
+      );
+    } else {
+      this.logger.debug("Existing PR branch prepared before session start", {
+        prUrl,
+        branch: result.branch,
+        alreadyActive: result.status === "already_active",
+      });
+    }
+  }
+
   private buildDetectedPrContext(prUrl: string): string {
     if (!this.shouldAutoPublishCloudChanges()) {
       return (
@@ -3296,10 +3459,10 @@ export class AgentServer {
     return (
       `IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.\n` +
       `You already have an open pull request: ${prUrl}\n` +
-      `You MUST:\n` +
+      `Unless the user explicitly asks for a new branch or separate PR, you MUST:\n` +
       `1. ${this.buildExistingPrCheckoutInstruction(prUrl)}\n` +
       `2. Make changes, commit, and push to that branch\n` +
-      `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
+      `By default, do not create a new branch, close the existing PR, or create a new PR — continue on the existing PR. If the user explicitly asks you to create a new branch or a separate PR, follow their instruction instead.`
     );
   }
 
@@ -3417,7 +3580,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
       }
@@ -3437,7 +3600,7 @@ After completing the requested changes:
    List unresolved threads first with \`gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{body}}}}}}}'\` so you can resolve each one you fixed.
 
 Important:
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
@@ -3575,6 +3738,25 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
+  /**
+   * Ends the run's telemetry (root span + final flush) at the in-sandbox
+   * terminal point of a background run. Sandbox teardown cannot be relied on
+   * for this: agent-server is an exec'd process inside the sandbox, so
+   * `docker stop` signals only the container's PID 1 and Modal terminate is
+   * immediate — the SIGTERM handler (and thus cleanupSession) never runs, and
+   * an unended root span would never export. Once the background prompt
+   * settles the run is over in-sandbox; the workflow marks the terminal
+   * status and destroys the sandbox right after.
+   */
+  private async finalizeRunTelemetry(payload: JwtPayload): Promise<void> {
+    if (this.getEffectiveMode(payload) !== "background") return;
+    try {
+      await this.session?.telemetry?.shutdown();
+    } catch (error) {
+      this.logger.debug("Failed to finalize run telemetry", error);
+    }
+  }
+
   private async signalTaskComplete(
     payload: JwtPayload,
     stopReason: string,
@@ -3620,6 +3802,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } finally {
       await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
+      // The run is terminal and the sandbox is torn down right after — and
+      // teardown kills this exec'd process without SIGTERM, so this is the
+      // last chance to end the root span and drain the OTel queues. The
+      // error mirror was appended above, so the root span exports as ERROR.
+      await this.session?.telemetry?.shutdown().catch(() => {});
     }
   }
 
@@ -3629,15 +3816,20 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       | typeof POSTHOG_NOTIFICATIONS.ERROR,
     params: Record<string, unknown>,
   ): void {
-    this.eventStreamSender?.enqueue({
-      type: "notification",
+    const entry = {
+      type: "notification" as const,
       timestamp: new Date().toISOString(),
       notification: {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         method,
         params,
       },
-    });
+    };
+    this.eventStreamSender?.enqueue(entry);
+    // Terminal events bypass the SessionLogWriter (and its sinks), so mirror
+    // them onto the OTel writer directly — a failed run is exactly what the
+    // telemetry must record.
+    this.session?.telemetry?.append(this.session.payload.run_id, entry);
   }
 
   private configureEnvironment({
@@ -4283,6 +4475,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     if (this.mcpRelayServer) {
       await this.mcpRelayServer.stop();
       this.mcpRelayServer = null;
+    }
+
+    // Shutdown ends open spans and flushes batched records; without it,
+    // sandbox teardown races the OTel batch delay and drops the tail of the
+    // run's telemetry.
+    try {
+      await this.session.telemetry?.shutdown();
+    } catch (error) {
+      this.logger.error("Failed to shut down OTel run telemetry", error);
     }
 
     // Drain pending permissions before ACP cleanup to avoid deadlocks —

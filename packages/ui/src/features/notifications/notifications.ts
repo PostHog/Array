@@ -27,7 +27,7 @@ const MAX_TITLE_LENGTH = 50;
 type ToastLevel = "success" | "error" | "warning";
 
 export interface NotificationDescriptor {
-  // Native title; defaults to "PostHog Code".
+  // Native title; defaults to "PostHog".
   title?: string;
   body: string;
   // What the notification is about — drives suppression (am I viewing it?) and
@@ -102,7 +102,7 @@ export class NotificationBus {
       resolveSoundUrl(settings.completionSound, settings.customSounds) !== null;
     if (settings.desktopNotifications) {
       this.notifications.notify({
-        title: descriptor.title ?? "PostHog Code",
+        title: descriptor.title ?? "PostHog",
         body: descriptor.body,
         silent: descriptor.silent ?? willPlaySound,
         target: descriptor.target,

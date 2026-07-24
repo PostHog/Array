@@ -2,6 +2,7 @@ import {
   ArrowSquareOutIcon,
   ChatCircleIcon,
   GitBranchIcon,
+  LinkIcon,
   RobotIcon,
 } from "@phosphor-icons/react";
 import { taskFeedRunStatus } from "@posthog/core/canvas/channelFeed";
@@ -43,12 +44,13 @@ import type {
   TaskRunStatus,
   UserBasic,
 } from "@posthog/shared/domain-types";
-import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import { shouldOpenTaskCardInline } from "@posthog/ui/features/canvas/taskCardNavigation";
+import { taskCardNavigation } from "@posthog/ui/features/canvas/taskCardNavigation";
+import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
   type SidebarPrState,
@@ -59,13 +61,14 @@ import { Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import {
   Fragment,
-  type MouseEvent,
   memo,
   type ReactNode,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 
 // Feed rows poll their reply counts slower than the open thread panel — the
@@ -270,12 +273,10 @@ const NO_PENDING: PendingKickoff[] = [];
 export function TaskCard({
   task,
   channelId,
-  onOpen,
   inThread = false,
 }: {
   task: Task;
   channelId: string;
-  onOpen?: () => void;
   inThread?: boolean;
 }) {
   const statusDisplay = useTaskStatusDisplay(task);
@@ -284,18 +285,10 @@ export function TaskCard({
       ? task.latest_run.output.pr_url
       : undefined;
   const stage = task.latest_run?.stage;
-  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!onOpen || !shouldOpenTaskCardInline(event)) return;
-    event.preventDefault();
-    onOpen();
-  };
-
   return (
     <Link
-      to="/website/$channelId/tasks/$taskId"
-      params={{ channelId, taskId: task.id }}
+      {...taskCardNavigation(channelId, task.id)}
       preload="intent"
-      onClick={handleClick}
       className={cn(
         "mt-1.5 block w-full text-inherit no-underline outline-none focus-visible:ring-(--accent-8) focus-visible:ring-2",
         inThread ? "rounded-none" : "rounded-sm",
@@ -401,9 +394,7 @@ function ReplyFooter({
     <ThreadItemReplies onClick={onOpenThread} className="mt-1">
       <AvatarGroup size="xs">
         {authors.map((author, index) => (
-          <Avatar key={author?.uuid ?? index} size="xs">
-            <AvatarFallback>{getUserInitials(author)}</AvatarFallback>
-          </Avatar>
+          <UserAvatar key={author?.uuid ?? index} user={author} size="xs" />
         ))}
       </AvatarGroup>
       <ThreadItemRepliesLabel>
@@ -420,6 +411,109 @@ function channelTaskStarter(task: Task): UserBasic | null {
   return task.origin_product === "user_created"
     ? (task.created_by ?? null)
     : null;
+}
+
+function ExpandablePrompt({
+  children,
+  lines,
+}: {
+  children: string;
+  lines: 2 | 4;
+}) {
+  // The prompt is truncated by hand — not with -webkit-line-clamp — so the
+  // "more" toggle can sit inline right after the ellipsis on the last visible
+  // line, like "...prompt…more". A hidden copy of the full text is measured to
+  // find how much fits, leaving room for the toggle; the visible body renders
+  // the cut. Measuring the full text (not the visible, already-cut text) keeps
+  // the ResizeObserver stable instead of oscillating as content swaps.
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [cut, setCut] = useState<string | null>(null);
+
+  const measureRef = useCallback(
+    (measure: HTMLDivElement | null) => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      if (!measure || expanded) return;
+
+      const compute = () => {
+        const lineHeight = parseFloat(getComputedStyle(measure).lineHeight);
+        const maxHeight = lineHeight * lines;
+        if (measure.scrollHeight <= maxHeight + 0.5) {
+          setCut(null);
+          return;
+        }
+        // Find the longest prefix that still fits in `lines` once "…more" is
+        // appended — so the toggle can sit inline right after the ellipsis on the
+        // last line. We probe by swapping the measure's text node to "prefix…more"
+        // and reading scrollHeight (no per-line geometry), then restore it so the
+        // next resize re-measures against the uncut prompt. `children` is the
+        // source of truth (and a dep below) so a polled prompt update re-measures
+        // even when its rendered size is unchanged.
+        const text = measure.firstChild as Text;
+        const fits = (end: number) => {
+          text.nodeValue = `${children.slice(0, end).trimEnd()}…more`;
+          return measure.scrollHeight <= maxHeight + 0.5;
+        };
+        let lo = 0;
+        let hi = children.length;
+        let best = 0;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (fits(mid)) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        text.nodeValue = children;
+        // Even when no full character fits alongside "…more" (best === 0, only at
+        // extreme narrow widths), still cut so the toggle shows and the prompt
+        // stays expandable instead of silently clipped.
+        setCut(`${children.slice(0, best).trimEnd()}…`);
+      };
+
+      compute();
+      const observer = new ResizeObserver(compute);
+      observer.observe(measure);
+      observerRef.current = observer;
+    },
+    [children, expanded, lines],
+  );
+
+  const truncated = cut !== null;
+  const displayText = expanded || !truncated ? children : cut;
+
+  const clampClass = lines === 2 ? "max-h-[2lh]" : "max-h-[4lh]";
+
+  return (
+    <ThreadItemBody className="wrap-break-word relative overflow-hidden whitespace-pre-line">
+      <div
+        aria-hidden
+        className="pointer-events-none invisible absolute top-0 right-0 left-0"
+      >
+        <div ref={measureRef} className="wrap-break-word whitespace-pre-line">
+          {children}
+        </div>
+      </div>
+      <div
+        className={cn(!expanded && clampClass, !expanded && "overflow-hidden")}
+      >
+        {displayText}
+        {truncated && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            className="pl-1 text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "less" : "more"}
+          </button>
+        )}
+      </div>
+    </ThreadItemBody>
+  );
 }
 
 export function TaskFeedRow({
@@ -440,11 +534,15 @@ export function TaskFeedRow({
   return (
     <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
-        <Avatar>
-          <AvatarFallback>
-            {starter ? getUserInitials(starter) : <RobotIcon size={16} />}
-          </AvatarFallback>
-        </Avatar>
+        {starter ? (
+          <UserAvatar user={starter} />
+        ) : (
+          <Avatar>
+            <AvatarFallback>
+              <RobotIcon size={16} />
+            </AvatarFallback>
+          </Avatar>
+        )}
       </ThreadItemGutter>
 
       <ThreadItemContent className="min-w-0">
@@ -460,10 +558,10 @@ export function TaskFeedRow({
           </ThreadItemTimestamp>
         </ThreadItemHeader>
 
-        <ThreadItemBody className="wrap-break-word line-clamp-2 whitespace-pre-wrap">
+        <ExpandablePrompt lines={2}>
           {prompt ||
             (starter ? "started a new task" : "A new task was started")}
-        </ThreadItemBody>
+        </ExpandablePrompt>
 
         {children}
       </ThreadItemContent>
@@ -491,22 +589,26 @@ const FeedItem = memo(function FeedItem({
       task={task}
       actions={
         // Replying now lives in the always-visible ReplyFooter, so the hover
-        // toolbar only carries the distinct "Open task" action. Actions anchor
-        // to the row's top-right corner; a top tooltip there overhangs the panel
-        // edge and gets clipped by the scroll container, so open tooltips toward
-        // the content instead.
+        // toolbar only carries per-row actions (copy link, open task). Actions
+        // anchor to the row's top-right corner; a top tooltip there overhangs
+        // the panel edge and gets clipped by the scroll container, so open
+        // tooltips toward the content instead.
         <ThreadItemActions aria-label="Message actions" className="inset-bs-2">
+          <ThreadItemAction
+            label="Copy link to task"
+            onClick={() =>
+              void copyChannelLink(channelId, "thread_panel", task.id)
+            }
+          >
+            <LinkIcon size={15} />
+          </ThreadItemAction>
           <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
             <ArrowSquareOutIcon size={15} />
           </ThreadItemAction>
         </ThreadItemActions>
       }
     >
-      <TaskCard
-        task={task}
-        channelId={channelId}
-        onOpen={() => onOpenThread(task)}
-      />
+      <TaskCard task={task} channelId={channelId} />
       <ReplyFooter
         taskId={task.id}
         inView={inView}
@@ -582,9 +684,7 @@ function PendingFeedRow({
             <ThreadItemAuthor>You</ThreadItemAuthor>
             <ThreadItemTimestamp dateTime={createdAt}>now</ThreadItemTimestamp>
           </ThreadItemHeader>
-          <ThreadItemBody className="wrap-break-word line-clamp-4 whitespace-pre-wrap">
-            {pending.prompt}
-          </ThreadItemBody>
+          <ExpandablePrompt lines={4}>{pending.prompt}</ExpandablePrompt>
           <Card
             size="sm"
             className="mt-1.5 w-full max-w-[820px] rounded-sm py-0"
@@ -611,15 +711,15 @@ function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
     <ChatMessageScrollerItem messageId={message.id}>
       <ThreadItem className="rounded-none py-1 pr-8">
         <ThreadItemGutter>
-          <Avatar>
-            <AvatarFallback>
-              {message.author ? (
-                getUserInitials(message.author)
-              ) : (
+          {message.author ? (
+            <UserAvatar user={message.author} />
+          ) : (
+            <Avatar>
+              <AvatarFallback>
                 <RobotIcon size={16} />
-              )}
-            </AvatarFallback>
-          </Avatar>
+              </AvatarFallback>
+            </Avatar>
+          )}
         </ThreadItemGutter>
         <ThreadItemContent className="min-w-0">
           <ThreadItemHeader>

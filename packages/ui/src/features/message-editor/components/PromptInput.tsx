@@ -1,6 +1,6 @@
 import "./message-editor.css";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { ArrowUp, Stop } from "@phosphor-icons/react";
+import { ArrowUp, StopCircle } from "@phosphor-icons/react";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
@@ -366,7 +366,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           onClick={onCancel}
           aria-label="Stop"
         >
-          <Stop size={14} weight="fill" />
+          <StopCircle size={14} weight="fill" />
         </InputGroupButton>
       </Tooltip>
     ) : slotMachineMode ? null : (

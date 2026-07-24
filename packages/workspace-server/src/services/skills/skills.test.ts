@@ -502,6 +502,60 @@ describe("write-path guard", () => {
     ).rejects.toThrow("not a known skill directory");
   });
 
+  it("rejects a repo skill reached through a symlinked skills directory", async () => {
+    // The leaf check alone misses this: a repo committing `.claude/skills`
+    // itself as a symlink makes every skill under it resolve outside the repo.
+    const outside = path.join(root, "outside-skills");
+    await createSkill(outside, "escapee");
+    await rm(repoSkillsDir, { recursive: true, force: true });
+    await symlink(outside, repoSkillsDir, "dir");
+    const service = makeService();
+
+    await expect(
+      service.bundleLocalSkill({
+        name: "escapee",
+        source: "repo",
+        path: path.join(repoSkillsDir, "escapee"),
+      }),
+    ).rejects.toThrow("resolves outside its repository");
+  });
+
+  it("rejects a symlinked repo skill root", async () => {
+    // A repository could commit `.claude/skills/foo` as a symlink to a
+    // directory outside the repo; bundling must refuse to follow it rather
+    // than upload the external target.
+    const target = await createSkill(root, "linked");
+    const linkPath = path.join(repoSkillsDir, "linked");
+    await symlink(target, linkPath, "dir");
+    const service = makeService();
+
+    await expect(
+      service.bundleLocalSkill({
+        name: "linked",
+        source: "repo",
+        path: linkPath,
+      }),
+    ).rejects.toThrow("resolves outside its repository");
+  });
+
+  it("rejects a symlinked skill root outside repo roots", async () => {
+    // Non-repo roots have no repository anchor, so the bundler's own
+    // leaf-symlink check is the guard there.
+    const target = await createSkill(root, "linked");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    const linkPath = path.join(userSkillsHome.dir, "linked");
+    await symlink(target, linkPath, "dir");
+    const service = makeService();
+
+    await expect(
+      service.bundleLocalSkill({
+        name: "linked",
+        source: "user",
+        path: linkPath,
+      }),
+    ).rejects.toThrow("not a symlink");
+  });
+
   it.each([
     ["bundled skill", () => path.join(pluginPath, "skills", "bundled-skill")],
     ["arbitrary directory", () => path.join(root, "rogue")],

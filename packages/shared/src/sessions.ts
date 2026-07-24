@@ -10,7 +10,7 @@ import type { Adapter } from "./adapter";
 import type { SkillButtonId } from "./analytics-events";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
-import type { TaskRunStatus } from "./task";
+import type { TaskRunArtifact, TaskRunStatus } from "./task";
 
 export type { Adapter };
 
@@ -94,6 +94,7 @@ export interface AgentSession {
   cloudStatus?: TaskRunStatus;
   cloudStage?: string | null;
   cloudOutput?: Record<string, unknown> | null;
+  cloudArtifacts?: TaskRunArtifact[];
   cloudErrorMessage?: string | null;
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;

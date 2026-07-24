@@ -1,6 +1,7 @@
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../state/gitInteractionStore", () => ({
@@ -42,9 +43,36 @@ vi.mock("../../../primitives/toast", () => ({
 }));
 
 const mutateMock = vi.fn();
+let checkoutMutationOptions: {
+  onSuccess?: (result: {
+    previousBranch: string;
+    currentBranch: string;
+  }) => void;
+};
+let completeCheckout: (result: {
+  previousBranch: string;
+  currentBranch: string;
+}) => void;
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [], isLoading: false }),
-  useMutation: () => ({ mutate: mutateMock }),
+  useMutation: (options: typeof checkoutMutationOptions) => {
+    checkoutMutationOptions = options;
+    const [result, setResult] = useState<{
+      data?: { previousBranch: string; currentBranch: string };
+      variables?: { directoryPath: string; branchName: string };
+    }>({});
+    completeCheckout = (data) => {
+      setResult({
+        data,
+        variables: {
+          directoryPath: "/repos/code",
+          branchName: data.currentBranch,
+        },
+      });
+      options.onSuccess?.(data);
+    };
+    return { mutate: mutateMock, ...result };
+  },
   useQueryClient: () => ({
     getQueriesData: () => [],
     getQueryData: () => undefined,
@@ -297,6 +325,45 @@ describe("BranchSelector cloud mode", () => {
 });
 
 describe("BranchSelector checkout context", () => {
+  it("shows the checked-out branch after an in-place checkout succeeds", () => {
+    const { rerender } = renderInTheme(
+      <BranchSelector
+        repoPath="/repos/code"
+        currentBranch="main"
+        workspaceMode="local"
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
+      "main",
+    );
+
+    act(() => {
+      completeCheckout({
+        previousBranch: "main",
+        currentBranch: "feature/in-place",
+      });
+    });
+
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
+      "feature/in-place",
+    );
+
+    rerender(
+      <Theme>
+        <BranchSelector
+          repoPath="/repos/code"
+          currentBranch="feature/external"
+          workspaceMode="local"
+        />
+      </Theme>,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
+      "feature/external",
+    );
+  });
+
   it.each([
     {
       name: "local mode shows which checkout the branch switch applies to",

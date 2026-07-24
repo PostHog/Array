@@ -26,6 +26,9 @@ function createDependencies() {
         accessToken: "fresh-access-token",
         apiHost: "https://app.posthog.com",
       }),
+      getState: vi.fn((): { currentProjectId: number | null } => ({
+        currentProjectId: 1,
+      })),
       authenticatedFetch: vi
         .fn()
         .mockImplementation(
@@ -82,6 +85,23 @@ describe("AgentAuthAdapter", () => {
     vi.restoreAllMocks();
   });
 
+  describe("getCurrentCredentials", () => {
+    it("returns the auth host and selected project", async () => {
+      deps.authService.getState.mockReturnValue({ currentProjectId: 42 });
+
+      await expect(adapter.getCurrentCredentials()).resolves.toEqual({
+        apiHost: "https://app.posthog.com",
+        projectId: 42,
+      });
+    });
+
+    it("returns null when no project is selected", async () => {
+      deps.authService.getState.mockReturnValue({ currentProjectId: null });
+
+      await expect(adapter.getCurrentCredentials()).resolves.toBeNull();
+    });
+  });
+
   it("builds the default PostHog MCP server routed through the local proxy", async () => {
     const { servers } = await adapter.buildMcpServers(baseCredentials);
 
@@ -103,7 +123,7 @@ describe("AgentAuthAdapter", () => {
     );
   });
 
-  it("identifies as the PostHog Code consumer so the MCP server emits UI-app metadata", async () => {
+  it("identifies as the posthog-code consumer so the MCP server emits UI-app metadata", async () => {
     const { servers } = await adapter.buildMcpServers(baseCredentials);
 
     const posthogServer = servers.find((s) => s.name === "posthog");

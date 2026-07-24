@@ -1,3 +1,4 @@
+import type { SourceProduct } from "@posthog/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -14,16 +15,7 @@ type SortField = Extract<
 
 type SortDirection = "asc" | "desc";
 
-export type SourceProduct =
-  | "conversations"
-  | "error_tracking"
-  | "github"
-  | "health_checks"
-  | "linear"
-  | "llm_analytics"
-  | "session_replay"
-  | "signals_scout"
-  | "zendesk";
+export type { SourceProduct };
 
 export const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
   "ready",

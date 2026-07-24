@@ -1,3 +1,12 @@
+export function formatClockTime(time: string): string {
+  const [hour, minute] = time.split(":").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(2000, 0, 1, hour, minute)));
+}
+
 /**
  * Format a timestamp as a short relative string (e.g. "3m", "2h", "5d").
  * Accepts either a Unix ms timestamp or an ISO date string.

@@ -11,6 +11,10 @@ import { useCallback } from "react";
 
 export const INDENT_SIZE = 8;
 
+export function getSidebarItemPaddingLeft(depth: number): string {
+  return `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`;
+}
+
 interface SidebarItemProps {
   depth: number;
   icon?: React.ReactNode;
@@ -102,7 +106,7 @@ export function SidebarItem({
       draggable={draggable}
       onDragStart={onDragStart}
       style={{
-        paddingLeft: `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`,
+        paddingLeft: getSidebarItemPaddingLeft(depth),
         paddingRight: "8px",
       }}
       onClick={onClick}

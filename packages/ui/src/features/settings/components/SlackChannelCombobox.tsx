@@ -31,8 +31,8 @@ interface SlackChannelComboboxProps {
   value: string | null;
   /** Fires with a new target, or null when "off" is chosen. */
   onChange: (channelTarget: string | null) => void;
-  /** Label for the "off" item, e.g. "Off — don't notify me" or "No default channel". */
-  offLabel: string;
+  /** When set, includes an option that clears the selected channel. */
+  offLabel?: string;
   ariaLabel: string;
   modal?: boolean;
   disabled?: boolean;
@@ -59,8 +59,8 @@ export function SlackChannelCombobox({
 
   const { data: channelsData, isFetching } = useSlackChannels(integrationId, {
     search: debouncedSearch || undefined,
-    enabled: open,
   });
+  const initialLoading = !!integrationId && !channelsData && isFetching;
   const searchPending = open && (isFetching || searchDebouncing);
 
   const visibleChannels = useMemo(
@@ -74,15 +74,25 @@ export function SlackChannelCombobox({
   );
 
   const comboboxItems = useMemo(
-    () => [OFF_VALUE, ...visibleChannels.map((c) => c.id)],
-    [visibleChannels],
+    () => [
+      ...(offLabel ? [OFF_VALUE] : []),
+      ...visibleChannels.map((c) => c.id),
+    ],
+    [offLabel, visibleChannels],
   );
-
   const triggerLabel = (() => {
-    if (searchPending && !hasChannel) return "Loading channels…";
+    if ((initialLoading || searchPending) && !hasChannel) {
+      return "Loading channels…";
+    }
     if (selectedChannelName) return selectedChannelName;
     if (selectedChannelId) return selectedChannelId;
     return "Pick a channel";
+  })();
+
+  const comboboxValue = (() => {
+    if (hasChannel && selectedChannelId) return selectedChannelId;
+    if (offLabel) return OFF_VALUE;
+    return null;
   })();
 
   const onComboboxChange = (rawValue: string | null) => {
@@ -110,6 +120,7 @@ export function SlackChannelCombobox({
       <ComboboxList className="max-h-[min(18rem,calc(var(--available-height,18rem)-5rem))]">
         {(itemValue: string) => {
           if (itemValue === OFF_VALUE) {
+            if (!offLabel) return null;
             return (
               <ComboboxItem key={OFF_VALUE} value={OFF_VALUE} title={offLabel}>
                 {offLabel}
@@ -151,7 +162,7 @@ export function SlackChannelCombobox({
       <Combobox
         items={comboboxItems}
         filter={null}
-        value={hasChannel && selectedChannelId ? selectedChannelId : OFF_VALUE}
+        value={comboboxValue}
         onValueChange={(v) => onComboboxChange(v as string | null)}
         open={open}
         onOpenChange={(next) => {
@@ -170,6 +181,7 @@ export function SlackChannelCombobox({
               size="sm"
               disabled={disabled || !integrationId}
               aria-label={ariaLabel}
+              aria-busy={initialLoading || searchPending}
               className={`${CONTROL_CLASS} justify-between`}
             >
               <span className="flex min-w-0 items-center gap-1">

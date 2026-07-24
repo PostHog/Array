@@ -5,7 +5,9 @@ import {
   canvasToHostMessageSchema,
   type HostToCanvasMessage,
 } from "@posthog/core/canvas/freeformSchemas";
+import { isSafePostHogUrl } from "@posthog/shared";
 import { logger } from "@posthog/ui/shell/logger";
+import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useThemeStore } from "@posthog/ui/shell/themeStore";
 import {
   useCallback,
@@ -17,6 +19,9 @@ import {
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
+
+// Canvas code can post open-external without a gesture, so opens are limited.
+const EXTERNAL_OPEN_MIN_INTERVAL_MS = 1_000;
 
 export interface FreeformCanvasProps {
   /** The single-file React source to render. */
@@ -45,12 +50,6 @@ export interface FreeformCanvasProps {
    * never crosses into the iframe.
    */
   analytics?: CanvasAnalyticsConfig;
-  /**
-   * Bump to force a full iframe reload (a fresh boot re-runs the app's data
-   * `useEffect`s = a real refresh). Folded into the srcDoc so changing it
-   * reloads the frame via the existing reload path.
-   */
-  refreshKey?: number;
 }
 
 // Renders a freeform-React canvas inside a null-origin sandboxed iframe and
@@ -64,7 +63,6 @@ export function FreeformCanvas({
   onRendered,
   onNavigate,
   analytics,
-  refreshKey = 0,
 }: FreeformCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // The canvas mirrors the host's light/dark theme. Passed via `init` (not the
@@ -74,17 +72,16 @@ export function FreeformCanvas({
   // only gates an imperative postMessage and is never shown on screen, so it
   // shouldn't trigger re-renders.
   const readyRef = useRef(false);
+  const lastExternalOpenRef = useRef(0);
 
   // The document is keyed on mode + the analytics host (which the CSP must open
   // for posthog-js), not on code: code is injected via `init`, so changing it
   // never reloads the iframe — it re-renders in place.
   const analyticsHost = analytics?.apiHost;
-  const srcDoc = useMemo(() => {
-    const doc = buildSandboxDocument(mode, analyticsHost);
-    // Append the refresh nonce as a comment so a bump changes the srcDoc string,
-    // which reloads the iframe (re-announces "ready" → re-init → fresh run).
-    return refreshKey > 0 ? `${doc}\n<!-- refresh:${refreshKey} -->` : doc;
-  }, [mode, analyticsHost, refreshKey]);
+  const srcDoc = useMemo(
+    () => buildSandboxDocument(mode, analyticsHost),
+    [mode, analyticsHost],
+  );
 
   // Latest props, read by the once-bound listener + the (stable) postInit.
   const latest = useRef({
@@ -182,6 +179,28 @@ export function FreeformCanvas({
           // msg.nav is already allowlist-validated by safeParse below.
           latest.current.onNavigate?.(msg.nav);
           break;
+        case "open-external":
+          // Re-checks the schema's allowlist refine in case it ever drifts.
+          if (!isSafePostHogUrl(msg.url)) {
+            log.warn("Blocked non-PostHog canvas external URL", {
+              url: msg.url,
+            });
+          } else if (document.activeElement !== iframeRef.current) {
+            // A real link click moves focus into the iframe; requiring focus
+            // stops code from auto-opening URLs on load (e.g. thumbnails).
+            log.warn("Ignored canvas external URL open without interaction", {
+              url: msg.url,
+            });
+          } else if (
+            Date.now() - lastExternalOpenRef.current <
+            EXTERNAL_OPEN_MIN_INTERVAL_MS
+          ) {
+            log.warn("Throttled canvas external URL open", { url: msg.url });
+          } else {
+            lastExternalOpenRef.current = Date.now();
+            openExternalUrl(msg.url);
+          }
+          break;
       }
     };
 
@@ -237,8 +256,8 @@ export function FreeformCanvas({
       ref={iframeRef}
       title="Canvas"
       // allow-scripts WITHOUT allow-same-origin = null origin = no access to host
-      // cookies/storage/DOM. Do not add allow-same-origin (it collapses the
-      // isolation boundary).
+      // cookies/storage/DOM. External navigation is brokered over postMessage;
+      // do not add allow-popups or allow-same-origin.
       sandbox="allow-scripts"
       srcDoc={srcDoc}
       // Race-free init: by `load`, the iframe's module bootstrap has executed

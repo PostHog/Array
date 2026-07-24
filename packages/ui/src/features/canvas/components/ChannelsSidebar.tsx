@@ -6,6 +6,7 @@ import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab"
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
@@ -144,6 +145,8 @@ export function ChannelsSidebar() {
             </button>
           </Box>
         )}
+
+        <LoopsPromoCard />
 
         {/* Workspace switcher pinned to the bottom. Its dropdown carries the
             Settings entry, so there's no separate Settings row. */}

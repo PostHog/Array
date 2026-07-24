@@ -11,6 +11,9 @@ export interface CreateArchiveData {
   workspaceId: string;
   branchName: string | null;
   checkpointId: string | null;
+  title?: string | null;
+  taskCreatedAt?: string | null;
+  repository?: string | null;
 }
 
 export interface IArchiveRepository {
@@ -18,6 +21,10 @@ export interface IArchiveRepository {
   findByWorkspaceId(workspaceId: string): Archive | null;
   findAll(): Archive[];
   create(data: CreateArchiveData): Archive;
+  updateDetailsByWorkspaceId(
+    workspaceId: string,
+    details: Pick<CreateArchiveData, "title" | "taskCreatedAt" | "repository">,
+  ): void;
   deleteByWorkspaceId(workspaceId: string): void;
   deleteAll(): void;
 }
@@ -60,6 +67,9 @@ export class ArchiveRepository implements IArchiveRepository {
       workspaceId: data.workspaceId,
       branchName: data.branchName,
       checkpointId: data.checkpointId,
+      title: data.title ?? null,
+      taskCreatedAt: data.taskCreatedAt ?? null,
+      repository: data.repository ?? null,
       archivedAt: timestamp,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -70,6 +80,17 @@ export class ArchiveRepository implements IArchiveRepository {
       throw new Error(`Failed to create archive with id ${id}`);
     }
     return created;
+  }
+
+  updateDetailsByWorkspaceId(
+    workspaceId: string,
+    details: Pick<CreateArchiveData, "title" | "taskCreatedAt" | "repository">,
+  ): void {
+    this.db
+      .update(archives)
+      .set({ ...details, updatedAt: now() })
+      .where(byWorkspaceId(workspaceId))
+      .run();
   }
 
   deleteByWorkspaceId(workspaceId: string): void {

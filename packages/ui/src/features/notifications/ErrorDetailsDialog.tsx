@@ -60,7 +60,7 @@ export function ErrorDetailsDialog() {
     close();
     openTaskInput({
       initialPrompt: [
-        `Investigate this error from the PostHog Code app: ${detail.title}`,
+        `Investigate this error from the PostHog app: ${detail.title}`,
         "",
         "## Error",
         "```",

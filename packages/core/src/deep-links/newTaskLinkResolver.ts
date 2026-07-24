@@ -10,6 +10,34 @@ import {
 
 export { NEW_TASK_LINK_RESOLVER };
 
+const GITHUB_PR_TAG_REGEX = /<github_pr\b[^>]*\burl="([^"]+)"[^>]*\/>/g;
+
+function inferRepositoryFromPullRequests(
+  prompt: string | undefined,
+): string | undefined {
+  if (!prompt) return undefined;
+
+  const repositories = new Set<string>();
+  for (const match of prompt.matchAll(GITHUB_PR_TAG_REGEX)) {
+    try {
+      const url = new URL(match[1]);
+      const pathParts = url.pathname.split("/").filter(Boolean);
+      if (
+        url.hostname !== "github.com" ||
+        pathParts.length !== 4 ||
+        pathParts[2] !== "pull"
+      ) {
+        continue;
+      }
+      repositories.add(`${pathParts[0]}/${pathParts[1]}`);
+    } catch {}
+  }
+
+  return repositories.size === 1
+    ? repositories.values().next().value
+    : undefined;
+}
+
 @injectable()
 export class NewTaskLinkResolver {
   constructor(
@@ -35,7 +63,8 @@ export class NewTaskLinkResolver {
       kind: "navigate",
       navigation: {
         initialPrompt: payload.prompt,
-        initialCloudRepository: payload.repo,
+        initialCloudRepository:
+          payload.repo ?? inferRepositoryFromPullRequests(payload.prompt),
         initialModel: payload.model,
         initialMode: payload.mode,
       },

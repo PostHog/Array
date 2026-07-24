@@ -253,7 +253,7 @@ export function useCustomSoundCapture(onOpenChange: (open: boolean) => void) {
         commit({
           type: "error",
           message:
-            "We didn't pick up any audio. Check that PostHog Code has microphone access, then try again.",
+            "We didn't pick up any audio. Check that PostHog has microphone access, then try again.",
         });
         return;
       }

@@ -37,6 +37,7 @@ import { useSmoothedText } from "@posthog/ui/features/editor/components/useSmoot
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
 import {
   ChatMarkdown,
   ChatStreamingMarkdown,
@@ -67,6 +68,7 @@ import {
 } from "@posthog/ui/features/sessions/components/session-update/parseFileMentions";
 import { SessionUpdateView } from "@posthog/ui/features/sessions/components/session-update/SessionUpdateView";
 import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
+import { UserMessageAttachments } from "@posthog/ui/features/sessions/components/UserMessageAttachments";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useAgentConversationItems } from "@posthog/ui/features/sessions/hooks/useAgentConversationItems";
@@ -406,14 +408,8 @@ function UserBubble({
               )}
             </div>
             {attachments.length > 0 && !containsFileMentions && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {attachments.map((attachment) => (
-                  <MentionChip
-                    key={attachment.id}
-                    icon={<FileText size={12} />}
-                    label={attachment.label}
-                  />
-                ))}
+              <div className="mt-1.5">
+                <UserMessageAttachments attachments={attachments} />
               </div>
             )}
             {isOverflowing && (
@@ -1171,13 +1167,16 @@ function ChatThreadRenderer({
               keyboardFocusedMessageId={keyboardFocusedMessageId}
               onUserInteract={clearKeyboardFocus}
               footer={
-                <ChatThreadFooter
-                  events={footerEvents}
-                  isPromptPending={isPromptPending}
-                  promptStartedAt={promptStartedAt}
-                  task={task}
-                  taskId={taskId}
-                />
+                <>
+                  <CloudArtifactDownloads taskId={taskId} task={task} />
+                  <ChatThreadFooter
+                    events={footerEvents}
+                    isPromptPending={isPromptPending}
+                    promptStartedAt={promptStartedAt}
+                    task={task}
+                    taskId={taskId}
+                  />
+                </>
               }
             />
             <ThreadKeyboardNav

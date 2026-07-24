@@ -290,6 +290,7 @@ export type {
   TaskCreationOutput,
 } from "./task-creation-domain";
 export {
+  formatClockTime,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
   getLocalDayDiff,
@@ -306,7 +307,7 @@ export {
   readParentToolCallId,
 } from "./tool-meta";
 export { TypedEventEmitter } from "./typed-event-emitter";
-export { isSafeExternalUrl } from "./url";
+export { isSafeExternalUrl, isSafePostHogUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";
 export {
   ALLOWED_VIDEO_MIME_TYPES,

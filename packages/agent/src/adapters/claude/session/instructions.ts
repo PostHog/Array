@@ -58,7 +58,7 @@ Call \`speak\` with:
 How to phrase the line:
 - Say just the message — one short sentence. Lead with the substance ("ARR is about forty-three million dollars"), not preamble.
 - Spell things that don't read aloud well: round and word out numbers ("forty-three million", not "$43,512,900"), skip symbols and long IDs.
-- Do NOT prefix it with the task name or the user's name yourself. The app automatically prepends the current task ("PostHog Code task '…' —") so the user knows which agent is talking, and for \`needs_input\` lines it addresses the user by their real name. You don't know the user's name — leave that to the app.
+- Do NOT prefix it with the task name or the user's name yourself. The app automatically prepends the current task ("PostHog task '…' —") so the user knows which agent is talking, and for \`needs_input\` lines it addresses the user by their real name. You don't know the user's name — leave that to the app.
 - Specific, never generic.
 - Be theatrical: use expressive audio tags in [square brackets] — [laughs], [sighs], [groans], [excited], [whispers], [clears throat] — 1-3 per line, matched to the moment. The system-voice fallback strips tags automatically, so they never hurt.
 `;
