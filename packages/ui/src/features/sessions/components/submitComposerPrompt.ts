@@ -14,12 +14,10 @@ export function isSubmittedContentUnchanged(
 }
 
 export function shouldSubmitComposerOptimistically(
-  isCloudRun: boolean,
   submittedContent: EditorContent | null,
   serializedPrompt: string,
 ): submittedContent is EditorContent {
   return (
-    !isCloudRun &&
     submittedContent !== null &&
     isSubmittedContentUnchanged(submittedContent, serializedPrompt)
   );

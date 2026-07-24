@@ -17,17 +17,11 @@ const content: EditorContent = {
   segments: [{ type: "text", text: "queued message" }],
 };
 
-it.each([
-  { isCloudRun: false, expected: true },
-  { isCloudRun: true, expected: false },
-])(
-  "returns $expected for optimistic submission when isCloudRun is $isCloudRun",
-  ({ isCloudRun, expected }) => {
-    expect(
-      shouldSubmitComposerOptimistically(isCloudRun, content, "queued message"),
-    ).toBe(expected);
-  },
-);
+it("uses optimistic submission when the composer still matches", () => {
+  expect(shouldSubmitComposerOptimistically(content, "queued message")).toBe(
+    true,
+  );
+});
 
 it("clears the submitted message before sending completes", async () => {
   const editor = createEditor();

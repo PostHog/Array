@@ -306,7 +306,6 @@ export function SessionView({
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
   const editorRef = useRef<PromptInputHandle>(null);
   const sendInFlightRef = useRef(false);
-  const [isSendingPrompt, setIsSendingPrompt] = useState(false);
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -326,7 +325,7 @@ export function SessionView({
       const submittedContent = editor?.getContent() ?? null;
       if (
         editor &&
-        shouldSubmitComposerOptimistically(isCloudRun, submittedContent, text)
+        shouldSubmitComposerOptimistically(submittedContent, text)
       ) {
         const sendPromise = submitComposerPrompt(editor, submittedContent, () =>
           onSendPrompt(text),
@@ -336,7 +335,6 @@ export function SessionView({
         return;
       }
 
-      setIsSendingPrompt(true);
       try {
         if (await onSendPrompt(text)) {
           const currentEditor = editorRef.current;
@@ -349,10 +347,9 @@ export function SessionView({
         }
       } finally {
         sendInFlightRef.current = false;
-        setIsSendingPrompt(false);
       }
     },
-    [isCloudRun, onSendPrompt],
+    [onSendPrompt],
   );
 
   const handleBeforeSubmit = useCallback(
@@ -713,7 +710,7 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline || isSendingPrompt
+                            handoffInProgress || !isOnline
                           }
                           clearOnSubmit={false}
                           submitTooltipOverride={
