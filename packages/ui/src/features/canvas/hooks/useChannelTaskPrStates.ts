@@ -13,9 +13,9 @@ export function prDetailsToState(
 ): SidebarPrState {
   if (!details) return null;
   if (details.merged) return "merged";
+  if (details.state === "closed") return "closed";
   if (details.draft) return "draft";
   if (details.state === "open") return "open";
-  if (details.state === "closed") return "closed";
   return null;
 }
 
