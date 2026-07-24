@@ -192,6 +192,42 @@ describe("ShellService.createSession workspace env", () => {
       restoreEnv("POSTHOG_CODE_INTERNAL_CHILD", saved.internalChild);
     }
   });
+
+  it.each(["POSTHOG_API_KEY", "POSTHOG_AUTH_HEADER", "LLM_GATEWAY_URL"])(
+    "strips the credential var %s so repo scripts cannot read it",
+    async (key) => {
+      const saved = process.env[key];
+      process.env[key] = "secret-value";
+      try {
+        const { service } = createWorktreeTaskService("/does/not/exist");
+
+        await service.createSession({
+          sessionId: "session-1",
+          taskId: "task-1",
+        });
+
+        expect(spawnedEnv()[key]).toBeUndefined();
+      } finally {
+        restoreEnv(key, saved);
+      }
+    },
+  );
+
+  it("strips credential vars even when supplied via additionalEnv", async () => {
+    const { service } = createWorktreeTaskService("/does/not/exist");
+
+    await service.createSession({
+      sessionId: "session-1",
+      taskId: "task-1",
+      additionalEnv: {
+        POSTHOG_API_KEY: "leaked",
+        LLM_GATEWAY_URL: "http://127.0.0.1:9999/token",
+      },
+    });
+
+    expect(spawnedEnv().POSTHOG_API_KEY).toBeUndefined();
+    expect(spawnedEnv().LLM_GATEWAY_URL).toBeUndefined();
+  });
 });
 
 describe("ShellService.execute", () => {

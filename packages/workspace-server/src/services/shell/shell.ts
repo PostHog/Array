@@ -38,6 +38,12 @@ declare module "node-pty" {
 const PTY_ENCODING = "utf8";
 const DESTROYED_EXIT_CODE = 130;
 
+const CREDENTIAL_ENV_KEYS = [
+  "POSTHOG_API_KEY",
+  "POSTHOG_AUTH_HEADER",
+  "LLM_GATEWAY_URL",
+];
+
 export interface ShellSession {
   pty: pty.IPty;
   exitPromise: Promise<{ exitCode: number }>;
@@ -92,6 +98,11 @@ function buildShellEnv(
     FORCE_COLOR: "3",
     ...additionalEnv,
   });
+
+  // After additionalEnv, so a caller cannot reintroduce one.
+  for (const key of CREDENTIAL_ENV_KEYS) {
+    delete env[key];
+  }
 
   return env;
 }

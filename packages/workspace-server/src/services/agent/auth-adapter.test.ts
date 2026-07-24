@@ -250,6 +250,8 @@ describe("AgentAuthAdapter", () => {
 
   it("configures environment using the gateway proxy and current token", async () => {
     const pathBefore = process.env.PATH;
+    delete process.env.POSTHOG_API_KEY;
+    delete process.env.POSTHOG_AUTH_HEADER;
 
     await adapter.configureProcessEnv({
       credentials: baseCredentials,
@@ -257,8 +259,8 @@ describe("AgentAuthAdapter", () => {
       claudeCliPath: "/mock/claude-cli.js",
     });
 
-    expect(process.env.POSTHOG_API_KEY).toBe("test-access-token");
-    expect(process.env.POSTHOG_AUTH_HEADER).toBe("Bearer test-access-token");
+    expect(process.env.POSTHOG_API_KEY).toBeUndefined();
+    expect(process.env.POSTHOG_AUTH_HEADER).toBeUndefined();
     expect(process.env.LLM_GATEWAY_URL).toBe("http://127.0.0.1:9999");
     expect(process.env.CLAUDE_CODE_EXECUTABLE).toBe("/mock/claude-cli.js");
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");

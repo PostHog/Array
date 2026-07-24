@@ -184,20 +184,13 @@ export class AgentAuthAdapter {
     }
   }
 
-  private syncTokenEnvironment(token: string): void {
-    process.env.POSTHOG_API_KEY = token;
-    process.env.POSTHOG_AUTH_HEADER = `Bearer ${token}`;
-  }
-
   private async getValidToken(): Promise<string> {
     const { accessToken } = await this.authService.getValidAccessToken();
-    this.syncTokenEnvironment(accessToken);
     return accessToken;
   }
 
   private async refreshToken(): Promise<string> {
     const { accessToken } = await this.authService.refreshAccessToken();
-    this.syncTokenEnvironment(accessToken);
     return accessToken;
   }
 
