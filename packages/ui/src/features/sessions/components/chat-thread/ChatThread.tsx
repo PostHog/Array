@@ -622,9 +622,12 @@ function VirtualStickyHeader({
 }) {
   const [dismissedId, setDismissedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!offscreen) setDismissedId(null);
-  }, [offscreen]);
+  // Clear a dismissal the moment the anchor is back on screen, so the header can return for the
+  // next offscreen episode. Render-phase adjustment, not an effect — the cleared state must not
+  // flash through a committed frame.
+  if (!offscreen && dismissedId !== null) {
+    setDismissedId(null);
+  }
 
   const active = items.find(
     (i): i is Extract<ConversationItem, { type: "user_message" }> =>
@@ -1307,15 +1310,13 @@ function VirtualThreadScrollBody({
   const [footerHeight, setFooterHeight] = useState(0);
   useLayoutEffect(() => {
     const el = footerRef.current;
-    if (!hasFooter || !el) {
-      setFooterHeight(0);
-      return;
-    }
-    setFooterHeight(el.offsetHeight);
-    const ro = new ResizeObserver(() => {
-      const h = el.offsetHeight;
-      setFooterHeight((prev) => (prev === h ? prev : h));
-    });
+    const measure = () => {
+      const height = hasFooter && el ? el.offsetHeight : 0;
+      setFooterHeight((prev) => (prev === height ? prev : height));
+    };
+    measure();
+    if (!hasFooter || !el) return;
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [hasFooter]);
