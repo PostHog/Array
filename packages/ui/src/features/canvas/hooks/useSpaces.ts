@@ -79,138 +79,63 @@ export function useSpaces(): {
   return { spaces, currentChannelId, currentIndex, switchTo, cycle };
 }
 
-// Gesture-session swipe tuning. A "gesture" is a run of wheel events with no
-// gap longer than GESTURE_GAP_MS between them — macOS inertia events arrive
-// well inside that gap, so a whole fling (fingers + momentum) is one session.
-const GESTURE_GAP_MS = 150;
-// Travel before the gesture commits to an axis (horizontal vs vertical).
-const AXIS_INTENT_PX = 12;
-// Horizontal travel that triggers the switch.
-const SWIPE_FIRE_PX = 50;
-// A new intentional burst inside a still-live session: the horizontal delta
-// must reach this many px AND this multiple of the recent horizontal level.
-// Inertia decays smoothly, so it can never satisfy both; a fresh finger swipe
-// spikes well past them.
-const REARM_MIN_PX = 15;
-const REARM_FACTOR = 2.5;
-const RECENT_SAMPLES = 4;
-// A fired session may only re-arm after this much time: within it, a single
-// fling is still ramping/peaking and its own deltas can spike past the burst
-// test — which read as one swipe moving several spaces. A human re-swipe
-// (lift, reposition, swipe) always takes longer than this.
-const REARM_COOLDOWN_MS = 250;
-// After a fire, a sparse inertia tail can pause longer than GESTURE_GAP_MS
-// and come back — a technically "new" session that would crawl back to the
-// threshold. Within this window a new session opening on a small delta is
-// parked (treated as leftover noise) until a real burst re-arms it.
-const POST_FIRE_GUARD_MS = 800;
+// Swipe tuning. macOS "switch desktop" semantics: one swipe = one space,
+// regardless of speed. A trackpad swipe is a burst of wheel events (fingers +
+// inertia tail); the whole burst must move exactly one space.
+//
+// The gate: fire once when a horizontal swipe crosses the threshold, then lock
+// until the wheel goes QUIET for END_GAP_MS. Inertia streams events with small
+// gaps, so it keeps the lock alive and can never fire again; the lock only
+// releases after the fling (fingers + momentum) has fully stopped. A fresh
+// swipe then re-arms. No speed dependence, no re-arm heuristics.
+const END_GAP_MS = 250;
+// Horizontal travel within one gesture that triggers the switch.
+const FIRE_PX = 40;
 
-interface SwipeSession {
+interface SwipeGate {
   lastEventAt: number;
-  totalX: number;
-  totalY: number;
-  axis: "x" | "y" | null;
-  fired: boolean;
-  firedAt: number;
-  /** Recent |deltaX| samples — the stream level re-arm bursts are judged against. */
-  recentX: number[];
+  accumX: number;
+  locked: boolean;
 }
 
 /**
- * Horizontal trackpad swipe → cycle spaces: exactly one space per swipe, and
- * every swipe counts.
- *
- * Wheel events carry no native intent-vs-inertia signal (the problem
- * use-gesture's docs point at Lethargy for), so this combines two mechanisms:
- *
- * 1. A gesture-session latch — events under GESTURE_GAP_MS apart form one
- *    session; the axis is decided once per session (diagonal scrolling can't
- *    flap) and it fires at most once, so an inertia tail can never re-fire.
- * 2. Lethargy-style burst re-arm — a horizontal delta that spikes well above
- *    the session's recent stream level is a NEW intent, so a swipe made while
- *    the previous one's inertia is still rolling (or right after vertical
- *    scrolling locked the session to "y") re-opens the session instead of
- *    being swallowed.
+ * Horizontal trackpad swipe → cycle spaces, exactly one space per swipe.
+ * Attach the returned handler via `onWheel`.
  */
 export function useSpaceSwipe(
   enabled: boolean,
 ): (event: React.WheelEvent) => void {
   const { cycle } = useSpaces();
-  const session = useRef<SwipeSession>({
+  const gate = useRef<SwipeGate>({
     lastEventAt: 0,
-    totalX: 0,
-    totalY: 0,
-    axis: null,
-    fired: false,
-    firedAt: 0,
-    recentX: [],
+    accumX: 0,
+    locked: false,
   });
 
   return useCallback(
     (event: React.WheelEvent) => {
       if (!enabled) return;
       const now = Date.now();
-      const s = session.current;
-      const deltaX = event.deltaX;
-      const magnitudeX = Math.abs(deltaX);
+      const g = gate.current;
 
-      const resetSession = () => {
-        s.totalX = 0;
-        s.totalY = 0;
-        s.axis = null;
-        s.fired = false;
-        s.recentX = [];
-      };
-
-      // A spent session (fired, past its cooldown) or one committed to
-      // vertical scrolling can re-open when a horizontal burst far above the
-      // recent level shows up — that's the user swiping again right now.
-      const canRearm =
-        (s.fired && now - s.firedAt >= REARM_COOLDOWN_MS) ||
-        (!s.fired && s.axis === "y");
-
-      if (now - s.lastEventAt > GESTURE_GAP_MS) {
-        resetSession();
-        // Leftover inertia shortly after a fire opens weak — park the session
-        // on the vertical axis so only a genuine burst (via re-arm below, on
-        // a later event) can turn it into a swipe.
-        if (now - s.firedAt < POST_FIRE_GUARD_MS && magnitudeX < REARM_MIN_PX) {
-          s.axis = "y";
-        }
-      } else if (canRearm) {
-        const recent = s.recentX.slice(-RECENT_SAMPLES);
-        const average = recent.length
-          ? recent.reduce((sum, value) => sum + value, 0) / recent.length
-          : 0;
-        if (
-          magnitudeX >= REARM_MIN_PX &&
-          magnitudeX >= REARM_FACTOR * Math.max(average, 1)
-        ) {
-          resetSession();
-        }
+      // A quiet stretch ends the previous gesture (fingers + inertia have
+      // stopped), so the next event starts fresh and re-arms.
+      if (now - g.lastEventAt > END_GAP_MS) {
+        g.accumX = 0;
+        g.locked = false;
       }
+      g.lastEventAt = now;
 
-      s.lastEventAt = now;
-      s.recentX.push(magnitudeX);
-      if (s.recentX.length > RECENT_SAMPLES * 2) s.recentX.shift();
-      s.totalX += deltaX;
-      s.totalY += event.deltaY;
+      // Already fired this gesture — swallow the rest of the burst (inertia).
+      if (g.locked) return;
 
-      if (s.fired) return;
-      if (s.axis === null) {
-        if (
-          Math.abs(s.totalX) < AXIS_INTENT_PX &&
-          Math.abs(s.totalY) < AXIS_INTENT_PX
-        ) {
-          return;
-        }
-        s.axis = Math.abs(s.totalX) > Math.abs(s.totalY) * 1.2 ? "x" : "y";
-      }
-      if (s.axis !== "x") return;
-      if (Math.abs(s.totalX) >= SWIPE_FIRE_PX) {
-        s.fired = true;
-        s.firedAt = now;
-        cycle(s.totalX > 0 ? 1 : -1);
+      // Only horizontal-dominant events count; vertical scrolling is ignored.
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+
+      g.accumX += event.deltaX;
+      if (Math.abs(g.accumX) >= FIRE_PX) {
+        g.locked = true;
+        cycle(g.accumX > 0 ? 1 : -1);
       }
     },
     [enabled, cycle],
