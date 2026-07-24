@@ -1,10 +1,11 @@
 import { Text } from "@components/text";
 import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
-  getAvailableModes,
+  getAvailableModesForAdapter,
 } from "@posthog/core/sessions/executionModes";
 import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
+  type Adapter,
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
@@ -72,8 +73,6 @@ import {
 } from "./submitComposerMessage";
 
 const log = logger.scope("task-chat-composer");
-const EXECUTION_MODES = getMobileExecutionModes(getAvailableModes());
-
 interface TaskChatComposerProps {
   onSend: (
     message: string,
@@ -85,9 +84,12 @@ interface TaskChatComposerProps {
   initialMessage?: string;
   isUserTurn?: boolean;
   /** Current pill values (persisted per-task by the caller). */
+  adapter: Adapter;
   mode: ExecutionMode;
   model: string;
   reasoning: SupportedReasoningEffort;
+  onAdapterChange: (adapter: Adapter) => void;
+  canChangeAdapter?: boolean;
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
   onReasoningChange: (reasoning: SupportedReasoningEffort) => void;
@@ -181,9 +183,12 @@ export function TaskChatComposer({
   placeholder = "Ask a question",
   initialMessage,
   isUserTurn = false,
+  adapter,
   mode,
   model,
   reasoning,
+  onAdapterChange,
+  canChangeAdapter = true,
   onModeChange,
   onModelChange,
   onReasoningChange,
@@ -195,7 +200,10 @@ export function TaskChatComposer({
   onCancelEdit,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
-  const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
+  const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions(adapter);
+  const executionModes = getMobileExecutionModes(
+    getAvailableModesForAdapter(adapter),
+  );
   const modelConfigOption = getModelConfigOption(configOptions);
   const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const [message, setMessage] = useState(() => initialMessage ?? "");
@@ -224,7 +232,7 @@ export function TaskChatComposer({
   useEffect(() => {
     if (!hasLiveConfig) return;
     const next = resolveCloudComposerModelChange({
-      adapter: "claude",
+      adapter,
       modelOption: modelConfigOption,
       requestedModel: model,
       reasoning,
@@ -232,6 +240,7 @@ export function TaskChatComposer({
     if (next.model !== model) onModelChange(next.model);
     if (next.reasoning !== reasoning) onReasoningChange(next.reasoning);
   }, [
+    adapter,
     hasLiveConfig,
     model,
     modelConfigOption,
@@ -251,10 +260,11 @@ export function TaskChatComposer({
   const isTranscribing = status === "transcribing";
 
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  const [adapterSheetOpen, setAdapterSheetOpen] = useState(false);
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
 
-  const reasoningOptions = getReasoningEffortOptions("claude", model) ?? [];
+  const reasoningOptions = getReasoningEffortOptions(adapter, model) ?? [];
   const showReasoningPill = reasoningOptions.length > 0;
 
   const hasContent = !isComposerEmpty({ text: message, attachments });
@@ -418,6 +428,18 @@ export function TaskChatComposer({
                 }}
               >
                 <Pill
+                  icon={<Robot size={14} color={themeColors.gray[11]} />}
+                  label={adapter === "codex" ? "Codex" : "Claude"}
+                  accent={adapter === "codex"}
+                  onPress={
+                    canChangeAdapter
+                      ? () => setAdapterSheetOpen(true)
+                      : undefined
+                  }
+                  disabled={!canChangeAdapter}
+                />
+
+                <Pill
                   icon={
                     isSteer ? (
                       <Lightning
@@ -442,8 +464,8 @@ export function TaskChatComposer({
                       : themeColors.gray[11],
                   )}
                   label={
-                    EXECUTION_MODES.find((option) => option.id === mode)
-                      ?.name ?? mode
+                    executionModes.find((option) => option.id === mode)?.name ??
+                    mode
                   }
                   accent={mode === "plan"}
                   onPress={() => setModeSheetOpen(true)}
@@ -508,12 +530,34 @@ export function TaskChatComposer({
       </View>
 
       <SelectSheet
+        open={adapterSheetOpen}
+        title="Agent"
+        value={adapter}
+        onChange={(value) => onAdapterChange(value as Adapter)}
+        onClose={() => setAdapterSheetOpen(false)}
+        options={[
+          {
+            value: "claude",
+            label: "Claude Code",
+            description: "Anthropic's coding agent",
+            icon: <Robot size={16} color={themeColors.gray[11]} />,
+          },
+          {
+            value: "codex",
+            label: "Codex",
+            description: "OpenAI's coding agent",
+            icon: <Robot size={16} color={themeColors.accent[11]} />,
+          },
+        ]}
+      />
+
+      <SelectSheet
         open={modeSheetOpen}
         title="Execution mode"
         value={mode}
         onChange={(v) => onModeChange(v as ExecutionMode)}
         onClose={() => setModeSheetOpen(false)}
-        options={EXECUTION_MODES.map((m) => ({
+        options={executionModes.map((m) => ({
           value: m.id,
           label: m.name,
           description: m.description,
@@ -531,7 +575,7 @@ export function TaskChatComposer({
         value={model}
         onChange={(v) => {
           const next = resolveCloudComposerModelChange({
-            adapter: "claude",
+            adapter,
             modelOption: modelConfigOption,
             requestedModel: v,
             reasoning,

@@ -1,5 +1,9 @@
 import type { TaskActivitySortMode } from "@posthog/core/tasks/taskActivity";
-import type { ExecutionMode, SupportedReasoningEffort } from "@posthog/shared";
+import type {
+  Adapter,
+  ExecutionMode,
+  SupportedReasoningEffort,
+} from "@posthog/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -16,6 +20,7 @@ const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
 /** Per-task chat composer pill values. Persisted so reopening a task keeps
  *  the mode/model/reasoning the user last selected for it. */
 export interface TaskComposerConfig {
+  adapter?: Adapter;
   mode?: ExecutionMode;
   model?: string;
   reasoning?: SupportedReasoningEffort;

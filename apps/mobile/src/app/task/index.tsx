@@ -1,10 +1,12 @@
 import { Text } from "@components/text";
 import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
-  getAvailableModes,
+  getAvailableModesForAdapter,
 } from "@posthog/core/sessions/executionModes";
 import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
+  type Adapter,
+  DEFAULT_CODEX_MODEL,
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
@@ -89,8 +91,6 @@ import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
-const EXECUTION_MODES = getMobileExecutionModes(getAvailableModes());
-
 const SUGGESTIONS = [
   "Create or update my CLAUDE.md file",
   "Search for a TODO comment and fix it",
@@ -130,8 +130,12 @@ export default function NewTaskScreen() {
   const { insets, bottom } = useScreenInsets();
   const keyboard = useReanimatedKeyboardAnimation();
   const restingBottom = bottom("compact");
+  const [adapter, setAdapter] = useState<Adapter>("claude");
   const { configOptions, hasLiveConfig, isConfigReady } =
-    useCloudTaskConfigOptions("claude");
+    useCloudTaskConfigOptions(adapter);
+  const executionModes = getMobileExecutionModes(
+    getAvailableModesForAdapter(adapter),
+  );
   const modelConfigOption = getModelConfigOption(configOptions);
   const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const {
@@ -197,7 +201,9 @@ export default function NewTaskScreen() {
     const prefs = usePreferencesStore.getState();
     if (prefs.defaultInitialTaskMode === "last_used") {
       const last = prefs.lastNewTaskMode;
-      const isValidMode = EXECUTION_MODES.some((mode) => mode.id === last);
+      const isValidMode = getMobileExecutionModes(
+        getAvailableModesForAdapter("claude"),
+      ).some((mode) => mode.id === last);
       if (isValidMode) return last as ExecutionMode;
     }
     return DEFAULT_CLAUDE_EXECUTION_MODE;
@@ -217,16 +223,17 @@ export default function NewTaskScreen() {
   useEffect(() => {
     if (!hasLiveConfig) return;
     const next = resolveCloudComposerModelChange({
-      adapter: "claude",
+      adapter,
       modelOption: modelConfigOption,
       requestedModel: model,
       reasoning,
     });
     if (next.model !== model) setModel(next.model);
     if (next.reasoning !== reasoning) setReasoning(next.reasoning);
-  }, [hasLiveConfig, model, modelConfigOption, reasoning]);
+  }, [adapter, hasLiveConfig, model, modelConfigOption, reasoning]);
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
+  const [adapterSheetOpen, setAdapterSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
@@ -363,7 +370,7 @@ export default function NewTaskScreen() {
       // user picked here, so the task detail screen reflects them and every
       // subsequent run (resume-after-terminal) reuses the selected mode rather
       // than falling back to the default plan mode.
-      setComposerConfig(task.id, { mode, model, reasoning });
+      setComposerConfig(task.id, { adapter, mode, model, reasoning });
 
       const pendingUserMessage =
         attachments.length > 0
@@ -373,11 +380,11 @@ export default function NewTaskScreen() {
           : trimmedPrompt;
 
       const supportsReasoning =
-        getReasoningEffortOptions("claude", model) !== null;
+        getReasoningEffortOptions(adapter, model) !== null;
 
       await client.runTaskInCloud(task.id, undefined, {
         pendingUserMessage,
-        adapter: "claude",
+        adapter,
         model,
         reasoningLevel: supportsReasoning ? reasoning : undefined,
         initialPermissionMode: mode,
@@ -401,6 +408,7 @@ export default function NewTaskScreen() {
     }
   }, [
     attachments,
+    adapter,
     creating,
     mode,
     model,
@@ -419,7 +427,7 @@ export default function NewTaskScreen() {
     hasContent &&
     isRepositorySelectionComplete(selection) &&
     !creating;
-  const reasoningOptions = getReasoningEffortOptions("claude", model) ?? [];
+  const reasoningOptions = getReasoningEffortOptions(adapter, model) ?? [];
   const showReasoningPill = reasoningOptions.length > 0;
 
   // Best-effort prewarm; failures are swallowed. `selection.integrationId` is
@@ -429,7 +437,7 @@ export default function NewTaskScreen() {
     repository: selection.repository,
     githubIntegrationId: selection.integrationId,
     composerIsEmpty: !hasContent || !isConfigReady,
-    runtimeAdapter: "claude",
+    runtimeAdapter: adapter,
     model,
     reasoningEffort: showReasoningPill ? reasoning : null,
   });
@@ -637,6 +645,13 @@ export default function NewTaskScreen() {
                     }}
                   >
                     <Pill
+                      icon={<Robot size={14} color={themeColors.gray[11]} />}
+                      label={adapter === "codex" ? "Codex" : "Claude"}
+                      accent={adapter === "codex"}
+                      onPress={() => setAdapterSheetOpen(true)}
+                    />
+
+                    <Pill
                       icon={modeIcon(
                         mode,
                         mode === "plan"
@@ -644,7 +659,7 @@ export default function NewTaskScreen() {
                           : themeColors.gray[11],
                       )}
                       label={
-                        EXECUTION_MODES.find((option) => option.id === mode)
+                        executionModes.find((option) => option.id === mode)
                           ?.name ?? mode
                       }
                       accent={mode === "plan"}
@@ -750,6 +765,38 @@ export default function NewTaskScreen() {
       </View>
 
       <SelectSheet
+        open={adapterSheetOpen}
+        title="Agent"
+        value={adapter}
+        onChange={(value) => {
+          const nextAdapter = value as Adapter;
+          setAdapter(nextAdapter);
+          setMode(DEFAULT_CLAUDE_EXECUTION_MODE);
+          setModel(
+            nextAdapter === "codex"
+              ? DEFAULT_CODEX_MODEL
+              : DEFAULT_GATEWAY_MODEL,
+          );
+          setReasoning(DEFAULT_REASONING_EFFORT);
+        }}
+        onClose={() => setAdapterSheetOpen(false)}
+        options={[
+          {
+            value: "claude",
+            label: "Claude Code",
+            description: "Anthropic's coding agent",
+            icon: <Robot size={16} color={themeColors.gray[11]} />,
+          },
+          {
+            value: "codex",
+            label: "Codex",
+            description: "OpenAI's coding agent",
+            icon: <Robot size={16} color={themeColors.accent[11]} />,
+          },
+        ]}
+      />
+
+      <SelectSheet
         open={modeSheetOpen}
         title="Execution mode"
         value={mode}
@@ -759,7 +806,7 @@ export default function NewTaskScreen() {
           usePreferencesStore.getState().setLastNewTaskMode(next);
         }}
         onClose={() => setModeSheetOpen(false)}
-        options={EXECUTION_MODES.map((executionMode) => ({
+        options={executionModes.map((executionMode) => ({
           value: executionMode.id,
           label: executionMode.name,
           description: executionMode.description,
@@ -779,7 +826,7 @@ export default function NewTaskScreen() {
         value={model}
         onChange={(value) => {
           const next = resolveCloudComposerModelChange({
-            adapter: "claude",
+            adapter,
             modelOption: modelConfigOption,
             requestedModel: value,
             reasoning,
