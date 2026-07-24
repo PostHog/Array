@@ -3,14 +3,16 @@ import {
   type Channel,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { useCallback, useMemo } from "react";
 
 /**
- * The spaces in the Arc-style dot switcher: the user's starred channels (their
- * curated set), plus the current channel appended when it isn't starred — a
- * temporarily visited space, like opening an unstarred Arc space via search.
+ * The spaces in the Arc-style dot switcher: the personal "#me" channel always
+ * first, then the user's starred channels (their curated set), plus the
+ * current channel appended when it isn't one of those — a temporarily visited
+ * space, like opening an unstarred Arc space via search.
  */
 export function useSpaces(): {
   spaces: Channel[];
@@ -25,12 +27,17 @@ export function useSpaces(): {
   const setCurrentChannel = useSpaceStore((s) => s.setCurrentChannel);
 
   const spaces = useMemo(() => {
-    const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
+    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+    const starred = channels.filter(
+      (c) =>
+        c.name !== PERSONAL_CHANNEL_NAME && starredRefToShortcutId.has(c.path),
+    );
+    const list = me ? [me, ...starred] : starred;
     const current = channels.find((c) => c.id === currentChannelId);
-    if (current && !starred.some((c) => c.id === current.id)) {
-      starred.push(current);
+    if (current && !list.some((c) => c.id === current.id)) {
+      list.push(current);
     }
-    return starred;
+    return list;
   }, [channels, starredRefToShortcutId, currentChannelId]);
 
   const currentIndex = spaces.findIndex((c) => c.id === currentChannelId);

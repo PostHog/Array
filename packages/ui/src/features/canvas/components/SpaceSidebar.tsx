@@ -8,8 +8,14 @@ import {
 } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
-import { MenuLabel } from "@posthog/quill";
-import { LOOPS_FLAG } from "@posthog/shared";
+import {
+  MenuLabel,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@posthog/quill";
+import { formatRelativeTimeShort, LOOPS_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -17,6 +23,7 @@ import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTas
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useSpaces } from "@posthog/ui/features/canvas/hooks/useSpaces";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
+import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
@@ -34,7 +41,51 @@ interface SpaceItem {
   pinned: boolean;
   icon: ReactNode;
   isActive: boolean;
+  /** Run status ("In progress", …) for the hover card; tasks only. */
+  status: string | null;
+  /** Who created it, for the hover card. */
+  person: string | null;
   onClick: () => void;
+}
+
+function humanizeStatus(status: string | null | undefined): string | null {
+  if (!status) return null;
+  const text = status.replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// A pinned/recent row with its hover card: kind, status, author, last update.
+function SpaceItemRow({ item }: { item: SpaceItem }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <div className="min-w-0">
+            <SidebarItem
+              depth={0}
+              icon={item.icon}
+              label={item.title}
+              isActive={item.isActive}
+              onClick={item.onClick}
+            />
+          </div>
+        }
+      />
+      <TooltipContent side="right" sideOffset={10}>
+        <div className="flex max-w-64 flex-col gap-0.5 py-0.5 text-left">
+          <span className="font-medium text-[12px]">{item.title}</span>
+          <span className="text-[11px] opacity-75">
+            {item.kind === "canvas" ? "Canvas" : "Task"}
+            {item.status ? ` · ${item.status}` : ""} ·{" "}
+            {formatRelativeTimeShort(item.ts)}
+          </span>
+          {item.person && (
+            <span className="text-[11px] opacity-75">By {item.person}</span>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 const RECENTS_CAP = 30;
@@ -81,6 +132,8 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
         size: 15,
         className: "text-violet-9",
       }),
+      status: null,
+      person: d.createdBy ?? null,
       isActive: pathname === `${base}/dashboards/${d.id}`,
       onClick: () =>
         void navigate({
@@ -102,6 +155,8 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
             ts: Date.parse(task.updated_at) || 0,
             pinned: pinnedTaskIds.has(f.taskId),
             icon: <FileTextIcon size={15} className="text-blue-9" />,
+            status: humanizeStatus(task.latest_run?.status),
+            person: task.created_by ? userDisplayName(task.created_by) : null,
             isActive: pathname === `${base}/tasks/${f.taskId}`,
             onClick: () =>
               void navigate({
@@ -235,49 +290,37 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
         )}
       </div>
 
-      <div className="scroll-mask-4 mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {pinnedItems.length > 0 && (
-          <>
-            <MenuLabel>Pinned</MenuLabel>
-            <div className="flex flex-col gap-px">
-              {pinnedItems.map((item) => (
-                <SidebarItem
-                  key={item.key}
-                  depth={0}
-                  icon={item.icon}
-                  label={item.title}
-                  isActive={item.isActive}
-                  onClick={item.onClick}
-                />
-              ))}
-            </div>
-          </>
-        )}
+      <TooltipProvider delay={500}>
+        <div className="scroll-mask-4 mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {pinnedItems.length > 0 && (
+            <>
+              <MenuLabel>Pinned</MenuLabel>
+              <div className="flex flex-col gap-px">
+                {pinnedItems.map((item) => (
+                  <SpaceItemRow key={item.key} item={item} />
+                ))}
+              </div>
+            </>
+          )}
 
-        {recentItems.length > 0 && (
-          <>
-            <MenuLabel>Recent</MenuLabel>
-            <div className="flex flex-col gap-px">
-              {recentItems.map((item) => (
-                <SidebarItem
-                  key={item.key}
-                  depth={0}
-                  icon={item.icon}
-                  label={item.title}
-                  isActive={item.isActive}
-                  onClick={item.onClick}
-                />
-              ))}
-            </div>
-          </>
-        )}
+          {recentItems.length > 0 && (
+            <>
+              <MenuLabel>Recent</MenuLabel>
+              <div className="flex flex-col gap-px">
+                {recentItems.map((item) => (
+                  <SpaceItemRow key={item.key} item={item} />
+                ))}
+              </div>
+            </>
+          )}
 
-        {pinnedItems.length === 0 && recentItems.length === 0 && (
-          <p className="px-2 py-3 text-[12px] text-gray-10">
-            Tasks and canvases you create in this space show up here.
-          </p>
-        )}
-      </div>
+          {pinnedItems.length === 0 && recentItems.length === 0 && (
+            <p className="px-2 py-3 text-[12px] text-gray-10">
+              Tasks and canvases you create in this space show up here.
+            </p>
+          )}
+        </div>
+      </TooltipProvider>
     </motion.div>
   );
 }
