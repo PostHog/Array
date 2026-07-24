@@ -5,8 +5,8 @@ import {
   RepeatIcon,
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
