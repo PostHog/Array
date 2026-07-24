@@ -21,6 +21,7 @@ import {
   ArrowUp,
   BrainIcon,
   CaretDown,
+  Cpu,
   GithubLogo,
   MicrophoneIcon,
   PaperclipIcon,
@@ -91,6 +92,7 @@ import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
+const SWITCH_ADAPTER_VALUE = "__switch_adapter__";
 const SUGGESTIONS = [
   "Create or update my CLAUDE.md file",
   "Search for a TODO comment and fix it",
@@ -233,7 +235,6 @@ export default function NewTaskScreen() {
   }, [adapter, hasLiveConfig, model, modelConfigOption, reasoning]);
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
-  const [adapterSheetOpen, setAdapterSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
@@ -508,293 +509,266 @@ export default function NewTaskScreen() {
         <DotBackground />
 
         <Animated.View style={[{ flex: 1 }, containerStyle]}>
-          <View className="flex-1 items-stretch justify-end px-3">
-            {repoSheetOpen ? null : prompt.trim().length === 0 ? (
-              <Animated.View
-                style={suggestionsStyle}
-                pointerEvents={keyboardActive ? "none" : "auto"}
-                className="flex-1 justify-end pb-4"
-              >
-                <Text className="mb-3 px-1 text-[13px] text-gray-10">
-                  Suggestions
-                </Text>
-                <View className="gap-2">
-                  {SUGGESTIONS.map((suggestion) => (
-                    <Pressable
-                      key={suggestion}
-                      onPress={() => setPrompt(suggestion)}
-                      className="rounded-2xl border border-gray-6 bg-card px-4 py-3 active:bg-gray-2"
-                    >
-                      <Text className="text-[14px] text-gray-12">
-                        {suggestion}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </Animated.View>
-            ) : null}
-
-            {/* Inline repo picker: pops up directly above the pill when
-                open, replacing the suggestions area. Rendered inline (not
-                a Modal) so it feels like a dropdown anchored to the pill
-                rather than a slide-in sheet. */}
-            <View className="mb-2">
-              <RepositoryPickerInline
-                open={repoSheetOpen}
-                repositoryOptions={repositoryOptions}
-                selected={selectedRepositoryOption}
-                loading={isLoading && repositoryOptions.length === 0}
-                isRefreshing={isRefreshingInBackground}
-                onChange={(option) =>
-                  setSelection(toRepositorySelection(option))
-                }
-                onClose={() => setRepoSheetOpen(false)}
-              />
-            </View>
-          </View>
-
-          <View className="px-3">
-            {repositoryWarning ? (
-              <GitHubLoadNotice
-                message={repositoryWarning}
-                onRetry={refetch}
-                tone="warning"
-              />
-            ) : null}
-
-            <View className="mb-2 flex-row">
-              <Pressable
-                onPress={() => setRepoSheetOpen((prev) => !prev)}
-                className={`flex-row items-center gap-2 rounded-full border py-1.5 pr-2.5 pl-2 active:bg-gray-2 ${
-                  repoSheetOpen
-                    ? "border-accent-7 bg-accent-3"
-                    : "border-gray-6 bg-card"
-                }`}
-              >
-                <GithubLogo
-                  size={16}
-                  color={
-                    selectedRepositoryOption
-                      ? themeColors.gray[12]
-                      : themeColors.gray[10]
+          <View className="flex-1 justify-center px-4">
+            <View style={{ width: "100%", maxWidth: 600, alignSelf: "center" }}>
+              <View className="mb-2">
+                <RepositoryPickerInline
+                  open={repoSheetOpen}
+                  repositoryOptions={repositoryOptions}
+                  selected={selectedRepositoryOption}
+                  loading={isLoading && repositoryOptions.length === 0}
+                  isRefreshing={isRefreshingInBackground}
+                  onChange={(option) =>
+                    setSelection(toRepositorySelection(option))
                   }
-                  weight={selectedRepositoryOption ? "fill" : "regular"}
+                  onClose={() => setRepoSheetOpen(false)}
                 />
-                <Text
-                  className={`text-[13px] ${
-                    selectedRepositoryOption ? "text-gray-12" : "text-gray-10"
-                  }`}
-                  numberOfLines={1}
-                >
-                  {repositoryLabel}
-                </Text>
-                <CaretDown
-                  size={12}
-                  color={themeColors.gray[10]}
-                  style={{
-                    transform: [{ rotate: repoSheetOpen ? "180deg" : "0deg" }],
-                  }}
+              </View>
+
+              {repositoryWarning ? (
+                <GitHubLoadNotice
+                  message={repositoryWarning}
+                  onRetry={refetch}
+                  tone="warning"
                 />
-              </Pressable>
-            </View>
+              ) : null}
 
-            <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
-              <AttachmentsBar
-                attachments={attachments}
-                onRemove={removeAttachment}
-              />
-              <TextInput
-                className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
-                style={{ minHeight: 56, maxHeight: 200 }}
-                placeholder="Describe what you want to build…"
-                placeholderTextColor={themeColors.gray[9]}
-                value={prompt}
-                onChangeText={setPrompt}
-                multiline
-                textAlignVertical="top"
-              />
-
-              <View className="flex-row items-center gap-2 px-2 pb-2">
+              <View className="mb-2 flex-row items-center">
                 <Pressable
-                  hitSlop={8}
-                  onPress={() => setAttachmentSheetOpen(true)}
-                  accessibilityLabel="Add attachment"
-                  accessibilityRole="button"
-                  className="h-9 w-9 items-center justify-center active:opacity-60"
+                  onPress={() => setRepoSheetOpen((prev) => !prev)}
+                  className={`flex-row items-center gap-2 rounded-md border py-1.5 pr-2.5 pl-2 active:bg-gray-2 ${
+                    repoSheetOpen
+                      ? "border-accent-7 bg-accent-3"
+                      : "border-gray-6 bg-card"
+                  }`}
                 >
-                  <PaperclipIcon
-                    size={18}
+                  <GithubLogo
+                    size={16}
                     color={
-                      attachments.length > 0
-                        ? themeColors.accent[11]
+                      selectedRepositoryOption
+                        ? themeColors.gray[12]
                         : themeColors.gray[10]
                     }
-                    weight={attachments.length > 0 ? "fill" : "regular"}
+                    weight={selectedRepositoryOption ? "fill" : "regular"}
                   />
-                </Pressable>
-
-                <View className="relative flex-1">
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    contentContainerStyle={{
-                      alignItems: "center",
-                      gap: 6,
-                      paddingRight: 16,
-                    }}
+                  <Text
+                    className={`text-[13px] ${
+                      selectedRepositoryOption ? "text-gray-12" : "text-gray-10"
+                    }`}
+                    numberOfLines={1}
                   >
-                    <Pill
-                      icon={<Robot size={14} color={themeColors.gray[11]} />}
-                      label={adapter === "codex" ? "Codex" : "Claude"}
-                      accent={adapter === "codex"}
-                      onPress={() => setAdapterSheetOpen(true)}
-                    />
-
-                    <Pill
-                      icon={modeIcon(
-                        mode,
-                        mode === "plan"
-                          ? themeColors.accent[11]
-                          : themeColors.gray[11],
-                      )}
-                      label={
-                        executionModes.find((option) => option.id === mode)
-                          ?.name ?? mode
-                      }
-                      accent={mode === "plan"}
-                      onPress={() => setModeSheetOpen(true)}
-                    />
-
-                    <Pill
-                      icon={<Robot size={14} color={themeColors.gray[11]} />}
-                      label={
-                        getConfigOptionLabel(
-                          modelConfigOption.options,
-                          model,
-                        ) ?? model
-                      }
-                      onPress={() => setModelSheetOpen(true)}
-                    />
-
-                    {showReasoningPill ? (
-                      <Pill
-                        icon={
-                          <BrainIcon size={14} color={themeColors.gray[11]} />
-                        }
-                        label={
-                          reasoningOptions.find(
-                            (option) => option.value === reasoning,
-                          )?.name ?? reasoning
-                        }
-                        onPress={() => setReasoningSheetOpen(true)}
-                      />
-                    ) : null}
-                  </ScrollView>
-                  {/* Right-edge fade hints that more pills exist when the row
-                      overflows. Non-interactive so taps fall through. */}
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={[toRgba(themeColors.card, 0), themeColors.card]}
-                    start={{ x: 0, y: 0.5 }}
-                    end={{ x: 1, y: 0.5 }}
+                    {repositoryLabel}
+                  </Text>
+                  <CaretDown
+                    size={12}
+                    color={themeColors.gray[10]}
                     style={{
-                      position: "absolute",
-                      top: 0,
-                      bottom: 0,
-                      right: 0,
-                      width: 24,
+                      transform: [
+                        { rotate: repoSheetOpen ? "180deg" : "0deg" },
+                      ],
                     }}
                   />
-                </View>
-
-                <Pressable
-                  onPress={
-                    isTranscribing
-                      ? undefined
-                      : isRecording
-                        ? handleMicPress
-                        : hasContent
-                          ? handleCreateTask
-                          : handleMicPress
-                  }
-                  onLongPress={handleMicLongPress}
-                  disabled={
-                    isTranscribing || (hasContent && !canSubmit && !isRecording)
-                  }
-                  accessibilityLabel={
-                    isRecording
-                      ? "Stop recording"
-                      : hasContent
-                        ? "Create task"
-                        : "Record voice"
-                  }
-                  className={`h-9 w-9 items-center justify-center rounded-lg ${
-                    canSubmit || isRecording || (!hasContent && !isTranscribing)
-                      ? "bg-gray-12"
-                      : "bg-gray-5"
-                  }`}
-                >
-                  {creating || isTranscribing ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={themeColors.background}
-                    />
-                  ) : isRecording ? (
-                    <StopIcon
-                      size={18}
-                      color={themeColors.status.error}
-                      weight="fill"
-                    />
-                  ) : hasContent ? (
-                    <ArrowUp
-                      size={18}
-                      color={
-                        canSubmit ? themeColors.background : themeColors.gray[9]
-                      }
-                      weight="bold"
-                    />
-                  ) : (
-                    <MicrophoneIcon size={18} color={themeColors.background} />
-                  )}
                 </Pressable>
               </View>
+
+              <View className="overflow-hidden rounded-lg border border-gray-6 bg-card">
+                <AttachmentsBar
+                  attachments={attachments}
+                  onRemove={removeAttachment}
+                />
+                <TextInput
+                  className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
+                  style={{ minHeight: 92, maxHeight: 200 }}
+                  placeholder="What do you want to ship?"
+                  placeholderTextColor={themeColors.gray[9]}
+                  value={prompt}
+                  onChangeText={setPrompt}
+                  multiline
+                  textAlignVertical="top"
+                />
+
+                <View className="flex-row items-center gap-2 px-2 pb-2">
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => setAttachmentSheetOpen(true)}
+                    accessibilityLabel="Add attachment"
+                    accessibilityRole="button"
+                    className="h-9 w-9 items-center justify-center active:opacity-60"
+                  >
+                    <PaperclipIcon
+                      size={18}
+                      color={
+                        attachments.length > 0
+                          ? themeColors.accent[11]
+                          : themeColors.gray[10]
+                      }
+                      weight={attachments.length > 0 ? "fill" : "regular"}
+                    />
+                  </Pressable>
+
+                  <View className="relative flex-1">
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      keyboardShouldPersistTaps="handled"
+                      contentContainerStyle={{
+                        alignItems: "center",
+                        gap: 6,
+                        paddingRight: 16,
+                      }}
+                    >
+                      <Pill
+                        icon={modeIcon(
+                          mode,
+                          mode === "plan"
+                            ? themeColors.accent[11]
+                            : themeColors.gray[11],
+                        )}
+                        label={
+                          executionModes.find((option) => option.id === mode)
+                            ?.name ?? mode
+                        }
+                        accent={mode === "plan"}
+                        onPress={() => setModeSheetOpen(true)}
+                      />
+
+                      <Pill
+                        icon={
+                          adapter === "codex" ? (
+                            <Cpu size={14} color={themeColors.gray[11]} />
+                          ) : (
+                            <Robot size={14} color={themeColors.gray[11]} />
+                          )
+                        }
+                        label={
+                          getConfigOptionLabel(
+                            modelConfigOption.options,
+                            model,
+                          ) ?? model
+                        }
+                        onPress={() => setModelSheetOpen(true)}
+                      />
+
+                      {showReasoningPill ? (
+                        <Pill
+                          icon={
+                            <BrainIcon size={14} color={themeColors.gray[11]} />
+                          }
+                          label={
+                            reasoningOptions.find(
+                              (option) => option.value === reasoning,
+                            )?.name ?? reasoning
+                          }
+                          onPress={() => setReasoningSheetOpen(true)}
+                        />
+                      ) : null}
+                    </ScrollView>
+                    {/* Right-edge fade hints that more pills exist when the row
+                      overflows. Non-interactive so taps fall through. */}
+                    <LinearGradient
+                      pointerEvents="none"
+                      colors={[toRgba(themeColors.card, 0), themeColors.card]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        bottom: 0,
+                        right: 0,
+                        width: 24,
+                      }}
+                    />
+                  </View>
+
+                  <Pressable
+                    onPress={
+                      isTranscribing
+                        ? undefined
+                        : isRecording
+                          ? handleMicPress
+                          : hasContent
+                            ? handleCreateTask
+                            : handleMicPress
+                    }
+                    onLongPress={handleMicLongPress}
+                    disabled={
+                      isTranscribing ||
+                      (hasContent && !canSubmit && !isRecording)
+                    }
+                    accessibilityLabel={
+                      isRecording
+                        ? "Stop recording"
+                        : hasContent
+                          ? "Create task"
+                          : "Record voice"
+                    }
+                    className={`h-9 w-9 items-center justify-center rounded-lg ${
+                      canSubmit ||
+                      isRecording ||
+                      (!hasContent && !isTranscribing)
+                        ? "bg-gray-12"
+                        : "bg-gray-5"
+                    }`}
+                  >
+                    {creating || isTranscribing ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={themeColors.background}
+                      />
+                    ) : isRecording ? (
+                      <StopIcon
+                        size={18}
+                        color={themeColors.status.error}
+                        weight="fill"
+                      />
+                    ) : hasContent ? (
+                      <ArrowUp
+                        size={18}
+                        color={
+                          canSubmit
+                            ? themeColors.background
+                            : themeColors.gray[9]
+                        }
+                        weight="bold"
+                      />
+                    ) : (
+                      <MicrophoneIcon
+                        size={18}
+                        color={themeColors.background}
+                      />
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+
+              {!repoSheetOpen && prompt.trim().length === 0 ? (
+                <Animated.View
+                  style={suggestionsStyle}
+                  pointerEvents={keyboardActive ? "none" : "auto"}
+                  className="mt-6"
+                >
+                  <Text className="mb-2 px-2.5 font-medium text-[13px] text-gray-11">
+                    Suggestions
+                  </Text>
+                  <View className="gap-2">
+                    {SUGGESTIONS.map((suggestion) => (
+                      <Pressable
+                        key={suggestion}
+                        onPress={() => setPrompt(suggestion)}
+                        className="rounded-lg border border-gray-5 bg-gray-2 px-3 py-2.5 active:bg-gray-3"
+                      >
+                        <Text className="text-[13px] text-gray-12">
+                          {suggestion}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </Animated.View>
+              ) : null}
             </View>
           </View>
         </Animated.View>
       </View>
-
-      <SelectSheet
-        open={adapterSheetOpen}
-        title="Agent"
-        value={adapter}
-        onChange={(value) => {
-          const nextAdapter = value as Adapter;
-          setAdapter(nextAdapter);
-          setMode(DEFAULT_CLAUDE_EXECUTION_MODE);
-          setModel(
-            nextAdapter === "codex"
-              ? DEFAULT_CODEX_MODEL
-              : DEFAULT_GATEWAY_MODEL,
-          );
-          setReasoning(DEFAULT_REASONING_EFFORT);
-        }}
-        onClose={() => setAdapterSheetOpen(false)}
-        options={[
-          {
-            value: "claude",
-            label: "Claude Code",
-            description: "Anthropic's coding agent",
-            icon: <Robot size={16} color={themeColors.gray[11]} />,
-          },
-          {
-            value: "codex",
-            label: "Codex",
-            description: "OpenAI's coding agent",
-            icon: <Robot size={16} color={themeColors.accent[11]} />,
-          },
-        ]}
-      />
 
       <SelectSheet
         open={modeSheetOpen}
@@ -825,6 +799,19 @@ export default function NewTaskScreen() {
         title="Model"
         value={model}
         onChange={(value) => {
+          if (value === SWITCH_ADAPTER_VALUE) {
+            const nextAdapter: Adapter =
+              adapter === "claude" ? "codex" : "claude";
+            setAdapter(nextAdapter);
+            setMode(DEFAULT_CLAUDE_EXECUTION_MODE);
+            setModel(
+              nextAdapter === "codex"
+                ? DEFAULT_CODEX_MODEL
+                : DEFAULT_GATEWAY_MODEL,
+            );
+            setReasoning(DEFAULT_REASONING_EFFORT);
+            return;
+          }
           const next = resolveCloudComposerModelChange({
             adapter,
             modelOption: modelConfigOption,
@@ -835,13 +822,27 @@ export default function NewTaskScreen() {
           setReasoning(next.reasoning);
         }}
         onClose={() => setModelSheetOpen(false)}
-        options={mobileModelOptions.map((modelOption) => ({
-          value: modelOption.value,
-          label: modelOption.label,
-          description: modelOption.description,
-          disabled: modelOption.disabled,
-          icon: <Robot size={16} color={themeColors.gray[11]} />,
-        }))}
+        options={[
+          ...mobileModelOptions.map((modelOption) => ({
+            value: modelOption.value,
+            label: modelOption.label,
+            description: modelOption.description,
+            disabled: modelOption.disabled,
+            icon:
+              adapter === "codex" ? (
+                <Cpu size={16} color={themeColors.gray[11]} />
+              ) : (
+                <Robot size={16} color={themeColors.gray[11]} />
+              ),
+          })),
+          {
+            value: SWITCH_ADAPTER_VALUE,
+            label: `Switch to ${adapter === "claude" ? "Codex" : "Claude Code"}`,
+            description: "Change coding agent",
+            disabled: false,
+            icon: <Cpu size={16} color={themeColors.accent[11]} />,
+          },
+        ]}
       />
 
       <SelectSheet

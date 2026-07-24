@@ -16,6 +16,7 @@ import * as Haptics from "expo-haptics";
 import {
   ArrowUp,
   BrainIcon,
+  Cpu,
   Lightning,
   Microphone,
   PaperclipIcon,
@@ -73,6 +74,7 @@ import {
 } from "./submitComposerMessage";
 
 const log = logger.scope("task-chat-composer");
+const SWITCH_ADAPTER_VALUE = "__switch_adapter__";
 interface TaskChatComposerProps {
   onSend: (
     message: string,
@@ -260,7 +262,6 @@ export function TaskChatComposer({
   const isTranscribing = status === "transcribing";
 
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
-  const [adapterSheetOpen, setAdapterSheetOpen] = useState(false);
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
 
@@ -428,18 +429,6 @@ export function TaskChatComposer({
                 }}
               >
                 <Pill
-                  icon={<Robot size={14} color={themeColors.gray[11]} />}
-                  label={adapter === "codex" ? "Codex" : "Claude"}
-                  accent={adapter === "codex"}
-                  onPress={
-                    canChangeAdapter
-                      ? () => setAdapterSheetOpen(true)
-                      : undefined
-                  }
-                  disabled={!canChangeAdapter}
-                />
-
-                <Pill
                   icon={
                     isSteer ? (
                       <Lightning
@@ -472,7 +461,13 @@ export function TaskChatComposer({
                 />
 
                 <Pill
-                  icon={<Robot size={14} color={themeColors.gray[11]} />}
+                  icon={
+                    adapter === "codex" ? (
+                      <Cpu size={14} color={themeColors.gray[11]} />
+                    ) : (
+                      <Robot size={14} color={themeColors.gray[11]} />
+                    )
+                  }
                   label={
                     getConfigOptionLabel(modelConfigOption.options, model) ??
                     model
@@ -530,28 +525,6 @@ export function TaskChatComposer({
       </View>
 
       <SelectSheet
-        open={adapterSheetOpen}
-        title="Agent"
-        value={adapter}
-        onChange={(value) => onAdapterChange(value as Adapter)}
-        onClose={() => setAdapterSheetOpen(false)}
-        options={[
-          {
-            value: "claude",
-            label: "Claude Code",
-            description: "Anthropic's coding agent",
-            icon: <Robot size={16} color={themeColors.gray[11]} />,
-          },
-          {
-            value: "codex",
-            label: "Codex",
-            description: "OpenAI's coding agent",
-            icon: <Robot size={16} color={themeColors.accent[11]} />,
-          },
-        ]}
-      />
-
-      <SelectSheet
         open={modeSheetOpen}
         title="Execution mode"
         value={mode}
@@ -574,6 +547,10 @@ export function TaskChatComposer({
         title="Model"
         value={model}
         onChange={(v) => {
+          if (v === SWITCH_ADAPTER_VALUE) {
+            onAdapterChange(adapter === "claude" ? "codex" : "claude");
+            return;
+          }
           const next = resolveCloudComposerModelChange({
             adapter,
             modelOption: modelConfigOption,
@@ -586,13 +563,36 @@ export function TaskChatComposer({
           }
         }}
         onClose={() => setModelSheetOpen(false)}
-        options={mobileModelOptions.map((m) => ({
-          value: m.value,
-          label: m.label,
-          description: m.description,
-          disabled: m.disabled,
-          icon: <Robot size={16} color={themeColors.gray[11]} />,
-        }))}
+        options={[
+          ...mobileModelOptions.map((m) => ({
+            value: m.value,
+            label: m.label,
+            description: m.description,
+            disabled: m.disabled,
+            icon:
+              adapter === "codex" ? (
+                <Cpu size={16} color={themeColors.gray[11]} />
+              ) : (
+                <Robot size={16} color={themeColors.gray[11]} />
+              ),
+          })),
+          ...(canChangeAdapter
+            ? [
+                {
+                  value: SWITCH_ADAPTER_VALUE,
+                  label: `Switch to ${adapter === "claude" ? "Codex" : "Claude Code"}`,
+                  description: "Change coding agent",
+                  disabled: false,
+                  icon:
+                    adapter === "claude" ? (
+                      <Cpu size={16} color={themeColors.accent[11]} />
+                    ) : (
+                      <Robot size={16} color={themeColors.accent[11]} />
+                    ),
+                },
+              ]
+            : []),
+        ]}
       />
 
       <SelectSheet
