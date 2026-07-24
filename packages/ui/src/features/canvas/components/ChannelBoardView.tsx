@@ -3,48 +3,34 @@ import {
   CheckCircle,
   Eye,
   GitCommit,
-  GitPullRequest,
   XCircle,
 } from "@phosphor-icons/react";
-import {
-  getPrVisualConfig,
-  type PrVisualConfig,
-  parsePrNumber,
-} from "@posthog/core/git-interaction/prStatus";
 import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import {
   TASK_BOARD_STATUSES,
   type TaskBoardStatus,
   taskBoardStatusFromSources,
 } from "@posthog/core/home/taskBoardStatus";
-import { Button } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import {
   TaskStatusBadge,
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import { ChannelPrButton } from "@posthog/ui/features/canvas/components/ChannelPrButton";
 import type { ChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
 import {
   WorkBoard,
   type WorkBoardColumn,
 } from "@posthog/ui/features/home/components/WorkBoard";
 import type { SituationColor } from "@posthog/ui/features/home/utils/situationDisplay";
 import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
-import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
-const PR_BUTTON_COLOR_CLASSES: Record<PrVisualConfig["color"], string> = {
-  gray: "border-(--gray-6) text-(--gray-11) hover:bg-(--gray-3)",
-  green: "border-(--green-6) text-(--green-11) hover:bg-(--green-3)",
-  red: "border-(--red-6) text-(--red-11) hover:bg-(--red-3)",
-  purple: "border-(--purple-6) text-(--purple-11) hover:bg-(--purple-3)",
-};
 const STATUS_VISUAL: Record<
   TaskBoardStatus,
   {
@@ -226,22 +212,7 @@ function ChannelBoardCard({
           {task.repository}
         </span>
       ) : null}
-      {prUrl && prState ? (
-        <BoardPrButton prUrl={prUrl} prState={prState} />
-      ) : prUrl ? (
-        <Button
-          variant="outline"
-          size="xs"
-          className="w-fit"
-          onClick={(event) => {
-            event.stopPropagation();
-            void openUrlInBrowser(prUrl);
-          }}
-        >
-          <GitPullRequest size={11} />
-          View PR
-        </Button>
-      ) : null}
+      {prUrl ? <ChannelPrButton prUrl={prUrl} prState={prState} /> : null}
       <div className="mt-1.5 flex items-center justify-between gap-2 border-(--gray-3) border-t pt-2.5">
         <div className="flex min-w-0 items-center gap-1.5" title={creatorName}>
           <UserAvatar user={task.created_by} size="xs" />
@@ -262,37 +233,5 @@ function ChannelBoardCard({
         </button>
       </div>
     </Box>
-  );
-}
-
-function BoardPrButton({
-  prUrl,
-  prState,
-}: {
-  prUrl: string;
-  prState: Exclude<SidebarPrState, null>;
-}) {
-  const config = getPrVisualConfig(
-    prState === "merged" ? "closed" : prState,
-    prState === "merged",
-    prState === "draft",
-  );
-  const PrIcon = getPrVisualIcon(config.icon);
-  const prNumber = parsePrNumber(prUrl);
-
-  return (
-    <Button
-      variant="outline"
-      size="xs"
-      className={`w-fit ${PR_BUTTON_COLOR_CLASSES[config.color]}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        void openUrlInBrowser(prUrl);
-      }}
-    >
-      <PrIcon size={11} weight="bold" />
-      {config.label}
-      {prNumber ? ` #${prNumber}` : null}
-    </Button>
   );
 }

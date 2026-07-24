@@ -6,15 +6,20 @@ import {
 } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
 import { ThreadPanel } from "@posthog/ui/features/canvas/components/ThreadPanel";
+import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 
 export function ChannelTaskPreviewDialog({
   task,
   channelId,
+  prUrl,
+  prState,
   onClose,
   onOpenFull,
 }: {
   task: Task | null;
   channelId: string;
+  prUrl?: string;
+  prState: SidebarPrState;
   onClose: () => void;
   onOpenFull: (task: Task) => void;
 }) {
@@ -39,6 +44,8 @@ export function ChannelTaskPreviewDialog({
             onOpenFull={() => onOpenFull(task)}
             showAgentStatus={false}
             taskSummaryInHeader
+            taskSummaryPrUrl={prUrl}
+            taskSummaryPrState={prState}
           />
         ) : null}
       </DialogContent>

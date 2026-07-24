@@ -65,6 +65,7 @@ import {
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { ChannelPrButton } from "@posthog/ui/features/canvas/components/ChannelPrButton";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
@@ -82,6 +83,7 @@ import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails"
 import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
 import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
 import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
+import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
@@ -340,11 +342,15 @@ function ThreadLoadingState() {
 
 function ThreadHeader({
   task,
+  taskPrUrl,
+  taskPrState,
   onClose,
   onToggleCollapsed,
   onOpenFull,
 }: {
   task?: Task;
+  taskPrUrl?: string;
+  taskPrState: SidebarPrState;
   onClose?: () => void;
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
@@ -352,7 +358,13 @@ function ThreadHeader({
   return (
     <div className="flex items-center gap-1 border-border border-b px-3 py-2">
       <div className="min-w-0 flex-1">
-        {task ? <ThreadHeaderTaskSummary task={task} /> : null}
+        {task ? (
+          <ThreadHeaderTaskSummary
+            task={task}
+            prUrl={taskPrUrl}
+            prState={taskPrState}
+          />
+        ) : null}
         {!task ? (
           <span className="block font-medium text-sm">Thread</span>
         ) : null}
@@ -391,12 +403,19 @@ function ThreadHeader({
   );
 }
 
-function ThreadHeaderTaskSummary({ task }: { task: Task }) {
-  const display = useTaskStatusDisplay(task);
-  const prUrl =
-    typeof task.latest_run?.output?.pr_url === "string"
-      ? task.latest_run.output.pr_url
-      : undefined;
+function ThreadHeaderTaskSummary({
+  task,
+  prUrl,
+  prState,
+}: {
+  task: Task;
+  prUrl?: string;
+  prState: SidebarPrState;
+}) {
+  const taskDisplay = useTaskStatusDisplay(task);
+  const display = prState
+    ? { base: null, prState, isMerged: prState === "merged" }
+    : taskDisplay;
 
   return (
     <div className="flex min-w-0 items-center gap-2 pr-2">
@@ -405,12 +424,7 @@ function ThreadHeaderTaskSummary({ task }: { task: Task }) {
         {task.title || "Untitled task"}
       </span>
       <TaskStatusBadge display={display} />
-      {prUrl ? (
-        <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
-          <ArrowSquareOutIcon size={12} />
-          PR
-        </span>
-      ) : null}
+      {prUrl ? <ChannelPrButton prUrl={prUrl} prState={prState} /> : null}
       {task.repository ? (
         <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground text-xs">
           <GitBranchIcon size={12} className="shrink-0" />
@@ -544,6 +558,8 @@ function ThreadConversation({
   showTaskSummary,
   showAgentStatus,
   taskSummaryInHeader,
+  taskSummaryPrUrl,
+  taskSummaryPrState,
 }: {
   task: Task;
   channelId: string;
@@ -553,6 +569,8 @@ function ThreadConversation({
   showTaskSummary: boolean;
   showAgentStatus: boolean;
   taskSummaryInHeader: boolean;
+  taskSummaryPrUrl?: string;
+  taskSummaryPrState: SidebarPrState;
 }) {
   const taskId = task.id;
   const client = useOptionalAuthenticatedClient();
@@ -700,6 +718,8 @@ function ThreadConversation({
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-gray-1">
       <ThreadHeader
         task={taskSummaryInHeader ? task : undefined}
+        taskPrUrl={taskSummaryPrUrl}
+        taskPrState={taskSummaryPrState}
         onOpenFull={onOpenFull}
         onToggleCollapsed={onToggleCollapsed}
         onClose={onClose}
@@ -751,6 +771,8 @@ export function ThreadPanel({
   showTaskSummary = true,
   showAgentStatus = true,
   taskSummaryInHeader = false,
+  taskSummaryPrUrl,
+  taskSummaryPrState = null,
 }: {
   taskId: string;
   channelId: string;
@@ -762,6 +784,8 @@ export function ThreadPanel({
   showTaskSummary?: boolean;
   showAgentStatus?: boolean;
   taskSummaryInHeader?: boolean;
+  taskSummaryPrUrl?: string;
+  taskSummaryPrState?: SidebarPrState;
 }) {
   const { data: fetchedTask } = useQuery({
     ...taskDetailQuery(taskId),
@@ -798,6 +822,8 @@ export function ThreadPanel({
       showTaskSummary={showTaskSummary}
       showAgentStatus={showAgentStatus}
       taskSummaryInHeader={taskSummaryInHeader}
+      taskSummaryPrUrl={taskSummaryPrUrl}
+      taskSummaryPrState={taskSummaryPrState}
     />
   );
 }

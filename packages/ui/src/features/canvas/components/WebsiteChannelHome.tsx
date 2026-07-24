@@ -456,6 +456,21 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
       <ChannelTaskPreviewDialog
         task={previewTask}
         channelId={channelId}
+        prUrl={
+          previewTask
+            ? (prUrlByTaskId.get(previewTask.id) ??
+              (typeof previewTask.latest_run?.output?.pr_url === "string"
+                ? previewTask.latest_run.output.pr_url
+                : undefined))
+            : undefined
+        }
+        prState={
+          previewTask
+            ? (taskPrStates.states.get(previewTask.id) ??
+              prSnapshotByTaskId.get(previewTask.id)?.state ??
+              null)
+            : null
+        }
         onClose={() => setPreviewTask(null)}
         onOpenFull={(task) => {
           setPreviewTask(null);
