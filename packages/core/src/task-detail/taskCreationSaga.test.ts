@@ -377,6 +377,26 @@ describe("TaskCreationSaga", () => {
     expect(sessionService.markTaskCreationInFlight).not.toHaveBeenCalled();
   });
 
+  it("rejects cloud Pi file attachments before creating a task", async () => {
+    const createTaskRequest = vi.fn();
+    const saga = makeSaga({ createTask: createTaskRequest });
+
+    const result = await saga.run({
+      content: "Read this",
+      filePaths: ["/tmp/input.txt"],
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      runtime: "pi",
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Cloud Pi does not support file attachments",
+      failedStep: "unknown",
+    });
+    expect(createTaskRequest).not.toHaveBeenCalled();
+  });
+
   it("starts a cloud Pi run without creating a local runtime", async () => {
     const createdTask = createTask({ repository: "posthog/posthog" });
     const startedTask = createTask({ latest_run: createRun(), runtime: "pi" });
@@ -408,8 +428,8 @@ describe("TaskCreationSaga", () => {
         branch: "main",
         adapter: undefined,
         piRuntime: true,
-        model: "gpt-5.4",
-        reasoningLevel: "high",
+        model: undefined,
+        reasoningLevel: undefined,
         initialPermissionMode: undefined,
       }),
     );
@@ -418,74 +438,6 @@ describe("TaskCreationSaga", () => {
       pendingUserArtifactIds: undefined,
     });
     expect(piRunner.create).not.toHaveBeenCalled();
-  });
-
-  it("uploads initial Pi files and local skill bundles before starting the cloud run", async () => {
-    const createdTask = createTask({ repository: "posthog/posthog" });
-    const startedTask = createTask({ latest_run: createRun(), runtime: "pi" });
-    const createTaskRun = vi.fn().mockResolvedValue(createRun());
-    const startTaskRun = vi.fn().mockResolvedValue(startedTask);
-    const skillTag =
-      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it <file path="/tmp/input.txt" />';
-    const messageText =
-      '<skill name="my-skill" source="user" path="/skills/my-skill" /> do it';
-    const skillBundles = [
-      { name: "my-skill", source: "user" as const, path: "/skills/my-skill" },
-    ];
-
-    mockHost.resolveLocalSkillCommandPrompt.mockResolvedValue(skillTag);
-    mockHost.getCloudPromptTransport.mockReturnValue({
-      filePaths: ["/tmp/input.txt"],
-      skillBundles,
-      messageText,
-      promptText: "do it\n\nAttached files: input.txt",
-    });
-    mockHost.uploadRunAttachments.mockResolvedValue([
-      "file-artifact",
-      "skill-artifact",
-    ]);
-
-    const saga = makeSaga({
-      createTask: vi.fn().mockResolvedValue(createdTask),
-      createTaskRun,
-      startTaskRun,
-    });
-
-    const result = await saga.run({
-      content: '/my-skill do it <file path="/tmp/input.txt" />',
-      filePaths: ["/tmp/input.txt"],
-      repository: "posthog/posthog",
-      workspaceMode: "cloud",
-      runtime: "pi",
-      adapter: "codex",
-      model: "gpt-5.4",
-      reasoningLevel: "high",
-    });
-
-    expect(result.success).toBe(true);
-    expect(mockHost.resolveLocalSkillCommandPrompt).toHaveBeenCalledWith(
-      '/my-skill do it <file path="/tmp/input.txt" />',
-    );
-    expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(skillTag, [
-      "/tmp/input.txt",
-    ]);
-    expect(mockHost.uploadRunAttachments).toHaveBeenCalledWith(
-      expect.anything(),
-      "task-123",
-      "run-123",
-      ["/tmp/input.txt"],
-      skillBundles,
-    );
-    expect(startTaskRun).toHaveBeenCalledWith("task-123", "run-123", {
-      pendingUserMessage: messageText,
-      pendingUserArtifactIds: ["file-artifact", "skill-artifact"],
-    });
-    expect(createTaskRun.mock.invocationCallOrder[0]).toBeLessThan(
-      mockHost.uploadRunAttachments.mock.invocationCallOrder[0],
-    );
-    expect(
-      mockHost.uploadRunAttachments.mock.invocationCallOrder[0],
-    ).toBeLessThan(startTaskRun.mock.invocationCallOrder[0]);
   });
 
   it("uploads initial cloud attachments before starting the run", async () => {

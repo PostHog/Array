@@ -127,7 +127,7 @@ describe("PostHogAPIClient", () => {
     },
   );
 
-  it("loads and syncs the durable task session", async () => {
+  it("loads and atomically replaces the durable task session", async () => {
     const client = new PostHogAPIClient({
       apiUrl: "https://app.posthog.com",
       getApiKey: vi.fn().mockResolvedValue("token"),
@@ -137,15 +137,7 @@ describe("PostHogAPIClient", () => {
     const access = {
       id: "session-1",
       download_url: "https://storage.example/session.jsonl",
-      revision: 3,
-    };
-    const prepared = {
-      id: "session-1",
-      sync_id: "sync-1",
-      upload: {
-        url: "https://storage.example/upload",
-        fields: { key: "task-sessions/session-1/uploads/4.jsonl" },
-      },
+      content_sha256: "old-hash",
     };
     mockFetch
       .mockResolvedValueOnce({
@@ -158,60 +150,53 @@ describe("PostHogAPIClient", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: vi.fn().mockResolvedValue(prepared),
-      })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ id: "session-1", revision: 4 }),
+        json: vi.fn().mockResolvedValue({
+          id: "session-1",
+          content_sha256: "new-hash",
+        }),
       });
 
     const storage = await client.getTaskSession("task-1", "run-1");
     await expect(client.downloadTaskSession(storage)).resolves.toBe(content);
     await expect(
-      client.syncTaskSession("task-1", "run-1", "sandbox-1", 3, content),
-    ).resolves.toBe(4);
+      client.syncTaskSession(
+        "task-1",
+        "run-1",
+        "sandbox-1",
+        "old-hash",
+        content,
+      ),
+    ).resolves.toBe("new-hash");
 
-    expect(mockFetch).toHaveBeenNthCalledWith(
-      4,
-      "https://storage.example/upload",
-      expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
-    );
     expect(mockFetch).toHaveBeenLastCalledWith(
       "https://app.posthog.com/api/projects/7/tasks/task-1/runs/run-1/task_session_sync/",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          sandbox_id: "sandbox-1",
-          sync_id: "sync-1",
-          expected_revision: 3,
-        }),
-      }),
+      expect.objectContaining({ method: "POST", body: content }),
     );
+    const request = mockFetch.mock.calls.at(-1)?.[1] as RequestInit;
+    const headers = request.headers as Headers;
+    expect(headers.get("Content-Type")).toBe("application/octet-stream");
+    expect(headers.get("If-Match")).toBe('"old-hash"');
+    expect(headers.get("X-Sandbox-ID")).toBe("sandbox-1");
   });
 
-  it("treats a missing initial task session object as empty", async () => {
+  it("treats a task session without stored JSONL as empty", async () => {
     const client = new PostHogAPIClient({
       apiUrl: "https://app.posthog.com",
       getApiKey: vi.fn().mockResolvedValue("token"),
       projectId: 7,
     });
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-    });
 
     await expect(
       client.downloadTaskSession({
         id: "session-1",
-        download_url: "https://storage.example/session.jsonl",
-        revision: 0,
+        download_url: null,
+        content_sha256: null,
       }),
     ).resolves.toBe("");
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("rejects a missing promoted task session revision", async () => {
+  it("surfaces an uncertain task session replacement without retrying", async () => {
     const client = new PostHogAPIClient({
       apiUrl: "https://app.posthog.com",
       getApiKey: vi.fn().mockResolvedValue("token"),
@@ -219,112 +204,21 @@ describe("PostHogAPIClient", () => {
     });
     mockFetch.mockResolvedValueOnce({
       ok: false,
-      status: 404,
-      statusText: "Not Found",
+      status: 504,
+      statusText: "Gateway Timeout",
+      text: vi.fn().mockResolvedValue("Gateway Timeout"),
     });
-
-    await expect(
-      client.downloadTaskSession({
-        id: "session-1",
-        download_url: "https://storage.example/session.jsonl",
-        revision: 3,
-      }),
-    ).rejects.toThrow("Failed to download task session: [404] Not Found");
-  });
-
-  it("recovers an ambiguous finalize only when its prepared object was promoted", async () => {
-    const client = new PostHogAPIClient({
-      apiUrl: "https://app.posthog.com",
-      getApiKey: vi.fn().mockResolvedValue("token"),
-      projectId: 7,
-    });
-    const prepared = {
-      id: "session-1",
-      sync_id: "sync-1",
-      upload: {
-        url: "https://storage.example/upload",
-        fields: {
-          key: "task-sessions/org/task/session/uploads/4-sync-1.jsonl",
-        },
-      },
-    };
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: vi.fn().mockResolvedValue(prepared),
-      })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 504,
-        json: vi.fn().mockResolvedValue({ error: "Gateway timeout" }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: vi.fn().mockResolvedValue({
-          id: "session-1",
-          revision: 4,
-          download_url:
-            "https://storage.example/task-sessions/org/task/session/revisions/4-sync-1.jsonl?signature=abc",
-        }),
-      });
 
     await expect(
       client.syncTaskSession(
         "task-1",
         "run-1",
         "sandbox-1",
-        3,
+        null,
         '{"type":"session"}\n',
       ),
-    ).resolves.toBe(4);
-  });
-
-  it("rejects an ambiguous finalize when a competing revision was promoted", async () => {
-    const client = new PostHogAPIClient({
-      apiUrl: "https://app.posthog.com",
-      getApiKey: vi.fn().mockResolvedValue("token"),
-      projectId: 7,
-    });
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: vi.fn().mockResolvedValue({
-          id: "session-1",
-          sync_id: "sync-1",
-          upload: {
-            url: "https://storage.example/upload",
-            fields: {
-              key: "task-sessions/org/task/session/uploads/4-sync-1.jsonl",
-            },
-          },
-        }),
-      })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 409,
-        json: vi.fn().mockResolvedValue({ error: "Stale revision" }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: vi.fn().mockResolvedValue({
-          id: "session-1",
-          revision: 4,
-          download_url:
-            "https://storage.example/task-sessions/org/task/session/revisions/4-sync-2.jsonl?signature=abc",
-        }),
-      });
-
-    await expect(
-      client.syncTaskSession(
-        "task-1",
-        "run-1",
-        "sandbox-1",
-        3,
-        '{"type":"session"}\n',
-      ),
-    ).rejects.toThrow("Stale revision");
+    ).rejects.toThrow("Failed to sync task session: [504] Gateway Timeout");
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 
   it("returns only the artifacts created by the current upload request", async () => {

@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { PiAgentServer, resolveInitialPiPrompt } from "./pi-agent-server";
+import { PiAgentServer } from "./pi-agent-server";
 import type { AgentServerConfig } from "./types";
 
 function config(): AgentServerConfig {
@@ -20,55 +20,6 @@ function config(): AgentServerConfig {
 }
 
 describe("PiAgentServer", () => {
-  it.each([
-    {
-      name: "new session",
-      input: {
-        pendingMessage: null,
-        taskDescription: "initial task",
-        restoredSessionFile: null,
-        prewarmed: false,
-        resumed: false,
-      },
-      expected: "initial task",
-    },
-    {
-      name: "restored session",
-      input: {
-        pendingMessage: null,
-        taskDescription: "initial task",
-        restoredSessionFile: "/tmp/session.jsonl",
-        prewarmed: false,
-        resumed: true,
-      },
-      expected: null,
-    },
-    {
-      name: "explicit pending message on a restored session",
-      input: {
-        pendingMessage: "continue",
-        taskDescription: "initial task",
-        restoredSessionFile: "/tmp/session.jsonl",
-        prewarmed: false,
-        resumed: true,
-      },
-      expected: "continue",
-    },
-    {
-      name: "resumed session without persisted JSONL",
-      input: {
-        pendingMessage: null,
-        taskDescription: "initial task",
-        restoredSessionFile: null,
-        prewarmed: false,
-        resumed: true,
-      },
-      expected: null,
-    },
-  ])("selects the initial prompt for a $name", ({ input, expected }) => {
-    expect(resolveInitialPiPrompt(input)).toBe(expected);
-  });
-
   it.each([
     ["task", { task_id: "task-2", run_id: "run-1", team_id: 1 }],
     ["run", { task_id: "task-1", run_id: "run-2", team_id: 1 }],
@@ -149,80 +100,6 @@ describe("PiAgentServer", () => {
     expect(followUp).not.toHaveBeenCalled();
   });
 
-  it("deduplicates completed user messages by their stable messageId", async () => {
-    const prompt = vi.fn(async () => {});
-    const server = new PiAgentServer(config()) as unknown as {
-      app: {
-        request(path: string, init: RequestInit): Promise<Response>;
-      };
-      authenticate(): { task_id: string; run_id: string };
-      session: unknown;
-    };
-    server.authenticate = () => ({ task_id: "task-1", run_id: "run-1" });
-    server.session = {
-      payload: { run_id: "run-1" },
-      runtime: {
-        client: {
-          getState: vi.fn(async () => ({ isStreaming: false })),
-          prompt,
-        },
-      },
-    };
-    const command = (id: number) =>
-      server.app.request("/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id,
-          method: "user_message",
-          params: { content: "hello", messageId: "message-1" },
-        }),
-      });
-
-    const firstResponse = await command(1);
-    const retryResponse = await command(2);
-
-    expect(firstResponse.status).toBe(200);
-    expect(retryResponse.status).toBe(200);
-    expect(prompt).toHaveBeenCalledOnce();
-    expect(prompt).toHaveBeenCalledWith("hello");
-  });
-
-  it("deduplicates concurrent in-flight user-message deliveries", async () => {
-    let resolvePrompt: (() => void) | undefined;
-    const prompt = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolvePrompt = resolve;
-        }),
-    );
-    const server = new PiAgentServer(config()) as unknown as {
-      session: unknown;
-      executeCommand(
-        method: string,
-        params: Record<string, unknown>,
-      ): Promise<unknown>;
-    };
-    server.session = {
-      runtime: {
-        client: {
-          getState: vi.fn(async () => ({ isStreaming: false })),
-          prompt,
-        },
-      },
-    };
-    const params = { content: "hello", messageId: "message-1" };
-
-    const firstDelivery = server.executeCommand("user_message", params);
-    const concurrentDelivery = server.executeCommand("user_message", params);
-    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce());
-    resolvePrompt?.();
-    await Promise.all([firstDelivery, concurrentDelivery]);
-
-    expect(prompt).toHaveBeenCalledOnce();
-  });
-
   it("allows a failed user-message delivery to be retried", async () => {
     const prompt = vi
       .fn()
@@ -253,44 +130,6 @@ describe("PiAgentServer", () => {
     ).resolves.toBeUndefined();
 
     expect(prompt).toHaveBeenCalledTimes(2);
-  });
-
-  it("bounds completed user-message deliveries without evicting recent IDs", async () => {
-    const prompt = vi.fn(async () => {});
-    const server = new PiAgentServer(config()) as unknown as {
-      session: unknown;
-      completedUserMessageDeliveries: Map<string, unknown>;
-      executeCommand(
-        method: string,
-        params: Record<string, unknown>,
-      ): Promise<unknown>;
-    };
-    server.session = {
-      runtime: {
-        client: {
-          getState: vi.fn(async () => ({ isStreaming: false })),
-          prompt,
-        },
-      },
-    };
-
-    for (let index = 0; index <= 500; index++) {
-      await server.executeCommand("user_message", {
-        content: `message ${index}`,
-        messageId: `message-${index}`,
-      });
-    }
-
-    expect(server.completedUserMessageDeliveries.size).toBe(500);
-    expect(server.completedUserMessageDeliveries.has("message-0")).toBe(false);
-    expect(server.completedUserMessageDeliveries.has("message-1")).toBe(true);
-
-    await server.executeCommand("user_message", {
-      content: "recent retry",
-      messageId: "message-1",
-    });
-
-    expect(prompt).toHaveBeenCalledTimes(501);
   });
 
   it("does not install an SSE controller canceled during initialization", async () => {
@@ -377,7 +216,7 @@ describe("PiAgentServer", () => {
 
   it("waits for Pi to create the native session file before syncing", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-session-sync-"));
-    const syncTaskSession = vi.fn(async () => 1);
+    const syncTaskSession = vi.fn(async () => "content-hash");
     const server = new PiAgentServer(config()) as unknown as {
       sessionFile: string;
       posthogAPI: { syncTaskSession: typeof syncTaskSession };
@@ -397,7 +236,7 @@ describe("PiAgentServer", () => {
     const sessionFile = join(directory, "session.jsonl");
     const content = '{"type":"session"}\n';
     await writeFile(sessionFile, content);
-    const syncTaskSession = vi.fn(async () => 1);
+    const syncTaskSession = vi.fn(async () => "content-hash");
     const server = new PiAgentServer(config()) as unknown as {
       sessionFile: string;
       posthogAPI: { syncTaskSession: typeof syncTaskSession };
@@ -414,7 +253,7 @@ describe("PiAgentServer", () => {
       "task-1",
       "run-1",
       "sandbox-1",
-      0,
+      null,
       content,
     );
     await rm(directory, { recursive: true });

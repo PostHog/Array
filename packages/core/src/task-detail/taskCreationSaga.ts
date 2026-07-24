@@ -91,6 +91,13 @@ export class TaskCreationSaga extends Saga<
   ): Promise<TaskCreationOutput> {
     const taskId = input.taskId;
     const isPiRuntime = input.runtime === "pi";
+    if (
+      isPiRuntime &&
+      input.workspaceMode === "cloud" &&
+      input.filePaths?.length
+    ) {
+      throw new Error("Cloud Pi does not support file attachments");
+    }
     const folderPromise =
       !taskId && input.repoPath
         ? this.resolveFolder(input.repoPath)
@@ -368,11 +375,13 @@ export class TaskCreationSaga extends Saga<
               ) {
                 return null;
               }
-              const resolvedContent = input.content
-                ? await this.deps.host.resolveLocalSkillCommandPrompt(
-                    input.content,
-                  )
-                : "";
+              let resolvedContent = input.content ?? "";
+              if (resolvedContent && !isPiRuntime) {
+                resolvedContent =
+                  await this.deps.host.resolveLocalSkillCommandPrompt(
+                    resolvedContent,
+                  );
+              }
               return this.deps.host.getCloudPromptTransport(
                 resolvedContent,
                 input.filePaths,
@@ -405,8 +414,8 @@ export class TaskCreationSaga extends Saga<
             branch,
             adapter: cloudAdapter,
             ...(isPiRuntime ? { piRuntime: true } : {}),
-            model: input.model,
-            reasoningLevel: input.reasoningLevel,
+            model: isPiRuntime ? undefined : input.model,
+            reasoningLevel: isPiRuntime ? undefined : input.reasoningLevel,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
             customImageId: input.customImageId,
             prAuthorshipMode,
@@ -436,15 +445,16 @@ export class TaskCreationSaga extends Saga<
               .catch(() => undefined);
           }
 
-          const pendingUserArtifactIds = transport
-            ? await this.deps.host.uploadRunAttachments(
-                this.deps.posthogClient,
-                task.id,
-                taskRun.id,
-                transport.filePaths,
-                transport.skillBundles,
-              )
-            : [];
+          const pendingUserArtifactIds =
+            transport && !isPiRuntime
+              ? await this.deps.host.uploadRunAttachments(
+                  this.deps.posthogClient,
+                  task.id,
+                  taskRun.id,
+                  transport.filePaths,
+                  transport.skillBundles,
+                )
+              : [];
 
           const startedRun = await this.deps.posthogClient.startTaskRun(
             task.id,
@@ -713,17 +723,18 @@ export class TaskCreationSaga extends Saga<
       augmented,
     };
 
-    const lease = input.repository
-      ? this.deps.host.takeWarmTaskLease({
-          repository: input.repository,
-          branch: input.branch ?? null,
-          runtimeAdapter: input.adapter ?? null,
-          model: input.model ?? null,
-          reasoningEffort: input.reasoningLevel ?? null,
-          sandboxEnvironmentId: input.sandboxEnvironmentId ?? null,
-          customImageId: input.customImageId ?? null,
-        })
-      : null;
+    const lease =
+      input.repository && input.runtime !== "pi"
+        ? this.deps.host.takeWarmTaskLease({
+            repository: input.repository,
+            branch: input.branch ?? null,
+            runtimeAdapter: input.adapter ?? null,
+            model: input.model ?? null,
+            reasoningEffort: input.reasoningLevel ?? null,
+            sandboxEnvironmentId: input.sandboxEnvironmentId ?? null,
+            customImageId: input.customImageId ?? null,
+          })
+        : null;
 
     const requiresConfiguredWarm = Boolean(
       input.sandboxEnvironmentId || input.customImageId,
@@ -800,15 +811,21 @@ export class TaskCreationSaga extends Saga<
               ? (input.branch ?? null)
               : undefined,
           runtime_adapter:
-            input.workspaceMode === "cloud" && canActivateWarmRun
+            input.workspaceMode === "cloud" &&
+            canActivateWarmRun &&
+            input.runtime !== "pi"
               ? (input.adapter ?? null)
               : undefined,
           model:
-            input.workspaceMode === "cloud" && canActivateWarmRun
+            input.workspaceMode === "cloud" &&
+            canActivateWarmRun &&
+            input.runtime !== "pi"
               ? (input.model ?? null)
               : undefined,
           reasoning_effort:
-            input.workspaceMode === "cloud" && canActivateWarmRun
+            input.workspaceMode === "cloud" &&
+            canActivateWarmRun &&
+            input.runtime !== "pi"
               ? (input.reasoningLevel ?? null)
               : undefined,
           sandbox_environment_id:

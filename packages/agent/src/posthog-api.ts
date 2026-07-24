@@ -43,14 +43,8 @@ export interface PreparedTaskArtifactUpload {
 
 export interface TaskSessionStorageAccess {
   id: string;
-  download_url: string;
-  revision: number;
-}
-
-export interface TaskSessionSyncUpload {
-  id: string;
-  sync_id: string;
-  upload: { url: string; fields: Record<string, string> };
+  download_url: string | null;
+  content_sha256: string | null;
 }
 
 export interface TaskArtifactFinalizeUploadPayload {
@@ -111,7 +105,9 @@ export class PostHogAPIClient {
       "Authorization",
       `Bearer ${await this.resolveApiKey(forceRefresh)}`,
     );
-    headers.set("Content-Type", "application/json");
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
     headers.set("User-Agent", this.config.userAgent ?? DEFAULT_USER_AGENT);
     return headers;
   }
@@ -234,12 +230,12 @@ export class PostHogAPIClient {
   }
 
   async downloadTaskSession(access: TaskSessionStorageAccess): Promise<string> {
+    if (!access.download_url) {
+      return "";
+    }
     const response = await fetch(access.download_url, {
       signal: AbortSignal.timeout(30_000),
     });
-    if (response.status === 404 && access.revision === 0) {
-      return "";
-    }
     if (!response.ok) {
       throw new Error(
         `Failed to download task session: [${response.status}] ${response.statusText}`,
@@ -252,80 +248,31 @@ export class PostHogAPIClient {
     taskId: string,
     runId: string,
     sandboxId: string,
-    expectedRevision: number,
+    expectedContentSha256: string | null,
     content: string,
-  ): Promise<number> {
+  ): Promise<string> {
     const teamId = this.getTeamId();
-    const prepared = await this.apiRequest<TaskSessionSyncUpload>(
-      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session_sync_prepare/`,
+    const response = await this.performRequestWithRetry(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session_sync/`,
       {
         method: "POST",
-        body: JSON.stringify({
-          sandbox_id: sandboxId,
-          expected_revision: expectedRevision,
-        }),
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "If-Match": `"${expectedContentSha256 ?? "none"}"`,
+          "X-Sandbox-ID": sandboxId,
+        },
+        body: content,
         signal: AbortSignal.timeout(30_000),
       },
     );
-    const form = new FormData();
-    for (const [key, value] of Object.entries(prepared.upload.fields)) {
-      form.append(key, value);
-    }
-    form.append("file", new Blob([content]), "session.jsonl");
-    const uploadResponse = await fetch(prepared.upload.url, {
-      method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!uploadResponse.ok) {
+    if (!response.ok) {
+      const error = await response.text().catch(() => response.statusText);
       throw new Error(
-        `Failed to upload task session: [${uploadResponse.status}] ${uploadResponse.statusText}`,
+        `Failed to sync task session: [${response.status}] ${error}`,
       );
     }
-
-    try {
-      const result = await this.apiRequest<{ id: string; revision: number }>(
-        `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session_sync/`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            sandbox_id: sandboxId,
-            sync_id: prepared.sync_id,
-            expected_revision: expectedRevision,
-          }),
-          signal: AbortSignal.timeout(30_000),
-        },
-      );
-      return result.revision;
-    } catch (error) {
-      const current = await this.getTaskSession(taskId, runId);
-      const uploadStoragePath = prepared.upload.fields.key;
-      const promotedStoragePath = uploadStoragePath?.replace(
-        "/uploads/",
-        "/revisions/",
-      );
-      if (
-        current.id === prepared.id &&
-        current.revision === expectedRevision + 1 &&
-        promotedStoragePath &&
-        this.isTaskSessionStoragePath(current.download_url, promotedStoragePath)
-      ) {
-        return current.revision;
-      }
-      throw error;
-    }
-  }
-
-  private isTaskSessionStoragePath(
-    downloadUrl: string,
-    storagePath: string,
-  ): boolean {
-    try {
-      const pathname = decodeURIComponent(new URL(downloadUrl).pathname);
-      return pathname.endsWith(`/${storagePath}`);
-    } catch {
-      return false;
-    }
+    const result = (await response.json()) as { content_sha256: string };
+    return result.content_sha256;
   }
 
   async appendTaskRunLog(

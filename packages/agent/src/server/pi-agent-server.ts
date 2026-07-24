@@ -32,12 +32,12 @@ interface PiCloudSession {
   unsubscribe: () => void;
 }
 
-const COMPLETED_USER_MESSAGE_DELIVERY_LIMIT = 500;
 const emptySchema = z.object({});
 
 const userMessageCommandSchema = z.object({
   content: z.string().min(1),
   messageId: z.string().min(1).optional(),
+  steer: z.boolean().optional(),
 });
 
 const commandSchemas = {
@@ -47,23 +47,6 @@ const commandSchemas = {
 } as const;
 
 type PiCommandMethod = keyof typeof commandSchemas;
-
-export function resolveInitialPiPrompt(input: {
-  pendingMessage: string | null;
-  taskDescription: string | null | undefined;
-  restoredSessionFile: string | null | undefined;
-  prewarmed: boolean;
-  resumed: boolean;
-}): string | null {
-  const pendingMessage = input.pendingMessage?.trim();
-  if (pendingMessage) {
-    return pendingMessage;
-  }
-  if (input.restoredSessionFile || input.prewarmed || input.resumed) {
-    return null;
-  }
-  return input.taskDescription?.trim() || null;
-}
 
 export class PiAgentServer {
   private readonly app: Hono;
@@ -81,13 +64,12 @@ export class PiAgentServer {
   private sessionInitMs?: number;
   private sessionFile: string | null = null;
   private lastSyncedSessionContent = "";
-  private sessionRevision = 0;
+  private sessionContentSha256: string | null = null;
   private sessionSyncQueue: Promise<void> = Promise.resolve();
+  private settledPersistenceQueue: Promise<void> = Promise.resolve();
   private pendingLogEntries: StoredLogEntry[] = [];
   private logFlushQueue: Promise<void> = Promise.resolve();
   private readonly canceledSseControllers = new WeakSet<SseController>();
-  private readonly userMessageDeliveries = new Map<string, Promise<unknown>>();
-  private readonly completedUserMessageDeliveries = new Map<string, unknown>();
 
   constructor(private readonly config: AgentServerConfig) {
     this.posthogAPI = new PostHogAPIClient({
@@ -150,6 +132,9 @@ export class PiAgentServer {
             error,
           ),
         );
+      await this.settledPersistenceQueue.catch((error) =>
+        this.logger.error("Failed to persist settled Pi turn", error),
+      );
       await this.syncTaskSession().catch((error) =>
         this.logger.error("Failed to sync Pi session during shutdown", error),
       );
@@ -177,11 +162,8 @@ export class PiAgentServer {
         message,
       } satisfies AgentConversationEvent,
     });
-    await Promise.all([
-      this.syncTaskSession(),
-      this.flushConversationLog(),
-    ]).catch((syncError) =>
-      this.logger.error("Failed to persist crashed Pi session", syncError),
+    await this.flushConversationLog().catch((syncError) =>
+      this.logger.error("Failed to persist crashed Pi events", syncError),
     );
     await this.posthogAPI
       .updateTaskRun(this.config.taskId, this.config.runId, {
@@ -351,12 +333,6 @@ export class PiAgentServer {
   private async createSession(payload: JwtPayload): Promise<void> {
     const startedAt = Date.now();
     await this.waitForRepoReady();
-    const taskRun = await this.posthogAPI.getTaskRun(
-      payload.task_id,
-      payload.run_id,
-    );
-    const task = await this.posthogAPI.getTask(payload.task_id);
-    const state = (taskRun.state ?? {}) as Record<string, unknown>;
     const cwd = this.config.repositoryPath ?? "/tmp/workspace";
     if (!this.config.sandboxId) {
       throw new Error("Pi task session persistence requires a sandbox ID");
@@ -375,12 +351,11 @@ export class PiAgentServer {
       await writeFile(restoredSessionFile, persistedSessionContent, "utf8");
     }
     this.lastSyncedSessionContent = persistedSessionContent;
-    this.sessionRevision = sessionStorage.revision;
+    this.sessionContentSha256 = sessionStorage.content_sha256;
 
     const client = createPiRpcClient({
       cliPath: this.config.piRpcHostPath,
       cwd,
-      model: this.config.model,
       sessionFile: restoredSessionFile,
       providerOptions: {
         apiKey: this.config.apiKey,
@@ -396,18 +371,14 @@ export class PiAgentServer {
     );
     const unsubscribeRuntime = runtime.onRuntimeEvent((event) => {
       if (event.type === "agent_settled") {
-        void Promise.all([
-          this.syncTaskSession(),
-          this.flushConversationLog(),
-        ]).catch((error) =>
-          this.logger.error("Failed to persist settled Pi turn", error),
-        );
+        this.settledPersistenceQueue = this.settledPersistenceQueue
+          .then(() => this.persistSettledTurn())
+          .catch((error) => {
+            this.logger.error("Failed to persist settled Pi turn", error);
+          });
       }
     });
     await client.start();
-    if (this.config.reasoningEffort) {
-      await client.setThinkingLevel(this.config.reasoningEffort);
-    }
     const runtimeState = await client.getState();
     this.sessionFile = runtimeState.sessionFile ?? restoredSessionFile ?? null;
     const unsubscribe = () => {
@@ -416,7 +387,6 @@ export class PiAgentServer {
     };
 
     this.session = { payload, runtime, sseController: null, unsubscribe };
-    await this.syncTaskSession();
     this.sessionReadyBootMs = Math.round(process.uptime() * 1000);
     this.sessionInitMs = Date.now() - startedAt;
     await this.posthogAPI.updateTaskRun(payload.task_id, payload.run_id, {
@@ -428,21 +398,6 @@ export class PiAgentServer {
       taskId: payload.task_id,
       runId: payload.run_id,
     });
-
-    const pendingMessage =
-      typeof state.pending_user_message === "string"
-        ? state.pending_user_message
-        : null;
-    const prompt = resolveInitialPiPrompt({
-      pendingMessage,
-      taskDescription: task.description,
-      restoredSessionFile,
-      prewarmed: state.prewarmed === true,
-      resumed: state.handoff_resumed === true,
-    });
-    if (prompt) {
-      await client.prompt(prompt);
-    }
   }
 
   private handleEvent(event: AgentConversationEvent): void {
@@ -472,67 +427,30 @@ export class PiAgentServer {
     }
   }
 
-  private async deliverUserMessage(
+  private deliverUserMessage(
     client: PiRpcClient,
     params: Record<string, unknown>,
   ): Promise<unknown> {
-    const messageId =
-      typeof params.messageId === "string" ? params.messageId : null;
-    if (!messageId) {
-      return this.dispatchUserMessage(client, String(params.content));
-    }
-
-    if (this.completedUserMessageDeliveries.has(messageId)) {
-      return this.completedUserMessageDeliveries.get(messageId);
-    }
-
-    const existingDelivery = this.userMessageDeliveries.get(messageId);
-    if (existingDelivery) {
-      return existingDelivery;
-    }
-
-    const delivery = this.dispatchUserMessage(client, String(params.content));
-    this.userMessageDeliveries.set(messageId, delivery);
-    try {
-      const result = await delivery;
-      if (this.userMessageDeliveries.get(messageId) === delivery) {
-        this.userMessageDeliveries.delete(messageId);
-        this.completedUserMessageDeliveries.set(messageId, result);
-        this.evictCompletedUserMessageDeliveries();
-      }
-      return result;
-    } catch (error) {
-      if (this.userMessageDeliveries.get(messageId) === delivery) {
-        this.userMessageDeliveries.delete(messageId);
-      }
-      throw error;
-    }
+    return this.dispatchUserMessage(
+      client,
+      typeof params.content === "string" ? params.content : "",
+      params.steer === true,
+    );
   }
 
   private async dispatchUserMessage(
     client: PiRpcClient,
     content: string,
+    steer: boolean,
   ): Promise<unknown> {
     const state = await client.getState();
+    if (state.isStreaming && steer) {
+      return client.steer(content);
+    }
     if (state.isStreaming) {
       return client.followUp(content);
     }
     return client.prompt(content);
-  }
-
-  private evictCompletedUserMessageDeliveries(): void {
-    while (
-      this.completedUserMessageDeliveries.size >
-      COMPLETED_USER_MESSAGE_DELIVERY_LIMIT
-    ) {
-      const oldestMessageId = this.completedUserMessageDeliveries
-        .keys()
-        .next().value;
-      if (oldestMessageId === undefined) {
-        return;
-      }
-      this.completedUserMessageDeliveries.delete(oldestMessageId);
-    }
   }
 
   private installSseController(sseController: SseController | null): void {
@@ -551,6 +469,10 @@ export class PiAgentServer {
     if (this.session?.sseController === sseController) {
       this.session.sseController = null;
     }
+  }
+
+  private async persistSettledTurn(): Promise<void> {
+    await Promise.all([this.syncTaskSession(), this.flushConversationLog()]);
   }
 
   private syncTaskSession(): Promise<void> {
@@ -575,11 +497,11 @@ export class PiAgentServer {
       if (!this.config.sandboxId) {
         throw new Error("Pi task session persistence requires a sandbox ID");
       }
-      this.sessionRevision = await this.posthogAPI.syncTaskSession(
+      this.sessionContentSha256 = await this.posthogAPI.syncTaskSession(
         this.config.taskId,
         this.config.runId,
         this.config.sandboxId,
-        this.sessionRevision,
+        this.sessionContentSha256,
         content,
       );
       this.lastSyncedSessionContent = content;
