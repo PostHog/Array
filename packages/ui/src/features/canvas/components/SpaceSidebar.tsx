@@ -1,3 +1,4 @@
+import { PreviewCard } from "@base-ui/react/preview-card";
 import {
   BookOpenTextIcon,
   FileTextIcon,
@@ -8,15 +9,11 @@ import {
 } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
-import {
-  MenuLabel,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@posthog/quill";
+import { Avatar, AvatarFallback, Badge, MenuLabel } from "@posthog/quill";
 import { formatRelativeTimeShort, LOOPS_FLAG } from "@posthog/shared";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
@@ -32,6 +29,8 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { type ReactNode, useMemo } from "react";
 
+type StatusVariant = "default" | "destructive" | "info" | "success" | "warning";
+
 interface SpaceItem {
   key: string;
   kind: "task" | "canvas";
@@ -42,8 +41,10 @@ interface SpaceItem {
   isActive: boolean;
   /** Run status ("In progress", …) for the hover card; tasks only. */
   status: string | null;
-  /** Who created it, for the hover card. */
-  person: string | null;
+  statusVariant: StatusVariant;
+  /** Who created it — the full user when known (tasks), else a name. */
+  authorUser: UserBasic | null;
+  authorName: string | null;
   onClick: () => void;
 }
 
@@ -53,37 +54,94 @@ function humanizeStatus(status: string | null | undefined): string | null {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-// A pinned/recent row with its hover card: kind, status, author, last update.
+function statusVariantFor(status: string | null | undefined): StatusVariant {
+  if (!status) return "default";
+  const value = status.toLowerCase();
+  if (value.includes("complete")) return "success";
+  if (value.includes("fail") || value.includes("error")) return "destructive";
+  if (
+    value.includes("progress") ||
+    value.includes("running") ||
+    value.includes("pending") ||
+    value.includes("start")
+  ) {
+    return "info";
+  }
+  return "default";
+}
+
+// A pinned/recent row with its hover card (Base UI PreviewCard): icon, full
+// title, kind + freshness, status badge, and the author with their avatar.
 function SpaceItemRow({ item }: { item: SpaceItem }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
+    <PreviewCard.Root>
+      <PreviewCard.Trigger
+        delay={400}
+        closeDelay={100}
         render={
           <div className="min-w-0">
             <SidebarItem
               depth={0}
               icon={item.icon}
-              label={item.title}
+              // A non-string label opts out of SidebarItem's built-in
+              // truncation tooltip — the hover card carries the full title.
+              label={<>{item.title}</>}
               isActive={item.isActive}
               onClick={item.onClick}
             />
           </div>
         }
       />
-      <TooltipContent side="right" sideOffset={10}>
-        <div className="flex max-w-64 flex-col gap-0.5 py-0.5 text-left">
-          <span className="font-medium text-[12px]">{item.title}</span>
-          <span className="text-[11px] opacity-75">
-            {item.kind === "canvas" ? "Canvas" : "Task"}
-            {item.status ? ` · ${item.status}` : ""} ·{" "}
-            {formatRelativeTimeShort(item.ts)}
-          </span>
-          {item.person && (
-            <span className="text-[11px] opacity-75">By {item.person}</span>
-          )}
-        </div>
-      </TooltipContent>
-    </Tooltip>
+      <PreviewCard.Portal>
+        <PreviewCard.Positioner
+          side="right"
+          align="start"
+          sideOffset={10}
+          className="z-50"
+        >
+          <PreviewCard.Popup className="w-64 rounded-lg border border-border bg-background p-3 shadow-lg outline-none">
+            <div className="flex items-start gap-2.5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-gray-3">
+                {item.icon}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="break-words font-medium text-[13px] text-gray-12 leading-snug">
+                  {item.title}
+                </p>
+                <p className="mt-0.5 text-[11px] text-gray-10">
+                  {item.kind === "canvas" ? "Canvas" : "Task"} · updated{" "}
+                  {formatRelativeTimeShort(item.ts)}
+                </p>
+              </div>
+            </div>
+            {item.status && (
+              <div className="mt-2">
+                <Badge variant={item.statusVariant}>{item.status}</Badge>
+              </div>
+            )}
+            {(item.authorUser || item.authorName) && (
+              <div className="mt-2.5 flex items-center gap-2 border-border border-t pt-2.5">
+                {item.authorUser ? (
+                  <UserAvatar user={item.authorUser} />
+                ) : (
+                  <Avatar>
+                    <AvatarFallback>
+                      {(item.authorName ?? "?").charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] text-gray-12">
+                    {item.authorName ?? "Unknown"}
+                  </p>
+                  <p className="text-[10px] text-gray-10">Created by</p>
+                </div>
+              </div>
+            )}
+          </PreviewCard.Popup>
+        </PreviewCard.Positioner>
+      </PreviewCard.Portal>
+    </PreviewCard.Root>
   );
 }
 
@@ -125,7 +183,9 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
         className: "text-violet-9",
       }),
       status: null,
-      person: d.createdBy ?? null,
+      statusVariant: "default" as const,
+      authorUser: null,
+      authorName: d.createdBy ?? null,
       isActive: pathname === `${base}/dashboards/${d.id}`,
       onClick: () =>
         void navigate({
@@ -148,7 +208,11 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
             pinned: pinnedTaskIds.has(f.taskId),
             icon: <FileTextIcon size={15} className="text-blue-9" />,
             status: humanizeStatus(task.latest_run?.status),
-            person: task.created_by ? userDisplayName(task.created_by) : null,
+            statusVariant: statusVariantFor(task.latest_run?.status),
+            authorUser: task.created_by ?? null,
+            authorName: task.created_by
+              ? userDisplayName(task.created_by)
+              : null,
             isActive: pathname === `${base}/tasks/${f.taskId}`,
             onClick: () =>
               void navigate({
@@ -260,37 +324,35 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
         )}
       </div>
 
-      <TooltipProvider delay={500}>
-        <div className="scroll-mask-4 mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          {pinnedItems.length > 0 && (
-            <>
-              <MenuLabel>Pinned</MenuLabel>
-              <div className="flex flex-col gap-px">
-                {pinnedItems.map((item) => (
-                  <SpaceItemRow key={item.key} item={item} />
-                ))}
-              </div>
-            </>
-          )}
+      <div className="scroll-mask-4 mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {pinnedItems.length > 0 && (
+          <>
+            <MenuLabel>Pinned</MenuLabel>
+            <div className="flex flex-col gap-px">
+              {pinnedItems.map((item) => (
+                <SpaceItemRow key={item.key} item={item} />
+              ))}
+            </div>
+          </>
+        )}
 
-          {recentItems.length > 0 && (
-            <>
-              <MenuLabel>Recent</MenuLabel>
-              <div className="flex flex-col gap-px">
-                {recentItems.map((item) => (
-                  <SpaceItemRow key={item.key} item={item} />
-                ))}
-              </div>
-            </>
-          )}
+        {recentItems.length > 0 && (
+          <>
+            <MenuLabel>Recent</MenuLabel>
+            <div className="flex flex-col gap-px">
+              {recentItems.map((item) => (
+                <SpaceItemRow key={item.key} item={item} />
+              ))}
+            </div>
+          </>
+        )}
 
-          {pinnedItems.length === 0 && recentItems.length === 0 && (
-            <p className="px-2 py-3 text-[12px] text-gray-10">
-              Tasks and canvases you create in this space show up here.
-            </p>
-          )}
-        </div>
-      </TooltipProvider>
+        {pinnedItems.length === 0 && recentItems.length === 0 && (
+          <p className="px-2 py-3 text-[12px] text-gray-10">
+            Tasks and canvases you create in this space show up here.
+          </p>
+        )}
+      </div>
     </motion.div>
   );
 }
