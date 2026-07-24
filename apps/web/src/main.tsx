@@ -37,10 +37,8 @@ if (window.location.pathname === OAUTH_CALLBACK_PATH) {
   // and analytics service then no-op gracefully rather than firing at a bogus
   // endpoint. In production web builds this also enables posthog-js's automatic
   // unhandled-error/rejection capture and session recording.
-  const posthogKey = import.meta.env.VITE_POSTHOG_API_KEY;
-  if (typeof posthogKey === "string" && posthogKey.startsWith("phc_")) {
-    initializePostHog();
-  }
+  const posthogKey = import.meta.env.VITE_POSTHOG_API_KEY?.trim();
+  if (posthogKey) initializePostHog();
 
   // Restore any persisted session (desktop does this in main-process
   // bootstrap); flips authState.bootstrapComplete when done.
