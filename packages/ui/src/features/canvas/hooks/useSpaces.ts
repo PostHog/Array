@@ -75,44 +75,73 @@ export function useSpaces(): {
   return { spaces, currentChannelId, currentIndex, switchTo, cycle };
 }
 
-// How much horizontal trackpad travel counts as a space swipe, and how long
-// the gesture must go quiet before another swipe can fire.
-const SWIPE_THRESHOLD = 90;
-const SWIPE_QUIET_MS = 300;
-const SWIPE_RESET_MS = 300;
+// Gesture-session swipe tuning. A "gesture" is a run of wheel events with no
+// gap longer than GESTURE_GAP_MS between them — macOS inertia events arrive
+// well inside that gap, so a whole fling (fingers + momentum) is one session.
+const GESTURE_GAP_MS = 250;
+// Travel before the gesture commits to an axis (horizontal vs vertical).
+const AXIS_INTENT_PX = 12;
+// Horizontal travel that triggers the switch.
+const SWIPE_FIRE_PX = 60;
+
+interface SwipeSession {
+  lastEventAt: number;
+  totalX: number;
+  totalY: number;
+  axis: "x" | "y" | null;
+  fired: boolean;
+}
 
 /**
- * Horizontal trackpad swipe → cycle spaces, strictly one space per gesture:
- * after a move fires, every further wheel event of the same gesture (macOS
- * inertia included) keeps a quiet-period lock alive, so even a very fast
- * fling moves exactly one space. Attach the returned handler via `onWheel`.
+ * Horizontal trackpad swipe → cycle spaces, strictly one space per gesture.
+ *
+ * Wheel events carry no native intent-vs-inertia signal (the same problem
+ * use-gesture's docs point at Lethargy for), so this uses a gesture-session
+ * latch: events separated by less than GESTURE_GAP_MS belong to one session;
+ * each session decides its axis exactly once (so diagonal scrolling can't
+ * flap between "scroll" and "swipe"), fires at most once, and stays latched —
+ * inertia included — until true quiet ends the session.
  */
 export function useSpaceSwipe(
   enabled: boolean,
 ): (event: React.WheelEvent) => void {
   const { cycle } = useSpaces();
-  const accum = useRef(0);
-  const lockUntil = useRef(0);
-  const lastEvent = useRef(0);
+  const session = useRef<SwipeSession>({
+    lastEventAt: 0,
+    totalX: 0,
+    totalY: 0,
+    axis: null,
+    fired: false,
+  });
 
   return useCallback(
     (event: React.WheelEvent) => {
       if (!enabled) return;
-      // Mostly-vertical wheel = list scrolling, never a space switch.
-      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
       const now = Date.now();
-      if (now < lockUntil.current) {
-        // Same gesture still rolling — extend the lock so it can't re-fire.
-        lockUntil.current = now + SWIPE_QUIET_MS;
-        return;
+      const s = session.current;
+      if (now - s.lastEventAt > GESTURE_GAP_MS) {
+        s.totalX = 0;
+        s.totalY = 0;
+        s.axis = null;
+        s.fired = false;
       }
-      if (now - lastEvent.current > SWIPE_RESET_MS) accum.current = 0;
-      lastEvent.current = now;
-      accum.current += event.deltaX;
-      if (Math.abs(accum.current) >= SWIPE_THRESHOLD) {
-        cycle(accum.current > 0 ? 1 : -1);
-        accum.current = 0;
-        lockUntil.current = now + SWIPE_QUIET_MS;
+      s.lastEventAt = now;
+      s.totalX += event.deltaX;
+      s.totalY += event.deltaY;
+      if (s.fired) return;
+      if (s.axis === null) {
+        if (
+          Math.abs(s.totalX) < AXIS_INTENT_PX &&
+          Math.abs(s.totalY) < AXIS_INTENT_PX
+        ) {
+          return;
+        }
+        s.axis = Math.abs(s.totalX) > Math.abs(s.totalY) * 1.2 ? "x" : "y";
+      }
+      if (s.axis !== "x") return;
+      if (Math.abs(s.totalX) >= SWIPE_FIRE_PX) {
+        s.fired = true;
+        cycle(s.totalX > 0 ? 1 : -1);
       }
     },
     [enabled, cycle],
