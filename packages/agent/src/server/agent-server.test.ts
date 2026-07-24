@@ -3416,9 +3416,8 @@ describe("AgentServer HTTP Mode", () => {
         retryFails: true,
         oversizedError: "Internal error: Prompt is too long",
       },
-      // The LLM gateway rejects oversized requests with HTTP 413 rather than
-      // Anthropic's "prompt is too long" phrasing; the fresh-session retry
-      // must trigger on that shape as well.
+      // The LLM gateway phrases oversized rejections as HTTP 413; the
+      // fresh-session retry must trigger on that shape too.
       {
         retryOutcome: "succeeds after a gateway 413",
         retryFails: false,

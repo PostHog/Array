@@ -48,21 +48,19 @@ describe("isPromptTooLongError", () => {
       'API Error: 413 {"error":{"message":"litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)","code":"5021"}}',
       true,
     ],
-    // The context-window phrasing alone must match, without the 413 prefix.
+    // Must match without the "API Error: 413" prefix.
     [
       "litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)",
       true,
     ],
-    // The ACP layer wraps adapter failures as "Internal error: <result>";
-    // this is the shape the agent-server catch sees.
+    // The ACP-wrapped shape the agent-server catch actually sees.
     [
       'Internal error: API Error: 413 {"error":{"message":"exceeded this model context window limit (262144)"}}',
       true,
     ],
-    // Any 413 from the gateway means the request payload is oversized, even
-    // when the body text varies.
+    // Any gateway 413 means an oversized payload, whatever the body text.
     ["API Error: 413 Payload Too Large", true],
-    // Case-insensitive, matching the sibling matchers in this file.
+    // Pins the 413 matcher's i flag.
     ["api error: 413 payload too large", true],
     ["API Error: 429 rate limited", false],
     ["API Error: 400 invalid request", false],

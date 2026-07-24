@@ -49,11 +49,9 @@ export function classifyAgentError(
 }
 
 /**
- * Hard API rejection: the assembled prompt exceeds the model's context
- * window. Anthropic phrases this as "prompt is too long"; the LLM gateway
- * rejects the same condition with HTTP 413 and "exceeded this model context
- * window limit". Deterministic client errors: retrying the same transcript
- * can never succeed, so callers must shrink the prompt instead of retrying.
+ * Hard API rejection: the prompt exceeds the model's context window
+ * (Anthropic phrasing, or the LLM gateway's HTTP 413). Retrying the same
+ * transcript can never succeed; callers must shrink the prompt.
  */
 export function isPromptTooLongError(error: unknown): boolean {
   const message = getErrorMessage(error);
