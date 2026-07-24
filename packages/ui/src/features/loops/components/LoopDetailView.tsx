@@ -14,6 +14,8 @@ import {
   Textarea,
 } from "@posthog/quill";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { assertCloudUsageAvailable } from "@posthog/ui/features/billing/preflightCloudUsage";
+import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -36,6 +38,8 @@ import {
 import { RECENT_RUNS_LIMIT, useLoopRuns } from "../hooks/useLoopRuns";
 import {
   describeTrigger,
+  loopFireBlockedMessage,
+  loopPausedDescription,
   loopStatusColor,
   loopStatusLabel,
   nextScheduleRun,
@@ -78,13 +82,18 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
     );
   };
 
-  const handleRunNow = () => {
+  const handleRunNow = async () => {
+    if (!(await assertCloudUsageAvailable())) return;
     runLoop.mutate(undefined, {
       onSuccess: (result) => {
         if (result.created) {
           toast.success("Loop run started");
+        } else if (result.reason === "gate_blocked") {
+          useUsageLimitStore.getState().show({ cause: "org_limit" });
         } else {
-          toast.error(`Run not started: ${result.reason}`);
+          toast.error("Run not started", {
+            description: loopFireBlockedMessage(result.reason),
+          });
         }
       },
       onError: (error) =>
@@ -155,7 +164,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
                 size="sm"
                 loading={runLoop.isPending}
                 disabled={runLoop.isPending}
-                onClick={handleRunNow}
+                onClick={() => void handleRunNow()}
               >
                 Run now
               </Button>
@@ -181,6 +190,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               {loop.description}
             </Text>
           ) : null}
+
+          <PausedNotice loop={loop} />
         </Flex>
 
         <ConfigSummarySection loop={loop} />
@@ -270,6 +281,36 @@ function loopStatusBadgeVariant(
   if (color === "green") return "success";
   if (color === "red") return "destructive";
   return "default";
+}
+
+function PausedNotice({ loop }: { loop: LoopSchemas.Loop }) {
+  const description = loopPausedDescription(loop);
+  if (!description) return null;
+
+  return (
+    <Flex
+      align="center"
+      justify="between"
+      gap="3"
+      wrap="wrap"
+      className="rounded-(--radius-2) border border-(--red-6) bg-(--red-2) px-3 py-2"
+    >
+      <Text className="text-(--red-11) text-[12.5px] leading-snug">
+        {description}
+      </Text>
+      {loop.disabled_reason === "usage_limited" ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            useUsageLimitStore.getState().show({ cause: "org_limit" })
+          }
+        >
+          Manage plan
+        </Button>
+      ) : null}
+    </Flex>
+  );
 }
 
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
