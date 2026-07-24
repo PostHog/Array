@@ -11,12 +11,15 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
-  normalizeAgentPromptText,
   shouldSuspendThreadSession,
-  type ThreadAgentMessage,
   type ThreadAgentStatus,
+  type ThreadArtifact,
   type ThreadTimelineRow,
 } from "@posthog/core/canvas/threadTimeline";
+import {
+  getPrVisualConfig,
+  parsePrNumber,
+} from "@posthog/core/git-interaction/prStatus";
 import {
   Avatar,
   AvatarFallback,
@@ -55,13 +58,10 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
-import {
-  MentionText,
-  mentionChipClass,
-} from "@posthog/ui/features/canvas/components/MentionText";
+import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
-import { agentTurns } from "@posthog/ui/features/canvas/components/threadAgentTurns";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
   useDeleteTaskThreadMessage,
@@ -71,19 +71,18 @@ import {
   useTaskThread,
 } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import {
-  ChatMarkdown,
-  ChatStreamingMarkdown,
-} from "@posthog/ui/features/sessions/components/chat-thread/ChatMarkdown";
-import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
-import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
+import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
+import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
 import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
 import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
 import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
+import { openExternalUrl } from "@posthog/ui/shell/openExternal";
+import { parseShareLink } from "@posthog/ui/utils/posthogLinks";
+import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
+import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -105,38 +104,16 @@ export function ThreadMessageRow({
   onDelete: () => void;
 }) {
   const forwarded = !!message.forwarded_to_agent_at;
-  const authorKind = message.author_kind ?? "human";
-  const isAgent = authorKind === "agent";
-  const isSystem = authorKind === "system";
-  const showMenu =
-    authorKind === "human" && ((isTaskAuthor && !forwarded) || isOwnMessage);
+  const showMenu = (isTaskAuthor && !forwarded) || isOwnMessage;
 
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        {isAgent || isSystem ? (
-          <Avatar size="lg" className="sticky top-2">
-            <AvatarFallback>
-              {isAgent ? <RobotIcon size={14} /> : "S"}
-            </AvatarFallback>
-          </Avatar>
-        ) : (
-          <UserAvatar
-            user={message.author}
-            size="lg"
-            className="sticky top-2"
-          />
-        )}
+        <UserAvatar user={message.author} size="lg" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>
-            {isAgent
-              ? "Agent"
-              : isSystem
-                ? "System"
-                : userDisplayName(message.author)}
-          </ThreadItemAuthor>
+          <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
           <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
         <ThreadItemBody>
@@ -186,19 +163,6 @@ export function ThreadMessageRow({
   );
 }
 
-function agentPrompts(items: ConversationItem[]): ThreadAgentMessage[] {
-  const prompts: ThreadAgentMessage[] = [];
-  for (const item of items) {
-    if (item.type !== "user_message") continue;
-    const text = (
-      extractChannelContext(item.content)?.stripped ?? item.content
-    ).trim();
-    if (!text) continue;
-    prompts.push({ id: item.id, text, timestamp: item.timestamp });
-  }
-  return prompts;
-}
-
 export function AgentStatusLine({ status }: { status: ThreadAgentStatus }) {
   return (
     <output
@@ -215,12 +179,117 @@ export function AgentStatusLine({ status }: { status: ThreadAgentStatus }) {
   );
 }
 
-export function AgentTurnRow({
-  message,
-  streaming,
+function ArtifactCardButton({
+  icon,
+  title,
+  detail,
+  onOpen,
 }: {
-  message: ThreadAgentMessage;
-  streaming: boolean;
+  icon: React.ReactNode;
+  title: string;
+  detail?: string | null;
+  onOpen?: () => void;
+}) {
+  const body = (
+    <>
+      {icon}
+      <span className="min-w-0 truncate font-medium">{title}</span>
+      {detail && (
+        <span className="shrink-0 text-muted-foreground">{detail}</span>
+      )}
+    </>
+  );
+  const cardClass =
+    "flex w-fit max-w-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-[13px]";
+  if (!onOpen) {
+    return <span className={cardClass}>{body}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`${cardClass} text-left transition-colors hover:bg-gray-3`}
+    >
+      {body}
+    </button>
+  );
+}
+
+function parseHttpsUrl(url: string): URL | null {
+  try {
+    const parsedUrl = new URL(url);
+    return parsedUrl.protocol === "https:" ? parsedUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+function CanvasArtifactCard({
+  name,
+  url,
+}: {
+  name: string;
+  url: string | null;
+}) {
+  const parsedUrl = url ? parseHttpsUrl(url) : null;
+  const target = parsedUrl ? parseShareLink(parsedUrl.href) : null;
+  const open =
+    parsedUrl && target
+      ? () => {
+          const currentPostHogUrl = getPostHogUrl("/");
+          const currentPostHogOrigin = currentPostHogUrl
+            ? parseHttpsUrl(currentPostHogUrl)?.origin
+            : null;
+          if (parsedUrl.origin === currentPostHogOrigin) {
+            navigateToShareTarget(target);
+          } else {
+            openExternalUrl(parsedUrl.href);
+          }
+        }
+      : undefined;
+  return (
+    <ArtifactCardButton
+      icon={iconForTemplate("", { size: 14, className: "text-violet-9" })}
+      title={name}
+      onOpen={open}
+    />
+  );
+}
+
+function PrArtifactCard({ url }: { url: string }) {
+  const parsedUrl = parseHttpsUrl(url);
+  const safeUrl =
+    parsedUrl?.origin === "https://github.com" ? parsedUrl.href : null;
+  const {
+    meta: { state, merged, draft },
+  } = usePrDetails(safeUrl);
+  const config = getPrVisualConfig(state ?? "open", merged, draft);
+  const PrIcon = getPrVisualIcon(config.icon);
+  const prNumber = safeUrl ? parsePrNumber(safeUrl) : null;
+  return (
+    <ArtifactCardButton
+      icon={
+        <PrIcon
+          size={14}
+          weight="bold"
+          className="shrink-0"
+          style={{ color: `var(--${config.color}-9)` }}
+        />
+      }
+      title={prNumber ? `Pull request #${prNumber}` : "Pull request"}
+      // Only show the resolved state once we have it, to avoid a flash of "Open".
+      detail={state ? config.label : null}
+      onOpen={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
+    />
+  );
+}
+
+export function ThreadArtifactRow({
+  artifact,
+  createdAt,
+}: {
+  artifact: ThreadArtifact;
+  createdAt: string;
 }) {
   return (
     <ThreadItem>
@@ -233,54 +302,17 @@ export function AgentTurnRow({
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>Agent</ThreadItemAuthor>
-          {message.timestamp !== undefined && (
-            <ThreadTimestamp
-              dateTime={new Date(message.timestamp).toISOString()}
-            />
-          )}
+          <ThreadItemAuthor>
+            {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
+          </ThreadItemAuthor>
+          <ThreadTimestamp dateTime={createdAt} />
         </ThreadItemHeader>
-        {message.text && (
-          <ThreadItemBody>
-            <div className="rounded-md border border-border bg-muted px-2 py-1.5">
-              {streaming ? (
-                <ChatStreamingMarkdown content={message.text} />
-              ) : (
-                <ChatMarkdown content={message.text} />
-              )}
-            </div>
-          </ThreadItemBody>
-        )}
-      </ThreadItemContent>
-    </ThreadItem>
-  );
-}
-
-export function UserPromptRow({
-  message,
-  author,
-}: {
-  message: ThreadAgentMessage;
-  author: TaskThreadMessage["author"];
-}) {
-  const promptText = normalizeAgentPromptText(message.text);
-
-  return (
-    <ThreadItem>
-      <ThreadItemGutter>
-        <UserAvatar user={author} size="lg" className="sticky top-2" />
-      </ThreadItemGutter>
-      <ThreadItemContent>
-        <ThreadItemHeader>
-          <ThreadItemAuthor>{userDisplayName(author)}</ThreadItemAuthor>
-          {message.timestamp !== undefined && (
-            <ThreadTimestamp
-              dateTime={new Date(message.timestamp).toISOString()}
-            />
+        <ThreadItemBody>
+          {artifact.kind === "canvas" ? (
+            <CanvasArtifactCard name={artifact.name} url={artifact.url} />
+          ) : (
+            <PrArtifactCard url={artifact.url} />
           )}
-        </ThreadItemHeader>
-        <ThreadItemBody className="wrap-break-word whitespace-pre-wrap">
-          <span className={mentionChipClass}>@agent</span> {promptText}
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>
@@ -351,25 +383,19 @@ function ThreadHeader({
 function ThreadTimeline({
   timeline,
   isReady,
-  taskAuthor,
   currentUserUuid,
   currentUserEmail,
   isTaskAuthor,
   canForward,
-  lastAgentId,
-  agentActive,
   onSendToAgent,
   onDelete,
 }: {
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
   isReady: boolean;
-  taskAuthor: UserBasic | null | undefined;
   currentUserUuid?: string;
   currentUserEmail?: string;
   isTaskAuthor: boolean;
   canForward: boolean;
-  lastAgentId?: string;
-  agentActive: boolean;
   onSendToAgent: (messageId: string) => void;
   onDelete: (messageId: string) => void;
 }) {
@@ -383,9 +409,9 @@ function ThreadTimeline({
           </EmptyMedia>
           <EmptyTitle>No messages yet</EmptyTitle>
           <EmptyDescription>
-            Discuss this task with your team. The agent's status shows up here
-            too; messages stay between humans unless the task author sends one
-            to the agent.
+            Discuss this task with your team. Canvases and pull requests the
+            agent creates show up here too; messages stay between humans unless
+            the task author sends one to the agent.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -395,20 +421,13 @@ function ThreadTimeline({
   return (
     <ThreadItemGroup>
       {timeline.map((row) =>
-        row.kind === "prompt" ? (
-          <UserPromptRow
-            key={row.message.id}
-            message={row.message}
-            author={taskAuthor}
-          />
-        ) : row.kind === "human" ? (
+        row.kind === "human" ? (
           <ThreadMessageRow
             key={row.message.id}
-            message={row.message.value as TaskThreadMessage}
+            message={row.message}
             isTaskAuthor={isTaskAuthor}
             isOwnMessage={
-              !!currentUserUuid &&
-              currentUserUuid === row.message.value?.author?.uuid
+              !!currentUserUuid && currentUserUuid === row.message.author?.uuid
             }
             currentUserEmail={currentUserEmail}
             canForward={canForward}
@@ -416,10 +435,10 @@ function ThreadTimeline({
             onDelete={() => onDelete(row.message.id)}
           />
         ) : (
-          <AgentTurnRow
+          <ThreadArtifactRow
             key={row.message.id}
-            message={row.message}
-            streaming={row.message.id === lastAgentId && agentActive}
+            artifact={row.artifact}
+            createdAt={row.message.created_at}
           />
         ),
       )}
@@ -526,10 +545,7 @@ function ThreadConversation({
       hasSession: Boolean(session),
     }),
   });
-  const { items } = useConversationItems(events, isPromptPending);
   const pendingPermissions = usePendingPermissionsForTask(taskId);
-  const agentMsgs = useMemo(() => agentTurns(items), [items]);
-  const promptMsgs = useMemo(() => agentPrompts(items), [items]);
 
   const agentStatus = useMemo(
     () =>
@@ -554,23 +570,7 @@ function ThreadConversation({
     ],
   );
 
-  const timeline = useMemo(
-    () =>
-      buildThreadTimeline({
-        prompts: promptMsgs,
-        agentMessages: agentMsgs,
-        humanMessages: messages.map((message) => ({
-          id: message.id,
-          content: message.content,
-          createdAt: message.created_at,
-          forwardedToAgent: !!message.forwarded_to_agent_at,
-          value: message,
-        })),
-      }),
-    [promptMsgs, messages, agentMsgs],
-  );
-
-  const lastAgentId = agentMsgs[agentMsgs.length - 1]?.id;
+  const timeline = useMemo(() => buildThreadTimeline(messages), [messages]);
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -668,13 +668,10 @@ function ThreadConversation({
         <ThreadTimeline
           timeline={timeline}
           isReady={isReady}
-          taskAuthor={task.created_by}
           currentUserUuid={currentUser?.uuid}
           currentUserEmail={currentUser?.email}
           isTaskAuthor={isTaskAuthor}
           canForward={canForward}
-          lastAgentId={lastAgentId}
-          agentActive={agentStatus?.phase === "active"}
           onSendToAgent={handleSendToAgent}
           onDelete={handleDelete}
         />

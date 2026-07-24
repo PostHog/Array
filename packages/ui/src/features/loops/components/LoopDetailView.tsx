@@ -13,7 +13,10 @@ import {
   Switch,
   Textarea,
 } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { assertCloudUsageAvailable } from "@posthog/ui/features/billing/preflightCloudUsage";
+import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -24,10 +27,10 @@ import {
   navigateToEditLoop,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Text } from "@radix-ui/themes";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
-import { useLoopDisplayModel } from "../hooks/useLoopDisplayModel";
 import {
   useDeleteLoop,
   useRunLoop,
@@ -35,12 +38,19 @@ import {
 } from "../hooks/useLoopMutations";
 import { RECENT_RUNS_LIMIT, useLoopRuns } from "../hooks/useLoopRuns";
 import {
+  buildLoopEnabledToggledProps,
+  buildLoopViewedProps,
+} from "../loopAnalytics";
+import {
   describeTrigger,
+  loopFireBlockedMessage,
+  loopPausedDescription,
   loopStatusColor,
   loopStatusLabel,
   nextScheduleRun,
   summarizeNotificationDestinations,
 } from "../loopDisplay";
+import { formatLoopModel } from "../loopModels";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
@@ -50,9 +60,21 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   const deleteLoop = useDeleteLoop();
   const runLoop = useRunLoop(loopId);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [runNowPending, setRunNowPending] = useState(false);
 
   const runsQuery = useLoopRuns(loopId);
   const runs = runsQuery.data ?? [];
+
+  const viewTrackedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (isLoading || runsQuery.isLoading || runsQuery.isError || !loop) return;
+    if (viewTrackedFor.current === loop.id) return;
+    viewTrackedFor.current = loop.id;
+    track(
+      ANALYTICS_EVENTS.LOOP_VIEWED,
+      buildLoopViewedProps(loop, runs.length),
+    );
+  }, [isLoading, runsQuery.isLoading, runsQuery.isError, loop, runs.length]);
 
   useSetHeaderContent(
     <Flex align="center" gap="2" className="w-full min-w-0">
@@ -67,34 +89,86 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   );
 
   const handleToggleEnabled = (enabled: boolean) => {
+    if (!loop) return;
     updateLoop.mutate(
       { enabled },
       {
-        onError: (error) =>
+        onSuccess: () => {
+          track(
+            ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED,
+            buildLoopEnabledToggledProps(loop, enabled, true),
+          );
+        },
+        onError: (error) => {
+          track(
+            ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED,
+            buildLoopEnabledToggledProps(loop, enabled, false),
+          );
           toast.error("Failed to update loop", {
             description: error.message,
-          }),
+          });
+        },
       },
     );
   };
 
-  const handleRunNow = () => {
-    runLoop.mutate(undefined, {
-      onSuccess: (result) => {
-        if (result.created) {
-          toast.success("Loop run started");
-        } else {
-          toast.error(`Run not started: ${result.reason}`);
+  const handleRunNow = async () => {
+    if (runNowPending || !loop) return;
+    setRunNowPending(true);
+    try {
+      if (!(await assertCloudUsageAvailable())) return;
+      const result = await runLoop.mutateAsync();
+      if (result.created) {
+        toast.success("Loop run started");
+        track(ANALYTICS_EVENTS.LOOP_RUN_STARTED, {
+          loop_id: loop.id,
+          task_id: result.task_id,
+          task_run_id: result.task_run_id,
+          runtime_adapter: loop.runtime_adapter,
+          model: loop.model || undefined,
+          trigger_count: loop.triggers.length,
+        });
+      } else if (result.reason === "gate_blocked") {
+        useUsageLimitStore.getState().show({ cause: "org_limit" });
+        track(ANALYTICS_EVENTS.LOOP_RUN_BLOCKED, {
+          loop_id: loop.id,
+          reason: result.reason,
+          overlap_policy: loop.overlap_policy,
+          trigger_count: loop.triggers.length,
+        });
+      } else {
+        toast.error("Run not started", {
+          description: loopFireBlockedMessage(result.reason),
+        });
+        if (result.reason !== "created") {
+          track(ANALYTICS_EVENTS.LOOP_RUN_BLOCKED, {
+            loop_id: loop.id,
+            reason: result.reason,
+            overlap_policy: loop.overlap_policy,
+            trigger_count: loop.triggers.length,
+          });
         }
-      },
-      onError: (error) =>
-        toast.error("Failed to start run", { description: error.message }),
-    });
+      }
+    } catch (error) {
+      toast.error("Failed to start run", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setRunNowPending(false);
+    }
   };
 
   const handleDelete = () => {
+    if (!loop) return;
     deleteLoop.mutate(loopId, {
       onSuccess: () => {
+        track(ANALYTICS_EVENTS.LOOP_DELETED, {
+          loop_id: loop.id,
+          visibility: loop.visibility,
+          enabled: loop.enabled,
+          trigger_count: loop.triggers.length,
+          consecutive_failures: loop.consecutive_failures,
+        });
         toast.success("Loop deleted");
         navigateToLoops();
       },
@@ -153,9 +227,9 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               <Button
                 variant="outline"
                 size="sm"
-                loading={runLoop.isPending}
-                disabled={runLoop.isPending}
-                onClick={handleRunNow}
+                loading={runNowPending}
+                disabled={runNowPending}
+                onClick={() => void handleRunNow()}
               >
                 Run now
               </Button>
@@ -181,6 +255,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               {loop.description}
             </Text>
           ) : null}
+
+          <PausedNotice loop={loop} />
         </Flex>
 
         <ConfigSummarySection loop={loop} />
@@ -218,6 +294,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               {runs.map((run) => (
                 <LoopRunRow
                   key={run.id}
+                  loopId={loop.id}
                   run={run}
                   onStopped={() => void runsQuery.refetch()}
                 />
@@ -272,8 +349,38 @@ function loopStatusBadgeVariant(
   return "default";
 }
 
+function PausedNotice({ loop }: { loop: LoopSchemas.Loop }) {
+  const description = loopPausedDescription(loop);
+  if (!description) return null;
+
+  return (
+    <Flex
+      align="center"
+      justify="between"
+      gap="3"
+      wrap="wrap"
+      className="rounded-(--radius-2) border border-(--red-6) bg-(--red-2) px-3 py-2"
+    >
+      <Text className="text-(--red-11) text-[12.5px] leading-snug">
+        {description}
+      </Text>
+      {loop.disabled_reason === "usage_limited" ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            useUsageLimitStore.getState().show({ cause: "org_limit" })
+          }
+        >
+          Manage plan
+        </Button>
+      ) : null}
+    </Flex>
+  );
+}
+
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
-  const displayModel = useLoopDisplayModel(loop.runtime_adapter, loop.model);
+  const displayModel = formatLoopModel(loop.runtime_adapter, loop.model);
   const {
     members,
     isLoading: membersLoading,

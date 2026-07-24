@@ -1,10 +1,106 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   describeTrigger,
+  loopFireBlockedMessage,
+  loopPausedDescription,
+  loopStatusColor,
+  loopStatusLabel,
   nextScheduleRun,
   summarizeNotificationDestinations,
   summarizeTrigger,
 } from "./loopDisplay";
+
+const statusFields = (
+  overrides: Partial<{
+    enabled: boolean;
+    disabled_reason: string | null;
+    last_run_status: string | null;
+  }> = {},
+) => ({
+  enabled: true,
+  disabled_reason: null,
+  last_run_status: null,
+  ...overrides,
+});
+
+describe("loopStatusLabel and loopStatusColor", () => {
+  it.each([
+    [statusFields(), "Active", "green"],
+    [statusFields({ last_run_status: "failed" }), "Failing", "red"],
+    [statusFields({ enabled: false }), "Paused", "gray"],
+    [
+      statusFields({ enabled: false, disabled_reason: "usage_limited" }),
+      "Paused: usage limit",
+      "red",
+    ],
+    [
+      statusFields({ enabled: false, disabled_reason: "repeated_failures" }),
+      "Auto-paused",
+      "red",
+    ],
+    [
+      statusFields({ enabled: false, disabled_reason: "owner_deactivated" }),
+      "Auto-paused",
+      "red",
+    ],
+  ])("derives label and color (%#)", (loop, label, color) => {
+    expect(loopStatusLabel(loop)).toBe(label);
+    expect(loopStatusColor(loop)).toBe(color);
+  });
+
+  it("ignores disabled_reason while the loop is enabled", () => {
+    const loop = statusFields({ disabled_reason: "usage_limited" });
+    expect(loopStatusLabel(loop)).toBe("Active");
+    expect(loopStatusColor(loop)).toBe("green");
+  });
+});
+
+describe("loopPausedDescription", () => {
+  it.each([
+    ["usage_limited", "usage limit"],
+    ["repeated_failures", "failed runs in a row"],
+    ["owner_deactivated", "deactivated"],
+    ["owner_removed_from_org", "left the organization"],
+    ["github_integration_disconnected", "GitHub connection"],
+  ])("explains a %s pause", (reason, expected) => {
+    expect(
+      loopPausedDescription(
+        statusFields({ enabled: false, disabled_reason: reason }),
+      ),
+    ).toContain(expected);
+  });
+
+  it("falls back to a generic sentence for unknown reasons", () => {
+    expect(
+      loopPausedDescription(
+        statusFields({ enabled: false, disabled_reason: "something_new" }),
+      ),
+    ).toBe("Paused automatically.");
+  });
+
+  it.each([
+    [statusFields()],
+    [statusFields({ enabled: false })],
+    [statusFields({ disabled_reason: "usage_limited" })],
+  ])("returns null without a backend-driven pause (%#)", (loop) => {
+    expect(loopPausedDescription(loop)).toBeNull();
+  });
+});
+
+describe("loopFireBlockedMessage", () => {
+  it.each([
+    ["gate_blocked", "usage limit"],
+    ["overlap_skipped", "still in progress"],
+    ["rate_capped", "daily run cap"],
+    ["team_rate_capped", "daily loop run cap"],
+    ["deduped", "already started"],
+    ["disabled", "disabled"],
+    ["owner_inactive", "no longer start runs"],
+    ["owner_changed", "owner changed"],
+  ] as const)("describes %s", (reason, expected) => {
+    expect(loopFireBlockedMessage(reason)).toContain(expected);
+  });
+});
 
 describe("describeTrigger", () => {
   beforeEach(() => vi.useFakeTimers());
