@@ -2,6 +2,7 @@ import {
   ArrowSquareOutIcon,
   CaretRightIcon,
   DotsThreeIcon,
+  GitBranchIcon,
   PaperPlaneRightIcon,
   RobotIcon,
   TrashIcon,
@@ -57,7 +58,12 @@ import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
+import {
+  TaskCard,
+  TaskStatusBadge,
+  useTaskStatusDisplay,
+} from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
@@ -333,10 +339,12 @@ function ThreadLoadingState() {
 }
 
 function ThreadHeader({
+  task,
   onClose,
   onToggleCollapsed,
   onOpenFull,
 }: {
+  task?: Task;
   onClose?: () => void;
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
@@ -344,7 +352,10 @@ function ThreadHeader({
   return (
     <div className="flex items-center gap-1 border-border border-b px-3 py-2">
       <div className="min-w-0 flex-1">
-        <span className="block font-medium text-sm">Thread</span>
+        {task ? <ThreadHeaderTaskSummary task={task} /> : null}
+        {!task ? (
+          <span className="block font-medium text-sm">Thread</span>
+        ) : null}
       </div>
       {onOpenFull && (
         <Button
@@ -376,6 +387,42 @@ function ThreadHeader({
           <XIcon size={14} />
         </Button>
       )}
+    </div>
+  );
+}
+
+function ThreadHeaderTaskSummary({ task }: { task: Task }) {
+  const display = useTaskStatusDisplay(task);
+  const prUrl =
+    typeof task.latest_run?.output?.pr_url === "string"
+      ? task.latest_run.output.pr_url
+      : undefined;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 pr-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <TaskTabIcon task={task} size={14} />
+        <span className="truncate font-medium text-sm">
+          {task.title || "Untitled task"}
+        </span>
+        <TaskStatusBadge display={display} />
+      </div>
+      {task.repository || prUrl ? (
+        <div className="flex min-w-0 items-center gap-3 pl-[22px] text-muted-foreground text-xs">
+          {task.repository ? (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <GitBranchIcon size={12} className="shrink-0" />
+              <span className="truncate">{task.repository}</span>
+            </span>
+          ) : null}
+          {prUrl ? (
+            <span className="inline-flex shrink-0 items-center gap-1">
+              <ArrowSquareOutIcon size={12} />
+              PR
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -502,6 +549,7 @@ function ThreadConversation({
   onOpenFull,
   showTaskSummary,
   showAgentStatus,
+  taskSummaryInHeader,
 }: {
   task: Task;
   channelId: string;
@@ -510,6 +558,7 @@ function ThreadConversation({
   onOpenFull?: () => void;
   showTaskSummary: boolean;
   showAgentStatus: boolean;
+  taskSummaryInHeader: boolean;
 }) {
   const taskId = task.id;
   const client = useOptionalAuthenticatedClient();
@@ -656,12 +705,13 @@ function ThreadConversation({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-gray-1">
       <ThreadHeader
+        task={taskSummaryInHeader ? task : undefined}
         onOpenFull={onOpenFull}
         onToggleCollapsed={onToggleCollapsed}
         onClose={onClose}
       />
 
-      {showTaskSummary && (
+      {showTaskSummary && !taskSummaryInHeader && (
         <div className="z-10 px-2">
           <TaskCard task={task} channelId={channelId} inThread />
         </div>
@@ -706,6 +756,7 @@ export function ThreadPanel({
   onOpenFull,
   showTaskSummary = true,
   showAgentStatus = true,
+  taskSummaryInHeader = false,
 }: {
   taskId: string;
   channelId: string;
@@ -716,6 +767,7 @@ export function ThreadPanel({
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
   showAgentStatus?: boolean;
+  taskSummaryInHeader?: boolean;
 }) {
   const { data: fetchedTask } = useQuery({
     ...taskDetailQuery(taskId),
@@ -751,6 +803,7 @@ export function ThreadPanel({
       onOpenFull={onOpenFull}
       showTaskSummary={showTaskSummary}
       showAgentStatus={showAgentStatus}
+      taskSummaryInHeader={taskSummaryInHeader}
     />
   );
 }
