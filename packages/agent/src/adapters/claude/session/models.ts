@@ -24,6 +24,7 @@ export function toSdkModelId(modelId: string): string {
 const MODELS_WITH_1M_CONTEXT = new Set([
   "claude-opus-4-7",
   "claude-opus-4-8",
+  "claude-opus-5",
   "claude-sonnet-4-6",
   "claude-sonnet-5",
   "claude-fable-5",
@@ -46,6 +47,7 @@ const EXTENDED_EFFORT_LEVELS: readonly EffortLevel[] = [
 const MODEL_EFFORT_LEVELS: Readonly<Record<string, readonly EffortLevel[]>> = {
   "claude-opus-4-7": EXTENDED_EFFORT_LEVELS,
   "claude-opus-4-8": EXTENDED_EFFORT_LEVELS,
+  "claude-opus-5": EXTENDED_EFFORT_LEVELS,
   "claude-sonnet-4-6": STANDARD_EFFORT_LEVELS,
   "claude-sonnet-5": EXTENDED_EFFORT_LEVELS,
   "claude-fable-5": EXTENDED_EFFORT_LEVELS,
