@@ -82,14 +82,18 @@ export function useSpaces(): {
 // Gesture-session swipe tuning. A "gesture" is a run of wheel events with no
 // gap longer than GESTURE_GAP_MS between them — macOS inertia events arrive
 // well inside that gap, so a whole fling (fingers + momentum) is one session.
-// Kept short enough that two deliberate back-to-back swipes register as two
-// gestures; a dying inertia tail that sneaks past the gap can't re-fire
-// because its tiny deltas never reach the fire threshold.
 const GESTURE_GAP_MS = 150;
 // Travel before the gesture commits to an axis (horizontal vs vertical).
 const AXIS_INTENT_PX = 12;
 // Horizontal travel that triggers the switch.
-const SWIPE_FIRE_PX = 60;
+const SWIPE_FIRE_PX = 50;
+// A new intentional burst inside a still-live session: the horizontal delta
+// must reach this many px AND this multiple of the recent horizontal level.
+// Inertia decays smoothly, so it can never satisfy both; a fresh finger swipe
+// spikes well past them.
+const REARM_MIN_PX = 15;
+const REARM_FACTOR = 2.5;
+const RECENT_SAMPLES = 4;
 
 interface SwipeSession {
   lastEventAt: number;
@@ -97,17 +101,25 @@ interface SwipeSession {
   totalY: number;
   axis: "x" | "y" | null;
   fired: boolean;
+  /** Recent |deltaX| samples — the stream level re-arm bursts are judged against. */
+  recentX: number[];
 }
 
 /**
- * Horizontal trackpad swipe → cycle spaces, strictly one space per gesture.
+ * Horizontal trackpad swipe → cycle spaces: exactly one space per swipe, and
+ * every swipe counts.
  *
- * Wheel events carry no native intent-vs-inertia signal (the same problem
- * use-gesture's docs point at Lethargy for), so this uses a gesture-session
- * latch: events separated by less than GESTURE_GAP_MS belong to one session;
- * each session decides its axis exactly once (so diagonal scrolling can't
- * flap between "scroll" and "swipe"), fires at most once, and stays latched —
- * inertia included — until true quiet ends the session.
+ * Wheel events carry no native intent-vs-inertia signal (the problem
+ * use-gesture's docs point at Lethargy for), so this combines two mechanisms:
+ *
+ * 1. A gesture-session latch — events under GESTURE_GAP_MS apart form one
+ *    session; the axis is decided once per session (diagonal scrolling can't
+ *    flap) and it fires at most once, so an inertia tail can never re-fire.
+ * 2. Lethargy-style burst re-arm — a horizontal delta that spikes well above
+ *    the session's recent stream level is a NEW intent, so a swipe made while
+ *    the previous one's inertia is still rolling (or right after vertical
+ *    scrolling locked the session to "y") re-opens the session instead of
+ *    being swallowed.
  */
 export function useSpaceSwipe(
   enabled: boolean,
@@ -119,6 +131,7 @@ export function useSpaceSwipe(
     totalY: 0,
     axis: null,
     fired: false,
+    recentX: [],
   });
 
   return useCallback(
@@ -126,15 +139,41 @@ export function useSpaceSwipe(
       if (!enabled) return;
       const now = Date.now();
       const s = session.current;
-      if (now - s.lastEventAt > GESTURE_GAP_MS) {
+      const deltaX = event.deltaX;
+      const magnitudeX = Math.abs(deltaX);
+
+      const resetSession = () => {
         s.totalX = 0;
         s.totalY = 0;
         s.axis = null;
         s.fired = false;
+        s.recentX = [];
+      };
+
+      if (now - s.lastEventAt > GESTURE_GAP_MS) {
+        resetSession();
+      } else if (s.fired || s.axis === "y") {
+        // The session is spent (fired) or committed to vertical scrolling —
+        // but a horizontal burst far above the recent level means the user is
+        // swiping again right now. Re-open for it.
+        const recent = s.recentX.slice(-RECENT_SAMPLES);
+        const average = recent.length
+          ? recent.reduce((sum, value) => sum + value, 0) / recent.length
+          : 0;
+        if (
+          magnitudeX >= REARM_MIN_PX &&
+          magnitudeX >= REARM_FACTOR * Math.max(average, 1)
+        ) {
+          resetSession();
+        }
       }
+
       s.lastEventAt = now;
-      s.totalX += event.deltaX;
+      s.recentX.push(magnitudeX);
+      if (s.recentX.length > RECENT_SAMPLES * 2) s.recentX.shift();
+      s.totalX += deltaX;
       s.totalY += event.deltaY;
+
       if (s.fired) return;
       if (s.axis === null) {
         if (
