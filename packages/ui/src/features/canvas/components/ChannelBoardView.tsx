@@ -8,6 +8,7 @@ import {
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
+import { fallbackChannelTaskSituation } from "@posthog/ui/features/canvas/utils/channelTaskSituation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
   WorkBoard,
@@ -35,13 +36,17 @@ export function ChannelBoardView({
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  const columns = useMemo<WorkBoardColumn<Task>[]>(() => {
-    const grouped = new Map<SituationId, Task[]>(
-      HOME_BOARD_COLUMN_IDS.map((id) => [id, []]),
-    );
+  const columns = useMemo<
+    WorkBoardColumn<{ task: Task; situation: SituationId }>[]
+  >(() => {
+    const grouped = new Map<
+      SituationId,
+      Array<{ task: Task; situation: SituationId }>
+    >(HOME_BOARD_COLUMN_IDS.map((id) => [id, []]));
     for (const task of tasks) {
-      const situation = situationByTaskId.get(task.id);
-      if (situation) grouped.get(situation)?.push(task);
+      const situation =
+        situationByTaskId.get(task.id) ?? fallbackChannelTaskSituation(task);
+      if (situation) grouped.get(situation)?.push({ task, situation });
     }
     return HOME_BOARD_COLUMN_IDS.map((id) => ({
       id,
@@ -60,11 +65,11 @@ export function ChannelBoardView({
   return (
     <WorkBoard
       columns={columns}
-      getKey={(task) => task.id}
-      renderCard={(task) => (
+      getKey={(item) => item.task.id}
+      renderCard={({ task, situation }) => (
         <ChannelBoardCard
           task={task}
-          homeSituation={situationByTaskId.get(task.id)}
+          situation={situation}
           prUrl={
             prUrlByTaskId.get(task.id) ??
             (typeof task.latest_run?.output?.pr_url === "string"
@@ -81,13 +86,13 @@ export function ChannelBoardView({
 
 function ChannelBoardCard({
   task,
-  homeSituation,
+  situation,
   prUrl,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
-  homeSituation?: SituationId;
+  situation: SituationId;
   prUrl?: string;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
@@ -97,7 +102,7 @@ function ChannelBoardCard({
     pollIntervalMs: BOARD_REPLIES_POLL_INTERVAL_MS,
   });
   const creatorName = userDisplayName(task.created_by);
-  const visual = SITUATION_VISUAL[homeSituation ?? "working"];
+  const visual = SITUATION_VISUAL[situation];
   const replyLabel = `${messages.length} ${messages.length === 1 ? "reply" : "replies"}`;
 
   return (
