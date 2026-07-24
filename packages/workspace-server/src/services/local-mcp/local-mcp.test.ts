@@ -1,4 +1,11 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,8 +14,13 @@ import { LocalMcpServiceImpl } from "./local-mcp";
 let home: string;
 let originalHome: string | undefined;
 
-async function writeClaudeJson(data: unknown) {
-  await writeFile(path.join(home, ".claude.json"), JSON.stringify(data));
+function mcpConfigPath(): string {
+  return path.join(home, ".posthog-code", "mcp.json");
+}
+
+async function writeMcpConfig(data: unknown) {
+  await mkdir(path.dirname(mcpConfigPath()), { recursive: true });
+  await writeFile(mcpConfigPath(), JSON.stringify(data));
 }
 
 beforeEach(async () => {
@@ -23,16 +35,17 @@ afterEach(async () => {
 });
 
 describe("LocalMcpServiceImpl.listServers", () => {
-  it("returns empty when ~/.claude.json is missing or malformed", async () => {
+  it("returns empty when the config is missing or malformed", async () => {
     const service = new LocalMcpServiceImpl();
     expect(await service.listServers()).toEqual([]);
 
-    await writeFile(path.join(home, ".claude.json"), "not json");
+    await mkdir(path.dirname(mcpConfigPath()), { recursive: true });
+    await writeFile(mcpConfigPath(), "not json");
     expect(await service.listServers()).toEqual([]);
   });
 
-  it("normalizes http, sse, and stdio servers with their scope", async () => {
-    await writeClaudeJson({
+  it("normalizes shared HTTP and stdio transports", async () => {
+    await writeMcpConfig({
       mcpServers: {
         grafana: {
           type: "http",
@@ -47,16 +60,9 @@ describe("LocalMcpServiceImpl.listServers", () => {
           env: { SECRET: "do-not-leak" },
         },
       },
-      projects: {
-        "/repo": {
-          mcpServers: {
-            docs: { type: "http", url: "http://localhost:3001/mcp" },
-          },
-        },
-      },
     });
 
-    const servers = await new LocalMcpServiceImpl().listServers("/repo");
+    const servers = await new LocalMcpServiceImpl().listServers();
 
     expect(servers).toEqual([
       {
@@ -71,7 +77,7 @@ describe("LocalMcpServiceImpl.listServers", () => {
       {
         name: "legacy",
         scope: "user",
-        transport: { type: "sse", url: "https://sse.example.com/mcp" },
+        transport: { type: "unknown" },
       },
       {
         name: "playwright",
@@ -82,28 +88,7 @@ describe("LocalMcpServiceImpl.listServers", () => {
           args: ["@playwright/mcp@latest"],
         },
       },
-      {
-        name: "docs",
-        scope: "project",
-        transport: { type: "http", url: "http://localhost:3001/mcp" },
-      },
     ]);
-  });
-
-  it("omits project-scoped servers when no cwd is given", async () => {
-    await writeClaudeJson({
-      mcpServers: { top: { type: "http", url: "https://a.example.com" } },
-      projects: {
-        "/repo": {
-          mcpServers: {
-            scoped: { type: "http", url: "https://b.example.com" },
-          },
-        },
-      },
-    });
-
-    const servers = await new LocalMcpServiceImpl().listServers();
-    expect(servers.map((s) => s.name)).toEqual(["top"]);
   });
 
   it.each([
@@ -113,18 +98,75 @@ describe("LocalMcpServiceImpl.listServers", () => {
       transport: { type: "stdio", command: "uvx", args: ["some-mcp"] },
     },
     {
-      name: "bare url without type is read as http",
+      name: "bare url without type is unknown",
       config: { url: "https://bare.example.com/mcp" },
-      transport: { type: "http", url: "https://bare.example.com/mcp" },
+      transport: { type: "unknown" },
     },
     {
       name: "unrecognized shape is unknown",
       config: { type: "websocket", endpoint: "wss://x" },
       transport: { type: "unknown" },
     },
+    {
+      name: "non-object config is unknown",
+      config: null,
+      transport: { type: "unknown" },
+    },
   ])("$name", async ({ config, transport }) => {
-    await writeClaudeJson({ mcpServers: { server: config } });
+    await writeMcpConfig({ mcpServers: { server: config } });
     const servers = await new LocalMcpServiceImpl().listServers();
     expect(servers).toEqual([{ name: "server", scope: "user", transport }]);
   });
+});
+
+describe("LocalMcpServiceImpl.getConfigFile", () => {
+  it("returns the local config path and its content when present", async () => {
+    await writeMcpConfig({ mcpServers: {} });
+
+    await expect(new LocalMcpServiceImpl().getConfigFile()).resolves.toEqual({
+      path: mcpConfigPath(),
+      content: JSON.stringify({ mcpServers: {} }),
+    });
+  });
+
+  it("reports a missing local config without failing", async () => {
+    await expect(new LocalMcpServiceImpl().getConfigFile()).resolves.toEqual({
+      path: mcpConfigPath(),
+      content: null,
+    });
+  });
+});
+
+describe("LocalMcpServiceImpl.updateConfigFile", () => {
+  it("saves the exact content, including invalid JSON", async () => {
+    const content = "{ invalid json";
+
+    await expect(
+      new LocalMcpServiceImpl().updateConfigFile(content),
+    ).resolves.toEqual({ path: mcpConfigPath(), content });
+    await expect(readFile(mcpConfigPath(), "utf8")).resolves.toBe(content);
+  });
+
+  it("serializes concurrent saves so the latest content wins", async () => {
+    const service = new LocalMcpServiceImpl();
+    await Promise.all([
+      service.updateConfigFile("first"),
+      service.updateConfigFile("second"),
+    ]);
+
+    await expect(readFile(mcpConfigPath(), "utf8")).resolves.toBe("second");
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "restricts config and directory permissions",
+    async () => {
+      await new LocalMcpServiceImpl().updateConfigFile("secret");
+
+      const fileMode = (await stat(mcpConfigPath())).mode & 0o777;
+      const directoryMode =
+        (await stat(path.dirname(mcpConfigPath()))).mode & 0o777;
+      expect(fileMode).toBe(0o600);
+      expect(directoryMode).toBe(0o700);
+    },
+  );
 });

@@ -3,9 +3,51 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  loadPostHogCodeMcpServers,
   loadUserClaudeJsonMcpServerEntries,
   loadUserClaudeJsonMcpServers,
+  toAcpMcpServers,
 } from "./mcp-config";
+
+describe("loadPostHogCodeMcpServers", () => {
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "posthog-mcp-test-"));
+    fs.mkdirSync(path.join(tmpHome, ".posthog-code"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  it("loads only transports shared by Claude and Codex", () => {
+    fs.writeFileSync(
+      path.join(tmpHome, ".posthog-code", "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          command: { command: "npx", args: ["server"] },
+          remote: { type: "http", url: "https://mcp.example.com" },
+          legacy: { type: "sse", url: "https://sse.example.com" },
+        },
+      }),
+    );
+
+    expect(Object.keys(loadPostHogCodeMcpServers(undefined, tmpHome))).toEqual([
+      "command",
+      "remote",
+    ]);
+  });
+
+  it("returns empty for missing or invalid config", () => {
+    expect(loadPostHogCodeMcpServers(undefined, tmpHome)).toEqual({});
+    fs.writeFileSync(
+      path.join(tmpHome, ".posthog-code", "mcp.json"),
+      "invalid",
+    );
+    expect(loadPostHogCodeMcpServers(undefined, tmpHome)).toEqual({});
+  });
+});
 
 describe("loadUserClaudeJsonMcpServers", () => {
   let tmpHome: string;
@@ -111,6 +153,44 @@ describe("loadUserClaudeJsonMcpServers", () => {
       else process.env.CLAUDE_CONFIG_DIR = original;
       fs.rmSync(altDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("toAcpMcpServers", () => {
+  it("preserves stdio and HTTP server credentials for another local adapter", () => {
+    expect(
+      toAcpMcpServers({
+        filesystem: {
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-filesystem"],
+          env: { ROOT: "/workspace" },
+        },
+        observability: {
+          type: "http",
+          url: "https://mcp.example.com/mcp",
+          headers: { Authorization: "Bearer secret" },
+        },
+      }),
+    ).toEqual([
+      {
+        name: "filesystem",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem"],
+        env: [{ name: "ROOT", value: "/workspace" }],
+      },
+      {
+        name: "observability",
+        type: "http",
+        url: "https://mcp.example.com/mcp",
+        headers: [{ name: "Authorization", value: "Bearer secret" }],
+      },
+    ]);
+  });
+
+  it("drops local entries with an unsupported transport", () => {
+    expect(
+      toAcpMcpServers({ invalid: { type: "websocket" } as never }),
+    ).toEqual([]);
   });
 });
 

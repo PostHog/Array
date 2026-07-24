@@ -29,7 +29,7 @@ import {
 import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { buildAppendedInstructions } from "./instructions";
-import { loadUserClaudeJsonMcpServers } from "./mcp-config";
+import { loadPostHogCodeMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
 import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
 import type { SettingsManager } from "./settings";
@@ -140,10 +140,10 @@ export function buildSystemPrompt(
 function buildMcpServers(
   userServers: Record<string, McpServerConfig> | undefined,
   acpServers: Record<string, McpServerConfig>,
-  projectScopedServers: Record<string, McpServerConfig>,
+  posthogCodeServers: Record<string, McpServerConfig>,
 ): Record<string, McpServerConfig> {
   return {
-    ...projectScopedServers,
+    ...posthogCodeServers,
     ...(userServers || {}),
     ...acpServers,
   };
@@ -465,7 +465,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     mcpServers: buildMcpServers(
       params.userProvidedOptions?.mcpServers,
       params.mcpServers,
-      loadUserClaudeJsonMcpServers(params.cwd, params.logger),
+      loadPostHogCodeMcpServers(params.logger),
     ),
     env: buildEnvironment(params.gatewayEnv),
     hooks: buildHooks(

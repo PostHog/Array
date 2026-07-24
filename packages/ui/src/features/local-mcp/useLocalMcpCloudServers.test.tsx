@@ -19,7 +19,10 @@ vi.mock("../feature-flags/useFeatureFlag", () => ({
   useFeatureFlag: () => mocks.flagEnabled,
 }));
 
-import { useLocalMcpCloudServers } from "./useLocalMcpCloudServers";
+import {
+  useLocalMcpCloudServers,
+  useLocalMcpServers,
+} from "./useLocalMcpCloudServers";
 
 function wrapper({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
@@ -43,7 +46,7 @@ describe("useLocalMcpCloudServers", () => {
     mocks.getCloudAvailability.mockResolvedValue([server]);
   });
 
-  it("does not inspect local MCP servers while the feature flag is disabled", () => {
+  it("does not import local MCP servers into cloud while the flag is disabled", () => {
     const { result } = renderHook(() => useLocalMcpCloudServers(true), {
       wrapper,
     });
@@ -52,9 +55,8 @@ describe("useLocalMcpCloudServers", () => {
     expect(mocks.getCloudAvailability).not.toHaveBeenCalled();
   });
 
-  it("returns local MCP servers while the feature flag is enabled", async () => {
+  it("returns local MCP servers for cloud while the flag is enabled", async () => {
     mocks.flagEnabled = true;
-
     const { result } = renderHook(() => useLocalMcpCloudServers(true), {
       wrapper,
     });
@@ -64,16 +66,20 @@ describe("useLocalMcpCloudServers", () => {
     );
   });
 
-  it("hides cached local MCP servers when the feature flag is disabled", async () => {
-    mocks.flagEnabled = true;
+  it("always returns local MCP servers for the settings page", async () => {
+    const { result } = renderHook(() => useLocalMcpServers(true), { wrapper });
+
+    await waitFor(() => expect(result.current.servers).toEqual([server]));
+  });
+
+  it("hides cached local MCP servers when disabled", async () => {
     const { result, rerender } = renderHook(
-      () => useLocalMcpCloudServers(true),
-      { wrapper },
+      ({ enabled }) => useLocalMcpServers(enabled),
+      { wrapper, initialProps: { enabled: true } },
     );
     await waitFor(() => expect(result.current.servers).toEqual([server]));
 
-    mocks.flagEnabled = false;
-    rerender();
+    rerender({ enabled: false });
 
     expect(result.current).toEqual({ servers: [], isLoading: false });
   });

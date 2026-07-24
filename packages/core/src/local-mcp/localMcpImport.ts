@@ -11,6 +11,10 @@ import { LOCAL_MCP_WORKSPACE_CLIENT } from "./identifiers";
 /** The slice of workspace-server this service needs, bound by the host. */
 export interface LocalMcpWorkspaceClient {
   listLocalMcpServers(cwd?: string): Promise<LocalMcpServerDescriptor[]>;
+  getLocalMcpConfig(): Promise<{ path: string; content: string | null }>;
+  updateLocalMcpConfig(
+    content: string,
+  ): Promise<{ path: string; content: string | null }>;
 }
 
 export type LocalMcpCloudAvailability =
@@ -199,13 +203,22 @@ export class LocalMcpImportService {
 
   /**
    * Classifies the user's local MCP servers by whether they can be imported
-   * into a cloud sandbox. `cwd` picks up ~/.claude.json project-scoped
-   * servers for that checkout in addition to user-scoped ones.
+   * into a cloud sandbox.
    */
   async getCloudAvailability(
     cwd?: string,
   ): Promise<LocalMcpCloudClassification[]> {
     const servers = await this.workspace.listLocalMcpServers(cwd);
     return servers.map(classifyLocalMcpServer);
+  }
+
+  async getConfigFile(): Promise<{ path: string; content: string | null }> {
+    return this.workspace.getLocalMcpConfig();
+  }
+
+  async updateConfigFile(
+    content: string,
+  ): Promise<{ path: string; content: string | null }> {
+    return this.workspace.updateLocalMcpConfig(content);
   }
 }

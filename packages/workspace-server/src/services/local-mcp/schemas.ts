@@ -32,3 +32,10 @@ export const listLocalMcpServersInput = z.object({
 export const listLocalMcpServersOutput = z.array(
   localMcpServerDescriptorSchema,
 );
+
+export const localMcpConfigFileOutput = z.object({
+  path: z.string(),
+  content: z.string().nullable(),
+});
+
+export const updateLocalMcpConfigFileInput = z.object({ content: z.string() });

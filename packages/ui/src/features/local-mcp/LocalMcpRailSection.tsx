@@ -1,37 +1,33 @@
-import { Plugs } from "@phosphor-icons/react";
+import { FolderOpen, Plugs } from "@phosphor-icons/react";
 import type { LocalMcpCloudClassification } from "@posthog/core/local-mcp/localMcpImport";
-import { Flex, Text } from "@radix-ui/themes";
+import { Button, Flex, Text } from "@radix-ui/themes";
 
-const AVAILABILITY_LABELS: Record<
-  LocalMcpCloudClassification["availability"],
-  string
-> = {
-  importable: "Available in cloud",
-  requires_desktop: "Relayed via your machine",
-  built_in: "Built into cloud runs",
-  unsupported: "Not available in cloud",
-};
+function transportLabel(server: LocalMcpCloudClassification): string {
+  if (server.reason === "reserved_name") return "Reserved name";
+  if (server.reason === "stdio_transport") return "Local command";
+  if (server.reason === "public_url" || server.reason === "private_url") {
+    return "HTTP server";
+  }
+  return "Unsupported configuration";
+}
 
 interface LocalMcpRailSectionProps {
   servers: LocalMcpCloudClassification[];
   search: string;
+  onOpenConfig: () => void;
 }
 
-/**
- * Rail section listing the user's local (~/.claude.json) MCP servers and
- * whether each will be available inside cloud task runs. Purely
- * informational: these servers are configured outside the app, so the rows
- * open no detail view.
- */
+/** Local PostHog Code MCP servers shared by local agent adapters. */
 export function LocalMcpRailSection({
   servers,
   search,
+  onOpenConfig,
 }: LocalMcpRailSectionProps) {
   const query = search.trim().toLowerCase();
   const visible = query
     ? servers.filter((server) => server.name.toLowerCase().includes(query))
     : servers;
-  if (visible.length === 0) return null;
+  if (visible.length === 0 && query) return null;
 
   return (
     <>
@@ -46,16 +42,20 @@ export function LocalMcpRailSection({
         <Text
           color="gray"
           className="font-medium text-[10px] uppercase leading-none"
-          title="MCP servers from ~/.claude.json on this machine"
+          title="MCP servers from ~/.posthog-code/mcp.json on this machine"
         >
           Local
         </Text>
-        <Text
+        <Button
+          variant="ghost"
           color="gray"
-          className="rounded-[10px] bg-(--gray-4) px-[6px] py-[1px] text-[10px] leading-none"
+          size="1"
+          title="Open local MCP configuration"
+          aria-label="Open local MCP configuration"
+          onClick={onOpenConfig}
         >
-          {visible.length}
-        </Text>
+          <FolderOpen size={12} />
+        </Button>
       </Flex>
       {visible.map((server) => (
         <div
@@ -74,11 +74,16 @@ export function LocalMcpRailSection({
               {server.name}
             </Text>
             <Text color="gray" truncate className="text-[10px] leading-none">
-              {AVAILABILITY_LABELS[server.availability]}
+              {transportLabel(server)}
             </Text>
           </Flex>
         </div>
       ))}
+      {visible.length === 0 && (
+        <Text color="gray" className="px-2 py-1 text-[11px]">
+          No local servers configured.
+        </Text>
+      )}
     </>
   );
 }

@@ -19,28 +19,38 @@ export interface LocalMcpCloudServersResult {
 }
 
 /**
- * The user's local (~/.claude.json) MCP servers classified by cloud
+ * The user's local (~/.posthog-code/mcp.json) MCP servers classified by cloud
  * availability. Empty on hosts without a local workspace (web/mobile — the
- * service is only bound on desktop) and while the feature flag is off.
+ * service is only bound on desktop).
  */
-export function useLocalMcpCloudServers(
-  enabled: boolean,
-): LocalMcpCloudServersResult {
+function useLocalMcpServersQuery(enabled: boolean): LocalMcpCloudServersResult {
   const service = useServiceOptional<LocalMcpImportService>(
     LOCAL_MCP_IMPORT_SERVICE,
   );
-  const flagEnabled = useFeatureFlag(LOCAL_MCP_IMPORT_FLAG);
-  const queryEnabled = enabled && flagEnabled && !!service;
+  const queryEnabled = enabled && !!service;
 
   const query = useQuery({
     queryKey: ["local-mcp-cloud-availability"],
     queryFn: () => (service ? service.getCloudAvailability() : NO_SERVERS),
     enabled: queryEnabled,
-    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   return {
     servers: queryEnabled ? (query.data ?? NO_SERVERS) : NO_SERVERS,
     isLoading: queryEnabled && query.isLoading,
   };
+}
+
+export function useLocalMcpServers(
+  enabled: boolean,
+): LocalMcpCloudServersResult {
+  return useLocalMcpServersQuery(enabled);
+}
+
+export function useLocalMcpCloudServers(
+  enabled: boolean,
+): LocalMcpCloudServersResult {
+  const flagEnabled = useFeatureFlag(LOCAL_MCP_IMPORT_FLAG);
+  return useLocalMcpServersQuery(enabled && flagEnabled);
 }

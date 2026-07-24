@@ -177,6 +177,11 @@ describe("LocalMcpImportService", () => {
   it("classifies everything the workspace client reports, passing cwd through", async () => {
     const listed: Array<string | undefined> = [];
     const workspace: LocalMcpWorkspaceClient = {
+      getLocalMcpConfig: async () => ({ path: "/config", content: null }),
+      updateLocalMcpConfig: async (content) => ({
+        path: "/config",
+        content,
+      }),
       listLocalMcpServers: async (cwd) => {
         listed.push(cwd);
         return [
@@ -195,6 +200,24 @@ describe("LocalMcpImportService", () => {
       ["server", "importable"],
       ["local", "requires_desktop"],
     ]);
+  });
+
+  it("delegates config reads and writes to the workspace boundary", async () => {
+    const workspace: LocalMcpWorkspaceClient = {
+      listLocalMcpServers: async () => [],
+      getLocalMcpConfig: async () => ({ path: "/config", content: "old" }),
+      updateLocalMcpConfig: async (content) => ({ path: "/config", content }),
+    };
+    const service = new LocalMcpImportService(workspace);
+
+    await expect(service.getConfigFile()).resolves.toEqual({
+      path: "/config",
+      content: "old",
+    });
+    await expect(service.updateConfigFile("new")).resolves.toEqual({
+      path: "/config",
+      content: "new",
+    });
   });
 });
 

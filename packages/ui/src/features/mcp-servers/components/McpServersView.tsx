@@ -2,7 +2,7 @@ import type {
   McpRecommendedServer,
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
-import { useLocalMcpCloudServers } from "@posthog/ui/features/local-mcp/useLocalMcpCloudServers";
+import { useLocalMcpServers } from "@posthog/ui/features/local-mcp/useLocalMcpCloudServers";
 import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
 import { MarketplaceView } from "@posthog/ui/features/mcp-servers/components/parts/MarketplaceView";
 import { McpInstalledRail } from "@posthog/ui/features/mcp-servers/components/parts/McpInstalledRail";
@@ -18,13 +18,15 @@ import {
 } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LocalMcpConfigView } from "./parts/LocalMcpConfigView";
 import { ServerDetailView } from "./parts/ServerDetailView";
 
 type SceneView =
   | { kind: "marketplace" }
   | { kind: "detail-installation"; installationId: string }
   | { kind: "detail-template"; templateId: string }
-  | { kind: "add-custom" };
+  | { kind: "add-custom" }
+  | { kind: "local-config"; openKey: number };
 
 export function McpServersView() {
   const queryClient = useQueryClient();
@@ -59,11 +61,14 @@ export function McpServersView() {
     reauthorizePending,
   } = useMcpServers();
 
-  const { servers: localServers } = useLocalMcpCloudServers(true);
+  const { servers: localServers } = useLocalMcpServers(true);
 
   useEffect(() => {
     const refreshMcpState = () => {
       queryClient.invalidateQueries({ queryKey: ["mcp"] });
+      queryClient.invalidateQueries({
+        queryKey: ["local-mcp-cloud-availability"],
+      });
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") refreshMcpState();
@@ -185,6 +190,10 @@ export function McpServersView() {
       );
     }
 
+    if (view.kind === "local-config") {
+      return <LocalMcpConfigView openKey={view.openKey} />;
+    }
+
     if (
       view.kind === "detail-installation" ||
       view.kind === "detail-template"
@@ -264,6 +273,12 @@ export function McpServersView() {
         localServers={localServers}
         selectedInstallationId={selectedInstallationId}
         onAddCustom={() => setView({ kind: "add-custom" })}
+        onOpenLocalConfig={() =>
+          setView((current) => ({
+            kind: "local-config",
+            openKey: current.kind === "local-config" ? current.openKey + 1 : 1,
+          }))
+        }
         onSelectInstallation={(installationId) =>
           setView({ kind: "detail-installation", installationId })
         }

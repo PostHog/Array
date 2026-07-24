@@ -1,12 +1,16 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { NewSessionRequest } from "@agentclientprotocol/sdk";
+import type { McpServer, NewSessionRequest } from "@agentclientprotocol/sdk";
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import type {
   LocalMcpServerDescriptor,
   LocalMcpServerScope,
   LocalMcpTransport,
+} from "@posthog/shared";
+import {
+  parsePostHogMcpServers,
+  validatePostHogMcpConfig,
 } from "@posthog/shared";
 import type { Logger } from "../../../utils/logger";
 
@@ -83,6 +87,83 @@ export function loadUserClaudeJsonMcpServers(
     servers[entry.name] = entry.config;
   }
   return servers;
+}
+
+export function loadPostHogCodeMcpServers(
+  logger?: Logger,
+  homeDir: string = os.homedir(),
+): Record<string, McpServerConfig> {
+  const configPath = path.join(homeDir, ".posthog-code", "mcp.json");
+  let parsed: { mcpServers?: unknown };
+  try {
+    parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      logger?.warn("Failed to parse PostHog Code MCP config", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return {};
+  }
+  const servers: Record<string, McpServerConfig> = {};
+  const issues = validatePostHogMcpConfig(parsed);
+  if (issues.length > 0) {
+    logger?.warn("Ignoring invalid PostHog Code MCP configuration", { issues });
+  }
+  for (const entry of parsePostHogMcpServers(parsed)) {
+    if (entry.config) servers[entry.name] = entry.config as McpServerConfig;
+  }
+  return servers;
+}
+
+/**
+ * Converts local Claude config entries into ACP's transport-neutral MCP shape.
+ * This lets non-Claude adapters use the same explicit local configuration
+ * without inheriting ambient agent configuration or plugins.
+ */
+export function toAcpMcpServers(
+  servers: Record<string, McpServerConfig>,
+): McpServer[] {
+  const result: McpServer[] = [];
+  for (const [name, config] of Object.entries(servers)) {
+    const transport = parseClaudeJsonTransport(config);
+    switch (transport.kind) {
+      case "http":
+        result.push({
+          name,
+          type: "http",
+          url: transport.url,
+          headers: Object.entries(transport.headers ?? {}).map(
+            ([headerName, value]) => ({ name: headerName, value }),
+          ),
+        });
+        break;
+      case "sse":
+        result.push({
+          name,
+          type: "sse",
+          url: transport.url,
+          headers: Object.entries(transport.headers ?? {}).map(
+            ([headerName, value]) => ({ name: headerName, value }),
+          ),
+        });
+        break;
+      case "stdio":
+        result.push({
+          name,
+          command: transport.command,
+          args: transport.args ?? [],
+          env: Object.entries(transport.env ?? {}).map(([envName, value]) => ({
+            name: envName,
+            value,
+          })),
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return result;
 }
 
 export function sanitizeHeaders(

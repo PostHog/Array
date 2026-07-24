@@ -51,6 +51,10 @@ import {
   emptyBaseline,
   estimateTokens,
 } from "../claude/context-breakdown";
+import {
+  loadPostHogCodeMcpServers,
+  toAcpMcpServers,
+} from "../claude/session/mcp-config";
 import { isLocalSkillCommandChunk } from "../local-skill";
 import { resolveSpokenNarration } from "../session-meta";
 import {
@@ -540,8 +544,15 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           { message },
         ),
     );
+    const localMcpServers = toAcpMcpServers(
+      loadPostHogCodeMcpServers(this.logger),
+    );
     const mcpServers = toCodexMcpServers(
-      [...(params.mcpServers ?? []), ...(localTools ? [localTools] : [])],
+      [
+        ...localMcpServers,
+        ...(params.mcpServers ?? []),
+        ...(localTools ? [localTools] : []),
+      ],
       { gatePosthogExec: true },
     );
     const config = buildThreadConfig(mcpServers, params.additionalDirectories);

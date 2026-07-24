@@ -28,6 +28,7 @@ interface McpInstalledRailProps {
   localServers: LocalMcpCloudClassification[];
   selectedInstallationId: string | null;
   onAddCustom: () => void;
+  onOpenLocalConfig: () => void;
   onSelectInstallation: (installationId: string) => void;
 }
 
@@ -37,6 +38,7 @@ export function McpInstalledRail({
   localServers,
   selectedInstallationId,
   onAddCustom,
+  onOpenLocalConfig,
   onSelectInstallation,
 }: McpInstalledRailProps) {
   const [search, setSearch] = useState("");
@@ -185,7 +187,11 @@ export function McpInstalledRail({
               );
             })
           )}
-          <LocalMcpRailSection servers={localServers} search={search} />
+          <LocalMcpRailSection
+            servers={localServers}
+            search={search}
+            onOpenConfig={onOpenLocalConfig}
+          />
         </Flex>
       </ScrollArea>
     </aside>

@@ -166,6 +166,12 @@ export type {
   LocalMcpServerDescriptor,
   LocalMcpServerScope,
   LocalMcpTransport,
+  ParsedPostHogMcpServer,
+  PostHogMcpServerConfig,
+} from "./local-mcp-domain";
+export {
+  parsePostHogMcpServers,
+  validatePostHogMcpConfig,
 } from "./local-mcp-domain";
 export {
   formatMention,

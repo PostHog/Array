@@ -6,6 +6,7 @@ interface CodexMcpServerToolConfig {
 }
 
 interface CodexMcpServerPolicyConfig {
+  enabled: true;
   tools?: Record<string, CodexMcpServerToolConfig>;
 }
 
@@ -42,11 +43,13 @@ export function toCodexMcpServers(
     // `approval_mode: "prompt"` makes codex ask before every exec call; the
     // per-sub-tool regex filtering happens in the adapter's approval handlers,
     // which auto-accept calls the session's permission policy does not gate.
-    const policy =
+    const policy: CodexMcpServerPolicyConfig = { enabled: true };
+    if (
       options?.gatePosthogExec &&
       isPostHogExecDescriptor({ server: server.name, tool: "exec" })
-        ? { tools: { exec: { approval_mode: "prompt" as const } } }
-        : {};
+    ) {
+      policy.tools = { exec: { approval_mode: "prompt" } };
+    }
     if ("command" in server && server.command) {
       const env = pairsToRecord(server.env);
       out[server.name] = {

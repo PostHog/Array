@@ -399,10 +399,13 @@ container.bind(CODE_REVIEW_WORKSPACE_CLIENT).toConstantValue({
 } satisfies CodeReviewWorkspaceClient);
 container.bind(REVERT_HUNK_SERVICE).to(RevertHunkService).inSingletonScope();
 
-// local MCP servers (~/.claude.json), read for cloud-import classification
+// local MCP servers, read for cloud-import classification
 container.bind(LOCAL_MCP_WORKSPACE_CLIENT).toConstantValue({
   listLocalMcpServers: (cwd?: string) =>
     trpcClient.localMcp.list.query({ cwd }),
+  getLocalMcpConfig: () => trpcClient.localMcp.config.query(),
+  updateLocalMcpConfig: (content: string) =>
+    trpcClient.localMcp.updateConfig.mutate({ content }),
 } satisfies LocalMcpWorkspaceClient);
 
 // skills (team publish/install reach workspace-server through this slice)

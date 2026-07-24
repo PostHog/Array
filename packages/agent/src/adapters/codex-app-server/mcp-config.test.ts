@@ -23,6 +23,7 @@ describe("toCodexMcpServers", () => {
 
     expect(toCodexMcpServers(servers)).toEqual({
       posthog: {
+        enabled: true,
         command: "node",
         args: ["server.js"],
         env: { TOKEN: "abc", BASE: "http://x" },
@@ -36,7 +37,7 @@ describe("toCodexMcpServers", () => {
     ] as unknown as McpServer[];
 
     expect(toCodexMcpServers(servers)).toEqual({
-      bare: { command: "run", args: [] },
+      bare: { enabled: true, command: "run", args: [] },
     });
   });
 
@@ -52,6 +53,7 @@ describe("toCodexMcpServers", () => {
 
     expect(toCodexMcpServers(servers)).toEqual({
       remote: {
+        enabled: true,
         url: "https://mcp.example/mcp",
         http_headers: { Authorization: "Bearer t" },
       },
@@ -74,10 +76,11 @@ describe("toCodexMcpServers", () => {
 
     expect(toCodexMcpServers(servers, { gatePosthogExec: true })).toEqual({
       posthog_cloud: {
+        enabled: true,
         url: "https://mcp.example/mcp",
         tools: { exec: { approval_mode: "prompt" } },
       },
-      other: { url: "https://other.example/mcp" },
+      other: { enabled: true, url: "https://other.example/mcp" },
     });
   });
 
@@ -91,7 +94,7 @@ describe("toCodexMcpServers", () => {
     ] as unknown as McpServer[];
 
     expect(toCodexMcpServers(servers)).toEqual({
-      posthog: { url: "https://mcp.example/mcp" },
+      posthog: { enabled: true, url: "https://mcp.example/mcp" },
     });
   });
 });
