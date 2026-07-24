@@ -1,183 +1,115 @@
-import {
-  ChatCircleIcon,
-  ChatTeardropTextIcon,
-  CheckCircleIcon,
-  SpinnerGapIcon,
-  XCircleIcon,
-} from "@phosphor-icons/react";
-import { Button, Card, CardContent, cn } from "@posthog/quill";
+import { ChatCircleIcon } from "@phosphor-icons/react";
+import type { SituationId } from "@posthog/core/workflow/schemas";
 import type { Task } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
-import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import {
   TaskStatusBadge,
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
-import { useChannelFeedbackRequest } from "@posthog/ui/features/canvas/hooks/useChannelFeedbackRequest";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import type { ChannelBoardStatus } from "@posthog/ui/features/canvas/utils/channelBoardStatus";
+import { channelBoardStatus } from "@posthog/ui/features/canvas/utils/channelBoardStatus";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { toast } from "@posthog/ui/primitives/toast";
-import { ScrollArea } from "@radix-ui/themes";
+import {
+  WorkBoard,
+  type WorkBoardColumn,
+} from "@posthog/ui/features/home/components/WorkBoard";
+import { SITUATION_VISUAL } from "@posthog/ui/features/home/utils/situationDisplay";
+import { Box } from "@radix-ui/themes";
+import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
-
-const COLUMNS: Array<{
-  id: ChannelBoardStatus;
-  label: string;
-  Icon: typeof SpinnerGapIcon;
-}> = [
-  { id: "in_progress", label: "In progress", Icon: SpinnerGapIcon },
-  {
-    id: "needs_feedback",
-    label: "Needs feedback",
-    Icon: ChatTeardropTextIcon,
-  },
-  { id: "ready", label: "Ready", Icon: CheckCircleIcon },
-  { id: "closed", label: "Closed", Icon: XCircleIcon },
+const CHANNEL_COLUMN_IDS: SituationId[] = [
+  "working",
+  "in_review",
+  "ci_failing",
+  "changes_requested",
+  "comments_waiting",
+  "ready_to_merge",
+  "done",
 ];
 
 export function ChannelBoardView({
   tasks,
   isLoading,
+  situationByTaskId,
   onOpenTask,
   onOpenThread,
 }: {
   tasks: Task[];
   isLoading: boolean;
+  situationByTaskId: ReadonlyMap<string, SituationId>;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  if (isLoading) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center">
-        <SpinnerGapIcon className="animate-spin" size={20} />
-      </div>
+  const columns = useMemo<WorkBoardColumn<Task>[]>(() => {
+    const grouped = new Map<SituationId, Task[]>(
+      CHANNEL_COLUMN_IDS.map((id) => [id, []]),
     );
+    for (const task of tasks) {
+      const prUrl = task.latest_run?.output?.pr_url;
+      const situation = channelBoardStatus({
+        status: task.latest_run?.status,
+        prState: typeof prUrl === "string" ? "open" : null,
+        needsPermission: false,
+        isGenerating: task.latest_run?.status === "in_progress",
+        homeSituation: situationByTaskId.get(task.id),
+      });
+      grouped.get(situation)?.push(task);
+    }
+    return CHANNEL_COLUMN_IDS.map((id) => ({
+      id,
+      label: id === "in_review" ? "Needs feedback" : SITUATION_VISUAL[id].label,
+      description: SITUATION_VISUAL[id].description,
+      color: SITUATION_VISUAL[id].color,
+      Icon: SITUATION_VISUAL[id].Icon,
+      items: grouped.get(id) ?? [],
+    }));
+  }, [situationByTaskId, tasks]);
+
+  if (isLoading) {
+    return <div className="min-h-0 flex-1" />;
   }
 
   return (
-    <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
-      {COLUMNS.map((column) => (
-        <BoardColumn
-          key={column.id}
-          column={column}
-          tasks={tasks}
+    <WorkBoard
+      columns={columns}
+      getKey={(task) => task.id}
+      renderCard={(task) => (
+        <ChannelBoardCard
+          task={task}
+          homeSituation={situationByTaskId.get(task.id)}
           onOpenTask={onOpenTask}
           onOpenThread={onOpenThread}
         />
-      ))}
-    </div>
-  );
-}
-
-function BoardColumn({
-  column,
-  tasks,
-  onOpenTask,
-  onOpenThread,
-}: {
-  column: (typeof COLUMNS)[number];
-  tasks: Task[];
-  onOpenTask: (task: Task) => void;
-  onOpenThread: (task: Task) => void;
-}) {
-  return (
-    <div className="flex h-full min-h-0 w-[300px] shrink-0 flex-col">
-      <div className="mb-2 flex items-center gap-2 px-1">
-        <column.Icon
-          size={14}
-          weight="bold"
-          className="text-muted-foreground"
-        />
-        <span className="font-semibold text-[12px] text-gray-12">
-          {column.label}
-        </span>
-      </div>
-      <div className="min-h-0 flex-1 rounded-xl border border-(--gray-3) bg-(--gray-2)">
-        <ScrollArea scrollbars="vertical" className="h-full min-h-0">
-          <div className="flex flex-col gap-2 p-2">
-            {tasks.map((task) => (
-              <ChannelBoardCardFilter
-                key={task.id}
-                task={task}
-                status={column.id}
-                onOpenTask={onOpenTask}
-                onOpenThread={onOpenThread}
-              />
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
-    </div>
-  );
-}
-
-function ChannelBoardCardFilter({
-  task,
-  status,
-  onOpenTask,
-  onOpenThread,
-}: {
-  task: Task;
-  status: ChannelBoardStatus;
-  onOpenTask: (task: Task) => void;
-  onOpenThread: (task: Task) => void;
-}) {
-  const display = useTaskStatusDisplay(task);
-  if (display.boardStatus !== status) return null;
-  return (
-    <ChannelBoardCard
-      task={task}
-      display={display}
-      onOpenTask={onOpenTask}
-      onOpenThread={onOpenThread}
+      )}
     />
   );
 }
 
 function ChannelBoardCard({
   task,
-  display,
+  homeSituation,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
-  display: ReturnType<typeof useTaskStatusDisplay>;
+  homeSituation?: SituationId;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
+  const display = useTaskStatusDisplay(task, homeSituation);
   const { messages } = useTaskThread(task.id, {
     pollIntervalMs: BOARD_REPLIES_POLL_INTERVAL_MS,
   });
-  const creator = task.created_by;
-  const creatorName = userDisplayName(creator);
-  const client = useOptionalAuthenticatedClient();
-  const { data: currentUser } = useCurrentUser({ client });
-  const { setNeedsFeedback, isPending } = useChannelFeedbackRequest();
-  const isCreator =
-    !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
-  const needsFeedback = display.boardStatus === "needs_feedback";
-  const canRequestFeedback =
-    isCreator &&
-    !!task.latest_run &&
-    (display.boardStatus === "ready" || needsFeedback);
+  const creatorName = userDisplayName(task.created_by);
+  const visual = SITUATION_VISUAL[display.boardStatus];
   const replyLabel = `${messages.length} ${messages.length === 1 ? "reply" : "replies"}`;
 
-  const toggleFeedbackRequest = (value: boolean) => {
-    void setNeedsFeedback(task, value).catch((error: unknown) => {
-      toast.error("Couldn't update feedback request", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    });
-  };
-
   return (
-    <Card
-      size="sm"
+    <Box
       role="button"
       tabIndex={0}
+      aria-label={`Open ${task.title || "Untitled task"}`}
       onClick={() => onOpenTask(task)}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -186,63 +118,43 @@ function ChannelBoardCard({
           onOpenTask(task);
         }
       }}
-      className={cn(
-        "cursor-pointer py-0 hover:border-border-primary hover:bg-fill-hover",
-        display.isMerged && "border-(--purple-8) bg-(--purple-a2)",
-      )}
+      className="group hover:-translate-y-px relative flex cursor-pointer flex-col gap-2 overflow-hidden rounded-lg border border-(--gray-4) bg-(--color-panel-solid) px-3 pt-3 pb-2.5 transition-all hover:border-(--gray-7) hover:shadow-md"
     >
-      <CardContent className="flex flex-col gap-2 py-3">
-        <div className="flex items-start justify-between gap-2">
-          <span className="line-clamp-2 font-medium text-sm">
-            {task.title || "Untitled task"}
+      <span
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-[3px]"
+        style={{ backgroundColor: `var(--${visual.color}-9)` }}
+      />
+      <div className="flex items-start justify-between gap-2">
+        <span className="line-clamp-2 font-medium text-[13px] text-gray-12 leading-snug">
+          {task.title || "Untitled task"}
+        </span>
+        <TaskStatusBadge display={display} />
+      </div>
+      {task.repository ? (
+        <span className="truncate text-(--gray-10) text-[11px]">
+          {task.repository}
+        </span>
+      ) : null}
+      <div className="mt-1.5 flex items-center justify-between gap-2 border-(--gray-3) border-t pt-2.5">
+        <div className="flex min-w-0 items-center gap-1.5" title={creatorName}>
+          <UserAvatar user={task.created_by} size="xs" />
+          <span className="truncate text-(--gray-10) text-[11px]">
+            {creatorName}
           </span>
-          <TaskStatusBadge display={display} />
         </div>
-        {task.repository ? (
-          <span
-            className="truncate text-muted-foreground text-xs"
-            title={task.repository}
-          >
-            {task.repository}
-          </span>
-        ) : null}
-        {canRequestFeedback ? (
-          <Button
-            size="xs"
-            variant={needsFeedback ? "outline" : "link-muted"}
-            disabled={isPending}
-            onClick={(event) => {
-              event.stopPropagation();
-              toggleFeedbackRequest(!needsFeedback);
-            }}
-          >
-            <ChatTeardropTextIcon size={12} />
-            {needsFeedback ? "Clear feedback request" : "Request feedback"}
-          </Button>
-        ) : null}
-        <div className="flex items-center justify-between gap-2 border-(--gray-3) border-t pt-2">
-          <div
-            className="flex min-w-0 items-center gap-1.5"
-            title={creatorName}
-          >
-            <UserAvatar user={creator} size="xs" />
-            <span className="truncate text-muted-foreground text-xs">
-              {creatorName}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenThread(task);
-            }}
-          >
-            <ChatCircleIcon size={13} />
-            {replyLabel}
-          </button>
-        </div>
-      </CardContent>
-    </Card>
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1 text-(--gray-10) text-[11px] hover:text-gray-12"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenThread(task);
+          }}
+        >
+          <ChatCircleIcon size={13} />
+          {replyLabel}
+        </button>
+      </div>
+    </Box>
   );
 }

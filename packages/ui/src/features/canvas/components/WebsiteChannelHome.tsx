@@ -1,9 +1,12 @@
-import { Kanban, ListBullets } from "@phosphor-icons/react";
+import { Kanban, ListBullets, User } from "@phosphor-icons/react";
 import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
+import type { SituationId } from "@posthog/core/workflow/schemas";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTaskSuggestions";
 import { ChannelBoardView } from "@posthog/ui/features/canvas/components/ChannelBoardView";
 import {
@@ -40,6 +43,7 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useChannelHomeUiStore } from "@posthog/ui/features/canvas/stores/channelHomeUiStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
+import { useHomeSnapshot } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -62,6 +66,11 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const { fileTask } = useChannelTaskMutations();
   const viewMode = useChannelHomeUiStore((state) => state.viewMode);
   const setViewMode = useChannelHomeUiStore((state) => state.setViewMode);
+  const taskScope = useChannelHomeUiStore((state) => state.taskScope);
+  const setTaskScope = useChannelHomeUiStore((state) => state.setTaskScope);
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
+  const { snapshot: homeSnapshot } = useHomeSnapshot();
 
   // Poll while empty so the intro's context.md card flips to "created" when
   // the agent publishes mid plan-session, without a manual reload.
@@ -100,36 +109,33 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     return creation ? [creation, ...feedMessages] : feedMessages;
   }, [backendChannel, feedMessages]);
 
-  const viewToggle = useMemo(
-    () => (
-      <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
-        <Button
-          size="sm"
-          variant={viewMode === "feed" ? "primary" : "link-muted"}
-          onClick={() => setViewMode("feed")}
-        >
-          <ListBullets size={14} />
-          Feed
-        </Button>
-        <Button
-          size="sm"
-          variant={viewMode === "board" ? "primary" : "link-muted"}
-          onClick={() => setViewMode("board")}
-        >
-          <Kanban size={14} />
-          Board
-        </Button>
-      </div>
-    ),
-    [setViewMode, viewMode],
+  useSetHeaderContent(
+    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
   );
 
-  useSetHeaderContent(
-    useMemo(
-      () => <ChannelHeader channelId={channelId} trailing={viewToggle} />,
-      [channelId, viewToggle],
-    ),
+  const visibleTasks = useMemo(
+    () =>
+      taskScope === "me"
+        ? tasks.filter(
+            (task) =>
+              !!currentUser?.uuid && task.created_by?.uuid === currentUser.uuid,
+          )
+        : tasks,
+    [currentUser?.uuid, taskScope, tasks],
   );
+  const situationByTaskId = useMemo(() => {
+    const result = new Map<string, SituationId>();
+    for (const workstream of [
+      ...homeSnapshot.needsAttention,
+      ...homeSnapshot.inProgress,
+    ]) {
+      if (!workstream.primarySituation) continue;
+      for (const task of workstream.tasks) {
+        result.set(task.id, workstream.primarySituation);
+      }
+    }
+    return result;
+  }, [homeSnapshot.inProgress, homeSnapshot.needsAttention]);
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);
 
@@ -308,17 +314,55 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   return (
     <div className="flex h-full min-w-0 bg-gray-1">
       <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-(--gray-4) border-b px-4">
+          <div className="flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
+            <Button
+              size="sm"
+              variant={taskScope === "all" ? "primary" : "link-muted"}
+              onClick={() => setTaskScope("all")}
+            >
+              All
+            </Button>
+            <Button
+              size="sm"
+              variant={taskScope === "me" ? "primary" : "link-muted"}
+              onClick={() => setTaskScope("me")}
+            >
+              <User size={14} />
+              Me
+            </Button>
+          </div>
+          <div className="ml-auto flex items-center gap-0.5 rounded-md border border-(--gray-4) bg-(--gray-2) p-0.5">
+            <Button
+              size="sm"
+              variant={viewMode === "feed" ? "primary" : "link-muted"}
+              onClick={() => setViewMode("feed")}
+            >
+              <ListBullets size={14} />
+              Feed
+            </Button>
+            <Button
+              size="sm"
+              variant={viewMode === "board" ? "primary" : "link-muted"}
+              onClick={() => setViewMode("board")}
+            >
+              <Kanban size={14} />
+              Board
+            </Button>
+          </div>
+        </div>
         {viewMode === "board" ? (
           <ChannelBoardView
-            tasks={tasks}
+            tasks={visibleTasks}
             isLoading={isLoading}
+            situationByTaskId={situationByTaskId}
             onOpenTask={handleOpenTask}
             onOpenThread={handleOpenThread}
           />
         ) : (
           <ChannelFeedView
             channelId={channelId}
-            tasks={tasks}
+            tasks={visibleTasks}
             pending={visiblePending}
             systemMessages={systemMessages}
             isLoading={isLoading}
