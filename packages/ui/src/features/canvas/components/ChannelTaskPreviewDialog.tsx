@@ -37,6 +37,7 @@ export function ChannelTaskPreviewDialog({
             task={task}
             onClose={onClose}
             onOpenFull={() => onOpenFull(task)}
+            showAgentStatus={false}
           />
         ) : null}
       </DialogContent>

@@ -19,10 +19,12 @@ export function WorkBoard<T>({
   columns,
   getKey,
   renderCard,
+  isLoading = false,
 }: {
   columns: WorkBoardColumn<T>[];
   getKey: (item: T) => string;
   renderCard: (item: T) => ReactNode;
+  isLoading?: boolean;
 }) {
   return (
     <div className="flex h-full min-h-0 gap-3 overflow-x-auto p-4">
@@ -57,18 +59,19 @@ export function WorkBoard<T>({
             >
               <ScrollArea scrollbars="vertical" className="h-full min-h-0">
                 <div className="flex flex-col gap-2 p-2">
-                  {count === 0 ? (
+                  {count === 0 && !isLoading ? (
                     <div className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-(--gray-a5) border-dashed py-10">
                       <column.Icon size={18} className="text-(--gray-8)" />
                       <span className="text-(--gray-9) text-[11px]">
                         Nothing here
                       </span>
                     </div>
-                  ) : (
+                  ) : count > 0 ? (
                     column.items.map((item) => (
                       <div key={getKey(item)}>{renderCard(item)}</div>
                     ))
-                  )}
+                  ) : null}
+                  {isLoading ? <WorkBoardCardSkeleton /> : null}
                 </div>
               </ScrollArea>
             </div>
@@ -76,5 +79,21 @@ export function WorkBoard<T>({
         );
       })}
     </div>
+  );
+}
+
+function WorkBoardCardSkeleton() {
+  return (
+    <output
+      aria-label="Loading tasks"
+      className="flex h-[112px] animate-pulse flex-col gap-3 rounded-lg border border-(--gray-4) bg-(--color-panel-solid) p-3"
+    >
+      <div className="h-3 w-4/5 rounded bg-(--gray-5)" />
+      <div className="h-3 w-2/5 rounded bg-(--gray-4)" />
+      <div className="mt-auto flex items-center justify-between">
+        <div className="h-5 w-20 rounded bg-(--gray-4)" />
+        <div className="h-3 w-12 rounded bg-(--gray-4)" />
+      </div>
+    </output>
   );
 }

@@ -501,6 +501,7 @@ function ThreadConversation({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary,
+  showAgentStatus,
 }: {
   task: Task;
   channelId: string;
@@ -508,6 +509,7 @@ function ThreadConversation({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary: boolean;
+  showAgentStatus: boolean;
 }) {
   const taskId = task.id;
   const client = useOptionalAuthenticatedClient();
@@ -677,7 +679,9 @@ function ThreadConversation({
         />
       </div>
 
-      {agentStatus && <AgentStatusLine status={agentStatus} />}
+      {showAgentStatus && agentStatus && (
+        <AgentStatusLine status={agentStatus} />
+      )}
 
       <ThreadReplyComposer
         draft={draft}
@@ -701,6 +705,7 @@ export function ThreadPanel({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary = true,
+  showAgentStatus = true,
 }: {
   taskId: string;
   channelId: string;
@@ -710,6 +715,7 @@ export function ThreadPanel({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  showAgentStatus?: boolean;
 }) {
   const { data: fetchedTask } = useQuery({
     ...taskDetailQuery(taskId),
@@ -744,6 +750,7 @@ export function ThreadPanel({
       onToggleCollapsed={onToggleCollapsed}
       onOpenFull={onOpenFull}
       showTaskSummary={showTaskSummary}
+      showAgentStatus={showAgentStatus}
     />
   );
 }

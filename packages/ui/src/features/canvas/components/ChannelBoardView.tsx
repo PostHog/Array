@@ -28,7 +28,7 @@ import {
 } from "@posthog/ui/features/home/components/WorkBoard";
 import type { SituationColor } from "@posthog/ui/features/home/utils/situationDisplay";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
-import { Box, Spinner } from "@radix-ui/themes";
+import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
@@ -116,34 +116,25 @@ export function ChannelBoardView({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {taskPrStates.isResolving || taskPrStates.isRefreshing ? (
-        <div className="flex shrink-0 items-center gap-2 px-4 py-2 text-(--gray-10) text-xs">
-          <Spinner size="1" />
-          {taskPrStates.isResolving
-            ? `Updating ${taskPrStates.pendingTaskIds.size} task ${taskPrStates.pendingTaskIds.size === 1 ? "status" : "statuses"}…`
-            : "Refreshing statuses…"}
-        </div>
-      ) : null}
-      <WorkBoard
-        columns={columns}
-        getKey={(item) => item.task.id}
-        renderCard={({ task, status }) => (
-          <ChannelBoardCard
-            task={task}
-            status={status}
-            prUrl={
-              prUrlByTaskId.get(task.id) ??
-              (typeof task.latest_run?.output?.pr_url === "string"
-                ? task.latest_run.output.pr_url
-                : undefined)
-            }
-            onOpenTask={onOpenTask}
-            onOpenThread={onOpenThread}
-          />
-        )}
-      />
-    </div>
+    <WorkBoard
+      columns={columns}
+      isLoading={taskPrStates.isResolving}
+      getKey={(item) => item.task.id}
+      renderCard={({ task, status }) => (
+        <ChannelBoardCard
+          task={task}
+          status={status}
+          prUrl={
+            prUrlByTaskId.get(task.id) ??
+            (typeof task.latest_run?.output?.pr_url === "string"
+              ? task.latest_run.output.pr_url
+              : undefined)
+          }
+          onOpenTask={onOpenTask}
+          onOpenThread={onOpenThread}
+        />
+      )}
+    />
   );
 }
 
