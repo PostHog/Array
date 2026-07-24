@@ -27,8 +27,8 @@ import {
 } from "@posthog/core/auth/identifiers";
 import { canvasCoreModule } from "@posthog/core/canvas/canvas.module";
 import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
+import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
-import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task-engine";
 import {
   CLOUD_TASK_AUTH,
   CLOUD_TASK_SERVICE,

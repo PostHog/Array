@@ -5,14 +5,17 @@ const mockNetFetch = vi.hoisted(() => vi.fn());
 const mockStreamFetch = vi.hoisted(() => vi.fn());
 const mockStreamTokenFetch = vi.hoisted(() => vi.fn());
 
-// The service now uses global fetch for BOTH authenticated API calls (JSON)
-// and SSE streaming. The two used to be distinct (net.fetch vs global fetch).
 // Route by URL: /stream_token/ → token mock (read-leg resolution), the stream leg
 // (Django /stream/ or proxy /v1/runs/:run/stream) → stream mock, everything else → API mock.
 // The token mock has a Django-path default so existing fixtures (which never set it) are untouched.
 const fetchRouter = vi.hoisted(() =>
-  vi.fn((input: string | Request, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input.url;
+  vi.fn((input: string | URL | Request, init?: RequestInit) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
     const impl = url.includes("/stream_token/")
       ? mockStreamTokenFetch
       : /\/stream(\/|\?|$)/.test(url)
@@ -22,7 +25,10 @@ const fetchRouter = vi.hoisted(() =>
   }),
 );
 
-import { CloudTaskService } from "./cloud-task-engine";
+import {
+  type CloudTaskEngine,
+  createCloudTaskEngine,
+} from "./cloud-task-engine";
 
 const mockAuthService = {
   authenticatedFetch: vi.fn(),
@@ -86,8 +92,8 @@ async function waitFor(
   }
 }
 
-describe("CloudTaskService", () => {
-  let service: CloudTaskService;
+describe("CloudTaskEngine", () => {
+  let service: CloudTaskEngine;
 
   beforeEach(() => {
     const scopedLog = {
@@ -98,11 +104,12 @@ describe("CloudTaskService", () => {
     };
     const loggerMock = { ...scopedLog, scope: vi.fn(() => scopedLog) };
     const analyticsMock = { track: vi.fn() };
-    service = new CloudTaskService(
-      mockAuthService as never,
-      analyticsMock as never,
-      loggerMock,
-    );
+    service = createCloudTaskEngine({
+      auth: mockAuthService as never,
+      analytics: analyticsMock as never,
+      logger: loggerMock,
+      streamFetch: fetchRouter,
+    });
     mockNetFetch.mockReset();
     mockStreamFetch.mockReset();
     mockStreamTokenFetch.mockReset();
@@ -3077,8 +3084,8 @@ describe("CloudTaskService", () => {
   });
 });
 
-describe("CloudTaskService MCP relay", () => {
-  let relayService: CloudTaskService;
+describe("CloudTaskEngine MCP relay", () => {
+  let relayService: CloudTaskEngine;
   let mcpRelayExecutor: {
     execute: ReturnType<typeof vi.fn>;
     closeRun: ReturnType<typeof vi.fn>;
@@ -3099,12 +3106,12 @@ describe("CloudTaskService MCP relay", () => {
       })),
       closeRun: vi.fn(async () => {}),
     };
-    relayService = new CloudTaskService(
-      mockAuthService as never,
-      analyticsMock as never,
-      loggerMock,
-      mcpRelayExecutor as never,
-    );
+    relayService = createCloudTaskEngine({
+      auth: mockAuthService as never,
+      analytics: analyticsMock as never,
+      logger: loggerMock,
+      mcpRelayExecutor: mcpRelayExecutor as never,
+    });
 
     mockNetFetch.mockReset();
     mockStreamFetch.mockReset();
