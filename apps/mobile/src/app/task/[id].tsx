@@ -5,6 +5,7 @@ import {
   countUserMessages,
   getSessionActivityPhase,
 } from "@posthog/core/sessions/sessionActivity";
+import type { CloudComposerSelection } from "@posthog/core/task-detail/composerModelPolicy";
 import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
 import {
   type Adapter,
@@ -539,14 +540,12 @@ export default function TaskDetailScreen() {
   );
 
   const handleAdapterChange = useCallback(
-    (value: Adapter) => {
+    (selection: CloudComposerSelection) => {
       if (!taskId) return;
-      setComposerConfig(taskId, {
-        adapter: value,
-        mode: getDefaultExecutionModeForAdapter(value),
-        model: value === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_GATEWAY_MODEL,
-        reasoning: DEFAULT_REASONING_EFFORT,
-      });
+      setComposerConfig(taskId, selection);
+      const preferences = usePreferencesStore.getState();
+      preferences.setLastNewTaskMode(selection.mode);
+      preferences.setLastUsedReasoningEffort(selection.reasoning);
     },
     [taskId, setComposerConfig],
   );

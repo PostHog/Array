@@ -581,7 +581,17 @@ export default function NewTaskScreen() {
                         model={model}
                         reasoning={reasoning}
                         configOptions={configOptions}
-                        onAdapterChange={setAdapter}
+                        onAdapterChange={(next) => {
+                          setAdapter(next.adapter);
+                          setMode(next.mode);
+                          setModel(next.model);
+                          setReasoning(next.reasoning);
+                          const preferences = usePreferencesStore.getState();
+                          preferences.setLastNewTaskMode(next.mode);
+                          preferences.setLastUsedReasoningEffort(
+                            next.reasoning,
+                          );
+                        }}
                         onModeChange={(next) => {
                           setMode(next);
                           usePreferencesStore

@@ -5,6 +5,7 @@ import {
   getCloudPrAuthorshipMode,
   getCloudRunSource,
   getCloudRuntimeOptions,
+  resolveCloudResumeOptions,
 } from "./cloudRunOptions";
 
 describe("getCloudPrAuthorshipMode", () => {
@@ -113,5 +114,44 @@ describe("getCloudRuntimeOptions", () => {
       previousRun,
     );
     expect(result.initialPermissionMode).toBe(expected);
+  });
+});
+
+describe("resolveCloudResumeOptions", () => {
+  it("ignores legacy Claude composer values when resuming Codex", () => {
+    expect(
+      resolveCloudResumeOptions(
+        { model: "claude-opus-4-8", reasoning: "high", mode: "plan" },
+        {
+          runtime_adapter: "codex",
+          model: "gpt-5.5",
+          reasoning_effort: "medium",
+          state: { initial_permission_mode: "auto" },
+        } as unknown as TaskRun,
+      ),
+    ).toEqual({
+      adapter: "codex",
+      model: "gpt-5.5",
+      reasoningLevel: "medium",
+      initialPermissionMode: "auto",
+    });
+  });
+
+  it("does not carry previous run options across an explicit adapter change", () => {
+    expect(
+      resolveCloudResumeOptions(
+        { adapter: "codex", model: "gpt-5.5", reasoning: "high", mode: "auto" },
+        {
+          runtime_adapter: "claude",
+          model: "claude-opus-4-8",
+          state: { initial_permission_mode: "plan" },
+        } as unknown as TaskRun,
+      ),
+    ).toEqual({
+      adapter: "codex",
+      model: "gpt-5.5",
+      reasoningLevel: "high",
+      initialPermissionMode: "auto",
+    });
   });
 });

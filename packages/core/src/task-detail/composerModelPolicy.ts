@@ -1,11 +1,34 @@
 import {
   type Adapter,
   type CloudTaskConfigOption,
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
+  type ExecutionMode,
   isRestrictedModelOption,
   isSupportedReasoningEffort,
   type SupportedReasoningEffort,
 } from "@posthog/shared";
+import { getDefaultExecutionModeForAdapter } from "../sessions/executionModes";
+
+export interface CloudComposerSelection {
+  adapter: Adapter;
+  mode: ExecutionMode;
+  model: string;
+  reasoning: SupportedReasoningEffort;
+}
+
+export function resolveCloudComposerAdapterChange(
+  currentAdapter: Adapter,
+): CloudComposerSelection {
+  const adapter: Adapter = currentAdapter === "claude" ? "codex" : "claude";
+  return {
+    adapter,
+    mode: getDefaultExecutionModeForAdapter(adapter),
+    model: adapter === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_GATEWAY_MODEL,
+    reasoning: DEFAULT_REASONING_EFFORT,
+  };
+}
 
 export function resolveCloudComposerModelChange({
   adapter,

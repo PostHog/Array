@@ -1,14 +1,12 @@
+import { getAvailableModesForAdapter } from "@posthog/core/sessions/executionModes";
 import {
-  getAvailableModesForAdapter,
-  getDefaultExecutionModeForAdapter,
-} from "@posthog/core/sessions/executionModes";
-import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
+  type CloudComposerSelection,
+  resolveCloudComposerAdapterChange,
+  resolveCloudComposerModelChange,
+} from "@posthog/core/task-detail/composerModelPolicy";
 import {
   type Adapter,
   type CloudTaskConfigOption,
-  DEFAULT_CODEX_MODEL,
-  DEFAULT_GATEWAY_MODEL,
-  DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
   getReasoningEffortOptions,
   type SupportedReasoningEffort,
@@ -41,7 +39,7 @@ interface AgentConfigControlsProps {
   model: string;
   reasoning: SupportedReasoningEffort;
   configOptions: readonly CloudTaskConfigOption[];
-  onAdapterChange: (adapter: Adapter) => void;
+  onAdapterChange: (selection: CloudComposerSelection) => void;
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
   onReasoningChange: (reasoning: SupportedReasoningEffort) => void;
@@ -152,16 +150,7 @@ export function AgentConfigControls({
         value={model}
         onChange={(value) => {
           if (value === SWITCH_ADAPTER_VALUE) {
-            const nextAdapter: Adapter =
-              adapter === "claude" ? "codex" : "claude";
-            onAdapterChange(nextAdapter);
-            onModeChange(getDefaultExecutionModeForAdapter(nextAdapter));
-            onModelChange(
-              nextAdapter === "codex"
-                ? DEFAULT_CODEX_MODEL
-                : DEFAULT_GATEWAY_MODEL,
-            );
-            onReasoningChange(DEFAULT_REASONING_EFFORT);
+            onAdapterChange(resolveCloudComposerAdapterChange(adapter));
             return;
           }
           const next = resolveCloudComposerModelChange({

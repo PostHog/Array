@@ -352,6 +352,36 @@ describe("_resumeCloudRun", () => {
       expect.objectContaining({ reasoningEffort: undefined }),
     );
   });
+
+  it("ignores legacy Claude composer values when resuming Codex", async () => {
+    useTaskStore.setState({
+      composerConfigByTaskId: {
+        t1: { mode: "plan", model: "claude-opus-4-8", reasoning: "high" },
+      },
+    });
+    mockGetTask.mockResolvedValue(
+      previousTask({
+        runtime_adapter: "codex",
+        model: "gpt-5.5",
+        reasoning_effort: "medium",
+        state: { initial_permission_mode: "auto" },
+      }),
+    );
+
+    await useTaskSessionStore
+      .getState()
+      ._resumeCloudRun("t1", "prev-run", "hi");
+
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "t1",
+      expect.objectContaining({
+        runtimeAdapter: "codex",
+        model: "gpt-5.5",
+        reasoningEffort: "medium",
+        initialPermissionMode: "auto",
+      }),
+    );
+  });
 });
 
 describe("compaction tracking from the log stream", () => {

@@ -89,9 +89,39 @@ describe("AgentConfigControls", () => {
       findPressableWithText(renderer, "Switch to Codex").props.onPress(),
     );
 
-    expect(onAdapterChange).toHaveBeenCalledWith("codex");
-    expect(onModeChange).toHaveBeenCalledWith("auto");
-    expect(onModelChange).toHaveBeenCalledWith("gpt-5.5");
-    expect(onReasoningChange).toHaveBeenCalledWith("high");
+    expect(onAdapterChange).toHaveBeenCalledWith({
+      adapter: "codex",
+      mode: "auto",
+      model: "gpt-5.5",
+      reasoning: "high",
+    });
+    expect(onModeChange).not.toHaveBeenCalled();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(onReasoningChange).not.toHaveBeenCalled();
+  });
+
+  it("hides adapter switching while the active run locks the adapter", () => {
+    let renderer!: ReturnType<typeof create>;
+
+    act(() => {
+      renderer = create(
+        createElement(AgentConfigControls, {
+          adapter: "claude",
+          mode: "plan",
+          model: "claude-sonnet-4-6",
+          reasoning: "high",
+          configOptions,
+          canChangeAdapter: false,
+          onAdapterChange: vi.fn(),
+          onModeChange: vi.fn(),
+          onModelChange: vi.fn(),
+          onReasoningChange: vi.fn(),
+        }),
+      );
+    });
+
+    act(() => findPressableWithText(renderer, "Sonnet 4.6").props.onPress());
+
+    expect(() => findPressableWithText(renderer, "Switch to Codex")).toThrow();
   });
 });
