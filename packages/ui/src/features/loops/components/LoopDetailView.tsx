@@ -54,6 +54,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   const deleteLoop = useDeleteLoop();
   const runLoop = useRunLoop(loopId);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [runNowPending, setRunNowPending] = useState(false);
 
   const runsQuery = useLoopRuns(loopId);
   const runs = runsQuery.data ?? [];
@@ -83,22 +84,27 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   };
 
   const handleRunNow = async () => {
-    if (!(await assertCloudUsageAvailable())) return;
-    runLoop.mutate(undefined, {
-      onSuccess: (result) => {
-        if (result.created) {
-          toast.success("Loop run started");
-        } else if (result.reason === "gate_blocked") {
-          useUsageLimitStore.getState().show({ cause: "org_limit" });
-        } else {
-          toast.error("Run not started", {
-            description: loopFireBlockedMessage(result.reason),
-          });
-        }
-      },
-      onError: (error) =>
-        toast.error("Failed to start run", { description: error.message }),
-    });
+    if (runNowPending) return;
+    setRunNowPending(true);
+    try {
+      if (!(await assertCloudUsageAvailable())) return;
+      const result = await runLoop.mutateAsync();
+      if (result.created) {
+        toast.success("Loop run started");
+      } else if (result.reason === "gate_blocked") {
+        useUsageLimitStore.getState().show({ cause: "org_limit" });
+      } else {
+        toast.error("Run not started", {
+          description: loopFireBlockedMessage(result.reason),
+        });
+      }
+    } catch (error) {
+      toast.error("Failed to start run", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setRunNowPending(false);
+    }
   };
 
   const handleDelete = () => {
@@ -162,8 +168,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               <Button
                 variant="outline"
                 size="sm"
-                loading={runLoop.isPending}
-                disabled={runLoop.isPending}
+                loading={runNowPending}
+                disabled={runNowPending}
                 onClick={() => void handleRunNow()}
               >
                 Run now
