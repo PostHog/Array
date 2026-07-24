@@ -1,5 +1,5 @@
-import { ArchiveIcon, GearSixIcon } from "@phosphor-icons/react";
-import { Button, Separator } from "@posthog/quill";
+import { ArchiveIcon } from "@phosphor-icons/react";
+import { Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
@@ -15,7 +15,6 @@ import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
-import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
 import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
@@ -243,27 +242,10 @@ export function ChannelsSidebar() {
             whenever channels are on so the landing shows the dot row too. */}
         {channelsEnabled && <SpaceDots />}
 
-        {/* Workspace switcher pinned to the bottom. In spaces mode a Configure
-            gear sits beside it (per the mockup); otherwise its dropdown still
-            carries the Settings entry. */}
+        {/* Workspace switcher pinned to the bottom. Its dropdown carries the
+            Settings entry, so there's no separate Settings row. */}
         <Box className="shrink-0 px-2 pb-2">
-          {channelsEnabled ? (
-            <Flex align="center" gap="1">
-              <Button
-                variant="default"
-                size="icon-sm"
-                aria-label="Settings"
-                onClick={() => openSettings()}
-              >
-                <GearSixIcon size={14} />
-              </Button>
-              <Box className="min-w-0 flex-1">
-                <ProjectSwitcher />
-              </Box>
-            </Flex>
-          ) : (
-            <ProjectSwitcher />
-          )}
+          <ProjectSwitcher />
         </Box>
       </Flex>
     </ResizableSidebar>
