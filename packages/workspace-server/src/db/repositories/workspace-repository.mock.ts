@@ -63,6 +63,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
         pinnedAt: null,
         lastViewedAt: null,
         lastActivityAt: null,
+        label: null,
         linkedBranch: null,
         additionalDirectories: "[]",
         prUrl: null,
@@ -86,6 +87,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
           pinnedAt: null,
           lastViewedAt: null,
           lastActivityAt: null,
+          label: null,
           linkedBranch: null,
           additionalDirectories: "[]",
           prUrl: null,
@@ -124,6 +126,7 @@ export function createMockWorkspaceRepository(): MockWorkspaceRepository {
     updatePinnedAt: () => {},
     updateLastViewedAt: () => {},
     updateLastActivityAt: () => {},
+    updateLabel: () => {},
     updateMode: () => {},
     setModeAndRepository: (taskId, mode, repositoryId) => {
       const id = taskIndex.get(taskId);

@@ -142,6 +142,58 @@ describe("ContextMenuService.showTaskContextMenu", () => {
     );
   });
 
+  it("offers a Label submenu with every label plus None, checking the current one", async () => {
+    const menu = new FakeContextMenu();
+    makeService(menu).showTaskContextMenu({
+      ...baseTask,
+      currentLabel: "active",
+    });
+    await menu.shown;
+    const submenu = findItem(menu.lastItems, "Label").submenu ?? [];
+    expect(labels(submenu)).toEqual([
+      "High priority",
+      "Active",
+      "Deprioritized",
+      "Done",
+      "None",
+    ]);
+    expect(findItem(submenu, "Active").checked).toBe(true);
+    expect(findItem(submenu, "High priority").checked).toBe(false);
+    expect(findItem(submenu, "None").checked).toBe(false);
+  });
+
+  it("checks None in the Label submenu when the task is unlabeled", async () => {
+    const menu = new FakeContextMenu();
+    makeService(menu).showTaskContextMenu({ ...baseTask, currentLabel: null });
+    await menu.shown;
+    const submenu = findItem(menu.lastItems, "Label").submenu ?? [];
+    expect(findItem(submenu, "None").checked).toBe(true);
+  });
+
+  it("resolves set-label with the clicked label, and null for None", async () => {
+    const pick = new FakeContextMenu();
+    const picked = makeService(pick).showTaskContextMenu(baseTask);
+    await pick.shown;
+    findItem(
+      findItem(pick.lastItems, "Label").submenu ?? [],
+      "High priority",
+    ).click();
+    expect(await picked).toEqual({
+      action: { type: "set-label", label: "high-priority" },
+    });
+
+    const clear = new FakeContextMenu();
+    const cleared = makeService(clear).showTaskContextMenu({
+      ...baseTask,
+      currentLabel: "done",
+    });
+    await clear.shown;
+    findItem(findItem(clear.lastItems, "Label").submenu ?? [], "None").click();
+    expect(await cleared).toEqual({
+      action: { type: "set-label", label: null },
+    });
+  });
+
   it("resolves to null when the menu is dismissed", async () => {
     const menu = new FakeContextMenu();
     const result = makeService(menu).showTaskContextMenu(baseTask);

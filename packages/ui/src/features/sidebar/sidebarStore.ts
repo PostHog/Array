@@ -1,4 +1,7 @@
-import { ALL_WORKSPACE_MODES } from "@posthog/core/sidebar/buildSidebarData";
+import {
+  ALL_WORKSPACE_MODES,
+  type SortMode,
+} from "@posthog/core/sidebar/buildSidebarData";
 import type { WorkspaceMode } from "@posthog/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -19,7 +22,7 @@ interface SidebarStoreState {
   folderOrder: string[];
   historyVisibleCount: number;
   organizeMode: "by-project" | "chronological";
-  sortMode: "updated" | "created";
+  sortMode: SortMode;
   showAllUsers: boolean;
   showInternal: boolean;
   taskTypeFilter: WorkspaceMode[];

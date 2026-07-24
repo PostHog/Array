@@ -17,6 +17,7 @@ const task = (overrides: Partial<TaskData>): TaskData => ({
   cloudPrUrl: null,
   branchName: null,
   linkedBranch: null,
+  label: null,
   ...overrides,
 });
 

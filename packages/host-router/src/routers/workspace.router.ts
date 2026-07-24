@@ -39,6 +39,8 @@ import {
   reconcileCloudWorkspacesInput,
   reconcileCloudWorkspacesOutput,
   setPrimaryPrUrlInput,
+  setTaskLabelInput,
+  setTaskLabelOutput,
   taskPrStatusInput,
   taskPrStatusOutput,
   togglePinInput,
@@ -197,6 +199,13 @@ export const workspaceRouter = router({
     .output(togglePinOutput)
     .mutation(({ ctx, input }) =>
       getMetadata(ctx.container).togglePin(input.taskId),
+    ),
+
+  setTaskLabel: publicProcedure
+    .input(setTaskLabelInput)
+    .output(setTaskLabelOutput)
+    .mutation(({ ctx, input }) =>
+      getMetadata(ctx.container).setTaskLabel(input.taskId, input.label),
     ),
 
   markViewed: publicProcedure

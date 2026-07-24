@@ -105,6 +105,7 @@ function TaskRow({
       depth={depth}
       taskId={task.id}
       label={task.title}
+      taskLabel={task.label}
       isActive={isActive}
       isSelected={isSelected}
       isArchiving={isArchiving}
@@ -191,8 +192,9 @@ export function TaskListView({
     useSidebarStore.getState().reorderFolders(sourceIndex, targetIndex);
   }, []);
 
+  // Priority sort tie-breaks by activity, so its rows show that timestamp too.
   const timestampKey: "lastActivityAt" | "createdAt" =
-    sortMode === "updated" ? "lastActivityAt" : "createdAt";
+    sortMode === "created" ? "createdAt" : "lastActivityAt";
 
   const dateGroupedTasks = useMemo(
     () => groupTasksByRelativeDate(flatTasks, timestampKey),

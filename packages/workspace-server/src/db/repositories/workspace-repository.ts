@@ -1,4 +1,9 @@
-import { mergePrUrls, promotePrUrl, type WorkspaceMode } from "@posthog/shared";
+import {
+  mergePrUrls,
+  promotePrUrl,
+  type TaskLabel,
+  type WorkspaceMode,
+} from "@posthog/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { DATABASE_SERVICE } from "../identifiers";
@@ -36,6 +41,7 @@ export interface IWorkspaceRepository {
   updatePinnedAt(taskId: string, pinnedAt: string | null): void;
   updateLastViewedAt(taskId: string, lastViewedAt: string): void;
   updateLastActivityAt(taskId: string, lastActivityAt: string): void;
+  updateLabel(taskId: string, label: TaskLabel | null): void;
   updateLinkedBranch(taskId: string, linkedBranch: string | null): void;
   updateMode(taskId: string, mode: WorkspaceMode): void;
   setModeAndRepository(
@@ -168,6 +174,14 @@ export class WorkspaceRepository implements IWorkspaceRepository {
     this.db
       .update(workspaces)
       .set({ lastActivityAt, updatedAt: now() })
+      .where(byTaskId(taskId))
+      .run();
+  }
+
+  updateLabel(taskId: string, label: TaskLabel | null): void {
+    this.db
+      .update(workspaces)
+      .set({ label, updatedAt: now() })
       .where(byTaskId(taskId))
       .run();
   }

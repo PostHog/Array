@@ -21,6 +21,8 @@ export interface SubmenuItemDef<T> {
   items: Array<{
     label: string;
     icon?: string;
+    /** Checkmark for radio-style submenus (e.g. the current task label). */
+    checked?: boolean;
     action: T;
   }>;
 }

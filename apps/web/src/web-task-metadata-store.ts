@@ -1,3 +1,4 @@
+import { type TaskLabel, taskLabelSchema } from "@posthog/shared";
 import { z } from "zod";
 import { createRecordStore } from "./web-local-store";
 
@@ -11,6 +12,8 @@ const taskMetadataSchema = z.object({
   pinnedAt: z.string().nullable(),
   lastViewedAt: z.string().nullable(),
   lastActivityAt: z.string().nullable(),
+  // catch(null) so rows persisted before labels shipped aren't shed on load.
+  label: taskLabelSchema.nullable().catch(null),
 });
 
 export type TaskMetadata = z.infer<typeof taskMetadataSchema>;
@@ -19,6 +22,7 @@ const EMPTY: TaskMetadata = {
   pinnedAt: null,
   lastViewedAt: null,
   lastActivityAt: null,
+  label: null,
 };
 
 const store = createRecordStore(
@@ -61,6 +65,14 @@ export const webTaskMetadataStore = {
 
   markActivity(taskId: string): void {
     update(taskId, { lastActivityAt: new Date().toISOString() });
+  },
+
+  setLabel(
+    taskId: string,
+    label: TaskLabel | null,
+  ): { label: TaskLabel | null } {
+    update(taskId, { label });
+    return { label };
   },
 
   remove(taskId: string): void {

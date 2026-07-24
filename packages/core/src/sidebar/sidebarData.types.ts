@@ -1,4 +1,4 @@
-import type { WorkspaceMode } from "@posthog/shared";
+import type { TaskLabel, WorkspaceMode } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import type {
   TaskGroup as GenericTaskGroup,
@@ -26,6 +26,8 @@ export interface TaskData {
   cloudPrUrl: string | null;
   branchName: string | null;
   linkedBranch: string | null;
+  /** User-set label from device-local metadata; null = unlabeled. */
+  label: TaskLabel | null;
 }
 
 export type TaskGroup = GenericTaskGroup<TaskData>;

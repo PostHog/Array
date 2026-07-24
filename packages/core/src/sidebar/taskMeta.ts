@@ -1,12 +1,16 @@
+import type { TaskLabel } from "@posthog/shared";
+
 export interface RawTaskTimestamp {
   pinnedAt: string | null;
   lastViewedAt: string | null;
   lastActivityAt: string | null;
+  label: TaskLabel | null;
 }
 
 export interface TaskTimestamps {
   lastViewedAt: number | null;
   lastActivityAt: number | null;
+  label: TaskLabel | null;
 }
 
 export function parseTimestamps(
@@ -21,6 +25,7 @@ export function parseTimestamps(
       lastActivityAt: ts.lastActivityAt
         ? new Date(ts.lastActivityAt).getTime()
         : null,
+      label: ts.label ?? null,
     };
   }
   return result;

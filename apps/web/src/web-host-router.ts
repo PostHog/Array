@@ -13,6 +13,7 @@ import {
   type CloudRegion,
   getCloudUrlFromRegion,
   tabsSnapshotSchema,
+  taskLabelSchema,
 } from "@posthog/shared";
 import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImperative";
 import { z } from "zod";
@@ -318,6 +319,11 @@ const workspaceStubRouter = router({
   togglePin: publicProcedure
     .input(z.object({ taskId: z.string() }))
     .mutation(({ input }) => webTaskMetadataStore.togglePin(input.taskId)),
+  setTaskLabel: publicProcedure
+    .input(z.object({ taskId: z.string(), label: taskLabelSchema.nullable() }))
+    .mutation(({ input }) =>
+      webTaskMetadataStore.setLabel(input.taskId, input.label),
+    ),
   markViewed: publicProcedure
     .input(z.object({ taskId: z.string() }))
     .mutation(({ input }) => {

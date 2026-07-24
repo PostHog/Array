@@ -1,6 +1,6 @@
 import { Archive, GitPullRequest, PushPin } from "@phosphor-icons/react";
 import { parseGithubUrl } from "@posthog/git/utils";
-import type { WorkspaceMode } from "@posthog/shared";
+import type { TaskLabel, WorkspaceMode } from "@posthog/shared";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { navigateToPullRequestView } from "@posthog/ui/router/navigationBridge";
@@ -11,6 +11,7 @@ import { Tooltip } from "../../../../primitives/Tooltip";
 import type { SidebarPrState } from "../../useTaskPrStatus";
 import { SidebarItem } from "../SidebarItem";
 import { ICON_SIZE, TaskIcon } from "./TaskIcon";
+import { TaskLabelDot } from "./TaskLabelDot";
 
 function PrBadge({ url, number }: { url: string; number: number }) {
   return (
@@ -33,6 +34,8 @@ interface TaskItemProps {
   depth?: number;
   taskId: string;
   label: string;
+  /** User-set task label (distinct from `label`, which is the row title). */
+  taskLabel?: TaskLabel | null;
   isActive: boolean;
   isSelected?: boolean;
   /** Archive request in flight: show a spinner and suppress hover actions. */
@@ -106,6 +109,7 @@ export function TaskItem({
   depth = 0,
   taskId,
   label,
+  taskLabel = null,
   isActive,
   isSelected = false,
   isArchiving = false,
@@ -173,9 +177,12 @@ export function TaskItem({
       />
     ) : null;
 
+  const labelDot = taskLabel ? <TaskLabelDot label={taskLabel} /> : null;
+
   const endContent =
-    prBadge || timestampNode || toolbar ? (
+    labelDot || prBadge || timestampNode || toolbar ? (
       <>
+        {labelDot}
         {prBadge}
         {timestampNode}
         {toolbar}

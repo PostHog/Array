@@ -1,3 +1,4 @@
+import { taskLabelSchema } from "@posthog/shared";
 import { z } from "zod";
 
 export const taskContextMenuInput = z.object({
@@ -9,6 +10,9 @@ export const taskContextMenuInput = z.object({
   canStop: z.boolean().optional(),
   isInCommandCenter: z.boolean().optional(),
   hasEmptyCommandCenterCell: z.boolean().optional(),
+  // The task's current label, so the Label submenu can check it. Omitted and
+  // null both read as unlabeled.
+  currentLabel: taskLabelSchema.nullable().optional(),
   // Top-level desktop_file_system channels available as "File to…" targets.
   // Omit (or pass empty) to hide the submenu entirely.
   channels: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
@@ -53,6 +57,10 @@ const taskAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("add-to-command-center") }),
   z.object({ type: z.literal("external-app"), action: externalAppAction }),
   z.object({ type: z.literal("file-to-channel"), channelId: z.string() }),
+  z.object({
+    type: z.literal("set-label"),
+    label: taskLabelSchema.nullable(),
+  }),
 ]);
 
 const bulkTaskAction = z.discriminatedUnion("type", [

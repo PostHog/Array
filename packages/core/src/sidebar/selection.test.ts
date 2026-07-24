@@ -26,6 +26,7 @@ function makeTaskData(id: string, overrides: Partial<TaskData> = {}): TaskData {
     cloudPrUrl: null,
     branchName: null,
     linkedBranch: null,
+    label: null,
     ...overrides,
   };
 }

@@ -29,6 +29,11 @@ function toElectronItem(item: ContextMenuItem): MenuItemConstructorOptions {
     enabled: action.enabled ?? true,
     accelerator: action.accelerator,
   };
+  // Electron only renders a checkmark on checkbox/radio items.
+  if (action.checked !== undefined) {
+    options.type = "checkbox";
+    options.checked = action.checked;
+  }
   if (action.icon) {
     options.icon = resizeIcon(action.icon);
   }

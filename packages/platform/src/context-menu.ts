@@ -3,6 +3,8 @@ export interface ContextMenuAction {
   icon?: string;
   enabled?: boolean;
   accelerator?: string;
+  /** Renders the item with a checkmark (radio-style selection in submenus). */
+  checked?: boolean;
   submenu?: ContextMenuItem[];
   click: () => void | Promise<void>;
 }

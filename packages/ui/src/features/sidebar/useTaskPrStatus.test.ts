@@ -40,6 +40,7 @@ function makeTask(overrides: Partial<TaskData> = {}): TaskData {
     cloudPrUrl: null,
     branchName: "feat/test",
     linkedBranch: null,
+    label: null,
     ...overrides,
   };
 }

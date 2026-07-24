@@ -324,6 +324,7 @@ function SidebarMenuComponent() {
         runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
+        currentLabel: taskData?.label ?? null,
         onTogglePin: () => handleTaskTogglePin(taskId),
         onStop: (stopTaskId, taskTitle, stopRunId) =>
           setStopConfirm({

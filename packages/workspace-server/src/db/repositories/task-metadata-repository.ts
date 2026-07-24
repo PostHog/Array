@@ -1,3 +1,4 @@
+import type { TaskLabel } from "@posthog/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { inject, injectable } from "inversify";
 import { DATABASE_SERVICE } from "../identifiers";
@@ -13,6 +14,7 @@ export interface TaskMetadataPatch {
   pinnedAt?: string | null;
   lastViewedAt?: string | null;
   lastActivityAt?: string | null;
+  label?: TaskLabel | null;
   archivedAt?: string | null;
   archivedTitle?: string | null;
   archivedTaskCreatedAt?: string | null;

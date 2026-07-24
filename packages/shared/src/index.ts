@@ -290,6 +290,14 @@ export type {
   TaskCreationOutput,
 } from "./task-creation-domain";
 export {
+  TASK_LABEL_META,
+  TASK_LABELS,
+  type TaskLabel,
+  type TaskLabelMeta,
+  taskLabelRank,
+  taskLabelSchema,
+} from "./task-label";
+export {
   formatClockTime,
   formatRelativeTimeLong,
   formatRelativeTimeShort,

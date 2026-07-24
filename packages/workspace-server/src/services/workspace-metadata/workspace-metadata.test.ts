@@ -15,6 +15,7 @@ function createService() {
     updatePinnedAt: vi.fn(),
     updateLastViewedAt: vi.fn(),
     updateLastActivityAt: vi.fn(),
+    updateLabel: vi.fn(),
   };
   const metadataRepo: MockTaskMetadataRepository =
     createMockTaskMetadataRepository();
@@ -137,6 +138,38 @@ describe("WorkspaceMetadataService.markActivity", () => {
   });
 });
 
+describe("WorkspaceMetadataService.setTaskLabel", () => {
+  it("writes the label to the workspace row when one exists", () => {
+    const { service, repo } = createService();
+    repo.findByTaskId.mockReturnValue({ taskId: "t1", label: null });
+
+    expect(service.setTaskLabel("t1", "high-priority")).toEqual({
+      label: "high-priority",
+    });
+    expect(repo.updateLabel).toHaveBeenCalledWith("t1", "high-priority");
+  });
+
+  it("clears the label with null", () => {
+    const { service, repo } = createService();
+    repo.findByTaskId.mockReturnValue({ taskId: "t1", label: "done" });
+
+    expect(service.setTaskLabel("t1", null)).toEqual({ label: null });
+    expect(repo.updateLabel).toHaveBeenCalledWith("t1", null);
+  });
+
+  it("stores the label in task_metadata for a rowless task", () => {
+    const { service, repo, metadataRepo } = createService();
+    repo.findByTaskId.mockReturnValue(undefined);
+
+    expect(service.setTaskLabel("t1", "active")).toEqual({ label: "active" });
+    expect(repo.updateLabel).not.toHaveBeenCalled();
+    expect(metadataRepo.findByTaskId("t1")?.label).toBe("active");
+
+    expect(service.setTaskLabel("t1", null)).toEqual({ label: null });
+    expect(metadataRepo.findByTaskId("t1")?.label).toBeNull();
+  });
+});
+
 describe("WorkspaceMetadataService projections", () => {
   it("unions pinned task ids from workspaces and task_metadata", () => {
     const { service, repo, metadataRepo } = createService();
@@ -153,24 +186,27 @@ describe("WorkspaceMetadataService projections", () => {
       pinnedAt: "2025-01-01T00:00:00.000Z",
       lastViewedAt: null,
       lastActivityAt: null,
+      label: "high-priority",
     });
 
     expect(service.getTaskTimestamps("t1")).toEqual({
       pinnedAt: "2025-01-01T00:00:00.000Z",
       lastViewedAt: null,
       lastActivityAt: null,
+      label: "high-priority",
     });
   });
 
   it("falls back to task_metadata for a rowless task", () => {
     const { service, repo, metadataRepo } = createService();
     repo.findByTaskId.mockReturnValue(undefined);
-    metadataRepo.upsert("t1", { lastViewedAt: NOW_ISO });
+    metadataRepo.upsert("t1", { lastViewedAt: NOW_ISO, label: "done" });
 
     expect(service.getTaskTimestamps("t1")).toEqual({
       pinnedAt: null,
       lastViewedAt: NOW_ISO,
       lastActivityAt: null,
+      label: "done",
     });
   });
 
@@ -182,19 +218,36 @@ describe("WorkspaceMetadataService projections", () => {
       pinnedAt: null,
       lastViewedAt: null,
       lastActivityAt: null,
+      label: null,
     });
   });
 
   it("merges all timestamps, with workspace rows winning on overlap", () => {
     const { service, repo, metadataRepo } = createService();
     repo.findAll.mockReturnValue([
-      { taskId: "a", pinnedAt: "p", lastViewedAt: "v", lastActivityAt: "x" },
+      {
+        taskId: "a",
+        pinnedAt: "p",
+        lastViewedAt: "v",
+        lastActivityAt: "x",
+        label: "active",
+      },
     ]);
-    metadataRepo.upsert("b", { lastViewedAt: "bv" });
+    metadataRepo.upsert("b", { lastViewedAt: "bv", label: "deprioritized" });
 
     expect(service.getAllTaskTimestamps()).toEqual({
-      a: { pinnedAt: "p", lastViewedAt: "v", lastActivityAt: "x" },
-      b: { pinnedAt: null, lastViewedAt: "bv", lastActivityAt: null },
+      a: {
+        pinnedAt: "p",
+        lastViewedAt: "v",
+        lastActivityAt: "x",
+        label: "active",
+      },
+      b: {
+        pinnedAt: null,
+        lastViewedAt: "bv",
+        lastActivityAt: null,
+        label: "deprioritized",
+      },
     });
   });
 });

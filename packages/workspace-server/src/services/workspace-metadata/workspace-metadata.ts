@@ -1,3 +1,4 @@
+import type { TaskLabel } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   TASK_METADATA_REPOSITORY,
@@ -10,6 +11,7 @@ export interface TaskTimestamps {
   pinnedAt: string | null;
   lastViewedAt: string | null;
   lastActivityAt: string | null;
+  label: TaskLabel | null;
 }
 
 /**
@@ -73,6 +75,19 @@ export class WorkspaceMetadataService {
     this.taskMetadataRepo.upsert(taskId, { lastActivityAt });
   }
 
+  setTaskLabel(
+    taskId: string,
+    label: TaskLabel | null,
+  ): { label: TaskLabel | null } {
+    if (this.workspaceRepo.findByTaskId(taskId)) {
+      this.workspaceRepo.updateLabel(taskId, label);
+      return { label };
+    }
+    // Rowless task: fall back to the task_metadata table.
+    this.taskMetadataRepo.upsert(taskId, { label });
+    return { label };
+  }
+
   getPinnedTaskIds(): string[] {
     return [
       ...this.workspaceRepo.findAllPinned().map((w) => w.taskId),
@@ -88,6 +103,7 @@ export class WorkspaceMetadataService {
       pinnedAt: row?.pinnedAt ?? null,
       lastViewedAt: row?.lastViewedAt ?? null,
       lastActivityAt: row?.lastActivityAt ?? null,
+      label: row?.label ?? null,
     };
   }
 
@@ -100,6 +116,7 @@ export class WorkspaceMetadataService {
         pinnedAt: m.pinnedAt,
         lastViewedAt: m.lastViewedAt,
         lastActivityAt: m.lastActivityAt,
+        label: m.label,
       };
     }
     for (const w of this.workspaceRepo.findAll()) {
@@ -107,6 +124,7 @@ export class WorkspaceMetadataService {
         pinnedAt: w.pinnedAt,
         lastViewedAt: w.lastViewedAt,
         lastActivityAt: w.lastActivityAt,
+        label: w.label,
       };
     }
     return result;

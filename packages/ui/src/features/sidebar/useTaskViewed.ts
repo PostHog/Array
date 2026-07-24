@@ -42,6 +42,7 @@ export function useTaskViewed() {
                 pinnedAt: null,
                 lastViewedAt: now,
                 lastActivityAt: null,
+                label: null,
               },
             };
           return {
@@ -84,6 +85,7 @@ export function useTaskViewed() {
                 pinnedAt: null,
                 lastViewedAt: null,
                 lastActivityAt: activityIso,
+                label: null,
               },
             };
           return {

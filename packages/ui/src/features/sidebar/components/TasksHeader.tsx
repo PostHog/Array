@@ -147,6 +147,9 @@ function TaskFilterMenu() {
         >
           <DropdownMenuRadioItem value="created">Created</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="updated">Updated</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="priority">
+            Priority
+          </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
 
         {import.meta.env.DEV && (

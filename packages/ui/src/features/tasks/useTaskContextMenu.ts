@@ -3,13 +3,14 @@ import {
   resolveTaskContextMenuIntent,
 } from "@posthog/core/tasks/contextMenuActions";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { PROJECT_BLUEBIRD_FLAG, type TaskLabel } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useExternalAppAction } from "@posthog/ui/features/external-apps/useExternalAppAction";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { useTaskLabel } from "@posthog/ui/features/sidebar/useTaskLabel";
 import { useRestoreTask } from "@posthog/ui/features/suspension/useRestoreTask";
 import { useSuspendTask } from "@posthog/ui/features/suspension/useSuspendTask";
 import { useDeleteTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
@@ -35,6 +36,7 @@ export function useTaskContextMenu() {
   );
   const { channels } = useChannels({ enabled: bluebirdEnabled });
   const { fileTask } = useChannelTaskMutations();
+  const { setLabel } = useTaskLabel();
 
   const showContextMenu = useCallback(
     async (
@@ -49,6 +51,7 @@ export function useTaskContextMenu() {
         runId?: string;
         isInCommandCenter?: boolean;
         hasEmptyCommandCenterCell?: boolean;
+        currentLabel?: TaskLabel | null;
         onTogglePin?: () => void;
         onStop?: (taskId: string, taskTitle: string, runId?: string) => void;
         onArchive?: (taskId: string) => void;
@@ -68,6 +71,7 @@ export function useTaskContextMenu() {
         runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
+        currentLabel,
         onTogglePin,
         onStop,
         onArchive,
@@ -85,6 +89,7 @@ export function useTaskContextMenu() {
           canStop,
           isInCommandCenter,
           hasEmptyCommandCenterCell,
+          currentLabel,
           channels: channels.map(({ id, name }) => ({ id, name })),
         });
 
@@ -131,6 +136,16 @@ export function useTaskContextMenu() {
           case "add-to-command-center":
             onAddToCommandCenter?.();
             break;
+          case "set-label":
+            try {
+              await setLabel(task.id, intent.label);
+            } catch (error) {
+              toast.error("Couldn't set task label", {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              });
+            }
+            break;
           case "file-to-channel":
             try {
               await fileTask(intent.channelId, task.id, task.title);
@@ -167,6 +182,7 @@ export function useTaskContextMenu() {
       deleteWithConfirm,
       fileTask,
       restoreTask,
+      setLabel,
       suspendTask,
       hostClient,
       openExternalApp,

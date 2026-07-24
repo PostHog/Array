@@ -1,9 +1,14 @@
-import { readPrUrls, type WorkspaceMode } from "@posthog/shared";
+import {
+  readPrUrls,
+  type TaskLabel,
+  taskLabelRank,
+  type WorkspaceMode,
+} from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData, TaskGroup } from "./sidebarData.types";
 
-export type SortMode = "updated" | "created";
+export type SortMode = "updated" | "created" | "priority";
 export type OrganizeMode = "by-project" | "chronological";
 
 export interface FullTask {
@@ -123,6 +128,7 @@ export interface TaskWorkspace {
 export interface TaskTimestamp {
   lastViewedAt?: number | null;
   lastActivityAt?: number | null;
+  label?: TaskLabel | null;
 }
 
 export interface DeriveTaskDataContext {
@@ -188,6 +194,7 @@ export function deriveTaskData(
     cloudPrUrl,
     branchName: workspace?.branchName ?? null,
     linkedBranch: workspace?.linkedBranch ?? null,
+    label: timestamp?.label ?? null,
   };
 }
 
@@ -220,13 +227,19 @@ export function filterByWorkspaceMode(
 }
 
 function getSortValue(task: TaskData, sortMode: SortMode): number {
-  return sortMode === "updated" ? task.lastActivityAt : task.createdAt;
+  return sortMode === "created" ? task.createdAt : task.lastActivityAt;
 }
 
 function sortTasks(tasks: TaskData[], sortMode: SortMode): TaskData[] {
-  return [...tasks].sort(
-    (a, b) => getSortValue(b, sortMode) - getSortValue(a, sortMode),
-  );
+  return [...tasks].sort((a, b) => {
+    // Priority sorts by user-set label rank first, falling back to recency
+    // within a rank (getSortValue reads lastActivityAt for non-"created").
+    if (sortMode === "priority") {
+      const byRank = taskLabelRank(a.label) - taskLabelRank(b.label);
+      if (byRank !== 0) return byRank;
+    }
+    return getSortValue(b, sortMode) - getSortValue(a, sortMode);
+  });
 }
 
 export interface PartitionedTasks {

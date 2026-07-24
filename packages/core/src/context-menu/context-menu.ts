@@ -4,6 +4,7 @@ import {
   type IContextMenu,
 } from "@posthog/platform/context-menu";
 import { DIALOG_SERVICE, type IDialog } from "@posthog/platform/dialog";
+import { TASK_LABEL_META, TASK_LABELS } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   CONTEXT_MENU_EXTERNAL_APPS_SERVICE,
@@ -40,6 +41,7 @@ import type {
   ConfirmOptions,
   MenuItemDef,
   SeparatorDef,
+  SubmenuItemDef,
 } from "./types";
 
 @injectable()
@@ -118,6 +120,7 @@ export class ContextMenuService {
       isInCommandCenter,
       hasEmptyCommandCenterCell,
       channels,
+      currentLabel,
     } = input;
     const { apps, lastUsedAppId } = await this.getExternalAppsData();
     const hasPath = worktreePath || folderPath;
@@ -139,9 +142,28 @@ export class ContextMenuService {
           ]
         : [];
 
+    // Radio-style label picker: every label plus "None", the current one checked.
+    const labelSubmenu: SubmenuItemDef<TaskAction> = {
+      type: "submenu",
+      label: "Label",
+      items: [
+        ...TASK_LABELS.map((label) => ({
+          label: TASK_LABEL_META[label].displayName,
+          checked: (currentLabel ?? null) === label,
+          action: { type: "set-label" as const, label },
+        })),
+        {
+          label: "None",
+          checked: (currentLabel ?? null) === null,
+          action: { type: "set-label" as const, label: null },
+        },
+      ],
+    };
+
     return this.showMenu<TaskAction>([
       this.item(isPinned ? "Unpin" : "Pin", { type: "pin" }),
       this.item("Rename", { type: "rename" }),
+      labelSubmenu,
       ...(canStop
         ? [this.separator(), this.item("Stop task", { type: "stop" as const })]
         : []),
@@ -367,6 +389,7 @@ export class ContextMenuService {
               submenu: def.items.map((sub) => ({
                 label: sub.label,
                 icon: sub.icon,
+                checked: sub.checked,
                 click: () => resolve({ action: sub.action }),
               })),
               click: () => {},

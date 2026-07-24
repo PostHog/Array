@@ -29,6 +29,8 @@ export function createMockTaskMetadataRepository(): MockTaskMetadataRepository {
         "lastActivityAt" in patch
           ? (patch.lastActivityAt ?? null)
           : (existing?.lastActivityAt ?? null),
+      label:
+        "label" in patch ? (patch.label ?? null) : (existing?.label ?? null),
       archivedAt:
         "archivedAt" in patch
           ? (patch.archivedAt ?? null)

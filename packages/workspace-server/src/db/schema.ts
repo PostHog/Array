@@ -31,6 +31,10 @@ export const workspaces = sqliteTable(
     pinnedAt: text(),
     lastViewedAt: text(),
     lastActivityAt: text(),
+    /** User-set task label (see TASK_LABELS in @posthog/shared); null = unlabeled. */
+    label: text({
+      enum: ["high-priority", "active", "deprioritized", "done"],
+    }),
     /** JSON-encoded array of absolute paths the agent can access for this task. */
     additionalDirectories: text().notNull().default("[]"),
     /** Cached PR URL for this task so task switches render without waiting on `gh`. */
@@ -54,6 +58,10 @@ export const taskMetadata = sqliteTable("task_metadata", {
   pinnedAt: text(),
   lastViewedAt: text(),
   lastActivityAt: text(),
+  /** User-set task label (see TASK_LABELS in @posthog/shared); null = unlabeled. */
+  label: text({
+    enum: ["high-priority", "active", "deprioritized", "done"],
+  }),
   // Archive state for rowless tasks. Tasks WITH a `workspaces` row record their
   // archived state in the `archives` table; rowless channel tasks have no such
   // row, so this timestamp is their only home — without it, archiving them is a

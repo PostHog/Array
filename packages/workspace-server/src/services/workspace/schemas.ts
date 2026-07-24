@@ -1,4 +1,5 @@
 import {
+  taskLabelSchema,
   workspaceInfoSchema,
   workspaceModeSchema,
   workspaceSchema,
@@ -270,6 +271,15 @@ export const markActivityInput = z.object({
 
 export const getPinnedTaskIdsOutput = z.array(z.string());
 
+export const setTaskLabelInput = z.object({
+  taskId: z.string(),
+  label: taskLabelSchema.nullable(),
+});
+
+export const setTaskLabelOutput = z.object({
+  label: taskLabelSchema.nullable(),
+});
+
 export const getTaskTimestampsInput = z.object({
   taskId: z.string(),
 });
@@ -278,6 +288,7 @@ export const getTaskTimestampsOutput = z.object({
   pinnedAt: z.string().nullable(),
   lastViewedAt: z.string().nullable(),
   lastActivityAt: z.string().nullable(),
+  label: taskLabelSchema.nullable(),
 });
 
 export const getAllTaskTimestampsOutput = z.record(
@@ -286,6 +297,7 @@ export const getAllTaskTimestampsOutput = z.record(
     pinnedAt: z.string().nullable(),
     lastViewedAt: z.string().nullable(),
     lastActivityAt: z.string().nullable(),
+    label: taskLabelSchema.nullable(),
   }),
 );
 

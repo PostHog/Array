@@ -32,6 +32,15 @@ describe("resolveTaskContextMenuIntent", () => {
     );
   });
 
+  it("carries the set-label payload, including a null clear", () => {
+    expect(
+      resolveTaskContextMenuIntent({ type: "set-label", label: "done" }, {}),
+    ).toEqual({ type: "set-label", label: "done" });
+    expect(
+      resolveTaskContextMenuIntent({ type: "set-label", label: null }, {}),
+    ).toEqual({ type: "set-label", label: null });
+  });
+
   it("carries the external-app action payload", () => {
     expect(
       resolveTaskContextMenuIntent(
