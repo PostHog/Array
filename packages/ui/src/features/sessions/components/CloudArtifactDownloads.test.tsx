@@ -52,13 +52,25 @@ const task = {
 describe("CloudArtifactDownloads", () => {
   beforeEach(() => {
     getCloudAttachmentPreviewUrl.mockReset();
+    vi.restoreAllMocks();
   });
 
   it("shows output artifacts and opens their download URL", async () => {
     getCloudAttachmentPreviewUrl.mockResolvedValue(
       "https://files.example/report.pdf",
     );
-    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const fetchArtifact = vi
+      .spyOn(window, "fetch")
+      .mockResolvedValue(new Response("file contents"));
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:artifact");
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
 
     render(
       <Theme>
@@ -70,15 +82,14 @@ describe("CloudArtifactDownloads", () => {
     expect(screen.getByText("12 KB")).toBeInTheDocument();
     expect(screen.queryByText("handoff.pack")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    fireEvent.click(screen.getByText("Download"));
 
-    await waitFor(() =>
-      expect(open).toHaveBeenCalledWith(
-        "https://files.example/report.pdf",
-        "_blank",
-        "noopener,noreferrer",
-      ),
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(fetchArtifact).toHaveBeenCalledWith(
+      "https://files.example/report.pdf",
     );
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:artifact");
     expect(getCloudAttachmentPreviewUrl).toHaveBeenCalledWith(
       "task-1",
       "run-1",

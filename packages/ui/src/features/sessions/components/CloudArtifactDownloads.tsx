@@ -81,7 +81,14 @@ export function CloudArtifactDownloads({
           toast.error("This file is no longer available");
           return;
         }
-        window.open(url, "_blank", "noopener,noreferrer");
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Artifact download failed");
+        const objectUrl = URL.createObjectURL(await response.blob());
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = artifact.name;
+        anchor.click();
+        URL.revokeObjectURL(objectUrl);
       } catch {
         toast.error("Couldn't download file");
       } finally {
