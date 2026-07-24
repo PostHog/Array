@@ -1,9 +1,11 @@
+import { buildInboxViewedProperties } from "@posthog/core/inbox/engagement";
 import {
   buildArchiveListOrdering,
   buildPriorityFilterParam,
   buildSignalReportListOrdering,
   INBOX_PIPELINE_STATUSES,
 } from "@posthog/core/inbox/reportFiltering";
+import { isRestorableReport } from "@posthog/core/inbox/reportMembership";
 import { formatSignalReportSummaryMarkdown } from "@posthog/core/inbox/reportPresentation";
 import { dismissalReasonLabel } from "@posthog/shared";
 import type {
@@ -13,11 +15,7 @@ import type {
   SignalReportStatus,
 } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
-import {
-  buildInboxViewedProperties,
-  isRestorableReport,
-  sourceLine,
-} from "./utils";
+import { sourceLine } from "./utils";
 
 function signal(source_product: string, source_type: string): Signal {
   return {
