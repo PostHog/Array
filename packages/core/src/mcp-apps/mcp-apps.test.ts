@@ -116,3 +116,185 @@ describe("McpAppsService config resolver", () => {
     expect(createConnection).toHaveBeenCalledTimes(2);
   });
 });
+
+const UI_MIME_TYPE = "text/html;profile=mcp-app";
+
+describe("McpAppsService resource cache isolation", () => {
+  let service: McpAppsService;
+
+  beforeEach(() => {
+    service = makeService();
+  });
+
+  function stubPerServerReads(): void {
+    vi.spyOn(internals(service), "getOrCreateConnection").mockImplementation(
+      async (serverName: string) => ({
+        name: serverName,
+        client: {
+          readResource: async () => ({
+            contents: [
+              {
+                text: `<html>${serverName}</html>`,
+                mimeType: UI_MIME_TYPE,
+              },
+            ],
+          }),
+        },
+      }),
+    );
+  }
+
+  it("does not let one server's resource satisfy another's fetch for the same URI", async () => {
+    stubPerServerReads();
+    const uri = "ui://posthog/survey-list.html";
+
+    const trusted = await service.getUiResourceByUri("posthog", uri);
+    const malicious = await service.getUiResourceByUri("evil", uri);
+
+    expect(trusted?.html).toBe("<html>posthog</html>");
+    expect(trusted?.serverName).toBe("posthog");
+    expect(malicious?.html).toBe("<html>evil</html>");
+    expect(malicious?.serverName).toBe("evil");
+  });
+
+  it("serves a cache hit only to the server that populated it", async () => {
+    const getConn = vi
+      .spyOn(internals(service), "getOrCreateConnection")
+      .mockImplementation(async (serverName: string) => ({
+        name: serverName,
+        client: {
+          readResource: async () => ({
+            contents: [
+              { text: `<html>${serverName}</html>`, mimeType: UI_MIME_TYPE },
+            ],
+          }),
+        },
+      }));
+    const uri = "ui://posthog/survey-list.html";
+
+    await service.getUiResourceByUri("posthog", uri);
+    await service.getUiResourceByUri("posthog", uri);
+    const other = await service.getUiResourceByUri("evil", uri);
+
+    expect(getConn).toHaveBeenCalledTimes(2);
+    expect(other?.serverName).toBe("evil");
+  });
+
+  it("does not share an in-flight fetch across servers for the same URI", async () => {
+    const reads: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(internals(service), "getOrCreateConnection").mockImplementation(
+      async (serverName: string) => ({
+        name: serverName,
+        client: {
+          readResource: async () => {
+            reads.push(serverName);
+            await gate;
+            return {
+              contents: [
+                { text: `<html>${serverName}</html>`, mimeType: UI_MIME_TYPE },
+              ],
+            };
+          },
+        },
+      }),
+    );
+    const uri = "ui://shared/app.html";
+
+    const first = service.getUiResourceByUri("posthog", uri);
+    const other = service.getUiResourceByUri("evil", uri);
+    const joined = service.getUiResourceByUri("posthog", uri);
+    release();
+    const [r1, r2, r3] = await Promise.all([first, other, joined]);
+
+    expect(reads.filter((s) => s === "posthog")).toHaveLength(1);
+    expect(reads.filter((s) => s === "evil")).toHaveLength(1);
+    expect(r1?.serverName).toBe("posthog");
+    expect(r3?.serverName).toBe("posthog");
+    expect(r2?.serverName).toBe("evil");
+  });
+});
+
+describe("McpAppsService.proxyToolCall authorization", () => {
+  let service: McpAppsService;
+  const callTool = vi.fn(async () => ({ ok: true }));
+
+  function discoverTools(tools: unknown[]): Promise<void> {
+    vi.spyOn(internals(service), "getOrCreateConnection").mockResolvedValue({
+      name: "posthog",
+      client: {
+        listTools: async () => ({ tools }),
+        listResources: async () => ({ resources: [] }),
+        callTool,
+      },
+    });
+    service.setServerConfigs([config("posthog")]);
+    return service.handleDiscovery(["posthog"]);
+  }
+
+  beforeEach(() => {
+    service = makeService();
+    callTool.mockClear();
+  });
+
+  it("denies a tool that declares no UI metadata", async () => {
+    await discoverTools([{ name: "exec" }]);
+
+    await expect(service.proxyToolCall("posthog", "exec")).rejects.toThrow(
+      'Tool "exec" is not exposed to apps',
+    );
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it("denies a tool that was never discovered", async () => {
+    await discoverTools([]);
+
+    await expect(
+      service.proxyToolCall("posthog", "delete_all"),
+    ).rejects.toThrow('Tool "delete_all" is not exposed to apps');
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it("allows a tool that opts in with ui.visibility app", async () => {
+    await discoverTools([
+      { name: "search", _meta: { ui: { visibility: ["app"] } } },
+    ]);
+
+    await expect(service.proxyToolCall("posthog", "search")).resolves.toEqual({
+      ok: true,
+    });
+    expect(callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a tool that carries a UI association", async () => {
+    await discoverTools([
+      {
+        name: "surveys",
+        _meta: { ui: { resourceUri: "ui://posthog/s.html" } },
+      },
+    ]);
+
+    await expect(service.proxyToolCall("posthog", "surveys")).resolves.toEqual({
+      ok: true,
+    });
+  });
+
+  it("still rejects a model-only tool", async () => {
+    await discoverTools([
+      {
+        name: "surveys",
+        _meta: {
+          ui: { resourceUri: "ui://posthog/s.html", visibility: ["model"] },
+        },
+      },
+    ]);
+
+    await expect(service.proxyToolCall("posthog", "surveys")).rejects.toThrow(
+      "not accessible to apps",
+    );
+    expect(callTool).not.toHaveBeenCalled();
+  });
+});

@@ -64,6 +64,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   private connections = new Map<string, ServerConnection>();
   private resourceCache = new Map<string, McpUiResource>();
   private toolAssociations = new Map<string, McpToolUiAssociation>();
+  private appVisibleTools = new Set<string>();
   private toolDefinitions = new Map<string, Tool>();
   private serverConfigs = new Map<string, McpServerConnectionConfig>();
   private configResolver?: (serverName: string) => Promise<void>;
@@ -81,6 +82,11 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     super();
 
     this.log = rootLogger.scope("mcp-apps-service");
+  }
+
+  // Resource URIs are server-chosen and collide across servers.
+  private cacheKey(serverName: string, resourceUri: string): string {
+    return `${serverName}\u0000${resourceUri}`;
   }
 
   /**
@@ -180,9 +186,14 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
         }
 
         const uiMeta = (tool as McpToolUiMeta)._meta?.ui;
+        const toolKey = `mcp__${serverName}__${tool.name}`;
+
+        if (uiMeta?.visibility?.includes("app")) {
+          this.appVisibleTools.add(toolKey);
+        }
+
         if (!uiMeta?.resourceUri) continue;
 
-        const toolKey = `mcp__${serverName}__${tool.name}`;
         this.toolAssociations.set(toolKey, {
           toolKey,
           serverName,
@@ -198,7 +209,10 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
         for (const resource of resourcesList.resources) {
           const meta = resource as McpResourceUiMeta;
           if (meta._meta?.ui) {
-            this.resourceMetaCache.set(resource.uri, meta);
+            this.resourceMetaCache.set(
+              this.cacheKey(serverName, resource.uri),
+              meta,
+            );
           }
         }
       }
@@ -335,7 +349,8 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     serverName: string,
     resourceUri: string,
   ): Promise<McpUiResource | null> {
-    const cached = this.resourceCache.get(resourceUri);
+    const key = this.cacheKey(serverName, resourceUri);
+    const cached = this.resourceCache.get(key);
     if (cached) {
       this.log.debug("fetchUiResourceByUri: cache hit", {
         serverName,
@@ -344,7 +359,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       return cached;
     }
 
-    const pendingFetch = this.pendingFetches.get(resourceUri);
+    const pendingFetch = this.pendingFetches.get(key);
     if (pendingFetch) {
       this.log.debug("fetchUiResourceByUri: joining pending fetch", {
         serverName,
@@ -358,11 +373,11 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       resourceUri,
     });
     const fetchPromise = this.doFetchUiResource(serverName, resourceUri);
-    this.pendingFetches.set(resourceUri, fetchPromise);
+    this.pendingFetches.set(key, fetchPromise);
     try {
       return await fetchPromise;
     } finally {
-      this.pendingFetches.delete(resourceUri);
+      this.pendingFetches.delete(key);
     }
   }
 
@@ -409,7 +424,9 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       return null;
     }
 
-    const resourceMeta = this.resourceMetaCache.get(resourceUri);
+    const resourceMeta = this.resourceMetaCache.get(
+      this.cacheKey(serverName, resourceUri),
+    );
 
     const resource: McpUiResource = {
       uri: resourceUri,
@@ -421,7 +438,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       serverName,
     };
 
-    this.resourceCache.set(resourceUri, resource);
+    this.resourceCache.set(this.cacheKey(serverName, resourceUri), resource);
     this.log.info("Lazily fetched and cached UI resource", {
       serverName,
       uri: resourceUri,
@@ -454,6 +471,10 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       throw new Error(
         `Tool "${toolName}" is not accessible to apps (visibility: ${association.visibility.join(", ")})`,
       );
+    }
+
+    if (!association && !this.appVisibleTools.has(toolKey)) {
+      throw new Error(`Tool "${toolName}" is not exposed to apps`);
     }
 
     const conn = await this.getOrCreateConnection(serverName);
@@ -540,6 +561,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.resourceCache.clear();
     this.resourceMetaCache.clear();
     this.toolAssociations.clear();
+    this.appVisibleTools.clear();
     this.toolDefinitions.clear();
     this.pendingConnections.clear();
     this.pendingFetches.clear();
@@ -578,13 +600,17 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       }
     }
 
-    // Only evict cached resources not referenced by remaining associations
-    const stillReferenced = new Set(
-      [...this.toolAssociations.values()].map((a) => a.resourceUri),
-    );
     for (const uri of urisToEvict) {
-      if (!stillReferenced.has(uri)) {
-        this.resourceCache.delete(uri);
+      const key = this.cacheKey(serverName, uri);
+      this.resourceCache.delete(key);
+      this.resourceMetaCache.delete(key);
+      this.pendingFetches.delete(key);
+    }
+
+    const toolKeyPrefix = `mcp__${serverName}__`;
+    for (const toolKey of this.appVisibleTools) {
+      if (toolKey.startsWith(toolKeyPrefix)) {
+        this.appVisibleTools.delete(toolKey);
       }
     }
   }
@@ -597,6 +623,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.resourceCache.clear();
     this.resourceMetaCache.clear();
     this.toolAssociations.clear();
+    this.appVisibleTools.clear();
     this.toolDefinitions.clear();
     this.serverConfigs.clear();
     this.pendingConnections.clear();
