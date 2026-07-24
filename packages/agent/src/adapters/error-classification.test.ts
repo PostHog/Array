@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { classifyAgentError } from "./error-classification";
+import {
+  classifyAgentError,
+  isPromptTooLongError,
+} from "./error-classification";
 
 describe("classifyAgentError", () => {
   it.each([
@@ -22,6 +25,8 @@ describe("classifyAgentError", () => {
     ["API Error: 429 rate limited", "upstream_provider_failure"],
     ["API Error: 529 overloaded", "upstream_provider_failure"],
     ["API Error: 400 invalid request", "agent_error"],
+    // 413 is a hard client rejection, never a transient upstream failure.
+    ["API Error: 413 Payload Too Large", "agent_error"],
     [
       "Connection closed mid-response without the API Error prefix",
       "agent_error",
@@ -30,5 +35,44 @@ describe("classifyAgentError", () => {
     [undefined, "agent_error"],
   ] as const)("classifies %j as %s", (message, expected) => {
     expect(classifyAgentError(message)).toBe(expected);
+  });
+});
+
+describe("isPromptTooLongError", () => {
+  it.each([
+    [
+      'API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 214431 tokens > 204698 maximum"}}',
+      true,
+    ],
+    [
+      'API Error: 413 {"error":{"message":"litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)","code":"5021"}}',
+      true,
+    ],
+    // The context-window phrasing alone must match, without the 413 prefix.
+    [
+      "litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)",
+      true,
+    ],
+    // The ACP layer wraps adapter failures as "Internal error: <result>";
+    // this is the shape the agent-server catch sees.
+    [
+      'Internal error: API Error: 413 {"error":{"message":"exceeded this model context window limit (262144)"}}',
+      true,
+    ],
+    // Any 413 from the gateway means the request payload is oversized, even
+    // when the body text varies.
+    ["API Error: 413 Payload Too Large", true],
+    // Case-insensitive, matching the sibling matchers in this file.
+    ["api error: 413 payload too large", true],
+    ["API Error: 429 rate limited", false],
+    ["API Error: 400 invalid request", false],
+    ["some unrelated failure", false],
+  ] as const)("detects %j as %s", (message, expected) => {
+    expect(isPromptTooLongError(new Error(message))).toBe(expected);
+  });
+
+  it("handles non-Error inputs", () => {
+    expect(isPromptTooLongError({ message: "prompt is too long" })).toBe(true);
+    expect(isPromptTooLongError(undefined)).toBe(false);
   });
 });

@@ -3280,11 +3280,28 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     it.each([
-      { retryOutcome: "succeeds", retryFails: false },
-      { retryOutcome: "fails", retryFails: true },
+      {
+        retryOutcome: "succeeds",
+        retryFails: false,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      {
+        retryOutcome: "fails",
+        retryFails: true,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      // The LLM gateway rejects oversized requests with HTTP 413 rather than
+      // Anthropic's "prompt is too long" phrasing; the fresh-session retry
+      // must trigger on that shape as well.
+      {
+        retryOutcome: "succeeds after a gateway 413",
+        retryFails: false,
+        oversizedError:
+          'Internal error: API Error: 413 {"error":{"message":"litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)","code":"5021"}}',
+      },
     ])(
       "clears resume state when the fresh-session retry $retryOutcome",
-      async ({ retryFails }) => {
+      async ({ retryFails, oversizedError }) => {
         const s = createServer();
         await s.start();
 
@@ -3292,7 +3309,7 @@ describe("AgentServer HTTP Mode", () => {
         const prompt = vi.fn(async (params: { prompt: ContentBlock[] }) => {
           prompts.push(params.prompt);
           if (prompts.length === 1) {
-            throw new Error("Internal error: Prompt is too long");
+            throw new Error(oversizedError);
           }
           if (retryFails) {
             throw new Error("Fresh-session retry failed");
