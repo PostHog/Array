@@ -24,9 +24,3 @@ export { useTaskStore } from "./stores/taskStore";
 
 // Types
 export * from "./types";
-
-// Utils
-export {
-  convertStoredEntriesToEvents,
-  parseSessionLogs,
-} from "./utils/parseSessionLogs";

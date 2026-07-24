@@ -1,11 +1,11 @@
 import { Text } from "@components/text";
+import type { CommitContent } from "@posthog/shared/domain-types";
 import { CaretDown, CaretRight } from "phosphor-react-native";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import { shortSha } from "../activityLog";
 import { useCommitDiff } from "../hooks/useInboxReports";
-import type { CommitContent } from "../types";
 import { DiffBlock } from "./DiffBlock";
 
 export function ArtefactCommit({

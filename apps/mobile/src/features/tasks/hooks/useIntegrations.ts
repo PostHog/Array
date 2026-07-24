@@ -3,7 +3,7 @@ import { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useRepositoryCacheStore } from "../stores/repositoryCacheStore";
-import type { Integration, RepositoryOption } from "../types";
+import type { RepositoryOption } from "../types";
 import { buildRepositoryOptions } from "../utils/repositorySelection";
 
 /** Cheap content-equality check for repository option lists. Lets the cache
@@ -60,26 +60,7 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
     queryKey: integrationKeys.github(),
     queryFn: async () => {
       const data = await getPostHogApiClient().getIntegrations();
-      return data.flatMap((integration): Integration[] => {
-        if (
-          integration.kind !== "github" ||
-          typeof integration.id !== "number"
-        ) {
-          return [];
-        }
-
-        return [
-          {
-            id: integration.id,
-            kind: integration.kind,
-            display_name:
-              typeof integration.display_name === "string"
-                ? integration.display_name
-                : undefined,
-            config: integration.config as Integration["config"],
-          },
-        ];
-      });
+      return data.filter((i) => i.kind === "github");
     },
     enabled: enabled && !!projectId && !!oauthAccessToken,
   });
@@ -97,9 +78,11 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
       const results = await Promise.allSettled(
         githubIntegrations.map(async (integration) => ({
           integrationId: integration.id,
-          repositories: await getPostHogApiClient().getGithubRepositories(
-            integration.id,
-          ),
+          repositories: (
+            await getPostHogApiClient().getGithubRepositories(integration.id)
+          )
+            .map((repository) => repository.toLowerCase())
+            .filter((repository) => repository.length > 0),
         })),
       );
 

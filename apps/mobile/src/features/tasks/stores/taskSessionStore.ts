@@ -1,7 +1,9 @@
+import { convertStoredEntriesToPortableSessionEvents } from "@posthog/core/sessions/portableSessionEvents";
 import {
   type CloudTaskUpdatePayload,
   isTerminalStatus,
   type StoredLogEntry,
+  serializeCloudPrompt,
   type Task,
 } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
@@ -18,7 +20,6 @@ import {
   sendCloudCommand,
 } from "../api";
 import { buildCloudPromptBlocks } from "../composer/attachments/buildCloudPrompt";
-import { serializeCloudPrompt } from "../composer/attachments/cloudPrompt";
 import type { PendingAttachment } from "../composer/attachments/types";
 import {
   type WatchCloudTaskHandle,
@@ -31,7 +32,6 @@ import type {
   SessionNotificationAttachment,
   TerminalStatus,
 } from "../types";
-import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playbackRateForTaskDuration } from "../utils/playbackRate";
 import { reinjectPromptAttachments } from "../utils/promptAttachments";
 import { playCompletionSound } from "../utils/sounds";
@@ -991,7 +991,8 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         ? update.newEntries
         : dedupAgainstLocalEchoes(update.newEntries, echoSet);
 
-      const events = convertStoredEntriesToEvents(dedupedEntries);
+      const events =
+        convertStoredEntriesToPortableSessionEvents(dedupedEntries);
       // Snapshots are S3-backed and replay user turns as text-only chunks;
       // reattach the images from the `session/prompt` entries in the same log.
       if (isSnapshot) {

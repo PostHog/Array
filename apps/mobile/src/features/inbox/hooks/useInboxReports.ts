@@ -7,6 +7,19 @@ import {
   INBOX_DISMISSED_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@posthog/core/inbox/reportFiltering";
+import type {
+  AvailableSuggestedReviewersResponse,
+  CommitDiffResponse,
+  SignalProcessingStateResponse,
+  SignalReport,
+  SignalReportArtefactsResponse,
+  SignalReportSignalsResponse,
+  SignalReportsQueryParams,
+  SignalReportsResponse,
+  SuggestedReviewer,
+  SuggestedReviewersArtefact,
+  SuggestedReviewerWriteEntry,
+} from "@posthog/shared/domain-types";
 import {
   useInfiniteQuery,
   useMutation,
@@ -29,18 +42,6 @@ import {
   updateSignalReportArtefact,
 } from "../api";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
-import type {
-  AvailableSuggestedReviewersResponse,
-  CommitDiffResponse,
-  SignalProcessingStateResponse,
-  SignalReport,
-  SignalReportArtefactsResponse,
-  SignalReportSignalsResponse,
-  SignalReportsQueryParams,
-  SignalReportsResponse,
-  SuggestedReviewer,
-  SuggestedReviewerWriteEntry,
-} from "../types";
 import { isRestorableReport } from "../utils";
 
 export const inboxKeys = {
@@ -264,12 +265,20 @@ export function useUpdateSuggestedReviewers(reportId: string) {
       if (previous) {
         queryClient.setQueryData<SignalReportArtefactsResponse>(queryKey, {
           ...previous,
-          results: previous.results.map((artefact) =>
-            artefact.id === artefactId &&
-            artefact.type === "suggested_reviewers"
-              ? { ...artefact, content: optimisticReviewers }
-              : artefact,
-          ),
+          results: previous.results.map((artefact) => {
+            if (
+              artefact.id === artefactId &&
+              artefact.type === "suggested_reviewers"
+            ) {
+              const updatedArtefact: SuggestedReviewersArtefact = {
+                ...artefact,
+                type: "suggested_reviewers",
+                content: optimisticReviewers,
+              };
+              return updatedArtefact;
+            }
+            return artefact;
+          }),
         });
       }
       return { previous };

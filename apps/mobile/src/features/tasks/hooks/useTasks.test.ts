@@ -27,18 +27,15 @@ vi.mock("@/lib/logger", () => {
   };
 });
 
-vi.mock("../api", () => ({
-  runTaskInCloud: vi.fn(),
-}));
-
 vi.mock("@/lib/posthogApiClient", () => ({
-  getPostHogApiClient: () => ({
+  getPostHogApiClient: vi.fn(() => ({
     createTask: vi.fn(),
     deleteTask: vi.fn(),
     getTask: vi.fn(),
     getTasks: vi.fn(),
+    runTaskInCloud: vi.fn(),
     updateTask: vi.fn(),
-  }),
+  })),
 }));
 
 vi.mock("../stores/taskStore", () => ({

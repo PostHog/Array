@@ -1,12 +1,12 @@
-import type { ReportArtefact } from "./types";
+import type { AnySignalReportArtefact } from "@posthog/shared/domain-types";
 
 export type ActivityArtefact = Extract<
-  ReportArtefact,
+  AnySignalReportArtefact,
   { type: "commit" | "task_run" }
 >;
 
 export function selectActivityArtefacts(
-  artefacts: ReportArtefact[],
+  artefacts: AnySignalReportArtefact[],
 ): ActivityArtefact[] {
   return artefacts
     .filter(

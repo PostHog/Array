@@ -1,4 +1,16 @@
 import { Text } from "@components/text";
+import {
+  DEFAULT_CLAUDE_EXECUTION_MODE,
+  getAvailableModes,
+} from "@posthog/core/sessions/executionModes";
+import {
+  DEFAULT_GATEWAY_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  type ExecutionMode,
+  getReasoningEffortOptions,
+  isSupportedReasoningEffort,
+  type SupportedReasoningEffort,
+} from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import {
   ArrowUp,
@@ -32,6 +44,7 @@ import {
   View,
 } from "react-native";
 import { useVoiceRecording } from "@/features/chat";
+import { useCloudTaskConfigOptions } from "@/features/tasks/hooks/useCloudTaskConfigOptions";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 import type { MessagingMode } from "../stores/messagingModeStore";
@@ -44,18 +57,10 @@ import {
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
 import {
-  DEFAULT_EXECUTION_MODE,
-  DEFAULT_MODEL,
-  DEFAULT_REASONING,
-  EXECUTION_MODES,
-  type ExecutionMode,
-  MODELS,
-  modeLabel,
-  modelLabel,
-  modelSupportsReasoning,
-  REASONING_LEVELS,
-  type ReasoningEffort,
-  reasoningLabel,
+  getMobileModelOptions,
+  getModelConfigOption,
+  getModelLabel,
+  resolveAvailableModel,
 } from "./options";
 import { Pill } from "./Pill";
 import { SelectSheet } from "./SelectSheet";
@@ -66,6 +71,7 @@ import {
 } from "./submitComposerMessage";
 
 const log = logger.scope("task-chat-composer");
+const EXECUTION_MODES = getAvailableModes();
 
 interface TaskChatComposerProps {
   onSend: (
@@ -80,10 +86,10 @@ interface TaskChatComposerProps {
   /** Current pill values (persisted per-task by the caller). */
   mode: ExecutionMode;
   model: string;
-  reasoning: ReasoningEffort;
+  reasoning: SupportedReasoningEffort;
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
-  onReasoningChange: (reasoning: ReasoningEffort) => void;
+  onReasoningChange: (reasoning: SupportedReasoningEffort) => void;
   /** Steer vs Queue behaviour for messages sent while a turn is running. */
   messagingMode: MessagingMode;
   queuedCount: number;
@@ -103,6 +109,11 @@ function modeIcon(mode: ExecutionMode, color: string, size = 14): ReactNode {
       return <PencilIcon size={size} color={color} />;
     case "acceptEdits":
       return <ShieldCheck size={size} color={color} />;
+    case "bypassPermissions":
+    case "full-access":
+      return <ShieldCheck size={size} color={color} weight="fill" />;
+    case "read-only":
+      return <PauseIcon size={size} color={color} />;
     case "auto":
       return <Sparkle size={size} color={color} weight="fill" />;
   }
@@ -183,6 +194,9 @@ export function TaskChatComposer({
   onCancelEdit,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
+  const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
+  const modelConfigOption = getModelConfigOption(configOptions);
+  const mobileModelOptions = getMobileModelOptions(modelConfigOption);
   const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
@@ -206,6 +220,23 @@ export function TaskChatComposer({
     setAttachments(restoredDraft.attachments);
   }, [restoredDraft]);
 
+  useEffect(() => {
+    if (!hasLiveConfig) return;
+    const availableModel = resolveAvailableModel(modelConfigOption, model);
+    if (availableModel === model) return;
+    onModelChange(availableModel);
+    if (!isSupportedReasoningEffort("claude", availableModel, reasoning)) {
+      onReasoningChange(DEFAULT_REASONING_EFFORT);
+    }
+  }, [
+    hasLiveConfig,
+    model,
+    modelConfigOption,
+    onModelChange,
+    onReasoningChange,
+    reasoning,
+  ]);
+
   const appendTranscript = useCallback((transcript: string) => {
     setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
   }, []);
@@ -220,7 +251,8 @@ export function TaskChatComposer({
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
 
-  const showReasoningPill = modelSupportsReasoning(model);
+  const reasoningOptions = getReasoningEffortOptions("claude", model) ?? [];
+  const showReasoningPill = reasoningOptions.length > 0;
 
   const hasContent = !isComposerEmpty({ text: message, attachments });
   const canSend = hasContent && !disabled && !isRecording;
@@ -399,21 +431,28 @@ export function TaskChatComposer({
                       ? themeColors.accent[11]
                       : themeColors.gray[11],
                   )}
-                  label={modeLabel(mode)}
+                  label={
+                    EXECUTION_MODES.find((option) => option.id === mode)
+                      ?.name ?? mode
+                  }
                   accent={mode === "plan"}
                   onPress={() => setModeSheetOpen(true)}
                 />
 
                 <Pill
                   icon={<Robot size={14} color={themeColors.gray[11]} />}
-                  label={modelLabel(model)}
+                  label={getModelLabel(modelConfigOption, model)}
                   onPress={() => setModelSheetOpen(true)}
                 />
 
                 {showReasoningPill ? (
                   <Pill
                     icon={<BrainIcon size={14} color={themeColors.gray[11]} />}
-                    label={reasoningLabel(reasoning)}
+                    label={
+                      reasoningOptions.find(
+                        (option) => option.value === reasoning,
+                      )?.name ?? reasoning
+                    }
                     onPress={() => setReasoningSheetOpen(true)}
                   />
                 ) : null}
@@ -462,12 +501,12 @@ export function TaskChatComposer({
         onChange={(v) => onModeChange(v as ExecutionMode)}
         onClose={() => setModeSheetOpen(false)}
         options={EXECUTION_MODES.map((m) => ({
-          value: m.value,
-          label: m.label,
+          value: m.id,
+          label: m.name,
           description: m.description,
           icon: modeIcon(
-            m.value,
-            m.value === "plan" ? themeColors.accent[11] : themeColors.gray[11],
+            m.id as ExecutionMode,
+            m.id === "plan" ? themeColors.accent[11] : themeColors.gray[11],
             16,
           ),
         }))}
@@ -479,18 +518,16 @@ export function TaskChatComposer({
         value={model}
         onChange={(v) => {
           onModelChange(v);
-          // If the new model doesn't support reasoning, drop the level so the
-          // payload stays consistent. Default reasoning re-applies when
-          // switching back to a reasoning-capable model.
-          if (!modelSupportsReasoning(v)) {
-            onReasoningChange(DEFAULT_REASONING);
+          if (!isSupportedReasoningEffort("claude", v, reasoning)) {
+            onReasoningChange(DEFAULT_REASONING_EFFORT);
           }
         }}
         onClose={() => setModelSheetOpen(false)}
-        options={MODELS.map((m) => ({
+        options={mobileModelOptions.map((m) => ({
           value: m.value,
           label: m.label,
           description: m.description,
+          disabled: m.disabled,
           icon: <Robot size={16} color={themeColors.gray[11]} />,
         }))}
       />
@@ -499,11 +536,11 @@ export function TaskChatComposer({
         open={reasoningSheetOpen}
         title="Reasoning"
         value={reasoning}
-        onChange={(v) => onReasoningChange(v as ReasoningEffort)}
+        onChange={(v) => onReasoningChange(v as SupportedReasoningEffort)}
         onClose={() => setReasoningSheetOpen(false)}
-        options={REASONING_LEVELS.map((r) => ({
+        options={reasoningOptions.map((r) => ({
           value: r.value,
-          label: r.label,
+          label: r.name,
           icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
         }))}
       />
@@ -520,7 +557,7 @@ export function TaskChatComposer({
 }
 
 export const TASK_CHAT_DEFAULTS = {
-  mode: DEFAULT_EXECUTION_MODE,
-  model: DEFAULT_MODEL,
-  reasoning: DEFAULT_REASONING,
+  mode: DEFAULT_CLAUDE_EXECUTION_MODE,
+  model: DEFAULT_GATEWAY_MODEL,
+  reasoning: DEFAULT_REASONING_EFFORT,
 } as const;
