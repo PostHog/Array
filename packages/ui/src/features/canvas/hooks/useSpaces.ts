@@ -81,19 +81,27 @@ export function useSpaces(): {
 
 // Swipe tuning. macOS "switch desktop" semantics: one swipe = one space,
 // regardless of speed. A trackpad swipe is a burst of wheel events (fingers +
-// inertia tail); the whole burst must move exactly one space.
+// a long, decaying inertia tail); the whole burst must move exactly one space.
 //
-// The gate: fire once when a horizontal swipe crosses the threshold, then lock
-// until the wheel goes QUIET for END_GAP_MS. Inertia streams events with small
-// gaps, so it keeps the lock alive and can never fire again; the lock only
-// releases after the fling (fingers + momentum) has fully stopped. A fresh
-// swipe then re-arms. No speed dependence, no re-arm heuristics.
-const END_GAP_MS = 250;
+// Two guards together make a single fire impossible to beat, without trying to
+// classify inertia vs. intent (which timing alone can't do reliably):
+//   1. QUIET_GAP — after firing, stay locked until the wheel is silent this
+//      long. A continuous inertia tail never goes silent, so it stays locked.
+//   2. MIN_FIRE_INTERVAL — a hard floor between two switches. Even if the tail
+//      *does* have a gap longer than QUIET_GAP (some trackpads emit sparse
+//      late-inertia events), a second switch can't fire until this has passed,
+//      and by then the tail's velocity is spent — with the accumulator reset
+//      on every fire, the dregs can't re-reach the threshold.
+// The cost is that two *deliberate* swipes need ~half a second between them,
+// which is fine for discrete space switching and the price of never over-shooting.
+const QUIET_GAP_MS = 400;
+const MIN_FIRE_INTERVAL_MS = 500;
 // Horizontal travel within one gesture that triggers the switch.
 const FIRE_PX = 40;
 
 interface SwipeGate {
   lastEventAt: number;
+  firedAt: number;
   accumX: number;
   locked: boolean;
 }
@@ -108,6 +116,7 @@ export function useSpaceSwipe(
   const { cycle } = useSpaces();
   const gate = useRef<SwipeGate>({
     lastEventAt: 0,
+    firedAt: 0,
     accumX: 0,
     locked: false,
   });
@@ -117,25 +126,33 @@ export function useSpaceSwipe(
       if (!enabled) return;
       const now = Date.now();
       const g = gate.current;
-
-      // A quiet stretch ends the previous gesture (fingers + inertia have
-      // stopped), so the next event starts fresh and re-arms.
-      if (now - g.lastEventAt > END_GAP_MS) {
-        g.accumX = 0;
-        g.locked = false;
-      }
+      const gap = now - g.lastEventAt;
       g.lastEventAt = now;
 
-      // Already fired this gesture — swallow the rest of the burst (inertia).
-      if (g.locked) return;
+      if (g.locked) {
+        // Release only once the wheel has gone quiet AND the hard floor since
+        // the last switch has passed — inertia can satisfy neither.
+        if (gap > QUIET_GAP_MS && now - g.firedAt > MIN_FIRE_INTERVAL_MS) {
+          g.locked = false;
+          g.accumX = 0;
+        } else {
+          return;
+        }
+      } else if (gap > QUIET_GAP_MS) {
+        // Fresh gesture after a real pause.
+        g.accumX = 0;
+      }
 
       // Only horizontal-dominant events count; vertical scrolling is ignored.
       if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
 
       g.accumX += event.deltaX;
       if (Math.abs(g.accumX) >= FIRE_PX) {
+        const direction = g.accumX > 0 ? 1 : -1;
         g.locked = true;
-        cycle(g.accumX > 0 ? 1 : -1);
+        g.firedAt = now;
+        g.accumX = 0;
+        cycle(direction);
       }
     },
     [enabled, cycle],

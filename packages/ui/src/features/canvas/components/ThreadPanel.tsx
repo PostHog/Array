@@ -7,7 +7,6 @@ import {
   PlusCircleIcon,
   RobotIcon,
   TrashIcon,
-  UserIcon,
   XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -334,39 +333,83 @@ export function ThreadArtifactRow({
   );
 }
 
-// A condensed history row in the Activity timeline (task created, user
-// message, run finished, …) — the "what happened" events the mockup asks for,
-// derived from the task and its session rather than the human thread.
-function ActivityEventRow({
-  icon,
+// A compact lifecycle marker in the Activity timeline (task created / run
+// finished): a small leading glyph — a person's avatar or a status icon — then
+// a muted label and the time. Deliberately lighter than a full message row so
+// the timeline reads as events, not a wall of chunky avatars.
+function LifecycleMarker({
+  leading,
   label,
-  detail,
   timestamp,
 }: {
+  leading: ReactNode;
+  label: ReactNode;
+  timestamp: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 py-1 pr-3 pl-4">
+      <span className="flex size-5 shrink-0 items-center justify-center">
+        {leading}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[12px] text-gray-11">
+        {label}
+      </span>
+      <ThreadTimestamp dateTime={timestamp} />
+    </div>
+  );
+}
+
+// The small circular status glyph for lifecycle markers with no person.
+function StatusGlyph({
+  icon,
+  tone,
+}: {
   icon: ReactNode;
-  label: string;
-  detail?: string | null;
+  tone: "muted" | "success" | "danger";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-green-9"
+      : tone === "danger"
+        ? "text-red-9"
+        : "text-gray-10";
+  return (
+    <span
+      className={`flex size-5 items-center justify-center rounded-full bg-gray-3 ${toneClass}`}
+    >
+      {icon}
+    </span>
+  );
+}
+
+// A user message sent to the agent — a real message row with the author's
+// avatar, matching the human comment rows so the two read alike.
+function UserMessageRow({
+  author,
+  content,
+  timestamp,
+}: {
+  author?: UserBasic | null;
+  content: string;
   timestamp: string;
 }) {
   return (
     <ThreadItem>
       <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
-          <AvatarFallback>{icon}</AvatarFallback>
-        </Avatar>
+        <UserAvatar user={author} size="lg" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>{label}</ThreadItemAuthor>
+          <ThreadItemAuthor>
+            {author ? userDisplayName(author) : "You"}
+          </ThreadItemAuthor>
           <ThreadTimestamp dateTime={timestamp} />
         </ThreadItemHeader>
-        {detail && (
-          <ThreadItemBody>
-            <span className="line-clamp-3 whitespace-pre-wrap break-words text-[13px] text-gray-11">
-              {detail}
-            </span>
-          </ThreadItemBody>
-        )}
+        <ThreadItemBody>
+          <span className="line-clamp-4 whitespace-pre-wrap break-words text-[13px]">
+            {content}
+          </span>
+        </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>
   );
@@ -770,12 +813,22 @@ function ThreadConversation({
       key: "task-created",
       ts: createdTs,
       node: (
-        <ActivityEventRow
-          icon={<PlusCircleIcon size={14} />}
-          label={`${
-            task.created_by ? userDisplayName(task.created_by) : "Someone"
-          } created this task`}
-          detail={task.title || null}
+        <LifecycleMarker
+          leading={
+            task.created_by ? (
+              <UserAvatar user={task.created_by} size="xs" />
+            ) : (
+              <StatusGlyph icon={<PlusCircleIcon size={12} />} tone="muted" />
+            )
+          }
+          label={
+            <>
+              <span className="font-medium text-gray-12">
+                {task.created_by ? userDisplayName(task.created_by) : "Someone"}
+              </span>{" "}
+              created this task
+            </>
+          }
           timestamp={task.created_at}
         />
       ),
@@ -787,10 +840,11 @@ function ThreadConversation({
         key: `user-message-${item.id}`,
         ts: item.timestamp,
         node: (
-          <ActivityEventRow
-            icon={<UserIcon size={14} />}
-            label="User message"
-            detail={item.content}
+          // The session carries no per-message author; the task owner drives
+          // it, so attribute their avatar rather than a generic glyph.
+          <UserMessageRow
+            author={task.created_by}
+            content={item.content}
             timestamp={new Date(item.timestamp).toISOString()}
           />
         ),
@@ -845,17 +899,23 @@ function ThreadConversation({
 
     const runStatus = task.latest_run?.status;
     if (runStatus && isTerminalStatus(runStatus)) {
+      const succeeded = runStatus === "completed";
       nodes.push({
         key: "run-status",
         ts: updatedTs + 1,
         node: (
-          <ActivityEventRow
-            icon={
-              runStatus === "completed" ? (
-                <CheckCircleIcon size={14} />
-              ) : (
-                <XCircleIcon size={14} />
-              )
+          <LifecycleMarker
+            leading={
+              <StatusGlyph
+                icon={
+                  succeeded ? (
+                    <CheckCircleIcon size={12} weight="fill" />
+                  ) : (
+                    <XCircleIcon size={12} weight="fill" />
+                  )
+                }
+                tone={succeeded ? "success" : "danger"}
+              />
             }
             label={`Task ${runStatus.replace(/_/g, " ")}`}
             timestamp={task.updated_at}
