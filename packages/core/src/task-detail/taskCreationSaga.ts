@@ -637,8 +637,16 @@ export class TaskCreationSaga extends Saga<
   ): void {
     this.deps.host
       .getEnvironment({ repoPath, id: environmentId })
-      .then((env) => {
+      .then(async (env) => {
         if (!env?.setup?.script) return;
+
+        const approved = await this.deps.host.confirmEnvironmentSetup({
+          repoPath,
+          environmentId,
+          name: env.name,
+          script: env.setup.script,
+        });
+        if (!approved) return;
 
         this.deps.host.dispatchSetupAction({
           taskId,
