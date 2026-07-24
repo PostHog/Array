@@ -114,7 +114,7 @@ describe("loopModelOptions", () => {
 
 describe("LOOP_DEFAULT_MODELS", () => {
   it("mirrors the backend loop defaults", () => {
-    expect(LOOP_DEFAULT_MODELS.claude.id).toBe("@cf/zai-org/glm-5.2");
+    expect(LOOP_DEFAULT_MODELS.claude.id).toBe("claude-sonnet-5");
     expect(LOOP_DEFAULT_MODELS.codex.id).toBe("gpt-5");
   });
 });
@@ -125,7 +125,11 @@ describe("loopReasoningEffortOptions", () => {
     model: string;
     expectedValues: LoopSchemas.LoopReasoningEffortEnum[];
   }>([
-    { adapter: "claude", model: "", expectedValues: ["high", "max"] },
+    {
+      adapter: "claude",
+      model: "",
+      expectedValues: ["low", "medium", "high", "xhigh", "max"],
+    },
     {
       adapter: "claude",
       model: "claude-sonnet-5",
@@ -184,9 +188,9 @@ describe("clampLoopReasoningEffort", () => {
     },
     {
       name: "clears an effort the default model doesn't support",
-      adapter: "claude",
+      adapter: "codex",
       model: "",
-      effort: "medium",
+      effort: "xhigh",
       expected: null,
     },
     {

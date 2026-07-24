@@ -16,7 +16,7 @@ export const LOOP_DEFAULT_MODELS: Record<
   LoopSchemas.LoopRuntimeAdapterEnum,
   { id: string; label: string }
 > = {
-  claude: { id: "@cf/zai-org/glm-5.2", label: "GLM-5.2" },
+  claude: { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
   codex: { id: "gpt-5", label: "GPT-5" },
 };
 
