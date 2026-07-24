@@ -5,6 +5,10 @@ import {
   getDefaultExecutionModeForAdapter,
 } from "./executionModes";
 
+export function getCloudReasoningConfigOptionId(adapter: Adapter): string {
+  return adapter === "codex" ? "reasoning_effort" : "effort";
+}
+
 /**
  * Pure derivations of cloud session config options. No store or host access —
  * just shaping the config-option list the mode switcher renders.
@@ -101,7 +105,7 @@ export function addMissingCloudRuntimeConfigOptions(
 
   if (initialReasoningEffort && !categories.has("thought_level")) {
     extras.push({
-      id: adapter === "codex" ? "reasoning_effort" : "effort",
+      id: getCloudReasoningConfigOptionId(adapter),
       name: adapter === "codex" ? "Reasoning" : "Effort",
       type: "select",
       currentValue: initialReasoningEffort,

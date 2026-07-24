@@ -1,8 +1,6 @@
 import { Text } from "@components/text";
-import {
-  DEFAULT_CLAUDE_EXECUTION_MODE,
-  getDefaultExecutionModeForAdapter,
-} from "@posthog/core/sessions/executionModes";
+import { getCloudReasoningConfigOptionId } from "@posthog/core/sessions/cloudSessionConfig";
+import { getDefaultExecutionModeForAdapter } from "@posthog/core/sessions/executionModes";
 import {
   countUserMessages,
   getSessionActivityPhase,
@@ -187,7 +185,7 @@ export default function TaskDetailScreen() {
       : composerConfig.adapter === composerAdapter;
   const composerMode: ExecutionMode =
     (composerConfigMatchesAdapter ? composerConfig?.mode : undefined) ??
-    DEFAULT_CLAUDE_EXECUTION_MODE;
+    getDefaultExecutionModeForAdapter(composerAdapter);
   const composerModel =
     (composerConfigMatchesAdapter ? composerConfig?.model : undefined) ??
     task?.latest_run?.model ??
@@ -566,10 +564,14 @@ export default function TaskDetailScreen() {
     (value: SupportedReasoningEffort) => {
       if (!taskId) return;
       setComposerConfig(taskId, { reasoning: value });
-      setConfigOption(taskId, "effort", value).catch(() => {});
+      setConfigOption(
+        taskId,
+        getCloudReasoningConfigOptionId(composerAdapter),
+        value,
+      ).catch(() => {});
       usePreferencesStore.getState().setLastUsedReasoningEffort(value);
     },
-    [taskId, setComposerConfig, setConfigOption],
+    [taskId, composerAdapter, setComposerConfig, setConfigOption],
   );
 
   const handleStop = useCallback(() => {
