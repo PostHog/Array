@@ -829,7 +829,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       jsonrpc: "2.0",
       method: input.method,
       params: input.params ?? {},
-      id: `posthog-code-${Date.now()}`,
+      id: input.id ?? globalThis.crypto.randomUUID(),
     };
 
     try {
@@ -839,6 +839,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5 * 60_000),
       });
 
       if (!response.ok) {

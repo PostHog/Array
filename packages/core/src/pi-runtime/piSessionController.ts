@@ -35,6 +35,11 @@ export const LOCAL_PI_SESSION_FACTORY = Symbol.for(
 export interface PiSession {
   client: PiRemoteRpcClient;
   readonly resumeRequired?: boolean;
+  sendUserMessage?(
+    type: "prompt" | "steer" | "follow_up",
+    message: string,
+    artifactIds: string[],
+  ): Promise<void>;
   health(): Promise<PiRuntimeHealth>;
   getConversation(): Promise<AgentConversationEvent[]>;
   onConversationEvent(
@@ -168,12 +173,30 @@ export class PiSessionController {
       const command = parseCommandLine(message);
       const customInstructions = command?.args?.trim() || undefined;
       await session.client.compact(customInstructions);
-    } else if (action === "prompt") {
-      await session.client.prompt(message);
-    } else if (action === "steer") {
-      await session.client.steer(message);
     } else {
-      await session.client.followUp(message);
+      const taskRunId = this.taskRunIds.get(taskId);
+      const prepared =
+        taskRunId && session.sendUserMessage
+          ? await this.taskService.prepareCloudPiMessage(
+              taskId,
+              taskRunId,
+              message,
+            )
+          : { content: message, artifactIds: [] };
+      if (session.sendUserMessage) {
+        const commandType = action === "followUp" ? "follow_up" : action;
+        await session.sendUserMessage(
+          commandType,
+          prepared.content,
+          prepared.artifactIds,
+        );
+      } else if (action === "prompt") {
+        await session.client.prompt(prepared.content);
+      } else if (action === "steer") {
+        await session.client.steer(prepared.content);
+      } else {
+        await session.client.followUp(prepared.content);
+      }
     }
 
     await this.refreshStatus(taskId);
@@ -185,7 +208,10 @@ export class PiSessionController {
     await session.client.setModel(model.provider, model.id);
     await this.refreshStatus(taskId);
     const thinkingLevels = await session.client.getAvailableThinkingLevels();
-    this.updateSession(taskId, { thinkingLevels });
+    this.updateSession(taskId, {
+      thinkingLevels,
+      thinkingLevelsLoaded: true,
+    });
   }
 
   async setThinkingLevel(
@@ -308,20 +334,34 @@ export class PiSessionController {
         events: reconciledEvents,
         status,
         models: currentSession.models,
+        modelsLoaded: currentSession.modelsLoaded,
         thinkingLevels: currentSession.thinkingLevels,
+        thinkingLevelsLoaded: currentSession.thinkingLevelsLoaded,
         commands: currentSession.commands,
         isBashRunning: false,
         error: undefined,
       });
 
-      const [models, thinkingLevels, commands] = await Promise.all([
-        session.client.getAvailableModels(),
-        session.client.getAvailableThinkingLevels(),
-        session.client.getCommands(),
+      await Promise.all([
+        session.client.getAvailableModels().then((models) => {
+          if (this.getSessionVersion(taskId) === connectedSessionVersion) {
+            this.updateSession(taskId, { models, modelsLoaded: true });
+          }
+        }),
+        session.client.getAvailableThinkingLevels().then((thinkingLevels) => {
+          if (this.getSessionVersion(taskId) === connectedSessionVersion) {
+            this.updateSession(taskId, {
+              thinkingLevels,
+              thinkingLevelsLoaded: true,
+            });
+          }
+        }),
+        session.client.getCommands().then((commands) => {
+          if (this.getSessionVersion(taskId) === connectedSessionVersion) {
+            this.updateSession(taskId, { commands });
+          }
+        }),
       ]);
-      if (this.getSessionVersion(taskId) === connectedSessionVersion) {
-        this.updateSession(taskId, { models, thinkingLevels, commands });
-      }
     } catch (error) {
       if (this.getSessionVersion(taskId) === connectedSessionVersion) {
         this.updateSession(taskId, {
@@ -355,92 +395,17 @@ export class PiSessionController {
   }
 
   private reconcileLiveEvents(
-    nativeEvents: AgentConversationEvent[],
+    historyEvents: AgentConversationEvent[],
     liveEvents: AgentConversationEvent[],
   ): AgentConversationEvent[] {
-    const nativeEventCounts = new Map<string, number>();
-    const nativeTextByMessage = new Map<string, string>();
-
-    for (const event of nativeEvents) {
-      const textMessageKey = this.getTextMessageKey(event);
-      const text = this.getTextContent(event);
-      if (textMessageKey && text !== undefined) {
-        const nativeText = nativeTextByMessage.get(textMessageKey) ?? "";
-        nativeTextByMessage.set(textMessageKey, nativeText + text);
-        continue;
-      }
-
-      const key = this.getEventKey(event);
-      nativeEventCounts.set(key, (nativeEventCounts.get(key) ?? 0) + 1);
-    }
-
-    const nativeTextOffsets = new Map<string, number>();
-    return liveEvents.filter((event) => {
-      const textMessageKey = this.getTextMessageKey(event);
-      const text = this.getTextContent(event);
-      if (textMessageKey && text !== undefined) {
-        const nativeText = nativeTextByMessage.get(textMessageKey);
-        if (nativeText === undefined) {
-          return true;
-        }
-
-        const offset = nativeTextOffsets.get(textMessageKey) ?? 0;
-        const matchIndex = nativeText.indexOf(text, offset);
-        if (matchIndex === -1) {
-          return true;
-        }
-
-        nativeTextOffsets.set(textMessageKey, matchIndex + text.length);
-        return false;
-      }
-
-      const key = this.getEventKey(event);
-      const nativeCount = nativeEventCounts.get(key) ?? 0;
-      if (nativeCount === 0) {
-        return true;
-      }
-
-      nativeEventCounts.set(key, nativeCount - 1);
-      return false;
-    });
-  }
-
-  private getTextMessageKey(event: AgentConversationEvent): string | undefined {
-    if (
-      event.type !== "assistant_message_chunk" &&
-      event.type !== "assistant_thought_chunk"
-    ) {
-      return undefined;
-    }
-
-    if (event.content.type !== "text") {
-      return undefined;
-    }
-
-    return `${event.type}:${event.timestamp}`;
-  }
-
-  private getTextContent(event: AgentConversationEvent): string | undefined {
-    if (
-      event.type !== "assistant_message_chunk" &&
-      event.type !== "assistant_thought_chunk"
-    ) {
-      return undefined;
-    }
-
-    return event.content.type === "text" ? event.content.text : undefined;
-  }
-
-  private getEventKey(event: AgentConversationEvent): string {
-    if (event.type === "user_message") {
-      return JSON.stringify({
-        type: event.type,
-        timestamp: event.timestamp,
-        content: event.content,
-      });
-    }
-
-    return JSON.stringify(event);
+    const historySourceIds = new Set(
+      historyEvents.flatMap((event) =>
+        event.sourceId ? [event.sourceId] : [],
+      ),
+    );
+    return liveEvents.filter(
+      (event) => !event.sourceId || !historySourceIds.has(event.sourceId),
+    );
   }
 
   private async refreshStatus(taskId: string): Promise<void> {

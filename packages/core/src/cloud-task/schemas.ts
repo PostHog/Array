@@ -67,6 +67,7 @@ export const onUpdateInput = z.object({
 
 export const sendCommandInput = z.object({
   taskId: z.string(),
+  id: z.string().optional(),
   runId: z.string(),
   apiHost: z.string(),
   teamId: z.number(),

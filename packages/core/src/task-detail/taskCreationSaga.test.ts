@@ -377,9 +377,23 @@ describe("TaskCreationSaga", () => {
     expect(sessionService.markTaskCreationInFlight).not.toHaveBeenCalled();
   });
 
-  it("rejects cloud Pi file attachments before creating a task", async () => {
-    const createTaskRequest = vi.fn();
-    const saga = makeSaga({ createTask: createTaskRequest });
+  it("uploads cloud Pi attachments before starting the run", async () => {
+    const createdTask = createTask({ repository: "posthog/posthog" });
+    const startedTask = createTask({ latest_run: createRun(), runtime: "pi" });
+    const createTaskRun = vi.fn().mockResolvedValue(createRun());
+    const startTaskRun = vi.fn().mockResolvedValue(startedTask);
+    mockHost.getCloudPromptTransport.mockReturnValue({
+      filePaths: ["/tmp/input.txt"],
+      skillBundles: [],
+      messageText: "Read this",
+      promptText: "Read this\n\nAttached files: input.txt",
+    });
+    mockHost.uploadRunAttachments.mockResolvedValue(["artifact-1"]);
+    const saga = makeSaga({
+      createTask: vi.fn().mockResolvedValue(createdTask),
+      createTaskRun,
+      startTaskRun,
+    });
 
     const result = await saga.run({
       content: "Read this",
@@ -389,12 +403,18 @@ describe("TaskCreationSaga", () => {
       runtime: "pi",
     });
 
-    expect(result).toEqual({
-      success: false,
-      error: "Cloud Pi does not support file attachments",
-      failedStep: "unknown",
+    expect(result.success).toBe(true);
+    expect(mockHost.uploadRunAttachments).toHaveBeenCalledWith(
+      expect.anything(),
+      "task-123",
+      "run-123",
+      ["/tmp/input.txt"],
+      [],
+    );
+    expect(startTaskRun).toHaveBeenCalledWith("task-123", "run-123", {
+      pendingUserMessage: "Read this",
+      pendingUserArtifactIds: ["artifact-1"],
     });
-    expect(createTaskRequest).not.toHaveBeenCalled();
   });
 
   it("starts a cloud Pi run without creating a local runtime", async () => {

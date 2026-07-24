@@ -64,6 +64,7 @@ function toContent(block: {
   text?: string;
   data?: string;
   mimeType?: string;
+  fileName?: string;
 }): AgentContent | undefined {
   if (block.type === "text" && typeof block.text === "string") {
     return { type: "text", text: block.text };
@@ -74,7 +75,12 @@ function toContent(block: {
     typeof block.data === "string" &&
     typeof block.mimeType === "string"
   ) {
-    return { type: "image", data: block.data, mimeType: block.mimeType };
+    return {
+      type: "image",
+      data: block.data,
+      mimeType: block.mimeType,
+      ...(block.fileName ? { fileName: block.fileName } : {}),
+    };
   }
 
   return undefined;

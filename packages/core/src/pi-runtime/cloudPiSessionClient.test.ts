@@ -88,7 +88,7 @@ describe("CloudPiSessionClient", () => {
     expect(cloud.client.sendCommand).toHaveBeenCalledOnce();
   });
 
-  it("ignores historical readiness events when resuming the same run", async () => {
+  it("accepts an in-progress reconnect snapshot as runtime readiness", async () => {
     const cloud = createCloudTaskClient();
     vi.mocked(cloud.client.sendCommand).mockResolvedValue({
       success: true,
@@ -110,16 +110,6 @@ describe("CloudPiSessionClient", () => {
       status: "in_progress",
       newEntries: [{ type: "pi_run_started" }],
       totalEntryCount: 1,
-    });
-
-    expect(cloud.client.sendCommand).not.toHaveBeenCalled();
-
-    cloud.sendUpdate({
-      taskId: "task-1",
-      runId: "run-1",
-      kind: "logs",
-      newEntries: [{ type: "pi_run_started" }],
-      totalEntryCount: 2,
     });
 
     await expect(state).resolves.toMatchObject({ isStreaming: false });
@@ -149,7 +139,9 @@ describe("CloudPiSessionClient", () => {
 
     cloud.startSubscription();
 
-    await expect(conversation).resolves.toEqual([snapshotEvent]);
+    await expect(conversation).resolves.toEqual([
+      expect.objectContaining(snapshotEvent),
+    ]);
     expect(cloud.client.watch).toHaveBeenCalledTimes(1);
 
     cleanup();
@@ -206,14 +198,14 @@ describe("CloudPiSessionClient", () => {
     });
 
     expect(events).toEqual([
-      {
+      expect.objectContaining({
         type: "progress",
         timestamp: Date.parse("2026-07-23T12:00:00.000Z"),
         step: "sandbox",
         status: "in_progress",
         label: "Setting up sandbox",
         group: "setup:run-1",
-      },
+      }),
     ]);
     expect(cloud.client.sendCommand).not.toHaveBeenCalled();
   });
@@ -237,7 +229,9 @@ describe("CloudPiSessionClient", () => {
       totalEntryCount: 1,
     });
 
-    await expect(conversation).resolves.toEqual([snapshotEvent]);
+    await expect(conversation).resolves.toEqual([
+      expect.objectContaining(snapshotEvent),
+    ]);
     expect(session.resumeRequired).toBe(true);
     await expect(session.health()).resolves.toEqual({ state: "cold" });
     await expect(session.client.getState()).resolves.toMatchObject({
@@ -246,7 +240,7 @@ describe("CloudPiSessionClient", () => {
     await expect(session.client.getAvailableModels()).resolves.toEqual([]);
     await expect(session.client.getCommands()).resolves.toEqual([]);
     expect(events).toEqual([
-      snapshotEvent,
+      expect.objectContaining(snapshotEvent),
       expect.objectContaining({ type: "turn_completed" }),
     ]);
     expect(cloud.client.sendCommand).not.toHaveBeenCalled();
@@ -254,40 +248,21 @@ describe("CloudPiSessionClient", () => {
 
   it("does not install streaming state after a terminal snapshot arrives during controller load", async () => {
     const cloud = createCloudTaskClient();
-    let resolveEntries: (result: { success: false; retryable: true }) => void =
-      () => {};
-    const entries = new Promise<{ success: false; retryable: true }>(
-      (resolve) => {
-        resolveEntries = resolve;
-      },
-    );
+    let resolveState: (result: {
+      success: true;
+      result: Record<string, unknown>;
+    }) => void = () => {};
+    const state = new Promise<{
+      success: true;
+      result: Record<string, unknown>;
+    }>((resolve) => {
+      resolveState = resolve;
+    });
     vi.mocked(cloud.client.sendCommand).mockImplementation(async (input) => {
       const command = input.params?.command as { type: string };
-      if (command.type === "get_entries") {
-        return entries;
-      }
       if (command.type === "get_state") {
-        return {
-          success: true,
-          result: {
-            type: "response",
-            command: "get_state",
-            success: true,
-            data: {
-              thinkingLevel: "off",
-              isStreaming: true,
-              isCompacting: false,
-              steeringMode: "all",
-              followUpMode: "all",
-              sessionId: "run-1",
-              autoCompactionEnabled: true,
-              messageCount: 1,
-              pendingMessageCount: 0,
-            },
-          },
-        };
+        return state;
       }
-
       return { success: false };
     });
     const session = new CloudPiSessionClient(
@@ -321,12 +296,32 @@ describe("CloudPiSessionClient", () => {
       newEntries: [{ type: "pi_event", event: snapshotEvent }],
       totalEntryCount: 1,
     });
-    resolveEntries({ success: false, retryable: true });
+    resolveState({
+      success: true,
+      result: {
+        type: "response",
+        command: "get_state",
+        success: true,
+        data: {
+          thinkingLevel: "off",
+          isStreaming: true,
+          isCompacting: false,
+          steeringMode: "all",
+          followUpMode: "all",
+          sessionId: "run-1",
+          autoCompactionEnabled: true,
+          messageCount: 1,
+          pendingMessageCount: 0,
+        },
+      },
+    });
 
     await connection;
 
     const controllerSession = controller.store.getState().sessions["task-1"];
-    expect(controllerSession.events).toContain(snapshotEvent);
+    expect(controllerSession.events).toContainEqual(
+      expect.objectContaining(snapshotEvent),
+    );
     expect(controllerSession.status).toMatchObject({ isStreaming: false });
   });
 
@@ -356,7 +351,12 @@ describe("CloudPiSessionClient", () => {
       totalEntryCount: 1,
     });
 
-    await expect(session.getConversation()).resolves.toEqual([snapshotEvent]);
+    await expect(session.client.getState()).resolves.toMatchObject({
+      isStreaming: false,
+    });
+    await expect(session.getConversation()).resolves.toEqual([
+      expect.objectContaining(snapshotEvent),
+    ]);
     expect(cloud.client.sendCommand).toHaveBeenCalledTimes(1);
   });
 
@@ -393,7 +393,7 @@ describe("CloudPiSessionClient", () => {
     });
 
     expect(events).toEqual([
-      snapshotEvent,
+      expect.objectContaining(snapshotEvent),
       expect.objectContaining({ type: "turn_completed" }),
     ]);
     await expect(session.client.abort()).rejects.toThrow(

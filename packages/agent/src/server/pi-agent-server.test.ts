@@ -1,11 +1,11 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { PiAgentServer } from "./pi-agent-server";
 import type { AgentServerConfig } from "./types";
 
-function config(): AgentServerConfig {
+function config(overrides: Partial<AgentServerConfig> = {}): AgentServerConfig {
   return {
     port: 0,
     jwtPublicKey: "public-key",
@@ -16,6 +16,7 @@ function config(): AgentServerConfig {
     taskId: "task-1",
     runId: "run-1",
     sandboxId: "sandbox-1",
+    ...overrides,
   };
 }
 
@@ -58,25 +59,33 @@ describe("PiAgentServer", () => {
 
     expect(appendTaskRunLog).toHaveBeenCalledWith("task-1", "run-1", [
       {
+        id: expect.any(String),
         type: "pi_event",
         timestamp: expect.any(String),
         event: {
           type: "user_message",
           timestamp: 1,
           content: [{ type: "text", text: "hello" }],
+          sourceId: expect.any(String),
         },
       },
       {
+        id: expect.any(String),
         type: "pi_event",
         timestamp: expect.any(String),
-        event: { type: "turn_completed", timestamp: 2 },
+        event: {
+          type: "turn_completed",
+          timestamp: 2,
+          sourceId: expect.any(String),
+        },
       },
     ]);
   });
 
-  it("uses native Pi prompt for an idle cloud user message", async () => {
-    const prompt = vi.fn(async () => {});
-    const followUp = vi.fn(async () => {});
+  it("uses the durable message id for an idle native Pi prompt", async () => {
+    const sendCommand = vi.fn(
+      async (_command: Record<string, unknown>) => ({}),
+    );
     const server = new PiAgentServer(config()) as unknown as {
       session: unknown;
       executeCommand(
@@ -88,20 +97,94 @@ describe("PiAgentServer", () => {
       runtime: {
         client: {
           getState: vi.fn(async () => ({ isStreaming: false })),
-          prompt,
-          followUp,
         },
+        sendCommand,
       },
     };
 
-    await server.executeCommand("user_message", { content: "hello" });
+    await server.executeCommand("user_message", {
+      content: "hello",
+      messageId: "message-1",
+    });
 
-    expect(prompt).toHaveBeenCalledWith("hello");
-    expect(followUp).not.toHaveBeenCalled();
+    expect(sendCommand).toHaveBeenCalledWith({
+      id: "message-1",
+      type: "prompt",
+      message: "hello",
+      images: [],
+    });
+  });
+
+  it("hydrates cloud artifacts into native Pi prompt inputs", async () => {
+    const repositoryPath = await mkdtemp(join(tmpdir(), "pi-attachments-"));
+    const sendCommand = vi.fn(
+      async (_command: Record<string, unknown>) => ({}),
+    );
+    const downloadArtifact = vi
+      .fn()
+      .mockResolvedValueOnce(Buffer.from("notes"))
+      .mockResolvedValueOnce(Buffer.from("image"));
+    const server = new PiAgentServer(config({ repositoryPath })) as unknown as {
+      posthogAPI: { downloadArtifact: typeof downloadArtifact };
+      session: unknown;
+      executeCommand(
+        method: string,
+        params: Record<string, unknown>,
+      ): Promise<unknown>;
+    };
+    server.posthogAPI.downloadArtifact = downloadArtifact;
+    server.session = {
+      runtime: {
+        client: {
+          getState: vi.fn(async () => ({ isStreaming: false })),
+        },
+        sendCommand,
+      },
+    };
+
+    await server.executeCommand("user_message", {
+      content: "Read these",
+      artifacts: [
+        {
+          id: "file-1",
+          name: "notes.txt",
+          type: "user_attachment",
+          content_type: "text/plain",
+          storage_path: "artifacts/notes.txt",
+        },
+        {
+          id: "image-1",
+          name: "image.png",
+          type: "user_attachment",
+          content_type: "image/png",
+          storage_path: "artifacts/image.png",
+        },
+      ],
+    });
+
+    const command = sendCommand.mock.calls[0][0];
+    const filePath = join(
+      repositoryPath,
+      ".posthog",
+      "attachments",
+      "file-1-notes.txt",
+    );
+    expect(command.message).toContain(filePath);
+    await expect(readFile(filePath, "utf8")).resolves.toBe("notes");
+    expect(command.images).toEqual([
+      {
+        type: "image",
+        data: Buffer.from("image").toString("base64"),
+        mimeType: "image/png",
+        fileName: "image.png",
+      },
+    ]);
+
+    await rm(repositoryPath, { recursive: true });
   });
 
   it("allows a failed user-message delivery to be retried", async () => {
-    const prompt = vi
+    const sendCommand = vi
       .fn()
       .mockRejectedValueOnce(new Error("delivery failed"))
       .mockResolvedValueOnce(undefined);
@@ -116,8 +199,8 @@ describe("PiAgentServer", () => {
       runtime: {
         client: {
           getState: vi.fn(async () => ({ isStreaming: false })),
-          prompt,
         },
+        sendCommand,
       },
     };
     const params = { content: "hello", messageId: "message-1" };
@@ -129,7 +212,7 @@ describe("PiAgentServer", () => {
       server.executeCommand("user_message", params),
     ).resolves.toBeUndefined();
 
-    expect(prompt).toHaveBeenCalledTimes(2);
+    expect(sendCommand).toHaveBeenCalledTimes(2);
   });
 
   it("does not install an SSE controller canceled during initialization", async () => {

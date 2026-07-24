@@ -36,7 +36,13 @@ export async function getRemotePiConversation(
 
   for (const entry of entries.entries) {
     if (entry.type === "message") {
-      events.push(...translator.translateHistoryMessage(entry.message));
+      const translated = translator.translateHistoryMessage(entry.message);
+      events.push(
+        ...translated.map((event, index) => ({
+          ...event,
+          sourceId: `${entry.id}:${index}`,
+        })),
+      );
     }
   }
 
@@ -152,7 +158,10 @@ export class RemotePiRpcClient implements PiRemoteRpcClient {
   }
 
   private async request(command: RpcCommand): Promise<RpcResponse> {
-    return parsePiRpcResponse(await this.transport.request(command));
+    const identifiedCommand = command.id
+      ? command
+      : { ...command, id: globalThis.crypto.randomUUID() };
+    return parsePiRpcResponse(await this.transport.request(identifiedCommand));
   }
 
   private data<T>(response: RpcResponse): T {

@@ -193,19 +193,13 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   }
 
   const pending = status ? isStreaming || isBashRunning : false;
-  let modelSelector = <Skeleton className="h-7 w-32" />;
+  let modelSelector: ReactElement = <Skeleton className="h-7 w-32" />;
   let reasoningSelector: ReactElement | null = (
     <Skeleton className="h-7 w-20" />
   );
-  let messagingModeToggle = <Skeleton className="h-7 w-24" />;
+  let messagingModeToggle: ReactElement = <Skeleton className="h-7 w-24" />;
 
-  if (status) {
-    const supportsThinking = session.thinkingLevels.some(
-      (level) => level !== "off",
-    );
-    const queueMode =
-      messagingMode === "steer" ? status.steeringMode : status.followUpMode;
-
+  if (status && session.modelsLoaded) {
     modelSelector = (
       <PiModelSelector
         models={session.models}
@@ -213,6 +207,12 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
         disabled={pending || isCompacting}
         onChange={setModel}
       />
+    );
+  }
+
+  if (status && session.thinkingLevelsLoaded) {
+    const supportsThinking = session.thinkingLevels.some(
+      (level) => level !== "off",
     );
     reasoningSelector = supportsThinking ? (
       <PiThinkingLevelSelector
@@ -222,6 +222,11 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
         onChange={setThinkingLevel}
       />
     ) : null;
+  }
+
+  if (status) {
+    const queueMode =
+      messagingMode === "steer" ? status.steeringMode : status.followUpMode;
     messagingModeToggle = (
       <PiMessagingModeSelector
         mode={messagingMode}

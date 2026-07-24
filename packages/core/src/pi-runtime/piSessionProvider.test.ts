@@ -100,9 +100,12 @@ describe("RoutingPiSessionProvider", () => {
       runId: "run-1",
       apiHost: "https://us.posthog.com",
       teamId: 1,
-      method: "pi/rpc",
+      id: expect.any(String),
+      method: "user_message",
       params: {
-        command: { type: "steer", message: "change direction" },
+        content: "change direction",
+        artifact_ids: [],
+        steer: true,
       },
     });
     expect(local.client.steer).not.toHaveBeenCalled();

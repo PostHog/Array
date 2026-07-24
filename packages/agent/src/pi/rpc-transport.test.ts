@@ -34,14 +34,17 @@ describe("RemotePiRpcClient", () => {
     const thinkingLevels = await client.getAvailableThinkingLevels();
 
     expect(request).toHaveBeenNthCalledWith(1, {
+      id: expect.any(String),
       type: "set_follow_up_mode",
       mode: "one-at-a-time",
     });
     expect(request).toHaveBeenNthCalledWith(2, {
+      id: expect.any(String),
       type: "compact",
       customInstructions: "retain decisions",
     });
     expect(request).toHaveBeenNthCalledWith(3, {
+      id: expect.any(String),
       type: "get_available_thinking_levels",
     });
     expect(compaction.summary).toBe("summary");

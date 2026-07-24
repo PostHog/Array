@@ -74,6 +74,7 @@ export const IMPORTED_USER_PROMPT_META_KEY = "importedUserPrompt";
  * Used when fetching historical logs and appending new entries.
  */
 export interface StoredLogEntry {
+  id?: string;
   type: string;
   timestamp?: string;
   event?: AgentConversationEvent;

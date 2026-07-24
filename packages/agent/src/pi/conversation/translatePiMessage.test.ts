@@ -53,7 +53,12 @@ describe("createPiMessageTranslator", () => {
       role: "user",
       content: [
         { type: "text", text: "first" },
-        { type: "image", data: "abc", mimeType: "image/png" },
+        {
+          type: "image",
+          data: "abc",
+          mimeType: "image/png",
+          fileName: "screenshot.png",
+        } as Exclude<UserMessage["content"], string>[number],
       ],
       timestamp: 0,
     };
@@ -65,7 +70,12 @@ describe("createPiMessageTranslator", () => {
         timestamp: 0,
         content: [
           { type: "text", text: "first" },
-          { type: "image", data: "abc", mimeType: "image/png" },
+          {
+            type: "image",
+            data: "abc",
+            mimeType: "image/png",
+            fileName: "screenshot.png",
+          },
         ],
       },
     ]);

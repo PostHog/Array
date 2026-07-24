@@ -11,6 +11,7 @@ import type {
 } from "@posthog/shared";
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
+import { extractFilePaths, xmlToContent } from "../message-editor/content";
 import { PI_RUNNER } from "../pi-runtime/identifiers";
 import type { PiRunner } from "../pi-runtime/piRunner";
 import { TASK_CREATION_EFFECTS, TASK_CREATION_HOST } from "./identifiers";
@@ -53,6 +54,45 @@ export class TaskService {
   }
 
   private readonly log: ReturnType<RootLogger["scope"]>;
+
+  async prepareCloudPiMessage(
+    taskId: string,
+    runId: string,
+    serializedContent: string,
+  ): Promise<{ content: string; artifactIds: string[] }> {
+    const editorContent = xmlToContent(serializedContent);
+    const filePaths = extractFilePaths(editorContent);
+    const resolvedContent =
+      await this.host.resolveLocalSkillCommandPrompt(serializedContent);
+    const transport = this.host.getCloudPromptTransport(
+      resolvedContent,
+      filePaths,
+    );
+    const hasAttachments =
+      transport.filePaths.length > 0 || transport.skillBundles.length > 0;
+    if (!hasAttachments) {
+      return {
+        content: transport.messageText ?? transport.promptText,
+        artifactIds: [],
+      };
+    }
+
+    const client = await this.host.getAuthenticatedClient();
+    if (!client) {
+      throw new Error("Not authenticated");
+    }
+    const artifactIds = await this.host.uploadRunAttachments(
+      client,
+      taskId,
+      runId,
+      transport.filePaths,
+      transport.skillBundles,
+    );
+    return {
+      content: transport.messageText ?? transport.promptText,
+      artifactIds,
+    };
+  }
 
   public async createTask(
     input: TaskCreationInput,

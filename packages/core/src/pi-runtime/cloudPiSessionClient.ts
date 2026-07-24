@@ -1,5 +1,4 @@
 import {
-  getRemotePiConversation,
   type PiRemoteRpcClient,
   RemotePiRpcClient,
 } from "@posthog/agent/pi/remote-rpc-client";
@@ -69,6 +68,7 @@ export class CloudPiSessionClient implements PiSession {
   private readonly terminalClient: PiRemoteRpcClient;
   private runStatus: TaskRunStatus;
   private snapshotEvents: AgentConversationEvent[] = [];
+  private snapshotReady = false;
   private resolveSnapshot: () => void = () => {};
   private rejectSnapshot: (error: unknown) => void = () => {};
   private readonly snapshotReceived = new Promise<void>((resolve, reject) => {
@@ -114,6 +114,31 @@ export class CloudPiSessionClient implements PiSession {
     return isTerminalStatus(this.runStatus);
   }
 
+  async sendUserMessage(
+    type: "prompt" | "steer" | "follow_up",
+    message: string,
+    artifactIds: string[],
+    id: string = globalThis.crypto.randomUUID(),
+  ): Promise<void> {
+    await this.waitForRuntimeReady();
+    const result = await this.cloudTaskClient.sendCommand({
+      taskId: this.context.taskId,
+      runId: this.context.runId,
+      apiHost: this.context.apiHost,
+      teamId: this.context.teamId,
+      id,
+      method: "user_message",
+      params: {
+        content: message,
+        artifact_ids: artifactIds,
+        steer: type === "steer",
+      },
+    });
+    if (!result.success) {
+      throw new Error(result.error ?? `Pi RPC command failed: ${type}`);
+    }
+  }
+
   health(): Promise<PiRuntimeHealth> {
     if (this.runStatus === "in_progress") {
       return Promise.resolve({ state: "streaming" });
@@ -125,19 +150,6 @@ export class CloudPiSessionClient implements PiSession {
   }
 
   async getConversation(): Promise<AgentConversationEvent[]> {
-    if (!isTerminalStatus(this.runStatus)) {
-      try {
-        const conversation = await getRemotePiConversation(this.liveClient);
-        if (!isTerminalStatus(this.runStatus)) {
-          return conversation;
-        }
-      } catch (error) {
-        if (!isTerminalStatus(this.runStatus)) {
-          throw error;
-        }
-      }
-    }
-
     await this.snapshotReceived;
     return this.snapshotEvents;
   }
@@ -190,7 +202,7 @@ export class CloudPiSessionClient implements PiSession {
     onError: (error: unknown) => void,
   ): void {
     const snapshotCanProveReadiness =
-      update.kind === "snapshot" && this.context.runStatus === "in_progress";
+      update.kind === "snapshot" && update.status === "in_progress";
     const hasCurrentReadinessEvent =
       (update.kind === "logs" || snapshotCanProveReadiness) &&
       update.newEntries.some((entry) => entry.type === "pi_run_started");
@@ -208,28 +220,37 @@ export class CloudPiSessionClient implements PiSession {
     }
 
     if (update.kind === "snapshot") {
-      const events = this.getConversationEvents(update.newEntries);
-      let unchangedEventCount = 0;
-      while (
-        unchangedEventCount < events.length &&
-        unchangedEventCount < this.snapshotEvents.length &&
-        this.eventsEqual(
-          events[unchangedEventCount],
-          this.snapshotEvents[unchangedEventCount],
-        )
-      ) {
-        unchangedEventCount += 1;
-      }
+      const events = this.getConversationEvents(update.newEntries, 0);
+      const previousSourceIds = new Set(
+        this.snapshotEvents.flatMap((event) =>
+          event.sourceId ? [event.sourceId] : [],
+        ),
+      );
 
       this.snapshotEvents = events;
-      this.resolveSnapshot();
-      for (const event of events.slice(unchangedEventCount)) {
-        onEvent(event);
+      this.markSnapshotReady();
+      for (const event of events) {
+        if (!event.sourceId || !previousSourceIds.has(event.sourceId)) {
+          onEvent(event);
+        }
       }
     } else if (update.kind === "logs") {
-      const events = this.getConversationEvents(update.newEntries);
-      this.snapshotEvents = [...this.snapshotEvents, ...events];
-      for (const event of events) {
+      const firstEntryIndex = update.totalEntryCount - update.newEntries.length;
+      const events = this.getConversationEvents(
+        update.newEntries,
+        firstEntryIndex,
+      );
+      const existingSourceIds = new Set(
+        this.snapshotEvents.flatMap((event) =>
+          event.sourceId ? [event.sourceId] : [],
+        ),
+      );
+      const newEvents = events.filter(
+        (event) => !event.sourceId || !existingSourceIds.has(event.sourceId),
+      );
+      this.snapshotEvents = [...this.snapshotEvents, ...newEvents];
+      this.markSnapshotReady();
+      for (const event of newEvents) {
         onEvent(event);
       }
     }
@@ -250,26 +271,22 @@ export class CloudPiSessionClient implements PiSession {
     }
   }
 
-  private eventsEqual(
-    left: AgentConversationEvent,
-    right: AgentConversationEvent,
-  ): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
-  }
-
   private getConversationEvents(
     entries: StoredLogEntry[],
+    firstEntryIndex: number,
   ): AgentConversationEvent[] {
     const events: AgentConversationEvent[] = [];
-    for (const entry of entries) {
+    for (const [index, entry] of entries.entries()) {
+      const sourceId =
+        entry.id ?? `${this.context.runId}:log:${firstEntryIndex + index}`;
       if (entry.type === "pi_event" && entry.event) {
-        events.push(entry.event);
+        events.push({ ...entry.event, sourceId });
         continue;
       }
 
       const progress = this.getProgressEvent(entry);
       if (progress) {
-        events.push(progress);
+        events.push({ ...progress, sourceId });
       }
     }
     return events;
@@ -308,19 +325,65 @@ export class CloudPiSessionClient implements PiSession {
       );
     }
 
+    if (!command.id) {
+      throw new Error(`Pi RPC command is missing an id: ${command.type}`);
+    }
+
+    const isUserMessage =
+      command.type === "prompt" ||
+      command.type === "steer" ||
+      command.type === "follow_up";
+    if (isUserMessage) {
+      await this.sendUserMessage(command.type, command.message, [], command.id);
+      return {
+        id: command.id,
+        type: "response",
+        command: command.type,
+        success: true,
+      };
+    }
+
     const result = await this.cloudTaskClient.sendCommand({
       taskId: this.context.taskId,
       runId: this.context.runId,
       apiHost: this.context.apiHost,
       teamId: this.context.teamId,
+      id: command.id,
       method: "pi/rpc",
       params: { command },
     });
+    if (isTerminalStatus(this.runStatus) && command.type === "get_state") {
+      return {
+        id: command.id,
+        type: "response",
+        command: "get_state",
+        success: true,
+        data: {
+          isStreaming: false,
+          isCompacting: false,
+          thinkingLevel: "off",
+          steeringMode: "all",
+          followUpMode: "all",
+          sessionId: this.context.runId,
+          autoCompactionEnabled: true,
+          messageCount: this.snapshotEvents.length,
+          pendingMessageCount: 0,
+        },
+      };
+    }
     if (!result.success) {
       throw new Error(result.error ?? `Pi RPC command failed: ${command.type}`);
     }
 
     return result.result;
+  }
+
+  private markSnapshotReady(): void {
+    if (this.snapshotReady) {
+      return;
+    }
+    this.snapshotReady = true;
+    this.resolveSnapshot();
   }
 
   private markRuntimeReady(): void {
@@ -336,9 +399,24 @@ export class CloudPiSessionClient implements PiSession {
       return;
     }
 
-    await Promise.race([
-      this.runtimeReadyReceived,
-      this.terminalStatusReceived,
-    ]);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error("Timed out waiting for the Pi runtime")),
+        30_000,
+      );
+    });
+
+    try {
+      await Promise.race([
+        this.runtimeReadyReceived,
+        this.terminalStatusReceived,
+        timeout,
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 }

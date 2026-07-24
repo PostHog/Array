@@ -125,6 +125,37 @@ describe("PiSessionController", () => {
     expect(client.getConversation).not.toHaveBeenCalled();
   });
 
+  it("uploads cloud follow-up attachments before sending the native message", async () => {
+    const session = createSession();
+    session.sendUserMessage = vi.fn(async () => {});
+    const prepareCloudPiMessage = vi.fn(async () => ({
+      content: "Read this\n\nAttached files:\n- /tmp/cloud/input.txt",
+      artifactIds: ["artifact-1"],
+    }));
+    const controller = createController(session, {
+      prepareCloudPiMessage,
+    } as unknown as TaskService);
+
+    await controller.connect("task-1", "run-1");
+    await controller.submit(
+      "task-1",
+      'Read this <file path="/tmp/input.txt" />',
+      false,
+      "steer",
+    );
+
+    expect(prepareCloudPiMessage).toHaveBeenCalledWith(
+      "task-1",
+      "run-1",
+      'Read this <file path="/tmp/input.txt" />',
+    );
+    expect(session.sendUserMessage).toHaveBeenCalledWith(
+      "prompt",
+      "Read this\n\nAttached files:\n- /tmp/cloud/input.txt",
+      ["artifact-1"],
+    );
+  });
+
   it("uses the live bash operation without reloading native history", async () => {
     const session = createSession();
     const controller = createController(session);
@@ -289,10 +320,14 @@ describe("PiSessionController", () => {
     ]);
   });
 
-  it("makes the transcript available before model discovery finishes", async () => {
+  it("loads status, models, and thinking levels independently", async () => {
     let resolveModels: (models: []) => void = () => {};
     const models = new Promise<[]>((resolve) => {
       resolveModels = resolve;
+    });
+    let resolveThinkingLevels: (levels: ["off", "high"]) => void = () => {};
+    const thinkingLevels = new Promise<["off", "high"]>((resolve) => {
+      resolveThinkingLevels = resolve;
     });
     const initialEvent: AgentConversationEvent = {
       type: "assistant_thought_chunk",
@@ -313,6 +348,9 @@ describe("PiSessionController", () => {
       pendingMessageCount: 0,
     });
     vi.mocked(client.client.getAvailableModels).mockReturnValue(models);
+    vi.mocked(client.client.getAvailableThinkingLevels).mockReturnValue(
+      thinkingLevels,
+    );
     const controller = createController(client);
 
     const connection = controller.connect("task-1");
@@ -321,11 +359,27 @@ describe("PiSessionController", () => {
       expect(controller.store.getState().sessions["task-1"]).toMatchObject({
         events: [initialEvent],
         status: { isStreaming: true },
+        modelsLoaded: false,
+        thinkingLevelsLoaded: false,
+      });
+    });
+
+    resolveThinkingLevels(["off", "high"]);
+    await vi.waitFor(() => {
+      expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+        modelsLoaded: false,
+        thinkingLevels: ["off", "high"],
+        thinkingLevelsLoaded: true,
       });
     });
 
     resolveModels([]);
     await connection;
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      models: [],
+      modelsLoaded: true,
+      thinkingLevelsLoaded: true,
+    });
   });
 
   it("reconciles structurally equal live events included in native history", async () => {
@@ -334,6 +388,7 @@ describe("PiSessionController", () => {
       id: "native-message-id",
       timestamp: 1,
       content: [{ type: "text", text: "hello" }],
+      sourceId: "pi-entry-1:0",
     };
     const liveEvent: AgentConversationEvent = {
       ...nativeEvent,
@@ -372,11 +427,13 @@ describe("PiSessionController", () => {
       type: "assistant_message_chunk",
       timestamp: 1,
       content: { type: "text", text: "hello world" },
+      sourceId: "pi-entry-1:0",
     };
     const liveEvent: AgentConversationEvent = {
       type: "assistant_message_chunk",
       timestamp: 1,
       content: { type: "text", text: "world" },
+      sourceId: "pi-entry-1:0",
     };
     let resolveConversation: (events: AgentConversationEvent[]) => void =
       () => {};

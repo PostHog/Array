@@ -28,6 +28,7 @@ export interface AgentImageContent {
   type: "image";
   data: string;
   mimeType: string;
+  fileName?: string;
 }
 
 export interface AgentAudioContent {
@@ -109,7 +110,11 @@ export interface AgentToolCall {
   parentId?: string;
 }
 
-export type AgentConversationEvent =
+interface AgentConversationEventIdentity {
+  sourceId?: string;
+}
+
+export type AgentConversationEvent = (
   | {
       type: "user_message";
       id: string;
@@ -166,4 +171,6 @@ export type AgentConversationEvent =
       type: "turn_completed";
       timestamp: number;
       stopReason?: string;
-    };
+    }
+) &
+  AgentConversationEventIdentity;

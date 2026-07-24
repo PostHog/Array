@@ -86,6 +86,40 @@ describe("buildAgentConversationItems", () => {
     });
   });
 
+  it("keeps inline Pi images on the rendered user message", () => {
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "user_message",
+          id: "user-1",
+          timestamp: 1,
+          content: [
+            { type: "text", text: "What is this?" },
+            {
+              type: "image",
+              data: "aW1hZ2U=",
+              mimeType: "image/png",
+              fileName: "screenshot.png",
+            },
+          ],
+        },
+      ],
+      false,
+    );
+
+    expect(result.items[0]).toMatchObject({
+      type: "user_message",
+      content: "What is this?",
+      attachments: [
+        {
+          id: expect.stringMatching(/^inline-image:/),
+          label: "screenshot.png",
+          previewUrl: "data:image/png;base64,aW1hZ2U=",
+        },
+      ],
+    });
+  });
+
   it("keeps generic extension tool result content for rendering", () => {
     const rawOutput = [{ type: "text", text: "Workflow finished" }];
     const result = buildAgentConversationItems(

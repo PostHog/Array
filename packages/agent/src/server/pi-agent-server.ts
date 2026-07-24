@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
-import type { AgentConversationEvent, StoredLogEntry } from "@posthog/shared";
+import type {
+  AgentConversationEvent,
+  StoredLogEntry,
+  TaskRunArtifact,
+} from "@posthog/shared";
 import { Hono } from "hono";
 import { z } from "zod/v4";
 import { createPiRpcClient, type PiRpcClient } from "../pi/rpc-client";
@@ -30,11 +35,17 @@ interface PiCloudSession {
 
 const emptySchema = z.object({});
 
-const userMessageCommandSchema = z.object({
-  content: z.string().min(1),
-  messageId: z.string().min(1).optional(),
-  steer: z.boolean().optional(),
-});
+const userMessageCommandSchema = z
+  .object({
+    content: z.string().min(1).optional(),
+    artifacts: z.array(z.record(z.string(), z.unknown())).optional(),
+    messageId: z.string().min(1).optional(),
+    steer: z.boolean().optional(),
+  })
+  .refine(
+    (params) => params.content || (params.artifacts?.length ?? 0) > 0,
+    "Either content or artifacts are required",
+  );
 
 const commandSchemas = {
   user_message: userMessageCommandSchema,
@@ -278,6 +289,19 @@ export class PiAgentServer {
           error: { code: -32602, message: params.error.message },
         });
       }
+      if (method === "pi/rpc") {
+        const command = (params.data as { command: RpcCommand }).command;
+        if (!command.id || command.id !== request.data.id) {
+          return context.json({
+            jsonrpc: "2.0",
+            id: request.data.id,
+            error: {
+              code: -32602,
+              message: "Pi command id must match the JSON-RPC request id",
+            },
+          });
+        }
+      }
 
       try {
         const result = await this.executeCommand(
@@ -397,10 +421,12 @@ export class PiAgentServer {
   }
 
   private handleEvent(event: AgentConversationEvent): void {
+    const id = randomUUID();
     this.broadcast({
+      id,
       type: "pi_event",
       timestamp: new Date().toISOString(),
-      event,
+      event: { ...event, sourceId: id },
     });
   }
 
@@ -415,7 +441,7 @@ export class PiAgentServer {
     const client = runtime.client;
     switch (method) {
       case "user_message":
-        return this.deliverUserMessage(client, params);
+        return this.deliverUserMessage(runtime, params);
       case "cancel":
         return client.abort();
       case "pi/rpc":
@@ -423,30 +449,111 @@ export class PiAgentServer {
     }
   }
 
-  private deliverUserMessage(
-    client: PiRpcClient,
+  private async deliverUserMessage(
+    runtime: PiRuntime,
     params: Record<string, unknown>,
   ): Promise<unknown> {
-    return this.dispatchUserMessage(
-      client,
+    const artifacts = Array.isArray(params.artifacts)
+      ? (params.artifacts as TaskRunArtifact[])
+      : [];
+    const message = await this.prepareUserMessage(
       typeof params.content === "string" ? params.content : "",
+      artifacts,
+    );
+    return this.dispatchUserMessage(
+      runtime,
+      message.content,
+      message.images,
+      typeof params.messageId === "string" ? params.messageId : randomUUID(),
       params.steer === true,
     );
   }
 
-  private async dispatchUserMessage(
-    client: PiRpcClient,
+  private async prepareUserMessage(
     content: string,
+    artifacts: TaskRunArtifact[],
+  ): Promise<{
+    content: string;
+    images: Parameters<PiRpcClient["prompt"]>[1];
+  }> {
+    const images: NonNullable<Parameters<PiRpcClient["prompt"]>[1]> = [];
+    const filePaths: string[] = [];
+    const attachmentDirectory = join(
+      this.config.repositoryPath ?? "/tmp/workspace",
+      ".posthog",
+      "attachments",
+    );
+
+    for (const artifact of artifacts) {
+      if (!artifact.storage_path) {
+        continue;
+      }
+      const data = await this.posthogAPI.downloadArtifact(
+        this.config.taskId,
+        this.config.runId,
+        artifact.storage_path,
+      );
+      if (!data) {
+        throw new Error(`Failed to download attachment: ${artifact.name}`);
+      }
+
+      const mimeType = artifact.content_type ?? "application/octet-stream";
+      if (mimeType.startsWith("image/")) {
+        images.push({
+          type: "image",
+          data: Buffer.from(data).toString("base64"),
+          mimeType,
+          fileName: artifact.name,
+        } as (typeof images)[number]);
+        continue;
+      }
+
+      await mkdir(attachmentDirectory, { recursive: true });
+      const fileName = `${artifact.id}-${basename(artifact.name)}`;
+      const filePath = join(attachmentDirectory, fileName);
+      await writeFile(filePath, Buffer.from(data));
+      filePaths.push(filePath);
+    }
+
+    const attachmentText = filePaths.length
+      ? `Attached files:\n${filePaths.map((filePath) => `- ${filePath}`).join("\n")}`
+      : "";
+    return {
+      content: [content, attachmentText].filter(Boolean).join("\n\n"),
+      images,
+    };
+  }
+
+  private async dispatchUserMessage(
+    runtime: PiRuntime,
+    content: string,
+    images: Parameters<PiRpcClient["prompt"]>[1],
+    id: string,
     steer: boolean,
   ): Promise<unknown> {
-    const state = await client.getState();
+    const state = await runtime.client.getState();
     if (state.isStreaming && steer) {
-      return client.steer(content);
+      return runtime.sendCommand({
+        id,
+        type: "steer",
+        message: content,
+        images,
+      });
     }
     if (state.isStreaming) {
-      return client.followUp(content);
+      return runtime.sendCommand({
+        id,
+        type: "follow_up",
+        message: content,
+        images,
+      });
     }
-    return client.prompt(content);
+    return runtime.sendCommand({
+      id,
+      type: "prompt",
+      message: content,
+      images,
+    });
   }
 
   private installSseController(sseController: SseController | null): void {
@@ -509,6 +616,7 @@ export class PiAgentServer {
   private broadcast(event: Record<string, unknown>): void {
     if (event.type === "pi_event" || event.type === "pi_run_started") {
       this.pendingLogEntries.push({
+        id: typeof event.id === "string" ? event.id : undefined,
         type: event.type,
         timestamp:
           typeof event.timestamp === "string" ? event.timestamp : undefined,

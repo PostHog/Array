@@ -11,7 +11,9 @@ export interface PiControllerSessionState {
   connectionState: "connecting" | "connected" | "failed";
   events: AgentConversationEvent[];
   models: PiNativeModelInfo[];
+  modelsLoaded: boolean;
   thinkingLevels: PiThinkingLevel[];
+  thinkingLevelsLoaded: boolean;
   commands: PiCommand[];
   status?: PiSessionStatus;
   error?: string;
@@ -33,7 +35,9 @@ export function createEmptyPiControllerSession(): PiControllerSessionState {
     connectionState: "connecting",
     events: [],
     models: [],
+    modelsLoaded: false,
     thinkingLevels: [],
+    thinkingLevelsLoaded: false,
     commands: [],
     isBashRunning: false,
   };

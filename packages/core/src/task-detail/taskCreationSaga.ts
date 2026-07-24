@@ -91,13 +91,6 @@ export class TaskCreationSaga extends Saga<
   ): Promise<TaskCreationOutput> {
     const taskId = input.taskId;
     const isPiRuntime = input.runtime === "pi";
-    if (
-      isPiRuntime &&
-      input.workspaceMode === "cloud" &&
-      input.filePaths?.length
-    ) {
-      throw new Error("Cloud Pi does not support file attachments");
-    }
     const folderPromise =
       !taskId && input.repoPath
         ? this.resolveFolder(input.repoPath)
@@ -375,13 +368,11 @@ export class TaskCreationSaga extends Saga<
               ) {
                 return null;
               }
-              let resolvedContent = input.content ?? "";
-              if (resolvedContent && !isPiRuntime) {
-                resolvedContent =
-                  await this.deps.host.resolveLocalSkillCommandPrompt(
-                    resolvedContent,
-                  );
-              }
+              const resolvedContent = input.content
+                ? await this.deps.host.resolveLocalSkillCommandPrompt(
+                    input.content,
+                  )
+                : "";
               return this.deps.host.getCloudPromptTransport(
                 resolvedContent,
                 input.filePaths,
@@ -445,16 +436,15 @@ export class TaskCreationSaga extends Saga<
               .catch(() => undefined);
           }
 
-          const pendingUserArtifactIds =
-            transport && !isPiRuntime
-              ? await this.deps.host.uploadRunAttachments(
-                  this.deps.posthogClient,
-                  task.id,
-                  taskRun.id,
-                  transport.filePaths,
-                  transport.skillBundles,
-                )
-              : [];
+          const pendingUserArtifactIds = transport
+            ? await this.deps.host.uploadRunAttachments(
+                this.deps.posthogClient,
+                task.id,
+                taskRun.id,
+                transport.filePaths,
+                transport.skillBundles,
+              )
+            : [];
 
           const startedRun = await this.deps.posthogClient.startTaskRun(
             task.id,
