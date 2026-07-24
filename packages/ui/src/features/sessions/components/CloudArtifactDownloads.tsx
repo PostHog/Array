@@ -86,7 +86,7 @@ export function CloudArtifactDownloads({
               <Flex align="center" gap="2" className="min-w-0">
                 <FileIcon filename={artifact.name} size={16} />
                 <Text className="truncate text-[13px]">{artifact.name}</Text>
-                {size && (
+                {size !== null && (
                   <Text color="gray" className="shrink-0 text-[12px]">
                     {size}
                   </Text>

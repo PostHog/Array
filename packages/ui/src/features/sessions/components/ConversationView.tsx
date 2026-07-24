@@ -15,8 +15,8 @@ import type {
   ConversationItem,
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
 import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
+import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
 import {
   PROMPT_RECALL_HINT_KEY,
   type PromptRecallHandler,
