@@ -1,20 +1,24 @@
 import {
   ChatCircleIcon,
+  ChatTeardropTextIcon,
   CheckCircleIcon,
-  CircleIcon,
   SpinnerGapIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { Card, CardContent, cn } from "@posthog/quill";
+import { Button, Card, CardContent, cn } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import {
   TaskStatusBadge,
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import { useChannelFeedbackRequest } from "@posthog/ui/features/canvas/hooks/useChannelFeedbackRequest";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import type { ChannelBoardStatus } from "@posthog/ui/features/canvas/utils/channelBoardStatus";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import { toast } from "@posthog/ui/primitives/toast";
 import { ScrollArea } from "@radix-ui/themes";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
@@ -22,10 +26,14 @@ const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
 const COLUMNS: Array<{
   id: ChannelBoardStatus;
   label: string;
-  Icon: typeof CircleIcon;
+  Icon: typeof SpinnerGapIcon;
 }> = [
-  { id: "todo", label: "To do", Icon: CircleIcon },
   { id: "in_progress", label: "In progress", Icon: SpinnerGapIcon },
+  {
+    id: "needs_feedback",
+    label: "Needs feedback",
+    Icon: ChatTeardropTextIcon,
+  },
   { id: "ready", label: "Ready", Icon: CheckCircleIcon },
   { id: "closed", label: "Closed", Icon: XCircleIcon },
 ];
@@ -145,7 +153,25 @@ function ChannelBoardCard({
   });
   const creator = task.created_by;
   const creatorName = userDisplayName(creator);
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
+  const { setNeedsFeedback, isPending } = useChannelFeedbackRequest();
+  const isCreator =
+    !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
+  const needsFeedback = display.boardStatus === "needs_feedback";
+  const canRequestFeedback =
+    isCreator &&
+    !!task.latest_run &&
+    (display.boardStatus === "ready" || needsFeedback);
   const replyLabel = `${messages.length} ${messages.length === 1 ? "reply" : "replies"}`;
+
+  const toggleFeedbackRequest = (value: boolean) => {
+    void setNeedsFeedback(task, value).catch((error: unknown) => {
+      toast.error("Couldn't update feedback request", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
 
   return (
     <Card
@@ -179,6 +205,20 @@ function ChannelBoardCard({
           >
             {task.repository}
           </span>
+        ) : null}
+        {canRequestFeedback ? (
+          <Button
+            size="xs"
+            variant={needsFeedback ? "outline" : "link-muted"}
+            disabled={isPending}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleFeedbackRequest(!needsFeedback);
+            }}
+          >
+            <ChatTeardropTextIcon size={12} />
+            {needsFeedback ? "Clear feedback request" : "Request feedback"}
+          </Button>
         ) : null}
         <div className="flex items-center justify-between gap-2 border-(--gray-3) border-t pt-2">
           <div

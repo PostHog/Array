@@ -19,6 +19,7 @@ import {
   ChannelIntro,
   type ContextMdState,
 } from "@posthog/ui/features/canvas/components/ChannelIntro";
+import { ChannelTaskPreviewDialog } from "@posthog/ui/features/canvas/components/ChannelTaskPreviewDialog";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import { CONTEXT_MD_TASK_TITLE_PREFIX } from "@posthog/ui/features/canvas/contextPrompt";
@@ -156,6 +157,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   // The "Create your context.md" dialog, opened from the welcome message's
   // onboarding checklist. Describe-mode: seeds a plan session for this context.
   const [contextMdDialogOpen, setContextMdDialogOpen] = useState(false);
+  const [previewTask, setPreviewTask] = useState<Task | null>(null);
 
   const threadTaskId = useThreadPanelStore(
     (s) => s.openByChannel[channelId] ?? null,
@@ -226,10 +228,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
     },
     [channelId, navigate],
   );
-  const handleOpenTask = useCallback(
-    (task: Task) => handleOpenFull(task.id),
-    [handleOpenFull],
-  );
+  const handleOpenTask = useCallback((task: Task) => setPreviewTask(task), []);
 
   const handleOpenThread = useCallback(
     (task: Task) => openThread(channelId, task.id),
@@ -360,6 +359,16 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           existingContext={{ channelId, channelName }}
         />
       )}
+
+      <ChannelTaskPreviewDialog
+        task={previewTask}
+        channelId={channelId}
+        onClose={() => setPreviewTask(null)}
+        onOpenFull={(task) => {
+          setPreviewTask(null);
+          handleOpenFull(task.id);
+        }}
+      />
     </div>
   );
 }
