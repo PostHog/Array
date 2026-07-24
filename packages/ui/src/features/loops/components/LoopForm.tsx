@@ -33,6 +33,7 @@ import {
   loopToFormValues,
   normalizeLoopFormValues,
 } from "../loopFormTypes";
+import { formatLoopModel } from "../loopModels";
 import { LoopBehaviorFields } from "./LoopBehaviorFields";
 import { LoopContextFields } from "./LoopContextFields";
 import { Field } from "./LoopFormPrimitives";
@@ -548,9 +549,10 @@ function ReviewList({
       />
       <ReviewRow
         label="Model"
-        value={`${ADAPTER_LABELS[values.runtimeAdapter]} · ${
-          values.model || "Default model"
-        } · ${reasoning} reasoning`}
+        value={`${ADAPTER_LABELS[values.runtimeAdapter]} · ${formatLoopModel(
+          values.runtimeAdapter,
+          values.model,
+        )} · ${reasoning} reasoning`}
       />
       {showContext ? (
         <ReviewRow
