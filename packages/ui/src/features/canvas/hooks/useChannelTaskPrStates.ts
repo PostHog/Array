@@ -6,17 +6,19 @@ import { useMemo } from "react";
 
 export function useChannelTaskPrStates(
   tasks: Task[],
+  prUrlByTaskId: ReadonlyMap<string, string>,
 ): Map<string, SidebarPrState> {
   const trpc = useHostTRPC();
   const results = useQueries({
     queries: tasks.map((task) => {
       const prUrl =
-        typeof task.latest_run?.output?.pr_url === "string"
+        prUrlByTaskId.get(task.id) ??
+        (typeof task.latest_run?.output?.pr_url === "string"
           ? task.latest_run.output.pr_url
-          : null;
+          : null);
       return trpc.workspace.getTaskPrStatus.queryOptions(
         { taskId: task.id, cloudPrUrl: prUrl },
-        { staleTime: 60_000 },
+        { staleTime: 15_000, refetchInterval: 15_000 },
       );
     }),
   });

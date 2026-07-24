@@ -10,7 +10,7 @@ import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import {
   TASK_BOARD_STATUSES,
   type TaskBoardStatus,
-  taskBoardStatus,
+  taskBoardStatusFromSources,
 } from "@posthog/core/home/taskBoardStatus";
 import { Button } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
@@ -82,7 +82,7 @@ export function ChannelBoardView({
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  const prStates = useChannelTaskPrStates(tasks);
+  const prStates = useChannelTaskPrStates(tasks, prUrlByTaskId);
   const columns = useMemo<
     WorkBoardColumn<{ task: Task; status: TaskBoardStatus }>[]
   >(() => {
@@ -92,10 +92,11 @@ export function ChannelBoardView({
     >(TASK_BOARD_STATUSES.map((status) => [status, []]));
     for (const task of tasks) {
       const snapshot = prSnapshotByTaskId.get(task.id);
-      const status = taskBoardStatus({
+      const resolvedPrState = prStates.get(task.id);
+      const status = taskBoardStatusFromSources({
         runStatus: task.latest_run?.status,
-        prState: snapshot?.state ?? prStates.get(task.id),
-        ciStatus: snapshot?.ciStatus,
+        resolvedPrState,
+        prSnapshot: snapshot,
       });
       grouped.get(status)?.push({ task, status });
     }

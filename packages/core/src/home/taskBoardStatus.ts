@@ -1,5 +1,5 @@
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
-import type { PrCiStatus, PrSnapshotState } from "./prSnapshot";
+import type { PrCiStatus, PrSnapshot, PrSnapshotState } from "./prSnapshot";
 
 export const TASK_BOARD_STATUSES = [
   "working",
@@ -27,4 +27,17 @@ export function taskBoardStatus(input: {
     return "in_review";
   }
   return "working";
+}
+
+export function taskBoardStatusFromSources(input: {
+  runStatus?: TaskRunStatus | null;
+  resolvedPrState?: PrSnapshotState | null;
+  prSnapshot?: PrSnapshot | null;
+}): TaskBoardStatus {
+  return taskBoardStatus({
+    runStatus: input.runStatus,
+    // Direct PR resolution is fresher than the periodically rebuilt Home row.
+    prState: input.resolvedPrState ?? input.prSnapshot?.state,
+    ciStatus: input.prSnapshot?.ciStatus,
+  });
 }
