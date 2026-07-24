@@ -12,11 +12,13 @@ import {
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { cn } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { toast } from "@posthog/ui/primitives/toast";
 import { navigateToTaskDetail } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Text } from "@radix-ui/themes";
 import { type ReactNode, useState } from "react";
 
@@ -119,9 +121,11 @@ function isStoppable(run: LoopSchemas.LoopRun): boolean {
 }
 
 export function LoopRunRow({
+  loopId,
   run,
   onStopped,
 }: {
+  loopId: string;
   run: LoopSchemas.LoopRun;
   onStopped?: () => void;
 }) {
@@ -194,7 +198,17 @@ export function LoopRunRow({
           variant="soft"
           color="gray"
           size="1"
-          onClick={() => navigateToTaskDetail(run.task_id)}
+          onClick={() => {
+            track(ANALYTICS_EVENTS.LOOP_RUN_VIEWED, {
+              loop_id: loopId,
+              run_id: run.id,
+              task_id: run.task_id,
+              status: run.status,
+              environment: run.environment,
+              is_manual_run: run.loop_trigger_id === null,
+            });
+            navigateToTaskDetail(run.task_id);
+          }}
         >
           View run
         </Button>
