@@ -1,5 +1,6 @@
 import {
   ArrowSquareOutIcon,
+  FileTextIcon,
   PackageIcon,
   SlackLogoIcon,
 } from "@phosphor-icons/react";
@@ -16,12 +17,14 @@ import {
   EmptyTitle,
 } from "@posthog/quill";
 import type { Task, TaskThreadMessage } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
 import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
 import { usePrReviewThreads } from "@posthog/ui/features/pr-review/usePrReviewThreads";
+import { toast } from "@posthog/ui/primitives/toast";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
@@ -31,7 +34,46 @@ import { type ReactNode, useMemo } from "react";
 type ArtifactRow =
   | { kind: "pr"; key: string; url: string }
   | { kind: "canvas"; key: string; name: string; url: string | null }
+  | {
+      kind: "file";
+      key: string;
+      name: string;
+      typeLabel: string;
+      storagePath: string | null;
+      runId: string | null;
+    }
   | { kind: "slack"; key: string; url: string };
+
+// Human labels for the artifact types the agent uploads during a run.
+const ARTIFACT_TYPE_LABELS: Record<string, string> = {
+  plan: "Plan",
+  context: "Context",
+  reference: "Reference",
+  output: "Output",
+  artifact: "File",
+  skill_bundle: "Skill",
+};
+
+interface RunArtifact {
+  id?: string;
+  name?: string;
+  type?: string;
+  storage_path?: string;
+}
+
+// Run-uploaded artifacts live on the run JSON but aren't in the typed TaskRun,
+// so read them past the type. Skip user attachments (those are task inputs,
+// not things generated during the session).
+function readRunArtifacts(task: Task): RunArtifact[] {
+  const run = task.latest_run as { artifacts?: unknown } | undefined;
+  if (!run || !Array.isArray(run.artifacts)) return [];
+  return (run.artifacts as RunArtifact[]).filter(
+    (artifact) =>
+      artifact &&
+      typeof artifact.name === "string" &&
+      artifact.type !== "user_attachment",
+  );
+}
 
 function parseHttpsUrl(url: string): URL | null {
   try {
@@ -43,9 +85,10 @@ function parseHttpsUrl(url: string): URL | null {
 }
 
 /**
- * Everything this task produced or is anchored to, derived with no new
- * backend: PRs and canvases the agent announced on the task thread, the run
- * output's PR as a fallback, and the originating Slack thread (external link).
+ * Everything this task produced or is anchored to during the session: PRs and
+ * canvases the agent announced on the task thread, the run output's PR as a
+ * fallback, the files the agent uploaded on the run, and the originating Slack
+ * thread (external link).
  */
 function buildRows(
   task: Task,
@@ -73,6 +116,21 @@ function buildRows(
   const outputPr = task.latest_run?.output?.pr_url;
   if (typeof outputPr === "string" && outputPr && !seenPrUrls.has(outputPr)) {
     rows.push({ kind: "pr", key: `output-pr:${outputPr}`, url: outputPr });
+  }
+
+  // Files the agent uploaded during the run (plans, outputs, references, …).
+  const runId = task.latest_run?.id ?? null;
+  for (const artifact of readRunArtifacts(task)) {
+    rows.push({
+      kind: "file",
+      key: `artifact:${artifact.id ?? artifact.storage_path ?? artifact.name}`,
+      name: artifact.name ?? "Artifact",
+      typeLabel: artifact.type
+        ? (ARTIFACT_TYPE_LABELS[artifact.type] ?? "File")
+        : "File",
+      storagePath: artifact.storage_path ?? null,
+      runId,
+    });
   }
 
   const slackUrl = task.latest_run?.state?.slack_thread_url;
@@ -188,6 +246,51 @@ function CanvasRow({ name, url }: { name: string; url: string | null }) {
   );
 }
 
+// A file the agent uploaded during the run. Clicking presigns a fresh URL and
+// opens it (download) — the presign endpoint needs the task + run id + path.
+function FileRow({
+  taskId,
+  runId,
+  name,
+  typeLabel,
+  storagePath,
+}: {
+  taskId: string;
+  runId: string | null;
+  name: string;
+  typeLabel: string;
+  storagePath: string | null;
+}) {
+  const client = useOptionalAuthenticatedClient();
+  const canOpen = !!client && !!runId && !!storagePath;
+  const onOpen = canOpen
+    ? () => {
+        client
+          .presignTaskRunArtifact(
+            taskId,
+            runId as string,
+            storagePath as string,
+          )
+          .then((url) => openExternalUrl(url))
+          .catch((error: unknown) => {
+            toast.error("Couldn't open artifact", {
+              description:
+                error instanceof Error ? error.message : String(error),
+            });
+          });
+      }
+    : undefined;
+  return (
+    <ArtifactListRow
+      icon={<FileTextIcon size={14} className="shrink-0 text-gray-11" />}
+      title={name}
+      detail={typeLabel}
+      external={canOpen}
+      onOpen={onOpen}
+    />
+  );
+}
+
 export function TaskArtifactsList({
   task,
   timeline,
@@ -221,6 +324,15 @@ export function TaskArtifactsList({
           <PrRow key={row.key} url={row.url} taskId={task.id} />
         ) : row.kind === "canvas" ? (
           <CanvasRow key={row.key} name={row.name} url={row.url} />
+        ) : row.kind === "file" ? (
+          <FileRow
+            key={row.key}
+            taskId={task.id}
+            runId={row.runId}
+            name={row.name}
+            typeLabel={row.typeLabel}
+            storagePath={row.storagePath}
+          />
         ) : (
           <ArtifactListRow
             key={row.key}
