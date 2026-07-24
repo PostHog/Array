@@ -23,8 +23,14 @@ import {
  * session. Other identities' sessions are never shown or pruned: the summaries
  * this hook queries are only authoritative for the signed-in account. The
  * liveness decision itself is the pure `isBuilderSessionEnded`.
+ *
+ * `isSettled` is false until the summaries backing the liveness check have
+ * resolved, i.e. while `sessions` may still contain entries about to be pruned.
  */
-export function useLoopBuilderSessions(): LoopBuilderSession[] {
+export function useLoopBuilderSessions(): {
+  sessions: LoopBuilderSession[];
+  isSettled: boolean;
+} {
   const identity = useAuthStateValue(getAuthIdentity);
   const allSessions = useLoopBuilderSessionStore((state) => state.sessions);
   const sessions = useMemo(
@@ -82,7 +88,7 @@ export function useLoopBuilderSessions(): LoopBuilderSession[] {
     }
   }, [summaries, archivedTaskIds, now, identity]);
 
-  return useMemo(() => {
+  const liveSessions = useMemo(() => {
     if (!summaries) {
       return sessions.filter((session) => !archivedTaskIds.has(session.taskId));
     }
@@ -91,4 +97,9 @@ export function useLoopBuilderSessions(): LoopBuilderSession[] {
         !isBuilderSessionEnded(session, summaries, archivedTaskIds, now),
     );
   }, [sessions, summaries, archivedTaskIds, now]);
+
+  return {
+    sessions: liveSessions,
+    isSettled: sessions.length === 0 || summaries !== null,
+  };
 }

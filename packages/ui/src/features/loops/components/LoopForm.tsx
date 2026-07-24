@@ -5,12 +5,7 @@ import {
   Check,
 } from "@phosphor-icons/react";
 import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
-import {
-  ANALYTICS_EVENTS,
-  type LoopCreatedProperties,
-  type LoopUpdatedProperties,
-  PROJECT_BLUEBIRD_FLAG,
-} from "@posthog/shared";
+import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -26,6 +21,7 @@ import { Box, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { useCreateLoop, useUpdateLoop } from "../hooks/useLoopMutations";
+import { buildLoopSavedProps } from "../loopAnalytics";
 import { summarizeTrigger } from "../loopDisplay";
 import { useLoopDraftStore } from "../loopDraftStore";
 import {
@@ -61,33 +57,6 @@ const ADAPTER_LABELS: Record<LoopSchemas.LoopRuntimeAdapterEnum, string> = {
 };
 
 const STEPS = ["Prompt", "When", "Options", "Review"] as const;
-
-function buildLoopAnalyticsProperties(
-  loop: LoopSchemas.Loop,
-): LoopCreatedProperties | LoopUpdatedProperties {
-  return {
-    loop_id: loop.id,
-    visibility: loop.visibility,
-    runtime_adapter: loop.runtime_adapter,
-    model: loop.model || undefined,
-    reasoning_effort: loop.reasoning_effort,
-    repository_count: loop.repositories.length,
-    trigger_count: loop.triggers.length,
-    has_schedule_trigger: loop.triggers.some(
-      (trigger) => trigger.type === "schedule",
-    ),
-    has_github_trigger: loop.triggers.some(
-      (trigger) => trigger.type === "github",
-    ),
-    has_api_trigger: loop.triggers.some((trigger) => trigger.type === "api"),
-    is_pr_creation_enabled: loop.behaviors.create_prs,
-    is_auto_fix_enabled: isAutoFixEnabled(loop.behaviors),
-    notification_channel_count: (["push", "email", "slack"] as const).filter(
-      (channel) => loop.notifications[channel]?.enabled,
-    ).length,
-    has_context_target: loop.context_target !== null,
-  };
-}
 
 interface LoopFormProps {
   /** Present in edit mode; absent when creating a new loop. */
@@ -173,17 +142,11 @@ export function LoopForm({ loop }: LoopFormProps) {
     try {
       if (isEdit) {
         const updated = await updateLoop.mutateAsync(body);
-        track(
-          ANALYTICS_EVENTS.LOOP_UPDATED,
-          buildLoopAnalyticsProperties(updated),
-        );
+        track(ANALYTICS_EVENTS.LOOP_UPDATED, buildLoopSavedProps(updated));
         navigateToLoopDetail(updated.id);
       } else {
         const created = await createLoop.mutateAsync(body);
-        track(
-          ANALYTICS_EVENTS.LOOP_CREATED,
-          buildLoopAnalyticsProperties(created),
-        );
+        track(ANALYTICS_EVENTS.LOOP_CREATED, buildLoopSavedProps(created));
         navigateToLoopDetail(created.id);
       }
     } catch (error) {

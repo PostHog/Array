@@ -86,7 +86,8 @@ export function LoopsListView() {
   );
   useSetHeaderContent(headerContent);
 
-  const builderSessions = useLoopBuilderSessions();
+  const { sessions: builderSessions, isSettled: builderSessionsSettled } =
+    useLoopBuilderSessions();
 
   const allLoops = loops ?? [];
   const personalLoops = allLoops.filter(
@@ -102,7 +103,8 @@ export function LoopsListView() {
 
   const hasTrackedListViewedRef = useRef(false);
   useEffect(() => {
-    if (isLoading || hasTrackedListViewedRef.current) return;
+    if (isLoading || !builderSessionsSettled || hasTrackedListViewedRef.current)
+      return;
     hasTrackedListViewedRef.current = true;
     track(ANALYTICS_EVENTS.LOOP_LIST_VIEWED, {
       loop_count: allLoops.length,
@@ -114,6 +116,7 @@ export function LoopsListView() {
     });
   }, [
     isLoading,
+    builderSessionsSettled,
     allLoops.length,
     personalLoops.length,
     teamLoops.length,

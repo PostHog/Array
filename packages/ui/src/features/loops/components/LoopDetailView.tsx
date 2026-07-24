@@ -41,6 +41,7 @@ import {
   useUpdateLoop,
 } from "../hooks/useLoopMutations";
 import { RECENT_RUNS_LIMIT, useLoopRuns } from "../hooks/useLoopRuns";
+import { buildLoopViewedProps } from "../loopAnalytics";
 import {
   describeTrigger,
   loopFireBlockedMessage,
@@ -69,27 +70,10 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
     if (isLoading || runsQuery.isLoading || !loop) return;
     if (viewTrackedFor.current === loop.id) return;
     viewTrackedFor.current = loop.id;
-    track(ANALYTICS_EVENTS.LOOP_VIEWED, {
-      loop_id: loop.id,
-      visibility: loop.visibility,
-      enabled: loop.enabled,
-      disabled_reason: loop.disabled_reason,
-      runtime_adapter: loop.runtime_adapter,
-      model: loop.model || undefined,
-      reasoning_effort: loop.reasoning_effort,
-      repository_count: loop.repositories.length,
-      trigger_count: loop.triggers.length,
-      has_schedule_trigger: loop.triggers.some(
-        (trigger) => trigger.type === "schedule",
-      ),
-      has_github_trigger: loop.triggers.some(
-        (trigger) => trigger.type === "github",
-      ),
-      has_api_trigger: loop.triggers.some((trigger) => trigger.type === "api"),
-      last_run_status: loop.last_run_status,
-      consecutive_failures: loop.consecutive_failures,
-      recent_run_count: runs.length,
-    });
+    track(
+      ANALYTICS_EVENTS.LOOP_VIEWED,
+      buildLoopViewedProps(loop, runs.length),
+    );
   }, [isLoading, runsQuery.isLoading, loop, runs.length]);
 
   useSetHeaderContent(
