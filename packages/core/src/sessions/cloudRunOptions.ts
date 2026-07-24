@@ -57,9 +57,9 @@ export function resolveCloudResumeOptions(
   const composerAdapter = composerConfig?.adapter ?? "claude";
   const useComposerConfig =
     composerConfig !== undefined && composerAdapter === adapter;
+  const previousAdapter = previousRun?.runtime_adapter ?? "claude";
   const previousRunMatchesAdapter =
-    previousRun?.runtime_adapter === undefined ||
-    previousRun.runtime_adapter === adapter;
+    previousRun !== undefined && previousAdapter === adapter;
   const model =
     (useComposerConfig ? composerConfig.model : undefined) ??
     (previousRunMatchesAdapter ? previousRun?.model : undefined) ??

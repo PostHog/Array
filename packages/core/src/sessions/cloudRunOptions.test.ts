@@ -142,7 +142,6 @@ describe("resolveCloudResumeOptions", () => {
       resolveCloudResumeOptions(
         { adapter: "codex", model: "gpt-5.5", reasoning: "high", mode: "auto" },
         {
-          runtime_adapter: "claude",
           model: "claude-opus-4-8",
           state: { initial_permission_mode: "plan" },
         } as unknown as TaskRun,
