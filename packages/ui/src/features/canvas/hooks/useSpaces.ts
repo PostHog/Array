@@ -20,10 +20,9 @@ export type SpaceSwitchMethod =
   | "me";
 
 /**
- * The spaces in the Arc-style dot switcher: the personal "#me" channel always
- * first, then the user's starred channels (their curated set), plus the
- * current channel appended when it isn't one of those — a temporarily visited
- * space, like opening an unstarred Arc space via search.
+ * The spaces in the dot switcher: the personal "#me" channel first, then the
+ * user's starred channels, plus the current channel when it isn't one of those
+ * (a temporarily-visited space).
  */
 export function useSpaces(): {
   spaces: Channel[];
@@ -96,21 +95,11 @@ export function useSpaces(): {
   return { spaces, currentChannelId, currentIndex, switchTo, cycle };
 }
 
-// Swipe tuning. macOS "switch desktop" semantics: one swipe = one space,
-// regardless of speed. A trackpad swipe is a burst of wheel events (fingers +
-// a long, decaying inertia tail); the whole burst must move exactly one space.
-//
-// Two guards together make a single fire impossible to beat, without trying to
-// classify inertia vs. intent (which timing alone can't do reliably):
-//   1. QUIET_GAP — after firing, stay locked until the wheel is silent this
-//      long. A continuous inertia tail never goes silent, so it stays locked.
-//   2. MIN_FIRE_INTERVAL — a hard floor between two switches. Even if the tail
-//      *does* have a gap longer than QUIET_GAP (some trackpads emit sparse
-//      late-inertia events), a second switch can't fire until this has passed,
-//      and by then the tail's velocity is spent — with the accumulator reset
-//      on every fire, the dregs can't re-reach the threshold.
-// The cost is that two *deliberate* swipes need ~half a second between them,
-// which is fine for discrete space switching and the price of never over-shooting.
+// One swipe = one space, regardless of speed. A trackpad swipe is a burst of
+// wheel events with a long inertia tail; two guards keep the whole burst to a
+// single switch: after firing we stay locked until the wheel goes quiet
+// (QUIET_GAP) *and* a hard floor since the last fire has passed
+// (MIN_FIRE_INTERVAL) — an inertia tail satisfies neither.
 const QUIET_GAP_MS = 400;
 const MIN_FIRE_INTERVAL_MS = 500;
 // Horizontal travel within one gesture that triggers the switch.

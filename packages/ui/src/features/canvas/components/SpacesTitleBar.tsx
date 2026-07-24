@@ -12,18 +12,10 @@ import { isMac } from "@posthog/ui/utils/platform";
 import { Flex } from "@radix-ui/themes";
 import { useMemo } from "react";
 
-/**
- * The spaces-layout title bar center: a persistent search pill that opens the
- * command menu. Replaces the browser-tab strip while channels are on (the
- * prototype moves tabs inside the task view instead).
- */
+/** Title-bar search pill (opens the command menu); replaces the tab strip in spaces. */
 export function SpacesSearchField() {
   const toggleCommandMenu = useCommandMenuStore((s) => s.toggle);
   return (
-    // No left padding: the pill's left edge lines up with the content pane /
-    // task column (the title-bar-left block is exactly the sidebar width, so
-    // this flex starts at the pane's left edge). Right padding keeps it off
-    // the empty draggable middle.
     <Flex align="center" justify="start" className="min-w-0 flex-1 pr-3">
       <button
         type="button"
@@ -40,11 +32,7 @@ export function SpacesSearchField() {
   );
 }
 
-/**
- * Activity (bell, with an unread-mentions dot) and Inbox buttons for the
- * spaces-layout title bar. Both open in the main view; the sidebar keeps its
- * current space.
- */
+/** Title-bar Activity (bell + unread dot) and Inbox buttons. */
 export function SpacesTitleBarActions() {
   const { items } = useMentionActivity();
   const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);

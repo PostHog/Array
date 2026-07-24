@@ -36,7 +36,6 @@ import { useEffect } from "react";
 const RAIL_BUTTON_CLASS =
   "flex size-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12";
 
-// Curated emoji choices for a space's dot (Arc-style space icons).
 const SPACE_EMOJIS = [
   "🦔",
   "🚀",
@@ -60,9 +59,7 @@ const SPACE_EMOJIS = [
   "❤️",
 ] as const;
 
-// One space in the dot row: an emoji (if set), the person glyph for "#me", or
-// a plain dot. Right-click offers emoji selection and, for starred channels,
-// removing the space.
+// One space in the dot row; right-click sets an emoji or removes the space.
 function SpaceDot({
   channel,
   active,
@@ -147,8 +144,6 @@ function SpaceDot({
         <TooltipContent side="top"># {channel.name}</TooltipContent>
       </Tooltip>
       <ContextMenuContent className="w-48">
-        {/* Emoji grid — plain buttons inside the menu, not menu items, so a
-            pick doesn't need per-emoji rows. */}
         <div className="grid grid-cols-5 gap-0.5 p-1">
           {SPACE_EMOJIS.map((option) => (
             <button
@@ -184,11 +179,9 @@ function SpaceDot({
 }
 
 /**
- * The Arc-style space switcher pinned above the sidebar footer. "#me" is
- * always the first space in the row; added spaces append to the right. The
- * "#" toggles the sidebar body into the all-channels list; the "+" opens a
- * draft new space with its own temporary dot. Ctrl+Alt+←/→ and horizontal
- * swipes cycle spaces.
+ * The space switcher pinned above the sidebar footer. "#me" is first; added
+ * spaces append to the right. "#" toggles the all-channels list; "+" opens a
+ * draft new space. Ctrl+Alt+←/→ and horizontal swipes cycle spaces.
  */
 export function SpaceDots() {
   const navigate = useNavigate();
@@ -219,10 +212,8 @@ export function SpaceDots() {
   const hasMe = spaces.some((c) => c.name === PERSONAL_CHANNEL_NAME);
   const overrideOpen = browsing || draftSpace;
 
-  // The "#" directory is a preview: while it's open the sidebar lists every
-  // channel and clicking one just shows its activity in the main view. Closing
-  // it returns to the current space (or the landing) so the preview leaves no
-  // trace — no space scoped, nothing pinned.
+  // Closing the "#" directory returns to the current space (or the landing),
+  // leaving no trace — the preview never scopes or pins.
   const toggleBrowsing = () => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "space_browse_toggle",
@@ -251,8 +242,7 @@ export function SpaceDots() {
     setDraftSpace(!draftSpace);
   };
 
-  // Open (creating on first use) the personal space — only needed while the
-  // "#me" channel doesn't exist yet; afterwards it's a regular dot.
+  // Only used before the "#me" channel exists; afterwards it's a regular dot.
   const openPersonalSpace = () => {
     ensurePersonalChannel(channels, createChannel)
       .then((me) => switchTo(me, "me"))
@@ -266,8 +256,6 @@ export function SpaceDots() {
   return (
     <TooltipProvider delay={300}>
       <div className="flex shrink-0 items-center gap-1 px-3 py-1.5">
-        {/* Toggle the sidebar body into the all-channels list (in place — no
-            popover, no navigation). */}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -289,7 +277,7 @@ export function SpaceDots() {
         </Tooltip>
 
         <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden">
-          {/* "#me" not provisioned yet: show its slot anyway, first. */}
+          {/* "#me" not provisioned yet — show its slot anyway. */}
           {!hasMe && (
             <Tooltip>
               <TooltipTrigger
@@ -319,8 +307,6 @@ export function SpaceDots() {
               onSelect={() => switchTo(channel)}
             />
           ))}
-          {/* The draft space's temporary dot — a hollow placeholder until a
-              channel is chosen or created. */}
           {draftSpace && (
             <motion.span
               initial={{ scale: 0.5, opacity: 0 }}
@@ -330,8 +316,6 @@ export function SpaceDots() {
           )}
         </div>
 
-        {/* Open a draft new space (Arc-style): its dot appears immediately;
-            the sidebar body becomes the choose-or-create view. */}
         <Tooltip>
           <TooltipTrigger
             render={

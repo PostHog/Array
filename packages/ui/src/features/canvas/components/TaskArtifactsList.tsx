@@ -55,10 +55,8 @@ interface RunArtifact {
   storage_path?: string;
 }
 
-// A run's uploaded artifacts live on the run JSON but aren't in the typed
-// TaskRun, so read them past the type. Only PLANS are surfaced — the other
-// types are internal blobs (skill packs, raw outputs) with opaque UUID names
-// that don't belong in a human artifacts list.
+// Run artifacts live on the run JSON but aren't in the typed TaskRun, so read
+// them past the type. Only plans are surfaced; other types are internal blobs.
 function readRunPlans(run: TaskRun): RunArtifact[] {
   const raw = (run as { artifacts?: unknown }).artifacts;
   if (!Array.isArray(raw)) return [];
@@ -85,10 +83,9 @@ function parseHttpsUrl(url: string): URL | null {
 }
 
 /**
- * A task's artifacts, gathered across ALL of its runs: the PRs and canvases the
- * agent announced on the task thread, every run's output PR, the plans the
- * agent produced, and the originating Slack thread. Deliberately curated —
- * internal upload blobs (skill packs, raw outputs) are excluded.
+ * A task's artifacts across all runs: thread-announced PRs and canvases, every
+ * run's output PR, plans, and the originating Slack thread. Internal upload
+ * blobs are excluded.
  */
 function buildRows(
   task: Task,
@@ -105,7 +102,6 @@ function buildRows(
     rows.push({ kind: "pr", key, url });
   };
 
-  // Canvases + PRs the agent announced on the (task-level) thread.
   for (const row of timeline) {
     if (row.kind !== "artifact") continue;
     if (row.artifact.kind === "pr") {
@@ -120,8 +116,7 @@ function buildRows(
     }
   }
 
-  // PRs and plans from every run of the task (fall back to latest_run while
-  // the runs list is still loading).
+  // Fall back to latest_run while the runs list is still loading.
   const allRuns =
     runs.length > 0 ? runs : task.latest_run ? [task.latest_run] : [];
   for (const run of allRuns) {
@@ -183,8 +178,7 @@ function ArtifactListRow({
   );
 }
 
-// PR row: live state + comment count from GitHub. Clicking opens the diff in
-// the task's review pane (the mockup's "on click, show diff").
+// PR row: live state + comment count from GitHub; opens the diff in the review pane.
 function PrRow({ url, taskId }: { url: string; taskId: string }) {
   const parsed = parseHttpsUrl(url);
   const safeUrl = parsed?.origin === "https://github.com" ? parsed.href : null;
@@ -256,8 +250,7 @@ function CanvasRow({ name, url }: { name: string; url: string | null }) {
   );
 }
 
-// A plan the agent produced during a run. Clicking presigns a fresh URL and
-// opens it — the presign endpoint needs the task + run id + storage path.
+// Clicking presigns a fresh URL (needs task + run id + storage path) and opens it.
 function PlanRow({
   taskId,
   runId,

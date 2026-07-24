@@ -7,12 +7,9 @@ import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayo
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
-// The shared channel header: a clickable "# channel" that doubles as the Home
-// item — it routes to the channel home (`/website/$channelId`, like the sidebar
-// channel row) and highlights `bg-fill-selected` while you're there. In the
-// spaces layout the section tab strip (Loops / Artifacts / Recents /
-// CONTEXT.md) is dropped — the space sidebar carries those entries; flag off
-// keeps the strip exactly as before.
+// The shared channel header: a clickable "# channel" routing to the channel
+// home. The spaces layout drops the section tab strip (the space sidebar
+// carries those entries); flag off keeps the strip as before.
 export function ChannelHeader({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const spacesOn = useSpacesLayout();
@@ -20,8 +17,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isHome = pathname === `/website/${channelId}`;
-  // Every channel surface renders this header, so it is where "the viewer is
-  // in this channel" is known — and therefore where the channel is marked read.
+  // Every channel surface renders this header, so mark the channel read here.
   useMarkChannelSeen(channelName);
 
   return (

@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /**
- * Per-space emoji, set from a dot's right-click menu (Arc-style space icons).
- * Pure view state persisted to localStorage, keyed by channel id.
+ * Per-space emoji, set from a dot's right-click menu. Pure view state persisted
+ * to localStorage, keyed by channel id.
  */
 interface SpaceEmojiState {
   emojiByChannelId: Record<string, string>;

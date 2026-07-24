@@ -15,11 +15,9 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 // routes, channels and dashboards.
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
 /**
- * Gates the Spaces layout: channels as scoped spaces (per-space sidebar, dot
- * switcher, title-bar search/inbox/account) and the task Activity panel
- * (Timeline / Artifacts / Comments). Off = the previous experience exactly,
- * including the "Enable channels" alpha toggle; on = the full new experience
- * with no separate toggle. Requires project-bluebird underneath.
+ * Gates the Spaces layout (channels as scoped spaces + the task Activity
+ * panel). Off = the previous experience, including the "Enable channels" alpha
+ * toggle; on = the full new experience, no toggle. Requires project-bluebird.
  */
 export const SPACES_LAYOUT_FLAG = "code-spaces-layout";
 // Gates the Loops feature: the sidebar Loops space and the per-channel Loops tab.
