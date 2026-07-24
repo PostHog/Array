@@ -1,35 +1,54 @@
-import { useHostTRPC } from "@posthog/host-router/react";
 import type { Task } from "@posthog/shared/domain-types";
+import {
+  type PrStateDetails,
+  usePrDetailsMap,
+} from "@posthog/ui/features/git-interaction/usePrDetails";
 import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
-import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
+
+export function prDetailsToState(
+  details: PrStateDetails | undefined,
+): SidebarPrState {
+  if (!details) return null;
+  if (details.merged) return "merged";
+  if (details.draft) return "draft";
+  if (details.state === "open") return "open";
+  if (details.state === "closed") return "closed";
+  return null;
+}
 
 export function useChannelTaskPrStates(
   tasks: Task[],
   prUrlByTaskId: ReadonlyMap<string, string>,
 ): Map<string, SidebarPrState> {
-  const trpc = useHostTRPC();
-  const results = useQueries({
-    queries: tasks.map((task) => {
-      const prUrl =
-        prUrlByTaskId.get(task.id) ??
-        (typeof task.latest_run?.output?.pr_url === "string"
-          ? task.latest_run.output.pr_url
-          : null);
-      return trpc.workspace.getTaskPrStatus.queryOptions(
-        { taskId: task.id, cloudPrUrl: prUrl },
-        { staleTime: 15_000, refetchInterval: 15_000 },
-      );
-    }),
-  });
+  const prUrls = useMemo(
+    () =>
+      tasks.flatMap((task) => {
+        const prUrl =
+          prUrlByTaskId.get(task.id) ??
+          (typeof task.latest_run?.output?.pr_url === "string"
+            ? task.latest_run.output.pr_url
+            : null);
+        return prUrl ? [prUrl] : [];
+      }),
+    [prUrlByTaskId, tasks],
+  );
+  const detailsByUrl = usePrDetailsMap(prUrls);
   return useMemo(
     () =>
       new Map(
-        tasks.map((task, index) => [
-          task.id,
-          results[index]?.data?.prState ?? null,
-        ]),
+        tasks.map((task) => {
+          const prUrl =
+            prUrlByTaskId.get(task.id) ??
+            (typeof task.latest_run?.output?.pr_url === "string"
+              ? task.latest_run.output.pr_url
+              : null);
+          return [
+            task.id,
+            prDetailsToState(prUrl ? detailsByUrl[prUrl] : undefined),
+          ];
+        }),
       ),
-    [results, tasks],
+    [detailsByUrl, prUrlByTaskId, tasks],
   );
 }
