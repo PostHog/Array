@@ -26,6 +26,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useAppVisibilityWatchdog } from "@posthog/ui/shell/useAppVisibilityWatchdog";
+import { useRendererHeapWatchdog } from "@posthog/ui/shell/useRendererHeapWatchdog";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -117,6 +118,7 @@ function App({ devToolbar }: AppProps) {
   // Mirrors the "main" branch of renderContent() below; keep the two in sync.
   const showingMainApp = readyForMainApp && initialRouteLoaded;
   useAppVisibilityWatchdog(mainRef, showingMainApp);
+  useRendererHeapWatchdog();
 
   // Single gate for every state where the whole app is still loading.
   if (
