@@ -1,7 +1,6 @@
 import {
   BookOpenTextIcon,
   FunnelSimple as FunnelSimpleIcon,
-  HashIcon,
   MagnifyingGlass,
   PackageIcon,
   PlusIcon,
@@ -19,15 +18,14 @@ import {
   MenuLabel,
 } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
-import { SpaceItemRow } from "@posthog/ui/features/canvas/components/SpaceItemRow";
+import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
+import { ChannelSwitcher } from "@posthog/ui/features/canvas/components/ChannelSwitcher";
+import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useSpaceItems } from "@posthog/ui/features/canvas/hooks/useSpaceItems";
-import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { navigateToChannelNewTask } from "@posthog/ui/router/navigationBridge";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { type ReactNode, useState } from "react";
 
 type CreatedByFilter = "anyone" | "me" | "others";
@@ -166,17 +164,16 @@ function RecentSectionHeader({
  * header, its sections (Context / Loops / Artifacts), then pinned and recent
  * tasks & canvases. The sidebar-wide swipe handler lives in ChannelsSidebar.
  */
-export function SpaceSidebar({ channelId }: { channelId: string }) {
+export function ChannelSidebar({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const direction = useSpaceStore((s) => s.direction);
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
 
   const { channels } = useChannels();
   const channelName =
     channels.find((c) => c.id === channelId)?.name ?? "channel";
 
-  const { items, meUuid, meName } = useSpaceItems(channelId, channelName);
+  const { items, meUuid, meName } = useChannelItems(channelId, channelName);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -223,25 +220,8 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
   );
 
   return (
-    <motion.div
-      key={channelId}
-      initial={{ x: direction * 32, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
-      className="flex h-full min-h-0 flex-col"
-    >
-      <button
-        type="button"
-        onClick={() =>
-          void navigate({ to: "/website/$channelId", params: { channelId } })
-        }
-        className="mx-2 mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors hover:bg-gray-3"
-      >
-        <HashIcon size={14} className="shrink-0 text-gray-10" />
-        <span className="min-w-0 truncate font-semibold text-[13px] text-gray-12">
-          {channelName}
-        </span>
-      </button>
+    <div className="flex h-full min-h-0 flex-col">
+      <ChannelSwitcher channelId={channelId} />
 
       <div className="flex flex-col gap-px px-2 pt-1">
         {sectionRow(
@@ -293,7 +273,7 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
             <MenuLabel>Pinned</MenuLabel>
             <div className="flex flex-col gap-px">
               {pinnedItems.map((item) => (
-                <SpaceItemRow key={item.key} item={item} />
+                <ChannelItemRow key={item.key} item={item} />
               ))}
             </div>
           </>
@@ -318,7 +298,7 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
             {recentItems.length > 0 ? (
               <div className="flex flex-col gap-px">
                 {recentItems.map((item) => (
-                  <SpaceItemRow key={item.key} item={item} />
+                  <ChannelItemRow key={item.key} item={item} />
                 ))}
               </div>
             ) : (
@@ -331,10 +311,10 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
 
         {items.length === 0 && (
           <p className="px-2 py-3 text-[12px] text-gray-10">
-            Tasks and canvases you create in this space show up here.
+            Tasks and canvases you create in this channel show up here.
           </p>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }

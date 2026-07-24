@@ -872,11 +872,8 @@ export type ChannelsSurface =
   | "canvas"
   | "context"
   | "thread_panel"
-  // Spaces layout: the task's tabbed Activity panel and the space chrome
-  // (dot switcher / space sidebar).
+  // The task's tabbed Activity panel (new channels layout).
   | "activity_panel"
-  | "space_switcher"
-  | "space_sidebar"
   | "activity";
 
 export type ChannelActionType =
@@ -911,10 +908,6 @@ export type ChannelActionType =
   | "view_activity"
   | "open_mention"
   | "canvas_mode_toggle"
-  // Spaces layout.
-  | "space_switch"
-  | "space_browse_toggle"
-  | "space_draft_toggle"
   | "activity_tab_change";
 
 export interface ChannelActionProperties {
@@ -934,10 +927,6 @@ export interface ChannelActionProperties {
   suggestion_label?: string;
   /** For canvas_mode_toggle: whether canvas mode is being armed. */
   armed?: boolean;
-  /** For space_switch: what drove it ("dot" | "swipe" | "keyboard" | "browse" | "draft" | "me"). */
-  method?: string;
-  /** For space_browse_toggle / space_draft_toggle: the resulting open state. */
-  open?: boolean;
   /** For activity_tab_change: the tab landed on. */
   tab?: string;
   /** Whether the underlying mutation resolved successfully. */

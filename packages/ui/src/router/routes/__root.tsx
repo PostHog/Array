@@ -28,13 +28,9 @@ import {
   FeedbackModal,
   type FeedbackModalMode,
 } from "@posthog/ui/features/canvas/components/FeedbackModal";
-import {
-  SpacesSearchField,
-  SpacesTitleBarActions,
-} from "@posthog/ui/features/canvas/components/SpacesTitleBar";
 import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { useChannelDeepLink } from "@posthog/ui/features/canvas/hooks/useChannelDeepLink";
-import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { GlobalFilePicker } from "@posthog/ui/features/command/GlobalFilePicker";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
@@ -197,9 +193,9 @@ function RootLayout() {
   );
   const channelsToggleOn = useSidebarStore((s) => s.channelsEnabled);
   const channelsEnabled = channelsToggleOn && bluebirdEnabled;
-  // The Spaces layout has exactly one gate: its feature flag (no sidebar
-  // toggle). When on it subsumes the channels world entirely.
-  const spacesOn = useSpacesLayout();
+  // The new channels layout has exactly one gate: its feature flag (no
+  // sidebar toggle). When on it subsumes the channels alpha entirely.
+  const channelsLayout = useChannelsLayout();
   // When the sidebar is collapsed (Cmd+B) the title bar's left block shrinks to
   // fit its own controls so the tab strip flushes left with the content pane.
   const sidebarOpen = useSidebarStore((s) => s.open);
@@ -418,19 +414,16 @@ function RootLayout() {
               </Flex>
             )}
           </Flex>
-          {/* Spaces layout: the title-bar center is a persistent search pill
-              (tabs live inside the task view instead of a global strip).
-              Flag off keeps the browser-tab strip exactly as before: channel
-              tabs under /website, plain task tabs in Code. */}
-          {spacesOn ? <SpacesSearchField /> : <BrowserTabStrip />}
+          {/* The new layout has no global tab strip (tabs live inside the
+              task view); search/inbox/activity live in the sidebar nav. */}
+          {!channelsLayout && <BrowserTabStrip />}
           {/* Gated so an empty right-side group can't claim a no-drag rect
               in the title bar for nothing — every pixel without controls
               should drag the window. */}
-          {(billingEnabled || channelsEnabled || spacesOn) && (
+          {(billingEnabled || channelsEnabled || channelsLayout) && (
             <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
-              {spacesOn && <SpacesTitleBarActions />}
               <UsageButton />
-              {(channelsEnabled || spacesOn) && (
+              {(channelsEnabled || channelsLayout) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -441,9 +434,9 @@ function RootLayout() {
                   PostHog Web
                 </Button>
               )}
-              {/* Account / project / org menu, moved out of the sidebar into a
-                  compact avatar in the spaces layout. */}
-              {spacesOn && <ProjectSwitcher variant="compact" />}
+              {/* Account / project / org menu — moves out of the sidebar into
+                  a compact avatar in the new layout. */}
+              {channelsLayout && <ProjectSwitcher variant="compact" />}
             </Flex>
           )}
         </Flex>

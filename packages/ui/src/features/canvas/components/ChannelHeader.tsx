@@ -2,17 +2,17 @@ import { HashIcon } from "@phosphor-icons/react";
 import { Button, cn } from "@posthog/quill";
 import { ChannelTabs } from "@posthog/ui/features/canvas/components/ChannelTabs";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useMarkChannelSeen } from "@posthog/ui/features/canvas/hooks/useMarkChannelSeen";
-import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
 // The shared channel header: a clickable "# channel" routing to the channel
-// home. The spaces layout drops the section tab strip (the space sidebar
+// home. The new layout drops the section tab strip (the channel sidebar
 // carries those entries); flag off keeps the strip as before.
 export function ChannelHeader({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
-  const spacesOn = useSpacesLayout();
+  const channelsLayout = useChannelsLayout();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -36,7 +36,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
           {channelName ?? "Channel"}
         </Text>
       </Button>
-      {!spacesOn && <ChannelTabs channelId={channelId} />}
+      {!channelsLayout && <ChannelTabs channelId={channelId} />}
     </div>
   );
 }

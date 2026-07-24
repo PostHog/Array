@@ -16,7 +16,7 @@ export type StatusVariant =
   | "success"
   | "warning";
 
-export interface SpaceItem {
+export interface ChannelItem {
   key: string;
   kind: "task" | "canvas";
   title: string;
@@ -68,7 +68,7 @@ const HOVER_ACTION_CLASS =
   "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12";
 
 // A pinned/recent row with a hover card carrying the full title, status, author.
-export function SpaceItemRow({ item }: { item: SpaceItem }) {
+export function ChannelItemRow({ item }: { item: ChannelItem }) {
   return (
     <PreviewCard.Root>
       <PreviewCard.Trigger
