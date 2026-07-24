@@ -1,5 +1,17 @@
-import { ChatCircleIcon, GitPullRequest } from "@phosphor-icons/react";
-import type { SituationId } from "@posthog/core/workflow/schemas";
+import {
+  ChatCircleIcon,
+  CheckCircle,
+  Eye,
+  GitCommit,
+  GitPullRequest,
+  XCircle,
+} from "@phosphor-icons/react";
+import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
+import {
+  TASK_BOARD_STATUSES,
+  type TaskBoardStatus,
+  taskBoardStatus,
+} from "@posthog/core/home/taskBoardStatus";
 import { Button } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
@@ -7,56 +19,92 @@ import {
   TaskStatusBadge,
   useTaskStatusDisplay,
 } from "@posthog/ui/features/canvas/components/ChannelFeedView";
+import { useChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
-import { fallbackChannelTaskSituation } from "@posthog/ui/features/canvas/utils/channelTaskSituation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
   WorkBoard,
   type WorkBoardColumn,
 } from "@posthog/ui/features/home/components/WorkBoard";
-import { HOME_BOARD_COLUMN_IDS } from "@posthog/ui/features/home/utils/boardColumns";
-import { SITUATION_VISUAL } from "@posthog/ui/features/home/utils/situationDisplay";
+import type { SituationColor } from "@posthog/ui/features/home/utils/situationDisplay";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
 
 const BOARD_REPLIES_POLL_INTERVAL_MS = 15_000;
+const STATUS_VISUAL: Record<
+  TaskBoardStatus,
+  {
+    label: string;
+    description: string;
+    color: SituationColor;
+    Icon: typeof GitCommit;
+  }
+> = {
+  working: {
+    label: "Working",
+    description: "No PR, draft PR, or CI is not passing",
+    color: "purple",
+    Icon: GitCommit,
+  },
+  in_review: {
+    label: "In review",
+    description: "Open PR with passing CI",
+    color: "blue",
+    Icon: Eye,
+  },
+  done: {
+    label: "Done",
+    description: "PR merged",
+    color: "gray",
+    Icon: CheckCircle,
+  },
+  cancelled: {
+    label: "Cancelled",
+    description: "PR closed or task failed/cancelled",
+    color: "red",
+    Icon: XCircle,
+  },
+};
+
 export function ChannelBoardView({
   tasks,
   isLoading,
-  situationByTaskId,
+  prSnapshotByTaskId,
   prUrlByTaskId,
   onOpenTask,
   onOpenThread,
 }: {
   tasks: Task[];
   isLoading: boolean;
-  situationByTaskId: ReadonlyMap<string, SituationId>;
+  prSnapshotByTaskId: ReadonlyMap<string, PrSnapshot>;
   prUrlByTaskId: ReadonlyMap<string, string>;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
+  const prStates = useChannelTaskPrStates(tasks);
   const columns = useMemo<
-    WorkBoardColumn<{ task: Task; situation: SituationId }>[]
+    WorkBoardColumn<{ task: Task; status: TaskBoardStatus }>[]
   >(() => {
     const grouped = new Map<
-      SituationId,
-      Array<{ task: Task; situation: SituationId }>
-    >(HOME_BOARD_COLUMN_IDS.map((id) => [id, []]));
+      TaskBoardStatus,
+      Array<{ task: Task; status: TaskBoardStatus }>
+    >(TASK_BOARD_STATUSES.map((status) => [status, []]));
     for (const task of tasks) {
-      const situation =
-        situationByTaskId.get(task.id) ?? fallbackChannelTaskSituation(task);
-      if (situation) grouped.get(situation)?.push({ task, situation });
+      const snapshot = prSnapshotByTaskId.get(task.id);
+      const status = taskBoardStatus({
+        runStatus: task.latest_run?.status,
+        prState: snapshot?.state ?? prStates.get(task.id),
+        ciStatus: snapshot?.ciStatus,
+      });
+      grouped.get(status)?.push({ task, status });
     }
-    return HOME_BOARD_COLUMN_IDS.map((id) => ({
-      id,
-      label: SITUATION_VISUAL[id].label,
-      description: SITUATION_VISUAL[id].description,
-      color: SITUATION_VISUAL[id].color,
-      Icon: SITUATION_VISUAL[id].Icon,
-      items: grouped.get(id) ?? [],
+    return TASK_BOARD_STATUSES.map((status) => ({
+      id: status,
+      ...STATUS_VISUAL[status],
+      items: grouped.get(status) ?? [],
     }));
-  }, [situationByTaskId, tasks]);
+  }, [prSnapshotByTaskId, prStates, tasks]);
 
   if (isLoading) {
     return <div className="min-h-0 flex-1" />;
@@ -66,10 +114,10 @@ export function ChannelBoardView({
     <WorkBoard
       columns={columns}
       getKey={(item) => item.task.id}
-      renderCard={({ task, situation }) => (
+      renderCard={({ task, status }) => (
         <ChannelBoardCard
           task={task}
-          situation={situation}
+          status={status}
           prUrl={
             prUrlByTaskId.get(task.id) ??
             (typeof task.latest_run?.output?.pr_url === "string"
@@ -86,13 +134,13 @@ export function ChannelBoardView({
 
 function ChannelBoardCard({
   task,
-  situation,
+  status,
   prUrl,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
-  situation: SituationId;
+  status: TaskBoardStatus;
   prUrl?: string;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
@@ -102,7 +150,7 @@ function ChannelBoardCard({
     pollIntervalMs: BOARD_REPLIES_POLL_INTERVAL_MS,
   });
   const creatorName = userDisplayName(task.created_by);
-  const visual = SITUATION_VISUAL[situation];
+  const visual = STATUS_VISUAL[status];
   const replyLabel = `${messages.length} ${messages.length === 1 ? "reply" : "replies"}`;
 
   return (

@@ -1,6 +1,6 @@
 import { Kanban, ListBullets, User } from "@phosphor-icons/react";
+import type { PrSnapshot } from "@posthog/core/home/prSnapshot";
 import { insertTaskDedup } from "@posthog/core/tasks/taskDelete";
-import type { SituationId } from "@posthog/core/workflow/schemas";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
@@ -44,7 +44,6 @@ import {
 import { useChannelHomeUiStore } from "@posthog/ui/features/canvas/stores/channelHomeUiStore";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { useHomeSnapshot } from "@posthog/ui/features/home/hooks/useHomeSnapshot";
-import { columnForWorkstream } from "@posthog/ui/features/home/utils/boardColumns";
 import { SuggestedPromptCard } from "@posthog/ui/features/task-detail/components/SuggestedPromptCard";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -124,16 +123,15 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         : tasks,
     [currentUser?.uuid, taskScope, tasks],
   );
-  const situationByTaskId = useMemo(() => {
-    const result = new Map<string, SituationId>();
+  const prSnapshotByTaskId = useMemo(() => {
+    const result = new Map<string, PrSnapshot>();
     for (const workstream of [
       ...homeSnapshot.needsAttention,
       ...homeSnapshot.inProgress,
     ]) {
-      const column = columnForWorkstream(workstream);
-      if (!column) continue;
+      if (!workstream.pr) continue;
       for (const task of workstream.tasks) {
-        result.set(task.id, column);
+        result.set(task.id, workstream.pr);
       }
     }
     return result;
@@ -370,7 +368,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           <ChannelBoardView
             tasks={visibleTasks}
             isLoading={isLoading}
-            situationByTaskId={situationByTaskId}
+            prSnapshotByTaskId={prSnapshotByTaskId}
             prUrlByTaskId={prUrlByTaskId}
             onOpenTask={handleOpenTask}
             onOpenThread={handleOpenThread}
