@@ -13,6 +13,9 @@ import type { CloudRegion } from "@posthog/shared";
  */
 const LOCAL_INGRESS_ORIGIN = "http://localhost:3030";
 
+// Slug reaches the host below from an attacker-controllable deep link param.
+const AGENT_SLUG_PATTERN = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
+
 export function resolveIngressBaseUrl(
   ingressBaseUrl: string | null | undefined,
   region: CloudRegion | null,
@@ -41,7 +44,7 @@ export function agentIngressBaseUrl(
   slug: string,
   region: CloudRegion | null,
 ): string | null {
-  if (!slug || !region) return null;
+  if (!slug || !region || !AGENT_SLUG_PATTERN.test(slug)) return null;
   switch (region) {
     case "us":
       return `https://${slug}.agents.us.posthog.com`;
