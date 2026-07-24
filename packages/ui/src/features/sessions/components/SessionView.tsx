@@ -306,6 +306,7 @@ export function SessionView({
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
   const editorRef = useRef<PromptInputHandle>(null);
   const sendInFlightRef = useRef(false);
+  const composerSubmissionRef = useRef(0);
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -321,14 +322,18 @@ export function SessionView({
       if (!text.trim() || sendInFlightRef.current) return;
 
       sendInFlightRef.current = true;
+      const submissionId = ++composerSubmissionRef.current;
       const editor = editorRef.current;
       const submittedContent = editor?.getContent() ?? null;
       if (
         editor &&
         shouldSubmitComposerOptimistically(submittedContent, text)
       ) {
-        const sendPromise = submitComposerPrompt(editor, submittedContent, () =>
-          onSendPrompt(text),
+        const sendPromise = submitComposerPrompt(
+          editor,
+          submittedContent,
+          () => onSendPrompt(text),
+          () => submissionId === composerSubmissionRef.current,
         );
         sendInFlightRef.current = false;
         await sendPromise;

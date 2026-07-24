@@ -27,15 +27,16 @@ export async function submitComposerPrompt(
   editor: ComposerEditor,
   submittedContent: EditorContent,
   send: () => Promise<boolean>,
+  canRestore: () => boolean,
 ): Promise<void> {
   editor.clear();
 
   try {
-    if (!(await send()) && editor.isEmpty()) {
+    if (!(await send()) && canRestore() && editor.isEmpty()) {
       editor.setContent(submittedContent);
     }
   } catch (error) {
-    if (editor.isEmpty()) {
+    if (canRestore() && editor.isEmpty()) {
       editor.setContent(submittedContent);
     }
     throw error;
