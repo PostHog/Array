@@ -3,7 +3,6 @@ import {
   FunnelSimple as FunnelSimpleIcon,
   MagnifyingGlass,
   PackageIcon,
-  PlusIcon,
   RepeatIcon,
 } from "@phosphor-icons/react";
 import {
@@ -16,6 +15,7 @@ import {
   DropdownMenuTrigger,
   Input,
   MenuLabel,
+  Skeleton,
 } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
@@ -24,7 +24,6 @@ import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelIte
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
-import { navigateToChannelNewTask } from "@posthog/ui/router/navigationBridge";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
@@ -159,10 +158,33 @@ function RecentSectionHeader({
   );
 }
 
+// Varied-width ghost rows so the loading state reads as the list it becomes.
+const SKELETON_ROW_WIDTHS = [
+  "w-3/5",
+  "w-4/5",
+  "w-2/5",
+  "w-3/4",
+  "w-1/2",
+  "w-2/3",
+] as const;
+
+function ChannelItemsSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col gap-px">
+      <Skeleton className="mx-2 mt-1.5 mb-1 h-3 w-12" />
+      {SKELETON_ROW_WIDTHS.map((width) => (
+        <div key={width} className="flex items-center gap-2 px-2 py-1.5">
+          <Skeleton className="size-4 shrink-0 rounded" />
+          <Skeleton className={cn("h-3.5", width)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
- * The sidebar body while a space (channel) is active: New task, the channel
- * header, its sections (Context / Loops / Artifacts), then pinned and recent
- * tasks & canvases. The sidebar-wide swipe handler lives in ChannelsSidebar.
+ * The sidebar body while a channel is active: the switcher, its sections
+ * (Context / Loops / Artifacts), then pinned and recent tasks & canvases.
  */
 export function ChannelSidebar({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
@@ -173,7 +195,10 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   const channelName =
     channels.find((c) => c.id === channelId)?.name ?? "channel";
 
-  const { items, meUuid, meName } = useChannelItems(channelId, channelName);
+  const { items, meUuid, meName, isLoading } = useChannelItems(
+    channelId,
+    channelName,
+  );
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -257,17 +282,9 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
         )}
       </div>
 
-      <div className="flex flex-col gap-px px-2 pt-2">
-        <SidebarItem
-          depth={0}
-          icon={<PlusIcon size={16} />}
-          label="New task"
-          isActive={pathname === `${base}/new`}
-          onClick={() => navigateToChannelNewTask(channelId)}
-        />
-      </div>
-
       <div className="scroll-mask-4 mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {isLoading && items.length === 0 && <ChannelItemsSkeleton />}
+
         {pinnedItems.length > 0 && (
           <>
             <MenuLabel>Pinned</MenuLabel>
@@ -309,7 +326,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
           </>
         )}
 
-        {items.length === 0 && (
+        {!isLoading && items.length === 0 && (
           <p className="px-2 py-3 text-[12px] text-gray-10">
             Tasks and canvases you create in this channel show up here.
           </p>

@@ -30,7 +30,7 @@ import { useSidebarEdgeHoverPeek } from "@posthog/ui/primitives/hooks/useSidebar
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
-import { useParams, useRouterState } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useRef } from "react";
 
 export function ChannelsSidebar() {
@@ -140,7 +140,7 @@ export function ChannelsSidebar() {
         {/* active channel → channel list → tasks */}
         {inChannel && currentChannelId ? (
           <>
-            <ChannelNav />
+            <ChannelNav channelId={currentChannelId} />
             <Separator />
             <Box className="min-h-0 flex-1 overflow-hidden">
               <ChannelSidebar channelId={currentChannelId} />
@@ -181,12 +181,9 @@ export function ChannelsSidebar() {
 
         <LoopsPromoCard />
 
-        {/* In the new layout the account switcher moves to the title bar. */}
-        {!channelsLayout && (
-          <Box className="shrink-0 px-2 pb-2">
-            <ProjectSwitcher />
-          </Box>
-        )}
+        <Box className="shrink-0 px-2 pb-2">
+          <ProjectSwitcher />
+        </Box>
       </Flex>
     </ResizableSidebar>
   );

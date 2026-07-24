@@ -43,7 +43,6 @@ import { useInboxDeepLink } from "@posthog/ui/features/inbox/hooks/useInboxDeepL
 import { useIntegrations } from "@posthog/ui/features/integrations/useIntegrations";
 import { useScoutDeepLink } from "@posthog/ui/features/scouts/hooks/useScoutDeepLink";
 import { useSetupDiscovery } from "@posthog/ui/features/setup/useSetupDiscovery";
-import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import {
   beginSidebarPeek,
   cancelSidebarPeek,
@@ -434,9 +433,6 @@ function RootLayout() {
                   PostHog Web
                 </Button>
               )}
-              {/* Account / project / org menu — moves out of the sidebar into
-                  a compact avatar in the new layout. */}
-              {channelsLayout && <ProjectSwitcher variant="compact" />}
             </Flex>
           )}
         </Flex>
