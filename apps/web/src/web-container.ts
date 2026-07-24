@@ -87,8 +87,8 @@ import {
 } from "@posthog/core/onboarding/identifiers";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
 import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
-import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import { piRuntimeModule } from "@posthog/core/pi-runtime/pi-runtime.module";
+import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import {
   PI_SESSION_CLIENT,
   type PiSessionClient,
@@ -297,6 +297,7 @@ import {
   webNotifications,
 } from "./web-notifications";
 import { WebOAuthFlowService } from "./web-oauth-flow";
+import { webPiRunner } from "./web-pi-runner";
 import { webDiffWorkerFactory, webReviewHost } from "./web-review-host";
 import {
   webBundleLocalSkill,
@@ -306,7 +307,6 @@ import {
   webTitleGeneratorLogger,
 } from "./web-sessions-clients";
 import { webSetupStore } from "./web-setup-store";
-import { webPiRunner } from "./web-pi-runner";
 import { webShellClient } from "./web-shell-client";
 import {
   webTaskDeletionHost,
