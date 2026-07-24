@@ -1,7 +1,7 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import type {
-  LoopCreatedProperties,
-  LoopUpdatedProperties,
+  LoopEnabledToggledProperties,
+  LoopSavedProperties,
   LoopViewedProperties,
 } from "@posthog/shared/analytics-events";
 import { isAutoFixEnabled } from "./loopFormTypes";
@@ -39,7 +39,7 @@ export function buildLoopViewedProps(
 
 export function buildLoopSavedProps(
   loop: LoopSchemas.Loop,
-): LoopCreatedProperties | LoopUpdatedProperties {
+): LoopSavedProperties {
   return {
     loop_id: loop.id,
     visibility: loop.visibility,
@@ -54,5 +54,19 @@ export function buildLoopSavedProps(
       (channel) => loop.notifications[channel]?.enabled,
     ).length,
     has_context_target: loop.context_target !== null,
+  };
+}
+
+export function buildLoopEnabledToggledProps(
+  loop: LoopSchemas.Loop,
+  enabled: boolean,
+  success: boolean,
+): LoopEnabledToggledProperties {
+  return {
+    loop_id: loop.id,
+    enabled,
+    visibility: loop.visibility,
+    was_auto_paused: loop.disabled_reason !== null,
+    success,
   };
 }

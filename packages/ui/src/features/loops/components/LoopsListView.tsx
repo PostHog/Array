@@ -103,7 +103,12 @@ export function LoopsListView() {
 
   const hasTrackedListViewedRef = useRef(false);
   useEffect(() => {
-    if (isLoading || !builderSessionsSettled || hasTrackedListViewedRef.current)
+    if (
+      isLoading ||
+      isError ||
+      !builderSessionsSettled ||
+      hasTrackedListViewedRef.current
+    )
       return;
     hasTrackedListViewedRef.current = true;
     track(ANALYTICS_EVENTS.LOOP_LIST_VIEWED, {
@@ -116,6 +121,7 @@ export function LoopsListView() {
     });
   }, [
     isLoading,
+    isError,
     builderSessionsSettled,
     allLoops.length,
     personalLoops.length,

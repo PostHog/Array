@@ -205,7 +205,7 @@ export function LoopRunRow({
               task_id: run.task_id,
               status: run.status,
               environment: run.environment,
-              is_manual_run: run.loop_trigger_id === null,
+              is_manual_run: !triggered,
             });
             navigateToTaskDetail(run.task_id);
           }}

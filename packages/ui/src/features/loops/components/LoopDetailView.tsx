@@ -13,10 +13,7 @@ import {
   Switch,
   Textarea,
 } from "@posthog/quill";
-import {
-  ANALYTICS_EVENTS,
-  type LoopRunBlockedReason,
-} from "@posthog/shared/analytics-events";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { assertCloudUsageAvailable } from "@posthog/ui/features/billing/preflightCloudUsage";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
@@ -41,7 +38,10 @@ import {
   useUpdateLoop,
 } from "../hooks/useLoopMutations";
 import { RECENT_RUNS_LIMIT, useLoopRuns } from "../hooks/useLoopRuns";
-import { buildLoopViewedProps } from "../loopAnalytics";
+import {
+  buildLoopEnabledToggledProps,
+  buildLoopViewedProps,
+} from "../loopAnalytics";
 import {
   describeTrigger,
   loopFireBlockedMessage,
@@ -67,14 +67,14 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
 
   const viewTrackedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (isLoading || runsQuery.isLoading || !loop) return;
+    if (isLoading || runsQuery.isLoading || runsQuery.isError || !loop) return;
     if (viewTrackedFor.current === loop.id) return;
     viewTrackedFor.current = loop.id;
     track(
       ANALYTICS_EVENTS.LOOP_VIEWED,
       buildLoopViewedProps(loop, runs.length),
     );
-  }, [isLoading, runsQuery.isLoading, loop, runs.length]);
+  }, [isLoading, runsQuery.isLoading, runsQuery.isError, loop, runs.length]);
 
   useSetHeaderContent(
     <Flex align="center" gap="2" className="w-full min-w-0">
@@ -94,22 +94,16 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
       { enabled },
       {
         onSuccess: () => {
-          track(ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED, {
-            loop_id: loop.id,
-            enabled,
-            visibility: loop.visibility,
-            was_auto_paused: loop.disabled_reason !== null,
-            success: true,
-          });
+          track(
+            ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED,
+            buildLoopEnabledToggledProps(loop, enabled, true),
+          );
         },
         onError: (error) => {
-          track(ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED, {
-            loop_id: loop.id,
-            enabled,
-            visibility: loop.visibility,
-            was_auto_paused: loop.disabled_reason !== null,
-            success: false,
-          });
+          track(
+            ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED,
+            buildLoopEnabledToggledProps(loop, enabled, false),
+          );
           toast.error("Failed to update loop", {
             description: error.message,
           });
@@ -146,12 +140,14 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
         toast.error("Run not started", {
           description: loopFireBlockedMessage(result.reason),
         });
-        track(ANALYTICS_EVENTS.LOOP_RUN_BLOCKED, {
-          loop_id: loop.id,
-          reason: result.reason as LoopRunBlockedReason,
-          overlap_policy: loop.overlap_policy,
-          trigger_count: loop.triggers.length,
-        });
+        if (result.reason !== "created") {
+          track(ANALYTICS_EVENTS.LOOP_RUN_BLOCKED, {
+            loop_id: loop.id,
+            reason: result.reason,
+            overlap_policy: loop.overlap_policy,
+            trigger_count: loop.triggers.length,
+          });
+        }
       }
     } catch (error) {
       toast.error("Failed to start run", {

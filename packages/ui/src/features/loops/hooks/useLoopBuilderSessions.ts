@@ -24,8 +24,9 @@ import {
  * this hook queries are only authoritative for the signed-in account. The
  * liveness decision itself is the pure `isBuilderSessionEnded`.
  *
- * `isSettled` is false until the summaries backing the liveness check have
- * resolved, i.e. while `sessions` may still contain entries about to be pruned.
+ * `isSettled` is false until the persisted store has hydrated and the
+ * summaries backing the liveness check have resolved, i.e. while `sessions`
+ * may still be missing entries or contain entries about to be pruned.
  */
 export function useLoopBuilderSessions(): {
   sessions: LoopBuilderSession[];
@@ -33,6 +34,7 @@ export function useLoopBuilderSessions(): {
 } {
   const identity = useAuthStateValue(getAuthIdentity);
   const allSessions = useLoopBuilderSessionStore((state) => state.sessions);
+  const hasHydrated = useLoopBuilderSessionStore((state) => state._hasHydrated);
   const sessions = useMemo(
     () =>
       identity
@@ -100,6 +102,6 @@ export function useLoopBuilderSessions(): {
 
   return {
     sessions: liveSessions,
-    isSettled: sessions.length === 0 || summaries !== null,
+    isSettled: hasHydrated && (sessions.length === 0 || summaries !== null),
   };
 }

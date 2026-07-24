@@ -1085,9 +1085,9 @@ export interface AutoresearchRunStartedProperties {
 }
 
 // Loops events
-export type LoopReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
-export type LoopOverlapPolicy = "skip" | "allow" | "cancel_previous";
-export type LoopRunBlockedReason =
+type LoopReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type LoopOverlapPolicy = "skip" | "allow" | "cancel_previous";
+type LoopRunBlockedReason =
   | "deduped"
   | "overlap_skipped"
   | "rate_capped"
@@ -1096,7 +1096,7 @@ export type LoopRunBlockedReason =
   | "gate_blocked"
   | "owner_inactive"
   | "owner_changed";
-export type LoopRunStatus =
+type LoopRunStatus =
   | "not_started"
   | "queued"
   | "in_progress"
@@ -1134,25 +1134,7 @@ export interface LoopViewedProperties {
   recent_run_count: number;
 }
 
-export interface LoopCreatedProperties {
-  loop_id: string;
-  visibility: "personal" | "team";
-  runtime_adapter: "claude" | "codex";
-  model?: string;
-  reasoning_effort: LoopReasoningEffort | null;
-  repository_count: number;
-  trigger_count: number;
-  has_schedule_trigger: boolean;
-  has_github_trigger: boolean;
-  has_api_trigger: boolean;
-  is_pr_creation_enabled: boolean;
-  is_auto_fix_enabled: boolean;
-  /** Count of notifications.{push,email,slack} that are enabled. */
-  notification_channel_count: number;
-  has_context_target: boolean;
-}
-
-export interface LoopUpdatedProperties {
+export interface LoopSavedProperties {
   loop_id: string;
   visibility: "personal" | "team";
   runtime_adapter: "claude" | "codex";
@@ -1566,8 +1548,8 @@ export type EventPropertyMap = {
   // Loops events
   [ANALYTICS_EVENTS.LOOP_LIST_VIEWED]: LoopListViewedProperties;
   [ANALYTICS_EVENTS.LOOP_VIEWED]: LoopViewedProperties;
-  [ANALYTICS_EVENTS.LOOP_CREATED]: LoopCreatedProperties;
-  [ANALYTICS_EVENTS.LOOP_UPDATED]: LoopUpdatedProperties;
+  [ANALYTICS_EVENTS.LOOP_CREATED]: LoopSavedProperties;
+  [ANALYTICS_EVENTS.LOOP_UPDATED]: LoopSavedProperties;
   [ANALYTICS_EVENTS.LOOP_DELETED]: LoopDeletedProperties;
   [ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED]: LoopEnabledToggledProperties;
   [ANALYTICS_EVENTS.LOOP_RUN_STARTED]: LoopRunStartedProperties;
