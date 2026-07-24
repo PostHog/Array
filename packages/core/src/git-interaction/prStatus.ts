@@ -49,7 +49,7 @@ export function getPrVisualConfig(
   return {
     color: "green",
     icon: "pull-request",
-    label: "Open",
+    label: "Ready",
     actions: [
       { id: "draft", label: "Convert to draft" },
       { id: "close", label: "Close PR" },

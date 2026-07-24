@@ -22,11 +22,13 @@ import {
 import type { ChannelTaskPrStates } from "@posthog/ui/features/canvas/hooks/useChannelTaskPrStates";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import { PRBadgeLink } from "@posthog/ui/features/git-interaction/components/PRBadgeLink";
 import {
   WorkBoard,
   type WorkBoardColumn,
 } from "@posthog/ui/features/home/components/WorkBoard";
 import type { SituationColor } from "@posthog/ui/features/home/utils/situationDisplay";
+import type { SidebarPrState } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Box } from "@radix-ui/themes";
 import { useMemo } from "react";
@@ -85,11 +87,19 @@ export function ChannelBoardView({
   onOpenThread: (task: Task) => void;
 }) {
   const columns = useMemo<
-    WorkBoardColumn<{ task: Task; status: TaskBoardStatus }>[]
+    WorkBoardColumn<{
+      task: Task;
+      status: TaskBoardStatus;
+      prState: SidebarPrState;
+    }>[]
   >(() => {
     const grouped = new Map<
       TaskBoardStatus,
-      Array<{ task: Task; status: TaskBoardStatus }>
+      Array<{
+        task: Task;
+        status: TaskBoardStatus;
+        prState: SidebarPrState;
+      }>
     >(TASK_BOARD_STATUSES.map((status) => [status, []]));
     for (const task of tasks) {
       // A task with a PR cannot be classified until its first PR response.
@@ -102,7 +112,11 @@ export function ChannelBoardView({
         resolvedPrState,
         prSnapshot: snapshot,
       });
-      grouped.get(status)?.push({ task, status });
+      grouped.get(status)?.push({
+        task,
+        status,
+        prState: resolvedPrState ?? snapshot?.state ?? null,
+      });
     }
     return TASK_BOARD_STATUSES.map((status) => ({
       id: status,
@@ -120,10 +134,11 @@ export function ChannelBoardView({
       columns={columns}
       isLoading={taskPrStates.isResolving}
       getKey={(item) => item.task.id}
-      renderCard={({ task, status }) => (
+      renderCard={({ task, status, prState }) => (
         <ChannelBoardCard
           task={task}
           status={status}
+          prState={prState}
           prUrl={
             prUrlByTaskId.get(task.id) ??
             (typeof task.latest_run?.output?.pr_url === "string"
@@ -141,17 +156,27 @@ export function ChannelBoardView({
 function ChannelBoardCard({
   task,
   status,
+  prState,
   prUrl,
   onOpenTask,
   onOpenThread,
 }: {
   task: Task;
   status: TaskBoardStatus;
+  prState: SidebarPrState;
   prUrl?: string;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  const display = useTaskStatusDisplay(task);
+  const taskDisplay = useTaskStatusDisplay(task);
+  const display =
+    prState &&
+    ((status === "done" && prState === "merged") ||
+      (status === "cancelled" && prState === "closed") ||
+      (status === "in_review" && prState === "open") ||
+      (status === "working" && prState === "draft"))
+      ? { base: null, prState, isMerged: prState === "merged" }
+      : taskDisplay;
   const { messages } = useTaskThread(task.id, {
     pollIntervalMs: BOARD_REPLIES_POLL_INTERVAL_MS,
   });
@@ -190,7 +215,16 @@ function ChannelBoardCard({
           {task.repository}
         </span>
       ) : null}
-      {prUrl ? (
+      {prUrl && prState ? (
+        <div className="w-fit">
+          <PRBadgeLink
+            prUrl={prUrl}
+            prState={prState === "merged" ? "closed" : prState}
+            merged={prState === "merged"}
+            draft={prState === "draft"}
+          />
+        </div>
+      ) : prUrl ? (
         <Button
           variant="outline"
           size="xs"
