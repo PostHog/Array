@@ -32,6 +32,7 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import { submitComposerPrompt } from "@posthog/ui/features/sessions/components/submitComposerPrompt";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/useEditQueuedMessage";
@@ -302,7 +303,6 @@ export function SessionView({
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
   const editorRef = useRef<PromptInputHandle>(null);
   const sendInFlightRef = useRef(false);
-  const [isSendingPrompt, setIsSendingPrompt] = useState(false);
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -318,18 +318,24 @@ export function SessionView({
       if (!text.trim() || sendInFlightRef.current) return;
 
       sendInFlightRef.current = true;
-      setIsSendingPrompt(true);
-      try {
-        if (await onSendPrompt(text)) {
-          const editor = editorRef.current;
-          if (editor && contentToXml(editor.getContent()) === text) {
-            editor.clear();
-          }
-        }
-      } finally {
+      const editor = editorRef.current;
+      const submittedContent = editor?.getContent() ?? null;
+      if (
+        editor &&
+        submittedContent &&
+        contentToXml(submittedContent) === text
+      ) {
+        const sendPromise = submitComposerPrompt(editor, submittedContent, () =>
+          onSendPrompt(text),
+        );
         sendInFlightRef.current = false;
-        setIsSendingPrompt(false);
+        await sendPromise;
+        return;
       }
+
+      const sendPromise = onSendPrompt(text);
+      sendInFlightRef.current = false;
+      await sendPromise;
     },
     [onSendPrompt],
   );
@@ -692,7 +698,7 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline || isSendingPrompt
+                            handoffInProgress || !isOnline
                           }
                           clearOnSubmit={false}
                           submitTooltipOverride={
