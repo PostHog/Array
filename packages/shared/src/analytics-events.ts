@@ -1084,6 +1084,119 @@ export interface AutoresearchRunStartedProperties {
   workspace_mode?: "local" | "worktree" | "cloud";
 }
 
+// Loops events
+type LoopReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type LoopOverlapPolicy = "skip" | "allow" | "cancel_previous";
+type LoopRunBlockedReason =
+  | "deduped"
+  | "overlap_skipped"
+  | "rate_capped"
+  | "team_rate_capped"
+  | "disabled"
+  | "gate_blocked"
+  | "owner_inactive"
+  | "owner_changed";
+type LoopRunStatus =
+  | "not_started"
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface LoopListViewedProperties {
+  loop_count: number;
+  personal_loop_count: number;
+  team_loop_count: number;
+  is_at_limit: boolean;
+  /** Backend-enforced per-project cap; omitted while the limit is still loading. */
+  loop_limit?: number;
+  builder_session_count: number;
+}
+
+export interface LoopViewedProperties {
+  loop_id: string;
+  visibility: "personal" | "team";
+  enabled: boolean;
+  /** Backend-open string; null when enabled or manually paused with no reason given. */
+  disabled_reason: string | null;
+  runtime_adapter: "claude" | "codex";
+  model?: string;
+  reasoning_effort: LoopReasoningEffort | null;
+  repository_count: number;
+  trigger_count: number;
+  has_schedule_trigger: boolean;
+  has_github_trigger: boolean;
+  has_api_trigger: boolean;
+  /** Backend-open string, not a closed enum. */
+  last_run_status: string | null;
+  consecutive_failures: number;
+  recent_run_count: number;
+}
+
+export interface LoopSavedProperties {
+  loop_id: string;
+  visibility: "personal" | "team";
+  runtime_adapter: "claude" | "codex";
+  model?: string;
+  reasoning_effort: LoopReasoningEffort | null;
+  repository_count: number;
+  trigger_count: number;
+  has_schedule_trigger: boolean;
+  has_github_trigger: boolean;
+  has_api_trigger: boolean;
+  is_pr_creation_enabled: boolean;
+  is_auto_fix_enabled: boolean;
+  /** Count of notifications.{push,email,slack} that are enabled. */
+  notification_channel_count: number;
+  has_context_target: boolean;
+}
+
+export interface LoopDeletedProperties {
+  loop_id: string;
+  visibility: "personal" | "team";
+  enabled: boolean;
+  trigger_count: number;
+  /** State at time of deletion, distinguishes deleting a healthy loop from abandoning a failing one. */
+  consecutive_failures: number;
+}
+
+export interface LoopEnabledToggledProperties {
+  loop_id: string;
+  /** The new value the loop is being switched to. */
+  enabled: boolean;
+  visibility: "personal" | "team";
+  /** True when this toggle clears or reinstates a backend auto-pause rather than a routine manual pause/resume. */
+  was_auto_paused: boolean;
+  success: boolean;
+}
+
+export interface LoopRunStartedProperties {
+  loop_id: string;
+  task_id: string | null;
+  task_run_id: string | null;
+  runtime_adapter: "claude" | "codex";
+  model?: string;
+  trigger_count: number;
+}
+
+export interface LoopRunBlockedProperties {
+  loop_id: string;
+  reason: LoopRunBlockedReason;
+  overlap_policy: LoopOverlapPolicy;
+  trigger_count: number;
+}
+
+export interface LoopRunViewedProperties {
+  loop_id: string;
+  run_id: string;
+  task_id: string;
+  status: LoopRunStatus;
+  environment: "local" | "cloud";
+  /** True when the run wasn't triggered by a schedule/github/api trigger. */
+  is_manual_run: boolean;
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -1255,6 +1368,17 @@ export const ANALYTICS_EVENTS = {
   LOOPS_PROMO_OPENED: "Loops promo opened",
   LOOPS_PROMO_DISMISSED: "Loops promo dismissed",
   LOOPS_PROMO_LEARN_MORE_CLICKED: "Loops promo learn more clicked",
+
+  // Loops events
+  LOOP_LIST_VIEWED: "Loop list viewed",
+  LOOP_VIEWED: "Loop viewed",
+  LOOP_CREATED: "Loop created",
+  LOOP_UPDATED: "Loop updated",
+  LOOP_DELETED: "Loop deleted",
+  LOOP_ENABLED_TOGGLED: "Loop enabled toggled",
+  LOOP_RUN_STARTED: "Loop run started",
+  LOOP_RUN_BLOCKED: "Loop run blocked",
+  LOOP_RUN_VIEWED: "Loop run viewed",
 } as const;
 
 // Event property mapping
@@ -1420,6 +1544,17 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.LOOPS_PROMO_OPENED]: never;
   [ANALYTICS_EVENTS.LOOPS_PROMO_DISMISSED]: never;
   [ANALYTICS_EVENTS.LOOPS_PROMO_LEARN_MORE_CLICKED]: never;
+
+  // Loops events
+  [ANALYTICS_EVENTS.LOOP_LIST_VIEWED]: LoopListViewedProperties;
+  [ANALYTICS_EVENTS.LOOP_VIEWED]: LoopViewedProperties;
+  [ANALYTICS_EVENTS.LOOP_CREATED]: LoopSavedProperties;
+  [ANALYTICS_EVENTS.LOOP_UPDATED]: LoopSavedProperties;
+  [ANALYTICS_EVENTS.LOOP_DELETED]: LoopDeletedProperties;
+  [ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED]: LoopEnabledToggledProperties;
+  [ANALYTICS_EVENTS.LOOP_RUN_STARTED]: LoopRunStartedProperties;
+  [ANALYTICS_EVENTS.LOOP_RUN_BLOCKED]: LoopRunBlockedProperties;
+  [ANALYTICS_EVENTS.LOOP_RUN_VIEWED]: LoopRunViewedProperties;
 };
 
 /**

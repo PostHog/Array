@@ -19,14 +19,19 @@ export const MAX_BUILDER_SESSIONS = 5;
 
 interface LoopBuilderSessionState {
   sessions: LoopBuilderSession[];
+  // Hydration is async (Electron storage over IPC); readers that must not
+  // mistake "not loaded yet" for "no sessions" wait on this flag.
+  _hasHydrated: boolean;
   addSession: (session: LoopBuilderSession) => void;
   removeSession: (taskId: string) => void;
+  setHasHydrated: (hydrated: boolean) => void;
 }
 
 export const useLoopBuilderSessionStore = create<LoopBuilderSessionState>()(
   persist(
     (set) => ({
       sessions: [],
+      _hasHydrated: false,
       // Flushed immediately: adding is followed by navigating away, and a lost
       // debounced write is exactly the "can't find my builder" bug again.
       addSession: (session) => {
@@ -51,6 +56,7 @@ export const useLoopBuilderSessionStore = create<LoopBuilderSessionState>()(
         }));
         void flushRendererStateWrites();
       },
+      setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
       name: "posthog-code-loop-builder-sessions",
@@ -59,6 +65,13 @@ export const useLoopBuilderSessionStore = create<LoopBuilderSessionState>()(
       // v0 entries had no identity and can't be attributed; drop them.
       version: 1,
       migrate: () => ({ sessions: [] as LoopBuilderSession[] }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.setHasHydrated(true);
+          return;
+        }
+        useLoopBuilderSessionStore.setState({ _hasHydrated: true });
+      },
     },
   ),
 );

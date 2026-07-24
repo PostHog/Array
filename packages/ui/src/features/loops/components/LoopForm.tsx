@@ -5,7 +5,7 @@ import {
   Check,
 } from "@phosphor-icons/react";
 import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -16,10 +16,12 @@ import {
   navigateToLoopDetail,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text, TextArea, TextField } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import { useCreateLoop, useUpdateLoop } from "../hooks/useLoopMutations";
+import { buildLoopSavedProps } from "../loopAnalytics";
 import { summarizeTrigger } from "../loopDisplay";
 import { useLoopDraftStore } from "../loopDraftStore";
 import {
@@ -141,9 +143,11 @@ export function LoopForm({ loop }: LoopFormProps) {
     try {
       if (isEdit) {
         const updated = await updateLoop.mutateAsync(body);
+        track(ANALYTICS_EVENTS.LOOP_UPDATED, buildLoopSavedProps(updated));
         navigateToLoopDetail(updated.id);
       } else {
         const created = await createLoop.mutateAsync(body);
+        track(ANALYTICS_EVENTS.LOOP_CREATED, buildLoopSavedProps(created));
         navigateToLoopDetail(created.id);
       }
     } catch (error) {

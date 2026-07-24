@@ -13,6 +13,7 @@ import {
   Switch,
   Textarea,
 } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { assertCloudUsageAvailable } from "@posthog/ui/features/billing/preflightCloudUsage";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
@@ -26,8 +27,9 @@ import {
   navigateToEditLoop,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Text } from "@radix-ui/themes";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
   useDeleteLoop,
@@ -35,6 +37,10 @@ import {
   useUpdateLoop,
 } from "../hooks/useLoopMutations";
 import { RECENT_RUNS_LIMIT, useLoopRuns } from "../hooks/useLoopRuns";
+import {
+  buildLoopEnabledToggledProps,
+  buildLoopViewedProps,
+} from "../loopAnalytics";
 import {
   describeTrigger,
   loopFireBlockedMessage,
@@ -59,6 +65,17 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   const runsQuery = useLoopRuns(loopId);
   const runs = runsQuery.data ?? [];
 
+  const viewTrackedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (isLoading || runsQuery.isLoading || runsQuery.isError || !loop) return;
+    if (viewTrackedFor.current === loop.id) return;
+    viewTrackedFor.current = loop.id;
+    track(
+      ANALYTICS_EVENTS.LOOP_VIEWED,
+      buildLoopViewedProps(loop, runs.length),
+    );
+  }, [isLoading, runsQuery.isLoading, runsQuery.isError, loop, runs.length]);
+
   useSetHeaderContent(
     <Flex align="center" gap="2" className="w-full min-w-0">
       <RepeatIcon size={12} className="shrink-0 text-gray-10" />
@@ -72,31 +89,65 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   );
 
   const handleToggleEnabled = (enabled: boolean) => {
+    if (!loop) return;
     updateLoop.mutate(
       { enabled },
       {
-        onError: (error) =>
+        onSuccess: () => {
+          track(
+            ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED,
+            buildLoopEnabledToggledProps(loop, enabled, true),
+          );
+        },
+        onError: (error) => {
+          track(
+            ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED,
+            buildLoopEnabledToggledProps(loop, enabled, false),
+          );
           toast.error("Failed to update loop", {
             description: error.message,
-          }),
+          });
+        },
       },
     );
   };
 
   const handleRunNow = async () => {
-    if (runNowPending) return;
+    if (runNowPending || !loop) return;
     setRunNowPending(true);
     try {
       if (!(await assertCloudUsageAvailable())) return;
       const result = await runLoop.mutateAsync();
       if (result.created) {
         toast.success("Loop run started");
+        track(ANALYTICS_EVENTS.LOOP_RUN_STARTED, {
+          loop_id: loop.id,
+          task_id: result.task_id,
+          task_run_id: result.task_run_id,
+          runtime_adapter: loop.runtime_adapter,
+          model: loop.model || undefined,
+          trigger_count: loop.triggers.length,
+        });
       } else if (result.reason === "gate_blocked") {
         useUsageLimitStore.getState().show({ cause: "org_limit" });
+        track(ANALYTICS_EVENTS.LOOP_RUN_BLOCKED, {
+          loop_id: loop.id,
+          reason: result.reason,
+          overlap_policy: loop.overlap_policy,
+          trigger_count: loop.triggers.length,
+        });
       } else {
         toast.error("Run not started", {
           description: loopFireBlockedMessage(result.reason),
         });
+        if (result.reason !== "created") {
+          track(ANALYTICS_EVENTS.LOOP_RUN_BLOCKED, {
+            loop_id: loop.id,
+            reason: result.reason,
+            overlap_policy: loop.overlap_policy,
+            trigger_count: loop.triggers.length,
+          });
+        }
       }
     } catch (error) {
       toast.error("Failed to start run", {
@@ -108,8 +159,16 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
   };
 
   const handleDelete = () => {
+    if (!loop) return;
     deleteLoop.mutate(loopId, {
       onSuccess: () => {
+        track(ANALYTICS_EVENTS.LOOP_DELETED, {
+          loop_id: loop.id,
+          visibility: loop.visibility,
+          enabled: loop.enabled,
+          trigger_count: loop.triggers.length,
+          consecutive_failures: loop.consecutive_failures,
+        });
         toast.success("Loop deleted");
         navigateToLoops();
       },
@@ -235,6 +294,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               {runs.map((run) => (
                 <LoopRunRow
                   key={run.id}
+                  loopId={loop.id}
                   run={run}
                   onStopped={() => void runsQuery.refetch()}
                 />
