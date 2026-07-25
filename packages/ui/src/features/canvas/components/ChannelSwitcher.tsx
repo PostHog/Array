@@ -36,6 +36,7 @@ import {
 import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useHotkeys } from "react-hotkeys-hook";
 
 // mod+0 jumps to #me; mod+1..9 jump to the first nine starred channels
@@ -133,6 +134,29 @@ function SwitcherRow({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+/**
+ * Dims the app while the switcher is open, so the channel list reads against
+ * the feed instead of competing with it.
+ *
+ * Portaled to the body and pointer-transparent: it has to sit above the app but
+ * below the popover's own z-50, and letting presses through keeps Base UI's
+ * close-on-outside-press working. Tokens and timing match the sidebar-peek
+ * scrim in __root, so the two dims look like the same effect.
+ */
+function SwitcherScrim({ open }: { open: boolean }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      aria-hidden
+      className={cn(
+        "pointer-events-none fixed inset-0 z-40 bg-blackA-2 transition-opacity duration-150 ease-out motion-reduce:transition-none dark:bg-blackA-5",
+        open ? "opacity-100" : "opacity-0",
+      )}
+    />,
+    document.body,
   );
 }
 
@@ -242,6 +266,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
 
   return (
     <div className="relative mx-2 mt-2">
+      <SwitcherScrim open={open} />
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
@@ -269,10 +294,11 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
           align="start"
           side="right"
           sideOffset={POPOVER_SIDE_OFFSET}
-          // quill's popover ships `gap-4` plus unlayered `padding`/`width` CSS
-          // that beats plain utilities, hence the `!` overrides — this is a
-          // menu, not a card, so it gets menu-tight spacing.
-          className="w-64! gap-0 p-1!"
+          // quill's popover ships `gap-4` plus unlayered `padding`/`width`/
+          // `box-shadow` CSS that beats plain utilities, hence the `!`
+          // overrides — this is a menu, not a card, so it gets menu-tight
+          // spacing, and a deeper shadow to lift it off the dimmed backdrop.
+          className="w-64! gap-0 p-1! shadow-2xl!"
         >
           <div className="p-1">
             <Input
