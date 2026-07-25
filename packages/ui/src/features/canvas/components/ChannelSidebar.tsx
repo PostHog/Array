@@ -255,6 +255,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
 
       <div className="px-2 pt-2">
         <NewTaskItem
+          elevated
           isActive={pathname === `${base}/new`}
           onClick={() => {
             track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
