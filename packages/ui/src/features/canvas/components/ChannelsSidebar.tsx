@@ -10,6 +10,7 @@ import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
 import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useSpaceSwipe } from "@posthog/ui/features/canvas/hooks/useSpaces";
+import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -86,39 +87,46 @@ export function ChannelsSidebar() {
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
+  // The Spaces layout has exactly one gate: its feature flag. When on it
+  // subsumes the channels world (the "Enable channels" toggle is irrelevant
+  // and hidden); when off, the toggle drives the old Channels alpha exactly
+  // as before.
+  const spacesOn = useSpacesLayout();
+  const channelsWorld = spacesOn || channelsEnabled;
   // The Switch (in SidebarNavSection) reads the live value and flips instantly.
   // Swapping the sidebar body mounts a heavy tree (ChannelsList: the channels
   // query + a provider-laden row per channel), so defer that decision: the
   // urgent commit keeps the current body and paints the toggle, then the tree
   // mounts in a follow-up non-blocking render.
-  const bodyChannelsEnabled = useDeferredValue(channelsEnabled);
+  const bodyChannelsWorld = useDeferredValue(channelsWorld);
 
   const archivedTaskIds = useArchivedTaskIds();
 
-  // Spaces layout (prototype): while a channel is active the sidebar scopes to
-  // it (Arc-style space). The route is the source of truth — visiting any
-  // /website/$channelId page adopts that channel as the current space, and it
-  // sticks across channel-less routes (inbox, activity). Two transient body
-  // overrides sit on top: browsing the full channel list ("#") and the draft
-  // new-space chooser ("+"); picking any space dismisses them.
+  // Spaces layout: while a channel is active the sidebar scopes to it. The
+  // route is the source of truth — visiting any /website/$channelId page
+  // adopts that channel as the current space, and it sticks across
+  // channel-less routes (inbox, activity). Two transient body overrides sit
+  // on top: browsing the full channel list ("#") and the draft new-space
+  // chooser ("+"); picking any space dismisses them. All of this machinery is
+  // inert while the flag is off.
   const params = useParams({ strict: false });
   const routeChannelId = params.channelId;
   const currentChannelId = useSpaceStore((s) => s.currentChannelId);
   const setCurrentChannel = useSpaceStore((s) => s.setCurrentChannel);
   const browsing = useSpaceStore((s) => s.browsing);
   const draftSpace = useSpaceStore((s) => s.draftSpace);
-  const { channels } = useChannels({ enabled: channelsEnabled });
+  const { channels } = useChannels({ enabled: spacesOn });
   useEffect(() => {
-    if (!routeChannelId) return;
+    if (!spacesOn || !routeChannelId) return;
     // Browsing the all-channels list is a preview: clicking a channel shows its
     // activity in the main view but keeps the directory open in the sidebar and
     // does NOT scope to (or pin) it. Only non-browse navigation (a dot, a deep
     // link, in-space nav) adopts a channel as the current space.
     if (useSpaceStore.getState().browsing) return;
     setCurrentChannel(routeChannelId);
-  }, [routeChannelId, setCurrentChannel]);
+  }, [spacesOn, routeChannelId, setCurrentChannel]);
   const inSpace =
-    channelsEnabled && currentChannelId != null && !browsing && !draftSpace;
+    spacesOn && currentChannelId != null && !browsing && !draftSpace;
 
   // Leaving the channels world (navigating to a non-channel route) closes the
   // pickers. Previewing a channel from the browse list keeps the directory
@@ -130,11 +138,11 @@ export function ChannelsSidebar() {
   useEffect(() => {
     if (prevHistoryIndexRef.current === historyIndex) return;
     prevHistoryIndexRef.current = historyIndex;
-    if (routeChannelId) return;
+    if (!spacesOn || routeChannelId) return;
     const state = useSpaceStore.getState();
     if (state.browsing) state.setBrowsing(false);
     if (state.draftSpace) state.setDraftSpace(false);
-  }, [historyIndex, routeChannelId]);
+  }, [historyIndex, routeChannelId, spacesOn]);
 
   // The personal "#me" space is the default: on first load with nothing
   // scoped, land there. Once any space has been current (including via the
@@ -144,7 +152,7 @@ export function ChannelsSidebar() {
     if (currentChannelId) autoScopedRef.current = true;
   }, [currentChannelId]);
   useEffect(() => {
-    if (!channelsEnabled || autoScopedRef.current || currentChannelId) return;
+    if (!spacesOn || autoScopedRef.current || currentChannelId) return;
     if (browsing || draftSpace) return;
     const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
     if (me) {
@@ -152,7 +160,7 @@ export function ChannelsSidebar() {
       setCurrentChannel(me.id);
     }
   }, [
-    channelsEnabled,
+    spacesOn,
     channels,
     currentChannelId,
     browsing,
@@ -162,7 +170,7 @@ export function ChannelsSidebar() {
 
   // Horizontal trackpad swipe anywhere on the sidebar cycles spaces — from a
   // space, the channel list, or the draft view alike. One space per gesture.
-  const handleSpaceSwipe = useSpaceSwipe(channelsEnabled);
+  const handleSpaceSwipe = useSpaceSwipe(spacesOn);
 
   return (
     <ResizableSidebar
@@ -183,29 +191,30 @@ export function ChannelsSidebar() {
         className="h-full bg-chrome"
         onWheel={handleSpaceSwipe}
       >
-        {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by
-            the same flag), so this section carries the whole merged nav. In
-            channels mode the spaces chrome owns the sidebar (search / inbox /
-            activity live in the title bar) — browse mode shows purely the
-            channel list — so the nav only renders on the pre-scope landing. */}
-        {(!channelsEnabled ||
+        {/* The nav carries the whole merged nav (incl. the "Enable channels"
+            toggle while the spaces flag is off). In the spaces layout the
+            space chrome owns the sidebar (search / inbox / activity live in
+            the title bar), so the nav only renders on the pre-scope landing;
+            flag off keeps it always visible, exactly as before. */}
+        {(!spacesOn ||
           (currentChannelId == null && !browsing && !draftSpace)) && (
           <SidebarNavSection />
         )}
 
-        {/* Body precedence: the draft new-space chooser, then the active
-            space, then the channel list (browse mode / landing), else the
-            task list. Each owns its own scroll region. Gated on the deferred
-            value so the toggle paints before this heavy swap. */}
-        {bodyChannelsEnabled && draftSpace ? (
+        {/* Body precedence: (spaces only) the draft new-space chooser, then
+            the active space; then the channel list (browse mode / landing /
+            old channels alpha), else the task list. Each owns its own scroll
+            region. Gated on the deferred value so the toggle paints before
+            this heavy swap. */}
+        {bodyChannelsWorld && spacesOn && draftSpace ? (
           <Box className="min-h-0 flex-1 overflow-hidden">
             <NewSpaceDraft />
           </Box>
-        ) : bodyChannelsEnabled && inSpace && currentChannelId ? (
+        ) : bodyChannelsWorld && inSpace && currentChannelId ? (
           <Box className="min-h-0 flex-1 overflow-hidden">
             <SpaceSidebar channelId={currentChannelId} />
           </Box>
-        ) : bodyChannelsEnabled ? (
+        ) : bodyChannelsWorld ? (
           <>
             <Separator />
             {/* The fab is a sibling of the scroll region, not a child, so it
@@ -225,9 +234,9 @@ export function ChannelsSidebar() {
 
         <UpdateBanner />
 
-        {/* Archived is a task-list affordance — hidden while channels are on,
-            since the body then shows the channel tree, not tasks. */}
-        {!channelsEnabled && archivedTaskIds.size > 0 && (
+        {/* Archived is a task-list affordance — hidden while the body shows
+            the channel tree (old alpha) or a space, not tasks. */}
+        {!channelsWorld && archivedTaskIds.size > 0 && (
           <Box className="shrink-0 border-border border-t">
             <button
               type="button"
@@ -244,14 +253,14 @@ export function ChannelsSidebar() {
 
         <LoopsPromoCard />
 
-        {/* Arc-style space switcher: one dot per starred channel. Rendered
-            whenever channels are on so the landing shows the dot row too. */}
-        {channelsEnabled && <SpaceDots />}
+        {/* Arc-style space switcher: one dot per starred channel. Spaces
+            layout only. */}
+        {spacesOn && <SpaceDots />}
 
-        {/* Workspace switcher pinned to the bottom in the Code layout. In the
-            spaces layout it moves to the title bar (compact avatar) so the
-            sidebar's bottom is freed for the space's content. */}
-        {!channelsEnabled && (
+        {/* Workspace switcher pinned to the bottom. In the spaces layout it
+            moves to the title bar (compact avatar) so the sidebar's bottom is
+            freed for the space's content. */}
+        {!spacesOn && (
           <Box className="shrink-0 px-2 pb-2">
             <ProjectSwitcher />
           </Box>

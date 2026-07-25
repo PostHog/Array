@@ -11,6 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
   useChannelStarMutations,
@@ -27,6 +28,7 @@ import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadC
 import { useSpaceEmojiStore } from "@posthog/ui/features/canvas/stores/spaceEmojiStore";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
@@ -204,10 +206,10 @@ export function SpaceDots() {
       if (!event.ctrlKey || !event.altKey) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        cycle(-1);
+        cycle(-1, "keyboard");
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        cycle(1);
+        cycle(1, "keyboard");
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -222,24 +224,38 @@ export function SpaceDots() {
   // it returns to the current space (or the landing) so the preview leaves no
   // trace — no space scoped, nothing pinned.
   const toggleBrowsing = () => {
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "space_browse_toggle",
+      surface: "space_switcher",
+      open: !browsing,
+    });
     if (!browsing) {
       setBrowsing(true);
       return;
     }
     const current = channels.find((c) => c.id === currentChannelId);
     if (current) {
-      switchTo(current);
+      switchTo(current, "browse");
     } else {
       setBrowsing(false);
       void navigate({ to: "/website" });
     }
   };
 
+  const toggleDraftSpace = () => {
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "space_draft_toggle",
+      surface: "space_switcher",
+      open: !draftSpace,
+    });
+    setDraftSpace(!draftSpace);
+  };
+
   // Open (creating on first use) the personal space — only needed while the
   // "#me" channel doesn't exist yet; afterwards it's a regular dot.
   const openPersonalSpace = () => {
     ensurePersonalChannel(channels, createChannel)
-      .then((me) => switchTo(me))
+      .then((me) => switchTo(me, "me"))
       .catch((error: unknown) => {
         toast.error("Couldn't open your personal space", {
           description: error instanceof Error ? error.message : String(error),
@@ -323,7 +339,7 @@ export function SpaceDots() {
                 type="button"
                 aria-label="New space"
                 aria-pressed={draftSpace}
-                onClick={() => setDraftSpace(!draftSpace)}
+                onClick={toggleDraftSpace}
                 className={cn(
                   RAIL_BUTTON_CLASS,
                   draftSpace && "bg-gray-3 text-gray-12",

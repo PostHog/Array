@@ -47,7 +47,7 @@ export function NewSpaceDraft() {
       });
     });
     // Clears the draft too (setCurrentChannel dismisses the overrides).
-    switchTo(channel);
+    switchTo(channel, "draft");
   };
 
   return (

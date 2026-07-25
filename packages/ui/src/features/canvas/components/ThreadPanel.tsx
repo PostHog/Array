@@ -1,12 +1,10 @@
 import {
   ArrowSquareOutIcon,
   CaretRightIcon,
-  CheckCircleIcon,
   DotsThreeIcon,
   PaperPlaneRightIcon,
   RobotIcon,
   TrashIcon,
-  XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
@@ -27,7 +25,6 @@ import {
   AvatarFallback,
   Badge,
   Button,
-  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -64,7 +61,6 @@ import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
-import { TaskArtifactsList } from "@posthog/ui/features/canvas/components/TaskArtifactsList";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import {
@@ -77,7 +73,6 @@ import {
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
 import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
-import { buildConversationItems } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
 import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
 import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
@@ -89,15 +84,7 @@ import { parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Fragment,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export function ThreadMessageRow({
   message,
@@ -127,7 +114,7 @@ export function ThreadMessageRow({
       <ThreadItemContent>
         <ThreadItemHeader>
           <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
-          <RightTimestamp dateTime={message.created_at} />
+          <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
         <ThreadItemBody>
           <MentionText
@@ -318,7 +305,7 @@ export function ThreadArtifactRow({
           <ThreadItemAuthor>
             {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
           </ThreadItemAuthor>
-          <RightTimestamp dateTime={createdAt} />
+          <ThreadTimestamp dateTime={createdAt} />
         </ThreadItemHeader>
         <ThreadItemBody>
           {artifact.kind === "canvas" ? (
@@ -332,96 +319,7 @@ export function ThreadArtifactRow({
   );
 }
 
-// A lifecycle event in the Activity timeline (task created / run finished) —
-// Timestamp pinned to the right edge of a row header. `ml-auto` pushes it past
-// the flexible title; `self-baseline` keeps it on the author's baseline.
-function RightTimestamp({ dateTime }: { dateTime: string }) {
-  return (
-    <span className="ml-auto shrink-0 self-baseline pl-2">
-      <ThreadTimestamp dateTime={dateTime} />
-    </span>
-  );
-}
-
-// The x-offset of the avatar column's center within a ThreadItem row: row
-// padding-inline (0.5rem) + gutter width (2.5rem) − half the lg avatar
-// (2.35rem). The timeline rail and event nodes sit on this line so a slim
-// event row lines up with the avatars above and below it.
-const RAIL_LEFT = "1.825rem";
-
-// A slim lifecycle event on the timeline rail (task created / run finished):
-// a small node sitting on the rail, a one-line label, and the time on the
-// right. Deliberately lighter than a message row — GitHub/Linear-style — so
-// events read as markers on the spine rather than empty chunky rows.
-function ActivityEventRow({
-  node,
-  title,
-  action,
-  timestamp,
-}: {
-  node: ReactNode;
-  title: string;
-  action?: string;
-  timestamp: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 py-1.5 pr-2 pl-2">
-      <div className="flex w-10 shrink-0 justify-end">
-        <div className="flex w-[2.35rem] justify-center">{node}</div>
-      </div>
-      <span className="min-w-0 truncate text-[13px]">
-        <span className="font-medium text-gray-12">{title}</span>
-        {action && <span className="text-muted-foreground"> {action}</span>}
-      </span>
-      <RightTimestamp dateTime={timestamp} />
-    </div>
-  );
-}
-
-// A neutral chip node for a system event with no person (run finished). Opaque
-// so it masks the rail behind it, reading as a node on the spine.
-function EventNode({ icon }: { icon: ReactNode }) {
-  return (
-    <span className="relative z-10 flex size-6 items-center justify-center rounded-full bg-gray-3">
-      {icon}
-    </span>
-  );
-}
-
-// A user message sent to the agent — a real message row with the author's
-// avatar, matching the human comment rows so the two read alike.
-function UserMessageRow({
-  author,
-  content,
-  timestamp,
-}: {
-  author?: UserBasic | null;
-  content: string;
-  timestamp: string;
-}) {
-  return (
-    <ThreadItem>
-      <ThreadItemGutter>
-        <UserAvatar user={author} size="lg" className="sticky top-2" />
-      </ThreadItemGutter>
-      <ThreadItemContent>
-        <ThreadItemHeader>
-          <ThreadItemAuthor>
-            {author ? userDisplayName(author) : "You"}
-          </ThreadItemAuthor>
-          <RightTimestamp dateTime={timestamp} />
-        </ThreadItemHeader>
-        <ThreadItemBody>
-          <span className="line-clamp-4 whitespace-pre-wrap break-words text-[13px]">
-            {content}
-          </span>
-        </ThreadItemBody>
-      </ThreadItemContent>
-    </ThreadItem>
-  );
-}
-
-function ThreadLoadingState() {
+export function ThreadLoadingState() {
   return (
     <Empty className="h-full border-0">
       <EmptyHeader>
@@ -431,42 +329,6 @@ function ThreadLoadingState() {
         <EmptyTitle>Loading thread</EmptyTitle>
       </EmptyHeader>
     </Empty>
-  );
-}
-
-// The Activity panel's sub-views: Timeline is the task thread as before (the
-// mockup renames it), Artifacts lists the task's outputs, Comments filters the
-// thread to the human conversation.
-type ActivityTab = "timeline" | "artifacts" | "comments";
-
-const ACTIVITY_TABS: readonly { key: ActivityTab; label: string }[] = [
-  { key: "timeline", label: "Timeline" },
-  { key: "artifacts", label: "Artifacts" },
-  { key: "comments", label: "Comments" },
-] as const;
-
-function ActivityTabsRow({
-  tab,
-  onTabChange,
-}: {
-  tab: ActivityTab;
-  onTabChange: (tab: ActivityTab) => void;
-}) {
-  return (
-    <div className="flex shrink-0 items-center gap-px border-border border-b px-2 py-1.5">
-      {ACTIVITY_TABS.map((t) => (
-        <Button
-          key={t.key}
-          variant="default"
-          size="sm"
-          data-selected={tab === t.key || undefined}
-          className={cn(tab === t.key && "bg-fill-selected")}
-          onClick={() => onTabChange(t.key)}
-        >
-          {t.label}
-        </Button>
-      ))}
-    </div>
   );
 }
 
@@ -482,7 +344,7 @@ function ThreadHeader({
   return (
     <div className="flex items-center gap-1 border-border border-b px-3 py-2">
       <div className="min-w-0 flex-1">
-        <span className="block font-medium text-sm">Activity</span>
+        <span className="block font-medium text-sm">Thread</span>
       </div>
       {onOpenFull && (
         <Button
@@ -518,7 +380,7 @@ function ThreadHeader({
   );
 }
 
-function ThreadTimeline({
+export function ThreadTimeline({
   timeline,
   isReady,
   currentUserUuid,
@@ -584,7 +446,7 @@ function ThreadTimeline({
   );
 }
 
-function ThreadReplyComposer({
+export function ThreadReplyComposer({
   draft,
   onDraftChange,
   onSubmit,
@@ -710,14 +572,6 @@ function ThreadConversation({
 
   const timeline = useMemo(() => buildThreadTimeline(messages), [messages]);
 
-  const [tab, setTab] = useState<ActivityTab>("timeline");
-  // Comments = the human conversation without the agent's artifact
-  // announcements (those live in the Artifacts tab).
-  const commentRows = useMemo(
-    () => timeline.filter((row) => row.kind === "human"),
-    [timeline],
-  );
-
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -736,7 +590,7 @@ function ThreadConversation({
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [timeline, events.length, agentStatus?.phase, tab]);
+  }, [timeline, agentStatus?.phase]);
 
   const isTaskAuthor =
     !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
@@ -779,170 +633,23 @@ function ThreadConversation({
     }
   };
 
-  const handleSendToAgent = useCallback(
-    (messageId: string) => {
-      sendToAgent(messageId).catch((error: unknown) => {
-        toast.error("Couldn't send message to agent", {
-          description: error instanceof Error ? error.message : String(error),
-        });
+  const handleSendToAgent = (messageId: string) => {
+    sendToAgent(messageId).catch((error: unknown) => {
+      toast.error("Couldn't send message to agent", {
+        description: error instanceof Error ? error.message : String(error),
       });
-    },
-    [sendToAgent],
-  );
+    });
+  };
 
-  const handleDelete = useCallback(
-    (messageId: string) => {
-      deleteMessage(messageId).catch((error: unknown) => {
-        toast.error("Couldn't delete message", {
-          description: error instanceof Error ? error.message : String(error),
-        });
+  const handleDelete = (messageId: string) => {
+    deleteMessage(messageId).catch((error: unknown) => {
+      toast.error("Couldn't delete message", {
+        description: error instanceof Error ? error.message : String(error),
       });
-    },
-    [deleteMessage],
-  );
+    });
+  };
 
   const isReady = !isInitializing && !isLoading;
-
-  // The Timeline tab is the task's full history, not just the human thread:
-  // creation, the user messages sent to the agent (from the session — what
-  // used to live "inside the thread" of a task), the thread's human comments
-  // and artifact announcements, the run-output PR as a fallback, and the
-  // run's terminal status.
-  const conversationItems = useMemo(
-    () => buildConversationItems(events, isPromptPending).items,
-    [events, isPromptPending],
-  );
-  const activityNodes = useMemo(() => {
-    const nodes: { key: string; ts: number; node: ReactNode }[] = [];
-    const createdTs = Date.parse(task.created_at) || 0;
-    nodes.push({
-      key: "task-created",
-      ts: createdTs,
-      node: (
-        <ActivityEventRow
-          node={
-            <UserAvatar
-              user={task.created_by}
-              size="sm"
-              className="relative z-10"
-            />
-          }
-          title={task.created_by ? userDisplayName(task.created_by) : "Someone"}
-          action="created this task"
-          timestamp={task.created_at}
-        />
-      ),
-    });
-
-    for (const item of conversationItems) {
-      if (item.type !== "user_message") continue;
-      nodes.push({
-        key: `user-message-${item.id}`,
-        ts: item.timestamp,
-        node: (
-          // The session carries no per-message author; the task owner drives
-          // it, so attribute their avatar rather than a generic glyph.
-          <UserMessageRow
-            author={task.created_by}
-            content={item.content}
-            timestamp={new Date(item.timestamp).toISOString()}
-          />
-        ),
-      });
-    }
-
-    let hasPrArtifact = false;
-    for (const row of timeline) {
-      if (row.kind === "artifact" && row.artifact.kind === "pr") {
-        hasPrArtifact = true;
-      }
-      nodes.push({
-        key: `thread-${row.message.id}`,
-        ts: row.timestamp,
-        node:
-          row.kind === "human" ? (
-            <ThreadMessageRow
-              message={row.message}
-              isTaskAuthor={isTaskAuthor}
-              isOwnMessage={
-                !!currentUser?.uuid &&
-                currentUser.uuid === row.message.author?.uuid
-              }
-              currentUserEmail={currentUser?.email}
-              canForward={canForward}
-              onSendToAgent={() => handleSendToAgent(row.message.id)}
-              onDelete={() => handleDelete(row.message.id)}
-            />
-          ) : (
-            <ThreadArtifactRow
-              artifact={row.artifact}
-              createdAt={row.message.created_at}
-            />
-          ),
-      });
-    }
-
-    const updatedTs = Date.parse(task.updated_at) || createdTs;
-    const outputPr = task.latest_run?.output?.pr_url;
-    if (typeof outputPr === "string" && outputPr && !hasPrArtifact) {
-      nodes.push({
-        key: "output-pr",
-        ts: updatedTs,
-        node: (
-          <ThreadArtifactRow
-            artifact={{ kind: "pr", url: outputPr }}
-            createdAt={task.updated_at}
-          />
-        ),
-      });
-    }
-
-    const runStatus = task.latest_run?.status;
-    if (runStatus && isTerminalStatus(runStatus)) {
-      const succeeded = runStatus === "completed";
-      nodes.push({
-        key: "run-status",
-        ts: updatedTs + 1,
-        node: (
-          <ActivityEventRow
-            node={
-              <EventNode
-                icon={
-                  succeeded ? (
-                    <CheckCircleIcon
-                      size={14}
-                      weight="fill"
-                      className="text-green-9"
-                    />
-                  ) : (
-                    <XCircleIcon
-                      size={14}
-                      weight="fill"
-                      className="text-red-9"
-                    />
-                  )
-                }
-              />
-            }
-            title={`Task ${runStatus.replace(/_/g, " ")}`}
-            timestamp={task.updated_at}
-          />
-        ),
-      });
-    }
-
-    return nodes.sort((a, b) => a.ts - b.ts);
-  }, [
-    conversationItems,
-    timeline,
-    task,
-    isTaskAuthor,
-    canForward,
-    currentUser?.uuid,
-    currentUser?.email,
-    handleSendToAgent,
-    handleDelete,
-  ]);
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
@@ -951,71 +658,36 @@ function ThreadConversation({
         onToggleCollapsed={onToggleCollapsed}
         onClose={onClose}
       />
-      <ActivityTabsRow tab={tab} onTabChange={setTab} />
 
       {showTaskSummary && (
         <div className="z-10 px-2">
           <TaskCard task={task} channelId={channelId} inThread />
         </div>
       )}
-      {tab === "artifacts" ? (
-        <div className="flex-1 overflow-y-auto">
-          <TaskArtifactsList task={task} timeline={timeline} />
-        </div>
-      ) : tab === "comments" ? (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          <ThreadTimeline
-            timeline={commentRows}
-            isReady={isReady}
-            currentUserUuid={currentUser?.uuid}
-            currentUserEmail={currentUser?.email}
-            isTaskAuthor={isTaskAuthor}
-            canForward={canForward}
-            onSendToAgent={handleSendToAgent}
-            onDelete={handleDelete}
-          />
-        </div>
-      ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {!isReady ? (
-            <ThreadLoadingState />
-          ) : (
-            <div className="relative">
-              {/* The timeline spine: a continuous rail down the avatar column
-                  that every row's avatar/node sits on, so slim event rows and
-                  chunky message rows read as one timeline. */}
-              <div
-                aria-hidden
-                className="pointer-events-none absolute top-4 bottom-4 w-px bg-border"
-                style={{ left: RAIL_LEFT }}
-              />
-              <div className="relative z-10">
-                <ThreadItemGroup>
-                  {activityNodes.map((entry) => (
-                    <Fragment key={entry.key}>{entry.node}</Fragment>
-                  ))}
-                </ThreadItemGroup>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab !== "artifacts" && agentStatus && (
-        <AgentStatusLine status={agentStatus} />
-      )}
-
-      {tab !== "artifacts" && (
-        <ThreadReplyComposer
-          draft={draft}
-          onDraftChange={setDraft}
-          onSubmit={submit}
-          members={members}
-          allowAgentMention={isTaskAuthor && canForward}
-          onMentionInsert={handleMentionInsert}
-          disabled={!draft.trim() || isPosting || isSendingToAgent}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <ThreadTimeline
+          timeline={timeline}
+          isReady={isReady}
+          currentUserUuid={currentUser?.uuid}
+          currentUserEmail={currentUser?.email}
+          isTaskAuthor={isTaskAuthor}
+          canForward={canForward}
+          onSendToAgent={handleSendToAgent}
+          onDelete={handleDelete}
         />
-      )}
+      </div>
+
+      {agentStatus && <AgentStatusLine status={agentStatus} />}
+
+      <ThreadReplyComposer
+        draft={draft}
+        onDraftChange={setDraft}
+        onSubmit={submit}
+        members={members}
+        allowAgentMention={isTaskAuthor && canForward}
+        onMentionInsert={handleMentionInsert}
+        disabled={!draft.trim() || isPosting || isSendingToAgent}
+      />
     </div>
   );
 }

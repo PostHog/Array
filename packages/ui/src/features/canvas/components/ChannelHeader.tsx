@@ -1,17 +1,21 @@
 import { HashIcon } from "@phosphor-icons/react";
 import { Button, cn } from "@posthog/quill";
+import { ChannelTabs } from "@posthog/ui/features/canvas/components/ChannelTabs";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMarkChannelSeen } from "@posthog/ui/features/canvas/hooks/useMarkChannelSeen";
+import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
 // The shared channel header: a clickable "# channel" that doubles as the Home
 // item — it routes to the channel home (`/website/$channelId`, like the sidebar
-// channel row) and highlights `bg-fill-selected` while you're there. The old
-// section tab strip (Loops / Artifacts / Recents / CONTEXT.md) is gone: the
-// spaces sidebar carries those entries now.
+// channel row) and highlights `bg-fill-selected` while you're there. In the
+// spaces layout the section tab strip (Loops / Artifacts / Recents /
+// CONTEXT.md) is dropped — the space sidebar carries those entries; flag off
+// keeps the strip exactly as before.
 export function ChannelHeader({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
+  const spacesOn = useSpacesLayout();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -36,6 +40,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
           {channelName ?? "Channel"}
         </Text>
       </Button>
+      {!spacesOn && <ChannelTabs channelId={channelId} />}
     </div>
   );
 }

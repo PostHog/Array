@@ -14,6 +14,14 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 // Gates the entire canvas feature: the app rail's Channels space, the /website
 // routes, channels and dashboards.
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
+/**
+ * Gates the Spaces layout: channels as scoped spaces (per-space sidebar, dot
+ * switcher, title-bar search/inbox/account) and the task Activity panel
+ * (Timeline / Artifacts / Comments). Off = the previous experience exactly,
+ * including the "Enable channels" alpha toggle; on = the full new experience
+ * with no separate toggle. Requires project-bluebird underneath.
+ */
+export const SPACES_LAYOUT_FLAG = "code-spaces-layout";
 // Gates the Loops feature: the sidebar Loops space and the per-channel Loops tab.
 export const LOOPS_FLAG = "loops";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";

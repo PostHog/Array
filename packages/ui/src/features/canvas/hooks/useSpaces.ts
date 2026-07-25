@@ -1,3 +1,4 @@
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelStars } from "@posthog/ui/features/canvas/hooks/useChannelStars";
 import {
   type Channel,
@@ -6,7 +7,17 @@ import {
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCallback, useMemo, useRef } from "react";
+
+/** What drove a space switch, for analytics. */
+export type SpaceSwitchMethod =
+  | "dot"
+  | "swipe"
+  | "keyboard"
+  | "browse"
+  | "draft"
+  | "me";
 
 /**
  * The spaces in the Arc-style dot switcher: the personal "#me" channel always
@@ -18,8 +29,8 @@ export function useSpaces(): {
   spaces: Channel[];
   currentChannelId: string | null;
   currentIndex: number;
-  switchTo: (channel: Channel) => void;
-  cycle: (delta: 1 | -1) => void;
+  switchTo: (channel: Channel, method?: SpaceSwitchMethod) => void;
+  cycle: (delta: 1 | -1, method?: SpaceSwitchMethod) => void;
 } {
   const { channels } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
@@ -49,7 +60,7 @@ export function useSpaces(): {
   const currentIndex = spaces.findIndex((c) => c.id === currentChannelId);
 
   const switchTo = useCallback(
-    (channel: Channel) => {
+    (channel: Channel, method: SpaceSwitchMethod = "dot") => {
       // Re-selecting the current space still goes through setCurrentChannel:
       // it dismisses the browse/draft overrides and lands on the channel home.
       const from = spaces.findIndex((c) => c.id === currentChannelId);
@@ -58,12 +69,18 @@ export function useSpaces(): {
       const direction = from !== -1 && to !== -1 && to < from ? -1 : 1;
       setCurrentChannel(channel.id, direction);
       navigateToChannel(channel.id);
+      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+        action_type: "space_switch",
+        surface: "space_switcher",
+        channel_id: channel.id,
+        method,
+      });
     },
     [spaces, currentChannelId, setCurrentChannel],
   );
 
   const cycle = useCallback(
-    (delta: 1 | -1) => {
+    (delta: 1 | -1, method: SpaceSwitchMethod = "keyboard") => {
       if (spaces.length === 0) return;
       // Clamp at the ends — wrapping around reads as the switcher jumping
       // randomly when you swipe past the last space.
@@ -71,7 +88,7 @@ export function useSpaces(): {
       const nextIndex = Math.max(0, Math.min(spaces.length - 1, from + delta));
       if (nextIndex === currentIndex) return;
       const next = spaces[nextIndex];
-      if (next) switchTo(next);
+      if (next) switchTo(next, method);
     },
     [spaces, currentIndex, switchTo],
   );
@@ -152,7 +169,7 @@ export function useSpaceSwipe(
         g.locked = true;
         g.firedAt = now;
         g.accumX = 0;
-        cycle(direction);
+        cycle(direction, "swipe");
       }
     },
     [enabled, cycle],

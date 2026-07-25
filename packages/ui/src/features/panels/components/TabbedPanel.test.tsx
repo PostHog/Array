@@ -19,6 +19,10 @@ vi.mock("./PanelDropZones", () => ({
   PanelDropZones: () => null,
 }));
 
+vi.mock("@posthog/ui/features/canvas/hooks/useSpacesLayout", () => ({
+  useSpacesLayout: () => false,
+}));
+
 vi.mock("./PanelTab", () => ({
   PanelTab: ({ label, onSelect }: { label: string; onSelect: () => void }) => (
     <button type="button" onClick={onSelect}>

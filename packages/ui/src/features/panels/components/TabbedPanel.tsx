@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
+import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
@@ -99,6 +100,7 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   emptyState,
 }) => {
   const hostClient = useHostTRPCClient();
+  const spacesOn = useSpacesLayout();
   const [mountedTabs, setMountedTabs] = useState<{
     scopeKey: string;
     tabIds: Set<string>;
@@ -229,40 +231,51 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {/* "+" adds a tab. Only terminals work today; a chat tab is the
-                layout prototype's declared direction, shown disabled so the
-                menu communicates where this is going. */}
-            {content.droppable && onAddTerminal && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <TabBarButton ariaLabel="Add tab" onClick={() => {}}>
-                      <Plus size={14} />
-                    </TabBarButton>
-                  }
-                />
-                {/* Fixed width with room for the "Soon" badge so it isn't
-                    clipped at the menu's edge. */}
-                <DropdownMenuContent
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                  className="w-48"
-                >
-                  <DropdownMenuItem disabled>
-                    <ChatCircleIcon size={14} />
-                    New chat
-                    <span className="ml-auto shrink-0 pl-3 text-muted-foreground text-xs">
-                      Soon
-                    </span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onAddTerminal}>
-                    <TerminalWindowIcon size={14} />
-                    New terminal
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            {/* "+" adds a tab. Spaces layout: a menu (New chat is the declared
+                direction, shown disabled; terminals work today). Flag off: the
+                plain add-terminal button, exactly as before. */}
+            {content.droppable &&
+              onAddTerminal &&
+              (spacesOn ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <TabBarButton ariaLabel="Add tab" onClick={() => {}}>
+                        <Plus size={14} />
+                      </TabBarButton>
+                    }
+                  />
+                  {/* Fixed width with room for the "Soon" badge so it isn't
+                      clipped at the menu's edge. */}
+                  <DropdownMenuContent
+                    align="start"
+                    side="bottom"
+                    sideOffset={4}
+                    className="w-48"
+                  >
+                    <DropdownMenuItem disabled>
+                      <ChatCircleIcon size={14} />
+                      New chat
+                      <span className="ml-auto shrink-0 pl-3 text-muted-foreground text-xs">
+                        Soon
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onAddTerminal}>
+                      <TerminalWindowIcon size={14} />
+                      New terminal
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Tooltip content="New terminal" side="bottom">
+                  <TabBarButton
+                    ariaLabel="Add terminal"
+                    onClick={onAddTerminal}
+                  >
+                    <Plus size={14} />
+                  </TabBarButton>
+                </Tooltip>
+              ))}
             {/* Spacer to increase DND area */}
             {content.droppable && (
               <Box flexShrink="0" className="h-[32px] min-w-[90px]" />
