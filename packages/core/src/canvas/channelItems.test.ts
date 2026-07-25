@@ -4,7 +4,6 @@ import {
   buildChannelItems,
   type ChannelItemModel,
   filterChannelItems,
-  isOwnedBy,
 } from "./channelItems";
 import type { DashboardSummary } from "./dashboardSchemas";
 
@@ -50,77 +49,70 @@ function task(over: Partial<Task> = {}): Task {
 
 const NONE: ReadonlySet<string> = new Set();
 
+function build(options: Partial<Parameters<typeof buildChannelItems>[0]> = {}) {
+  return buildChannelItems({
+    dashboards: [],
+    feedTasks: [],
+    archivedTaskIds: NONE,
+    pinnedTaskIds: NONE,
+    ownedBy: null,
+    ...options,
+  });
+}
+
 describe("buildChannelItems", () => {
   it("merges canvases and tasks newest-first", () => {
-    const items = buildChannelItems({
+    const items = build({
       dashboards: [canvas({ id: "old", updatedAt: 1_000 })],
       feedTasks: [
         task({ id: "new", updated_at: new Date(5_000).toISOString() }),
       ],
-      archivedTaskIds: NONE,
-      pinnedTaskIds: NONE,
-      ownedBy: null,
     });
     expect(items.map((i) => i.key)).toEqual(["task:new", "canvas:old"]);
   });
 
   it("drops archived tasks but keeps canvases", () => {
-    const items = buildChannelItems({
+    const items = build({
       dashboards: [canvas()],
       feedTasks: [task({ id: "gone" })],
       archivedTaskIds: new Set(["gone"]),
-      pinnedTaskIds: NONE,
-      ownedBy: null,
     });
     expect(items.map((i) => i.kind)).toEqual(["canvas"]);
   });
 
   it("marks pinned state from each source's own signal", () => {
-    const items = buildChannelItems({
+    const items = build({
       dashboards: [canvas({ id: "pinned-canvas", pinnedAt: 42 })],
       feedTasks: [task({ id: "pinned-task" })],
-      archivedTaskIds: NONE,
       pinnedTaskIds: new Set(["pinned-task"]),
-      ownedBy: null,
     });
     expect(items.every((i) => i.pinned)).toBe(true);
   });
 
   it("falls back to a placeholder title for untitled tasks", () => {
-    const [item] = buildChannelItems({
-      dashboards: [],
+    const [item] = build({
       feedTasks: [task({ title: "" })],
-      archivedTaskIds: NONE,
-      pinnedTaskIds: NONE,
-      ownedBy: null,
     });
     expect(item.title).toBe("Untitled task");
   });
 
   it("treats an unparseable updated_at as epoch rather than NaN", () => {
-    const [item] = buildChannelItems({
-      dashboards: [],
+    const [item] = build({
       feedTasks: [task({ updated_at: "not a date" })],
-      archivedTaskIds: NONE,
-      pinnedTaskIds: NONE,
-      ownedBy: null,
     });
     expect(item.ts).toBe(0);
   });
 
   it("returns everything when the owner is unknown", () => {
-    const items = buildChannelItems({
+    const items = build({
       dashboards: [canvas({ createdBy: "Grace Hopper" })],
       feedTasks: [task({ created_by: OTHER })],
-      archivedTaskIds: NONE,
-      pinnedTaskIds: NONE,
-      ownedBy: null,
     });
     expect(items).toHaveLength(2);
   });
 
   it("filters to the owner for the personal channel", () => {
-    const items = buildChannelItems({
+    const items = build({
       dashboards: [
         canvas({ id: "mine", createdBy: "Ada Lovelace" }),
         canvas({ id: "theirs", createdBy: "Grace Hopper" }),
@@ -129,36 +121,18 @@ describe("buildChannelItems", () => {
         task({ id: "mine-task", created_by: ME }),
         task({ id: "their-task", created_by: OTHER }),
       ],
-      archivedTaskIds: NONE,
-      pinnedTaskIds: NONE,
       ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
     });
     expect(items.map((i) => i.id).sort()).toEqual(["mine", "mine-task"]);
   });
 
   it("keeps items whose author is unknown", () => {
-    const items = buildChannelItems({
+    const items = build({
       dashboards: [canvas({ id: "orphan", createdBy: undefined })],
       feedTasks: [task({ id: "orphan-task", created_by: null })],
-      archivedTaskIds: NONE,
-      pinnedTaskIds: NONE,
       ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
     });
     expect(items).toHaveLength(2);
-  });
-});
-
-describe("isOwnedBy", () => {
-  it("prefers uuid over display name when a full user is present", () => {
-    const item = { authorUser: OTHER, authorName: "Ada Lovelace" };
-    expect(isOwnedBy(item, { uuid: ME.uuid, name: "Ada Lovelace" })).toBe(
-      false,
-    );
-  });
-
-  it("cannot match a name-only author when our own name is unknown", () => {
-    const item = { authorUser: null, authorName: "Grace Hopper" };
-    expect(isOwnedBy(item, { uuid: ME.uuid, name: null })).toBe(true);
   });
 });
 

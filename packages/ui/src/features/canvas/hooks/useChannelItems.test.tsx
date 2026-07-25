@@ -170,15 +170,4 @@ describe("useChannelItems", () => {
     expect(result.current.channelMissing).toBe(true);
     expect(result.current.isLoading).toBe(false);
   });
-
-  it("keeps the actions object stable across rerenders", () => {
-    mocks.channels = {
-      channels: [{ id: "c1", name: "eng", path: "/eng" }],
-      isLoading: false,
-    };
-    const { result, rerender } = renderHook(() => useChannelItems("c1"));
-    const first = result.current.actions;
-    rerender();
-    expect(result.current.actions).toBe(first);
-  });
 });

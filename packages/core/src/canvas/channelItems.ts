@@ -40,7 +40,7 @@ export interface ChannelItemOwner {
  * owned — a channel shouldn't hide your own items just because the author field
  * came back empty. Canvases only carry a display name, hence the name fallback.
  */
-export function isOwnedBy(
+function isOwnedBy(
   item: Pick<ChannelItemModel, "authorUser" | "authorName">,
   owner: ChannelItemOwner,
 ): boolean {
