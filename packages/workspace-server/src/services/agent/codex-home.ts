@@ -39,7 +39,7 @@ export async function cleanupCodexHome(
 }
 
 /**
- * Builds a private CODEX_HOME for PostHog Code's own Codex sessions, so they
+ * Builds a private CODEX_HOME for PostHog's own Codex sessions, so they
  * load the bundled PostHog catalog and the user's `~/.claude/skills` — without
  * ever writing into the shared cross-agent `~/.agents/skills`.
  *

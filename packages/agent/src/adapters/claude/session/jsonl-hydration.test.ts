@@ -548,6 +548,30 @@ describe("conversationTurnsToJsonlEntries", () => {
     expect(conv[2].parentUuid).toBe(conv[1].uuid);
   });
 
+  it.each([undefined, null])(
+    "emits input: {} for tool calls whose input is %s",
+    (missingInput) => {
+      const lines = conversationTurnsToJsonlEntries(
+        [
+          {
+            role: "assistant",
+            content: [],
+            toolCalls: [
+              { toolCallId: "tc-1", toolName: "Bash", input: missingInput },
+            ],
+          },
+        ],
+        config,
+      );
+
+      const conv = parseConversationEntries(lines);
+      expect(conv).toHaveLength(1);
+      expect(conv[0].message.content).toEqual([
+        { type: "tool_use", id: "tc-1", name: "Bash", input: {} },
+      ]);
+    },
+  );
+
   it("sets stop_reason only on last block, null on intermediate", () => {
     const lines = conversationTurnsToJsonlEntries(
       [
@@ -1132,6 +1156,29 @@ describe("end-to-end: S3 log entries -> JSONL output", () => {
     expect(msg1.id).toBe(msg2.id);
     expect(msg2.id).toBe(msg3.id);
   });
+
+  it("emits input: {} when the tool input never reached the logs", () => {
+    const s3Logs: StoredEntry[] = [
+      s3Entry("user_message", {
+        content: { type: "text", text: "run the tests" },
+      }),
+      s3Entry("tool_call", {
+        toolCallId: "tc-lost",
+        _meta: { claudeCode: { toolName: "Bash" } },
+      }),
+    ];
+
+    const turns = rebuildConversation(s3Logs);
+    const lines = conversationTurnsToJsonlEntries(turns, config);
+    const conv = filterConv(lines.map((l) => JSON.parse(l)));
+
+    const toolUseLine = conv.find((e) => e.type === "assistant");
+    expect(toolUseLine).toBeDefined();
+    const content = (toolUseLine?.message as { content: unknown[] }).content;
+    expect(content).toEqual([
+      { type: "tool_use", id: "tc-lost", name: "Bash", input: {} },
+    ]);
+  });
 });
 
 describe("sanitizeSessionJsonl", () => {
@@ -1242,6 +1289,32 @@ describe("sanitizeSessionJsonl", () => {
     ]);
   });
 
+  it.each([
+    ["a missing", { type: "tool_use", id: "tc-1", name: "Bash" }],
+    ["a null", { type: "tool_use", id: "tc-1", name: "Bash", input: null }],
+  ])("adds input: {} to tool_use blocks with %s input", async (_, block) => {
+    const file = await writeJsonl([
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "running" }, block],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const assistant = lines[0].message as { content: unknown };
+    expect(assistant.content).toEqual([
+      { type: "text", text: "running" },
+      { type: "tool_use", id: "tc-1", name: "Bash", input: {} },
+    ]);
+  });
+
   it("sanitizes empty blocks in user lines too", async () => {
     const file = await writeJsonl([
       {
@@ -1317,6 +1390,156 @@ describe("sanitizeSessionJsonl", () => {
     expect(await fs.readFile(file, "utf8")).toBe(before);
   });
 
+  it("neutralizes an oversized image nested in a tool_result", async () => {
+    // A Read on a big image file lands its bytes inside a tool_result; on
+    // resume that block 400s every turn until it is replaced.
+    const oversized = "A".repeat(6 * 1024 * 1024 * (4 / 3));
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tc-1",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: oversized,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const user = lines[0].message as {
+      content: [{ content: unknown[] }];
+    };
+    expect(user.content[0].content).toEqual([
+      {
+        type: "text",
+        text: "[Removed unprocessable image: image exceeds the 5 MB per-image limit]",
+      },
+    ]);
+  });
+
+  it("neutralizes an unsupported top-level image mime type", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "look" },
+            { type: "image", data: "abc", mimeType: "image/tiff" },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const user = lines[0].message as { content: unknown };
+    expect(user.content).toEqual([
+      { type: "text", text: "look" },
+      {
+        type: "text",
+        text: "[Removed unprocessable image: unsupported image type image/tiff]",
+      },
+    ]);
+  });
+
+  it("neutralizes an image with empty base64 data", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "" },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(await sanitizeSessionJsonl(file)).toBe(true);
+
+    const lines = await readJsonl(file);
+    const user = lines[0].message as { content: unknown };
+    expect(user.content).toEqual([
+      {
+        type: "text",
+        text: "[Removed unprocessable image: image data is empty]",
+      },
+    ]);
+  });
+
+  it("leaves a small, supported image untouched", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "abc" },
+            },
+          ],
+        },
+      },
+    ]);
+    const before = await fs.readFile(file, "utf8");
+
+    expect(await sanitizeSessionJsonl(file)).toBe(false);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+
+  it("leaves url-sourced images untouched", async () => {
+    const file = await writeJsonl([
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "url", url: "https://example.com/x.png" },
+            },
+          ],
+        },
+      },
+    ]);
+    const before = await fs.readFile(file, "utf8");
+
+    expect(await sanitizeSessionJsonl(file)).toBe(false);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+
   it("returns false for missing files", async () => {
     expect(await sanitizeSessionJsonl("/nonexistent/dir/sess.jsonl")).toBe(
       false,
@@ -1372,6 +1595,37 @@ describe("hydrateSessionJsonl", () => {
     };
   }
 
+  it("returns the selected conversation when hydrating from logs", async () => {
+    const posthogAPI = {
+      getTaskRun: vi.fn().mockResolvedValue({ log_url: "https://logs.test" }),
+      fetchTaskRunLogs: vi.fn().mockResolvedValue([
+        entry("user_message", {
+          content: { type: "text", text: "previous request" },
+        }),
+      ]),
+    } as unknown as PostHogAPIClient;
+    const log = { info: vi.fn(), warn: vi.fn() };
+
+    const result = await hydrateSessionJsonl({
+      sessionId,
+      cwd,
+      taskId: "t1",
+      runId: "r1",
+      posthogAPI,
+      log,
+    });
+
+    expect(result).toEqual({
+      hasSession: true,
+      conversation: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "previous request" }],
+        },
+      ],
+    });
+  });
+
   it("sanitizes an existing file and skips S3 hydration", async () => {
     const file = await writeSessionFile();
     const { posthogAPI, log } = makeDeps();
@@ -1385,13 +1639,13 @@ describe("hydrateSessionJsonl", () => {
       log,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ hasSession: true });
     expect(
       (posthogAPI as unknown as { getTaskRun: ReturnType<typeof vi.fn> })
         .getTaskRun,
     ).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith(
-      "Removed empty content blocks from existing session JSONL",
+      "Healed existing session JSONL (empty and/or unprocessable-image blocks)",
       expect.anything(),
     );
     expect(await fs.readFile(file, "utf8")).not.toContain('"text":""');
@@ -1412,7 +1666,7 @@ describe("hydrateSessionJsonl", () => {
       log,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ hasSession: true });
     expect(log.warn).toHaveBeenCalledWith(
       "Failed to sanitize existing session JSONL",
       expect.anything(),

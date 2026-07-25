@@ -3,7 +3,9 @@ import {
   type AutoresearchEndReason,
   type AutoresearchInterruptionReason,
   type AutoresearchIteration,
+  type AutoresearchPauseInterval,
   type AutoresearchPhase,
+  type AutoresearchResearchFinding,
   type AutoresearchRun,
   type AutoresearchRunStatus,
   isTerminalRunStatus,
@@ -50,6 +52,16 @@ export const autoresearchStoreActions = {
     }));
   },
 
+  appendResearchFinding(
+    runId: string,
+    finding: AutoresearchResearchFinding,
+  ): void {
+    updateRun(runId, (run) => ({
+      ...run,
+      researchFindings: [...run.researchFindings, finding],
+    }));
+  },
+
   /** Record the metric label the agent chose in its reports. */
   setMetricName(runId: string, metricName: string): void {
     updateRun(runId, (run) => ({ ...run, metricName }));
@@ -62,6 +74,20 @@ export const autoresearchStoreActions = {
 
   setPhase(runId: string, phase: AutoresearchPhase | null): void {
     updateRun(runId, (run) => ({ ...run, phase }));
+  },
+
+  setPauseTiming(
+    runId: string,
+    pausedAt: number | null,
+    pausedDurationMs: number,
+    pauseIntervals: AutoresearchPauseInterval[],
+  ): void {
+    updateRun(runId, (run) => ({
+      ...run,
+      pausedAt,
+      pausedDurationMs,
+      pauseIntervals,
+    }));
   },
 
   setRunStatus(

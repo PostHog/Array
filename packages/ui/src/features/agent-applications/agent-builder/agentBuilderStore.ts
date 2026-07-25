@@ -27,7 +27,8 @@ export type AgentBuilderPageContext =
   | { kind: "agent-chat"; slug: string }
   | { kind: "unknown" };
 
-/** A pending "Edit with AI" hand-off: open the dock and send `prompt`. */
+/** A pending contextual hand-off: open the dock and prefill the composer with
+ *  `prompt` (the user reviews and sends — it is never auto-sent). */
 export interface AgentBuilderSeed {
   /** Monotonic id so a consumer can mark exactly one seed handled. */
   seq: number;
@@ -113,7 +114,7 @@ interface AgentBuilderStore {
   setVisible: (visible: boolean) => void;
   setFollowMode: (followMode: boolean) => void;
   setPage: (page: AgentBuilderPageContext) => void;
-  /** Open the dock and queue a prompt to send. */
+  /** Open the dock and prefill the composer with a prompt (not sent). */
   startAgentBuilder: (prompt: string, agentSlug?: string | null) => void;
   /** Mark a seed handled (no-op if a newer seed has since replaced it). */
   consumeSeed: (seq: number) => void;

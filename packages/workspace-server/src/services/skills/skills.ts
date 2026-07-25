@@ -16,6 +16,7 @@ import {
   parseSkillDependencies,
   parseSkillFrontmatter,
 } from "./parse-skill-frontmatter";
+import { parseSkillReferences } from "./parse-skill-references";
 import type {
   BundleLocalSkillInput,
   BundleLocalSkillOutput,
@@ -498,6 +499,7 @@ export class SkillsService {
     input: BundleLocalSkillInput,
   ): Promise<BundleLocalSkillOutput> {
     const skillDir = await this.resolveKnownSkillDir(input.path);
+    await this.assertRepoSkillStaysInRepo(skillDir);
     return bundleLocalSkill({
       name: input.name,
       source: input.source,
@@ -506,12 +508,39 @@ export class SkillsService {
   }
 
   /**
-   * Expand a set of tagged skill refs to include their transitively-declared
-   * dependency skills (SKILL.md `dependencies:`), so a skill that needs another
-   * (e.g. `/rs-self-review` → `rs-adversarial-review`) pulls its dependency into
-   * the same cloud run instead of the user having to tag every one by hand.
-   * Only uploadable local skills are returned; a dependency that resolves to a
-   * built-in (`bundled`) skill is already present in the sandbox and is skipped.
+   * A repository can commit any ancestor of its skills (`.claude` or
+   * `.claude/skills`) as a symlink pointing outside the repo, which passes the
+   * lexical known-root check and the bundler's leaf-symlink check yet bundles
+   * an external directory. Uploads must stay inside the real repository, so
+   * anchor the check on the workspace folder itself — the one path segment a
+   * repo author cannot control.
+   */
+  private async assertRepoSkillStaysInRepo(skillDir: string): Promise<void> {
+    const parent = path.dirname(skillDir);
+    const folders = await this.folders.getFolders();
+    const owningFolder = folders.find(
+      (folder) =>
+        path.resolve(path.join(folder.path, ".claude", "skills")) === parent,
+    );
+    if (!owningFolder) return;
+    const [realSkill, realFolder] = await Promise.all([
+      fs.promises.realpath(skillDir),
+      fs.promises.realpath(path.resolve(owningFolder.path)),
+    ]);
+    if (!realSkill.startsWith(realFolder + path.sep)) {
+      throw new Error(
+        "Access denied: repository skill resolves outside its repository",
+      );
+    }
+  }
+
+  /**
+   * Expand a set of tagged skill refs to include their transitive dependency
+   * skills, so a skill that needs another pulls it into the same cloud run.
+   * A dependency is either declared (SKILL.md frontmatter `dependencies:`)
+   * or referenced in the SKILL.md body as `/skill-name` or `[[skill-name]]`.
+   * Only uploadable local skills are returned; a dependency that resolves to
+   * a built-in (`bundled`) skill is already in the sandbox and is skipped.
    */
   async resolveSkillBundleDependencies(
     refs: SkillBundleRef[],
@@ -519,14 +548,30 @@ export class SkillsService {
     if (refs.length === 0) return [];
 
     const allSkills = await this.listSkills();
-    const findUploadableByName = (name: string): SkillBundleRef | null => {
-      const match = allSkills.find(
+    // Prefer a dependency beside the referencing skill (same root), then one
+    // from the same source, so a repo skill referencing /helper gets its
+    // sibling rather than a same-named skill from another source.
+    const findUploadableByName = (
+      name: string,
+      referencedFrom: SkillBundleRef,
+    ): SkillBundleRef | null => {
+      const candidates = allSkills.filter(
         (skill) => skill.name === name && isUploadableSkillSource(skill.source),
       );
+      const match =
+        candidates.find(
+          (skill) =>
+            path.dirname(skill.path) === path.dirname(referencedFrom.path),
+        ) ??
+        candidates.find((skill) => skill.source === referencedFrom.source) ??
+        candidates[0];
       return match && isUploadableSkillSource(match.source)
         ? { name: match.name, source: match.source, path: match.path }
         : null;
     };
+    const knownSkillNames: ReadonlySet<string> = new Set(
+      allSkills.map((skill) => skill.name),
+    );
 
     const seen = new Set<string>();
     const resolved: SkillBundleRef[] = [];
@@ -558,7 +603,12 @@ export class SkillsService {
           path.join(skillDir, "SKILL.md"),
           "utf-8",
         );
-        dependencyNames = parseSkillDependencies(manifest);
+        dependencyNames = [
+          ...new Set([
+            ...parseSkillDependencies(manifest),
+            ...parseSkillReferences(manifest, knownSkillNames),
+          ]),
+        ];
       } catch {
         // A ref we can't read (missing/renamed skill) still uploads on its own;
         // just skip its dependency expansion rather than failing the whole run.
@@ -566,7 +616,7 @@ export class SkillsService {
       }
 
       for (const dependencyName of dependencyNames) {
-        const dependencyRef = findUploadableByName(dependencyName);
+        const dependencyRef = findUploadableByName(dependencyName, ref);
         if (
           dependencyRef &&
           !seen.has(`${dependencyRef.source}:${dependencyRef.path}`)

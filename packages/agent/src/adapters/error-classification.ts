@@ -1,3 +1,5 @@
+import { getErrorMessage } from "@posthog/shared";
+
 export type AgentErrorClassification =
   | "upstream_stream_terminated"
   | "upstream_connection_error"
@@ -21,6 +23,19 @@ export function classifyAgentError(
   if (/API Error:\s*terminated\b/i.test(text)) {
     return "upstream_stream_terminated";
   }
+  // Claude Code surfaces an SSE stream that dies after content started
+  // (no message_stop) as "Connection closed mid-response". Seen when a
+  // gateway pod is replaced mid-stream or an intermediary cuts the socket
+  // during a long silent stretch.
+  if (/API Error:.*Connection closed mid-response/i.test(text)) {
+    return "upstream_stream_terminated";
+  }
+  // Transport-level socket deaths reported by fetch implementations
+  // (Bun/undici wording varies) — same failure mode as above. These are raw
+  // transport errors, so they don't always carry the "API Error:" prefix.
+  if (/socket connection (?:was )?closed/i.test(text)) {
+    return "upstream_stream_terminated";
+  }
   if (/API Error:\s*Connection error\b/i.test(text)) {
     return "upstream_connection_error";
   }
@@ -31,4 +46,18 @@ export function classifyAgentError(
     return "upstream_provider_failure";
   }
   return "agent_error";
+}
+
+/**
+ * Hard API rejection: the prompt exceeds the model's context window
+ * (Anthropic phrasing, or the LLM gateway's HTTP 413). Retrying the same
+ * transcript can never succeed; callers must shrink the prompt.
+ */
+export function isPromptTooLongError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  return (
+    /prompt is too long/i.test(message) ||
+    /exceeded this model context window limit/i.test(message) ||
+    /API Error:\s*413\b/i.test(message)
+  );
 }

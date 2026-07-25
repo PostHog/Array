@@ -64,6 +64,7 @@ import {
   diffStatsInput,
   diffStatsSchema,
   directoryPathInput,
+  discardAllChangesInput,
   discardFileChangesInput,
   discardFileChangesOutput,
   filePathInput,
@@ -480,6 +481,13 @@ export function createAppRouter({
             input.filePath,
             input.fileStatus,
           ),
+        ),
+
+      discardAllChanges: t.procedure
+        .input(discardAllChangesInput)
+        .output(discardFileChangesOutput)
+        .mutation(({ input }) =>
+          gitService().discardAllChanges(input.directoryPath),
         ),
 
       push: t.procedure

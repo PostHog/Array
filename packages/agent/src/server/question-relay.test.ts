@@ -23,7 +23,10 @@ interface TestableAgentServer {
   };
   questionRelayedToSlack: boolean;
   session: unknown;
-  relayAgentResponse: (payload: Record<string, unknown>) => Promise<void>;
+  relayAgentResponse: (
+    payload: Record<string, unknown>,
+    messageId?: string,
+  ) => Promise<void>;
   sendInitialTaskMessage: (payload: Record<string, unknown>) => Promise<void>;
 }
 
@@ -323,7 +326,7 @@ describe("Question relay", () => {
             optionId: string,
             customInput?: string,
             answers?: Record<string, string>,
-          ) => boolean;
+          ) => "resolved" | "not_found" | "invalid_option";
         };
         srv.session = {
           payload: TEST_PAYLOAD,
@@ -465,7 +468,10 @@ describe("Question relay", () => {
           options: unknown[];
           toolCall?: unknown;
         }) => Promise<{ outcome: { outcome: string; optionId: string } }>;
-        resolvePermission: (requestId: string, optionId: string) => boolean;
+        resolvePermission: (
+          requestId: string,
+          optionId: string,
+        ) => "resolved" | "not_found" | "invalid_option";
         session: {
           payload: typeof TEST_PAYLOAD;
           sseController: null;
@@ -494,7 +500,7 @@ describe("Question relay", () => {
       expect(request.params.toolCallId).toBe("tool-1");
       const requestId = request.params.requestId;
 
-      expect(srv.resolvePermission(requestId, "allow")).toBe(true);
+      expect(srv.resolvePermission(requestId, "allow")).toBe("resolved");
 
       const resolved = logged("_posthog/permission_resolved");
       expect(resolved).toBeTruthy();
@@ -555,6 +561,34 @@ describe("Question relay", () => {
         "test-run-id",
         "agent response",
         ["first part", "agent response"],
+        undefined,
+      );
+    });
+
+    it("passes the initiating message id through to relayMessage", async () => {
+      const relaySpy = vi
+        .spyOn(server.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+
+      server.session = {
+        payload: TEST_PAYLOAD,
+        logWriter: {
+          flush: vi.fn().mockResolvedValue(undefined),
+          getFullAgentResponse: vi.fn().mockReturnValue("agent response"),
+          getAgentResponseParts: vi.fn().mockReturnValue(["agent response"]),
+          isRegistered: vi.fn().mockReturnValue(true),
+        },
+      };
+
+      server.questionRelayedToSlack = false;
+      await server.relayAgentResponse(TEST_PAYLOAD, "msg-123");
+
+      expect(relaySpy).toHaveBeenCalledWith(
+        "test-task-id",
+        "test-run-id",
+        "agent response",
+        ["agent response"],
+        "msg-123",
       );
     });
 
@@ -730,7 +764,7 @@ describe("Question relay", () => {
       expect(promptSpy).not.toHaveBeenCalled();
     });
 
-    it("does not replay a transient upstream termination before any session activity", async () => {
+    it("replays a transient upstream termination with a continuation prompt", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -744,7 +778,8 @@ describe("Question relay", () => {
 
       const promptSpy = vi
         .fn()
-        .mockRejectedValueOnce(createTransientPromptError());
+        .mockRejectedValueOnce(createTransientPromptError())
+        .mockResolvedValueOnce({ stopReason: "cancelled" });
       const updateTaskRunSpy = vi
         .spyOn(server.posthogAPI, "updateTaskRun")
         .mockResolvedValue({} as TaskRun);
@@ -762,20 +797,26 @@ describe("Question relay", () => {
         },
       };
 
-      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+      vi.useFakeTimers();
+      try {
+        const sendPromise = server.sendInitialTaskMessage(TEST_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(5_000);
+        await sendPromise;
+      } finally {
+        vi.useRealTimers();
+      }
 
-      expect(promptSpy).toHaveBeenCalledTimes(1);
-      expect(updateTaskRunSpy).toHaveBeenCalledWith(
-        "test-task-id",
-        "test-run-id",
-        {
-          status: "failed",
-          error_message: UPSTREAM_PROVIDER_FAILURE_MESSAGE,
-        },
+      expect(promptSpy).toHaveBeenCalledTimes(2);
+      const continuation = promptSpy.mock.calls[1][0] as {
+        prompt: Array<{ type: string; text: string }>;
+      };
+      expect(continuation.prompt[0].text).toContain(
+        "interrupted by a transient connection error",
       );
+      expect(updateTaskRunSpy).not.toHaveBeenCalled();
     });
 
-    it("surfaces upstream provider failures with a retryable message", async () => {
+    it("re-sends the original prompt after an upstream provider failure", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -789,7 +830,8 @@ describe("Question relay", () => {
 
       const promptSpy = vi
         .fn()
-        .mockRejectedValueOnce(createUpstreamProviderFailureError());
+        .mockRejectedValueOnce(createUpstreamProviderFailureError())
+        .mockResolvedValueOnce({ stopReason: "cancelled" });
       const updateTaskRunSpy = vi
         .spyOn(server.posthogAPI, "updateTaskRun")
         .mockResolvedValue({} as TaskRun);
@@ -807,20 +849,24 @@ describe("Question relay", () => {
         },
       };
 
-      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+      vi.useFakeTimers();
+      try {
+        const sendPromise = server.sendInitialTaskMessage(TEST_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(5_000);
+        await sendPromise;
+      } finally {
+        vi.useRealTimers();
+      }
 
-      expect(promptSpy).toHaveBeenCalledTimes(1);
-      expect(updateTaskRunSpy).toHaveBeenCalledWith(
-        "test-task-id",
-        "test-run-id",
-        {
-          status: "failed",
-          error_message: UPSTREAM_PROVIDER_FAILURE_MESSAGE,
-        },
-      );
+      expect(promptSpy).toHaveBeenCalledTimes(2);
+      const retryRequest = promptSpy.mock.calls[1][0] as {
+        prompt: Array<{ type: string; text: string }>;
+      };
+      expect(retryRequest.prompt[0].text).toBe("original task description");
+      expect(updateTaskRunSpy).not.toHaveBeenCalled();
     });
 
-    it("surfaces upstream connection errors with the shared provider failure message", async () => {
+    it("surfaces the shared provider failure message once upstream retries are exhausted", async () => {
       vi.spyOn(server.posthogAPI, "getTask").mockResolvedValue({
         id: "test-task-id",
         title: "t",
@@ -832,7 +878,7 @@ describe("Question relay", () => {
         state: {},
       } as unknown as TaskRun);
 
-      const promptSpy = vi.fn().mockImplementationOnce(async () => {
+      const promptSpy = vi.fn().mockImplementation(async () => {
         throw createTransientConnectionError();
       });
       const updateTaskRunSpy = vi
@@ -852,9 +898,16 @@ describe("Question relay", () => {
         },
       };
 
-      await server.sendInitialTaskMessage(TEST_PAYLOAD);
+      vi.useFakeTimers();
+      try {
+        const sendPromise = server.sendInitialTaskMessage(TEST_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(10_000);
+        await sendPromise;
+      } finally {
+        vi.useRealTimers();
+      }
 
-      expect(promptSpy).toHaveBeenCalledTimes(1);
+      expect(promptSpy).toHaveBeenCalledTimes(3);
       expect(updateTaskRunSpy).toHaveBeenCalledWith(
         "test-task-id",
         "test-run-id",

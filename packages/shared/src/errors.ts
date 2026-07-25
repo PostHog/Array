@@ -74,12 +74,45 @@ const RATE_LIMIT_PATTERNS = [
   "[429]",
 ] as const;
 
+export type GatewayLimitCause = "model_gate" | "org_limit";
+
+const MODEL_GATE_PATTERNS = ["needs a paid posthog plan"] as const;
+
+const ORG_LIMIT_PATTERNS = [
+  "reached its posthog code usage limit",
+  "reached its usage limit for this billing period",
+  // Per-user free valves — billed orgs have none, so these always mean the
+  // free tier is used up.
+  "user burst rate limit exceeded",
+  "user sustained rate limit exceeded",
+] as const;
+
 const FATAL_SESSION_ERROR_PATTERNS = [
   "internal error",
   "process exited",
   "session did not end",
   "not ready for writing",
   "session not found",
+] as const;
+
+/**
+ * Transient upstream provider failures, as surfaced by agent adapters in
+ * "API Error: …" result strings (kept in sync with classifyAgentError in
+ * @posthog/agent). The agent process and session are healthy — a single
+ * provider request timed out, dropped, or returned a retryable status — so
+ * these must not count as fatal session errors: the fix is re-sending the
+ * prompt, never tearing the session down. Checked before the fatal patterns
+ * because the ACP layer wraps them as "Internal error: API Error: …".
+ */
+const UPSTREAM_TRANSIENT_ERROR_REGEXES = [
+  /API Error:\s*terminated\b/i,
+  /API Error:\s*Connection error\b/i,
+  /API Error:.*Connection closed mid-response/i,
+  // Raw transport-level socket death — wording varies by fetch
+  // implementation and doesn't always carry the "API Error:" prefix.
+  /socket connection (?:was )?closed/i,
+  /API Error:.*\b(?:timed out|timeout)\b/i,
+  /API Error:\s*(?:429|5\d\d)\b/i,
 ] as const;
 
 function includesAny(
@@ -101,11 +134,36 @@ export function isRateLimitError(
   );
 }
 
+export function classifyGatewayLimitError(
+  errorMessage: string,
+  errorDetails?: string,
+): GatewayLimitCause | null {
+  const matches = (patterns: readonly string[]) =>
+    includesAny(errorMessage, patterns) || includesAny(errorDetails, patterns);
+  if (matches(MODEL_GATE_PATTERNS)) return "model_gate";
+  if (matches(ORG_LIMIT_PATTERNS)) return "org_limit";
+  return null;
+}
+
+export function isTransientUpstreamError(
+  errorMessage: string,
+  errorDetails?: string,
+): boolean {
+  return UPSTREAM_TRANSIENT_ERROR_REGEXES.some(
+    (regex) =>
+      regex.test(errorMessage) || (!!errorDetails && regex.test(errorDetails)),
+  );
+}
+
 export function isFatalSessionError(
   errorMessage: string,
   errorDetails?: string,
 ): boolean {
   if (isRateLimitError(errorMessage, errorDetails)) return false;
+  if (isTransientUpstreamError(errorMessage, errorDetails)) return false;
+  if (classifyGatewayLimitError(errorMessage, errorDetails) === "model_gate") {
+    return false;
+  }
   return (
     includesAny(errorMessage, FATAL_SESSION_ERROR_PATTERNS) ||
     includesAny(errorDetails, FATAL_SESSION_ERROR_PATTERNS)

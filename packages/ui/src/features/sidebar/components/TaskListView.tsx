@@ -1,9 +1,9 @@
 import { PointerSensor } from "@dnd-kit/dom";
 import type { DragDropEvents } from "@dnd-kit/react";
 import { DragDropProvider } from "@dnd-kit/react";
-import { GitBranch } from "@phosphor-icons/react";
+import { GitBranch, Wrench } from "@phosphor-icons/react";
 import {
-  folderGroupId,
+  findGroupFolder,
   groupTasksByRelativeDate,
 } from "@posthog/core/sidebar/groupTasks";
 import { mostRecentRunEnvironment } from "@posthog/core/sidebar/runEnvironment";
@@ -14,8 +14,10 @@ import type {
 import { MenuLabel } from "@posthog/quill";
 import { builderHog } from "@posthog/ui/assets/hedgehogs";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useArchivingTasksStore } from "@posthog/ui/features/sidebar/archivingTasksStore";
 import { DraggableFolder } from "@posthog/ui/features/sidebar/components/DraggableFolder";
+import { GroupWorktreesSection } from "@posthog/ui/features/sidebar/components/GroupWorktreesSection";
 import { TaskItem } from "@posthog/ui/features/sidebar/components/items/TaskItem";
 import { SidebarSection } from "@posthog/ui/features/sidebar/components/SidebarSection";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -92,6 +94,7 @@ function TaskRow({
   const effectiveMode =
     workspace?.mode ??
     (task.taskRunEnvironment === "cloud" ? "cloud" : undefined);
+
   const { prState, hasDiff } = useTaskPrStatus(task);
   const isArchiving = useArchivingTasksStore((s) =>
     s.archivingTaskIds.has(task.id),
@@ -108,7 +111,6 @@ function TaskRow({
       hideHoverActions={hideHoverActions}
       isEditing={isEditing}
       workspaceMode={effectiveMode}
-      worktreePath={workspace?.worktreePath ?? undefined}
       isSuspended={task.isSuspended}
       isGenerating={task.isGenerating}
       isUnread={task.isUnread}
@@ -163,6 +165,9 @@ export function TaskListView({
     (state) => state.resetHistoryVisibleCount,
   );
   const { folders } = useFolders();
+  const showSidebarWorktrees = useSettingsStore(
+    (state) => state.showSidebarWorktrees,
+  );
   const view = useAppView();
   const isOnTaskInput =
     view.type === "task-input" || view.type === "task-pending";
@@ -277,7 +282,7 @@ export function TaskListView({
           <Flex direction="column">
             {groupedTasks.map((group, index) => {
               const isExpanded = !collapsedSections.has(group.id);
-              const folder = folders.find((f) => folderGroupId(f) === group.id);
+              const folder = findGroupFolder(folders, group.id);
               const groupFolderId =
                 folder?.id ?? group.tasks.find((t) => t.folderId)?.folderId;
               return (
@@ -285,7 +290,13 @@ export function TaskListView({
                   <SidebarSection
                     id={group.id}
                     label={folder?.name ?? group.name}
-                    icon={<GitBranch size={14} className="text-gray-10" />}
+                    icon={
+                      group.id === "custom-images" ? (
+                        <Wrench size={14} className="text-gray-10" />
+                      ) : (
+                        <GitBranch size={14} className="text-gray-10" />
+                      )
+                    }
                     isExpanded={isExpanded}
                     onToggle={() => toggleSection(group.id)}
                     addSpacingBefore={false}
@@ -338,6 +349,12 @@ export function TaskListView({
                         />
                       ))
                     )}
+                    {folder && showSidebarWorktrees && (
+                      <GroupWorktreesSection
+                        groupId={group.id}
+                        mainRepoPath={folder.mainRepoPath ?? folder.path}
+                      />
+                    )}
                   </SidebarSection>
                 </DraggableFolder>
               );
@@ -373,18 +390,21 @@ export function TaskListView({
               ))}
             </Fragment>
           ))}
-          {hasMore && (
-            <div className="px-2 py-2">
-              <button
-                type="button"
-                className="w-full rounded-md px-2 py-1 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
-                onClick={loadMoreHistory}
-              >
-                Show more
-              </button>
-            </div>
-          )}
         </Flex>
+      )}
+
+      {/* Rendered for both organize modes: "by-project" caps each group and
+          "chronological" caps the flat list, so either can have more to load. */}
+      {hasMore && (
+        <div className="px-2 py-2">
+          <button
+            type="button"
+            className="w-full rounded-md px-2 py-1 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
+            onClick={loadMoreHistory}
+          >
+            Show more
+          </button>
+        </div>
       )}
     </Flex>
   );

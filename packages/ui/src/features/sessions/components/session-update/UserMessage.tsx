@@ -1,7 +1,6 @@
 import {
   Check,
   Copy,
-  File,
   FileText,
   Scroll,
   SlackLogo,
@@ -15,6 +14,7 @@ import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
+import { UserMessageAttachments } from "../UserMessageAttachments";
 import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
 import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
@@ -33,6 +33,7 @@ interface UserMessageProps {
   animate?: boolean;
   /** Task the message belongs to — needed to open the context file tab. */
   taskId?: string;
+  keyboardFocused?: boolean;
 }
 
 function formatTimestamp(ts: number): string {
@@ -58,6 +59,7 @@ export const UserMessage = memo(function UserMessage({
   attachments = [],
   animate = true,
   taskId,
+  keyboardFocused = false,
 }: UserMessageProps) {
   // A channel's CONTEXT.md and the canvas generation instructions, if injected
   // into this prompt, are each collapsed into a clickable tag instead of
@@ -126,10 +128,10 @@ export const UserMessage = memo(function UserMessage({
       transition={animate ? { duration: 0.25, ease: "easeOut" } : undefined}
     >
       <Box
-        className="group/msg relative border-l-2 bg-gray-2 py-2 pl-3"
+        className={`group/msg relative border-l-2 bg-gray-2 py-2 pl-3 transition-shadow ${keyboardFocused ? "ring-(--accent-9) ring-2 ring-offset-(--gray-2) ring-offset-2" : ""}`}
         style={{ borderColor: "var(--accent-9)" }}
       >
-        <CollapsibleMessageContent contentClassName="[&_p]:leading-[1.9]">
+        <CollapsibleMessageContent contentClassName="font-medium text-[13px] [&_p]:leading-[1.9]">
           {containsFileMentions ? (
             parseFileMentions(displayContent)
           ) : (
@@ -177,19 +179,9 @@ export const UserMessage = memo(function UserMessage({
             </Flex>
           )}
           {showAttachmentChips && (
-            <Flex
-              wrap="wrap"
-              gap="1"
-              className={content.trim() ? "mt-1.5" : ""}
-            >
-              {attachments.map((attachment) => (
-                <MentionChip
-                  key={attachment.id}
-                  icon={<File size={12} />}
-                  label={attachment.label}
-                />
-              ))}
-            </Flex>
+            <div className={content.trim() ? "mt-1.5" : ""}>
+              <UserMessageAttachments attachments={attachments} />
+            </div>
           )}
         </CollapsibleMessageContent>
         {sourceUrl && (

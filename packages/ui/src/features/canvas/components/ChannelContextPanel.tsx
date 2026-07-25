@@ -29,13 +29,13 @@ export function ChannelContextPanel({
           weight="medium"
           className="min-w-0 truncate text-gray-12"
         >
-          {channelName ? `#${channelName} ` : ""}CONTEXT.md
+          {channelName ? `${channelName} ` : ""}CONTEXT.md
         </Text>
         <Tooltip content="Close">
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close context panel"
+            aria-label="Close CONTEXT.md panel"
             className="flex size-6 shrink-0 items-center justify-center rounded text-gray-10 hover:bg-gray-4 hover:text-gray-12"
           >
             <X size={14} />

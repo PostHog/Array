@@ -31,7 +31,10 @@ export function resolveGatewayProduct({
   return "posthog_code";
 }
 
-export { buildPosthogPropertyHeaderLines as buildGatewayPropertyHeaders } from "@posthog/shared/posthog-property-headers";
+export {
+  buildPosthogPropertyHeaderLines as buildGatewayPropertyHeaders,
+  buildPosthogPropertyHeaderRecord as buildGatewayPropertyHeaderRecord,
+} from "@posthog/shared/posthog-property-headers";
 
 function getGatewayBaseUrl(posthogHost: string): string {
   const url = new URL(posthogHost);
@@ -88,11 +91,4 @@ export function getGatewayUsageUrl(
   product: GatewayProduct = "posthog_code",
 ): string {
   return `${getGatewayBaseUrl(posthogHost)}/v1/usage/${product}`;
-}
-
-export function getGatewayInvalidatePlanCacheUrl(
-  posthogHost: string,
-  product: GatewayProduct = "posthog_code",
-): string {
-  return `${getGatewayBaseUrl(posthogHost)}/v1/usage/${product}/invalidate-plan-cache`;
 }

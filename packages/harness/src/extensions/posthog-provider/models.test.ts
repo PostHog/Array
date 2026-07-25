@@ -21,6 +21,18 @@ describe("gatewayBaseUrlForApi", () => {
       getLlmGatewayUrl("dev"),
     );
   });
+
+  it("routes models through an explicit gateway override", () => {
+    expect(
+      gatewayBaseUrlForApi("anthropic-messages", "us", "http://proxy/"),
+    ).toBe("http://proxy");
+    expect(gatewayBaseUrlForApi("openai-responses", "us", "http://proxy")).toBe(
+      "http://proxy/v1",
+    );
+    expect(
+      gatewayBaseUrlForApi("openai-responses", "us", "http://proxy/v1"),
+    ).toBe("http://proxy/v1");
+  });
 });
 
 describe("resolveModelConfigs", () => {
@@ -139,11 +151,35 @@ describe("resolveModelConfigs", () => {
     expect(opus?.input).toEqual(["text", "image"]);
     expect(opus?.contextWindow).toBe(500000);
     expect(opus?.compat).toEqual({ forceAdaptiveThinking: true });
+    expect(opus?.thinkingLevelMap).toMatchObject({
+      xhigh: "xhigh",
+    });
 
     const gpt = configs.find((model) => model.id === "gpt-5.5");
     expect(gpt?.api).toBe("openai-responses");
+    expect(gpt?.thinkingLevelMap).toMatchObject({
+      off: "none",
+      xhigh: "xhigh",
+    });
     expect(gpt?.input).toEqual(["text"]);
     expect(gpt?.baseUrl).toBe(`${getLlmGatewayUrl("dev")}/v1`);
+  });
+
+  it("fetches models through an authenticated gateway override", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    await resolveModelConfigs("us", "http://127.0.0.1:1234", "proxy-key");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://127.0.0.1:1234/v1/models",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer proxy-key" },
+      }),
+    );
   });
 
   it("falls back to the model id as the display name and default context window", async () => {

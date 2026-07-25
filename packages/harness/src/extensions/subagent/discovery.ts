@@ -1,6 +1,8 @@
 /**
- * Merges `BUNDLED_AGENTS` with project-local `.pi/agents/*.md`, and gates
- * running project-sourced agents behind trust + confirmation.
+ * Merges the bundled agents (`agents.ts`'s `loadBundledAgents()`) with
+ * project-local `.pi/agents/*.md` — both read through the same
+ * `loadAgentsFromDir` frontmatter loader — and gates running project-sourced
+ * agents behind trust + confirmation.
  *
  * Project agents are repo-controlled prompts: a hostile or compromised repo
  * could ship one that instructs the model to exfiltrate secrets or run
@@ -21,9 +23,12 @@ import * as path from "node:path";
 import {
   CONFIG_DIR_NAME,
   type ExtensionContext,
-  parseFrontmatter,
 } from "@earendil-works/pi-coding-agent";
-import { type AgentConfig, BUNDLED_AGENTS } from "./agents";
+import {
+  type AgentConfig,
+  loadAgentsFromDir,
+  loadBundledAgents,
+} from "./agents";
 
 export type AgentScope = "bundled" | "project" | "both";
 
@@ -51,58 +56,16 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
   }
 }
 
-function loadProjectAgents(dir: string): AgentConfig[] {
-  const agents: AgentConfig[] = [];
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return agents;
-  }
-
-  for (const entry of entries) {
-    if (!entry.name.endsWith(".md")) continue;
-    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-
-    let content: string;
-    try {
-      content = fs.readFileSync(path.join(dir, entry.name), "utf-8");
-    } catch {
-      continue;
-    }
-
-    const { frontmatter, body } =
-      parseFrontmatter<Record<string, string>>(content);
-    if (!frontmatter.name || !frontmatter.description) continue;
-
-    const tools = frontmatter.tools
-      ?.split(",")
-      .map((t: string) => t.trim())
-      .filter(Boolean);
-
-    agents.push({
-      name: frontmatter.name,
-      description: frontmatter.description,
-      tools: tools && tools.length > 0 ? tools : undefined,
-      model: frontmatter.model,
-      systemPrompt: body,
-      source: "project",
-    });
-  }
-
-  return agents;
-}
-
 export function discoverAgents(
   cwd: string,
   scope: AgentScope,
 ): AgentDiscoveryResult {
   const projectAgentsDir = findNearestProjectAgentsDir(cwd);
-  const bundled = scope === "project" ? [] : BUNDLED_AGENTS;
+  const bundled = scope === "project" ? [] : loadBundledAgents();
   const project =
     scope === "bundled" || !projectAgentsDir
       ? []
-      : loadProjectAgents(projectAgentsDir);
+      : loadAgentsFromDir(projectAgentsDir, "project");
 
   const agentMap = new Map<string, AgentConfig>();
   for (const agent of bundled) agentMap.set(agent.name, agent);

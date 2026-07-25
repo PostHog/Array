@@ -24,6 +24,7 @@ import { resolveTaskId } from "../session-meta";
  */
 export interface LocalToolsMeta extends LocalToolGateMeta {
   taskId?: string;
+  taskRunId?: string;
   persistence?: { taskId?: string };
   baseBranch?: string;
 }
@@ -78,6 +79,7 @@ export function buildLocalToolsServer(
     cwd,
     token: resolveGithubToken(),
     taskId: resolveTaskId(meta),
+    taskRunId: meta?.taskRunId,
     baseBranch: meta?.baseBranch,
   };
   const tools = enabledLocalTools(toolCtx, meta);

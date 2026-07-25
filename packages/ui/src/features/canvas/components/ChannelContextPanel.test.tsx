@@ -34,7 +34,7 @@ describe("ChannelContextPanel", () => {
   it.each([
     {
       channelName: "project-bluebird",
-      expectedTitle: "#project-bluebird CONTEXT.md",
+      expectedTitle: "project-bluebird CONTEXT.md",
     },
     { channelName: undefined, expectedTitle: "CONTEXT.md" },
   ])(
@@ -63,7 +63,7 @@ describe("ChannelContextPanel", () => {
     const user = userEvent.setup();
     const onClose = renderPanel();
     await user.click(
-      screen.getByRole("button", { name: "Close context panel" }),
+      screen.getByRole("button", { name: "Close CONTEXT.md panel" }),
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   });

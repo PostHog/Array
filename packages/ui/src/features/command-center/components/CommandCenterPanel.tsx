@@ -17,6 +17,7 @@ import { destroyShellTerminal } from "@posthog/ui/features/terminal/destroyShell
 import { ShellTerminal } from "@posthog/ui/features/terminal/ShellTerminal";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { secureRandomString } from "@posthog/ui/utils/random";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -110,6 +111,8 @@ function EnvironmentBadge({ mode }: { mode: WorkspaceMode | null }) {
 
 function EmptyCell({ cellIndex }: { cellIndex: number }) {
   const [selectorOpen, setSelectorOpen] = useState(false);
+  // The command-center terminal is unavailable on cloud-only hosts.
+  const { localWorkspaces } = useHostCapabilities();
   const isCreating = useCommandCenterStore((s) =>
     s.creatingCells.includes(cellIndex),
   );
@@ -133,9 +136,12 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
     setBrainrotCell(cellIndex);
   }, [layout, cells, setBrainrotCell, cellIndex]);
 
-  const handleNewTerminal = useCallback(() => {
-    setTerminalCell(cellIndex, secureRandomString(8));
-  }, [setTerminalCell, cellIndex]);
+  const handleNewTerminal = useCallback(
+    (cwd?: string) => {
+      setTerminalCell(cellIndex, secureRandomString(8), cwd);
+    },
+    [setTerminalCell, cellIndex],
+  );
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -195,7 +201,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           open={selectorOpen}
           onOpenChange={setSelectorOpen}
           onNewTask={() => startCreating(cellIndex)}
-          onNewTerminal={handleNewTerminal}
+          onNewTerminal={localWorkspaces ? handleNewTerminal : undefined}
           onBrainrot={brainrotMode ? handleBrainrot : undefined}
         >
           <button
@@ -279,13 +285,15 @@ function BrainrotCell({ cellIndex }: { cellIndex: number }) {
 function TerminalCell({
   cellIndex,
   terminalId,
+  terminalCwd,
 }: {
   cellIndex: number;
   terminalId: string;
+  terminalCwd: string | null;
 }) {
   const clearCell = useCommandCenterStore((s) => s.clearCell);
   const { getRecentFolders, getFolderDisplayName } = useFolders();
-  const cwd = getRecentFolders(1)[0]?.path;
+  const cwd = terminalCwd ?? getRecentFolders(1)[0]?.path;
   const folderName = cwd ? getFolderDisplayName(cwd) : null;
   const stateKey = getTerminalCellStateKey(terminalId);
 
@@ -413,7 +421,11 @@ export function CommandCenterPanel({
 
   if (cell.terminalId) {
     return (
-      <TerminalCell cellIndex={cell.cellIndex} terminalId={cell.terminalId} />
+      <TerminalCell
+        cellIndex={cell.cellIndex}
+        terminalId={cell.terminalId}
+        terminalCwd={cell.terminalCwd}
+      />
     );
   }
 

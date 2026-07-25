@@ -12,21 +12,23 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { FileEnrichmentDeps } from "../../../enrichment/file-enricher";
 import { IS_ROOT } from "../../../utils/common";
+import { buildGatewayPropertyHeaders } from "../../../utils/gateway";
 import type { Logger } from "../../../utils/logger";
 import type { TaskState } from "../conversion/task-state";
 import {
   createPostToolUseHook,
   createPreToolUseHook,
   createReadEnrichmentHook,
+  createReadImageGuardHook,
   createSignedCommitGuardHook,
   createSubagentRewriteHook,
   createTaskHook,
   type EnrichedReadCache,
   type OnModeChange,
 } from "../hooks";
-import type { CodeExecutionMode } from "../tools";
+import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
-import { APPENDED_INSTRUCTIONS } from "./instructions";
+import { buildAppendedInstructions } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
 import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
 import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
@@ -50,6 +52,13 @@ export type GatewayEnv = {
   openaiApiKey: string;
   /** Task-specific custom headers forwarded to the gateway (e.g. task_id, run_id). */
   anthropicCustomHeaders?: string;
+  /**
+   * Same task-metadata attribution headers as {@link anthropicCustomHeaders},
+   * in record form for the codex/OpenAI path (which sets provider
+   * `http_headers` rather than `ANTHROPIC_CUSTOM_HEADERS`). Includes `team_id`,
+   * which the Claude path instead appends in {@link buildEnvironment}.
+   */
+  openaiCustomHeaders?: Record<string, string>;
   /** PostHog project ID for per-team attribution headers. */
   posthogProjectId?: string;
 };
@@ -58,6 +67,7 @@ export interface BuildOptionsParams {
   cwd: string;
   mcpServers: Record<string, McpServerConfig>;
   permissionMode: CodeExecutionMode;
+  posthogExecPermissionRegex?: RegExp;
   canUseTool: CanUseTool;
   logger: Logger;
   systemPrompt?: Options["systemPrompt"];
@@ -93,11 +103,15 @@ export interface BuildOptionsParams {
 
 export function buildSystemPrompt(
   customPrompt?: unknown,
+  opts?: { spokenNarration?: boolean },
 ): Options["systemPrompt"] {
+  const appendedInstructions = buildAppendedInstructions({
+    spokenNarration: opts?.spokenNarration === true,
+  });
   const defaultPrompt: Options["systemPrompt"] = {
     type: "preset",
     preset: "claude_code",
-    append: APPENDED_INSTRUCTIONS,
+    append: appendedInstructions,
   };
 
   if (!customPrompt) {
@@ -105,7 +119,7 @@ export function buildSystemPrompt(
   }
 
   if (typeof customPrompt === "string") {
-    return customPrompt + APPENDED_INSTRUCTIONS;
+    return customPrompt + appendedInstructions;
   }
 
   if (
@@ -116,7 +130,7 @@ export function buildSystemPrompt(
   ) {
     return {
       ...defaultPrompt,
-      append: customPrompt.append + APPENDED_INSTRUCTIONS,
+      append: customPrompt.append + appendedInstructions,
     };
   }
 
@@ -156,7 +170,7 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
   // get_llm_client(team_id=...).
   const projectId = gateway?.posthogProjectId ?? process.env.POSTHOG_PROJECT_ID;
   if (projectId) {
-    headerLines.push(`x-posthog-property-team_id: ${projectId}`);
+    headerLines.push(buildGatewayPropertyHeaders({ team_id: projectId }));
   }
   // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
   headerLines.push("x-posthog-use-bedrock-fallback: true");
@@ -183,7 +197,9 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
     }),
     ...(gateway?.openaiBaseUrl && { OPENAI_BASE_URL: gateway.openaiBaseUrl }),
     ...(gateway?.openaiApiKey && { OPENAI_API_KEY: gateway.openaiApiKey }),
-    ELECTRON_RUN_AS_NODE: "1",
+    ...((process.versions.electron || process.env.ELECTRON_RUN_AS_NODE) && {
+      ELECTRON_RUN_AS_NODE: "1",
+    }),
     CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL: "true",
     // Offload all MCP tools by default
     ENABLE_TOOL_SEARCH: "auto:0",
@@ -203,6 +219,7 @@ function buildHooks(
     | ((subTool: string, commandText?: string) => void)
     | undefined,
   settingsManager: SettingsManager,
+  posthogExecPermissionRegex: RegExp | undefined,
   logger: Logger,
   enrichmentDeps: FileEnrichmentDeps | undefined,
   enrichedReadCache: EnrichedReadCache | undefined,
@@ -214,6 +231,7 @@ function buildHooks(
   rtkPrefix: string | undefined,
 ): Options["hooks"] {
   const postToolUseHooks = [
+    createReadImageGuardHook(),
     createPostToolUseHook({
       onModeChange,
       onPostHogResourceUsed,
@@ -226,7 +244,7 @@ function buildHooks(
   }
 
   const preToolUseHooks = [
-    createPreToolUseHook(settingsManager, logger),
+    createPreToolUseHook(settingsManager, logger, posthogExecPermissionRegex),
     createSubagentRewriteHook(logger, registeredAgents),
   ];
   if (cloudMode) {
@@ -436,7 +454,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     cwd: params.cwd,
     includePartialMessages: true,
     allowDangerouslySkipPermissions: !IS_ROOT || !!process.env.IS_SANDBOX,
-    permissionMode: params.permissionMode,
+    permissionMode: toSdkPermissionMode(params.permissionMode),
     canUseTool: params.canUseTool,
     tools,
     agents,
@@ -455,6 +473,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.onModeChange,
       params.onPostHogResourceUsed,
       params.settingsManager,
+      params.posthogExecPermissionRegex,
       params.logger,
       params.enrichmentDeps,
       params.enrichedReadCache,

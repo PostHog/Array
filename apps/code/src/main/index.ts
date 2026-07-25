@@ -2,7 +2,7 @@ import "reflect-metadata";
 import os from "node:os";
 import { TypedEventEmitter } from "@posthog/shared";
 import type { WorkspaceClient } from "@posthog/workspace-client/client";
-import { createWorkspaceClient } from "@posthog/workspace-client/client";
+import { createReconnectingWorkspaceClient } from "@posthog/workspace-client/client";
 import type { FileWatcherEvent } from "@posthog/workspace-client/types";
 import { app, BrowserWindow, dialog, session } from "electron";
 import log from "electron-log/main";
@@ -72,6 +72,7 @@ import {
   WORKSPACE_SERVER_SERVICE,
   WORKSPACE_SERVICE,
 } from "./di/tokens";
+import { setupExternalLinkPermissionHandlers } from "./external-links";
 import { posthogNodeAnalytics } from "./platform-adapters/posthog-analytics";
 import { registerMcpSandboxProtocol } from "./protocols/mcp-sandbox";
 import type { AppLifecycleService } from "./services/app-lifecycle/service";
@@ -82,7 +83,11 @@ import {
   focusSessionStore,
   focusWorktreePaths,
 } from "./services/focus/desktop-adapters";
-import type { WorkspaceServerService } from "./services/workspace-server/service";
+import {
+  WorkspaceServerEvent,
+  type WorkspaceServerService,
+  WorkspaceServerStatus,
+} from "./services/workspace-server/service";
 import {
   collectMemorySnapshot,
   flattenMemorySnapshot,
@@ -129,6 +134,19 @@ export class FileWatcherBridge extends TypedEventEmitter<FileWatcherEventsByKind
     if (!sub) return;
     sub.unsubscribe();
     this.subs.delete(repoPath);
+  }
+
+  /**
+   * Tear down and re-create every active watch. The workspace-server child
+   * respawns on a new port after a crash; the old SSE subscriptions keep
+   * retrying the dead port forever, so the boot wiring calls this when the
+   * server reports ready again.
+   */
+  resubscribeAll(): void {
+    for (const repoPath of [...this.subs.keys()]) {
+      this.stopWatching(repoPath);
+      this.startWatching(repoPath);
+    }
   }
 }
 
@@ -314,10 +332,10 @@ app.whenReady().then(async () => {
     );
     dialog.showMessageBoxSync({
       type: "warning",
-      title: "Move PostHog Code to Applications",
-      message: `PostHog Code is running from a location with read-only access:\n\n${bundleRoot}`,
+      title: "Move PostHog to Applications",
+      message: `PostHog is running from a location with read-only access:\n\n${bundleRoot}`,
       detail:
-        "After quitting, move PostHog Code to your Applications folder, then open it from there.",
+        "After quitting, move PostHog to your Applications folder, then open it from there.",
       buttons: ["Quit"],
       defaultId: 0,
     });
@@ -329,7 +347,7 @@ app.whenReady().then(async () => {
   const buildDate = __BUILD_DATE__ ?? "dev";
   log.info(
     [
-      `PostHog Code electron v${app.getVersion()} booting up`,
+      `PostHog electron v${app.getVersion()} booting up`,
       `Commit: ${commit}`,
       `Date: ${buildDate}`,
       `Electron: ${process.versions.electron}`,
@@ -343,6 +361,7 @@ app.whenReady().then(async () => {
     `Logs: main=${getLogFilePath()} chromium=${getChromiumLogFilePath() ?? "(disabled)"} network=${getNetworkLogFilePath()}`,
   );
   ensureClaudeConfigDir();
+  setupExternalLinkPermissionHandlers(session.fromPartition("persist:main"));
   registerMcpSandboxProtocol();
   installRendererNetworkLogging(
     session.fromPartition("persist:main").webRequest,
@@ -353,13 +372,25 @@ app.whenReady().then(async () => {
   const wsServer = container.get<WorkspaceServerService>(
     WORKSPACE_SERVER_SERVICE,
   );
-  const connection = await wsServer.start();
-  const workspaceClient = createWorkspaceClient(connection);
+  await wsServer.start();
+  // The workspace-server child respawns on a new port/secret after a crash;
+  // a reconnecting client follows the current connection so main-process
+  // callers don't keep hitting the dead port for the rest of the session.
+  const workspaceClient = createReconnectingWorkspaceClient(() =>
+    wsServer.getConnection(),
+  );
   container.bind(WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(GIT_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
   container.bind(CONNECTIVITY_CLIENT).toConstantValue(workspaceClient);
   container.bind(ENVIRONMENT_CLIENT).toConstantValue(workspaceClient);
   const fileWatcherBridge = new FileWatcherBridge(workspaceClient);
+  // Re-establish live watches after a workspace-server respawn — the old SSE
+  // subscriptions keep retrying the dead port and never recover on their own.
+  wsServer.on(WorkspaceServerEvent.StatusChanged, ({ status }) => {
+    if (status === WorkspaceServerStatus.Ready) {
+      fileWatcherBridge.resubscribeAll();
+    }
+  });
   container.bind(FILE_WATCHER_SERVICE).toConstantValue(fileWatcherBridge);
   container.bind(FILE_WATCHER_CONTROL).toConstantValue(fileWatcherBridge);
   container.bind(FOCUS_WORKSPACE_CLIENT).toConstantValue(workspaceClient);
@@ -486,9 +517,21 @@ if (process.platform !== "win32") {
   process.on("SIGHUP", () => handleShutdownSignal("SIGHUP"));
 }
 
+// A deliberate Ctrl+C during an interactive prompt makes Node's readline
+// SIGINT trap reject the pending prompt with an AbortError (code ABORT_ERR).
+// It is user-initiated, not a crash, so don't report it as an uncaught error.
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.name === "AbortError" ||
+    (error as NodeJS.ErrnoException).code === "ABORT_ERR");
+
 process.on("uncaughtException", (error) => {
   if (error.message === "write EIO") {
     log.transports.console.level = false;
+    return;
+  }
+  if (isAbortError(error)) {
+    log.debug("Ignoring user-initiated abort", error);
     return;
   }
   log.error("Uncaught exception", error);
@@ -499,6 +542,10 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
+  if (isAbortError(reason)) {
+    log.debug("Ignoring user-initiated abort", reason);
+    return;
+  }
   log.error("Unhandled rejection", reason);
   const error = reason instanceof Error ? reason : new Error(String(reason));
   posthogNodeAnalytics.captureException(error, {

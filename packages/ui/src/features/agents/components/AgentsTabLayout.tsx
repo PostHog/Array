@@ -22,7 +22,7 @@ const TAB_DESCRIPTION: Record<AgentsTab, string> = {
 /**
  * Shared chrome for the two top-level Agents tabs. Each tab view renders its
  * own content inside this layout and declares which tab is active, so the
- * header + tab bar stay identical across Scouts and Applications while detail
+ * header + tab bar stay identical across Scouts and Fleet while detail
  * pages (a scout, an agent, a session) keep their own focused chrome.
  */
 export function AgentsTabLayout({
@@ -50,7 +50,7 @@ export function AgentsTabLayout({
   const pageContext: AgentBuilderPageContext =
     activeTab === "applications" ? { kind: "agent-list" } : { kind: "scouts" };
   useSetAgentBuilderPage(pageContext);
-  // The Applications tab is gated behind the agent-platform flag.
+  // The Fleet tab is gated behind the agent-platform flag.
   const applicationsEnabled = useFeatureFlag(AGENT_PLATFORM_FLAG);
 
   return (
@@ -76,7 +76,7 @@ export function AgentsTabLayout({
           {applicationsEnabled ? (
             <TabLink
               to="/code/agents/applications"
-              label="Applications"
+              label="Fleet"
               active={activeTab === "applications"}
             />
           ) : null}

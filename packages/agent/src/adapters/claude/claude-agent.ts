@@ -57,6 +57,8 @@ import {
   type Enrichment,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
+import { PostHogAPIClient } from "../../posthog-api";
+import { resolvePostHogExecPermissionRegex } from "../../posthog-exec-permission";
 import {
   classifyPostHogExecCall,
   isUnclassifiedPostHogSubTool,
@@ -74,8 +76,8 @@ import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
-import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
-import { resolveTaskId } from "../session-meta";
+import { LOCAL_TOOLS_MCP_NAME, type LocalToolCtx } from "../local-tools";
+import { resolveSpokenNarration, resolveTaskId } from "../session-meta";
 import {
   buildBreakdown,
   emptyBaseline,
@@ -135,6 +137,7 @@ import {
   CODE_EXECUTION_MODES,
   type CodeExecutionMode,
   getAvailableModes,
+  toSdkPermissionMode,
 } from "./tools";
 import type {
   BackgroundTerminal,
@@ -481,12 +484,20 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const hasInFlightTurns =
       this.session.activeTurn !== null || this.session.turnQueue.length > 0;
 
-    if (hasInFlightTurns && isSteerMeta(params._meta)) {
+    const isSteer = isSteerMeta(params._meta);
+    if (hasInFlightTurns && isSteer) {
       // Fold into the running turn (promptToClaude tagged it priority:"next");
       // the benign end_turn is ignored by clients, which key off _meta.steer.
+      const owner =
+        this.session.activeTurn ??
+        this.session.turnQueue.find((turn) => !turn.settled);
+      owner?.pendingSteerUuids.add(promptUuid);
       this.session.input.push(userMessage);
       await this.broadcastUserMessage(params);
-      return { stopReason: "end_turn" };
+      return { stopReason: "end_turn", _meta: { steer: true } };
+    }
+    if (isSteer) {
+      return { stopReason: "end_turn", _meta: { steer: false } };
     }
 
     if (!hasInFlightTurns && !isLocalOnlyCommand) {
@@ -506,6 +517,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const turn: Turn = {
       promptUuid,
+      pendingSteerUuids: new Set(),
       isLocalOnlyCommand,
       commandName: commandMatch?.[1],
       broadcast: () => this.broadcastUserMessage(params),
@@ -638,6 +650,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           acc.cachedReadTokens +
           acc.cachedWriteTokens,
       };
+    };
+
+    const recordContextUsage = (nextTotal: number): boolean => {
+      if (nextTotal <= 0 || nextTotal === lastAssistantTotalUsage) {
+        return false;
+      }
+      const knownTotal = Math.max(
+        lastAssistantTotalUsage ?? 0,
+        session.contextUsed ?? 0,
+      );
+      if (nextTotal < knownTotal) {
+        return false;
+      }
+      lastAssistantTotalUsage = nextTotal;
+      return true;
     };
 
     const resetTurnScratch = () => {
@@ -821,16 +848,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 fetchContextUsedTokens(query, this.logger),
                 cancelController.signal,
               );
-              lastAssistantTotalUsage =
-                usedTokens.result === "success" ? (usedTokens.value ?? 0) : 0;
-              await this.client.sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "usage_update",
-                  used: lastAssistantTotalUsage,
-                  size: windowSize(),
-                },
-              });
+              if (usedTokens.result === "success" && usedTokens.value != null) {
+                lastAssistantTotalUsage = usedTokens.value;
+                session.contextUsed = usedTokens.value;
+                session.contextSize = windowSize();
+                await this.client.sessionUpdate({
+                  sessionId,
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: lastAssistantTotalUsage,
+                    size: windowSize(),
+                  },
+                });
+              }
             }
             if (message.subtype === "commands_changed") {
               session.knownSlashCommands = collectKnownSlashCommands(
@@ -945,7 +975,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                     sessionUpdate: "agent_message_chunk",
                     content: {
                       type: "text",
-                      text: `Unsupported slash command: \`${cmd}\`. PostHog Code does not implement this command.`,
+                      text: `Unsupported slash command: \`${cmd}\`. PostHog does not implement this command.`,
                     },
                   },
                 });
@@ -1057,6 +1087,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 ),
               },
             );
+
+            if (
+              !isTaskNotification &&
+              session.activeTurn &&
+              session.activeTurn.pendingSteerUuids.size > 0
+            ) {
+              this.logger.debug(
+                "Deferring turn completion until pending steers are consumed",
+                {
+                  sessionId,
+                  pendingSteers: session.activeTurn.pendingSteerUuids.size,
+                },
+              );
+              break;
+            }
 
             if (
               (message as { stop_reason?: string }).stop_reason === "refusal"
@@ -1175,8 +1220,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 lastStreamUsage.cache_read_input_tokens +
                 lastStreamUsage.cache_creation_input_tokens;
 
-              if (nextTotal !== lastAssistantTotalUsage) {
-                lastAssistantTotalUsage = nextTotal;
+              if (recordContextUsage(nextTotal)) {
                 await this.client.sessionUpdate({
                   sessionId,
                   update: {
@@ -1197,6 +1241,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             // active one first), then drops from the feed. Runs before the
             // cancelled guard so a turn enqueued after a cancel still starts.
             if (message.type === "user" && "uuid" in message && message.uuid) {
+              if (session.activeTurn?.pendingSteerUuids.delete(message.uuid)) {
+                break;
+              }
               const queued = session.turnQueue.find(
                 (t) => t.promptUuid === message.uuid && !t.settled,
               );
@@ -1268,21 +1315,23 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 cache_read_input_tokens: number | null;
                 cache_creation_input_tokens: number | null;
               };
-              lastAssistantTotalUsage =
+              const nextTotal =
                 (usage.input_tokens ?? 0) +
                 (usage.output_tokens ?? 0) +
                 (usage.cache_read_input_tokens ?? 0) +
                 (usage.cache_creation_input_tokens ?? 0);
 
-              await this.client.sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "usage_update",
-                  used: lastAssistantTotalUsage,
-                  size: windowSize(),
-                  cost: null,
-                },
-              });
+              if (recordContextUsage(nextTotal)) {
+                await this.client.sessionUpdate({
+                  sessionId,
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: nextTotal,
+                    size: windowSize(),
+                    cost: null,
+                  },
+                });
+              }
             }
 
             const result = await handleUserAssistantMessage(message, context);
@@ -1778,7 +1827,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.session.modeBeforePlan = previousMode;
     }
     try {
-      await this.session.query.setPermissionMode(modeId as CodeExecutionMode);
+      await this.session.query.setPermissionMode(
+        toSdkPermissionMode(modeId as CodeExecutionMode),
+      );
     } catch (error) {
       this.session.permissionMode = previousMode;
       if (error instanceof Error) {
@@ -1829,6 +1880,30 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     } catch {
       // Query may already be closed.
     }
+  }
+
+  // Backs the `finish` local tool: marks the task run terminal so the Temporal
+  // workflow tears the sandbox down. Only wired when we have both the run
+  // identifiers and a PostHog API config, i.e. a real cloud run.
+  private buildRequestFinish(
+    taskId: string | undefined,
+    taskRunId: string | undefined,
+  ): LocalToolCtx["requestFinish"] {
+    const config = this.options?.posthogApiConfig;
+    if (!config || !taskId || !taskRunId) {
+      return undefined;
+    }
+    return async (status, message) => {
+      try {
+        await new PostHogAPIClient(config).updateTaskRun(taskId, taskRunId, {
+          status,
+          ...(status === "failed" && message ? { error_message: message } : {}),
+        });
+      } catch (error) {
+        this.logger.error("finish tool failed to mark run terminal", error);
+        throw error;
+      }
+    };
   }
 
   private async createSession(
@@ -1888,13 +1963,26 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // needs so the session doesn't pin the whole meta object.
     const baseBranch = meta?.baseBranch;
     const environment = meta?.environment;
+    const spokenNarration = resolveSpokenNarration(meta);
+    const requestFinish = this.buildRequestFinish(taskId, meta?.taskRunId);
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
     > => {
       const server = createLocalToolsMcpServer(
-        { cwd, token: resolveGithubToken(), taskId, baseBranch },
-        { environment },
+        {
+          cwd,
+          token: resolveGithubToken(),
+          taskId,
+          taskRunId: meta?.taskRunId,
+          baseBranch,
+          requestFinish,
+        },
+        {
+          environment,
+          spokenNarration,
+          background: meta?.mode === "background",
+        },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
     };
@@ -1914,7 +2002,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       ...initialInProcess,
     };
 
-    const systemPrompt = buildSystemPrompt(meta?.systemPrompt);
+    const systemPrompt = buildSystemPrompt(meta?.systemPrompt, {
+      spokenNarration,
+    });
 
     if (meta?.mcpToolApprovals) {
       setMcpToolApprovalStates(meta.mcpToolApprovals);
@@ -1938,12 +2028,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       CODE_EXECUTION_MODES.includes(meta.permissionMode as CodeExecutionMode)
         ? (meta.permissionMode as CodeExecutionMode)
         : "default";
+    const posthogExecPermissionRegex = resolvePostHogExecPermissionRegex(
+      meta?.posthogExecPermissionRegex,
+      (message) =>
+        this.logger.warn(
+          "Invalid posthogExecPermissionRegex in session metadata; using default",
+          { message },
+        ),
+    );
 
     const taskState: TaskState = new Map();
     const options = buildSessionOptions({
       cwd,
       mcpServers,
       permissionMode,
+      posthogExecPermissionRegex,
       canUseTool: this.createCanUseTool(sessionId, meta?.allowedDomains),
       logger: this.logger,
       systemPrompt,
@@ -1998,6 +2097,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cancelled: false,
       settingsManager,
       permissionMode,
+      cloudMode: cloudRun,
+      posthogExecPermissionRegex,
       abortController,
       accumulatedUsage: {
         inputTokens: 0,
@@ -2085,6 +2186,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.getModelConfigOptions(
         settingsManager.getSettings().model || meta?.model || undefined,
         this.options?.gatewayEnv?.anthropicBaseUrl,
+        this.options?.gatewayEnv?.anthropicAuthToken,
       ),
       ...(meta?.taskRunId
         ? [

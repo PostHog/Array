@@ -1,5 +1,6 @@
 import type { Adapter } from "@posthog/shared";
 import type { AgentMode } from "../types";
+import type { RtkSavingsSummary } from "./rtk-savings";
 import type { RemoteMcpServer } from "./schemas";
 
 export interface ClaudeCodeConfig {
@@ -11,6 +12,7 @@ export interface ClaudeCodeConfig {
 
 export interface AgentServerConfig {
   port: number;
+  agentStateDir?: string;
   repositoryPath?: string;
   repoReadyFile?: string;
   apiUrl: string;
@@ -22,6 +24,12 @@ export interface AgentServerConfig {
   eventIngestBaseUrl?: string;
   eventIngestStreamWindowMs?: number;
   eventIngestKeepStreamOpen?: boolean;
+  /** Full OTLP logs URL for run telemetry, e.g. https://us.i.posthog.com/i/v1/logs */
+  otelLogsUrl?: string;
+  /** Project API key for the OTLP logs/traces endpoints */
+  otelLogsToken?: string;
+  /** Full OTLP traces URL for run spans, e.g. https://us.i.posthog.com/i/v1/traces */
+  otelTracesUrl?: string;
   mode: AgentMode;
   taskId: string;
   runId: string;
@@ -31,10 +39,22 @@ export interface AgentServerConfig {
   autoPublish?: boolean;
   version?: string;
   mcpServers?: RemoteMcpServer[];
+  /**
+   * Case-insensitive JavaScript regex matched against PostHog `exec` sub-tool
+   * names. Overrides the default approval regex for interactive calls.
+   */
+  posthogExecPermissionRegex?: string;
+  /**
+   * Names of desktop-only local MCP servers to expose through loopback relay
+   * endpoints (docs/cloud-mcp-relay.md). Names only; the desktop resolves
+   * each name against local config at execution time.
+   */
+  relayMcpServers?: string[];
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];
   runtimeAdapter?: Adapter;
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  resolveRtkSavings?: () => Promise<RtkSavingsSummary | null>;
 }

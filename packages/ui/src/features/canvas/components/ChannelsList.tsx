@@ -1,4 +1,7 @@
+import { Collapsible } from "@base-ui/react/collapsible";
 import {
+  CaretDownIcon,
+  CaretRightIcon,
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
@@ -31,17 +34,18 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Empty,
+  EmptyHeader,
   MenuLabel,
-  Separator,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
-import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
+import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/createCanvasAnalytics";
+import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
   useChannelStars,
   useChannelStarToggle,
@@ -56,10 +60,12 @@ import {
   PERSONAL_CHANNEL_NAME,
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { Box, Flex, Text } from "@radix-ui/themes";
+import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { hostClient } from "../hostClient";
@@ -286,7 +292,14 @@ function ChannelMenu({
 
 // One channel in the list: a "# name" row that navigates to the channel home.
 // No expansion — the channel's surfaces live in the in-channel top nav.
-function ChannelSection({ channel }: { channel: Channel }) {
+function ChannelSection({
+  channel,
+  isUnread,
+}: {
+  channel: Channel;
+  /** Bolds the name: activity here the viewer hasn't seen. */
+  isUnread?: boolean;
+}) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const base = `/website/${channel.id}`;
@@ -335,10 +348,26 @@ function ChannelSection({ channel }: { channel: Channel }) {
               }}
               className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
-              <HashIcon size={14} className="shrink-0 text-gray-9" />
+              <HashIcon
+                size={14}
+                weight={isUnread ? "bold" : undefined}
+                className={cn(
+                  "shrink-0",
+                  isUnread || isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground group-hover/button:text-foreground",
+                )}
+              />
               <span
                 className={cn(
-                  "truncate font-medium text-[13px] text-gray-12 group-hover/chan:pr-8",
+                  "truncate text-[13px] group-hover/chan:pr-8",
+                  // Bold is unread's alone; full contrast is shared with the
+                  // channel you're in. Either way there's no hover brighten
+                  // left to do, so those rows skip it.
+                  isUnread ? "font-bold" : "font-medium",
+                  isUnread || isActive
+                    ? "text-foreground"
+                    : "text-muted-foreground group-hover/button:text-foreground",
                   menuOpen && "pr-8",
                 )}
               >
@@ -440,7 +469,7 @@ function ChannelSection({ channel }: { channel: Channel }) {
       >
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete #{channel.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {channel.name}?</AlertDialogTitle>
             <AlertDialogDescription>
               This permanently deletes the channel and can’t be undone.
               <ul className="list-disc ps-4">
@@ -491,54 +520,237 @@ function PersonalChannelRow() {
   const { createChannel, isCreating } = useChannelMutations();
   // Listing backend channels lazily provisions the personal channel server-side.
   useTaskChannels();
+  // The "+" dropdown (New task / New canvas), mirroring a shared channel row.
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const isUnread = useIsChannelUnread()(PERSONAL_CHANNEL_NAME);
 
   const meFolder = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+  const createAndOpenCanvas = useCreateAndOpenDashboard(meFolder?.id);
   const isActive =
     !!meFolder &&
     (pathname === `/website/${meFolder.id}` ||
       pathname.startsWith(`/website/${meFolder.id}/`));
 
-  const open = async () => {
+  // The "me" folder is created on first use, so every action resolves the id
+  // rather than closing over it — the row is actionable before it exists. The
+  // create is shared (ensurePersonalChannel) so a row click racing its "+" menu
+  // can't provision two.
+  const ensureFolderId = async (): Promise<string | undefined> => {
     try {
-      const folder = meFolder ?? (await createChannel(PERSONAL_CHANNEL_NAME));
-      void navigate({
-        to: "/website/$channelId",
-        params: { channelId: folder.id },
-      });
+      return (await ensurePersonalChannel(channels, createChannel)).id;
     } catch (error) {
-      toast.error("Couldn't open #me", {
+      toast.error("Couldn't open me", {
         description: error instanceof Error ? error.message : String(error),
       });
+      return undefined;
     }
   };
 
+  const open = async () => {
+    const channelId = await ensureFolderId();
+    if (!channelId) return;
+    void navigate({ to: "/website/$channelId", params: { channelId } });
+  };
+
+  const newTask = async () => {
+    const channelId = await ensureFolderId();
+    if (!channelId) return;
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "new_task_open",
+      surface: "sidebar",
+      channel_id: channelId,
+    });
+    void navigate({ to: "/website/$channelId/new", params: { channelId } });
+  };
+
+  const newCanvas = async () => {
+    const channelId = await ensureFolderId();
+    if (!channelId) return;
+    trackAndCreateCanvas(
+      channelId,
+      undefined,
+      "sidebar",
+      () => void createAndOpenCanvas({ channelId }),
+    );
+  };
+
   return (
-    <Button
-      variant="default"
-      size="default"
-      left
-      data-selected={isActive || undefined}
-      disabled={isCreating}
-      onClick={() => void open()}
-      className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+    <Box className="group/chan relative">
+      <Button
+        variant="default"
+        size="default"
+        left
+        data-selected={isActive || undefined}
+        disabled={isCreating}
+        onClick={() => void open()}
+        className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+      >
+        <HashIcon
+          size={14}
+          weight={isUnread ? "bold" : undefined}
+          className={cn(
+            "shrink-0",
+            isUnread || isActive
+              ? "text-foreground"
+              : "text-muted-foreground group-hover/button:text-foreground",
+          )}
+        />
+        <span
+          className={cn(
+            "truncate text-[13px]",
+            isUnread ? "font-bold" : "font-medium",
+            isUnread || isActive
+              ? "text-foreground"
+              : "text-muted-foreground group-hover/button:text-foreground",
+          )}
+        >
+          {PERSONAL_CHANNEL_NAME}
+        </span>
+        {/* The lock and the hover "+" share the right edge, so fade the lock
+            out as the "+" comes in. */}
+        <LockSimpleIcon
+          size={12}
+          className={cn(
+            "ml-auto shrink-0 text-chrome-foreground transition-opacity",
+            newMenuOpen
+              ? "opacity-0"
+              : "opacity-100 group-hover/chan:opacity-0",
+          )}
+        />
+      </Button>
+      <div className="absolute top-0 right-1">
+        <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon-xs"
+                      aria-label={`New in ${PERSONAL_CHANNEL_NAME}`}
+                      className={cn(
+                        "gap-1 transition-opacity group-hover:border-border",
+                        newMenuOpen
+                          ? "opacity-100"
+                          : "opacity-0 group-hover/chan:opacity-100",
+                      )}
+                    >
+                      <PlusIcon size={12} weight="bold" />
+                    </Button>
+                  }
+                />
+              }
+            />
+            <TooltipContent side="top">New…</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent
+            align="start"
+            side="bottom"
+            sideOffset={4}
+            className="w-auto min-w-fit"
+          >
+            <DropdownMenuItem onClick={() => void newTask()}>
+              <FileTextIcon size={14} />
+              New task
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void newCanvas()}>
+              <ChartBarIcon size={14} />
+              New canvas
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </Box>
+  );
+}
+
+// Collapse state is keyed per section in the shared sidebar store, so it
+// persists across navigation and restarts. Prefixed to stay clear of the Code
+// sidebar's folder sections, which key the same set by folder path.
+const STARRED_SECTION_ID = "channels:starred";
+const CHANNELS_SECTION_ID = "channels:all";
+
+// A collapsible sidebar group ("Starred" / "Channels"). Base UI directly rather
+// than quill's Collapsible: quill styles its trigger as a button (which fought
+// the label styling) and animates the panel height (which janked on a list this
+// long). Unstyled parts give a plain label row that snaps.
+//
+// The whole header row is the trigger. It rests as a "#" and swaps to a chevron
+// on hover or keyboard focus, so the row only advertises the disclosure when
+// you're actually reaching for it.
+function ChannelGroup({
+  sectionId,
+  label,
+  className,
+  children,
+}: {
+  sectionId: string;
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const collapsedSections = useSidebarStore((s) => s.collapsedSections);
+  const toggleSection = useSidebarStore((s) => s.toggleSection);
+  const isOpen = !collapsedSections.has(sectionId);
+
+  return (
+    <Collapsible.Root
+      open={isOpen}
+      // The store only exposes a toggle, so drive it from the requested value:
+      // an event for the state we're already in is then a no-op rather than an
+      // inversion.
+      onOpenChange={(open) => {
+        if (open !== isOpen) toggleSection(sectionId);
+      }}
+      className={className}
     >
-      <HashIcon size={14} className="shrink-0 text-gray-9" />
-      <span className="truncate font-medium text-[13px] text-gray-12">
-        {PERSONAL_CHANNEL_NAME}
-      </span>
-      <LockSimpleIcon size={12} className="ml-auto shrink-0 text-gray-9" />
-    </Button>
+      {/* MenuLabel carries the sidebar's label styling; `render` keeps it a
+          real button so the whole row is clickable. */}
+      <Collapsible.Trigger
+        className="group/group-trigger flex w-full items-center gap-2"
+        render={<MenuLabel render={<button type="button" />} />}
+      >
+        <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+          <HashIcon
+            size={14}
+            className="group-hover/group-trigger:hidden group-focus-visible/group-trigger:hidden"
+          />
+          {isOpen ? (
+            <CaretDownIcon
+              size={14}
+              className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
+            />
+          ) : (
+            <CaretRightIcon
+              size={14}
+              className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
+            />
+          )}
+        </span>
+        {label}
+      </Collapsible.Trigger>
+      {/* Stay mounted while collapsed. Every row builds a context menu, a
+          dropdown, a tooltip and two dialogs up front, so unmounting on close
+          makes each expand rebuild the lot (~940ms for 46 channels, vs ~80ms
+          to collapse). */}
+      <Collapsible.Panel keepMounted>
+        <div className="pl-5">{children}</div>
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 }
 
 // The channel list — the Channels space sidebar body. The private "#me"
 // channel is pinned at the top; starred channels surface in their own section
 // so the ones you use most stay in reach; the rest sit under a "Channels"
-// label with the "New" channel button.
+// label. Creating anything goes through the floating ChannelsFab, mounted by
+// the sidebar outside this scroll region.
 export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
-  const [modalOpen, setModalOpen] = useState(false);
+
+  const isUnread = useIsChannelUnread();
 
   // The "me" folder renders as the pinned personal row, not a shared channel.
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
@@ -562,60 +774,38 @@ export function ChannelsList() {
     // One shared provider groups every row tooltip so that once one shows,
     // moving to the next row reveals its tooltip instantly (no re-delay).
     <TooltipProvider delay={600}>
-      <Flex direction="column" gap="px" className="px-2 pb-2">
-        <Box className="py-1.5">
-          <Separator className="bg-border" />
-        </Box>
-
+      {/* Bottom padding clears the floating create button (ChannelsFab), so the
+          last channel stays reachable at full scroll. */}
+      <Flex direction="column" gap="px" className="px-2 pt-2 pb-16">
         <PersonalChannelRow />
 
         {starred.length > 0 && (
-          <>
-            <Box>
-              <MenuLabel className="flex items-center gap-2 uppercase">
-                <StarIcon size={14} className="text-gray-9" />
-                Starred
-              </MenuLabel>
-            </Box>
-            <div className="pl-2">
-              {starred.map((channel) => (
-                <ChannelSection key={channel.id} channel={channel} />
-              ))}
-            </div>
-          </>
+          <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
+            {starred.map((channel) => (
+              <ChannelSection
+                key={channel.id}
+                channel={channel}
+                isUnread={isUnread(channel.name)}
+              />
+            ))}
+          </ChannelGroup>
         )}
 
-        <Box className={cn(starred.length > 0 && "mt-3")}>
-          <MenuLabel className="group flex items-center justify-between uppercase">
-            <span className="flex items-center gap-2">
-              <HashIcon size={14} className="text-gray-9" />
-              Channels
-            </span>
-            <Button
-              variant="outline"
-              size="icon-xs"
-              onClick={() => setModalOpen(true)}
-              className="-mr-1 group-hover:border-border"
-            >
-              <PlusIcon size={14} />
-            </Button>
-          </MenuLabel>
-        </Box>
-
-        {!isLoading && channels.length === 0 && (
-          <Text size="1" className="px-2 text-gray-9">
-            No channels yet. Create one to get started.
-          </Text>
-        )}
-
-        <div className="pl-2">
+        <ChannelGroup sectionId={CHANNELS_SECTION_ID} label="Channels">
+          {!isLoading && channels.length === 0 && (
+            <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+              <EmptyHeader className="text-left">No channels yet.</EmptyHeader>
+            </Empty>
+          )}
           {others.map((channel) => (
-            <ChannelSection key={channel.id} channel={channel} />
+            <ChannelSection
+              key={channel.id}
+              channel={channel}
+              isUnread={isUnread(channel.name)}
+            />
           ))}
-        </div>
+        </ChannelGroup>
       </Flex>
-
-      <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
     </TooltipProvider>
   );
 }

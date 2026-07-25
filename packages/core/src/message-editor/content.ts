@@ -195,6 +195,11 @@ export function xmlToPlainText(xml: string): string {
   return contentToPlainText(xmlToContent(xml));
 }
 
+/** Wrap plain text in editor content as a single text segment, no chip parsing. */
+export function textToContent(text: string): EditorContent {
+  return { segments: [{ type: "text", text }] };
+}
+
 export function isContentEmpty(
   content: EditorContent | null | string,
 ): boolean {

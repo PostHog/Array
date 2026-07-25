@@ -1,5 +1,6 @@
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import type { Adapter } from "@posthog/shared";
+import type { ModelInfo } from "../gateway-models";
 import type { SessionLogWriter } from "../session-log-writer";
 import type { PostHogAPIConfig, ProcessSpawnedCallback } from "../types";
 import { Logger } from "../utils/logger";
@@ -24,7 +25,7 @@ export type AcpConnectionConfig = {
   logger?: Logger;
   processCallbacks?: ProcessSpawnedCallback;
   codexOptions?: CodexOptions;
-  allowedModelIds?: Set<string>;
+  codexModels?: ReadonlyArray<ModelInfo>;
   /** Callback invoked when the agent calls the create_output tool for structured output */
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
   /** PostHog API config; when set, enables file-read enrichment unless disabled. */
@@ -225,10 +226,12 @@ function createCodexConnection(config: AcpConnectionConfig): AcpConnection {
         apiKey: codexOptions.apiKey,
         codexHome: codexOptions.codexHome,
         developerInstructions: codexOptions.developerInstructions,
+        httpHeaders: codexOptions.httpHeaders,
         configOverrides: codexOptions.configOverrides,
       },
       model: codexOptions.model,
       reasoningEffort: codexOptions.reasoningEffort,
+      gatewayModels: config.codexModels,
       processCallbacks: config.processCallbacks,
       onStructuredOutput: config.onStructuredOutput,
       logger: config.logger?.child("CodexAppServerAgent"),

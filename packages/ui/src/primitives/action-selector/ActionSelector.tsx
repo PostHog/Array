@@ -227,9 +227,9 @@ export function ActionSelector({
       style={{
         outline: "none",
       }}
-      className="rounded-(--radius-3) border border-(--gray-6) bg-(--gray-1)"
+      className="flex max-h-[80vh] flex-col rounded-(--radius-3) border border-(--gray-6) bg-(--gray-1)"
     >
-      <Flex direction="column" gap="2">
+      <Flex direction="column" gap="2" className="min-h-0 flex-1">
         {hasSteps && steps && (
           <StepTabs
             steps={steps}
@@ -253,13 +253,20 @@ export function ActionSelector({
             </Text>
           ))}
 
-        {pendingAction && <Box>{pendingAction}</Box>}
+        {(pendingAction || question) && (
+          <Box className="min-h-0 flex-1 overflow-y-auto">
+            {pendingAction && (
+              <Box mb={question ? "2" : "0"}>{pendingAction}</Box>
+            )}
+            {question && (
+              <Text as="p" className="text-[13px]">
+                {question}
+              </Text>
+            )}
+          </Box>
+        )}
 
         <Box>
-          <Text mb="2" as="p" className="text-[13px]">
-            {question}
-          </Text>
-
           <Flex direction="column" gap="1" px="2">
             {allOptions.map((option, index) => {
               if (isSubmitOption(option.id) || isCancelOption(option.id)) {

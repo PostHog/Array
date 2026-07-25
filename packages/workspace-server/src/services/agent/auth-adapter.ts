@@ -1,4 +1,3 @@
-import { delimiter } from "node:path";
 import {
   type McpToolApprovalState,
   type McpToolApprovals,
@@ -48,9 +47,10 @@ export type McpToolInstallations = Record<string, McpToolInstallationRef>;
 
 interface ConfigureProcessEnvInput {
   credentials: Credentials;
-  mockNodeDir: string;
   proxyUrl: string;
   claudeCliPath: string;
+  /** rtk command-output compression for the session; false opts out. */
+  rtkEnabled?: boolean;
 }
 
 @injectable()
@@ -77,6 +77,17 @@ export class AgentAuthAdapter {
       refreshApiKey: () => this.refreshToken(),
       projectId: credentials.projectId,
     };
+  }
+
+  /**
+   * The current signed-in credentials from auth state, or null when no project is
+   * selected. Lets the mcp-apps config resolver register servers for a cloud run
+   * without a session (where the renderer never supplies credentials).
+   */
+  async getCurrentCredentials(): Promise<Credentials | null> {
+    const { apiHost } = await this.authService.getValidAccessToken();
+    const projectId = this.authService.getState().currentProjectId;
+    return projectId === null ? null : { apiHost, projectId };
   }
 
   async buildMcpServers(credentials: Credentials): Promise<{
@@ -138,23 +149,39 @@ export class AgentAuthAdapter {
     return this.authProxy.start(getLlmGatewayUrl(apiHost));
   }
 
+  /**
+   * Bearer token for direct gateway REST calls (the models fetch), so the
+   * gateway can mark plan-restricted models. Null when auth isn't available —
+   * callers fall back to an anonymous fetch.
+   */
+  async gatewayAuthToken(): Promise<string | null> {
+    try {
+      return await this.getValidToken();
+    } catch {
+      return null;
+    }
+  }
+
   async configureProcessEnv({
     credentials,
-    mockNodeDir,
     proxyUrl,
     claudeCliPath,
+    rtkEnabled,
   }: ConfigureProcessEnvInput): Promise<void> {
     await this.getValidToken();
-
-    const currentPath = process.env.PATH || "";
-    if (!currentPath.split(delimiter).includes(mockNodeDir)) {
-      process.env.PATH = `${mockNodeDir}${delimiter}${currentPath}`;
-    }
 
     process.env.LLM_GATEWAY_URL = proxyUrl;
     process.env.CLAUDE_CODE_EXECUTABLE = claudeCliPath;
     process.env.POSTHOG_API_URL = credentials.apiHost;
     process.env.POSTHOG_PROJECT_ID = String(credentials.projectId);
+    // The agent auto-detects rtk on PATH; an explicit opt-out from settings
+    // pins it off for sessions this process spawns. Deleting on the enabled
+    // path restores auto-detection after a re-enable without a restart.
+    if (rtkEnabled === false) {
+      process.env.POSTHOG_RTK = "0";
+    } else {
+      delete process.env.POSTHOG_RTK;
+    }
   }
 
   private syncTokenEnvironment(token: string): void {

@@ -45,6 +45,10 @@ export type TaskRunStatus =
 
 export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
+// UI-facing terminal outcome for a run. `cancelled` maps to `stopped` (the user
+// deliberately halted it) so the UI can distinguish it from a real failure.
+export type TerminalStatus = "completed" | "failed" | "stopped";
+
 export function isTerminalStatus(
   status: TaskRunStatus | string | null | undefined,
 ): boolean {
@@ -53,6 +57,11 @@ export function isTerminalStatus(
     status !== undefined &&
     TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number])
   );
+}
+
+export interface TaskRunArtifact {
+  id?: string;
+  storage_path?: string;
 }
 
 export interface TaskRun {
@@ -68,6 +77,7 @@ export interface TaskRun {
   reasoning_effort?: string | null;
   output: Record<string, unknown> | null;
   state: Record<string, unknown>;
+  artifacts?: TaskRunArtifact[];
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -86,11 +96,20 @@ export interface StoredLogEntry {
   direction?: "client" | "agent";
 }
 
+export interface CloudArtifactRef {
+  runId: string;
+  artifactId: string;
+}
+
 export interface SessionNotificationAttachment {
   kind: "image" | "document";
   uri: string;
   fileName: string;
   mimeType?: string;
+  // Set when the attachment was resolved from a cloud `session/prompt` entry.
+  // Its bytes live in S3 as a run artifact; the preview is fetched by presigning
+  // rather than read off the local device.
+  cloudArtifact?: CloudArtifactRef;
 }
 
 export interface SessionNotification {

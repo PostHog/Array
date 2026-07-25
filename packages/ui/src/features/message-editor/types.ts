@@ -30,7 +30,7 @@ export interface EditorHandle {
   isEmpty: () => boolean;
   getContent: () => EditorContent;
   getText: () => string;
-  setContent: (text: string) => void;
+  setContent: (content: string | EditorContent) => void;
   /** Insert editor content (text + chips) at the cursor (end), without replacing. */
   insertEditorContent: (content: EditorContent) => void;
   insertChip: (chip: MentionChip) => void;

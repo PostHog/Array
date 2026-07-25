@@ -44,7 +44,11 @@ export function activeTabIsBlank(snapshot: TabsSnapshot): boolean {
   if (!w?.activeTabId) return false;
   const t = snapshot.tabs.find((x) => x.id === w.activeTabId);
   return (
-    !!t && t.dashboardId == null && t.taskId == null && t.channelId == null
+    !!t &&
+    t.dashboardId == null &&
+    t.taskId == null &&
+    t.channelId == null &&
+    t.appView == null
   );
 }
 
@@ -72,6 +76,28 @@ function setActiveTab(
   };
 }
 
+/**
+ * Focus a tab in a window, validating the target: the tab must exist and live
+ * in that window, otherwise the snapshot is returned unchanged. A `null` tabId
+ * clears focus (the landing state). This is the persistence-safe primitive —
+ * history entries can carry ids of tabs closed since (back/forward replay), and
+ * blindly persisting such an id leaves the window with a dangling activeTabId,
+ * after which every navigation looks like "no active tab" and opens a new tab.
+ */
+export function setWindowActiveTab(
+  snapshot: TabsSnapshot,
+  windowId: string,
+  tabId: string | null,
+): TabsSnapshot {
+  if (tabId !== null) {
+    const tab = snapshot.tabs.find((t) => t.id === tabId);
+    if (!tab || tab.windowId !== windowId) return snapshot;
+  }
+  const window = snapshot.windows.find((w) => w.id === windowId);
+  if (!window || window.activeTabId === tabId) return snapshot;
+  return setActiveTab(snapshot, windowId, tabId);
+}
+
 /** What a tab points at: a canvas, a task, or neither (blank). */
 export type TabTarget = {
   dashboardId: string | null;
@@ -89,6 +115,7 @@ export type TabIdentity = {
   taskId: string | null;
   channelId: string | null;
   channelSection: string | null;
+  appView: string | null;
 };
 
 function sameIdentity(a: TabIdentity, b: TabIdentity): boolean {
@@ -96,7 +123,8 @@ function sameIdentity(a: TabIdentity, b: TabIdentity): boolean {
     a.dashboardId === b.dashboardId &&
     a.taskId === b.taskId &&
     a.channelId === b.channelId &&
-    a.channelSection === b.channelSection
+    a.channelSection === b.channelSection &&
+    a.appView === b.appView
   );
 }
 
@@ -111,16 +139,24 @@ export function openOrFocusTab(
     windowId: string;
     channelId: string | null;
     channelSection?: string | null;
+    appView?: string | null;
     makeId: IdFactory;
     now: Clock;
   },
 ): OpenTabResult {
   const { windowId, dashboardId, taskId, channelId, makeId, now } = input;
   const channelSection = input.channelSection ?? null;
+  const appView = input.appView ?? null;
   const existing = snapshot.tabs.find(
     (t) =>
       t.windowId === windowId &&
-      sameIdentity(t, { dashboardId, taskId, channelId, channelSection }),
+      sameIdentity(t, {
+        dashboardId,
+        taskId,
+        channelId,
+        channelSection,
+        appView,
+      }),
   );
   if (existing) {
     const ts = now();
@@ -143,6 +179,7 @@ export function openOrFocusTab(
     taskId,
     channelId,
     channelSection,
+    appView,
     makeId,
     now,
   });
@@ -154,6 +191,7 @@ function appendTab(
     windowId: string;
     channelId: string | null;
     channelSection?: string | null;
+    appView?: string | null;
     makeId: IdFactory;
     now: Clock;
   },
@@ -169,6 +207,7 @@ function appendTab(
     taskId,
     channelId,
     channelSection: input.channelSection ?? null,
+    appView: input.appView ?? null,
     position: lastPos + POSITION_GAP,
     scrollState: null,
     createdAt: ts,
@@ -212,6 +251,7 @@ export function setTabTarget(
     tabId: string;
     channelId: string | null;
     channelSection?: string | null;
+    appView?: string | null;
     now: Clock;
   },
 ): TabsSnapshot {
@@ -228,6 +268,7 @@ export function setTabTarget(
             taskId: input.taskId,
             channelId: input.channelId,
             channelSection: input.channelSection ?? null,
+            appView: input.appView ?? null,
             lastActiveAt: ts,
           }
         : t,
@@ -391,6 +432,7 @@ export type TabNavDecision =
       taskId: string | null;
       channelId: string | null;
       channelSection: string | null;
+      appView: string | null;
       stampTabId: string | null;
     }
   | {
@@ -399,6 +441,7 @@ export type TabNavDecision =
       taskId: string | null;
       channelId: string | null;
       channelSection: string | null;
+      appView: string | null;
       stampTabId: string | null;
     }
   | { type: "stamp"; stampTabId: string }
@@ -407,6 +450,24 @@ export type TabNavDecision =
 export function decideTabNavigation(input: {
   /** tabId carried in the current history entry, if any. */
   historyTabId: string | null;
+  /**
+   * Ids of the tabs that currently exist in this window. A history entry can
+   * be tagged with a tab that has since been closed (back/forward replays the
+   * entry); such a dead tag must NOT activate — it falls through and the route
+   * decides (in-tab replace / open / stamp), which also re-stamps the entry
+   * with a live tab. When omitted, tags are trusted (legacy behaviour).
+   */
+  windowTabIds?: readonly string[];
+  /**
+   * The window's tabs with their identities. When a navigation's route matches
+   * an existing tab that isn't the active one, we activate that tab instead of
+   * replacing the active tab's target (which would duplicate it) or opening a
+   * second copy. This also self-heals a rapid tab switch whose history stamp
+   * was lost: it arrives looking like an in-tab nav, but the route still
+   * identifies the intended tab, so we focus it rather than corrupt the active
+   * tab. When omitted, this dedup is skipped (legacy behaviour).
+   */
+  windowTabs?: readonly (TabIdentity & { id: string })[];
   /** The window's active tab id from the server snapshot (lags history). */
   serverActiveTabId: string | null;
   /** The active tab record, if one exists. */
@@ -416,6 +477,7 @@ export function decideTabNavigation(input: {
     taskId: string | null;
     channelId?: string | null;
     channelSection?: string | null;
+    appView?: string | null;
   } | null;
   /** Canvas in the current route, if any. */
   routeDashboardId: string | null;
@@ -424,6 +486,8 @@ export function decideTabNavigation(input: {
   routeChannelId: string | null;
   /** Channel sub-section in the current route, if any. */
   routeChannelSection?: string | null;
+  /** Top-level app page in the current route, if any. */
+  routeAppView?: string | null;
 }): TabNavDecision {
   const {
     historyTabId,
@@ -434,13 +498,19 @@ export function decideTabNavigation(input: {
     routeChannelId,
   } = input;
   const routeChannelSection = input.routeChannelSection ?? null;
+  const routeAppView = input.routeAppView ?? null;
 
   // Tagged entry for a DIFFERENT tab → a tab switch or a back/forward replay.
-  // Focus it (this is how "back returns to the previous tab" resolves). When
-  // the tag equals the active tab we must NOT stop here: a plain navigation
-  // (e.g. the sidebar) inherits the active tab's tag, so an in-tab nav arrives
-  // tagged with the active tab — fall through and decide from the route.
-  if (historyTabId && historyTabId !== serverActiveTabId) {
+  // Focus it (this is how "back returns to the previous tab" resolves). Two
+  // guards: (1) the tagged tab must still exist — back/forward can replay an
+  // entry whose tab was closed, and activating a dead id persists a dangling
+  // activeTabId (every nav then opens a new tab); (2) when the tag equals the
+  // active tab we must NOT stop here: an in-tab nav can arrive tagged with the
+  // active tab — fall through and decide from the route.
+  const historyTabIsLive =
+    !!historyTabId &&
+    (input.windowTabIds ? input.windowTabIds.includes(historyTabId) : true);
+  if (historyTabId && historyTabIsLive && historyTabId !== serverActiveTabId) {
     return { type: "activate", tabId: historyTabId };
   }
 
@@ -452,23 +522,51 @@ export function decideTabNavigation(input: {
     taskId: routeTaskId,
     channelId: routeChannelId,
     channelSection: routeChannelSection,
+    appView: routeAppView,
   };
-  if (!routeDashboardId && !routeTaskId && !routeChannelId) {
+  if (!routeDashboardId && !routeTaskId && !routeChannelId && !routeAppView) {
     return { type: "noop" };
   }
 
-  if (
-    activeTab &&
-    !sameIdentity(
+  const activeMatchesRoute =
+    !!activeTab &&
+    sameIdentity(
       {
         dashboardId: activeTab.dashboardId,
         taskId: activeTab.taskId,
         channelId: activeTab.channelId ?? null,
         channelSection: activeTab.channelSection ?? null,
+        appView: activeTab.appView ?? null,
       },
       routeIdentity,
-    )
-  ) {
+    );
+
+  // A blank active tab is a fresh `+` tab waiting for its first target: the
+  // navigation is "fill me", never a switch — so the dedup below must not
+  // steal it (activating another tab would strand the blank forever).
+  const activeIsBlank =
+    !!activeTab &&
+    activeTab.dashboardId == null &&
+    activeTab.taskId == null &&
+    (activeTab.channelId ?? null) == null &&
+    (activeTab.appView ?? null) == null;
+
+  // The route already lives in another tab → focus it instead of replacing the
+  // active tab's target (which would leave two tabs on the same identity) or
+  // opening a duplicate. Also recovers a rapid switch whose history tag was
+  // lost: the intended tab is still identified by the route. Only when the
+  // active tab does NOT already show the route — otherwise, if a duplicate tab
+  // already exists, we'd bounce between the two identical tabs forever.
+  if (!activeMatchesRoute && !activeIsBlank) {
+    const existingMatch = input.windowTabs?.find(
+      (t) => t.id !== activeTab?.id && sameIdentity(t, routeIdentity),
+    );
+    if (existingMatch) {
+      return { type: "activate", tabId: existingMatch.id };
+    }
+  }
+
+  if (activeTab && !activeMatchesRoute) {
     return {
       type: "replace",
       tabId: activeTab.id,
@@ -476,6 +574,7 @@ export function decideTabNavigation(input: {
       taskId: routeTaskId,
       channelId: routeChannelId,
       channelSection: routeChannelSection,
+      appView: routeAppView,
       stampTabId: serverActiveTabId,
     };
   }
@@ -486,6 +585,7 @@ export function decideTabNavigation(input: {
       taskId: routeTaskId,
       channelId: routeChannelId,
       channelSection: routeChannelSection,
+      appView: routeAppView,
       stampTabId: serverActiveTabId,
     };
   }

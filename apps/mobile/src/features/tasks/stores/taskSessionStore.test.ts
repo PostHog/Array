@@ -23,6 +23,7 @@ vi.mock("../api", () => ({
   sendCloudCommand: vi.fn(),
 }));
 
+import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getTask, runTaskInCloud } from "../api";
 import type {
   CloudTaskUpdatePayload,
@@ -31,7 +32,11 @@ import type {
   TaskRun,
 } from "../types";
 import { useMessageQueueStore } from "./messageQueueStore";
-import { type TaskSession, useTaskSessionStore } from "./taskSessionStore";
+import {
+  mapTerminalStatus,
+  type TaskSession,
+  useTaskSessionStore,
+} from "./taskSessionStore";
 import { useTaskStore } from "./taskStore";
 
 function seedSession(overrides: Partial<TaskSession> = {}): void {
@@ -45,6 +50,20 @@ function seedSession(overrides: Partial<TaskSession> = {}): void {
   };
   useTaskSessionStore.setState({ sessions: { "run-1": session } });
 }
+
+describe("mapTerminalStatus", () => {
+  it.each([
+    { status: "completed", expected: "completed" },
+    { status: "failed", expected: "failed" },
+    { status: "cancelled", expected: "stopped" },
+    { status: "in_progress", expected: undefined },
+    { status: "queued", expected: undefined },
+    { status: undefined, expected: undefined },
+    { status: null, expected: undefined },
+  ] as const)("maps $status to $expected", ({ status, expected }) => {
+    expect(mapTerminalStatus(status)).toBe(expected);
+  });
+});
 
 describe("steerQueuedMessage", () => {
   beforeEach(() => {
@@ -140,6 +159,80 @@ describe("steerQueuedMessage", () => {
   });
 });
 
+describe("flushQueuedMessagesIfIdle", () => {
+  beforeEach(() => {
+    useMessageQueueStore.setState(
+      { queuesByTaskId: {}, editingByTaskId: {} },
+      false,
+    );
+    useTaskSessionStore.setState({ sessions: {} });
+  });
+
+  it("sends the queue when the agent is idle", async () => {
+    seedSession({ isPromptPending: false });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+    useMessageQueueStore.getState().enqueue("t1", "a", []);
+    useMessageQueueStore.getState().enqueue("t1", "b", []);
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await vi.waitFor(() => expect(sendInterrupting).toHaveBeenCalled());
+
+    expect(sendInterrupting).toHaveBeenCalledWith("t1", "a\n\nb", []);
+    expect(useMessageQueueStore.getState().getQueue("t1")).toEqual([]);
+  });
+
+  it("sends only the messages before the one being edited", async () => {
+    seedSession({ isPromptPending: false });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+    useMessageQueueStore.getState().enqueue("t1", "a", []);
+    useMessageQueueStore.getState().enqueue("t1", "b", []);
+    useMessageQueueStore.getState().enqueue("t1", "c", []);
+    const edited = useMessageQueueStore.getState().getQueue("t1")[1];
+    useMessageQueueStore.getState().setEditing("t1", edited.id);
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await vi.waitFor(() => expect(sendInterrupting).toHaveBeenCalled());
+
+    expect(sendInterrupting).toHaveBeenCalledWith("t1", "a", []);
+    expect(
+      useMessageQueueStore
+        .getState()
+        .getQueue("t1")
+        .map((m) => m.content),
+    ).toEqual(["b", "c"]);
+  });
+
+  it.each([
+    { name: "a turn is running", overrides: { isPromptPending: true } },
+    { name: "the run is terminal", overrides: { terminalStatus: "completed" } },
+    { name: "the agent is compacting", overrides: { isCompacting: true } },
+  ] as const)("no-ops when $name", async ({ overrides }) => {
+    seedSession({ isPromptPending: false, ...overrides });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+    useMessageQueueStore.getState().enqueue("t1", "a", []);
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await Promise.resolve();
+
+    expect(sendInterrupting).not.toHaveBeenCalled();
+    expect(useMessageQueueStore.getState().getQueue("t1")).toHaveLength(1);
+  });
+
+  it("no-ops when the queue is empty", async () => {
+    seedSession({ isPromptPending: false });
+    const sendInterrupting = vi.fn(() => Promise.resolve());
+    useTaskSessionStore.setState({ sendInterrupting });
+
+    useTaskSessionStore.getState().flushQueuedMessagesIfIdle("t1");
+    await Promise.resolve();
+
+    expect(sendInterrupting).not.toHaveBeenCalled();
+  });
+});
+
 describe("_resumeCloudRun", () => {
   const mockGetTask = vi.mocked(getTask);
   const mockRunTaskInCloud = vi.mocked(runTaskInCloud);
@@ -155,6 +248,7 @@ describe("_resumeCloudRun", () => {
     vi.clearAllMocks();
     useTaskStore.setState({ composerConfigByTaskId: {} });
     useTaskSessionStore.setState({ sessions: {} });
+    usePreferencesStore.setState({ rtkEnabledCloud: true });
     mockRunTaskInCloud.mockResolvedValue({
       id: "t1",
       latest_run: { id: "new-run" },
@@ -180,7 +274,22 @@ describe("_resumeCloudRun", () => {
       pendingUserMessage: "hi",
       reasoningEffort: "low",
       initialPermissionMode: "acceptEdits",
+      rtkEnabled: true,
     });
+  });
+
+  it("forwards the rtk compression opt-out so resume preserves it", async () => {
+    usePreferencesStore.setState({ rtkEnabledCloud: false });
+    mockGetTask.mockResolvedValue(previousTask({ branch: "feature" }));
+
+    await useTaskSessionStore
+      .getState()
+      ._resumeCloudRun("t1", "prev-run", "hi");
+
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "t1",
+      expect.objectContaining({ rtkEnabled: false }),
+    );
   });
 
   it("prefers the composer's current selection over the previous run", async () => {

@@ -6,7 +6,7 @@ The core runtime for PostHog cloud runs. Provides two things: an **Agent SDK** f
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│  Client (PostHog Code IDE or local CLI)                                  │
+│  Client (PostHog desktop app or local CLI)                                  │
 │    connects via SSE/JSON-RPC (cloud) or in-process streams (local)│
 └────────────────────┬─────────────────────────────────────────────┘
                      │
@@ -57,7 +57,7 @@ The same ACP agent runs in both contexts. The difference is how it's connected:
 
 **Cloud (AgentServer):** The agent runs inside a sandbox. `AgentServer` is an HTTP server (Hono) that wraps the ACP connection. Clients connect via `GET /events` (SSE) and `POST /command` (JSON-RPC). Authentication uses JWT tokens (RS256) — the sandbox holds a public key, PostHog Django holds the private key. In background mode, the server auto-starts, prompts the agent with the task description, and signals completion via the PostHog API. In interactive mode, it stays open for conversation.
 
-**Local (PostHog Code desktop):** The agent runs in-process. PostHog Code calls `createAcpConnection()` directly — no HTTP server, no JWT. The bidirectional ACP streams connect client ↔ agent within the same process.
+**Local (desktop):** The agent runs in-process. The desktop app calls `createAcpConnection()` directly — no HTTP server, no JWT. The bidirectional ACP streams connect client ↔ agent within the same process.
 
 **HandoffCheckpointTracker** handles the bridge between these contexts: it captures git checkpoint state plus the object pack/index needed to restore the worktree across cloud and local. This enables the "hand off" flow — start locally, continue in cloud, or vice versa.
 
@@ -73,6 +73,8 @@ Four modes defined in `src/execution-mode.ts`:
 | Bypass permissions  | `bypassPermissions` | Auto-approves everything (hidden when running as root)          |
 
 In cloud background mode, permissions are always auto-approved. In interactive mode, the permission system is active and configurable per session. Tool categorization lives in `src/adapters/claude/tools.ts` — each tool belongs to a group (read, write, bash, search, web, agent) and modes whitelist groups.
+
+Cloud provisioning can pass `--posthogExecPermissionRegex <regex>` to require one-time client approval for matching PostHog MCP `exec` sub-tools in every interactive cloud Claude and Codex permission mode. Non-matching sub-tools never prompt. Locally, hands-off modes stay hands-off: Claude `auto` and `bypassPermissions`, and Codex `auto` and `full-access`, auto-approve matching sub-tools; other local modes prompt. Matching is case-insensitive against the delegated name in `call [--json] <sub-tool> ...`. These prompts offer Claude users an always-allow choice remembered in local repository settings; Codex approvals remain one-time. An invalid or empty regex is logged and falls back to the default. Background runs keep their existing auto-approval behavior. The default is `(^|-)(partial-update|update|patch|delete|destroy)(-|$)`.
 
 ## ACP connection layer
 
@@ -126,6 +128,8 @@ start()
 
 The two tapping layers are distinct. The inner tap (from `createAcpConnection`) persists to logs. The outer tap (in `AgentServer`) broadcasts to SSE. This means log persistence works for both cloud and local, while SSE broadcast is cloud-only.
 
+Adapters must remove provider notifications that do not belong to the active parent session before writing ACP updates. Persisted ACP updates do not retain enough provider-specific identity to separate a subagent transcript or completion from its parent safely during cloud replay.
+
 ### HTTP endpoints
 
 | Method | Path       | Auth | Description                                              |
@@ -138,11 +142,11 @@ JWT validation (`src/server/jwt.ts`) uses RS256 with a configurable public key. 
 
 ### Commands flow through ACP
 
-When `POST /command` receives a `user_message`, it doesn't handle it directly — it calls `clientConnection.prompt()` on the ACP `ClientSideConnection`, which sends a `session/prompt` message through the ACP streams to the agent. Similarly, `cancel` sends `session/cancel`. This means all commands follow the same path as in-process calls from PostHog Code, with the HTTP layer just being a thin translation.
+When `POST /command` receives a `user_message`, it doesn't handle it directly — it calls `clientConnection.prompt()` on the ACP `ClientSideConnection`, which sends a `session/prompt` message through the ACP streams to the agent. Similarly, `cancel` sends `session/cancel`. This means all commands follow the same path as in-process calls from the desktop app, with the HTTP layer just being a thin translation.
 
-### Auto-approval in cloud mode
+### Permission routing in cloud mode
 
-The `AgentServer` provides a `requestPermission` callback to the `ClientSideConnection` that always selects the "allow" option. In background mode this is necessary (no human to ask). In interactive mode it currently does the same, with a TODO for future per-tool approval via SSE round-trips.
+The `AgentServer` provides the `requestPermission` callback to the `ClientSideConnection`. Background mode selects an allow option automatically. Interactive mode relays approvals that need a person over SSE and parks them until a client responds; other requests follow the selected permission mode.
 
 ### Checkpoint capture
 
@@ -155,6 +159,7 @@ npx agent-server \
   --port 3001 \
   --mode interactive \
   --repositoryPath /path/to/repo \
+  --posthogExecPermissionRegex '(^|-)(partial-update|update|patch|delete|destroy)(-|$)' \
   --taskId task_123 \
   --runId run_456
 ```
@@ -165,6 +170,16 @@ Required environment variables (validated by zod in `src/server/bin.ts`):
 - `POSTHOG_API_URL` — PostHog API base URL
 - `POSTHOG_PERSONAL_API_KEY` — API key for PostHog requests
 - `POSTHOG_PROJECT_ID` — numeric project ID
+
+Optional run telemetry (the logs pair must both be set, otherwise telemetry stays off):
+
+- `POSTHOG_AGENT_OTEL_LOGS_URL` — full OTLP logs URL for run metadata, e.g. `https://us.i.posthog.com/i/v1/logs`
+- `POSTHOG_AGENT_OTEL_LOGS_TOKEN` — project API key of the telemetry project
+- `POSTHOG_AGENT_OTEL_TRACES_URL` — full OTLP traces URL, e.g. `https://us.i.posthog.com/i/v1/traces`; additionally enables one APM trace per run
+
+When set, `AgentServer` ships an allowlisted metadata subset of the session log (run/turn/tool lifecycle, usage, error provenance — never message content, tool arguments, or raw error text; see `src/otel-telemetry.ts`) to PostHog Logs, tagged with `service.name=posthog-code-agent` and `run_id`/`task_id`/`team_id`/`user_id`/`distinct_id` resource attributes so cloud runs are filterable per user. With the traces URL set, each run also produces an APM trace (`task_run` root span, a `turn` span per prompt, a `tool_call:<kind>` span per tool call; see `src/otel-trace-builder.ts`), and log records carry the matching trace/span ids so Logs and APM cross-link.
+
+The `task_run` root span is ended and exported at the run's in-process terminal point — a background run's prompt settling, a terminal failure, or session cleanup (`close`). It cannot wait for teardown: agent-server is an exec'd process inside the sandbox, so `docker stop` / Modal terminate kill it without SIGTERM ever arriving, and a span still open at that moment is lost. Interactive sessions that end via hard teardown (e.g. inactivity timeout) therefore lose the root span; turn/tool spans and logs still assemble under the same trace id.
 
 ## Agent SDK
 
@@ -194,7 +209,7 @@ await agent.attachPullRequestToTask(taskId, prUrl)
 await agent.cleanup()
 ```
 
-Key difference from `AgentServer`: the SDK returns raw ACP streams for the caller to manage. There's no HTTP layer, no SSE broadcasting, and no auto-prompting. The caller is responsible for creating a `ClientSideConnection`, running the ACP handshake, and sending prompts. This is what PostHog Code does when running agents locally.
+Key difference from `AgentServer`: the SDK returns raw ACP streams for the caller to manage. There's no HTTP layer, no SSE broadcasting, and no auto-prompting. The caller is responsible for creating a `ClientSideConnection`, running the ACP handshake, and sending prompts. This is what the desktop app does when running agents locally.
 
 For Codex adapters, `agent.run()` also fetches available models from the PostHog gateway and filters to OpenAI-compatible models, passing the allowed set to the ACP connection for model list filtering.
 
@@ -204,12 +219,9 @@ Logs serve two purposes: real-time observability and session resume. Every ACP m
 
 ### Writing logs
 
-`SessionLogWriter` (`src/session-log-writer.ts`) is a per-session multiplexer that buffers raw ndJson lines. On flush (auto-scheduled 500ms after writes, or explicit), it dispatches to whichever backend is configured:
+`SessionLogWriter` (`src/session-log-writer.ts`) is a per-session multiplexer that buffers raw ndJson lines. On flush (auto-scheduled 500ms after writes, or explicit), it POSTs batched `StoredNotification` entries to the Django API via `PostHogAPIClient.appendTaskRunLog()`; the API stores them in S3 as the task run's `log_url`. This S3 log is the source of truth for the full transcript and for session resume.
 
-- **OTEL** (`src/otel-log-writer.ts`) — preferred path. Creates an OpenTelemetry `LoggerProvider` per session with resource attributes (`task_id`, `run_id`, `device_type`) set once and indexed via `resource_fingerprint`. Each ndJson line is emitted as an OTEL log record with an `event_type` attribute (the ACP method name) and exported via OTLP HTTP to PostHog's `/i/v1/agent-logs` endpoint. Batch flush interval defaults to 500ms.
-- **Legacy S3** — falls back to `PostHogAPIClient.appendTaskRunLog()`, which POSTs batched `StoredNotification` entries to the Django API. The API stores them as the task run's `log_url`.
-
-Both backends can be active simultaneously — OTEL for fast indexed queries, S3 for full log download.
+Independently of that flush cycle, the writer tees every parsed non-chunk entry to optional `SessionLogSink`s at append time. In cloud, `OtelRunTelemetry` (`src/otel-telemetry.ts`) is wired as a sink and exports an allowlisted metadata subset (run/turn/tool lifecycle, usage, error provenance — never message content, tool arguments, or raw error text) to PostHog Logs, plus an APM trace per run when configured. See "Optional run telemetry" above for the env vars and behavior. Sink failures can never break S3 log persistence.
 
 ### Resuming from logs
 

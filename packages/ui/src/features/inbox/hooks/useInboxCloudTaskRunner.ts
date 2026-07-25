@@ -13,8 +13,10 @@ import { useService } from "@posthog/di/react";
 import {
   type Adapter,
   ANALYTICS_EVENTS,
+  defaultEligibleModel,
   getCloudUrlFromRegion,
 } from "@posthog/shared";
+import type { Task } from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
 import { resolveDefaultModel } from "@posthog/ui/features/inbox/hooks/resolveDefaultModel";
@@ -89,6 +91,8 @@ export interface UseInboxCloudTaskRunnerOptions {
   buildInput: (ctx: InboxCloudTaskInputContext) => TaskCreationInput;
   /** Telemetry extras merged into the TASK_CREATED event when the run succeeds. */
   analyticsExtras?: Record<string, unknown>;
+  /** Called with the created task record, before any navigation happens. */
+  onTaskCreated?: (task: Task) => void;
   /**
    * When false, the runner does not navigate to the created task. The task is
    * still added to the sidebar via `invalidateTasks`, and a success toast with a
@@ -119,6 +123,7 @@ export function useInboxCloudTaskRunner({
   loggerScope,
   buildInput,
   analyticsExtras,
+  onTaskCreated,
   redirectOnSuccess = true,
 }: UseInboxCloudTaskRunnerOptions): UseInboxCloudTaskRunnerReturn {
   const [isRunning, setIsRunning] = useState(false);
@@ -170,16 +175,17 @@ export function useInboxCloudTaskRunner({
     // resolver keeps it only if the gateway still offers it, otherwise it falls
     // back to the server default. A stale id (e.g. one later de-listed for the
     // org) would otherwise be sent here and fail the run with a gateway 403.
+    const preferredModel = defaultEligibleModel(settings.lastUsedModel);
     const resolvedModel = await resolveDefaultModel(
       queryClient,
       apiHost,
       adapter,
       modelResolver,
-      settings.lastUsedModel,
+      preferredModel,
     );
     // The resolver returns undefined on a transient failure; fall back to the
     // persisted id so a gateway outage degrades gracefully rather than blocking.
-    const model = resolvedModel ?? settings.lastUsedModel;
+    const model = resolvedModel ?? preferredModel;
 
     if (!model) {
       toast.dismiss(toastId);
@@ -223,6 +229,7 @@ export function useInboxCloudTaskRunner({
       const result = await taskService.createTask(input, (output) => {
         createdTask = output.task;
         invalidateTasks(output.task);
+        onTaskCreated?.(output.task);
         if (redirectOnSuccess) {
           void openTask(output.task);
         }
@@ -297,6 +304,7 @@ export function useInboxCloudTaskRunner({
     buildInput,
     copy,
     analyticsExtras,
+    onTaskCreated,
     modelResolver,
     taskService,
     redirectOnSuccess,

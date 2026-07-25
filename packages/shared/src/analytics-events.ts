@@ -1,6 +1,7 @@
 // Analytics event types and properties
 
 import type { Adapter } from "./adapter";
+import type { SourceProduct } from "./inbox-types";
 
 export interface PromptHistoryOpenedProperties {
   entry_count: number;
@@ -16,7 +17,7 @@ export interface PromptHistorySelectedProperties {
 
 type ExecutionType = "cloud" | "local";
 export type RepositoryProvider = "github" | "gitlab" | "local" | "none";
-type TaskCreatedFrom = "cli" | "command-menu" | "home-quick-action";
+type TaskCreatedFrom = "cli" | "command-menu" | "sidebar-worktree";
 type RepositorySelectSource = "task-creation" | "task-detail";
 type GitActionType =
   | "push"
@@ -55,6 +56,8 @@ export type CommandMenuAction =
   | "open-channel"
   | "open-command-center"
   | "open-inbox"
+  | "open-loops"
+  | "open-usage"
   | "search-files"
   | "open-file"
   | "reload-window"
@@ -131,6 +134,13 @@ export interface TaskRunCancelledProperties {
   execution_type: ExecutionType;
   duration_seconds: number;
   prompts_sent: number;
+}
+
+export interface TaskRunStoppedProperties {
+  task_id: string;
+  execution_type: ExecutionType;
+  duration_seconds?: number;
+  prompts_sent?: number;
 }
 
 export interface PromptSentProperties {
@@ -227,6 +237,39 @@ export interface CommandMenuActionProperties {
   action_type: CommandMenuAction;
   /** Channel acted on for the bluebird `open-channel` / `open-task` actions. */
   channel_id?: string;
+}
+
+export type SidebarNavItem =
+  | "new_task"
+  | "search"
+  | "inbox"
+  | "agents"
+  | "skills"
+  | "mcp_servers"
+  | "command_center"
+  | "contexts"
+  | "activity"
+  | "configure"
+  | "loops"
+  | "more"
+  | "customize_sidebar";
+
+export interface SidebarNavItemClickedProperties {
+  item: SidebarNavItem;
+  /** True when the row was clicked inside the expanded More section. */
+  in_more: boolean;
+}
+
+export interface SidebarCustomizedProperties {
+  item: SidebarNavItem;
+  /** True when the item was promoted to the top level, false when moved under More. */
+  visible: boolean;
+}
+
+export interface SidebarReorderedProperties {
+  item: SidebarNavItem;
+  /** Zero-based position of the item in the nav after the drag. */
+  to_index: number;
 }
 
 export interface BrainrotActivatedProperties {
@@ -643,7 +686,7 @@ export interface UsageViewedProperties {
 export interface SpendAnalysisTaskOpenedProperties {
   /** Total LLM spend in USD across all products for the analysed window. */
   total_cost_usd: number;
-  /** PostHog Code spend in USD for the analysed window (subset of total). */
+  /** Desktop app spend in USD for the analysed window (subset of total). */
   scoped_cost_usd: number;
   /** Number of `$ai_generation` events in the analysed window. */
   scoped_event_count: number;
@@ -716,6 +759,7 @@ export type ScoutActionType =
   | "show_more_emitted_runs"
   | "filter_runs"
   | "toggle_hide_disabled"
+  | "filter_created_by"
   | "open_settings"
   | "close_settings"
   | "open_findings"
@@ -774,21 +818,13 @@ export interface ScoutActionProperties {
   filter_match_count?: number;
   helper_skill?: string;
   hide_disabled?: boolean;
+  created_by_me?: boolean;
   /** Status of the linked inbox report, for `open_linked_report`. */
   report_status?: string;
 }
 
 export interface SignalSourceConnectedProperties {
-  source_product:
-    | "session_replay"
-    | "error_tracking"
-    | "signals_scout"
-    | "github"
-    | "linear"
-    | "zendesk"
-    | "conversations"
-    | "pganalyze"
-    | "llm_analytics";
+  source_product: SourceProduct;
   /** True when this is a brand-new createSignalSourceConfig, false for re-enable of an existing config. */
   is_first_connection: boolean;
   /** True when the connection went through the DataSourceSetup wizard (warehouse OAuth path). */
@@ -827,6 +863,7 @@ export type ChannelsSurface =
   | "sidebar"
   | "command_menu"
   | "new_task"
+  | "task_input"
   | "channel_home"
   | "channel_history"
   | "channel_artifacts"
@@ -840,6 +877,7 @@ export type ChannelsSurface =
 export type ChannelActionType =
   | "enter_space"
   | "leave_space"
+  | "toggle_channels"
   | "leave_feedback"
   | "nav_click"
   | "open_channel"
@@ -866,7 +904,8 @@ export type ChannelActionType =
   | "copy_link"
   | "mention_member"
   | "view_activity"
-  | "open_mention";
+  | "open_mention"
+  | "canvas_mode_toggle";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -883,6 +922,8 @@ export interface ChannelActionProperties {
   mentioned_user_id?: string;
   /** For new_task_suggestion: the starter-prompt card label. */
   suggestion_label?: string;
+  /** For canvas_mode_toggle: whether canvas mode is being armed. */
+  armed?: boolean;
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }
@@ -954,20 +995,31 @@ export interface ChannelsSpaceViewedProperties {
 
 // Subscription / billing events
 
-export type UpgradePromptShownSurface = "usage_limit_modal" | "upgrade_dialog";
+export type UpgradePromptShownSurface =
+  | "usage_limit_modal"
+  | "titlebar_card"
+  | "billing_announcement"
+  | "model_picker";
 
 export type UpgradePromptClickedSurface =
   | "usage_limit_modal"
   | "sidebar"
+  | "titlebar"
+  | "titlebar_card"
   | "plan_page_card"
-  | "upgrade_dialog";
+  | "billing_announcement"
+  | "model_picker";
+
+export type UpgradePromptCause = "model_gate" | "org_limit";
 
 export interface UpgradePromptShownProperties {
   surface: UpgradePromptShownSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface UpgradePromptClickedProperties {
   surface: UpgradePromptClickedSurface;
+  cause?: UpgradePromptCause;
 }
 
 export interface CloudTaskUsageBlockedProperties {
@@ -975,13 +1027,9 @@ export interface CloudTaskUsageBlockedProperties {
   is_pro: boolean;
 }
 
-export interface SubscriptionStartedProperties {
-  plan_key: string;
-  previous_plan_key?: string;
-}
-
-export interface SubscriptionCancelledProperties {
-  plan_key: string;
+export interface UsageBillingAnnouncementAcknowledgedProperties {
+  /** Stamps the acknowledgment on the person for support auditability. */
+  $set: { code_usage_billing_acknowledged_at: string };
 }
 
 // Claude Code session import events
@@ -1036,6 +1084,119 @@ export interface AutoresearchRunStartedProperties {
   workspace_mode?: "local" | "worktree" | "cloud";
 }
 
+// Loops events
+type LoopReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type LoopOverlapPolicy = "skip" | "allow" | "cancel_previous";
+type LoopRunBlockedReason =
+  | "deduped"
+  | "overlap_skipped"
+  | "rate_capped"
+  | "team_rate_capped"
+  | "disabled"
+  | "gate_blocked"
+  | "owner_inactive"
+  | "owner_changed";
+type LoopRunStatus =
+  | "not_started"
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface LoopListViewedProperties {
+  loop_count: number;
+  personal_loop_count: number;
+  team_loop_count: number;
+  is_at_limit: boolean;
+  /** Backend-enforced per-project cap; omitted while the limit is still loading. */
+  loop_limit?: number;
+  builder_session_count: number;
+}
+
+export interface LoopViewedProperties {
+  loop_id: string;
+  visibility: "personal" | "team";
+  enabled: boolean;
+  /** Backend-open string; null when enabled or manually paused with no reason given. */
+  disabled_reason: string | null;
+  runtime_adapter: "claude" | "codex";
+  model?: string;
+  reasoning_effort: LoopReasoningEffort | null;
+  repository_count: number;
+  trigger_count: number;
+  has_schedule_trigger: boolean;
+  has_github_trigger: boolean;
+  has_api_trigger: boolean;
+  /** Backend-open string, not a closed enum. */
+  last_run_status: string | null;
+  consecutive_failures: number;
+  recent_run_count: number;
+}
+
+export interface LoopSavedProperties {
+  loop_id: string;
+  visibility: "personal" | "team";
+  runtime_adapter: "claude" | "codex";
+  model?: string;
+  reasoning_effort: LoopReasoningEffort | null;
+  repository_count: number;
+  trigger_count: number;
+  has_schedule_trigger: boolean;
+  has_github_trigger: boolean;
+  has_api_trigger: boolean;
+  is_pr_creation_enabled: boolean;
+  is_auto_fix_enabled: boolean;
+  /** Count of notifications.{push,email,slack} that are enabled. */
+  notification_channel_count: number;
+  has_context_target: boolean;
+}
+
+export interface LoopDeletedProperties {
+  loop_id: string;
+  visibility: "personal" | "team";
+  enabled: boolean;
+  trigger_count: number;
+  /** State at time of deletion, distinguishes deleting a healthy loop from abandoning a failing one. */
+  consecutive_failures: number;
+}
+
+export interface LoopEnabledToggledProperties {
+  loop_id: string;
+  /** The new value the loop is being switched to. */
+  enabled: boolean;
+  visibility: "personal" | "team";
+  /** True when this toggle clears or reinstates a backend auto-pause rather than a routine manual pause/resume. */
+  was_auto_paused: boolean;
+  success: boolean;
+}
+
+export interface LoopRunStartedProperties {
+  loop_id: string;
+  task_id: string | null;
+  task_run_id: string | null;
+  runtime_adapter: "claude" | "codex";
+  model?: string;
+  trigger_count: number;
+}
+
+export interface LoopRunBlockedProperties {
+  loop_id: string;
+  reason: LoopRunBlockedReason;
+  overlap_policy: LoopOverlapPolicy;
+  trigger_count: number;
+}
+
+export interface LoopRunViewedProperties {
+  loop_id: string;
+  run_id: string;
+  task_id: string;
+  status: LoopRunStatus;
+  environment: "local" | "cloud";
+  /** True when the run wasn't triggered by a schedule/github/api trigger. */
+  is_manual_run: boolean;
+}
+
 // Event names as constants
 export const ANALYTICS_EVENTS = {
   // App lifecycle
@@ -1054,6 +1215,7 @@ export const ANALYTICS_EVENTS = {
   TASK_RUN_STARTED: "Task run started",
   TASK_RUN_COMPLETED: "Task run completed",
   TASK_RUN_CANCELLED: "Task run cancelled",
+  TASK_RUN_STOPPED: "Task run stopped",
   PROMPT_SENT: "Prompt sent",
 
   // Claude Code session import
@@ -1091,6 +1253,9 @@ export const ANALYTICS_EVENTS = {
   BRAINROT_ACTIVATED: "Brainrot activated",
   SKILL_BUTTON_TRIGGERED: "Skill button triggered",
   POSTHOG_WEB_OPENED: "PostHog web opened",
+  SIDEBAR_NAV_ITEM_CLICKED: "Sidebar nav item clicked",
+  SIDEBAR_CUSTOMIZED: "Sidebar customized",
+  SIDEBAR_REORDERED: "Sidebar reordered",
 
   // Permission events
   PERMISSION_RESPONDED: "Permission responded",
@@ -1185,8 +1350,8 @@ export const ANALYTICS_EVENTS = {
   UPGRADE_PROMPT_SHOWN: "Upgrade prompt shown",
   UPGRADE_PROMPT_CLICKED: "Upgrade prompt clicked",
   CLOUD_TASK_USAGE_BLOCKED: "Cloud task usage blocked",
-  SUBSCRIPTION_STARTED: "Subscription started",
-  SUBSCRIPTION_CANCELLED: "Subscription cancelled",
+  USAGE_BILLING_ANNOUNCEMENT_ACKNOWLEDGED:
+    "Usage billing announcement acknowledged",
 
   // Project Bluebird (Channels) events
   CHANNELS_SPACE_VIEWED: "Channels space viewed",
@@ -1198,6 +1363,22 @@ export const ANALYTICS_EVENTS = {
   // Autoresearch events
   AUTORESEARCH_ARMED: "Autoresearch armed",
   AUTORESEARCH_RUN_STARTED: "Autoresearch run started",
+
+  // Loops promo events
+  LOOPS_PROMO_OPENED: "Loops promo opened",
+  LOOPS_PROMO_DISMISSED: "Loops promo dismissed",
+  LOOPS_PROMO_LEARN_MORE_CLICKED: "Loops promo learn more clicked",
+
+  // Loops events
+  LOOP_LIST_VIEWED: "Loop list viewed",
+  LOOP_VIEWED: "Loop viewed",
+  LOOP_CREATED: "Loop created",
+  LOOP_UPDATED: "Loop updated",
+  LOOP_DELETED: "Loop deleted",
+  LOOP_ENABLED_TOGGLED: "Loop enabled toggled",
+  LOOP_RUN_STARTED: "Loop run started",
+  LOOP_RUN_BLOCKED: "Loop run blocked",
+  LOOP_RUN_VIEWED: "Loop run viewed",
 } as const;
 
 // Event property mapping
@@ -1214,6 +1395,7 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.TASK_RUN_STARTED]: TaskRunStartedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_COMPLETED]: TaskRunCompletedProperties;
   [ANALYTICS_EVENTS.TASK_RUN_CANCELLED]: TaskRunCancelledProperties;
+  [ANALYTICS_EVENTS.TASK_RUN_STOPPED]: TaskRunStoppedProperties;
   [ANALYTICS_EVENTS.PROMPT_SENT]: PromptSentProperties;
 
   // Claude Code session import
@@ -1248,6 +1430,9 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
   [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
+  [ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED]: SidebarNavItemClickedProperties;
+  [ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED]: SidebarCustomizedProperties;
+  [ANALYTICS_EVENTS.SIDEBAR_REORDERED]: SidebarReorderedProperties;
 
   // Permission events
   [ANALYTICS_EVENTS.PERMISSION_RESPONDED]: PermissionRespondedProperties;
@@ -1341,9 +1526,8 @@ export type EventPropertyMap = {
   // Subscription events
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_SHOWN]: UpgradePromptShownProperties;
   [ANALYTICS_EVENTS.UPGRADE_PROMPT_CLICKED]: UpgradePromptClickedProperties;
+  [ANALYTICS_EVENTS.USAGE_BILLING_ANNOUNCEMENT_ACKNOWLEDGED]: UsageBillingAnnouncementAcknowledgedProperties;
   [ANALYTICS_EVENTS.CLOUD_TASK_USAGE_BLOCKED]: CloudTaskUsageBlockedProperties;
-  [ANALYTICS_EVENTS.SUBSCRIPTION_STARTED]: SubscriptionStartedProperties;
-  [ANALYTICS_EVENTS.SUBSCRIPTION_CANCELLED]: SubscriptionCancelledProperties;
 
   // Project Bluebird (Channels) events
   [ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED]: ChannelsSpaceViewedProperties;
@@ -1355,6 +1539,22 @@ export type EventPropertyMap = {
   // Autoresearch events
   [ANALYTICS_EVENTS.AUTORESEARCH_ARMED]: AutoresearchArmedProperties;
   [ANALYTICS_EVENTS.AUTORESEARCH_RUN_STARTED]: AutoresearchRunStartedProperties;
+
+  // Loops promo events
+  [ANALYTICS_EVENTS.LOOPS_PROMO_OPENED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_DISMISSED]: never;
+  [ANALYTICS_EVENTS.LOOPS_PROMO_LEARN_MORE_CLICKED]: never;
+
+  // Loops events
+  [ANALYTICS_EVENTS.LOOP_LIST_VIEWED]: LoopListViewedProperties;
+  [ANALYTICS_EVENTS.LOOP_VIEWED]: LoopViewedProperties;
+  [ANALYTICS_EVENTS.LOOP_CREATED]: LoopSavedProperties;
+  [ANALYTICS_EVENTS.LOOP_UPDATED]: LoopSavedProperties;
+  [ANALYTICS_EVENTS.LOOP_DELETED]: LoopDeletedProperties;
+  [ANALYTICS_EVENTS.LOOP_ENABLED_TOGGLED]: LoopEnabledToggledProperties;
+  [ANALYTICS_EVENTS.LOOP_RUN_STARTED]: LoopRunStartedProperties;
+  [ANALYTICS_EVENTS.LOOP_RUN_BLOCKED]: LoopRunBlockedProperties;
+  [ANALYTICS_EVENTS.LOOP_RUN_VIEWED]: LoopRunViewedProperties;
 };
 
 /**

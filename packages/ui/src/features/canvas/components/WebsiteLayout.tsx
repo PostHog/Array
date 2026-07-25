@@ -1,4 +1,5 @@
 import {
+  ArrowClockwiseIcon,
   DotsThreeIcon,
   GitForkIcon,
   LinkIcon,
@@ -18,7 +19,10 @@ import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/Channe
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFrameHost";
+import { useCanvasFrameStore } from "@posthog/ui/features/canvas/freeform/canvasFrameStore";
+import { CANVAS_QUERY_KEY } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   useDashboard,
   useDashboardMutations,
@@ -32,10 +36,13 @@ import {
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
+import { TaskHeaderActions } from "@posthog/ui/features/task-detail/components/TaskHeaderActions";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { Box, Flex } from "@radix-ui/themes";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   useNavigate,
@@ -102,6 +109,23 @@ function FreeformEditControls({
     useFreeformThread(threadId);
   const revert = useFreeformChatStore((s) => s.revert);
   const goToLatest = useFreeformChatStore((s) => s.goToLatest);
+
+  const queryClient = useQueryClient();
+  const remountFrame = useCanvasFrameStore((s) => s.remount);
+  // Fully remount the mounted canvas iframe: drop the host-side read cache so
+  // queries re-run, then recreate the iframe element (not just reload its
+  // document) so a refresh also recovers from a wedged frame.
+  const onRefresh = () => {
+    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+      action_type: "refresh",
+      surface: "canvas",
+      channel_id: channelId,
+      dashboard_id: dashboardId,
+      kind: "freeform",
+    });
+    void queryClient.invalidateQueries({ queryKey: [CANVAS_QUERY_KEY] });
+    remountFrame(dashboardId);
+  };
 
   const hasCode = code.length > 0;
   // Viewing the head version (or there's no history yet) → autosave is live.
@@ -209,6 +233,10 @@ function FreeformEditControls({
           }
         />
         <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+          <DropdownMenuItem onClick={onRefresh}>
+            <ArrowClockwiseIcon size={14} />
+            Refresh
+          </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() =>
               void copyCanvasLink(channelId, dashboardId, "canvas")
@@ -278,6 +306,7 @@ function CanvasBreadcrumb({
         className: "",
       })}
       leafLabel={name}
+      editScopeKey={dashboardId}
       onRename={(next) => void renameDashboard(dashboardId, next)}
       trailing={trailing}
     />
@@ -299,7 +328,14 @@ export function WebsiteLayout() {
 
   const channelId = params.channelId;
   const dashboardId = params.dashboardId;
+  const taskId = params.taskId;
   const base = channelId ? `/website/${channelId}` : "/website";
+
+  const { data: tasks } = useTasks();
+  const { tasks: filedTasks } = useChannelTasks(channelId);
+  const channelTask = filedTasks.some((record) => record.taskId === taskId)
+    ? tasks?.find((task) => task.id === taskId)
+    : undefined;
 
   const { channels } = useChannels();
   const channelName = channelId
@@ -329,7 +365,14 @@ export function WebsiteLayout() {
           gap="2"
           className="h-10 shrink-0 border-gray-6 border-b px-3"
         >
-          {headerContent}
+          <Flex
+            align="center"
+            justify="between"
+            className="h-full min-w-0 flex-1 overflow-hidden"
+          >
+            {headerContent}
+          </Flex>
+          {channelTask && <TaskHeaderActions task={channelTask} />}
         </Flex>
       )}
 

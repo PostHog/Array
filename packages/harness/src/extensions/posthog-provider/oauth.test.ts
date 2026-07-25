@@ -77,8 +77,28 @@ function hitCallbackBody(port: number, query: string): Promise<string> {
   });
 }
 
+async function getAvailablePort(): Promise<number> {
+  const server = http.createServer();
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("Failed to allocate an OAuth callback port");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+
+  return address.port;
+}
+
 describe("buildAuthorizeUrl", () => {
-  it("targets the same authorize endpoint and client as PostHog Code", () => {
+  it("targets the same authorize endpoint and client as the desktop app", () => {
     const url = buildAuthorizeUrl("us", "challenge123", getRedirectUri(8237));
 
     expect(url.origin + url.pathname).toBe(
@@ -89,7 +109,7 @@ describe("buildAuthorizeUrl", () => {
     );
   });
 
-  it("uses PKCE S256 and the PostHog Code scope + access level", () => {
+  it("uses PKCE S256 and the desktop app scope + access level", () => {
     const url = buildAuthorizeUrl("eu", "challenge123", getRedirectUri());
 
     expect(url.searchParams.get("response_type")).toBe("code");
@@ -151,8 +171,8 @@ describe("loginPosthog region selection", () => {
   let fetchSpy: MockInstance<typeof fetch>;
   let port: number;
 
-  beforeEach(() => {
-    port = 18500 + Math.floor(Math.random() * 500);
+  beforeEach(async () => {
+    port = await getAvailablePort();
     process.env.HARNESS_OAUTH_PORT = String(port);
     fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
@@ -251,13 +271,13 @@ describe("loginPosthog region selection", () => {
   });
 });
 
-describe("loginPosthog", () => {
+describe("loginPosthog", { timeout: 15_000 }, () => {
   const originalPort = process.env.HARNESS_OAUTH_PORT;
   let fetchSpy: MockInstance<typeof fetch>;
   let port: number;
 
-  beforeEach(() => {
-    port = 18000 + Math.floor(Math.random() * 1000);
+  beforeEach(async () => {
+    port = await getAvailablePort();
     process.env.HARNESS_OAUTH_PORT = String(port);
     fetchSpy = vi.spyOn(global, "fetch");
   });
@@ -466,8 +486,8 @@ describe("openBrowser (via loginPosthog)", () => {
   let fetchSpy: MockInstance<typeof fetch>;
   let port: number;
 
-  beforeEach(() => {
-    port = 19000 + Math.floor(Math.random() * 1000);
+  beforeEach(async () => {
+    port = await getAvailablePort();
     process.env.HARNESS_OAUTH_PORT = String(port);
     fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,

@@ -238,6 +238,36 @@ describe("buildConversationItems", () => {
     expect(result.isCompacting).toBe(false);
   });
 
+  it("builds a compact boundary without optional metadata", () => {
+    const result = buildConversationItems(
+      [
+        userPromptMsg(1, 1, "hi"),
+        statusMsg(2, "compacting"),
+        {
+          type: "acp_message",
+          ts: 3,
+          message: {
+            jsonrpc: "2.0",
+            method: "_posthog/compact_boundary",
+            params: { sessionId: "session-1" },
+          },
+        },
+      ],
+      null,
+    );
+
+    const boundary = result.items.find(
+      (item) =>
+        item.type === "session_update" &&
+        item.update.sessionUpdate === "compact_boundary",
+    );
+    expect(boundary).toMatchObject({
+      type: "session_update",
+      update: { sessionUpdate: "compact_boundary" },
+    });
+    expect(result.isCompacting).toBe(false);
+  });
+
   it("renders a failed compaction as a compacting_failed status row and clears the spinner", () => {
     // A failed compaction emits no compact_boundary, so the agent sends a
     // structured `compacting_failed` status: it clears the spinner (the original
@@ -257,7 +287,12 @@ describe("buildConversationItems", () => {
     );
     // Spinner row (now complete) + the failure row.
     expect(statusItems.map((i) => i.update)).toEqual([
-      { sessionUpdate: "status", status: "compacting", isComplete: true },
+      {
+        sessionUpdate: "status",
+        status: "compacting",
+        isComplete: true,
+        startedAt: 2,
+      },
       {
         sessionUpdate: "status",
         status: "compacting_failed",

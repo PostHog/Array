@@ -184,6 +184,28 @@ describe("promptToClaude", () => {
     });
   });
 
+  it("replaces oversized base64 images with a text notice", () => {
+    // ~6 MB decoded — over the 5 MB per-image API limit. Embedding it would
+    // poison the resumable session and 400 every subsequent turn.
+    const oversized = "A".repeat((6 * 1024 * 1024 * 4) / 3);
+    const result = promptToClaude({
+      sessionId: "session-1",
+      prompt: [
+        {
+          type: "image",
+          data: oversized,
+          mimeType: "image/png",
+        } as PromptRequest["prompt"][number],
+      ],
+    });
+
+    expect(result.message.content).toHaveLength(1);
+    expect(result.message.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("5 MB"),
+    });
+  });
+
   it("maps file URI-only image blocks to workspace Read prompt text", () => {
     const req: PromptRequest = {
       sessionId: "session-1",

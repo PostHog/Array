@@ -1,6 +1,7 @@
 import type { StoredLogEntry } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
+  addMissingCloudRuntimeConfigOptions,
   buildCloudDefaultConfigOptions,
   extractLatestConfigOptionsFromEntries,
 } from "./cloudSessionConfig";
@@ -87,5 +88,52 @@ describe("buildCloudDefaultConfigOptions", () => {
 
     expect(options[0].id).toBe("mode");
     expect(options.at(-1)?.id).toBe("model");
+  });
+});
+
+describe("addMissingCloudRuntimeConfigOptions", () => {
+  it("seeds selected model and reasoning values for codex cloud sessions", () => {
+    const options = addMissingCloudRuntimeConfigOptions(
+      buildCloudDefaultConfigOptions("auto", "codex"),
+      "codex",
+      "gpt-5.6-sol",
+      "max",
+    );
+
+    expect(options).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "model",
+          category: "model",
+          currentValue: "gpt-5.6-sol",
+        }),
+        expect.objectContaining({
+          id: "reasoning_effort",
+          category: "thought_level",
+          currentValue: "max",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps preview-provided runtime options unchanged", () => {
+    const existing = buildCloudDefaultConfigOptions("plan", "claude", [
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "claude-opus-4-7",
+        options: [{ value: "claude-opus-4-7", name: "Opus 4.7" }],
+        category: "model",
+      },
+    ]);
+
+    expect(
+      addMissingCloudRuntimeConfigOptions(
+        existing,
+        "claude",
+        "claude-sonnet-4-6",
+      ),
+    ).toBe(existing);
   });
 });

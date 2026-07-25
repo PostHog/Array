@@ -1,5 +1,7 @@
 import type {
   Adapter,
+  CloudMcpServerImport,
+  CloudMcpServerRelayDesignation,
   CloudRunSource,
   PrAuthorshipMode,
 } from "@posthog/shared";
@@ -13,12 +15,15 @@ export interface CreateTaskRunClientOptions {
   model?: string;
   reasoningLevel?: string;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
   autoPublish?: boolean;
+  rtkEnabled?: boolean;
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: string;
-  homeQuickAction?: string;
+  importedMcpServers?: CloudMcpServerImport[];
+  relayedMcpServers?: CloudMcpServerRelayDesignation[];
 }
 
 export interface StartTaskRunClientOptions {

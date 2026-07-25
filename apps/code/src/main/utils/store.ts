@@ -1,5 +1,16 @@
 import Store from "electron-store";
 import { getUserDataDir } from "./env";
+import { logger } from "./logger";
+
+const log = logger.scope("store");
+
+/** Structurally matches Electron's Rectangle (not imported here — utils stay electron-free). */
+export interface DisplayBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 interface FocusSession {
   mainRepoPath: string;
@@ -26,6 +37,7 @@ export interface WindowStateSchema {
   isMaximized: boolean;
   zoomLevel: number;
   isFullScreen: boolean;
+  fullScreenDisplayBounds: DisplayBounds | undefined;
   restoreFullScreenOnNextLaunch: boolean;
 }
 
@@ -55,20 +67,50 @@ export const windowStateStore = new Store<WindowStateSchema>({
     isMaximized: true,
     zoomLevel: 0,
     isFullScreen: false,
+    fullScreenDisplayBounds: undefined,
     restoreFullScreenOnNextLaunch: false,
   },
 });
 
+/**
+ * Persist a single window-state key. electron-store writes synchronously and
+ * throws on failure (e.g. ENOSPC on a full disk). Window-state persistence is
+ * non-critical, so swallow and log the error instead of letting it propagate
+ * into an event/timer callback and crash the main process.
+ */
+function setWindowState<K extends keyof WindowStateSchema>(
+  key: K,
+  value: WindowStateSchema[K],
+): void {
+  try {
+    windowStateStore.set(key, value);
+  } catch (error) {
+    log.warn(`Failed to persist window state "${key}"`, { error });
+  }
+}
+
 export function saveZoomLevel(level: number): void {
-  windowStateStore.set("zoomLevel", level);
+  setWindowState("zoomLevel", level);
 }
 
 export function saveFullScreenState(isFullScreen: boolean): void {
-  windowStateStore.set("isFullScreen", isFullScreen);
+  setWindowState("isFullScreen", isFullScreen);
 }
 
 export function getFullScreenState(): boolean {
   return windowStateStore.get("isFullScreen", false);
+}
+
+/**
+ * The bounds of the display the window was last fullscreened on, so the
+ * post-update relaunch can restore fullscreen on the same monitor.
+ */
+export function saveFullScreenDisplayBounds(bounds: DisplayBounds): void {
+  windowStateStore.set("fullScreenDisplayBounds", bounds);
+}
+
+export function getFullScreenDisplayBounds(): DisplayBounds | undefined {
+  return windowStateStore.get("fullScreenDisplayBounds", undefined);
 }
 
 /**
@@ -77,7 +119,7 @@ export function getFullScreenState(): boolean {
  * A normal quit leaves it false and launches windowed.
  */
 export function setRestoreFullScreenOnNextLaunch(restore: boolean): void {
-  windowStateStore.set("restoreFullScreenOnNextLaunch", restore);
+  setWindowState("restoreFullScreenOnNextLaunch", restore);
 }
 
 export function getRestoreFullScreenOnNextLaunch(): boolean {

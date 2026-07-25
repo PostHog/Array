@@ -1,4 +1,8 @@
 import type { Adapter } from "@posthog/shared";
+import type {
+  SandboxCustomImage,
+  SandboxEnvironment,
+} from "@posthog/shared/domain-types";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
@@ -310,6 +314,8 @@ export async function warmTask(options: {
   runtime_adapter?: string | null;
   model?: string | null;
   reasoning_effort?: string | null;
+  sandbox_environment_id?: string | null;
+  custom_image_id?: string | null;
 }): Promise<{ task_id: string; run_id: string } | null> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
@@ -325,6 +331,12 @@ export async function warmTask(options: {
         runtime_adapter: options.runtime_adapter ?? null,
         model: options.model ?? null,
         reasoning_effort: options.reasoning_effort ?? null,
+        ...(options.sandbox_environment_id
+          ? { sandbox_environment_id: options.sandbox_environment_id }
+          : {}),
+        ...(options.custom_image_id
+          ? { custom_image_id: options.custom_image_id }
+          : {}),
       }),
     },
   );
@@ -427,12 +439,21 @@ export interface RunTaskInCloudOptions {
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
   reasoningEffort?: string;
+  /** Sandbox environment / custom base image to run on. Sent so a reused warm
+   *  sandbox matches the selection instead of a mismatched default. */
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
   /** Permission mode: "default" | "acceptEdits" | "plan" | "auto". */
   initialPermissionMode?: string;
   /** Source that triggered this run. */
   runSource?: "manual" | "signal_report";
   /** Signal report ID when run_source is "signal_report". */
   signalReportId?: string;
+  /** When true, the cloud run pushes its changes and opens a draft PR on
+   *  completion without waiting for an explicit ask. */
+  autoPublish?: boolean;
+  /** Only false is sent: opts the run out of rtk command-output compression. */
+  rtkEnabled?: boolean;
 }
 
 export async function runTaskInCloud(
@@ -454,9 +475,13 @@ export async function runTaskInCloud(
       options.runtimeAdapter !== undefined ||
       options.model !== undefined ||
       options.reasoningEffort !== undefined ||
+      options.sandboxEnvironmentId !== undefined ||
+      options.customImageId !== undefined ||
       options.initialPermissionMode !== undefined ||
       options.runSource !== undefined ||
-      options.signalReportId !== undefined);
+      options.signalReportId !== undefined ||
+      options.autoPublish !== undefined ||
+      options.rtkEnabled === false);
 
   let body: string | undefined;
   if (hasOptions) {
@@ -477,12 +502,24 @@ export async function runTaskInCloud(
         payload.reasoning_effort = options.reasoningEffort;
       }
     }
+    if (options?.sandboxEnvironmentId) {
+      payload.sandbox_environment_id = options.sandboxEnvironmentId;
+    }
+    if (options?.customImageId) {
+      payload.custom_image_id = options.customImageId;
+    }
     if (options?.initialPermissionMode) {
       payload.initial_permission_mode = options.initialPermissionMode;
     }
     if (options?.runSource) payload.run_source = options.runSource;
     if (options?.signalReportId)
       payload.signal_report_id = options.signalReportId;
+    if (options?.autoPublish !== undefined) {
+      payload.auto_publish = options.autoPublish;
+    }
+    if (options?.rtkEnabled === false) {
+      payload.rtk_enabled = false;
+    }
     body = JSON.stringify(payload);
   }
 
@@ -525,6 +562,68 @@ export async function getTaskRun(
   }
 
   return await response.json();
+}
+
+/**
+ * Exchanges an artifact's storage path for a short-lived presigned S3 URL used
+ * to render image attachment previews.
+ */
+export async function presignTaskRunArtifact(
+  taskId: string,
+  runId: string,
+  storagePath: string,
+): Promise<string> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ storage_path: storagePath }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to generate artifact preview URL",
+    );
+  }
+
+  const data = (await response.json()) as { url: string };
+  return data.url;
+}
+
+export async function cancelRun(
+  taskId: string,
+  runId: string,
+  reason?: string,
+): Promise<{ status?: string }> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/cancel/`,
+    {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: unknown;
+    } | null;
+    const message =
+      typeof payload?.error === "string" && payload.error
+        ? payload.error
+        : "Failed to stop run";
+    throw new HttpError(response.status, response.statusText, message);
+  }
+
+  return (await response.json().catch(() => ({}))) as { status?: string };
 }
 
 export async function appendTaskRunLog(
@@ -734,6 +833,50 @@ export async function streamCloudTask(
     headers,
     signal: options.signal,
   });
+}
+
+export async function getSandboxCustomImages(): Promise<SandboxCustomImage[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/sandbox_custom_images/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch sandbox custom images",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: SandboxCustomImage[] }>(
+    response,
+  );
+  return data.results ?? [];
+}
+
+export async function getSandboxEnvironments(): Promise<SandboxEnvironment[]> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/sandbox_environments/`,
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to fetch sandbox environments",
+    );
+  }
+
+  const data = await parseJsonResponse<{ results?: SandboxEnvironment[] }>(
+    response,
+  );
+  return data.results ?? [];
 }
 
 export async function getIntegrations(): Promise<Integration[]> {

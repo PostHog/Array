@@ -1,11 +1,15 @@
-import type { SessionEvent, SessionNotification } from "../types";
+import type {
+  SessionEvent,
+  SessionNotification,
+  TerminalStatus,
+} from "../types";
 
 export type SessionActivityPhase = "idle" | "connecting" | "working";
 
 interface SessionActivityState {
   isPromptPending?: boolean;
   awaitingAgentOutput?: boolean;
-  terminalStatus?: "failed" | "completed";
+  terminalStatus?: TerminalStatus;
   events?: SessionEvent[];
 }
 
@@ -97,6 +101,14 @@ export function isSessionAwaitingUserInput(
   }
 
   return awaitingUserInput;
+}
+
+export function countUserMessages(events: SessionEvent[] = []): number {
+  return events.filter(
+    (e) =>
+      e.type === "session_update" &&
+      e.notification.update?.sessionUpdate === "user_message_chunk",
+  ).length;
 }
 
 export function getSessionActivityPhase(args: {

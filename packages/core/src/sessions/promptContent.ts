@@ -23,6 +23,30 @@ export function makeAttachmentUri(filePath: string): string {
 export interface AttachmentRef {
   id: string;
   label: string;
+  cloudArtifact?: CloudArtifactRef;
+}
+
+export interface CloudArtifactRef {
+  runId: string;
+  artifactId: string;
+}
+
+function parseCloudArtifactRef(pathname: string): CloudArtifactRef | undefined {
+  const segments = pathname.split("/").filter(Boolean);
+  const posthogIndex = segments.lastIndexOf(".posthog");
+  if (
+    posthogIndex < 0 ||
+    segments[posthogIndex + 1] !== "attachments" ||
+    !segments[posthogIndex + 2] ||
+    !segments[posthogIndex + 3]
+  ) {
+    return undefined;
+  }
+
+  return {
+    runId: segments[posthogIndex + 2],
+    artifactId: segments[posthogIndex + 3],
+  };
 }
 
 export function parseAttachmentUri(uri: string): AttachmentRef | null {
@@ -56,7 +80,8 @@ function parseFileUri(
     const pathname = decodeURIComponent(new URL(uri).pathname);
     const label =
       fallbackLabel?.trim() || getFileName(pathname) || "attachment";
-    return { id: uri, label };
+    const cloudArtifact = parseCloudArtifactRef(pathname);
+    return { id: uri, label, ...(cloudArtifact ? { cloudArtifact } : {}) };
   } catch {
     const label = fallbackLabel?.trim() || getFileName(uri) || "attachment";
     return { id: uri, label };

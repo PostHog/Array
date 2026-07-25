@@ -4,12 +4,13 @@ import { SidebarItem } from "../SidebarItem";
 interface SkillsItemProps {
   isActive: boolean;
   onClick: () => void;
+  depth?: number;
 }
 
-export function SkillsItem({ isActive, onClick }: SkillsItemProps) {
+export function SkillsItem({ isActive, onClick, depth = 0 }: SkillsItemProps) {
   return (
     <SidebarItem
-      depth={0}
+      depth={depth}
       icon={<Lightbulb size={16} weight={isActive ? "fill" : "regular"} />}
       label="Skills"
       isActive={isActive}

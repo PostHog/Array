@@ -1,6 +1,11 @@
-import { McpServersView } from "@posthog/ui/features/mcp-servers/components/McpServersView";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/mcp-servers")({
-  component: McpServersView,
+  beforeLoad: () => {
+    throw redirect({
+      to: "/settings/$category",
+      params: { category: "mcp-servers" },
+      replace: true,
+    });
+  },
 });

@@ -38,11 +38,13 @@ const isDev = !app.isPackaged;
 
 // Set app name for single-instance lock, crashReporter, etc
 const appName = isDev ? "posthog-code-dev" : "posthog-code";
-app.setName(isDev ? "PostHog Code (Development)" : "PostHog Code");
+app.setName(isDev ? "PostHog (Development)" : "PostHog");
 
 // Set userData path for @posthog/code
 const appDataPath = app.getPath("appData");
-const userDataPath = path.join(appDataPath, "@posthog", appName);
+const userDataPath =
+  process.env.POSTHOG_E2E_USER_DATA_DIR ??
+  path.join(appDataPath, "@posthog", appName);
 app.setPath("userData", userDataPath);
 
 // Export the electron-derived state to env so utility singletons (utils/*,
@@ -69,6 +71,12 @@ process.env.POSTHOG_CODE_CHROMIUM_LOG_PATH = chromiumLogPath;
 app.commandLine.appendSwitch("enable-logging", "file");
 app.commandLine.appendSwitch("log-file", chromiumLogPath);
 app.commandLine.appendSwitch("log-level", "0");
+
+// Allow programmatic audio playback without a prior user gesture. The agent
+// speaks (and completion sounds ring) autonomously, with no click at that
+// moment, so Chromium's default gesture requirement would silently reject
+// HTMLMediaElement.play(). Must be set before app "ready".
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 // In dev, expose the renderer over CDP (:9222 by default) for the
 // test-electron-app skill. electron-vite launches Electron itself, so this is

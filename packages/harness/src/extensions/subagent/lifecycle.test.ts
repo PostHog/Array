@@ -2,17 +2,22 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { RunStatus } from "./lifecycle";
 import {
   appendEvent,
   createRunId,
   endRun,
-  listRuns,
-  readStatus,
-  readTranscript,
   runDirectory,
   startRun,
+  transcriptPath,
   writeTranscript,
 } from "./lifecycle";
+
+function readStatusFile(runId: string): RunStatus {
+  return JSON.parse(
+    fs.readFileSync(path.join(runDirectory(runId), "status.json"), "utf-8"),
+  ) as RunStatus;
+}
 
 describe("lifecycle", () => {
   let originalHome: string | undefined;
@@ -41,8 +46,7 @@ describe("lifecycle", () => {
     expect(status.state).toBe("running");
     expect(status.lifecycleArtifactVersion).toBe(1);
 
-    const readBack = readStatus(runId);
-    expect(readBack).toMatchObject({
+    expect(readStatusFile(runId)).toMatchObject({
       runId,
       mode: "single",
       agents: ["scout"],
@@ -75,7 +79,7 @@ describe("lifecycle", () => {
     expect(final.durationMs).toBeGreaterThanOrEqual(0);
     expect(final.totalTokens).toBe(123);
     expect(final.totalCost).toBe(0.5);
-    expect(readStatus(runId)?.state).toBe("completed");
+    expect(readStatusFile(runId).state).toBe("completed");
   });
 
   it("endRun records an error message for failed runs", () => {
@@ -102,39 +106,18 @@ describe("lifecycle", () => {
     expect(events).toHaveLength(2);
   });
 
-  it("readStatus returns undefined for a run that doesn't exist", () => {
-    expect(readStatus("does-not-exist")).toBeUndefined();
-  });
-
-  it("listRuns returns all known runs, most recently started first", async () => {
-    const first = createRunId();
-    startRun({ runId: first, mode: "single", agents: ["scout"] });
-    await new Promise((r) => setTimeout(r, 2));
-    const second = createRunId();
-    startRun({ runId: second, mode: "single", agents: ["worker"] });
-
-    const runs = listRuns();
-    expect(runs.map((r) => r.runId)).toEqual([second, first]);
-  });
-
-  it("listRuns returns an empty array when the runs directory doesn't exist", () => {
-    expect(listRuns()).toEqual([]);
-  });
-
-  it("writeTranscript then readTranscript round-trips short content", () => {
+  it("writeTranscript stores content readable at transcriptPath", () => {
     const runId = createRunId();
     writeTranscript(runId, "# hello\n\nsome transcript content");
-    expect(readTranscript(runId)).toBe("# hello\n\nsome transcript content");
-  });
-
-  it("readTranscript returns undefined when there's no transcript yet", () => {
-    expect(readTranscript(createRunId())).toBeUndefined();
+    expect(fs.readFileSync(transcriptPath(runId), "utf-8")).toBe(
+      "# hello\n\nsome transcript content",
+    );
   });
 
   it("writeTranscript truncates content exceeding maxBytes and appends a notice", () => {
     const runId = createRunId();
     writeTranscript(runId, "x".repeat(1000), 100);
-    const stored = readTranscript(runId) ?? "";
+    const stored = fs.readFileSync(transcriptPath(runId), "utf-8");
     expect(Buffer.byteLength(stored, "utf-8")).toBeLessThan(1000);
     expect(stored).toMatch(/transcript truncated: exceeded 100 bytes/);
   });

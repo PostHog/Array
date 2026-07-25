@@ -1,5 +1,6 @@
 import { CaretDownIcon, CaretRightIcon, Plus } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import { INDENT_SIZE } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { useState } from "react";
@@ -17,6 +18,8 @@ interface SidebarSectionProps {
   onNewTask?: () => void;
   newTaskTooltip?: string;
   dragHandleRef?: React.RefCallback<HTMLButtonElement>;
+  /** Indents the header for sections nested inside another section. */
+  depth?: number;
 }
 
 export function SidebarSection({
@@ -31,6 +34,7 @@ export function SidebarSection({
   onNewTask,
   newTaskTooltip,
   dragHandleRef,
+  depth,
 }: SidebarSectionProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -43,6 +47,8 @@ export function SidebarSection({
           className="flex w-full items-center justify-between pl-2 not-hover:aria-expanded:bg-transparent"
           style={{
             marginTop: addSpacingBefore ? "12px" : undefined,
+            // + 8 matches the base pl-2 padding set via className below.
+            paddingLeft: depth ? `${depth * INDENT_SIZE + 8}px` : undefined,
           }}
           onContextMenu={onContextMenu}
           onMouseEnter={() => setIsHovered(true)}

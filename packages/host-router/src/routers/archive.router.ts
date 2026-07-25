@@ -32,7 +32,7 @@ export const archiveRouter = router({
   list: publicProcedure
     .output(listArchivedTasksOutput)
     .query(({ ctx }) =>
-      ctx.container.get<ArchiveService>(ARCHIVE_SERVICE).getArchivedTasks(),
+      ctx.container.get<ArchiveService>(ARCHIVE_SERVICE).listArchivedTasks(),
     ),
 
   archivedTaskIds: publicProcedure

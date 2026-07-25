@@ -32,3 +32,14 @@ export interface IActiveView {
 export const ACTIVE_VIEW_PROVIDER = Symbol.for(
   "posthog.ui.notifications.activeView",
 );
+
+// Reads the user's spoken-notification settings at speak time (host binds it to
+// the settings store). Separate from INotificationSettings so the speech
+// channel and the toast/native channel evolve independently.
+export interface ISpeechNotifySettings {
+  get(): import("./speechRouting").SpeechGateSettings;
+}
+
+export const SPEECH_NOTIFY_SETTINGS = Symbol.for(
+  "posthog.ui.speech.notifySettings",
+);

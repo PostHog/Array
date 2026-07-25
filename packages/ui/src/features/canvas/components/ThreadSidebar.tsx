@@ -12,13 +12,19 @@ import { useState } from "react";
 // re-render on every resize tick.
 export function ThreadSidebar({
   taskId,
+  channelId,
   task,
   onClose,
+  onOpenFull,
+  showTaskSummary,
 }: {
   taskId: string;
+  channelId: string;
   /** The thread's task when the caller already has it; fetched otherwise. */
   task?: Task;
   onClose?: () => void;
+  onOpenFull?: () => void;
+  showTaskSummary?: boolean;
 }) {
   const collapsed = useThreadPanelStore((s) => s.collapsed);
   const width = useThreadPanelStore((s) => s.width);
@@ -39,6 +45,7 @@ export function ThreadSidebar({
     return (
       <ThreadPanel
         taskId={taskId}
+        channelId={channelId}
         task={task}
         collapsed
         onToggleCollapsed={() => toggleCollapsed(false)}
@@ -57,9 +64,12 @@ export function ThreadSidebar({
     >
       <ThreadPanel
         taskId={taskId}
+        channelId={channelId}
         task={task}
         onClose={onClose}
         onToggleCollapsed={() => toggleCollapsed(true)}
+        onOpenFull={onOpenFull}
+        showTaskSummary={showTaskSummary}
       />
     </ResizableSidebar>
   );

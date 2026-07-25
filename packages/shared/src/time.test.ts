@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  formatClockTime,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
+  getLocalDayDiff,
   getRelativeDateGroup,
 } from "./time";
 
@@ -9,6 +11,17 @@ const NOW = new Date("2026-06-15T12:00:00.000Z").getTime();
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
+
+describe("formatClockTime", () => {
+  it.each([
+    ["00:00", "12:00 AM"],
+    ["08:15", "8:15 AM"],
+    ["11:00", "11:00 AM"],
+    ["17:30", "5:30 PM"],
+  ])("formats %s as %s", (time, expected) => {
+    expect(formatClockTime(time)).toBe(expected);
+  });
+});
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -64,6 +77,29 @@ describe("formatRelativeTimeLong", () => {
 
   it("falls back to a locale date older than a week", () => {
     expect(formatRelativeTimeLong(NOW - 400 * DAY)).toContain("2025");
+  });
+});
+
+describe("getLocalDayDiff", () => {
+  it("returns 0 for any moment on the same local day", () => {
+    expect(getLocalDayDiff(NOW - 2 * HOUR)).toBe(0);
+  });
+
+  it("counts calendar days, not 24h windows", () => {
+    // 1h ago but across the local midnight boundary is still "yesterday".
+    const justAfterMidnight = new Date(NOW);
+    justAfterMidnight.setHours(0, 30, 0, 0);
+    vi.setSystemTime(justAfterMidnight);
+    expect(getLocalDayDiff(justAfterMidnight.getTime() - HOUR)).toBe(1);
+  });
+
+  it("accepts an ISO string and an explicit now", () => {
+    const now = new Date(NOW);
+    expect(getLocalDayDiff(new Date(NOW - 3 * DAY).toISOString(), now)).toBe(3);
+  });
+
+  it("returns negative for future days", () => {
+    expect(getLocalDayDiff(NOW + 2 * DAY)).toBe(-2);
   });
 });
 

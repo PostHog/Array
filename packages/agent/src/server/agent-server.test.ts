@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
@@ -17,6 +25,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { POSTHOG_NOTIFICATIONS } from "../acp-extensions";
 import { getSessionJsonlPath } from "../adapters/claude/session/jsonl-hydration";
 import type { PermissionMode } from "../execution-mode";
 import type { PostHogAPIClient } from "../posthog-api";
@@ -35,6 +44,7 @@ import {
   SSE_KEEPALIVE_INTERVAL_MS,
 } from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
+import type { ExistingPrCheckoutResult } from "./pr-checkout";
 
 const mockedClaudeSdk = vi.hoisted(() => {
   const createSuccessResult = () => ({
@@ -223,6 +233,13 @@ interface TestableServer {
     inboxReportUrl?: string | null,
   ): string;
   buildDetectedPrContext(prUrl: string): string;
+  buildExistingPrCheckoutPromise(
+    prUrl: string | null,
+  ): Promise<ExistingPrCheckoutResult> | null;
+  logExistingPrCheckoutResult(
+    prUrl: string | null,
+    result: ExistingPrCheckoutResult,
+  ): void;
   buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
@@ -233,6 +250,10 @@ interface TestableServer {
   buildClaudeCodeSessionMeta(
     runtimeAdapter: Adapter,
   ): { claudeCode: { options: Record<string, unknown> } } | undefined;
+  resumeState: ResumeState | null;
+  getNativeGoalForFreshSession(
+    runtimeAdapter: Adapter,
+  ): ResumeState["nativeGoal"];
 }
 
 interface NativeResumeTestServer {
@@ -406,6 +427,7 @@ describe("AgentServer HTTP Mode", () => {
       mode: "interactive",
       taskId: "test-task-id",
       runId: "test-run-id",
+      resolveRtkSavings: async () => null,
       ...overrides,
     });
     return server;
@@ -426,6 +448,37 @@ describe("AgentServer HTTP Mode", () => {
     );
   };
 
+  it("replays ACP notifications emitted before cloud session assignment", () => {
+    const testServer = createServer() as unknown as {
+      session: { sseController: null } | null;
+      pendingEvents: Record<string, unknown>[];
+      preSessionEvents: Record<string, unknown>[];
+      handleAcpTransportMessage(message: unknown): void;
+      flushPreSessionEvents(): void;
+    };
+    const message = {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [{ name: "goal" }],
+        },
+      },
+    };
+
+    testServer.handleAcpTransportMessage(message);
+    expect(testServer.preSessionEvents).toHaveLength(1);
+
+    testServer.session = { sseController: null };
+    testServer.flushPreSessionEvents();
+
+    expect(testServer.preSessionEvents).toHaveLength(0);
+    expect(testServer.pendingEvents).toContainEqual(
+      expect.objectContaining({ notification: message }),
+    );
+    testServer.session = null;
+  });
+
   describe("GET /health", () => {
     it("returns ok status with active session", async () => {
       await createServer().start();
@@ -441,10 +494,47 @@ describe("AgentServer HTTP Mode", () => {
         sessionInitMs: expect.any(Number),
       });
     }, 30000);
+
+    it("links native agent state before initializing the session", async () => {
+      const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      const originalCodexHome = process.env.CODEX_HOME;
+      const claudeConfigDir = join(repo.path, ".claude-test");
+      const codexHome = join(repo.path, ".codex-test");
+      const agentStateDir = join(repo.path, ".posthog", "agent-state");
+      process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+      process.env.CODEX_HOME = codexHome;
+
+      try {
+        await createServer({ agentStateDir }).start();
+
+        const claudeProjects = join(claudeConfigDir, "projects");
+        const codexSessions = join(codexHome, "sessions");
+        expect((await lstat(claudeProjects)).isSymbolicLink()).toBe(true);
+        expect((await lstat(codexSessions)).isSymbolicLink()).toBe(true);
+        expect(await readlink(claudeProjects)).toBe(
+          join(agentStateDir, "claude", "projects"),
+        );
+        expect(await readlink(codexSessions)).toBe(
+          join(agentStateDir, "codex", "sessions"),
+        );
+      } finally {
+        if (originalClaudeConfigDir === undefined) {
+          delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+          process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+        }
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
+    }, 30000);
   });
 
   describe("turn completion", () => {
     function stubSessionCleanup(testServer: unknown): {
+      session: unknown;
       cleanupSession: (options?: {
         completeEventStream?: boolean;
       }) => Promise<void>;
@@ -497,6 +587,48 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.eventStreamSender.stop).toHaveBeenCalledOnce();
     });
 
+    it("emits rtk savings once before terminal event ingest stops", async () => {
+      const testServer = stubSessionCleanup(
+        createServer({
+          resolveRtkSavings: async () => ({
+            totalCommands: 4,
+            inputTokens: 1000,
+            outputTokens: 350,
+            tokensSaved: 650,
+          }),
+        }),
+      );
+      const session = testServer.session;
+
+      await testServer.cleanupSession({ completeEventStream: true });
+      testServer.session = session;
+      await testServer.cleanupSession({ completeEventStream: true });
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledOnce();
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notification: expect.objectContaining({
+            method: "_posthog/rtk_savings",
+            params: expect.objectContaining({
+              task_id: "test-task-id",
+              run_id: "test-run-id",
+              team_id: 1,
+              counter_id: "test-task-id",
+              cumulative_commands: 4,
+              cumulative_input_tokens: 1000,
+              cumulative_output_tokens: 350,
+              cumulative_tokens_saved: 650,
+            }),
+          }),
+        }),
+      );
+      expect(
+        testServer.eventStreamSender.enqueue.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        testServer.eventStreamSender.stop.mock.invocationCallOrder[0],
+      );
+    });
+
     it("writes terminal failure status before completing event ingest", async () => {
       const order: string[] = [];
       const testServer = new AgentServer({
@@ -509,6 +641,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
@@ -586,6 +719,7 @@ describe("AgentServer HTTP Mode", () => {
         mode: "interactive",
         taskId: "test-task-id",
         runId: "test-run-id",
+        resolveRtkSavings: async () => null,
       }) as unknown as {
         eventStreamSender: {
           enqueue: (event: Record<string, unknown>) => void;
@@ -685,6 +819,257 @@ describe("AgentServer HTTP Mode", () => {
       expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
     });
 
+    function createUsageTestServer() {
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: { payload: JwtPayload } | null;
+        posthogAPI: { updateTaskRun: ReturnType<typeof vi.fn> };
+        recordTurnUsage(usage: unknown): void;
+      };
+      testServer.posthogAPI = { updateTaskRun: vi.fn(async () => ({})) };
+      testServer.session = {
+        payload: {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      return testServer;
+    }
+
+    it("reports cumulative run token usage into TaskRun.state after each settled turn", () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 5,
+        totalTokens: 165,
+      };
+
+      testServer.recordTurnUsage(turnUsage);
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenCalledTimes(2);
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenNthCalledWith(
+        1,
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 10,
+              cache_write_tokens: 5,
+              thought_tokens: 0,
+              total_tokens: 165,
+              turns: 1,
+            },
+          },
+        },
+      );
+      // The second report carries run-cumulative totals, not per-turn figures.
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-1",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 200,
+              output_tokens: 100,
+              cache_read_tokens: 20,
+              cache_write_tokens: 10,
+              thought_tokens: 0,
+              total_tokens: 330,
+              turns: 2,
+            },
+          },
+        },
+      );
+    });
+
+    it("does not report anything when a turn settles without usage", () => {
+      const testServer = createUsageTestServer();
+
+      testServer.recordTurnUsage(undefined);
+
+      expect(testServer.posthogAPI.updateTaskRun).not.toHaveBeenCalled();
+    });
+
+    it("resets run usage on session cleanup so a later run starts from zero", async () => {
+      const testServer = createUsageTestServer();
+      const turnUsage = {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      const cleanupServer = stubSessionCleanup(testServer);
+      await cleanupServer.cleanupSession();
+
+      testServer.session = {
+        payload: {
+          run_id: "run-2",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "interactive",
+        },
+      };
+      testServer.recordTurnUsage(turnUsage);
+
+      expect(testServer.posthogAPI.updateTaskRun).toHaveBeenLastCalledWith(
+        "task-1",
+        "run-2",
+        {
+          state: {
+            token_usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_read_tokens: 0,
+              cache_write_tokens: 0,
+              thought_tokens: 0,
+              total_tokens: 150,
+              turns: 1,
+            },
+          },
+        },
+      );
+    });
+
+    // Sandbox teardown kills the exec'd agent-server without SIGTERM, so the
+    // trace's root span only exports if telemetry is shut down at the run's
+    // in-process terminal points.
+    it("shuts down telemetry after mirroring the terminal failure record", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: {
+          payload: { run_id: string };
+          logWriter: { flush: ReturnType<typeof vi.fn> };
+          telemetry: {
+            append: ReturnType<typeof vi.fn>;
+            shutdown: ReturnType<typeof vi.fn>;
+          };
+        };
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => ({})),
+      };
+      testServer.session = {
+        payload: { run_id: "run-1" },
+        logWriter: { flush: vi.fn(async () => {}) },
+        telemetry: {
+          append: vi.fn(() => {
+            order.push("append");
+          }),
+          shutdown: vi.fn(async () => {
+            order.push("shutdown");
+          }),
+        },
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "background",
+        },
+        "error",
+        "boom",
+      );
+
+      // The error mirror must land before shutdown so the root span exports
+      // with ERROR status.
+      expect(order).toEqual(["append", "shutdown"]);
+    });
+
+    it.each([
+      { mode: "background" as const, shutdownCalls: 1 },
+      { mode: "interactive" as const, shutdownCalls: 0 },
+    ])(
+      "finalizeRunTelemetry shuts down telemetry only for $mode runs",
+      async ({ mode, shutdownCalls }) => {
+        const testServer = new AgentServer({
+          port,
+          jwtPublicKey: TEST_PUBLIC_KEY,
+          repositoryPath: repo.path,
+          apiUrl: "http://localhost:8000",
+          apiKey: "test-api-key",
+          projectId: 1,
+          mode: "interactive",
+          taskId: "test-task-id",
+          runId: "test-run-id",
+        }) as unknown as {
+          session: { telemetry: { shutdown: ReturnType<typeof vi.fn> } };
+          finalizeRunTelemetry(payload: JwtPayload): Promise<void>;
+        };
+        testServer.session = {
+          telemetry: { shutdown: vi.fn(async () => {}) },
+        };
+
+        await testServer.finalizeRunTelemetry({
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode,
+        });
+
+        expect(testServer.session.telemetry.shutdown).toHaveBeenCalledTimes(
+          shutdownCalls,
+        );
+      },
+    );
+
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -777,6 +1162,123 @@ describe("AgentServer HTTP Mode", () => {
       },
     );
 
+    function createRetryTestServer(prompt: ReturnType<typeof vi.fn>) {
+      const testServer = createFailureTestServer();
+      testServer.session = {
+        acpSessionId: "acp-1",
+        payload: { run_id: "run-1" },
+        logWriter: { appendRawLine: vi.fn(), flush: vi.fn(async () => {}) },
+        clientConnection: { prompt },
+      };
+      return testServer as unknown as {
+        promptWithUpstreamRetry(request: {
+          sessionId: string;
+          prompt: ContentBlock[];
+        }): Promise<{ stopReason: string }>;
+      };
+    }
+
+    it("continues an unattended turn after a transient upstream stream death", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: terminated"))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt[0].text).toContain(
+          "interrupted by a transient connection error",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("re-sends the original prompt when the failure happened before the stream started", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("API Error: Connection error."))
+          .mockResolvedValueOnce({ stopReason: "end_turn" });
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await expect(resultPromise).resolves.toEqual({
+          stopReason: "end_turn",
+        });
+        expect(prompt).toHaveBeenCalledTimes(2);
+        const retryRequest = prompt.mock.calls[1][0] as {
+          sessionId: string;
+          prompt: Array<{ type: string; text: string }>;
+        };
+        expect(retryRequest.sessionId).toBe("acp-1");
+        expect(retryRequest.prompt).toEqual([
+          { type: "text", text: "do the task" },
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not retry a genuine agent error", async () => {
+      const prompt = vi.fn().mockRejectedValue(new Error("boom"));
+      const testServer = createRetryTestServer(prompt);
+
+      await expect(
+        testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        }),
+      ).rejects.toThrow("boom");
+      expect(prompt).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops continuing once the bounded retry budget is exhausted", async () => {
+      vi.useFakeTimers();
+      try {
+        const prompt = vi
+          .fn()
+          .mockRejectedValue(new Error("API Error: terminated"));
+        const testServer = createRetryTestServer(prompt);
+
+        const resultPromise = testServer.promptWithUpstreamRetry({
+          sessionId: "acp-1",
+          prompt: [{ type: "text", text: "do the task" }],
+        });
+        const assertion = expect(resultPromise).rejects.toThrow(
+          "API Error: terminated",
+        );
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        await assertion;
+        expect(prompt).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("persists structured turn completion notifications", () => {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -861,6 +1363,526 @@ describe("AgentServer HTTP Mode", () => {
       ).toBe(false);
       expect(isTurnCompleteNotification(null)).toBe(false);
       expect(isTurnCompleteNotification("turn_complete")).toBe(false);
+    });
+  });
+
+  describe("broadcastEvent", () => {
+    function exposeBroadcastEvent(testServer: AgentServer) {
+      return testServer as unknown as {
+        eventStreamSender: {
+          enqueue: ReturnType<typeof vi.fn>;
+          stop: ReturnType<typeof vi.fn>;
+        } | null;
+        pendingEvents: Record<string, unknown>[];
+        session: unknown;
+        broadcastEvent(event: Record<string, unknown>): void;
+      };
+    }
+
+    it("enqueues and buffers events raised before a session is assigned", () => {
+      // Regression: an MCP relay request can fire the instant the client
+      // subprocess starts, ahead of session assignment. broadcastEvent must
+      // not silently drop it.
+      const testServer = exposeBroadcastEvent(createServer());
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.session = null;
+
+      const event = {
+        type: "mcp_request",
+        requestId: "req-1",
+        server: "slack",
+      };
+      testServer.broadcastEvent(event);
+
+      expect(testServer.eventStreamSender.enqueue).toHaveBeenCalledWith(event);
+      expect(testServer.pendingEvents).toEqual([event]);
+    });
+
+    it("buffers events with no event stream sender configured and no session", () => {
+      const testServer = exposeBroadcastEvent(createServer());
+      testServer.session = null;
+
+      const event = {
+        type: "mcp_request",
+        requestId: "req-1",
+        server: "slack",
+      };
+      expect(() => testServer.broadcastEvent(event)).not.toThrow();
+
+      expect(testServer.pendingEvents).toEqual([event]);
+    });
+  });
+
+  describe("relayed MCP server tool permissions", () => {
+    function exposeCloudClient(testServer: AgentServer) {
+      return testServer as unknown as {
+        config: { relayMcpServers?: string[]; mode?: string };
+        session: { hasDesktopConnected?: boolean } | null;
+        eventStreamSender: unknown;
+        relayPermissionToClient: (params: unknown) => Promise<unknown>;
+        pendingPermissions: Map<string, unknown>;
+        resolvePermission: (
+          requestId: string,
+          optionId: string,
+        ) => "resolved" | "not_found" | "invalid_option";
+        createCloudClient(payload: {
+          run_id: string;
+          task_id: string;
+          team_id: number;
+          user_id: number;
+          distinct_id: string;
+          mode?: "interactive" | "background";
+        }): {
+          requestPermission(params: unknown): Promise<{
+            outcome: { outcome: string; optionId?: string };
+            _meta?: Record<string, unknown>;
+          }>;
+        };
+      };
+    }
+
+    function permissionRequestFor(mcpToolName: string) {
+      return {
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+        toolCall: {
+          kind: "other",
+          _meta: { claudeCode: { toolName: mcpToolName } },
+          rawInput: {},
+        },
+      };
+    }
+
+    // Codex never writes `_meta.claudeCode`; it populates the neutral
+    // `_meta.posthog` channel with a structured `mcp` descriptor and sets
+    // rawInput to the tool arguments (no toolName). The gate must still fire.
+    function codexPermissionRequestFor(server: string, tool: string) {
+      return {
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+        toolCall: {
+          kind: "other",
+          _meta: {
+            posthog: {
+              toolName: `mcp__${server}__${tool}`,
+              mcp: { server, tool },
+            },
+          },
+          rawInput: { some: "arg" },
+        },
+      };
+    }
+
+    function posthogExecPermissionOptions() {
+      return [
+        { optionId: "allow_once", kind: "allow_once" },
+        { optionId: "allow_always", kind: "allow_always" },
+        { optionId: "reject_once", kind: "reject_once" },
+      ];
+    }
+
+    function claudePosthogExecPermissionRequest(command: string) {
+      return {
+        options: posthogExecPermissionOptions(),
+        toolCall: {
+          kind: "other",
+          _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
+          rawInput: { command },
+        },
+      };
+    }
+
+    function codexPosthogExecPermissionRequest(command: string) {
+      return {
+        options: posthogExecPermissionOptions(),
+        toolCall: {
+          kind: "other",
+          _meta: {
+            posthog: {
+              toolName: "mcp__posthog_cloud__exec",
+              mcp: { server: "posthog_cloud", tool: "exec" },
+            },
+          },
+          rawInput: { command },
+        },
+      };
+    }
+
+    const basePayload = {
+      run_id: "run-1",
+      task_id: "task-1",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "user-1",
+    };
+
+    it("relays a relayed-server tool call when the desktop is connected", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+      expect(result).toEqual({
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      });
+    });
+
+    it("relays when only the durable event stream is reachable (no desktop session)", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      await requestPermission(permissionRequestFor("mcp__slack__send_message"));
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+    });
+
+    it("denies a relayed-server tool call instead of auto-approving when no client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it("denies a relayed-server tool call in background mode even when a client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient({
+        ...basePayload,
+        mode: "background",
+      });
+      const result = await requestPermission(
+        permissionRequestFor("mcp__slack__send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it("does not treat a tool on a non-relayed server as always-ask", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        permissionRequestFor("mcp__posthog__query"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({
+        outcome: "selected",
+        optionId: "allow_once",
+      });
+    });
+
+    it("treats a codex relay tool call (posthog _meta channel) as always-ask", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = { hasDesktopConnected: true };
+      const relaySpy = vi
+        .spyOn(testServer, "relayPermissionToClient")
+        .mockResolvedValue({
+          outcome: { outcome: "selected", optionId: "allow_once" },
+        });
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      await requestPermission(
+        codexPermissionRequestFor("slack", "send_message"),
+      );
+
+      expect(relaySpy).toHaveBeenCalledOnce();
+    });
+
+    it("denies a codex relay tool call when no client is reachable", async () => {
+      const testServer = exposeCloudClient(createServer());
+      testServer.config.relayMcpServers = ["slack"];
+      testServer.session = null;
+      testServer.eventStreamSender = null;
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        codexPermissionRequestFor("slack", "send_message"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it.each([
+      {
+        adapter: "Claude",
+        request: claudePosthogExecPermissionRequest(
+          "call notebooks-destroy {}",
+        ),
+        expectedKinds: ["allow_once", "allow_always", "reject_once"],
+      },
+      {
+        adapter: "Codex",
+        request: codexPosthogExecPermissionRequest("call notebooks-destroy {}"),
+        expectedKinds: ["allow_once", "reject_once"],
+      },
+    ])(
+      "relays a configured PostHog exec match from $adapter with adapter-specific choices",
+      async ({ request, expectedKinds }) => {
+        const testServer = exposeCloudClient(createServer());
+        testServer.session = null;
+        testServer.eventStreamSender = null;
+        const relaySpy = vi
+          .spyOn(testServer, "relayPermissionToClient")
+          .mockResolvedValue({
+            outcome: { outcome: "selected", optionId: "allow_once" },
+          });
+
+        const { requestPermission } = testServer.createCloudClient(basePayload);
+        const result = await requestPermission(request);
+
+        const relayed = relaySpy.mock.calls[0]?.[0] as {
+          options: Array<{ kind: string }>;
+        };
+        expect(relayed.options.map((option) => option.kind)).toEqual(
+          expectedKinds,
+        );
+        expect(result.outcome).toEqual({
+          outcome: "selected",
+          optionId: "allow_once",
+        });
+      },
+    );
+
+    it("auto-approves a nonmatching PostHog exec sub-tool", async () => {
+      const testServer = exposeCloudClient(
+        createServer({ posthogExecPermissionRegex: "delete|destroy" }),
+      );
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        claudePosthogExecPermissionRequest("call experiment-get {}"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({
+        outcome: "selected",
+        optionId: "allow_once",
+      });
+    });
+
+    it.each([
+      {
+        modeSource: "JWT payload",
+        configMode: "interactive",
+        payloadMode: "background",
+      },
+      {
+        modeSource: "server config",
+        configMode: "background",
+        payloadMode: undefined,
+      },
+    ] as const)(
+      "keeps PostHog exec matches auto-approved in background mode from $modeSource",
+      async ({ configMode, payloadMode }) => {
+        const testServer = exposeCloudClient(
+          createServer({
+            mode: configMode,
+            posthogExecPermissionRegex: "delete|destroy",
+          }),
+        );
+        const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+        const { requestPermission } = testServer.createCloudClient({
+          ...basePayload,
+          ...(payloadMode ? { mode: payloadMode } : {}),
+        });
+        const result = await requestPermission(
+          codexPosthogExecPermissionRequest("call experiment-delete {}"),
+        );
+
+        expect(relaySpy).not.toHaveBeenCalled();
+        expect(result.outcome).toEqual({
+          outcome: "selected",
+          optionId: "allow_once",
+        });
+      },
+    );
+
+    it("rejects permission responses for options that were not offered", async () => {
+      const testServer = exposeCloudClient(createServer());
+      const pending = testServer.relayPermissionToClient({
+        options: [
+          { optionId: "allow_once", kind: "allow_once" },
+          { optionId: "reject_once", kind: "reject_once" },
+        ],
+      });
+      const requestId = [...testServer.pendingPermissions.keys()][0];
+
+      expect(requestId).toBeDefined();
+      expect(
+        testServer.resolvePermission(requestId as string, "allow_always"),
+      ).toBe("invalid_option");
+      expect(testServer.pendingPermissions.has(requestId as string)).toBe(true);
+      expect(testServer.resolvePermission("nope", "allow_once")).toBe(
+        "not_found",
+      );
+      expect(
+        testServer.resolvePermission(requestId as string, "allow_once"),
+      ).toBe("resolved");
+      await expect(pending).resolves.toEqual({
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      });
+    });
+
+    it("distinguishes unknown requests from unoffered options in permission_response errors", async () => {
+      const server = createServer();
+      const testServer = exposeCloudClient(server);
+      const commandServer = server as unknown as {
+        session: unknown;
+        executeCommand(
+          method: string,
+          params: Record<string, unknown>,
+        ): Promise<unknown>;
+      };
+      void testServer.relayPermissionToClient({
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+      });
+      const requestId = [...testServer.pendingPermissions.keys()][0] as string;
+      // Both error paths return before touching the session; the guard at the
+      // top of executeCommand only needs it to exist.
+      commandServer.session = {};
+
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId: "missing",
+          optionId: "allow_once",
+        }),
+      ).rejects.toThrow("No pending permission request found for id: missing");
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId,
+          optionId: "allow_always",
+        }),
+      ).rejects.toThrow(
+        `Option "allow_always" was not offered for permission request ${requestId}`,
+      );
+      expect(testServer.pendingPermissions.has(requestId)).toBe(true);
+    });
+  });
+
+  describe("refresh_session relay re-append", () => {
+    function exposeRefresh(testServer: AgentServer) {
+      return testServer as unknown as {
+        session: {
+          clientConnection: { extMethod: ReturnType<typeof vi.fn> };
+        } | null;
+        mcpRelayServer: { mcpServers: unknown[] } | null;
+        executeCommand(
+          method: string,
+          params: Record<string, unknown>,
+        ): Promise<unknown>;
+      };
+    }
+
+    it("re-appends the loopback relay entries so a refresh doesn't drop them", async () => {
+      const testServer = exposeRefresh(createServer());
+      const extMethod = vi.fn(async () => ({ refreshed: true }));
+      testServer.session = { clientConnection: { extMethod } };
+      const relayEntry = {
+        type: "http",
+        name: "slack",
+        url: "http://127.0.0.1:5555/relay/slack",
+        headers: [{ name: "Authorization", value: "Bearer secret" }],
+      };
+      testServer.mcpRelayServer = { mcpServers: [relayEntry] };
+
+      // Django's refresh list carries posthog + imported, never the relay entries.
+      await testServer.executeCommand("refresh_session", {
+        mcpServers: [
+          { type: "http", name: "posthog", url: "https://mcp", headers: [] },
+        ],
+      });
+
+      expect(extMethod).toHaveBeenCalledOnce();
+      const forwarded = (extMethod.mock.calls[0] as unknown[])[1] as {
+        mcpServers: Array<{ name: string }>;
+      };
+      expect(forwarded.mcpServers.map((s) => s.name)).toEqual([
+        "posthog",
+        "slack",
+      ]);
+
+      // Detach the fake session so afterEach's stop() short-circuits before
+      // touching the partial session/relay stubs.
+      testServer.session = null;
+    });
+
+    it("does not duplicate a relay entry already present in the refresh list", async () => {
+      const testServer = exposeRefresh(createServer());
+      const extMethod = vi.fn(async () => ({ refreshed: true }));
+      testServer.session = { clientConnection: { extMethod } };
+      testServer.mcpRelayServer = {
+        mcpServers: [
+          {
+            type: "http",
+            name: "slack",
+            url: "http://127.0.0.1:5555/relay/slack",
+            headers: [],
+          },
+        ],
+      };
+
+      await testServer.executeCommand("refresh_session", {
+        mcpServers: [
+          {
+            type: "http",
+            name: "slack",
+            url: "http://127.0.0.1:5555/relay/slack",
+            headers: [],
+          },
+        ],
+      });
+
+      const forwarded = (extMethod.mock.calls[0] as unknown[])[1] as {
+        mcpServers: Array<{ name: string }>;
+      };
+      expect(forwarded.mcpServers.map((s) => s.name)).toEqual(["slack"]);
+
+      testServer.session = null;
     });
   });
 
@@ -1093,6 +2115,126 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.error).toBe("No active session for this run");
     }, 20000);
 
+    it("continues a cloud task after a manual compact command", async () => {
+      const s = createServer();
+      await s.start();
+      const broadcastEvent = vi.fn();
+      let serverInternals!: {
+        session: { clientConnection: { prompt: typeof prompt } };
+        broadcastEvent: typeof broadcastEvent;
+        handleAcpTransportMessage(message: unknown): void;
+      };
+      const prompt = vi.fn(async (_params: { prompt: ContentBlock[] }) => {
+        serverInternals.handleAcpTransportMessage({
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+          params: { sessionId: "session-1", stopReason: "end_turn" },
+        });
+        return { stopReason: "end_turn" };
+      });
+      serverInternals = s as unknown as typeof serverInternals;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.broadcastEvent = broadcastEvent;
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "compact-and-continue",
+          method: "user_message",
+          params: {
+            content:
+              "/compact Continue with the task using the question tool and plan.",
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result?: { stopReason?: string };
+      };
+      expect(body.result?.stopReason).toBe("end_turn");
+      expect(prompt).toHaveBeenCalledTimes(2);
+      expect(prompt.mock.calls[0]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: "/compact Continue with the task using the question tool and plan.",
+        },
+      ]);
+      expect(prompt.mock.calls[1]?.[0].prompt).toEqual([
+        {
+          type: "text",
+          text: expect.stringContaining("Continue working on the task"),
+          _meta: { ui: { hidden: true } },
+        },
+      ]);
+      const turnCompleteEvents = broadcastEvent.mock.calls.filter(
+        ([event]) =>
+          (event as { notification?: { method?: string } }).notification
+            ?.method === POSTHOG_NOTIFICATIONS.TURN_COMPLETE,
+      );
+      expect(turnCompleteEvents).toHaveLength(1);
+    }, 20000);
+
+    it("retries only the continuation after compact follow-up failure", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn(async (_params: { prompt: ContentBlock[] }) => ({
+          stopReason: "end_turn",
+        }))
+        .mockResolvedValueOnce({ stopReason: "end_turn" })
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async () =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "compact-retry",
+            method: "user_message",
+            params: {
+              content: "/compact Continue the task.",
+              messageId: "compact-retry",
+            },
+          }),
+        });
+
+      const first = await send();
+      expect(first.status).toBe(200);
+      expect(prompt).toHaveBeenCalledTimes(2);
+
+      const retry = await send();
+      expect(retry.status).toBe(200);
+      expect(prompt).toHaveBeenCalledTimes(3);
+      expect(prompt.mock.calls[0]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: "/compact Continue the task.",
+      });
+      expect(prompt.mock.calls[1]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("Continue working on the task"),
+      });
+      expect(prompt.mock.calls[2]?.[0].prompt[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("Continue working on the task"),
+      });
+    }, 20000);
+
     it("rewrites a bundled local skill slash command before sending the prompt", async () => {
       const skillDefinition = [
         "---",
@@ -1187,6 +2329,215 @@ describe("AgentServer HTTP Mode", () => {
       expect(sentMeta?.localSkillName).toBe("local-test-skill");
     }, 20000);
 
+    it("lists co-installed dependency skills with their paths in the skill context", async () => {
+      const makeBundle = (name: string, body: string) =>
+        zipSync({
+          "SKILL.md": new TextEncoder().encode(
+            [
+              "---",
+              `name: ${name}`,
+              `description: ${name}`,
+              "---",
+              "",
+              body,
+            ].join("\n"),
+          ),
+        });
+      const invokedBundle = makeBundle(
+        "parent-skill",
+        "Use /dep-skill for the review step.",
+      );
+      const depBundle = makeBundle("dep-skill", "Dependency instructions.");
+      const checksumOf = (bundle: Uint8Array) =>
+        createHash("sha256").update(Buffer.from(bundle)).digest("hex");
+
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(
+        async (_params: {
+          prompt: ContentBlock[];
+          _meta?: Record<string, unknown>;
+        }) => ({ stopReason: "cancelled" }) as { stopReason: string },
+      );
+      const downloadArtifact = vi.fn(
+        async (_taskId: string, _runId: string, storagePath: string) =>
+          exactArrayBuffer(
+            storagePath.includes("dep-skill") ? depBundle : invokedBundle,
+          ),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+        posthogAPI: { downloadArtifact: typeof downloadArtifact };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.posthogAPI.downloadArtifact = downloadArtifact;
+
+      const makeArtifact = (
+        id: string,
+        name: string,
+        bundle: Uint8Array,
+      ): Record<string, unknown> => ({
+        id,
+        name: `${name}.zip`,
+        type: "skill_bundle",
+        source: "posthog_code_skill",
+        storage_path: `tasks/artifacts/${name}.zip`,
+        content_type: "application/zip",
+        metadata: {
+          skill_name: name,
+          skill_source: "user",
+          content_sha256: checksumOf(bundle),
+          bundle_format: "zip",
+          schema_version: 1,
+        },
+      });
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "skill-command-deps",
+          method: "user_message",
+          params: {
+            content: "/parent-skill run it",
+            artifacts: [
+              makeArtifact(
+                "skill-artifact-parent",
+                "parent-skill",
+                invokedBundle,
+              ),
+              makeArtifact("skill-artifact-dep", "dep-skill", depBundle),
+            ],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(prompt).toHaveBeenCalledOnce();
+
+      const sentMeta = prompt.mock.calls[0]?.[0]._meta;
+      const context = sentMeta?.localSkillContext as string;
+      expect(sentMeta?.localSkillName).toBe("parent-skill");
+      expect(context).toContain('local skill "/parent-skill"');
+      expect(context).toContain("Other local skills installed for this run");
+      expect(context).toMatch(/- \/dep-skill: \S*dep-skill/);
+    }, 20000);
+
+    it("announces mid-message skill mentions via localSkillContext without a skill name", async () => {
+      const makeBundle = (name: string, body: string) =>
+        zipSync({
+          "SKILL.md": new TextEncoder().encode(
+            [
+              "---",
+              `name: ${name}`,
+              `description: ${name}`,
+              "---",
+              "",
+              body,
+            ].join("\n"),
+          ),
+        });
+      const mentionedBundle = makeBundle(
+        "mentioned-skill",
+        "MENTIONED_SKILL_MARKER instructions.",
+      );
+      const prefixBundle = makeBundle("mentioned", "PREFIX_SKILL_MARKER body.");
+      const checksumOf = (bundle: Uint8Array) =>
+        createHash("sha256").update(Buffer.from(bundle)).digest("hex");
+
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(
+        async (_params: {
+          prompt: ContentBlock[];
+          _meta?: Record<string, unknown>;
+        }) => ({ stopReason: "cancelled" }) as { stopReason: string },
+      );
+      const downloadArtifact = vi.fn(
+        async (_taskId: string, _runId: string, storagePath: string) =>
+          exactArrayBuffer(
+            storagePath.includes("mentioned-skill")
+              ? mentionedBundle
+              : prefixBundle,
+          ),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+        posthogAPI: { downloadArtifact: typeof downloadArtifact };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.posthogAPI.downloadArtifact = downloadArtifact;
+
+      const makeArtifact = (
+        id: string,
+        name: string,
+        bundle: Uint8Array,
+      ): Record<string, unknown> => ({
+        id,
+        name: `${name}.zip`,
+        type: "skill_bundle",
+        source: "posthog_code_skill",
+        storage_path: `tasks/artifacts/${name}.zip`,
+        content_type: "application/zip",
+        metadata: {
+          skill_name: name,
+          skill_source: "user",
+          content_sha256: checksumOf(bundle),
+          bundle_format: "zip",
+          schema_version: 1,
+        },
+      });
+
+      const token = createToken();
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "skill-mid-message",
+          method: "user_message",
+          params: {
+            content: "please use /mentioned-skill on the diff",
+            artifacts: [
+              makeArtifact(
+                "skill-artifact-mentioned",
+                "mentioned-skill",
+                mentionedBundle,
+              ),
+              makeArtifact("skill-artifact-prefix", "mentioned", prefixBundle),
+            ],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(prompt).toHaveBeenCalledOnce();
+
+      const sentPrompt = prompt.mock.calls[0]?.[0].prompt;
+      const sentMeta = prompt.mock.calls[0]?.[0]._meta;
+      const context = sentMeta?.localSkillContext as string;
+      // not a bare invocation, so nothing to strip and no localSkillName
+      expect(sentMeta?.localSkillName).toBeUndefined();
+      expect(context).toContain("MENTIONED_SKILL_MARKER");
+      // "mentioned" is a prefix of "/mentioned-skill" but was not itself
+      // mentioned: listed by path, not inlined
+      expect(context).not.toContain("PREFIX_SKILL_MARKER");
+      expect(context).toMatch(/- \/mentioned: \S*mentioned/);
+      const sentText = sentPrompt?.find(
+        (block): block is Extract<ContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )?.text;
+      expect(sentText).toBe("please use /mentioned-skill on the diff");
+    }, 20000);
+
     it("ignores a redelivered user_message whose messageId was already accepted", async () => {
       const s = createServer();
       await s.start();
@@ -1240,6 +2591,106 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toHaveBeenCalledTimes(4);
     }, 20000);
 
+    it("steers an active turn without emitting a separate turn completion", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async () => ({
+        stopReason: "end_turn",
+        _meta: { steer: true },
+      }));
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-1",
+          method: "user_message",
+          params: { content: "change direction", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "steered", steered: true },
+      });
+      expect(prompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(broadcastTurnComplete).not.toHaveBeenCalled();
+      expect(resetTurnMessages).not.toHaveBeenCalled();
+    }, 20000);
+
+    it("declines steering without blocking on a fallback normal turn", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn();
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      prompt.mockImplementationOnce(async () => {
+        serverInternals.activeOwnedTurnCount = 0;
+        return { stopReason: "end_turn", _meta: { steer: false } };
+      });
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-race",
+          method: "user_message",
+          params: { content: "continue normally", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "steer_declined", steered: false },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+      expect(prompt.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(resetTurnMessages).not.toHaveBeenCalled();
+      expect(broadcastTurnComplete).not.toHaveBeenCalled();
+    }, 20000);
+
     it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
       const s = createServer();
       await s.start();
@@ -1279,6 +2730,268 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.result?.stopReason).toBe("end_turn");
       expect(prompt).toHaveBeenCalledTimes(2);
     }, 20000);
+
+    it("keeps a recoverable delivery committed across an ambiguous retry", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn()
+        .mockRejectedValue(new Error("API Error: The operation timed out."));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              messageId: "m-recoverable",
+            },
+          }),
+        });
+
+      const first = await send("first-attempt");
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "error_recoverable" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const retry = await send("ambiguous-retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    it("shares a failed in-flight messageId outcome with concurrent retries", async () => {
+      const s = createServer();
+      await s.start();
+      let rejectFirstDelivery!: (error: Error) => void;
+      const prompt = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectFirstDelivery = reject;
+            }),
+        )
+        .mockResolvedValueOnce({ stopReason: "end_turn" });
+      const serverInternals = s as unknown as {
+        logger: { info: (...args: unknown[]) => void };
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      const infoLog = vi.spyOn(serverInternals.logger, "info");
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-concurrent" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      let retrySettled = false;
+      const retryResponse = send("concurrent-retry").finally(() => {
+        retrySettled = true;
+      });
+      await vi.waitFor(() => {
+        expect(infoLog).toHaveBeenCalledWith(
+          "Awaiting in-flight user_message delivery",
+          { messageId: "m-concurrent" },
+        );
+        expect(prompt).toHaveBeenCalledTimes(1);
+        expect(retrySettled).toBe(false);
+      });
+
+      rejectFirstDelivery(new Error("sdk connection lost"));
+      const [first, retry] = await Promise.all([firstResponse, retryResponse]);
+      await expect(first.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      await expect(retry.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    it("keeps an accepted messageId committed when teardown clears the active session", async () => {
+      const s = createServer();
+      await s.start();
+      let finishPrompt!: (result: { stopReason: "end_turn" }) => void;
+      const prompt = vi.fn(
+        () =>
+          new Promise<{ stopReason: "end_turn" }>((resolve) => {
+            finishPrompt = resolve;
+          }),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } } | null;
+      };
+      const acceptedSession = serverInternals.session;
+      if (!acceptedSession) throw new Error("expected active test session");
+      acceptedSession.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-teardown" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      serverInternals.session = null;
+      finishPrompt({ stopReason: "end_turn" });
+      const first = await firstResponse;
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "end_turn" },
+      });
+
+      serverInternals.session = acceptedSession;
+      const retry = await send("retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    // Shared plumbing for the relay-echo tests: install a controllable
+    // prompt, stub the log writer so relayAgentResponse has an answer to
+    // relay, and spy on the relay_message client call.
+    const setupRelayEchoServer = async (
+      prompt: () => Promise<{ stopReason: string }>,
+    ) => {
+      const s = createServer();
+      await s.start();
+      const serverInternals = s as unknown as {
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: {
+            getFullAgentResponse: (runId: string) => string | undefined;
+            getAgentResponseParts: (runId: string) => string[];
+          };
+        };
+        posthogAPI: PostHogAPIClient;
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      vi.spyOn(
+        serverInternals.session.logWriter,
+        "getFullAgentResponse",
+      ).mockReturnValue("final answer");
+      vi.spyOn(
+        serverInternals.session.logWriter,
+        "getAgentResponseParts",
+      ).mockReturnValue(["final answer"]);
+      const relaySpy = vi
+        .spyOn(serverInternals.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+
+      const token = createToken();
+      const send = (messageId?: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: messageId ?? "no-id",
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              ...(messageId ? { messageId } : {}),
+            },
+          }),
+        });
+
+      return { relaySpy, send };
+    };
+
+    it("echoes each turn's own initiating messageId on relay_message", async () => {
+      const pendingTurns: Array<(result: { stopReason: string }) => void> = [];
+      const prompt = vi.fn(
+        () =>
+          new Promise<{ stopReason: string }>((resolve) => {
+            pendingTurns.push(resolve);
+          }),
+      );
+      const { relaySpy, send } = await setupRelayEchoServer(prompt);
+
+      // The second message lands while the first turn is still in flight;
+      // each relay carries its own sender's id, not the first turn's.
+      const first = send("m-first");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+      const second = send("m-second");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2));
+
+      pendingTurns[0]({ stopReason: "end_turn" });
+      await first;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBe("m-first");
+
+      pendingTurns[1]({ stopReason: "end_turn" });
+      await second;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(2));
+      expect(relaySpy.mock.calls[1][4]).toBe("m-second");
+
+      // A message without an id relays without correlation (backward
+      // compatible with backends that don't know message_id).
+      relaySpy.mockClear();
+      const anonymous = send(undefined);
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(3));
+      pendingTurns[2]({ stopReason: "end_turn" });
+      await anonymous;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBeUndefined();
+    }, 20000);
+
+    it("does not leak a failed turn's messageId into the next turn", async () => {
+      const prompt = vi
+        .fn(async () => ({ stopReason: "end_turn" }))
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const { relaySpy, send } = await setupRelayEchoServer(prompt);
+
+      await send("m-fail");
+      expect(relaySpy).not.toHaveBeenCalled();
+
+      await send("m-next");
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBe("m-next");
+    }, 20000);
   });
 
   describe("404 handling", () => {
@@ -1315,6 +3028,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(runStarted?.notification?.params).toMatchObject({
             runId: "test-run-id",
             taskId: "test-task-id",
+            steering: "native",
           });
           // Agent reports its semver so clients can gate UI features
           // against agent capabilities (e.g. `>=0.40.1`). The exact value
@@ -1675,6 +3389,130 @@ describe("AgentServer HTTP Mode", () => {
   });
 
   describe("native resume", () => {
+    it("restores persisted Codex goals only for fresh Codex sessions", () => {
+      const s = createServer() as unknown as TestableServer;
+      const goal = { objective: "Ship the fix", status: "paused" as const };
+      s.resumeState = {
+        conversation: [],
+        latestGitCheckpoint: null,
+        interrupted: false,
+        logEntryCount: 1,
+        sessionId: "prior-session",
+        nativeGoal: goal,
+      };
+
+      expect(s.getNativeGoalForFreshSession("codex")).toEqual(goal);
+      expect(s.getNativeGoalForFreshSession("claude")).toBeUndefined();
+    });
+
+    it.each([
+      {
+        retryOutcome: "succeeds",
+        retryFails: false,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      {
+        retryOutcome: "fails",
+        retryFails: true,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      // The LLM gateway phrases oversized rejections as HTTP 413; the
+      // fresh-session retry must trigger on that shape too.
+      {
+        retryOutcome: "succeeds after a gateway 413",
+        retryFails: false,
+        oversizedError:
+          'Internal error: API Error: 413 {"error":{"message":"litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)","code":"5021"}}',
+      },
+    ])(
+      "clears resume state when the fresh-session retry $retryOutcome",
+      async ({ retryFails, oversizedError }) => {
+        const s = createServer();
+        await s.start();
+
+        const prompts: ContentBlock[][] = [];
+        const prompt = vi.fn(async (params: { prompt: ContentBlock[] }) => {
+          prompts.push(params.prompt);
+          if (prompts.length === 1) {
+            throw new Error(oversizedError);
+          }
+          if (retryFails) {
+            throw new Error("Fresh-session retry failed");
+          }
+          return { stopReason: "end_turn" };
+        });
+        const newSession = vi.fn(async () => ({ sessionId: "fresh-session" }));
+
+        const internals = s as unknown as {
+          session: {
+            acpSessionId: string;
+            clientConnection: {
+              prompt: typeof prompt;
+              newSession: typeof newSession;
+            };
+          };
+          resumeState: ResumeState | null;
+          nativeResume: { sessionId: string; warm: boolean } | null;
+          loadResumeState(
+            taskId: string,
+            resumeRunId: string,
+            runId: string,
+          ): Promise<void>;
+          sendResumeContinuation(
+            payload: JwtPayload,
+            taskRun: TaskRun | null,
+          ): Promise<void>;
+        };
+        internals.session.clientConnection.prompt = prompt;
+        internals.session.clientConnection.newSession = newSession;
+        internals.nativeResume = { sessionId: "prior-session", warm: true };
+        internals.loadResumeState = vi.fn(async () => {
+          internals.resumeState = {
+            conversation: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "original task" }],
+              },
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "progress so far" }],
+              },
+            ],
+            latestGitCheckpoint: null,
+            interrupted: false,
+            logEntryCount: 2,
+            sessionId: "prior-session",
+          };
+        });
+
+        await internals.sendResumeContinuation(
+          {
+            task_id: "test-task-id",
+            run_id: "test-run-id",
+            team_id: 1,
+            user_id: 1,
+            distinct_id: "test-distinct-id",
+            mode: "interactive",
+          },
+          createTaskRun({
+            id: "test-run-id",
+            state: { resume_from_run_id: "previous-run" },
+          }),
+        );
+
+        expect(newSession).toHaveBeenCalledOnce();
+        expect(internals.session.acpSessionId).toBe("fresh-session");
+        expect(internals.resumeState).toBeNull();
+        expect(internals.nativeResume).toBeNull();
+        expect(prompts).toHaveLength(2);
+        const retryText = prompts[1]
+          .map((block) => ("text" in block ? block.text : ""))
+          .join("\n");
+        expect(retryText).toContain("progress so far");
+      },
+      20000,
+    );
+
     it("hydrates cold sessions from S3 logs instead of cached resume conversation", async () => {
       const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
       process.env.CLAUDE_CONFIG_DIR = join(repo.path, ".claude-test");
@@ -1980,8 +3818,22 @@ describe("AgentServer HTTP Mode", () => {
       expect(s.detectedPrUrl).toBeNull();
     });
 
-    it("fails closed when the run's GitHub identity cannot be resolved", async () => {
-      const s = setup(justNow());
+    it("attributes a recent PR when the identity is a GitHub App installation (gh api user unavailable)", async () => {
+      // Cloud runs authenticate with a GitHub App installation token, for which
+      // `gh api user` returns 403 → ghLogin is null. The PR is authored by the
+      // app bot (e.g. "app/posthog"); recency alone must carry attribution.
+      const s = setup(justNow(), "app/posthog");
+      s.fetchGhLogin = vi.fn(async () => null);
+      s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
+      await flush();
+      expect(s.posthogAPI.updateTaskRun).toHaveBeenCalledWith("t", "r", {
+        output: { pr_url: PR_URL, pr_urls: [PR_URL] },
+      });
+      expect(s.detectedPrUrl).toBe(PR_URL);
+    });
+
+    it("still rejects an old PR when the identity cannot be resolved (recency guards)", async () => {
+      const s = setup(longAgo, "app/posthog");
       s.fetchGhLogin = vi.fn(async () => null);
       s.maybeAttachCreatedPr(payload, terminalUpdate(PR_URL));
       await flush();
@@ -2016,6 +3868,17 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("Generated-By: PostHog Code");
       expect(prompt).toContain("Task-Id: test-task-id");
       expect(prompt).not.toContain("gh pr create --draft");
+      // If the user does explicitly ask for a PR in this review-first mode,
+      // the agent must still use the PostHog Code footer, not Claude Code's default.
+      expect(prompt).toContain(
+        "If the user explicitly asks you to open a pull request",
+      );
+      expect(prompt).toContain(
+        "*Created with [PostHog Code](https://posthog.com/code?ref=pr)*",
+      );
+      expect(prompt).toContain(".github/pull_request_template.md");
+      expect(prompt).toContain("gh issue list --search");
+      expect(prompt).toContain("Closes #<n>");
     });
 
     it("returns default prompt when prUrl is null", () => {
@@ -2239,8 +4102,12 @@ describe("AgentServer HTTP Mode", () => {
         "https://github.com/org/repo/pull/1",
       );
       expect(prompt).toContain(
-        "gh pr checkout https://github.com/org/repo/pull/1",
+        "If it is not already checked out, check it out with `gh pr checkout https://github.com/org/repo/pull/1`",
       );
+      expect(prompt).toContain(
+        "Do not check it out again when it is already active",
+      );
+      expect(prompt).not.toContain("Check out the existing PR branch");
       expect(prompt).toContain("git_signed_commit");
       expect(prompt).toContain("Committing (signed commits required)");
       expect(prompt).not.toContain("Create a draft pull request");
@@ -2562,13 +4429,18 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).not.toContain("gh pr checkout");
     });
 
-    it("returns auto-update PR context for Slack-origin runs", () => {
+    it("avoids redundant PR checkout for auto-update runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       const s = createServer();
       const context = (s as unknown as TestableServer).buildDetectedPrContext(
         prUrl,
       );
-      expect(context).toContain(`gh pr checkout ${prUrl}`);
+      expect(context).toContain(
+        `If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\``,
+      );
+      expect(context).toContain(
+        "Do not check it out again when it is already active",
+      );
       expect(context).toContain(
         "Make changes, commit, and push to that branch",
       );
@@ -2595,6 +4467,78 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).toContain("stop with local changes ready for review");
       expect(context).not.toContain("gh pr checkout");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+  });
+
+  describe("buildExistingPrCheckoutPromise", () => {
+    const prUrl = "https://github.com/org/repo/pull/1";
+
+    afterEach(() => {
+      delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+
+    // Guards the gating condition: a review-first run (no auto-publish) must
+    // not silently check out a PR branch the prompt told the agent to leave
+    // alone. Regressing the guard to always-checkout would fail here.
+    it("does not check out when auto-publish is off", () => {
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when there is no prUrl", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(null);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when createPr is false, even on a Slack-origin run", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer({ createPr: false });
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when no repository is connected", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer({ repositoryPath: undefined });
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("starts a checkout when auto-publish is on for a Slack-origin run", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeInstanceOf(Promise);
+      // Sanity: the promise resolves to a checkout result shape (it will fail
+      // against the synthetic URL with no real gh, which is fine — we only
+      // assert the promise was actually kicked off).
+      expect(typeof promise).toBe("object");
+    });
+
+    // Guards the failure fallback: a transient gh failure must surface as a
+    // warn, never throw or abort startup. Regressing the failed branch to
+    // `throw` would fail here.
+    it("logs a warning for a failed checkout result without throwing", () => {
+      const s = createServer();
+      expect(() =>
+        (s as unknown as TestableServer).logExistingPrCheckoutResult(prUrl, {
+          status: "failed",
+          error: "gh unavailable",
+        }),
+      ).not.toThrow();
     });
   });
 });
@@ -2626,6 +4570,7 @@ describe("AgentServer pending user attachments", () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await server?.stop();
     server = undefined;
     await rm(tempDir, { recursive: true, force: true });
@@ -2647,6 +4592,7 @@ describe("AgentServer pending user attachments", () => {
   };
 
   it("appends an explicit notice when a pending attachment never reaches the manifest", async () => {
+    vi.useFakeTimers();
     const internals = buildInternals();
     // Refetch still can't see the attachment (truly absent, not just lagging).
     const getTaskRun = vi.fn(async () =>
@@ -2657,17 +4603,18 @@ describe("AgentServer pending user attachments", () => {
     );
     internals.posthogAPI.getTaskRun = getTaskRun;
 
-    const result = await internals.getPendingUserPrompt(
+    const resultPromise = internals.getPendingUserPrompt(
       createTaskRun({
         state: { pending_user_artifact_ids: ["missing-attachment"] },
         artifacts: [],
       }),
     );
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
 
-    // Refetched once to recover a lagging manifest, then — still missing —
-    // surfaced an explicit notice instead of returning null (which would let the
-    // caller fall back to the misleading "Attached files: …" description).
-    expect(getTaskRun).toHaveBeenCalledTimes(1);
+    // Retried to recover a lagging manifest, then surfaced an explicit notice
+    // instead of falling back to the misleading attachment summary.
+    expect(getTaskRun).toHaveBeenCalledTimes(4);
     expect(result).not.toBeNull();
     expect(result?.prompt).toHaveLength(1);
     const [block] = result?.prompt ?? [];
@@ -2721,6 +4668,117 @@ describe("AgentServer pending user attachments", () => {
     expect(hasNotice).toBe(false);
   });
 
+  it("recovers a pending attachment that only lands in a later manifest refetch", async () => {
+    vi.useFakeTimers();
+    const internals = buildInternals();
+    internals.posthogAPI.getTaskRun = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1"] },
+          artifacts: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1"] },
+          artifacts: [],
+        }),
+      )
+      .mockResolvedValue(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1"] },
+          artifacts: [
+            {
+              id: "att-1",
+              name: "pasted-text.txt",
+              type: "user_attachment",
+              storage_path: "tasks/artifacts/pasted-text.txt",
+              content_type: "text/plain",
+            },
+          ],
+        }),
+      );
+    internals.posthogAPI.downloadArtifact = vi.fn(async () =>
+      exactArrayBuffer(new TextEncoder().encode("pasted body")),
+    );
+
+    const resultPromise = internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1"] },
+        artifacts: [],
+      }),
+    );
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(internals.posthogAPI.getTaskRun).toHaveBeenCalledTimes(3);
+    expect(result?.prompt.some((block) => block.type === "resource_link")).toBe(
+      true,
+    );
+    expect(
+      result?.prompt.some(
+        (block) =>
+          block.type === "text" && block.text.includes("could not be loaded"),
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves an initially visible attachment while polling for another", async () => {
+    vi.useFakeTimers();
+    const internals = buildInternals();
+    const firstArtifact = {
+      id: "att-1",
+      name: "first.txt",
+      type: "user_attachment" as const,
+      storage_path: "tasks/artifacts/first.txt",
+      content_type: "text/plain",
+    };
+    const secondArtifact = {
+      id: "att-2",
+      name: "second.txt",
+      type: "user_attachment" as const,
+      storage_path: "tasks/artifacts/second.txt",
+      content_type: "text/plain",
+    };
+    internals.posthogAPI.getTaskRun = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1", "att-2"] },
+          artifacts: [],
+        }),
+      )
+      .mockResolvedValue(
+        createTaskRun({
+          state: { pending_user_artifact_ids: ["att-1", "att-2"] },
+          artifacts: [secondArtifact],
+        }),
+      );
+    internals.posthogAPI.downloadArtifact = vi.fn(async () =>
+      exactArrayBuffer(new TextEncoder().encode("body")),
+    );
+
+    const resultPromise = internals.getPendingUserPrompt(
+      createTaskRun({
+        state: { pending_user_artifact_ids: ["att-1", "att-2"] },
+        artifacts: [firstArtifact],
+      }),
+    );
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(
+      result?.prompt.filter((block) => block.type === "resource_link"),
+    ).toHaveLength(2);
+    expect(
+      result?.prompt.some(
+        (block) =>
+          block.type === "text" && block.text.includes("could not be loaded"),
+      ),
+    ).toBe(false);
+  });
+
   it("returns null without refetching when no pending artifacts were declared", async () => {
     const internals = buildInternals();
     const getTaskRun = vi.fn();
@@ -2735,6 +4793,7 @@ describe("AgentServer pending user attachments", () => {
   });
 
   it("warns once (not twice) about a missing artifact across the speculative and post-refetch resolves", async () => {
+    vi.useFakeTimers();
     const internals = buildInternals();
     // A non-empty manifest that never lists the requested id — so getArtifactsById
     // reaches its per-id "missing" warning on both the pre- and post-refetch calls
@@ -2759,12 +4818,14 @@ describe("AgentServer pending user attachments", () => {
       .spyOn(loggerHost.logger, "warn")
       .mockImplementation(() => {});
 
-    await internals.getPendingUserPrompt(
+    const resultPromise = internals.getPendingUserPrompt(
       createTaskRun({
         state: { pending_user_artifact_ids: ["missing-attachment"] },
         artifacts: decoyManifest,
       }),
     );
+    await vi.runAllTimersAsync();
+    await resultPromise;
 
     // The speculative pre-refetch resolve stays quiet (a miss there is expected);
     // only the post-refetch resolve emits the per-id "missing" warning.

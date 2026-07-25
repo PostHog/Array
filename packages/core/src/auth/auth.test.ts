@@ -64,8 +64,8 @@ function createPreferencePort(): IAuthPreferenceStore {
 }
 
 const identityCipher: IAuthTokenCipher = {
-  encrypt: (plaintext) => plaintext,
-  decrypt: (encrypted) => encrypted,
+  encrypt: (plaintext) => Promise.resolve(plaintext),
+  decrypt: (encrypted) => Promise.resolve(encrypted),
 };
 
 const mockLogger: RootLogger = {
@@ -413,6 +413,52 @@ describe("AuthService", () => {
     }
   });
 
+  it("dedupes concurrent refreshes into a single token request", async () => {
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({
+        accessToken: "initial-access-token",
+        refreshToken: "initial-refresh-token",
+      }),
+    );
+    stubAuthFetch();
+
+    // Keep the refresh in flight so both callers overlap; if the refresh
+    // isn't deduped, the rotating refresh token is spent twice.
+    let resolveRefresh!: (value: unknown) => void;
+    oauthFlow.refreshToken.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    await service.initialize();
+    await service.login("us");
+
+    // Two forced refreshes fired in the same tick. The dedup guard must close
+    // synchronously — resolving the stored session now awaits decryption, so
+    // if that await sat between the guard and the refreshPromise assignment,
+    // both callers would slip through and fire their own request.
+    oauthFlow.refreshToken.mockClear();
+    const both = Promise.all([
+      service.refreshAccessToken(),
+      service.refreshAccessToken(),
+    ]);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
+
+    resolveRefresh(
+      mockTokenResponse({
+        accessToken: "refreshed-access-token",
+        refreshToken: "refreshed-refresh-token",
+      }),
+    );
+    const [a, b] = await both;
+    expect(a.accessToken).toBe("refreshed-access-token");
+    expect(b.accessToken).toBe("refreshed-access-token");
+    expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(1);
+  });
+
   it("forces a token refresh when explicitly requested", async () => {
     oauthFlow.startFlow.mockResolvedValue(
       mockTokenResponse({
@@ -498,6 +544,141 @@ describe("AuthService", () => {
         },
       },
     });
+  });
+
+  it("keeps the prior selection committed when persisting a new selection fails", async () => {
+    const orgs = {
+      "org-1": {
+        name: "Org 1",
+        projects: [
+          { id: 42, name: "Project 42" },
+          { id: 84, name: "Project 84" },
+        ],
+      },
+    };
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({
+        accessToken: "initial-access-token",
+        refreshToken: "initial-refresh-token",
+      }),
+    );
+    stubAuthFetch({ orgs });
+
+    // Encrypts fine during login, then rejects so the selectProject persist
+    // fails mid-flow (mirrors the browser cipher's Web Crypto rejecting).
+    let failEncrypt = false;
+    const flakyCipher: IAuthTokenCipher = {
+      encrypt: (plaintext) =>
+        failEncrypt
+          ? Promise.reject(new Error("encryption unavailable"))
+          : Promise.resolve(plaintext),
+      decrypt: (encrypted) => Promise.resolve(encrypted),
+    };
+    service = new AuthService(
+      preferencePort,
+      sessionPort,
+      oauthFlow as unknown as IAuthOAuthFlowService,
+      connectivity,
+      flakyCipher,
+      mockPowerManager as unknown as IPowerManager,
+      mockLogger,
+      null,
+    );
+
+    // Initialize once while the session store is empty so login/selectProject
+    // don't later trigger the stored-session restore path.
+    service.init();
+    await service.initialize();
+
+    await service.login("us");
+    const priorProjectId = service.getState().currentProjectId;
+    expect(priorProjectId).toBe(42);
+
+    failEncrypt = true;
+    await expect(service.selectProject(84)).rejects.toThrow(
+      "encryption unavailable",
+    );
+
+    // A failed persist must not commit the new project anywhere: published
+    // state, the stored session, and the saved preference all stay on the
+    // prior selection (the preference is the tell — the buggy order saved it
+    // to 84 before the encrypt rejected).
+    expect(service.getState().currentProjectId).toBe(priorProjectId);
+    expect(sessionPort.getCurrent()?.selectedProjectId).toBe(priorProjectId);
+    expect(preferencePort.get("user-1", "us")?.lastSelectedProjectId).toBe(
+      priorProjectId,
+    );
+  });
+
+  it("keeps overlapping selections consistent so the latest one wins", async () => {
+    const orgs = {
+      "org-1": {
+        name: "Org 1",
+        projects: [
+          { id: 42, name: "Project 42" },
+          { id: 84, name: "Project 84" },
+          { id: 99, name: "Project 99" },
+        ],
+      },
+    };
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({
+        accessToken: "initial-access-token",
+        refreshToken: "initial-refresh-token",
+      }),
+    );
+    stubAuthFetch({ orgs });
+
+    // Encryption is gated so overlapping selection commits stay in flight and
+    // can be resolved out of order below.
+    let deferEncrypt = false;
+    const pending: Array<() => void> = [];
+    const gatedCipher: IAuthTokenCipher = {
+      encrypt: (plaintext) =>
+        deferEncrypt
+          ? new Promise<string>((resolve) => {
+              pending.push(() => resolve(plaintext));
+            })
+          : Promise.resolve(plaintext),
+      decrypt: (encrypted) => Promise.resolve(encrypted),
+    };
+    service = new AuthService(
+      preferencePort,
+      sessionPort,
+      oauthFlow as unknown as IAuthOAuthFlowService,
+      connectivity,
+      gatedCipher,
+      mockPowerManager as unknown as IPowerManager,
+      mockLogger,
+      null,
+    );
+    service.init();
+    await service.initialize();
+    await service.login("us");
+    expect(service.getState().currentProjectId).toBe(42);
+
+    deferEncrypt = true;
+    // Two overlapping selections: 84 first, then 99 (the latest intent).
+    const first = service.selectProject(84);
+    const second = service.selectProject(99);
+
+    // Drain pending encryptions newest-first each round to surface any
+    // out-of-order completion, until both commits settle. Serialized commits
+    // only expose one pending encryption at a time; unserialized ones would
+    // let the stale 84 commit land last.
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    await flush();
+    while (pending.length > 0) {
+      for (const resolve of pending.splice(0).reverse()) resolve();
+      await flush();
+    }
+    await Promise.all([first, second]);
+
+    // The latest selection wins everywhere — no stale overwrite and no split
+    // between the in-memory session (getState), stored session, and preference.
+    expect(service.getState().currentProjectId).toBe(99);
+    expect(sessionPort.getCurrent()?.selectedProjectId).toBe(99);
+    expect(preferencePort.get("user-1", "us")?.lastSelectedProjectId).toBe(99);
   });
 
   it("restores the selected project after app restart while logged out", async () => {
@@ -715,6 +896,72 @@ describe("AuthService", () => {
       expect(service.getState().status).toBe("restoring");
       expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(3);
     });
+
+    it("uses the current access token when a preemptive refresh fails before expiry", async () => {
+      vi.useFakeTimers();
+      try {
+        oauthFlow.startFlow.mockResolvedValue(
+          mockTokenResponse({
+            accessToken: "current-access-token",
+            refreshToken: "current-refresh-token",
+          }),
+        );
+        stubAuthFetch();
+
+        await service.initialize();
+        await service.login("us");
+
+        oauthFlow.refreshToken.mockReset();
+        oauthFlow.refreshToken.mockResolvedValue({
+          success: false,
+          error: "Token refresh failed: 500 Internal Server Error",
+          errorCode: "server_error",
+        });
+
+        await vi.advanceTimersByTimeAsync(3_599_500);
+
+        await expect(service.getValidAccessToken()).resolves.toMatchObject({
+          accessToken: "current-access-token",
+        });
+        expect(oauthFlow.refreshToken).toHaveBeenCalledTimes(3);
+        expect(service.getState().status).toBe("authenticated");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not use the current access token when refresh token auth fails", async () => {
+      vi.useFakeTimers();
+      try {
+        oauthFlow.startFlow.mockResolvedValue(
+          mockTokenResponse({
+            accessToken: "current-access-token",
+            refreshToken: "current-refresh-token",
+          }),
+        );
+        stubAuthFetch();
+
+        await service.initialize();
+        await service.login("us");
+
+        oauthFlow.refreshToken.mockReset();
+        oauthFlow.refreshToken.mockResolvedValue({
+          success: false,
+          error: "Token revoked",
+          errorCode: "auth_error",
+        });
+
+        await vi.advanceTimersByTimeAsync(3_599_500);
+
+        await expect(service.getValidAccessToken()).rejects.toThrow(
+          "Token revoked",
+        );
+        expect(service.getState().status).toBe("anonymous");
+        expect(sessionPort.getCurrent()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe("transient org fetch failures", () => {
@@ -886,7 +1133,10 @@ describe("AuthService", () => {
   });
 
   describe("project-less recovery", () => {
-    function stubOrgFetch(state: { succeeds: boolean; orgCalls: number }) {
+    function stubOrgFetch(
+      state: { succeeds: boolean; orgCalls: number },
+      options: { orgless?: boolean } = {},
+    ) {
       vi.stubGlobal(
         "fetch",
         vi.fn(async (input: string | Request) => {
@@ -897,7 +1147,7 @@ describe("AuthService", () => {
               ok: true,
               json: vi.fn().mockResolvedValue({
                 uuid: "user-1",
-                organization: { id: "org-1" },
+                organization: options.orgless ? null : { id: "org-1" },
               }),
             } as unknown as Response;
           }
@@ -1156,27 +1406,63 @@ describe("AuthService", () => {
       expect(sessionPort.getCurrent()?.selectedProjectId).toBe(84);
     });
 
-    it("does not attempt recovery when the token grants no scoped organizations", async () => {
-      const fetchState = { succeeds: true, orgCalls: 0 };
-      stubOrgFetch(fetchState);
-      oauthFlow.startFlow.mockResolvedValue(
-        mockTokenResponse({ scopedOrgs: [] }),
-      );
+    // Team-scoped tokens (required_access_level=project) arrive with empty
+    // scoped_organizations on some backends. When @me carries a current org,
+    // we fetch it so the picker isn't stranded on "No projects". When @me has
+    // no org either (truly orgless user), there's nothing to fetch and the
+    // recovery loop must not spin — that was the concern from #2655.
+    it.each([
+      {
+        when: "the user has no organization at all",
+        orgless: true,
+        expectedOrgCalls: 0,
+        expectedState: {
+          status: "authenticated",
+          currentProjectId: null,
+          orgProjectsMap: {},
+        },
+      },
+      {
+        when: "the @me current org is used as a fallback",
+        orgless: false,
+        expectedOrgCalls: 1,
+        expectedState: {
+          status: "authenticated",
+          currentOrgId: "org-1",
+          currentProjectId: 42,
+          orgProjectsMap: {
+            "org-1": {
+              orgName: "Org 1",
+              projects: [
+                { id: 42, name: "Project 42" },
+                { id: 84, name: "Project 84" },
+              ],
+            },
+          },
+        },
+      },
+    ])(
+      "with empty scoped_organizations: $when",
+      async ({ orgless, expectedOrgCalls, expectedState }) => {
+        const fetchState = { succeeds: true, orgCalls: 0 };
+        stubOrgFetch(fetchState, { orgless });
+        oauthFlow.startFlow.mockResolvedValue(
+          mockTokenResponse({ scopedOrgs: [] }),
+        );
 
-      await service.login("us");
+        await service.login("us");
 
-      expect(service.getState()).toMatchObject({
-        status: "authenticated",
-        currentProjectId: null,
-        orgProjectsMap: {},
-      });
+        expect(fetchState.orgCalls).toBe(expectedOrgCalls);
+        expect(service.getState()).toMatchObject(expectedState);
 
-      emitStatus(true);
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(fetchState.orgCalls).toBe(0);
-      expect(service.getState().currentProjectId).toBeNull();
-    });
+        // Emitting connectivity should not trigger extra work: the map is
+        // complete (or empty by design) and the recovery loop must not spin.
+        emitStatus(true);
+        await new Promise((r) => setTimeout(r, 10));
+        expect(fetchState.orgCalls).toBe(expectedOrgCalls);
+        expect(service.getState()).toMatchObject(expectedState);
+      },
+    );
   });
 
   describe("switchOrg", () => {

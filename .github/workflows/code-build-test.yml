@@ -88,6 +88,7 @@ jobs:
           pnpm --filter @posthog/shared run build
           pnpm --filter @posthog/git run build
           pnpm --filter @posthog/enricher run build
+          pnpm --filter @posthog/harness run build
           pnpm --filter @posthog/agent run build
 
       # build/Assets.car is gitignored; regenerate it so the packaged app ships
@@ -113,9 +114,9 @@ jobs:
           MATRIX_ARCH: ${{ matrix.arch }}
         run: |
           if [[ "$MATRIX_ARCH" == "arm64" ]]; then
-            APP_BUNDLE="apps/code/out/mac-arm64/PostHog Code.app"
+            APP_BUNDLE="apps/code/out/mac-arm64/PostHog.app"
           else
-            APP_BUNDLE="apps/code/out/mac/PostHog Code.app"
+            APP_BUNDLE="apps/code/out/mac/PostHog.app"
           fi
           RESOURCES="$APP_BUNDLE/Contents/Resources"
           UNPACKED="$RESOURCES/app.asar.unpacked/node_modules"
@@ -205,6 +206,7 @@ jobs:
           pnpm --filter @posthog/shared run build
           pnpm --filter @posthog/git run build
           pnpm --filter @posthog/enricher run build
+          pnpm --filter @posthog/harness run build
           pnpm --filter @posthog/agent run build
 
       - name: Build app
@@ -275,6 +277,7 @@ jobs:
           pnpm --filter @posthog/shared run build
           pnpm --filter @posthog/git run build
           pnpm --filter @posthog/enricher run build
+          pnpm --filter @posthog/harness run build
           pnpm --filter @posthog/agent run build
 
       - name: Build app

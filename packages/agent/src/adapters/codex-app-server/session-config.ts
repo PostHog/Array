@@ -1,6 +1,19 @@
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { CODEX_MODE_PRESETS, type CodexModePreset } from "@posthog/shared";
-import { type GatewayModel, isOpenAIModel } from "../../gateway-models";
+import type {
+  SessionConfigOption,
+  SessionConfigSelectOption,
+} from "@agentclientprotocol/sdk";
+import {
+  CODEX_MODE_PRESETS,
+  type CodexModePreset,
+  type ExecutionMode,
+  resolveCloudInitialPermissionMode,
+  restrictedModelMeta,
+} from "@posthog/shared";
+import {
+  type GatewayModel,
+  isOpenAIModel,
+  type ModelInfo,
+} from "../../gateway-models";
 import { getReasoningEffortOptions } from "./models";
 
 /**
@@ -16,6 +29,7 @@ import { getReasoningEffortOptions } from "./models";
  */
 export type CodexSandboxPolicy =
   | { type: "readOnly"; networkAccess: boolean }
+  | { type: "workspaceWrite"; networkAccess: boolean; writableRoots?: string[] }
   | { type: "dangerFullAccess" };
 
 export interface CodexMode {
@@ -25,62 +39,75 @@ export interface CodexMode {
   /** codex AskForApproval the mode maps to, applied per-turn on turn/start. */
   approvalPolicy: string;
   /**
-   * Per-turn sandbox override; undefined keeps the spawned editable sandbox.
-   * Only applied off the cloud sandbox, where a non-danger policy would re-engage
-   * the unavailable linux-sandbox and panic.
+   * Per-turn sandbox, sent on every turn/start. codex keeps turn overrides for
+   * subsequent turns, so every mode states its full sandbox — omitting it would
+   * leave the previous mode's sandbox active (e.g. plan's readOnly bleeding
+   * into auto, which then prompts for every command and edit). Only applied off
+   * the cloud sandbox, where a non-danger policy would re-engage the
+   * unavailable linux-sandbox and panic.
    */
-  sandboxPolicy?: CodexSandboxPolicy;
+  sandboxPolicy: CodexSandboxPolicy;
   /**
    * codex's native collaboration mode (per-turn on `turn/start`). "plan" unlocks
    * plan proposals + `request_user_input`; everything else runs "default".
    */
   collaborationMode?: "plan" | "default";
-  /**
-   * codex's named permission profile (per-turn `activePermissionProfile.extends`).
-   * codex 0.140.0 enforces the sandbox through these built-in profiles; the raw
-   * `sandboxPolicy` is no longer honored alone. Undefined keeps the spawned default.
-   */
-  permissionProfile?: string;
+}
+
+/**
+ * The editable sandbox for a platform, mirroring spawn.ts's `sandbox_mode`:
+ * macOS Seatbelt supports workspace-write; linux/windows have no sandbox
+ * launcher (a managed sandbox would panic), so danger-full-access. Network
+ * stays restricted so commands that need egress still go through codex's
+ * escalation prompt — broadening that is a security decision, not a UX fix.
+ */
+function editableSandboxPolicy(platform: string): CodexSandboxPolicy {
+  return platform === "darwin"
+    ? { type: "workspaceWrite", networkAccess: false }
+    : { type: "dangerFullAccess" };
 }
 
 // Flattened Claude-style presets: the `{id, name, description}` literals live
 // in @posthog/shared (one copy for every picker); this map owns the behavior.
-// Restriction is driven by approvalPolicy + the named permissionProfile (codex
-// 0.140.0's enforced sandbox lever); plan/read-only block edits,
-// auto/full-access keep the spawned editable sandbox.
-const CODEX_MODE_POLICIES: Record<
+// Restriction is driven by approvalPolicy + sandboxPolicy: plan/read-only block
+// edits, auto/full-access restore the platform's editable sandbox.
+function modePolicies(
+  platform: string,
+): Record<
   CodexModePreset["id"],
-  Pick<
-    CodexMode,
-    | "approvalPolicy"
-    | "sandboxPolicy"
-    | "permissionProfile"
-    | "collaborationMode"
-  >
-> = {
-  plan: {
-    approvalPolicy: "on-request",
-    sandboxPolicy: { type: "readOnly", networkAccess: true },
-    permissionProfile: ":read-only",
-    collaborationMode: "plan",
-  },
-  "read-only": {
-    approvalPolicy: "untrusted",
-    sandboxPolicy: { type: "readOnly", networkAccess: true },
-    permissionProfile: ":read-only",
-  },
-  auto: {
-    approvalPolicy: "on-request",
-  },
-  "full-access": {
-    approvalPolicy: "never",
-  },
-};
+  Pick<CodexMode, "approvalPolicy" | "sandboxPolicy" | "collaborationMode">
+> {
+  return {
+    plan: {
+      approvalPolicy: "on-request",
+      sandboxPolicy: { type: "readOnly", networkAccess: true },
+      collaborationMode: "plan",
+    },
+    "read-only": {
+      approvalPolicy: "untrusted",
+      sandboxPolicy: { type: "readOnly", networkAccess: true },
+    },
+    auto: {
+      approvalPolicy: "on-request",
+      sandboxPolicy: editableSandboxPolicy(platform),
+    },
+    "full-access": {
+      approvalPolicy: "never",
+      sandboxPolicy: { type: "dangerFullAccess" },
+    },
+  };
+}
 
-export const CODEX_MODES: CodexMode[] = CODEX_MODE_PRESETS.map((preset) => ({
-  ...preset,
-  ...CODEX_MODE_POLICIES[preset.id],
-}));
+/** Test seam: the mode table for a given platform; CODEX_MODES uses the live one. */
+export function buildCodexModes(platform: string): CodexMode[] {
+  const policies = modePolicies(platform);
+  return CODEX_MODE_PRESETS.map((preset) => ({
+    ...preset,
+    ...policies[preset.id],
+  }));
+}
+
+export const CODEX_MODES: CodexMode[] = buildCodexModes(process.platform);
 
 export const DEFAULT_MODE = "auto";
 
@@ -90,18 +117,11 @@ export function modeApprovalPolicy(
   return CODEX_MODES.find((m) => m.id === modeId)?.approvalPolicy;
 }
 
-/** Per-turn sandbox for a mode id (undefined keeps the spawned full-access). */
+/** Per-turn sandbox for a mode id (sent every turn — codex turn overrides are sticky). */
 export function sandboxPolicyFor(
   modeId: string | undefined,
 ): CodexSandboxPolicy | undefined {
   return CODEX_MODES.find((m) => m.id === modeId)?.sandboxPolicy;
-}
-
-/** Named permission profile for a mode (undefined keeps the spawned default). */
-export function permissionProfileFor(
-  modeId: string | undefined,
-): string | undefined {
-  return CODEX_MODES.find((m) => m.id === modeId)?.permissionProfile;
 }
 
 /** codex collaboration mode for a preset — "plan" only for Plan, else "default". */
@@ -114,13 +134,13 @@ export function collaborationModeFor(
 }
 
 /**
- * Resolve the host's initial `_meta.permissionMode` to a codex mode. A recognized
- * mode is honored; anything else (e.g. "bypassPermissions") falls back to default.
+ * Resolve a host permission mode or live picker value to a codex mode. A
+ * recognized mode is honored; Claude's bypass mode maps to Codex full access.
+ * Other unknown modes fall back to default.
  */
-export function resolveInitialMode(permissionMode: string | undefined): string {
-  return permissionMode && CODEX_MODES.some((m) => m.id === permissionMode)
-    ? permissionMode
-    : DEFAULT_MODE;
+export function resolveCodexMode(mode: string | undefined): string {
+  if (!mode) return DEFAULT_MODE;
+  return resolveCloudInitialPermissionMode("codex", mode as ExecutionMode);
 }
 
 /** Codex's standard reasoning efforts; used when model/list doesn't expose them. */
@@ -146,7 +166,11 @@ export interface ConfigSelectors {
   model: string;
   effort?: string;
   /** From model/list; falls back to the single current model when empty. */
-  models: Array<{ id: string; name: string }>;
+  models: Array<{
+    id: string;
+    name: string;
+    _meta?: Record<string, unknown>;
+  }>;
   efforts: string[];
 }
 
@@ -183,7 +207,13 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
       name: "Model",
       category: "model",
       currentValue: s.model,
-      options: models.map((m) => ({ name: m.name, value: m.id })),
+      options: models.map(
+        (m): SessionConfigSelectOption => ({
+          name: m.name,
+          value: m.id,
+          ...(m._meta ? { _meta: m._meta } : {}),
+        }),
+      ),
     } as unknown as SessionConfigOption,
     {
       type: "select",
@@ -197,7 +227,7 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
 }
 
 /** A model entry from the app-server's `model/list` (loosely typed). */
-interface RawModel {
+export interface RawModel {
   id?: string;
   model?: string;
   displayName?: string;
@@ -214,13 +244,31 @@ export class SessionConfigState {
   private _model: string;
   private _effort?: string;
   private _mode = DEFAULT_MODE;
-  private models: Array<{ id: string; name: string }> = [];
+  private models: Array<{
+    id: string;
+    name: string;
+    _meta?: Record<string, unknown>;
+  }> = [];
   private efforts: string[] = [];
   private _options: SessionConfigOption[] = [];
+  private readonly gatewayModels?: ReadonlyArray<ModelInfo>;
+  private readonly allowedModelIds?: ReadonlySet<string>;
 
-  constructor(model: string, effort?: string) {
+  constructor(
+    model: string,
+    effort?: string,
+    gatewayModels?: ReadonlyArray<ModelInfo>,
+  ) {
     this._model = model;
     this._effort = effort;
+    this.gatewayModels = gatewayModels?.length ? gatewayModels : undefined;
+    this.allowedModelIds = this.gatewayModels
+      ? new Set(
+          this.gatewayModels
+            .filter((gatewayModel) => gatewayModel.allowed)
+            .map((gatewayModel) => gatewayModel.id),
+        )
+      : undefined;
     this.rebuild();
   }
 
@@ -239,7 +287,7 @@ export class SessionConfigState {
 
   /** Apply the host's initial approval mode (from `_meta.permissionMode`). */
   setInitialMode(permissionMode: string | undefined): void {
-    this._mode = resolveInitialMode(permissionMode);
+    this._mode = resolveCodexMode(permissionMode);
     this.rebuild();
   }
 
@@ -250,10 +298,14 @@ export class SessionConfigState {
   ): { modeChanged: boolean } {
     let modeChanged = false;
     if (typeof value === "string") {
-      if (configId === "model") this._model = value;
-      else if (configId === "effort") this._effort = value;
+      if (
+        configId === "model" &&
+        (!this.gatewayModels || this.allowedModelIds?.has(value))
+      ) {
+        this._model = value;
+      } else if (configId === "effort") this._effort = value;
       else if (configId === "mode") {
-        this._mode = value;
+        this._mode = resolveCodexMode(value);
         modeChanged = true;
       }
     }
@@ -267,13 +319,27 @@ export class SessionConfigState {
    * populate efforts, so fall back to the shared codex model→effort map.
    */
   loadModels(rawModels: RawModel[]): void {
-    this.models = rawModels
+    const liveModels = rawModels
       .filter((m) => !m?.hidden)
       .filter((m) => isOpenAIModel(m as unknown as GatewayModel))
       .map((m) => ({
         id: (m.id ?? m.model) as string,
         name: (m.displayName ?? m.id ?? m.model) as string,
       }));
+    if (this.gatewayModels) {
+      const liveModelsById = new Map(
+        liveModels.map((model) => [model.id, model]),
+      );
+      this.models = this.gatewayModels.map((gatewayModel) => ({
+        ...(liveModelsById.get(gatewayModel.id) ?? {
+          id: gatewayModel.id,
+          name: gatewayModel.id,
+        }),
+        ...(gatewayModel.allowed ? {} : { _meta: restrictedModelMeta() }),
+      }));
+    } else {
+      this.models = liveModels;
+    }
     const current = rawModels.find(
       (m) => m.id === this._model || m.model === this._model,
     );
@@ -288,7 +354,12 @@ export class SessionConfigState {
 
   /** Reset the model/effort lists (model/list failed); keeps the current model. */
   clearModels(): void {
-    this.models = [];
+    this.models =
+      this.gatewayModels?.map((gatewayModel) => ({
+        id: gatewayModel.id,
+        name: gatewayModel.id,
+        ...(gatewayModel.allowed ? {} : { _meta: restrictedModelMeta() }),
+      })) ?? [];
     this.efforts = [];
     this.rebuild();
   }
@@ -310,12 +381,6 @@ export class SessionConfigState {
 
   sandboxPolicy(): CodexSandboxPolicy | undefined {
     return sandboxPolicyFor(this._mode);
-  }
-
-  /** Per-turn `activePermissionProfile` (codex 0.140.0's enforced sandbox), or undefined. */
-  permissionProfile(): { extends: string } | undefined {
-    const profile = permissionProfileFor(this._mode);
-    return profile ? { extends: profile } : undefined;
   }
 
   private rebuild(): void {

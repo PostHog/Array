@@ -21,6 +21,7 @@ interface SettingsOptionSelectProps {
   ariaLabel: string;
   placeholder?: string;
   className?: string;
+  size?: "sm" | "default" | "lg";
 }
 
 export function SettingsOptionSelect({
@@ -31,6 +32,7 @@ export function SettingsOptionSelect({
   ariaLabel,
   placeholder = "Select…",
   className,
+  size = "sm",
 }: SettingsOptionSelectProps) {
   const selectedLabel =
     options.find((opt) => opt.value === value)?.label ?? placeholder;
@@ -42,10 +44,12 @@ export function SettingsOptionSelect({
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size={size}
             disabled={disabled}
             aria-label={ariaLabel}
-            className={`w-full justify-between ${className ?? ""}`}
+            className={`w-full justify-between ${
+              size === "sm" ? "" : "text-[13px]"
+            } ${className ?? ""}`}
           >
             <span className="min-w-0 truncate">{selectedLabel}</span>
             <CaretDown

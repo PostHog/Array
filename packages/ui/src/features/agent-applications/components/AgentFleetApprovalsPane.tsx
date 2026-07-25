@@ -24,7 +24,7 @@ import { RefreshIndicator } from "./RefreshIndicator";
  * (joined client-side with `useAgentApplications`) and the detail pane reuses
  * `AgentApprovalDetail` once we resolve the application's `idOrSlug`. Owns its
  * own chrome (back link + title) rather than nesting under the Scouts /
- * Applications tab bar, matching how per-agent detail pages render.
+ * Fleet tab bar, matching how per-agent detail pages render.
  */
 export function AgentFleetApprovalsPane({
   selectedId,
@@ -37,8 +37,15 @@ export function AgentFleetApprovalsPane({
   filter: ApprovalFilter;
   onFilterChange: (f: ApprovalFilter) => void;
 }) {
-  const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } =
-    useAgentFleetApprovals(filter === "all" ? undefined : { state: filter });
+  const {
+    data,
+    isLoading,
+    isError,
+    isPermissionError,
+    isFetching,
+    dataUpdatedAt,
+    refetch,
+  } = useAgentFleetApprovals(filter === "all" ? undefined : { state: filter });
   const { data: applications } = useAgentApplications();
 
   const approvals = useMemo(() => data ?? [], [data]);
@@ -109,10 +116,15 @@ export function AgentFleetApprovalsPane({
         />
       ))}
     </Flex>
+  ) : isPermissionError ? (
+    <AgentDetailEmptyState
+      title="You need organization admin access"
+      description="Tool approvals can only be viewed and decided by organization admins. Ask an admin to review pending requests."
+    />
   ) : isError ? (
     <AgentDetailEmptyState
       title="Couldn't load approvals"
-      description="The agent platform API returned an error. Fleet approvals are team-admin only — you may not have access."
+      description="The agent platform API returned an error while loading fleet approvals. Try again shortly."
     />
   ) : approvals.length === 0 ? (
     <AgentDetailEmptyState
@@ -149,7 +161,7 @@ export function AgentFleetApprovalsPane({
           className="flex w-fit items-center gap-1.5 text-[12px] text-gray-11 no-underline hover:text-gray-12"
         >
           <ArrowLeftIcon size={13} />
-          Applications
+          Fleet
         </Link>
         <Flex align="center" gap="2" wrap="wrap">
           <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">

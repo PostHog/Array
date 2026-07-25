@@ -7,6 +7,7 @@ import { type ReactNode, useRef } from "react";
 import { reorderWithinGroup, storedOrderIds } from "./displayOrder";
 import { usePinnedTabsStore } from "./pinnedTabsStore";
 import { useTabReorderStore } from "./tabReorderStore";
+import { applyLocalTransform, persistWrite } from "./tabsSync";
 
 function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
@@ -86,14 +87,12 @@ export function BrowserTabsDndProvider({ children }: { children: ReactNode }) {
       const snapshot = browserTabsStore.getState().snapshot;
       const win = primaryWindow(snapshot);
       if (!win) return;
-      // Optimistically apply so the strip doesn't flit back to the mirror's
-      // pre-drop order for a frame; then persist to the host.
-      browserTabsStore
-        .getState()
-        .setSnapshot(setTabOrder(snapshot, win.id, order));
-      setOrder.mutate(
-        { windowId: win.id, tabIds: order },
-        { onSuccess: (next) => browserTabsStore.getState().setSnapshot(next) },
+      // Apply locally so the strip doesn't flit back to the mirror's pre-drop
+      // order for a frame; persist through the tabsSync gate so the echo can't
+      // rewind a newer write.
+      applyLocalTransform((s) => setTabOrder(s, win.id, order));
+      void persistWrite(() =>
+        setOrder.mutateAsync({ windowId: win.id, tabIds: order }),
       );
     });
   };

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyGatewayLimitError,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,
   isNotAuthenticatedError,
   isRateLimitError,
+  isTransientUpstreamError,
   NotAuthenticatedError,
   serializeError,
 } from "./errors";
@@ -83,6 +85,62 @@ describe("isRateLimitError", () => {
   });
 });
 
+describe("classifyGatewayLimitError", () => {
+  it.each([
+    [
+      // The gate 403 as the ACP layer surfaces it (full body embedded).
+      `Internal error: API Error: 403 {"error":{"message":"Model 'claude-opus-4-8' needs a paid PostHog plan. Models available on the free tier: @cf/zai-org/glm-5.2. Add a payment method to your organization to unlock all models. (rate_limit)","type":"permission_error","code":"model_gate"}}`,
+      "model_gate",
+    ],
+    [
+      // SDK surfaces that reduce the body to its message string.
+      "API Error: 403 Model 'gpt-5.5' needs a paid PostHog plan. (rate_limit)",
+      "model_gate",
+    ],
+    [
+      // Bare FastAPI detail from gateways predating the error envelope.
+      `Internal error: API Error: 403 {"detail":"Model 'claude-opus-4-8' needs a paid PostHog plan."}`,
+      "model_gate",
+    ],
+    [
+      "Rate limit exceeded: Your team has reached its PostHog Code usage limit for this billing period. See https://app.posthog.com/organization/billing for your usage and limits.",
+      "org_limit",
+    ],
+    [
+      // Gateway fallback wording for a credit bucket without a mapped message.
+      "Your team has reached its usage limit for this billing period.",
+      "org_limit",
+    ],
+    [
+      // Per-user free valves fire only for unsubscribed orgs; the modal's
+      // subscribed bit picks the free-tier copy.
+      "Rate limit exceeded: User burst rate limit exceeded",
+      "org_limit",
+    ],
+    ["Rate limit exceeded: User sustained rate limit exceeded", "org_limit"],
+  ])("classifies %j as %s", (message, expected) => {
+    expect(classifyGatewayLimitError(message)).toBe(expected);
+  });
+
+  it("matches against the details when the message is generic", () => {
+    expect(
+      classifyGatewayLimitError(
+        "Internal error",
+        "API Error: 403 Model 'gpt-5.5' needs a paid PostHog plan.",
+      ),
+    ).toBe("model_gate");
+  });
+
+  it.each([
+    "Rate limit exceeded",
+    "Rate limit exceeded: Product rate limit exceeded",
+    "Your team has used its monthly PostHog AI credits.",
+    "network down",
+  ])("returns null for %j", (message) => {
+    expect(classifyGatewayLimitError(message)).toBeNull();
+  });
+});
+
 describe("isFatalSessionError", () => {
   it.each([
     "internal error",
@@ -102,6 +160,69 @@ describe("isFatalSessionError", () => {
 
   it("returns false for ordinary recoverable errors", () => {
     expect(isFatalSessionError("temporary network blip")).toBe(false);
+  });
+
+  it.each([
+    "Internal error: API Error: the operation timed out",
+    "Internal error: API Error: Request timeout",
+    "Internal error: API Error: terminated",
+    "Internal error: API Error: Connection error",
+    "Internal error: API Error: 529 overloaded_error",
+  ])("does not treat the transient upstream failure %j as fatal", (message) => {
+    expect(isFatalSessionError(message)).toBe(false);
+  });
+
+  it("does not treat a transient upstream failure in the details as fatal", () => {
+    expect(
+      isFatalSessionError(
+        "internal error",
+        "API Error: the operation timed out",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat a free-tier model-gate 403 as fatal despite the Internal error wrapper", () => {
+    // Shim-less body (no "(rate_limit)" suffix), so this exercises the
+    // model-gate exclusion rather than the rate-limit one.
+    expect(
+      isFatalSessionError(
+        `Internal error: API Error: 403 {"detail":"Model 'claude-opus-4-8' needs a paid PostHog plan."}`,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isTransientUpstreamError", () => {
+  it.each([
+    "API Error: the operation timed out",
+    "API Error: terminated",
+    "API Error: Connection error",
+    "API Error: 500 internal server error",
+    "API Error: 529 overloaded_error",
+    "Internal error: API Error: request timed out",
+    "Internal error: API Error: Connection closed mid-response. The response above may be incomplete.",
+    "The socket connection was closed unexpectedly.",
+    "socket connection closed",
+  ])("recognises %j", (message) => {
+    expect(isTransientUpstreamError(message)).toBe(true);
+  });
+
+  it("matches against the details when the message is generic", () => {
+    expect(
+      isTransientUpstreamError(
+        "Internal error",
+        "API Error: the operation timed out",
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "process exited",
+    "session not found",
+    "the operation timed out", // no "API Error:" marker — not an upstream turn failure
+    "API Error: 400 invalid_request_error",
+  ])("does not match %j", (message) => {
+    expect(isTransientUpstreamError(message)).toBe(false);
   });
 });
 

@@ -80,6 +80,12 @@ interface PreferencesState {
    *  `defaultReasoningEffort === "last_used"` can pre-fill it next time. */
   lastUsedReasoningEffort: string;
   setLastUsedReasoningEffort: (effort: string) => void;
+
+  autoPublishCloudRuns: boolean;
+  setAutoPublishCloudRuns: (enabled: boolean) => void;
+
+  rtkEnabledCloud: boolean;
+  setRtkEnabledCloud: (enabled: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -120,6 +126,13 @@ export const usePreferencesStore = create<PreferencesState>()(
       lastUsedReasoningEffort: "high",
       setLastUsedReasoningEffort: (effort) =>
         set({ lastUsedReasoningEffort: effort }),
+
+      autoPublishCloudRuns: true,
+      setAutoPublishCloudRuns: (enabled) =>
+        set({ autoPublishCloudRuns: enabled }),
+
+      rtkEnabledCloud: true,
+      setRtkEnabledCloud: (enabled) => set({ rtkEnabledCloud: enabled }),
     }),
     {
       name: "posthog-preferences",
@@ -136,6 +149,8 @@ export const usePreferencesStore = create<PreferencesState>()(
         lastNewTaskMode: state.lastNewTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
+        autoPublishCloudRuns: state.autoPublishCloudRuns,
+        rtkEnabledCloud: state.rtkEnabledCloud,
       }),
     },
   ),

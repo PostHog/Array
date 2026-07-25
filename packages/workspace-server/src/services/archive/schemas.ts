@@ -8,12 +8,19 @@ export const archivedTaskSchema = z.object({
   worktreeName: z.string().nullable(),
   branchName: z.string().nullable(),
   checkpointId: z.string().nullable(),
+  title: z.string().nullable().optional(),
+  taskCreatedAt: z.string().nullable().optional(),
+  repository: z.string().nullable().optional(),
+  recoveryPending: z.boolean().optional(),
 });
 
 export type ArchivedTask = z.infer<typeof archivedTaskSchema>;
 
 export const archiveTaskInput = z.object({
   taskId: z.string(),
+  title: z.string().optional(),
+  taskCreatedAt: z.string().optional(),
+  repository: z.string().nullable().optional(),
 });
 
 export type ArchiveTaskInput = z.infer<typeof archiveTaskInput>;

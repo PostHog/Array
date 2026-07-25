@@ -1,13 +1,12 @@
-import { Plugs } from "@phosphor-icons/react";
 import type {
   McpRecommendedServer,
   McpServerInstallation,
 } from "@posthog/api-client/posthog-client";
+import { useLocalMcpCloudServers } from "@posthog/ui/features/local-mcp/useLocalMcpCloudServers";
 import { AddCustomServerForm } from "@posthog/ui/features/mcp-server-manager/AddCustomServerForm";
 import { MarketplaceView } from "@posthog/ui/features/mcp-servers/components/parts/MarketplaceView";
 import { McpInstalledRail } from "@posthog/ui/features/mcp-servers/components/parts/McpInstalledRail";
 import { useMcpServers } from "@posthog/ui/features/mcp-servers/hooks/useMcpServers";
-import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import {
   AlertDialog,
   Box,
@@ -45,22 +44,6 @@ export function McpServersView() {
     null,
   );
 
-  const headerContent = useMemo(
-    () => (
-      <Flex align="center" gap="2" className="w-full min-w-0">
-        <Plugs size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="truncate whitespace-nowrap font-medium text-[13px]"
-          title="MCP servers"
-        >
-          MCP servers
-        </Text>
-      </Flex>
-    ),
-    [],
-  );
-  useSetHeaderContent(headerContent);
-
   const {
     installations,
     installationsLoading,
@@ -75,6 +58,8 @@ export function McpServersView() {
     reauthorize,
     reauthorizePending,
   } = useMcpServers();
+
+  const { servers: localServers } = useLocalMcpCloudServers(true);
 
   useEffect(() => {
     const refreshMcpState = () => {
@@ -276,6 +261,7 @@ export function McpServersView() {
       <McpInstalledRail
         installations={installationList}
         templates={serverList}
+        localServers={localServers}
         selectedInstallationId={selectedInstallationId}
         onAddCustom={() => setView({ kind: "add-custom" })}
         onSelectInstallation={(installationId) =>

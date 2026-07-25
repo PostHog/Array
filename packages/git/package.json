@@ -1,7 +1,7 @@
 {
   "name": "@posthog/git",
   "version": "1.0.0",
-  "description": "Git utilities for PostHog Code",
+  "description": "Git utilities for PostHog",
   "type": "module",
   "exports": {
     "./*": {

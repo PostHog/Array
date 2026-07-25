@@ -699,7 +699,7 @@ export const QuestionPending: Story = {
 const planText = `# Add Dark Mode Support
 
 ## Overview
-Add dark mode toggle to PostHog Code app with theme persistence.
+Add dark mode toggle to PostHog app with theme persistence.
 
 ## Implementation Steps
 - Create \`useThemeStore\` Zustand store with theme state

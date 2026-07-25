@@ -1,3 +1,4 @@
+import { partitionLocalMcpServersForRun } from "@posthog/core/local-mcp/localMcpImport";
 import {
   getErrorTitle,
   prepareTaskInput,
@@ -12,11 +13,15 @@ import type { HostTrpcClient } from "@posthog/host-router/client";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
+  type AgentRuntime,
   ANALYTICS_EVENTS,
+  PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
   type WorkspaceMode,
 } from "@posthog/shared";
 import type { ExecutionMode, Task } from "@posthog/shared/domain-types";
+import { useTaskChannels } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToTaskPending } from "@posthog/ui/router/navigationBridge";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -31,6 +36,7 @@ import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
 import { useUsageLimitStore } from "../../billing/usageLimitStore";
+import { useLocalMcpCloudServers } from "../../local-mcp/useLocalMcpCloudServers";
 import {
   contentToPlainText,
   contentToXml,
@@ -42,7 +48,10 @@ import { useTaskInputHistoryStore } from "../../message-editor/taskInputHistoryS
 import type { EditorHandle } from "../../message-editor/types";
 import { toastError } from "../../notifications/errorDetails";
 import { useProvisioningStore } from "../../provisioning/store";
-import { useSettingsStore } from "../../settings/settingsStore";
+import {
+  getEffectiveCustomInstructions,
+  useSettingsStore,
+} from "../../settings/settingsStore";
 import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../tasks/useTasks";
 import { useTourStore } from "../../tour/tourStore";
@@ -65,15 +74,23 @@ interface UseTaskCreationOptions {
   editorIsEmpty: boolean;
   executionMode?: ExecutionMode;
   adapter?: Adapter;
+  runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
+  customImageId?: string;
   signalReportId?: string;
   channelContext?: string;
   channelName?: string;
   /** Backend channel UUID the created task is owned by (its feed home). */
   channelId?: string;
+  /**
+   * Desktop file-system folder id that owns the channel's CONTEXT.md (the
+   * `/website/$channelId` id, distinct from the feed `channelId`). Lets the
+   * injected context address CONTEXT.md upkeep writes by a stable id.
+   */
+  channelContextId?: string;
   /**
    * Channels "generic chat box" mode: drop the repo/branch requirement so a
    * task can be submitted without picking a repo. The agent decides at runtime
@@ -159,14 +176,17 @@ export function useTaskCreation({
   editorIsEmpty,
   executionMode,
   adapter,
+  runtime = "acp",
   model,
   reasoningLevel,
   environmentId,
   sandboxEnvironmentId,
+  customImageId,
   signalReportId,
   channelContext,
   channelName,
   channelId,
+  channelContextId,
   allowNoRepo,
   onTaskCreated,
   onTaskCreatedEffect,
@@ -184,6 +204,10 @@ export function useTaskCreation({
     useState<string[] | null>(null);
   const additionalDirectories =
     additionalDirectoriesOverride ?? defaultAdditionalDirectories;
+  // Importable local MCP servers for cloud runs, self-fetched like the
+  // additional-directory defaults above rather than threaded in by callers.
+  const { servers: localMcpServers, isLoading: localMcpServersLoading } =
+    useLocalMcpCloudServers(workspaceMode === "cloud");
   const taskService = useService<TaskService>(TASK_SERVICE);
   const clearTaskInputReportAssociation = useTaskInputPrefillStore(
     (s) => s.clearReportAssociation,
@@ -195,6 +219,17 @@ export function useTaskCreation({
   const { isOnline } = useConnectivity();
   // Used to name the task occupying a branch's worktree when reuse is blocked.
   const { data: tasks } = useTasks();
+
+  // Tasks created without a channel default into the user's private #me
+  // backend channel so they still surface in the Channels space instead of
+  // staying unfiled. The personal channel is per-user and provisioned lazily
+  // server-side on first list, so this can't collide across teammates. If it
+  // hasn't loaded yet the task is created unfiled, as before.
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const { personalChannel } = useTaskChannels({ enabled: bluebirdEnabled });
 
   const hasRequiredPath = allowNoRepo
     ? true
@@ -214,6 +249,16 @@ export function useTaskCreation({
 
       // Block over-limit cloud creation before the pending view so it doesn't flash.
       if (workspaceMode === "cloud" && !(await assertCloudUsageAvailable())) {
+        return false;
+      }
+
+      // The local MCP server classification is fetched lazily on entering cloud
+      // mode; submitting before it resolves would silently drop importedMcpServers/
+      // relayedMcpServers below instead of including the user's local servers.
+      if (workspaceMode === "cloud" && localMcpServersLoading) {
+        toast.error("Still checking your local MCP servers", {
+          description: "Try again in a moment.",
+        });
         return false;
       }
 
@@ -302,6 +347,15 @@ export function useTaskCreation({
         }
 
         const settings = useSettingsStore.getState();
+        const defaultedChannelId =
+          bluebirdEnabled && !channelId && !channelName
+            ? personalChannel?.id
+            : undefined;
+
+        const localMcpServersForRun = partitionLocalMcpServersForRun(
+          localMcpServers,
+          adapter,
+        );
         const input = prepareTaskInput(serializedContent, filePaths, {
           // In channels chat-box mode no repo is attached up front, even if a
           // directory/repo is lingering in the persisted picker state.
@@ -315,18 +369,24 @@ export function useTaskCreation({
           reuseExistingWorktree,
           executionMode,
           adapter,
+          runtime,
           model,
           reasoningLevel,
           environmentId,
           sandboxEnvironmentId,
+          customImageId,
           signalReportId,
           additionalDirectories,
           channelContext,
           channelName,
-          channelId,
-          customInstructions: settings.customInstructions,
+          channelId: channelId ?? defaultedChannelId,
+          channelContextId,
+          customInstructions: getEffectiveCustomInstructions(settings),
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
+          rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
+          importedMcpServers: localMcpServersForRun.imported,
+          relayedMcpServers: localMcpServersForRun.relayed,
         });
 
         if (executionMode) {
@@ -368,6 +428,15 @@ export function useTaskCreation({
             // before the persisted draft is wiped, leaving stale text behind.
             if (!pendingTaskKey && !contentOverride) {
               editor.clear();
+            }
+            if (defaultedChannelId) {
+              track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                action_type: "file_task",
+                surface: "task_input",
+                channel_id: defaultedChannelId,
+                task_id: output.task.id,
+                success: true,
+              });
             }
             onTaskCreatedEffect?.(output.task);
             if (onTaskCreated) {
@@ -475,16 +544,23 @@ export function useTaskCreation({
       branch,
       executionMode,
       adapter,
+      runtime,
       model,
       reasoningLevel,
       environmentId,
       sandboxEnvironmentId,
+      customImageId,
       signalReportId,
       additionalDirectories,
       channelContext,
       channelName,
       channelId,
+      channelContextId,
       allowNoRepo,
+      bluebirdEnabled,
+      personalChannel?.id,
+      localMcpServers,
+      localMcpServersLoading,
       clearTaskInputReportAssociation,
       invalidateTasks,
       onTaskCreated,

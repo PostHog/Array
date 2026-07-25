@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildApiFetcher } from "./fetcher";
+import {
+  ApiRequestError,
+  buildApiFetcher,
+  requestErrorStatus,
+} from "./fetcher";
 
 describe("buildApiFetcher", () => {
   const mockFetch = vi.fn();
@@ -169,5 +173,49 @@ describe("buildApiFetcher", () => {
     await expect(fetcher.fetch(mockInput)).rejects.toThrow(
       "Network request failed",
     );
+  });
+
+  it("throws an ApiRequestError with a typed status and the legacy message format", async () => {
+    mockFetch.mockResolvedValueOnce(err(404, { detail: "Not found" }));
+    const fetcher = buildApiFetcher({
+      getAccessToken: vi.fn().mockResolvedValue("token"),
+      refreshAccessToken: vi.fn().mockResolvedValue("new-token"),
+      appVersion: "test",
+    });
+
+    const error = await fetcher.fetch(mockInput).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect((error as ApiRequestError).status).toBe(404);
+    // Catch sites across the codebase string-match on this exact format.
+    expect((error as ApiRequestError).message).toBe(
+      'Failed request: [404] {"detail":"Not found"}',
+    );
+  });
+
+  it("throws an ApiRequestError when refetching a token fails during retry", async () => {
+    mockFetch.mockResolvedValueOnce(err(401));
+    const fetcher = buildApiFetcher({
+      getAccessToken: vi.fn().mockResolvedValue("token"),
+      refreshAccessToken: vi.fn().mockRejectedValueOnce(new Error("failed")),
+      appVersion: "test",
+    });
+
+    const error = await fetcher.fetch(mockInput).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect((error as ApiRequestError).status).toBe(401);
+  });
+});
+
+describe("requestErrorStatus", () => {
+  it("returns the status of an ApiRequestError", () => {
+    expect(requestErrorStatus(new ApiRequestError(404, "{}"))).toBe(404);
+  });
+
+  it("returns undefined for plain errors and non-errors", () => {
+    expect(requestErrorStatus(new Error("Failed request: [404] x"))).toBe(
+      undefined,
+    );
+    expect(requestErrorStatus("Failed request: [404] x")).toBe(undefined);
+    expect(requestErrorStatus(null)).toBe(undefined);
   });
 });

@@ -23,6 +23,11 @@ export const POSTHOG_NOTIFICATIONS = {
   PERMISSION_RESOLVED: "_posthog/permission_resolved",
 } as const;
 
+// Qualified id of the agent's `speak` narration tool, as it appears on the
+// surfaced tool_call (`_meta.claudeCode.toolName`). Mirrors the agent's
+// LOCAL_TOOLS_MCP_NAME + tool name; kept here so core doesn't import @posthog/agent.
+export const SPEAK_TOOL_QUALIFIED_NAME = "mcp__posthog-code-tools__speak";
+
 type PosthogNotification =
   (typeof POSTHOG_NOTIFICATIONS)[keyof typeof POSTHOG_NOTIFICATIONS];
 

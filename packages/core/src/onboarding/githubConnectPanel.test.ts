@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GITHUB_CONNECT_TIMEOUT_MESSAGE } from "../integrations/connectErrors";
 import {
   buildConnectFailedProps,
   buildConnectFailureFingerprint,
@@ -29,7 +30,7 @@ describe("getGithubPanelMessage", () => {
     };
     expect(
       getGithubPanelMessage({ ...base, timedOut: true, isConnecting: false }),
-    ).toMatch(/didn't hear back/);
+    ).toBe(GITHUB_CONNECT_TIMEOUT_MESSAGE);
     expect(
       getGithubPanelMessage({ ...base, timedOut: false, isConnecting: true }),
     ).toBe("Waiting for GitHub...");

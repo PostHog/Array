@@ -6,6 +6,7 @@ import { usePreferencesStore } from "@/features/preferences/stores/preferencesSt
 import { logger } from "@/lib/logger";
 import {
   CloudCommandError,
+  cancelRun,
   getTask,
   runTaskInCloud,
   sendCloudCommand,
@@ -26,11 +27,12 @@ import {
   type SessionNotificationAttachment,
   type StoredLogEntry,
   type Task,
+  type TerminalStatus,
 } from "../types";
 import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playbackRateForTaskDuration } from "../utils/playbackRate";
+import { reinjectPromptAttachments } from "../utils/promptAttachments";
 import { playCompletionSound } from "../utils/sounds";
-import { useAttachmentEchoStore } from "./attachmentEchoStore";
 import {
   combineQueuedMessages,
   useMessageQueueStore,
@@ -47,36 +49,6 @@ function completionPlaybackRate(promptStartedAt?: number): number {
     return 1;
   }
   return playbackRateForTaskDuration(Date.now() - promptStartedAt);
-}
-
-// Match historical `user_message_chunk` events (text-only, as the cloud
-// stores them) against locally-cached attachment echoes by position+text.
-// Echoes are written in send-order; we walk user messages in receive-order
-// and zip them up. Drift (text mismatch at the same index) is treated as a
-// no-op rather than a misattribution.
-function reinjectAttachmentEchoes(
-  taskRunId: string,
-  events: SessionEvent[],
-): void {
-  const echoes = useAttachmentEchoStore.getState().getEchoes(taskRunId);
-  if (echoes.length === 0) return;
-
-  let echoIdx = 0;
-  for (const event of events) {
-    if (echoIdx >= echoes.length) return;
-    if (event.type !== "session_update") continue;
-    const update = event.notification?.update;
-    if (update?.sessionUpdate !== "user_message_chunk") continue;
-    if (update.attachments && update.attachments.length > 0) {
-      echoIdx++;
-      continue;
-    }
-    const echo = echoes[echoIdx];
-    echoIdx++;
-    if (echo.text === (update.content?.text ?? "")) {
-      update.attachments = echo.attachments;
-    }
-  }
 }
 
 type LocalNotificationKind =
@@ -124,7 +96,7 @@ function maybePresentLocalNotification(args: {
   if (previous && now - previous < NOTIFICATION_DEDUP_WINDOW_MS) return;
   lastNotificationAt.set(session.taskId, now);
 
-  const title = session.taskTitle ?? "PostHog Code";
+  const title = session.taskTitle ?? "PostHog";
   let body: string;
   switch (args.kind) {
     case "awaiting_user_input":
@@ -139,7 +111,7 @@ function maybePresentLocalNotification(args: {
   }
 
   presentLocalNotification({
-    title: "PostHog Code",
+    title: "PostHog",
     body,
     data: { taskId: session.taskId, taskRunId: session.taskRunId },
   }).catch(() => {});
@@ -293,8 +265,8 @@ export interface TaskSession {
   // the log). Used to dedup the canonical copy against the echo.
   localUserEchoes?: Set<string>;
   // Terminal backend status for this run, populated by status updates so the
-  // UI can surface "Run failed" / "Run completed".
-  terminalStatus?: "failed" | "completed";
+  // UI can surface "Run failed" / "Run completed" / "Run stopped".
+  terminalStatus?: TerminalStatus;
   lastError?: string | null;
   // True when the user initiated work (new task, sendPrompt, resume) and
   // we should play a sound when control returns. False when reconnecting
@@ -319,6 +291,10 @@ export interface TaskSession {
   // the running turn, which would abort an in-flight compaction, so queued
   // messages are held until compaction ends.
   isCompacting?: boolean;
+  // True once the user has requested the whole run be stopped, until the run
+  // reaches a terminal status. Hides the Stop control so it can't be tapped
+  // twice while the cancel is in flight.
+  stopRequested?: boolean;
 }
 
 interface TaskSessionStore {
@@ -345,6 +321,9 @@ interface TaskSessionStore {
     },
   ) => Promise<void>;
   cancelPrompt: (taskId: string) => Promise<boolean>;
+  /** Cancel the whole cloud run. Optimistically marks the session stop-requested
+   *  and reverts on failure. Returns false if there is no session or the API fails. */
+  stopRun: (taskId: string) => Promise<boolean>;
   /** Send a prompt now, interrupting the running turn first if one is live. */
   sendInterrupting: (
     taskId: string,
@@ -352,6 +331,10 @@ interface TaskSessionStore {
     attachments?: PendingAttachment[],
   ) => Promise<void>;
   flushQueuedMessages: (taskId: string) => Promise<void>;
+  /** Flush the queue only if the agent is idle. Used after an in-place edit is
+   *  saved or cancelled: the turn may have ended while the user was editing, so
+   *  nothing else would trigger the turn-end drain. A no-op mid-turn. */
+  flushQueuedMessagesIfIdle: (taskId: string) => void;
   /** Drop one queued message and resend it now as a steer (interrupt + resend). */
   steerQueuedMessage: (taskId: string, messageId: string) => Promise<void>;
   setConfigOption: (
@@ -380,11 +363,12 @@ const connectAttempts = new Set<string>();
 // queue twice.
 const flushingTasks = new Set<string>();
 
-function mapTerminalStatus(
+export function mapTerminalStatus(
   status: string | undefined | null,
-): "completed" | "failed" | undefined {
+): TerminalStatus | undefined {
   if (status === "completed") return "completed";
-  if (status === "failed" || status === "cancelled") return "failed";
+  if (status === "failed") return "failed";
+  if (status === "cancelled") return "stopped";
   return undefined;
 }
 
@@ -509,12 +493,6 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         },
       },
     };
-    if (echoAttachments.length > 0) {
-      useAttachmentEchoStore
-        .getState()
-        .recordEcho(session.taskRunId, prompt, echoAttachments);
-    }
-
     set((state) => {
       const current = state.sessions[session.taskRunId];
       const nextLocalEchoes = new Set(current.localUserEchoes ?? []);
@@ -804,6 +782,45 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     }
   },
 
+  stopRun: async (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (!session) return false;
+    const runId = session.taskRunId;
+
+    const previous = {
+      stopRequested: session.stopRequested,
+      isPromptPending: session.isPromptPending,
+    };
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [runId]: {
+          ...state.sessions[runId],
+          stopRequested: true,
+          isPromptPending: false,
+        },
+      },
+    }));
+
+    try {
+      await cancelRun(taskId, runId);
+      return true;
+    } catch (error) {
+      log.error("Failed to stop cloud run", error);
+      set((state) => {
+        const current = state.sessions[runId];
+        if (!current) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [runId]: { ...current, ...previous },
+          },
+        };
+      });
+      return false;
+    }
+  },
+
   sendInterrupting: async (taskId, prompt, attachments) => {
     // The cloud has no mid-turn inject, so steering interrupts the running
     // turn and resends as a fresh prompt.
@@ -817,7 +834,9 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     if (flushingTasks.has(taskId)) return;
     flushingTasks.add(taskId);
     try {
-      const drained = useMessageQueueStore.getState().drain(taskId);
+      const drained = useMessageQueueStore
+        .getState()
+        .drain(taskId, { stopAtEdited: true });
       if (drained.length === 0) return;
 
       const { text, attachments } = combineQueuedMessages(drained);
@@ -832,6 +851,21 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       }
     } finally {
       flushingTasks.delete(taskId);
+    }
+  },
+
+  flushQueuedMessagesIfIdle: (taskId: string) => {
+    const session = get().getSessionForTask(taskId);
+    if (
+      session?.status === "connected" &&
+      !session.isPromptPending &&
+      !session.terminalStatus &&
+      !session.isCompacting &&
+      useMessageQueueStore.getState().getQueue(taskId).length > 0
+    ) {
+      get()
+        .flushQueuedMessages(taskId)
+        .catch((err) => log.warn("Queue flush failed", err));
     }
   },
 
@@ -956,10 +990,10 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         : dedupAgainstLocalEchoes(update.newEntries, echoSet);
 
       const events = convertStoredEntriesToEvents(dedupedEntries);
-      // Snapshots are S3-backed and lose attachment metadata; reattach from
-      // the local echo store so historical user messages keep their images.
+      // Snapshots are S3-backed and replay user turns as text-only chunks;
+      // reattach the images from the `session/prompt` entries in the same log.
       if (isSnapshot) {
-        reinjectAttachmentEchoes(taskRunId, events);
+        reinjectPromptAttachments(events);
       }
 
       const analysis = analyzeEntries(
@@ -1165,6 +1199,7 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
       pendingUserMessage: prompt,
       reasoningEffort,
       initialPermissionMode,
+      rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
     });
 
     const newRun = updatedTask.latest_run;

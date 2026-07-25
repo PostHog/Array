@@ -13,7 +13,6 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@posthog/quill";
-import { BILLING_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { happyHog } from "@posthog/ui/assets/hedgehogs";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
@@ -27,8 +26,6 @@ import {
   useSwitchOrgMutation,
 } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { useSeatStore } from "@posthog/ui/features/billing/seatStore";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { StepActions } from "@posthog/ui/features/onboarding/components/StepActions";
 import {
   type ProjectInfo,
@@ -76,7 +73,6 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const { data: fullUser, isLoading } = useCurrentUser({
     client,
   });
-  const billingEnabled = useFeatureFlag(BILLING_FLAG);
   const switchOrgTrpcMutation = useSwitchOrgMutation();
 
   const organizations = useMemo<Org[]>(() => {
@@ -110,9 +106,6 @@ export function ProjectSelectStep({ onNext, onBack }: ProjectSelectStepProps) {
   const switchOrgMutation = useMutation({
     mutationFn: async (orgId: string) => {
       await switchOrgTrpcMutation.mutateAsync(orgId);
-      if (billingEnabled) {
-        void useSeatStore.getState().fetchSeat({ autoProvision: true });
-      }
     },
     onMutate: () => {
       setIsSwitchingOrg(true);

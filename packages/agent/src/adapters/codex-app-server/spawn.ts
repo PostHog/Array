@@ -4,7 +4,6 @@ import { delimiter, dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { ProcessSpawnedCallback } from "../../types";
 import { Logger } from "../../utils/logger";
-import { stripElectronNodeShimFromPath } from "../../utils/spawn-env";
 import { CodexSettingsManager } from "./settings";
 
 /**
@@ -18,6 +17,13 @@ export interface CodexOptions {
   apiKey?: string;
   model?: string;
   reasoningEffort?: string;
+  /**
+   * Static HTTP headers forwarded on every request to the PostHog gateway
+   * (the codex equivalent of Claude's `ANTHROPIC_CUSTOM_HEADERS`). Carries the
+   * `x-posthog-property-*` attribution headers the gateway lifts onto the
+   * `$ai_generation` event (team_id, ai_stage, task metadata).
+   */
+  httpHeaders?: Record<string, string>;
   /** Guidance appended on top of Codex's base prompt via `developer_instructions`. */
   developerInstructions?: string;
   /**
@@ -51,6 +57,12 @@ export interface CodexAppServerProcessOptions {
   codexHome?: string;
   /** Guidance appended to Codex's base prompt via `developer_instructions`. */
   developerInstructions?: string;
+  /**
+   * Static HTTP headers forwarded on every request to the PostHog gateway, set
+   * as `model_providers.posthog.http_headers`. Codex equivalent of Claude's
+   * `ANTHROPIC_CUSTOM_HEADERS` (see {@link CodexOptions.httpHeaders}).
+   */
+  httpHeaders?: Record<string, string>;
   /** Extra codex `-c key=value` config overrides (e.g. auto_compact_token_limit). */
   configOverrides?: Record<string, string | number>;
   logger?: Logger;
@@ -64,8 +76,22 @@ export interface CodexAppServerProcess {
   kill: () => void;
 }
 
+/** Serialize a string map as a TOML basic string (escapes `\` and `"`). */
+function tomlBasicString(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/** Render a `Record<string, string>` as a TOML inline table. */
+function tomlInlineTable(entries: Record<string, string>): string {
+  const pairs = Object.entries(entries).map(
+    ([key, value]) => `${tomlBasicString(key)} = ${tomlBasicString(value)}`,
+  );
+  return `{ ${pairs.join(", ")} }`;
+}
+
 export function buildAppServerArgs(
   options: CodexAppServerProcessOptions,
+  environment: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const args: string[] = ["app-server"];
 
@@ -98,6 +124,23 @@ export function buildAppServerArgs(
       : `sandbox_mode="danger-full-access"`,
   );
 
+  // The host owns approvals (surfaced via approvals.ts → requestPermission). Codex's
+  // guardian reviewer is on by default and routes approvals to its dedicated
+  // `codex-auto-review` model, which our gateway's posthog_code allowlist doesn't
+  // serve — so every review 403s. Default codex's own `user` reviewer; a caller can
+  // still override it via configOverrides, which the trailing loop appends last.
+  args.push("-c", `approvals_reviewer="user"`);
+
+  // Codex snapshots shell state only for the thread's initial cwd. Cloud tasks
+  // can work in additional checkouts, so pin the backend-controlled BASH_ENV
+  // path into every tool shell instead of relying on snapshot restoration.
+  if (environment.IS_SANDBOX && environment.BASH_ENV) {
+    args.push(
+      "-c",
+      `shell_environment_policy.set.BASH_ENV=${tomlBasicString(environment.BASH_ENV)}`,
+    );
+  }
+
   // Disable the user's ambient ~/.codex MCP servers so the adapter only exposes
   // MCP servers PostHog injects per-thread; otherwise codex fails connecting to them.
   for (const name of new CodexSettingsManager(
@@ -117,6 +160,17 @@ export function buildAppServerArgs(
       "-c",
       `model_providers.posthog.env_key="POSTHOG_GATEWAY_API_KEY"`,
     );
+
+    // Attribution + task-metadata headers the gateway lifts onto the captured
+    // $ai_generation event. Passed as a single TOML inline table so hyphenated
+    // header names (`x-posthog-property-*`) stay quoted rather than becoming
+    // bare-key segments of a dotted `-c` path.
+    if (options.httpHeaders && Object.keys(options.httpHeaders).length > 0) {
+      args.push(
+        "-c",
+        `model_providers.posthog.http_headers=${tomlInlineTable(options.httpHeaders)}`,
+      );
+    }
   }
 
   // developer_instructions are set per-thread in thread/start (with the host's
@@ -154,9 +208,9 @@ export function spawnCodexAppServerProcess(
   if (options.codexHome) {
     env.CODEX_HOME = options.codexHome;
   }
-  env.PATH = `${dirname(options.binaryPath)}${delimiter}${stripElectronNodeShimFromPath(env.PATH) ?? ""}`;
+  env.PATH = `${dirname(options.binaryPath)}${delimiter}${env.PATH ?? ""}`;
 
-  const args = buildAppServerArgs(options);
+  const args = buildAppServerArgs(options, env);
 
   logger.info("Spawning codex app-server process", {
     command: options.binaryPath,

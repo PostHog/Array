@@ -30,6 +30,7 @@ export const changedFileSchema = z.object({
   linesRemoved: z.number().optional(),
   staged: z.boolean().optional(),
   patch: z.string().optional(),
+  sha: z.string().optional(),
 });
 
 export type ChangedFile = z.infer<typeof changedFileSchema>;
@@ -166,6 +167,10 @@ export const discardFileChangesOutput = z.object({
 });
 
 export type DiscardFileChangesOutput = z.infer<typeof discardFileChangesOutput>;
+
+export const discardAllChangesInput = z.object({
+  directoryPath: z.string(),
+});
 
 export const getGitSyncStatusInput = z.object({
   directoryPath: z.string(),

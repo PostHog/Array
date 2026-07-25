@@ -10,11 +10,20 @@ import {
 } from "@posthog/quill";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import type {
   ConversationItem,
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
+import {
+  PROMPT_RECALL_HINT_KEY,
+  type PromptRecallHandler,
+} from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
+import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
+import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
+import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
@@ -59,7 +68,16 @@ import {
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
 import { Box, Flex, Text } from "@radix-ui/themes";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 export interface ConversationViewProps {
   events: AcpMessage[];
@@ -82,6 +100,11 @@ export interface ConversationViewProps {
    * scrollbar from off-edge content; nested code blocks keep their own scroll.
    */
   scrollX?: boolean;
+  /**
+   * Filled with the view's prompt recall handler so the composer can forward
+   * plain Up/Down presses (caret at the input boundary) to it.
+   */
+  promptRecallRef?: RefObject<PromptRecallHandler | null>;
 }
 
 export function ConversationView({
@@ -95,6 +118,7 @@ export function ConversationView({
   compact = false,
   collapseMode: collapseModeProp,
   scrollX = true,
+  promptRecallRef,
 }: ConversationViewProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
   const diffsPoolOptions = useMemo(
@@ -220,6 +244,93 @@ export function ConversationView({
     listRef: searchListRef,
   });
 
+  const [jumpPickerOpen, setJumpPickerOpen] = useState(false);
+  const [keyboardFocusedMessageId, setKeyboardFocusedMessageId] = useState<
+    string | null
+  >(null);
+
+  const userMessages = useMemo(() => {
+    const result: Array<{ id: string; index: number; content: string }> = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type === "user_message") {
+        result.push({ id: item.id, index: i, content: item.content });
+      }
+    }
+    return result;
+  }, [items]);
+
+  usePromptRecallSource(userMessages, promptRecallRef);
+
+  // Grouped rows != items, so scroll by the row the message landed in (same
+  // mapping search uses), falling back to the raw item index.
+  const scrollToUserMessage = useCallback((id: string, itemIndex: number) => {
+    const rowIndex = itemIdToRowIndexRef.current.get(id) ?? itemIndex;
+    listRef.current?.scrollToIndex(rowIndex);
+  }, []);
+
+  const handleNavigateMessage = useCallback(
+    (direction: -1 | 1) => {
+      if (userMessages.length === 0) return;
+
+      const currentIndex = keyboardFocusedMessageId
+        ? userMessages.findIndex(
+            (message) => message.id === keyboardFocusedMessageId,
+          )
+        : -1;
+
+      const nextIndex =
+        currentIndex === -1
+          ? direction > 0
+            ? 0
+            : userMessages.length - 1
+          : Math.max(
+              0,
+              Math.min(userMessages.length - 1, currentIndex + direction),
+            );
+
+      const nextMessage = userMessages[nextIndex];
+      if (!nextMessage) return;
+
+      useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
+      setKeyboardFocusedMessageId(nextMessage.id);
+      scrollToUserMessage(nextMessage.id, nextMessage.index);
+    },
+    [keyboardFocusedMessageId, userMessages, scrollToUserMessage],
+  );
+
+  useHotkeys(
+    SHORTCUTS.MESSAGE_JUMP,
+    () => setJumpPickerOpen((prev) => !prev),
+    THREAD_HOTKEY_OPTIONS,
+  );
+
+  useHotkeys(
+    SHORTCUTS.MESSAGE_PREV,
+    () => handleNavigateMessage(-1),
+    THREAD_HOTKEY_OPTIONS,
+  );
+
+  useHotkeys(
+    SHORTCUTS.MESSAGE_NEXT,
+    () => handleNavigateMessage(1),
+    THREAD_HOTKEY_OPTIONS,
+  );
+
+  const clearKeyboardFocus = useCallback(() => {
+    setKeyboardFocusedMessageId(null);
+  }, []);
+
+  const handleJumpToMessage = useCallback(
+    (id: string) => {
+      const message = userMessages.find((entry) => entry.id === id);
+      if (!message) return;
+      setKeyboardFocusedMessageId(id);
+      scrollToUserMessage(id, message.index);
+    },
+    [userMessages, scrollToUserMessage],
+  );
+
   const handleScrollStateChange = useCallback((isAtBottom: boolean) => {
     isAtBottomRef.current = isAtBottom;
     setShowScrollButton(!isAtBottom);
@@ -254,6 +365,7 @@ export function ConversationView({
               timestamp={item.timestamp}
               animate={!initialItemIds.has(item.id)}
               taskId={taskId}
+              keyboardFocused={item.id === keyboardFocusedMessageId}
               sourceUrl={
                 slackThreadUrl && item.id === firstUserMessageId
                   ? slackThreadUrl
@@ -287,7 +399,14 @@ export function ConversationView({
           return <UserShellExecuteView item={item} />;
       }
     },
-    [repoPath, taskId, slackThreadUrl, firstUserMessageId, initialItemIds],
+    [
+      repoPath,
+      taskId,
+      slackThreadUrl,
+      firstUserMessageId,
+      initialItemIds,
+      keyboardFocusedMessageId,
+    ],
   );
 
   const getRowKey = useCallback((row: ThreadRow) => row.id, []);
@@ -334,6 +453,7 @@ export function ConversationView({
 
   const footer = (
     <div className={compact ? "pb-1" : "pb-16"}>
+      <CloudArtifactDownloads taskId={taskId} task={task} />
       <SessionFooter
         task={task}
         isPromptPending={isPromptPending}
@@ -359,7 +479,11 @@ export function ConversationView({
       poolOptions={diffsPoolOptions}
       highlighterOptions={DIFFS_HIGHLIGHTER_OPTIONS}
     >
-      <div ref={containerRef} className="group/thread relative flex-1">
+      <div
+        ref={containerRef}
+        className="group/thread relative flex-1"
+        onPointerDownCapture={clearKeyboardFocus}
+      >
         <div
           id="fullscreen-portal"
           className="pointer-events-none absolute inset-0 z-20"
@@ -376,6 +500,13 @@ export function ConversationView({
             onClose={search.close}
           />
         )}
+
+        <MessageJumpPicker
+          open={jumpPickerOpen}
+          onOpenChange={setJumpPickerOpen}
+          items={items}
+          onJumpToMessage={handleJumpToMessage}
+        />
 
         <SessionTaskIdProvider taskId={taskId}>
           <VirtualizedList<ThreadRow>

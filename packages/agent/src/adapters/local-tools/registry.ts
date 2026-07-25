@@ -15,11 +15,22 @@ export interface LocalToolCtx {
   /** GitHub token available to the sandbox, if any. */
   token?: string;
   taskId?: string;
+  taskRunId?: string;
   /**
    * Base branch of the task's repo (e.g. "master"); the signed-git tools fall
    * back to origin/HEAD detection when unset.
    */
   baseBranch?: string;
+  /**
+   * Marks this run terminal and lets the workflow tear the sandbox down. Set by
+   * the adapter for cloud runs that own a sandbox; absent for local sessions.
+   * Powers the `finish` tool so an unattended run ends the moment the agent
+   * decides it's done, instead of idling until a timeout.
+   */
+  requestFinish?: (
+    status: "completed" | "failed",
+    message?: string,
+  ) => Promise<void>;
 }
 
 /** Minimal session-meta shape needed to gate tools (e.g. cloud-only). */
@@ -27,6 +38,14 @@ export interface LocalToolGateMeta {
   environment?: "local" | "cloud";
   /** Repo-less channel session: enables the lazy-repo tools. */
   channelMode?: boolean;
+  /** Spoken narration is on for this session: enables the speak tool. */
+  spokenNarration?: boolean;
+  /**
+   * Unattended run (no human driving turns): enables the `finish` tool so the
+   * agent can end its own run. False/undefined for interactive runs, which a
+   * human ends.
+   */
+  background?: boolean;
 }
 
 /**

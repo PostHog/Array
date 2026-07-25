@@ -48,14 +48,24 @@ export class TaskPrStatusService {
     };
   }
 
-  setPrimaryPrUrl(taskId: string, prUrl: string): void {
+  async setPrimaryPrUrl(taskId: string, prUrl: string): Promise<void> {
     this.workspaceRepo.promotePrUrl(taskId, prUrl);
-    const row = this.workspaceRepo.findByTaskId(taskId);
+    const details = await this.gitService
+      .getPrDetailsByUrl(prUrl)
+      .catch(() => null);
+    const prState: SidebarPrState = details
+      ? mapPrState(details.state, details.merged, details.draft)
+      : null;
+    this.workspaceRepo.updatePrCache(taskId, {
+      prUrl,
+      prState,
+      accumulate: false,
+    });
     this.workspaceService.emit("taskPrInfoChanged", {
       taskId,
       prUrl,
       prUrls: this.workspaceRepo.getPrUrls(taskId),
-      prState: row?.prState ?? null,
+      prState,
     });
   }
 

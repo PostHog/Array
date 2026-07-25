@@ -39,7 +39,6 @@ interface TaskItemProps {
   isArchiving?: boolean;
   hideHoverActions?: boolean;
   workspaceMode?: WorkspaceMode;
-  worktreePath?: string;
   isGenerating?: boolean;
   isUnread?: boolean;
   isPinned?: boolean;

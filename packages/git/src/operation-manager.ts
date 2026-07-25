@@ -7,12 +7,12 @@ import { AsyncReaderWriterLock } from "./rw-lock";
  * child processes spawned by git hooks (e.g. biome via lint-staged) don't
  * crash trying to initialise GPU subsystems.
  *
- * The agent service puts a `node` shim for the Electron binary on PATH (a
- * wrapper script that sets ELECTRON_RUN_AS_NODE itself on POSIX, a symlink
- * on win32). If the var is missing when the raw binary runs, it starts as a
- * full Chromium browser (GPU init → SIGTRAP crash). We strip most ELECTRON_/
- * CHROME_ vars but explicitly keep ELECTRON_RUN_AS_NODE=1 so any such
- * shim still behaves as plain Node.js.
+ * Releases before the node-shim removal put a `node` alias for the Electron
+ * binary on agent PATHs, and stale copies can outlive an update. We strip
+ * most ELECTRON_/CHROME_ vars but keep ELECTRON_RUN_AS_NODE=1 so a hook that
+ * still resolves such an alias runs it as plain Node.js instead of booting
+ * the desktop app (GPU init → SIGTRAP crash). Dropping the var entirely is
+ * tracked in #3114.
  *
  * GIT_LFS_SKIP_SMUDGE=1 prevents the LFS filter from running during
  * checkout/clone/worktree operations. Users who don't have git-lfs

@@ -65,9 +65,8 @@ interface Case {
   available: boolean;
   modal: {
     isOpen: boolean;
-    bucket?: "burst" | "sustained" | null;
+    cause?: "model_gate" | "org_limit" | null;
     resetAt?: string | null;
-    isPro?: boolean | null;
   };
   trackPayload?: { bucket: "burst" | "sustained" | null; is_pro: boolean };
 }
@@ -80,7 +79,7 @@ const cases: Case[] = [
     modal: { isOpen: false },
   },
   {
-    name: "blocks and shows the burst modal when the daily limit is exceeded",
+    name: "blocks with the daily reset hint when the burst bucket is exceeded",
     arrange: () =>
       refresh.mockResolvedValue(
         makeUsage({ burst: true, isRateLimited: true, isPro: true }),
@@ -88,9 +87,8 @@ const cases: Case[] = [
     available: false,
     modal: {
       isOpen: true,
-      bucket: "burst",
+      cause: "org_limit",
       resetAt: "2026-05-01T12:10:00.000Z",
-      isPro: true,
     },
     trackPayload: { bucket: "burst", is_pro: true },
   },
@@ -101,20 +99,20 @@ const cases: Case[] = [
       getLatest.mockResolvedValue(makeUsage({ sustained: true }));
     },
     available: false,
-    modal: { isOpen: true, bucket: "sustained" },
+    modal: { isOpen: true, cause: "org_limit" },
     trackPayload: { bucket: "sustained", is_pro: false },
   },
   {
-    name: "falls back to the monthly bucket when only is_rate_limited is set",
+    name: "falls back to the monthly reset hint when only is_rate_limited is set",
     arrange: () =>
       refresh.mockResolvedValue(makeUsage({ isRateLimited: true })),
     available: false,
     modal: {
       isOpen: true,
-      bucket: "sustained",
+      cause: "org_limit",
       resetAt: "2026-05-01T13:00:00.000Z",
     },
-    trackPayload: { bucket: "sustained", is_pro: false },
+    trackPayload: { bucket: null, is_pro: false },
   },
   {
     name: "fails open (allows creation) when usage cannot be fetched",
@@ -144,10 +142,9 @@ describe("assertCloudUsageAvailable", () => {
 
       const state = useUsageLimitStore.getState();
       expect(state.isOpen).toBe(modal.isOpen);
-      if (modal.bucket !== undefined) expect(state.bucket).toBe(modal.bucket);
+      if (modal.cause !== undefined) expect(state.cause).toBe(modal.cause);
       if (modal.resetAt !== undefined)
         expect(state.resetAt).toBe(modal.resetAt);
-      if (modal.isPro !== undefined) expect(state.isPro).toBe(modal.isPro);
 
       if (trackPayload) {
         expect(track).toHaveBeenCalledWith(

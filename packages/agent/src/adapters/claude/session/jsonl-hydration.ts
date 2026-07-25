@@ -7,12 +7,18 @@ import { DEFAULT_GATEWAY_MODEL } from "../../../gateway-models";
 import type { PostHogAPIClient } from "../../../posthog-api";
 import type { StoredEntry } from "../../../types";
 import { isEmptyContentBlock } from "../../../utils/acp-content";
+import { neutralizeUnprocessableImages } from "../image-sanitization";
 import { supports1MContext } from "./models";
 
-interface ConversationTurn {
+export interface ConversationTurn {
   role: "user" | "assistant";
   content: ContentBlock[];
   toolCalls?: ToolCallInfo[];
+}
+
+export interface HydrateSessionJsonlResult {
+  hasSession: boolean;
+  conversation?: ConversationTurn[];
 }
 
 interface ToolCallInfo {
@@ -195,17 +201,14 @@ export function rebuildConversation(
             // Bare streaming updates carry no name; the opening tool_call
             // always does, so the call exists by the time they arrive.
             if (!toolName) break;
-            toolCall = { toolCallId, toolName, input: undefined };
+            toolCall = { toolCallId, toolName, input: {} };
             currentToolCalls.push(toolCall);
           }
 
           const input = update.rawInput ?? meta?.toolInput;
           // The opening tool_call ships rawInput: {} — don't clobber an
           // already-streamed input with it.
-          if (
-            input !== undefined &&
-            !(isEmptyRecord(input) && toolCall.input !== undefined)
-          ) {
+          if (input !== undefined && !isEmptyRecord(input)) {
             toolCall.input = capToolPayload(input);
           }
           const result = update.rawOutput ?? meta?.toolResponse;
@@ -244,9 +247,12 @@ export function rebuildConversation(
   return turns;
 }
 
-const CHARS_PER_TOKEN = 4;
-const DEFAULT_MAX_TOKENS = 150_000;
-const LARGE_CONTEXT_MAX_TOKENS = 800_000;
+// JSON-heavy tool payloads tokenize at ~2.5-3 chars/token, so estimate low.
+const CHARS_PER_TOKEN = 3;
+// Target ~half the context window, leaving headroom for the system prompt,
+// tools, skills, estimation error, and the resumed run's own work.
+const DEFAULT_MAX_TOKENS = 80_000;
+const LARGE_CONTEXT_MAX_TOKENS = 400_000;
 
 function estimateTurnTokens(turn: ConversationTurn): number {
   let chars = 0;
@@ -496,7 +502,8 @@ export function conversationTurnsToJsonlEntries(
             type: "tool_use",
             id: tc.toolCallId,
             name: tc.toolName,
-            input: tc.input,
+            // undefined would be dropped on stringify; the API requires input
+            input: tc.input ?? {},
           });
         }
       }
@@ -594,8 +601,11 @@ interface HydrationLog {
   warn: (msg: string, data?: unknown) => void;
 }
 
-// Heals JSONL files written before the empty-block filters existed; without
-// this an already-poisoned transcript keeps 400ing on every resume.
+// Heals a persisted transcript that would otherwise 400 on every resume:
+// empty content blocks, missing tool_use.input, and images the API can't
+// process (unsupported type or over the per-image byte limit). The image case
+// is why a session that once read/attached a bad image keeps re-triggering the
+// same error on nearly every subsequent turn until the block is neutralized.
 export async function sanitizeSessionJsonl(
   jsonlPath: string,
 ): Promise<boolean> {
@@ -619,10 +629,25 @@ export async function sanitizeSessionJsonl(
     }
     const message = parsed.message as { content?: unknown } | undefined;
     if (!message || !Array.isArray(message.content)) return line;
+    let lineChanged = false;
     const kept = message.content.filter((block) => !isEmptyContentBlock(block));
-    if (kept.length === message.content.length) return line;
+    if (kept.length !== message.content.length) {
+      lineChanged = true;
+      message.content = kept.length > 0 ? kept : [{ type: "text", text: " " }];
+    }
+    for (const block of message.content as (Record<string, unknown> | null)[]) {
+      if (block?.type === "tool_use" && block.input == null) {
+        block.input = {};
+        lineChanged = true;
+      }
+    }
+    const imageResult = neutralizeUnprocessableImages(message.content);
+    if (imageResult.changed) {
+      message.content = imageResult.value;
+      lineChanged = true;
+    }
+    if (!lineChanged) return line;
     changed = true;
-    message.content = kept.length > 0 ? kept : [{ type: "text", text: " " }];
     return JSON.stringify(parsed);
   });
 
@@ -661,7 +686,7 @@ export async function hydrateSessionJsonl(params: {
   permissionMode?: string;
   posthogAPI: PostHogAPIClient;
   log: HydrationLog;
-}): Promise<boolean> {
+}): Promise<HydrateSessionJsonlResult> {
   const { posthogAPI, log } = params;
 
   try {
@@ -670,9 +695,10 @@ export async function hydrateSessionJsonl(params: {
       await fs.access(jsonlPath);
       try {
         if (await sanitizeSessionJsonl(jsonlPath)) {
-          log.info("Removed empty content blocks from existing session JSONL", {
-            jsonlPath,
-          });
+          log.info(
+            "Healed existing session JSONL (empty and/or unprocessable-image blocks)",
+            { jsonlPath },
+          );
         }
       } catch (err) {
         // A sanitize failure must not block resuming from the existing file.
@@ -681,7 +707,7 @@ export async function hydrateSessionJsonl(params: {
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      return true;
+      return { hasSession: true };
     } catch {
       // File doesn't exist, proceed with hydration
     }
@@ -689,13 +715,13 @@ export async function hydrateSessionJsonl(params: {
     const taskRun = await posthogAPI.getTaskRun(params.taskId, params.runId);
     if (!taskRun.log_url) {
       log.info("No log URL, skipping JSONL hydration");
-      return false;
+      return { hasSession: false };
     }
 
     const entries = await posthogAPI.fetchTaskRunLogs(taskRun);
     if (entries.length === 0) {
       log.info("No S3 log entries, skipping JSONL hydration");
-      return false;
+      return { hasSession: false };
     }
 
     const entryCounts: Record<string, number> = {};
@@ -721,7 +747,7 @@ export async function hydrateSessionJsonl(params: {
 
     if (allTurns.length === 0) {
       log.info("No conversation to hydrate, skipping JSONL hydration");
-      return false;
+      return { hasSession: false };
     }
 
     const maxTokens = supports1MContext(params.model ?? "")
@@ -753,12 +779,12 @@ export async function hydrateSessionJsonl(params: {
       turns: conversation.length,
       lines: jsonlLines.length,
     });
-    return true;
+    return { hasSession: true, conversation };
   } catch (err) {
     log.warn("Failed to hydrate session JSONL, continuing", {
       sessionId: params.sessionId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return false;
+    return { hasSession: false };
   }
 }

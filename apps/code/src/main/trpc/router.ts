@@ -24,24 +24,29 @@ import { foldersRouter } from "@posthog/host-router/routers/folders.router";
 import { fsRouter } from "@posthog/host-router/routers/fs.router";
 import { gitRouter } from "@posthog/host-router/routers/git.router";
 import { githubIntegrationRouter } from "@posthog/host-router/routers/github-integration.router";
-import { githubReleasesRouter } from "@posthog/host-router/routers/github-releases.router";
 import { handoffRouter } from "@posthog/host-router/routers/handoff.router";
+import { integrationRouter } from "@posthog/host-router/routers/integration.router";
 import { linearIntegrationRouter } from "@posthog/host-router/routers/linear-integration.router";
 import { llmGatewayRouter } from "@posthog/host-router/routers/llm-gateway.router";
+import { localMcpRouter } from "@posthog/host-router/routers/local-mcp.router";
 import { logsRouter } from "@posthog/host-router/routers/logs.router";
 import { mcpAppsRouter } from "@posthog/host-router/routers/mcp-apps.router";
 import { mcpCallbackRouter } from "@posthog/host-router/routers/mcp-callback.router";
+import { mcpRelayRouter } from "@posthog/host-router/routers/mcp-relay.router";
 import { notificationRouter } from "@posthog/host-router/routers/notification.router";
 import { oauthRouter } from "@posthog/host-router/routers/oauth.router";
 import { onboardingImportRouter } from "@posthog/host-router/routers/onboarding-import.router";
 import { osRouter } from "@posthog/host-router/routers/os.router";
+import { piSessionRouter } from "@posthog/host-router/routers/pi-session.router";
 import { processTrackingRouter } from "@posthog/host-router/routers/process-tracking.router";
 import { provisioningRouter } from "@posthog/host-router/routers/provisioning.router";
+import { releaseFeedRouter } from "@posthog/host-router/routers/release-feed.router";
 import { secureStoreRouter } from "@posthog/host-router/routers/secure-store.router";
 import { shellRouter } from "@posthog/host-router/routers/shell.router";
 import { skillsRouter } from "@posthog/host-router/routers/skills.router";
 import { slackIntegrationRouter } from "@posthog/host-router/routers/slack-integration.router";
 import { sleepRouter } from "@posthog/host-router/routers/sleep.router";
+import { speechRouter } from "@posthog/host-router/routers/speech.router";
 import { suspensionRouter } from "@posthog/host-router/routers/suspension.router";
 import { uiRouter } from "@posthog/host-router/routers/ui.router";
 import { updatesRouter } from "@posthog/host-router/routers/updates.router";
@@ -81,23 +86,28 @@ export const trpcRouter = router({
   fs: fsRouter,
   git: gitRouter,
   githubIntegration: githubIntegrationRouter,
-  githubReleases: githubReleasesRouter,
+  releaseFeed: releaseFeedRouter,
   handoff: handoffRouter,
+  integration: integrationRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
+  localMcp: localMcpRouter,
   mcpApps: mcpAppsRouter,
   mcpCallback: mcpCallbackRouter,
+  mcpRelay: mcpRelayRouter,
   notification: notificationRouter,
   oauth: oauthRouter,
   onboardingImport: onboardingImportRouter,
   logs: logsRouter,
   os: osRouter,
+  piSession: piSessionRouter,
   processTracking: processTrackingRouter,
   provisioning: provisioningRouter,
   sleep: sleepRouter,
   suspension: suspensionRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,
+  speech: speechRouter,
   skills: skillsRouter,
   slackIntegration: slackIntegrationRouter,
   ui: uiRouter,

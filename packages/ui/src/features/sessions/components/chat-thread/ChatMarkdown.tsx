@@ -14,6 +14,12 @@ import {
   parseOpenFence,
   splitMarkdownBlocks,
 } from "@posthog/ui/features/editor/components/splitMarkdownBlocks";
+import {
+  BareFileLink,
+  hasDirectoryPath,
+  InlineFileLink,
+  looksLikeBareFilename,
+} from "@posthog/ui/features/sessions/components/session-update/fileLinkChips";
 import { HighlightedCode } from "@posthog/ui/primitives/HighlightedCode";
 import { useCopy } from "@posthog/ui/primitives/useCopy";
 import { IconButton } from "@radix-ui/themes";
@@ -70,6 +76,11 @@ const components: Components = {
       {children}
     </a>
   ),
+  img: ({ alt }) => (
+    <Text className="text-muted-foreground text-sm">
+      Remote image blocked{alt ? `: ${alt}` : ""}
+    </Text>
+  ),
   ul: ({ children }) => (
     <ul className="list-disc space-y-0.5 ps-4">{children}</ul>
   ),
@@ -98,11 +109,18 @@ const components: Components = {
         </ChatCodeBlock>
       );
     }
-    return (
+    const fallback = (
       <code className="rounded rounded-sm border border-border bg-muted/50 px-1 font-mono text-xs">
         {children}
       </code>
     );
+    if (hasDirectoryPath(text)) {
+      return <InlineFileLink text={text} />;
+    }
+    if (looksLikeBareFilename(text)) {
+      return <BareFileLink text={text} fallback={fallback} />;
+    }
+    return fallback;
   },
   pre: ({ children }) => <>{children}</>,
   h1: ({ children }) => (

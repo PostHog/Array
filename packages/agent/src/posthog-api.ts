@@ -7,17 +7,9 @@ import type {
   TaskRun,
   TaskRunArtifact,
 } from "./types";
-import {
-  getGatewayInvalidatePlanCacheUrl,
-  getGatewayUsageUrl,
-  getLlmGatewayUrl,
-} from "./utils/gateway";
+import { getGatewayUsageUrl, getLlmGatewayUrl } from "./utils/gateway";
 
-export {
-  getGatewayInvalidatePlanCacheUrl,
-  getGatewayUsageUrl,
-  getLlmGatewayUrl,
-};
+export { getGatewayUsageUrl, getLlmGatewayUrl };
 
 const DEFAULT_USER_AGENT = `posthog/agent.hog.dev; version: ${packageJson.version}`;
 
@@ -25,6 +17,34 @@ export interface TaskArtifactUploadPayload {
   name: string;
   type: ArtifactType;
   content: string;
+  /** Encoding of `content`. With "base64" the backend stores the decoded bytes. */
+  content_encoding?: "utf-8" | "base64";
+  content_type?: string;
+}
+
+export interface TaskArtifactPrepareUploadPayload {
+  name: string;
+  type: ArtifactType;
+  size: number;
+  content_type?: string;
+}
+
+export interface PreparedTaskArtifactUpload {
+  id: string;
+  name: string;
+  type: ArtifactType;
+  size: number;
+  content_type?: string;
+  storage_path: string;
+  expires_in: number;
+  presigned_post: { url: string; fields: Record<string, string> };
+}
+
+export interface TaskArtifactFinalizeUploadPayload {
+  id: string;
+  name: string;
+  type: ArtifactType;
+  storage_path: string;
   content_type?: string;
 }
 
@@ -210,14 +230,22 @@ export class PostHogAPIClient {
     runId: string,
     text: string,
     textParts?: string[],
+    messageId?: string,
   ): Promise<void> {
     const teamId = this.getTeamId();
     // Send `text_parts` alongside the joined `text` so backends that understand
     // the new schema can pick just the post-last-tool-use answer, while older
     // backends still get the flat `text` field they already handle.
-    const body: { text: string; text_parts?: string[] } = { text };
+    // `message_id` correlates the relay with the user message that initiated
+    // the turn; it is omitted when no message id is known (e.g. boot prompt).
+    const body: { text: string; text_parts?: string[]; message_id?: string } = {
+      text,
+    };
     if (textParts && textParts.length > 0) {
       body.text_parts = textParts;
+    }
+    if (messageId) {
+      body.message_id = messageId;
     }
     await this.apiRequest<{ status: string }>(
       `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/relay_message/`,
@@ -251,6 +279,63 @@ export class PostHogAPIClient {
     // The backend returns the full run artifact manifest after each upload.
     // Callers want the artifacts corresponding to this upload request only.
     return manifest.slice(-artifacts.length);
+  }
+
+  /**
+   * Reserve S3 keys and presigned POST forms so artifact bytes can be
+   * uploaded directly to object storage instead of traveling base64-encoded
+   * through the API (which enforces much smaller request body limits).
+   */
+  async prepareTaskArtifactUploads(
+    taskId: string,
+    runId: string,
+    artifacts: TaskArtifactPrepareUploadPayload[],
+  ): Promise<PreparedTaskArtifactUpload[]> {
+    if (!artifacts.length) {
+      return [];
+    }
+
+    const teamId = this.getTeamId();
+    const response = await this.apiRequest<{
+      artifacts: PreparedTaskArtifactUpload[];
+    }>(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/prepare_upload/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ artifacts }),
+      },
+    );
+    return response.artifacts ?? [];
+  }
+
+  /** Attach directly-uploaded artifacts (see prepareTaskArtifactUploads) to the run manifest. */
+  async finalizeTaskArtifactUploads(
+    taskId: string,
+    runId: string,
+    artifacts: TaskArtifactFinalizeUploadPayload[],
+  ): Promise<TaskRunArtifact[]> {
+    if (!artifacts.length) {
+      return [];
+    }
+
+    const teamId = this.getTeamId();
+    const response = await this.apiRequest<{ artifacts: TaskRunArtifact[] }>(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/finalize_upload/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ artifacts }),
+      },
+    );
+
+    // The backend returns the full run artifact manifest; pick out the
+    // entries for this request (retried finalizes can land mid-manifest).
+    const manifest = response.artifacts ?? [];
+    const byStoragePath = new Map(
+      manifest.map((artifact) => [artifact.storage_path, artifact]),
+    );
+    return artifacts
+      .map((artifact) => byStoragePath.get(artifact.storage_path))
+      .filter((artifact): artifact is TaskRunArtifact => !!artifact);
   }
 
   /** Signal reports the given task is associated with (via report task associations). */

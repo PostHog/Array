@@ -56,6 +56,38 @@ describe("AuthProxyService", () => {
     expect(url).toBe("https://gateway.example/v1/messages");
   });
 
+  it("rejects requests that do not include the generated access token", async () => {
+    const proxyUrl = await service.start("https://gateway.example");
+    const proxyOrigin = new URL(proxyUrl).origin;
+
+    const missingToken = await fetch(`${proxyOrigin}/v1/messages`);
+    const invalidToken = await fetch(`${proxyOrigin}/invalid/v1/messages`);
+
+    expect(missingToken.status).toBe(401);
+    expect(invalidToken.status).toBe(401);
+    expect(authMock.authenticatedFetch).not.toHaveBeenCalled();
+  });
+
+  it("strips client body framing headers before forwarding", async () => {
+    authMock.authenticatedFetch.mockResolvedValue(new Response("ok"));
+
+    const proxyUrl = await service.start("https://gateway.example");
+    await fetch(`${proxyUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
+    const [, options] = authMock.authenticatedFetch.mock.calls[0];
+    const forwardedHeaderKeys = Object.keys(
+      options.headers as Record<string, string>,
+    ).map((key) => key.toLowerCase());
+
+    expect(forwardedHeaderKeys).not.toContain("content-length");
+    expect(forwardedHeaderKeys).not.toContain("transfer-encoding");
+    expect(options.headers["content-type"]).toBe("application/json");
+  });
+
   it("passes a connection-lifetime signal so authenticatedFetch's default timeout does not apply", async () => {
     authMock.authenticatedFetch.mockResolvedValue(new Response("ok"));
 

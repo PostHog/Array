@@ -23,20 +23,60 @@ import { skillTagsToSlashCommands } from "../message-editor/skillTags";
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import { extractPromptDisplayContent } from "./promptContent";
 
+export interface StoredLogEventPosition {
+  taskRunId: string;
+  entryIndex: number;
+}
+
+export interface StoredLogEventPositionOptions {
+  taskRunId: string;
+  startEntryIndex: number;
+  firstPositionedEntryIndex?: number;
+}
+
+// Ordinals are local reconciliation provenance, so keep them out of the ACP
+// event shape that crosses host and renderer boundaries.
+const storedLogEventPositions = new WeakMap<
+  AcpMessage,
+  StoredLogEventPosition
+>();
+
+export function getStoredLogEventPosition(
+  event: AcpMessage,
+): StoredLogEventPosition | undefined {
+  return storedLogEventPositions.get(event);
+}
+
+function recordStoredLogEventPosition(
+  event: AcpMessage,
+  position: StoredLogEventPosition | undefined,
+): AcpMessage {
+  if (position) storedLogEventPositions.set(event, position);
+  return event;
+}
+
 /**
  * Convert a stored log entry to an ACP message.
  */
-function storedEntryToAcpMessage(entry: StoredLogEntry): AcpMessage {
+function storedEntryToAcpMessage(
+  entry: StoredLogEntry,
+  position?: StoredLogEventPosition,
+): AcpMessage {
   const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now();
   const promoted = promoteImportedUserPrompt(entry, ts);
   // Freeze at creation: events assigned via setSession bypass the store's
   // per-append freeze, so this keeps them read-only once stored.
-  if (promoted) return Object.freeze(promoted);
-  return Object.freeze({
-    type: "acp_message",
-    ts,
-    message: (entry.notification ?? {}) as JsonRpcMessage,
-  });
+  if (promoted) {
+    return recordStoredLogEventPosition(Object.freeze(promoted), position);
+  }
+  return recordStoredLogEventPosition(
+    Object.freeze({
+      type: "acp_message",
+      ts,
+      message: (entry.notification ?? {}) as JsonRpcMessage,
+    }),
+    position,
+  );
 }
 
 /**
@@ -192,13 +232,16 @@ function withToolCallUpdate(
   update: Record<string, unknown>,
 ): AcpMessage {
   const msg = event.message as { params?: SessionNotification };
-  return Object.freeze({
-    ...event,
-    message: {
-      ...msg,
-      params: { ...msg.params, update },
-    } as JsonRpcMessage,
-  });
+  return recordStoredLogEventPosition(
+    Object.freeze({
+      ...event,
+      message: {
+        ...msg,
+        params: { ...msg.params, update },
+      } as JsonRpcMessage,
+    }),
+    getStoredLogEventPosition(event),
+  );
 }
 
 /**
@@ -262,6 +305,7 @@ export function collapseSupersededToolCallUpdates(
 export function convertStoredEntriesToEvents(
   entries: StoredLogEntry[],
   taskDescription?: string,
+  positionOptions?: StoredLogEventPositionOptions,
 ): AcpMessage[] {
   const events: AcpMessage[] = [];
 
@@ -272,8 +316,20 @@ export function convertStoredEntriesToEvents(
     events.push(createUserMessageEvent(taskDescription, startTs));
   }
 
-  for (const entry of entries) {
-    events.push(storedEntryToAcpMessage(entry));
+  const firstPositionedEntryIndex =
+    positionOptions?.firstPositionedEntryIndex ?? 0;
+  for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+    const position =
+      positionOptions && entryIndex >= firstPositionedEntryIndex
+        ? {
+            taskRunId: positionOptions.taskRunId,
+            entryIndex:
+              positionOptions.startEntryIndex +
+              entryIndex -
+              firstPositionedEntryIndex,
+          }
+        : undefined;
+    events.push(storedEntryToAcpMessage(entries[entryIndex], position));
   }
 
   return collapseSupersededToolCallUpdates(events);

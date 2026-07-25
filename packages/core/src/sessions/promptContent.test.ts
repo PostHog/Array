@@ -49,7 +49,8 @@ describe("promptContent", () => {
   });
 
   it("extracts cloud resource_link attachments from file URIs", () => {
-    const fileUri = "file:///tmp/workspace/attachments/Receipt-2264-0277.pdf";
+    const fileUri =
+      "file:///tmp/workspace/.posthog/attachments/run-123/artifact-456/Receipt-2264-0277.pdf";
 
     const result = extractPromptDisplayContent([
       { type: "text", text: "what is this about?" },
@@ -62,7 +63,23 @@ describe("promptContent", () => {
 
     expect(result.text).toBe("what is this about?");
     expect(result.attachments).toEqual([
-      { id: fileUri, label: "Receipt-2264-0277.pdf" },
+      {
+        id: fileUri,
+        label: "Receipt-2264-0277.pdf",
+        cloudArtifact: { runId: "run-123", artifactId: "artifact-456" },
+      },
+    ]);
+  });
+
+  it("does not mark ordinary file URIs as cloud artifacts", () => {
+    const fileUri = "file:///tmp/screenshot.png";
+
+    const result = extractPromptDisplayContent([
+      { type: "resource_link", uri: fileUri, name: "screenshot.png" },
+    ]);
+
+    expect(result.attachments).toEqual([
+      { id: fileUri, label: "screenshot.png" },
     ]);
   });
 });

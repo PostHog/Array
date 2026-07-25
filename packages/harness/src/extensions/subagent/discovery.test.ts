@@ -21,7 +21,7 @@ describe("discoverAgents", () => {
   it("returns only bundled agents for scope 'bundled'", () => {
     const result = discoverAgents(tmpProject, "bundled");
     expect(result.agents.every((a) => a.source === "bundled")).toBe(true);
-    expect(result.agents.map((a) => a.name)).toContain("scout");
+    expect(result.agents.map((a) => a.name)).toContain("Explore");
   });
 
   it("returns nothing for scope 'project' when there is no .pi/agents dir", () => {
@@ -45,7 +45,7 @@ describe("discoverAgents", () => {
       description: "A custom project agent",
       tools: ["read", "grep"],
     });
-    expect(result.agents.some((a) => a.name === "scout")).toBe(true);
+    expect(result.agents.some((a) => a.name === "Explore")).toBe(true);
     expect(result.projectAgentsDir).toBe(agentsDir);
   });
 
@@ -53,14 +53,14 @@ describe("discoverAgents", () => {
     const agentsDir = path.join(tmpProject, ".pi", "agents");
     fs.mkdirSync(agentsDir, { recursive: true });
     fs.writeFileSync(
-      path.join(agentsDir, "scout.md"),
-      "---\nname: scout\ndescription: Project-overridden scout\n---\nOverridden.\n",
+      path.join(agentsDir, "explore.md"),
+      "---\nname: Explore\ndescription: Project-overridden explore\n---\nOverridden.\n",
     );
 
     const result = discoverAgents(tmpProject, "both");
-    const scout = result.agents.find((a) => a.name === "scout");
-    expect(scout?.source).toBe("project");
-    expect(scout?.description).toBe("Project-overridden scout");
+    const explore = result.agents.find((a) => a.name === "Explore");
+    expect(explore?.source).toBe("project");
+    expect(explore?.description).toBe("Project-overridden explore");
   });
 
   it("ignores markdown files missing required frontmatter", () => {

@@ -62,7 +62,7 @@ export function getOriginProductMeta(
 // clickable NestedButton that opens the originating thread externally.
 // SidebarItem renders the row as a `<button>`, so a real `<a>` or a nested
 // `<button>` here would be invalid HTML.
-function renderIconSpan({
+function IconSpan({
   icon,
   link,
   ariaLabel,
@@ -72,7 +72,18 @@ function renderIconSpan({
   ariaLabel?: string;
 }) {
   if (!link) {
-    return <span className="flex items-center justify-center">{icon}</span>;
+    if (!ariaLabel) {
+      return <span className="flex items-center justify-center">{icon}</span>;
+    }
+    return (
+      <span
+        aria-label={ariaLabel}
+        className="flex items-center justify-center"
+        role="img"
+      >
+        {icon}
+      </span>
+    );
   }
   return (
     <NestedButton
@@ -112,11 +123,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} className="ph-pulse" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} className="ph-pulse" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -128,11 +139,11 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} weight="fill" color="var(--accent-11)" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--accent-11)" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -144,29 +155,47 @@ function CloudStatusIcon({
         }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} weight="fill" color="var(--green-11)" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--green-11)" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
-  if (taskRunStatus === "failed" || taskRunStatus === "cancelled") {
-    const statusLabel =
-      taskRunStatus === "cancelled"
-        ? `${sourceLabel} (cancelled)`
-        : `${sourceLabel} (failed)`;
+  if (taskRunStatus === "cancelled") {
     return (
       <Tooltip
-        content={link ? `Open ${sourceLabel} thread` : statusLabel}
+        content={
+          link ? `Open ${sourceLabel} thread` : `${sourceLabel} (stopped)`
+        }
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} weight="fill" color="var(--red-11)" />,
-          link,
-          ariaLabel,
-        })}
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--green-11)" />}
+          link={link}
+          ariaLabel={
+            link
+              ? `Open ${sourceLabel} thread (stopped)`
+              : `${sourceLabel} (stopped)`
+          }
+        />
+      </Tooltip>
+    );
+  }
+  if (taskRunStatus === "failed") {
+    return (
+      <Tooltip
+        content={
+          link ? `Open ${sourceLabel} thread` : `${sourceLabel} (failed)`
+        }
+        side="right"
+      >
+        <IconSpan
+          icon={<Icon size={size} weight="fill" color="var(--red-11)" />}
+          link={link}
+          ariaLabel={ariaLabel}
+        />
       </Tooltip>
     );
   }
@@ -175,11 +204,7 @@ function CloudStatusIcon({
       content={link ? `Open ${sourceLabel} thread` : sourceLabel}
       side="right"
     >
-      {renderIconSpan({
-        icon: <Icon size={size} />,
-        link,
-        ariaLabel,
-      })}
+      <IconSpan icon={<Icon size={size} />} link={link} ariaLabel={ariaLabel} />
     </Tooltip>
   );
 }
@@ -351,11 +376,11 @@ export function TaskIcon({
         content={link ? `Open ${label} thread` : `From ${label}`}
         side="right"
       >
-        {renderIconSpan({
-          icon: <Icon size={size} color="var(--gray-10)" />,
-          link,
-          ariaLabel: `Open ${label} thread`,
-        })}
+        <IconSpan
+          icon={<Icon size={size} color="var(--gray-10)" />}
+          link={link}
+          ariaLabel={`Open ${label} thread`}
+        />
       </Tooltip>
     );
   }

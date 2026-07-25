@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * End-to-end memory benchmark run for the PostHog Code dev app.
+ * End-to-end memory benchmark run for the PostHog dev app.
  *
  * Owns the full lifecycle so every run is comparable:
  *   1. launches a fresh dev app (POSTHOG_CODE_CDP_PORT, default :9223)

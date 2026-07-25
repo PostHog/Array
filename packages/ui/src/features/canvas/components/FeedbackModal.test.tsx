@@ -26,7 +26,6 @@ describe("FeedbackModal", () => {
   });
 
   it.each([
-    { mode: "leaving" as const, expected: "Skip", missing: "Cancel" },
     { mode: "posthog-web" as const, expected: "Skip", missing: "Cancel" },
     { mode: "feedback" as const, expected: "Cancel", missing: "Skip" },
   ])(
@@ -77,7 +76,7 @@ describe("FeedbackModal", () => {
 
   it("finishes without capturing when skipped", async () => {
     const user = userEvent.setup();
-    const onFinished = renderModal("leaving");
+    const onFinished = renderModal("posthog-web");
 
     await user.click(screen.getByRole("button", { name: "Skip" }));
 
