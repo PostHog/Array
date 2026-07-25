@@ -1,18 +1,6 @@
 import { useDroppable } from "@dnd-kit/react";
-import {
-  ChatCircleIcon,
-  Plus,
-  SquareSplitHorizontalIcon,
-  TerminalWindowIcon,
-} from "@phosphor-icons/react";
+import { Plus, SquareSplitHorizontalIcon } from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@posthog/quill";
-import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
@@ -100,7 +88,6 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   emptyState,
 }) => {
   const hostClient = useHostTRPCClient();
-  const channelsLayout = useChannelsLayout();
   const [mountedTabs, setMountedTabs] = useState<{
     scopeKey: string;
     tabIds: Set<string>;
@@ -231,48 +218,13 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {/* Flag on: a menu (New chat is coming, shown disabled). Flag off:
-                the plain add-terminal button. */}
-            {content.droppable &&
-              onAddTerminal &&
-              (channelsLayout ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <TabBarButton ariaLabel="Add tab" onClick={() => {}}>
-                        <Plus size={14} />
-                      </TabBarButton>
-                    }
-                  />
-                  <DropdownMenuContent
-                    align="start"
-                    side="bottom"
-                    sideOffset={4}
-                    className="w-48"
-                  >
-                    <DropdownMenuItem disabled>
-                      <ChatCircleIcon size={14} />
-                      New chat
-                      <span className="ml-auto shrink-0 pl-3 text-muted-foreground text-xs">
-                        Soon
-                      </span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={onAddTerminal}>
-                      <TerminalWindowIcon size={14} />
-                      New terminal
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <Tooltip content="New terminal" side="bottom">
-                  <TabBarButton
-                    ariaLabel="Add terminal"
-                    onClick={onAddTerminal}
-                  >
-                    <Plus size={14} />
-                  </TabBarButton>
-                </Tooltip>
-              ))}
+            {content.droppable && onAddTerminal && (
+              <Tooltip content="New terminal" side="bottom">
+                <TabBarButton ariaLabel="Add terminal" onClick={onAddTerminal}>
+                  <Plus size={14} />
+                </TabBarButton>
+              </Tooltip>
+            )}
             {/* Spacer to increase DND area */}
             {content.droppable && (
               <Box flexShrink="0" className="h-[32px] min-w-[90px]" />
