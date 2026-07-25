@@ -1,7 +1,7 @@
 import { unzipSync, zipSync } from "fflate";
 import { z } from "zod";
 
-const MAX_ARCHIVE_BYTES = 25_000_000;
+export const MAX_SETTINGS_BACKUP_ARCHIVE_BYTES = 25_000_000;
 const MAX_ENTRY_BYTES = 5_000_000;
 const MAX_ARCHIVE_ENTRIES = 101;
 const MANIFEST_PATH = "manifest.json";
@@ -204,7 +204,7 @@ export function createSettingsBackup(
 }
 
 export function parseSettingsBackup(bytes: Uint8Array): ParsedSettingsBackup {
-  if (bytes.byteLength > MAX_ARCHIVE_BYTES)
+  if (bytes.byteLength > MAX_SETTINGS_BACKUP_ARCHIVE_BYTES)
     throw new Error("Settings archive is too large");
   let declaredExpandedBytes = 0;
   let entryCount = 0;
@@ -227,7 +227,7 @@ export function parseSettingsBackup(bytes: Uint8Array): ParsedSettingsBackup {
         throw new Error("Settings archive contains an oversized file");
       }
       declaredExpandedBytes += originalSize;
-      if (declaredExpandedBytes > MAX_ARCHIVE_BYTES) {
+      if (declaredExpandedBytes > MAX_SETTINGS_BACKUP_ARCHIVE_BYTES) {
         throw new Error("Expanded settings archive is too large");
       }
       return true;
@@ -242,7 +242,7 @@ export function parseSettingsBackup(bytes: Uint8Array): ParsedSettingsBackup {
       throw new Error("Settings archive contains an oversized file");
     }
     expandedBytes += contents.byteLength;
-    if (expandedBytes > MAX_ARCHIVE_BYTES) {
+    if (expandedBytes > MAX_SETTINGS_BACKUP_ARCHIVE_BYTES) {
       throw new Error("Expanded settings archive is too large");
     }
   }

@@ -1,5 +1,8 @@
 import { DownloadSimple, UploadSimple } from "@phosphor-icons/react";
-import type { SettingsBackupCategory } from "@posthog/core/settings/settingsBackup";
+import {
+  MAX_SETTINGS_BACKUP_ARCHIVE_BYTES,
+  type SettingsBackupCategory,
+} from "@posthog/core/settings/settingsBackup";
 import {
   applySettingsBackup,
   changedSettingsCategories,
@@ -40,6 +43,9 @@ export function SettingsBackupControls() {
 
   const inspectFile = async (file: File) => {
     try {
+      if (file.size > MAX_SETTINGS_BACKUP_ARCHIVE_BYTES) {
+        throw new Error("Settings archive is too large");
+      }
       const inspected = inspectSettingsArchive(
         new Uint8Array(await file.arrayBuffer()),
       );
