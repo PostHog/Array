@@ -1,3 +1,4 @@
+import { Popover as BasePopover } from "@base-ui/react/popover";
 import {
   CaretUpDownIcon,
   HashIcon,
@@ -36,7 +37,6 @@ import {
 import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { useHotkeys } from "react-hotkeys-hook";
 
 // mod+0 jumps to #me; mod+1..9 jump to the first nine starred channels
@@ -134,29 +134,6 @@ function SwitcherRow({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  );
-}
-
-/**
- * Dims the app while the switcher is open, so the channel list reads against
- * the feed instead of competing with it.
- *
- * Portaled to the body and pointer-transparent: it has to sit above the app but
- * below the popover's own z-50, and letting presses through keeps Base UI's
- * close-on-outside-press working. Tokens and timing match the sidebar-peek
- * scrim in __root, so the two dims look like the same effect.
- */
-function SwitcherScrim({ open }: { open: boolean }) {
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <div
-      aria-hidden
-      className={cn(
-        "pointer-events-none fixed inset-0 z-40 bg-blackA-2 transition-opacity duration-150 ease-out motion-reduce:transition-none dark:bg-blackA-5",
-        open ? "opacity-100" : "opacity-0",
-      )}
-    />,
-    document.body,
   );
 }
 
@@ -266,8 +243,16 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
 
   return (
     <div className="relative mx-2 mt-2">
-      <SwitcherScrim open={open} />
       <Popover open={open} onOpenChange={setOpen}>
+        {/* Base UI's own backdrop rather than a hand-rolled scrim: it reads the
+            open state from the popover's context, mounts and unmounts itself,
+            and exposes the starting/ending-style hooks the fade below uses.
+            Portaled because ResizableSidebar's transform makes the sidebar a
+            containing block, which would otherwise clip a fixed overlay; z-40
+            keeps it under the popup's z-50. Clicking it closes the menu. */}
+        <BasePopover.Portal>
+          <BasePopover.Backdrop className="fixed inset-0 z-40 bg-blackA-4 opacity-100 transition-opacity duration-150 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-none dark:bg-blackA-7" />
+        </BasePopover.Portal>
         <PopoverTrigger
           render={
             <button
