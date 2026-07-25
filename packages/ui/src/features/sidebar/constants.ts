@@ -1,11 +1,9 @@
 import type { SidebarNavItem } from "@posthog/shared/analytics-events";
 
 /**
- * The title bar's left strip is pinned to the sidebar width and its contents
- * don't shrink: 78px of traffic-light inset, 62px of logo + sidebar toggle,
- * 80px of search + history buttons, and 8px of trailing padding — 228px. At
- * 240 that left the two groups 12px apart, with search jammed against the
- * sidebar edge; this leaves them ~44px apart.
+ * The title bar's left strip is pinned to this width and none of its contents
+ * shrink: inset, logo, toggle, search and history buttons come to 228px, so
+ * anything near 240 leaves the two groups touching.
  */
 export const SIDEBAR_MIN_WIDTH = 272;
 

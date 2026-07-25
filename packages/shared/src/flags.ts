@@ -15,10 +15,9 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 // routes, channels and dashboards.
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
 /**
- * Gates the new channels layout (channel-scoped sidebar + the task Activity
- * panel). Off = the previous experience, including the "Enable channels" alpha
- * toggle; on = the full new experience, no toggle. Requires project-bluebird.
- * The key predates the rename and stays in sync with the live PostHog flag.
+ * Gates the new channels layout (channel-scoped sidebar + task Activity panel).
+ * Off keeps the previous experience and its "Enable channels" toggle. Requires
+ * project-bluebird. The key predates the rename, matching the live flag.
  */
 export const CHANNELS_LAYOUT_FLAG = "code-spaces-layout";
 // Gates the Loops feature: the sidebar Loops space and the per-channel Loops tab.

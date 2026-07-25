@@ -20,13 +20,9 @@ import { navigateToChannelNewTask } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 
 /**
- * The create affordance for the active channel, floated over the bottom-right
- * of its item list — the same treatment the channel list uses (see
- * ChannelsFab), and it opens its menu upward for the same reason.
- *
- * It sits here rather than in the nav stack because it is an action, not a
- * destination: as a bordered row directly under the channel switcher it read as
- * a second switcher, two equal-weight boxes competing at the top of the sidebar.
+ * The active channel's create affordance, floated over its item list the way
+ * ChannelsFab is over the channel list — hence the upward menu. It lives here
+ * rather than the nav stack because it is an action, not a destination.
  */
 export function NewTaskFab({ channelId }: { channelId: string }) {
   const hasDraft = useDraftStore(
@@ -50,9 +46,7 @@ export function NewTaskFab({ channelId }: { channelId: string }) {
               className="absolute right-3 bottom-3 z-10 rounded-full shadow-lg"
             >
               <PlusIcon size={20} weight="bold" />
-              {/* Replaces the "Draft" badge the nav row carried: a pip in the
-                  button's own foreground, so it stays legible on the accent
-                  fill. */}
+              {/* In the button's own foreground, to stay legible on accent. */}
               {hasDraft && (
                 <span
                   aria-hidden
@@ -78,8 +72,7 @@ export function NewTaskFab({ channelId }: { channelId: string }) {
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => {
-            // Create + open a canvas on the default template directly; the
-            // canvas's own composer drives what gets built.
+            // Default template; the canvas's composer drives what gets built.
             trackAndCreateCanvas(
               channelId,
               undefined,

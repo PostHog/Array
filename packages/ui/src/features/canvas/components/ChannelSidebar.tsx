@@ -14,6 +14,8 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Empty,
+  EmptyHeader,
   Input,
   MenuLabel,
   Skeleton,
@@ -160,7 +162,7 @@ function RecentSectionHeader({
   );
 }
 
-// Varied-width ghost rows so the loading state reads as the list it becomes.
+// Varied widths so the loading state reads as the list it becomes.
 const SKELETON_ROW_WIDTHS = [
   "w-3/5",
   "w-4/5",
@@ -185,8 +187,8 @@ function ChannelItemsSkeleton() {
 }
 
 /**
- * The sidebar body while a channel is active: the switcher, its sections
- * (Context / Loops / Artifacts), then pinned and recent tasks & canvases.
+ * The sidebar body while a channel is active: the switcher, the channel's
+ * sections, then its pinned and recent tasks & canvases.
  */
 export function ChannelSidebar({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
@@ -291,8 +293,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
         )}
       </div>
 
-      {/* Relative so the New task FAB can float over the list, the way
-          ChannelsFab does over the channel list. */}
+      {/* Relative so the FAB can float over the list. */}
       <div className="relative mt-2 min-h-0 flex-1">
         <div className="scroll-mask-4 h-full overflow-y-auto px-2 pb-2">
           {isLoading && items.length === 0 && <ChannelItemsSkeleton />}
@@ -331,17 +332,21 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
                   ))}
                 </div>
               ) : (
-                <p className="px-2 py-2 text-[12px] text-gray-10">
-                  Nothing matches the current search or filters.
-                </p>
+                <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+                  <EmptyHeader className="text-left">
+                    Nothing matches the current search or filters.
+                  </EmptyHeader>
+                </Empty>
               )}
             </>
           )}
 
           {!isLoading && items.length === 0 && (
-            <p className="px-2 py-3 text-[12px] text-gray-10">
-              Tasks and canvases you create in this channel show up here.
-            </p>
+            <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+              <EmptyHeader className="text-left">
+                Tasks and canvases you create in this channel show up here.
+              </EmptyHeader>
+            </Empty>
           )}
         </div>
         <NewTaskFab channelId={channelId} />

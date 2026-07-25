@@ -114,8 +114,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
           channelName={channelName}
           channelContextId={channelId}
           allowNoRepo
-          // The same prefill /code and /website/new read, so a prompt handed to
-          // openTaskInput survives being routed into a channel.
+          // So a prompt handed to openTaskInput survives routing into a channel.
           initialPrompt={view.initialPrompt}
           initialPromptKey={view.taskInputRequestId}
           initialCloudRepository={view.initialCloudRepository}

@@ -21,9 +21,8 @@ interface CreateSidebarStoreOptions {
   defaultWidth: number;
   defaultOpen?: boolean;
   /**
-   * Floor applied to live sets and to rehydrated values alike. Without it a
-   * width persisted while the minimum was lower survives below it forever,
-   * since nothing re-clamps on load.
+   * Floor for live sets and rehydrated values alike — without it a width
+   * persisted under an older, lower minimum survives below the new one.
    */
   minWidth?: number;
 }

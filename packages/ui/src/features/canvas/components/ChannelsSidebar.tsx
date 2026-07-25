@@ -92,8 +92,8 @@ export function ChannelsSidebar() {
 
   const archivedTaskIds = useArchivedTaskIds();
 
-  // Channel scoping: the route is the source of truth — a /website/$channelId
-  // page adopts that channel as current. Inert while the flag is off.
+  // The route is the source of truth: a /website/$channelId page adopts that
+  // channel as current. Inert while the flag is off.
   const params = useParams({ strict: false });
   const routeChannelId = params.channelId;
   const currentChannelId = useCurrentChannelStore((s) => s.currentChannelId);
@@ -103,9 +103,9 @@ export function ChannelsSidebar() {
     if (!channelsLayout || !routeChannelId) return;
     setCurrentChannel(routeChannelId);
   }, [channelsLayout, routeChannelId, setCurrentChannel]);
-  // Flags resolve after first paint and can flip mid-session, so clear the
-  // scope when the layout goes away. Keeps "a channel is current" a reliable
-  // stand-in for the flag elsewhere — openTaskInput routes creates on it.
+  // Flags resolve after first paint and can flip mid-session. Clearing keeps
+  // "a channel is current" a reliable stand-in for the flag — openTaskInput
+  // routes creates on it.
   useEffect(() => {
     if (!channelsLayout) setCurrentChannel(null);
   }, [channelsLayout, setCurrentChannel]);
@@ -143,11 +143,8 @@ export function ChannelsSidebar() {
       <Flex direction="column" className="h-full bg-chrome">
         {!inChannel && <SidebarNavSection />}
 
-        {/* active channel → channel list → tasks */}
         {inChannel && currentChannelId ? (
           <>
-            {/* No rule under the nav — the bordered channel switcher directly
-                below already reads as the divider. */}
             <ChannelNav />
             <Box className="min-h-0 flex-1 overflow-hidden">
               <ChannelSidebar channelId={currentChannelId} />

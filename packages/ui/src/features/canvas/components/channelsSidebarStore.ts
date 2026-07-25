@@ -4,8 +4,7 @@ import { createSidebarStore } from "@posthog/ui/shell/createSidebarStore";
 export const useChannelsSidebarStore = createSidebarStore({
   name: "channels-sidebar",
   defaultWidth: SIDEBAR_MIN_WIDTH,
-  // Also re-clamps widths persisted before the minimum rose, and the legacy
-  // Code width adopted by the migration below.
+  // Also re-clamps the legacy Code width adopted by the migration below.
   minWidth: SIDEBAR_MIN_WIDTH,
 });
 

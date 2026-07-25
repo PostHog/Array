@@ -9,12 +9,7 @@ import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import type { ReactNode } from "react";
 
-export type StatusVariant =
-  | "default"
-  | "destructive"
-  | "info"
-  | "success"
-  | "warning";
+type StatusVariant = "default" | "destructive" | "info" | "success" | "warning";
 
 export interface ChannelItem {
   key: string;
@@ -67,7 +62,6 @@ export function statusVariantFor(
 const HOVER_ACTION_CLASS =
   "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12";
 
-// A pinned/recent row with a hover card carrying the full title, status, author.
 export function ChannelItemRow({ item }: { item: ChannelItem }) {
   return (
     <PreviewCard.Root>
