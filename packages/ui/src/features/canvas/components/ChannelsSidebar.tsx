@@ -103,6 +103,12 @@ export function ChannelsSidebar() {
     if (!channelsLayout || !routeChannelId) return;
     setCurrentChannel(routeChannelId);
   }, [channelsLayout, routeChannelId, setCurrentChannel]);
+  // Flags resolve after first paint and can flip mid-session, so clear the
+  // scope when the layout goes away. Keeps "a channel is current" a reliable
+  // stand-in for the flag elsewhere — openTaskInput routes creates on it.
+  useEffect(() => {
+    if (!channelsLayout) setCurrentChannel(null);
+  }, [channelsLayout, setCurrentChannel]);
   const inChannel = channelsLayout && currentChannelId != null;
 
   // Default to the personal "#me" channel on first load; once any channel has

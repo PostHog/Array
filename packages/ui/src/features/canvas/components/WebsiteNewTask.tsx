@@ -11,6 +11,7 @@ import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { toast } from "@posthog/ui/primitives/toast";
+import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,6 +24,7 @@ import { useCallback, useMemo, useState } from "react";
 // channel folder on the project's desktop_file_system surface.
 export function WebsiteNewTask({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
+  const view = useAppView();
   const queryClient = useQueryClient();
   const { fileTask } = useChannelTaskMutations();
   const { channels } = useChannels();
@@ -112,6 +114,14 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
           channelName={channelName}
           channelContextId={channelId}
           allowNoRepo
+          // The same prefill /code and /website/new read, so a prompt handed to
+          // openTaskInput survives being routed into a channel.
+          initialPrompt={view.initialPrompt}
+          initialPromptKey={view.taskInputRequestId}
+          initialCloudRepository={view.initialCloudRepository}
+          initialModel={view.initialModel}
+          initialMode={view.initialMode}
+          reportAssociation={view.reportAssociation}
           suggestions={CHANNEL_TASK_SUGGESTIONS}
           onSuggestionSelect={(label) =>
             track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
