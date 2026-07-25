@@ -200,7 +200,9 @@ export function ProjectSwitcher({
               aria-label="Account, project and settings"
               className="no-drag gap-1.5"
             >
-              <UserAvatar user={currentUser} size="xs" />
+              {/* Shrink the avatar below the button height so it sits with the
+                  same breathing room as the sibling buttons' 14px icons. */}
+              <UserAvatar user={currentUser} size="xs" className="size-4!" />
               {currentProject?.name ?? "No project"}
             </Button>
           ) : (
