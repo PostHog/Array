@@ -33,13 +33,21 @@ import { useMemo } from "react";
 export function useChannelItems(
   channelId: string,
   channelName: string,
-): { items: ChannelItem[]; meUuid: string | null; meName: string | null } {
+): {
+  items: ChannelItem[];
+  meUuid: string | null;
+  meName: string | null;
+  isLoading: boolean;
+} {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  const { dashboards } = useDashboards(channelId);
-  const { channel: backendChannel } = useBackendChannel(channelName);
-  const { tasks: feedTasks } = useChannelFeed(backendChannel?.id);
+  const { dashboards, isLoading: dashboardsLoading } = useDashboards(channelId);
+  const { channel: backendChannel, isLoading: channelLoading } =
+    useBackendChannel(channelName);
+  const { tasks: feedTasks, isLoading: feedLoading } = useChannelFeed(
+    backendChannel?.id,
+  );
   const archivedTaskIds = useArchivedTaskIds();
   const { pinnedTaskIds, togglePin } = usePinnedTasks();
   const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
@@ -143,5 +151,10 @@ export function useChannelItems(
     meName,
   ]);
 
-  return { items, meUuid, meName };
+  return {
+    items,
+    meUuid,
+    meName,
+    isLoading: dashboardsLoading || channelLoading || feedLoading,
+  };
 }

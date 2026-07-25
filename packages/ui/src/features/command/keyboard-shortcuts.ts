@@ -19,6 +19,7 @@ export const SHORTCUTS = {
   CLOSE_TAB: "mod+w",
   SWITCH_TAB: "ctrl+1,ctrl+2,ctrl+3,ctrl+4,ctrl+5,ctrl+6,ctrl+7,ctrl+8,ctrl+9",
   SWITCH_TASK: "mod+1,mod+2,mod+3,mod+4,mod+5,mod+6,mod+7,mod+8,mod+9",
+  SWITCH_STARRED_CHANNEL: "mod+1,mod+2,mod+3,mod+4",
   OPEN_IN_EDITOR: "mod+o",
   COPY_PATH: "mod+shift+c",
   TOGGLE_FOCUS: "mod+r",
@@ -118,6 +119,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: "mod+1-9",
     description: "Switch to task 1-9",
     category: "navigation",
+  },
+  {
+    id: "switch-starred-channel",
+    keys: "mod+1-4",
+    description: "Switch to starred channel 1-4",
+    category: "navigation",
+    context: "Channels",
   },
   {
     id: "prev-task",

@@ -6,6 +6,7 @@ import { useService } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -73,14 +74,16 @@ export function GlobalEventHandlers({
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
 
   // With channels on, mod+1-9 belongs to the browser tab strip (it switches to
-  // the Nth tab). Yield those keys so task-switching only owns them in the Code
-  // nav; the strip's own handler is gated on the same flag.
+  // the Nth tab); in the new layout mod+1-4 belongs to starred channels
+  // (ChannelSwitcher). Yield those keys so task-switching only owns them in
+  // the Code nav.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
+  const channelsLayout = useChannelsLayout();
 
   const taskById = useMemo(() => {
     const map = new Map<string, Task>();
@@ -211,7 +214,7 @@ export function GlobalEventHandlers({
   );
 
   // Task switching with mod+1-9 — off when channels are on (the browser tab
-  // strip claims those keys to switch tabs by index).
+  // strip / starred-channel shortcuts claim those keys).
   useHotkeys(
     SHORTCUTS.SWITCH_TASK,
     (event, handler) => {
@@ -222,7 +225,7 @@ export function GlobalEventHandlers({
       const index = parseInt(keyPressed, 10);
       handleSwitchTask(index);
     },
-    { ...globalOptions, enabled: !channelsEnabled },
+    { ...globalOptions, enabled: !channelsEnabled && !channelsLayout },
     [handleSwitchTask],
   );
 
