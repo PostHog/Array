@@ -65,8 +65,12 @@ export function useSpaces(): {
   const cycle = useCallback(
     (delta: 1 | -1) => {
       if (spaces.length === 0) return;
-      const from = currentIndex === -1 ? 0 : currentIndex;
-      const next = spaces[(from + delta + spaces.length) % spaces.length];
+      // Clamp at the ends — wrapping around reads as the switcher jumping
+      // randomly when you swipe past the last space.
+      const from = currentIndex === -1 ? (delta > 0 ? -1 : 1) : currentIndex;
+      const nextIndex = Math.max(0, Math.min(spaces.length - 1, from + delta));
+      if (nextIndex === currentIndex) return;
+      const next = spaces[nextIndex];
       if (next) switchTo(next);
     },
     [spaces, currentIndex, switchTo],
@@ -78,7 +82,10 @@ export function useSpaces(): {
 // Gesture-session swipe tuning. A "gesture" is a run of wheel events with no
 // gap longer than GESTURE_GAP_MS between them — macOS inertia events arrive
 // well inside that gap, so a whole fling (fingers + momentum) is one session.
-const GESTURE_GAP_MS = 250;
+// Kept short enough that two deliberate back-to-back swipes register as two
+// gestures; a dying inertia tail that sneaks past the gap can't re-fire
+// because its tiny deltas never reach the fire threshold.
+const GESTURE_GAP_MS = 150;
 // Travel before the gesture commits to an axis (horizontal vs vertical).
 const AXIS_INTENT_PX = 12;
 // Horizontal travel that triggers the switch.

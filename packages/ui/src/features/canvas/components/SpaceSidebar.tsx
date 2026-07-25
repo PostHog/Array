@@ -2,7 +2,6 @@ import { PreviewCard } from "@base-ui/react/preview-card";
 import {
   Archive,
   BookOpenTextIcon,
-  CheckIcon,
   FileTextIcon,
   FunnelSimple as FunnelSimpleIcon,
   HashIcon,
@@ -21,7 +20,8 @@ import {
   cn,
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
@@ -530,30 +530,47 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
                     </button>
                   }
                 />
-                <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+                {/* Same construction as the task list's filter menu so the
+                    two read identically. */}
+                <DropdownMenuContent
+                  align="end"
+                  side="bottom"
+                  sideOffset={6}
+                  className="min-w-fit"
+                >
                   <MenuLabel>Created by</MenuLabel>
-                  {CREATED_BY_OPTIONS.map((option) => (
-                    <DropdownMenuItem
-                      key={option.value}
-                      onClick={() => setCreatedByFilter(option.value)}
-                    >
-                      <span className="min-w-0 flex-1">{option.label}</span>
-                      {createdByFilter === option.value && (
-                        <CheckIcon size={14} />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
+                  <DropdownMenuRadioGroup
+                    value={createdByFilter}
+                    onValueChange={(value) =>
+                      setCreatedByFilter(value as CreatedByFilter)
+                    }
+                  >
+                    {CREATED_BY_OPTIONS.map((option) => (
+                      <DropdownMenuRadioItem
+                        key={option.value}
+                        value={option.value}
+                      >
+                        {option.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
                   <DropdownMenuSeparator />
                   <MenuLabel>Status</MenuLabel>
-                  {STATUS_FILTER_OPTIONS.map((option) => (
-                    <DropdownMenuItem
-                      key={option.value ?? "any"}
-                      onClick={() => setStatusFilter(option.value)}
-                    >
-                      <span className="min-w-0 flex-1">{option.label}</span>
-                      {statusFilter === option.value && <CheckIcon size={14} />}
-                    </DropdownMenuItem>
-                  ))}
+                  <DropdownMenuRadioGroup
+                    value={statusFilter ?? "any"}
+                    onValueChange={(value) =>
+                      setStatusFilter(value === "any" ? null : value)
+                    }
+                  >
+                    {STATUS_FILTER_OPTIONS.map((option) => (
+                      <DropdownMenuRadioItem
+                        key={option.value ?? "any"}
+                        value={option.value ?? "any"}
+                      >
+                        {option.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
