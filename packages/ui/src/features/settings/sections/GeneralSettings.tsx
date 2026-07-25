@@ -250,7 +250,7 @@ export function GeneralSettings() {
 
       <SettingRow
         label="Settings backup"
-        description="Export your portable preferences and custom notification sounds, or import them on another machine. Credentials and local repository history are excluded."
+        description="Export settings from this machine, or import settings exported from another. Credentials and local repository history are excluded."
       >
         <SettingsBackupControls />
       </SettingRow>
