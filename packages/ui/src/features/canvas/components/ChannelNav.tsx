@@ -5,7 +5,7 @@ import {
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { countUnseenActivity } from "@posthog/core/canvas/mentionActivity";
-import { cn } from "@posthog/quill";
+import { cn, Separator } from "@posthog/quill";
 import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
@@ -29,21 +29,28 @@ import {
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
-import { Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
-// Tiles are a fixed 48px so they read the same at any sidebar width. Four of
-// them plus gaps fit inside SIDEBAR_MIN_WIDTH (240 - 16 padding = 224 ≥ 210),
-// so the row never wraps; a wider sidebar just leaves trailing space.
-const TILE_CLASS =
-  "relative flex size-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border border-border bg-gray-2 text-gray-11 transition-colors hover:bg-gray-3 hover:text-gray-12";
+/*
+ * Landscape pills in a 2x2 rather than a row of squares: a square small enough
+ * to fit four across SIDEBAR_MIN_WIDTH leaves ~44px of caption, which truncates
+ * the longest label ("Command Center" → "Comm…"). Segmented-control practice is
+ * to size every cell to the longest label and keep labels to one or two words,
+ * so the cells run landscape at a legible 11px and the label is abbreviated to
+ * "Command" — the tooltip carries the full name.
+ *
+ * Width is fixed, not fluid: two 104px pills plus the gap come to 214px, inside
+ * the 224px that SIDEBAR_MIN_WIDTH leaves after padding, and they stay that size
+ * as the sidebar widens instead of ballooning.
+ */
+const PILL_WIDTH_CLASS = "w-[104px]";
 
-// A corner count on a nav tile — red for unread-style counts, neutral for
-// ambient ones like the command center's filled cells.
-function TileBadge({
+// Inbox/activity counts read as unread (red); the command center's filled cells
+// are ambient, so they stay neutral.
+function PillBadge({
   count,
   tone = "notification",
 }: {
@@ -54,10 +61,10 @@ function TileBadge({
   return (
     <span
       className={cn(
-        "absolute top-0.5 right-0.5 inline-flex h-3 min-w-3 items-center justify-center rounded-full px-[3px] text-[8px] leading-none",
+        "ml-auto inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full px-1 font-semibold text-[9px] tabular-nums leading-none",
         tone === "notification"
           ? "bg-(--red-9) text-white"
-          : "bg-gray-5 text-gray-12",
+          : "bg-gray-5 text-gray-11",
       )}
     >
       {count > 99 ? "99+" : count}
@@ -66,14 +73,14 @@ function TileBadge({
 }
 
 /**
- * A launcher tile: icon over a short caption, so the destination is legible
- * without hovering. The tooltip carries the full name and shortcut, which is
- * what `caption` is abbreviated from.
+ * One global destination. The selected state layers a fill with brighter text
+ * rather than relying on colour alone, and the tooltip carries the full name
+ * plus shortcut — which is what `label` is abbreviated from.
  */
-function NavTile({
+function NavPill({
   icon,
   label,
-  caption,
+  fullLabel,
   shortcut,
   isActive,
   onClick,
@@ -81,26 +88,37 @@ function NavTile({
 }: {
   icon: ReactNode;
   label: string;
-  caption: string;
+  fullLabel?: string;
   shortcut?: string;
   isActive: boolean;
   onClick: () => void;
   badge?: ReactNode;
 }) {
+  const name = fullLabel ?? label;
   return (
-    <Tooltip content={label} shortcut={shortcut} side="bottom">
+    <Tooltip content={name} shortcut={shortcut} side="bottom">
       <button
         type="button"
-        aria-label={label}
+        aria-label={name}
         onClick={onClick}
         className={cn(
-          TILE_CLASS,
-          isActive && "border-transparent bg-fill-selected text-gray-12",
+          PILL_WIDTH_CLASS,
+          "flex h-8 items-center gap-2 rounded-lg px-2 text-left transition-colors duration-100",
+          isActive
+            ? "bg-fill-selected text-gray-12"
+            : "bg-gray-3 text-gray-11 hover:bg-gray-4 hover:text-gray-12",
         )}
       >
-        {icon}
-        <span className="max-w-full truncate px-0.5 text-[10px] leading-none">
-          {caption}
+        <span className="flex shrink-0 items-center justify-center">
+          {icon}
+        </span>
+        <span
+          className={cn(
+            "min-w-0 truncate text-[11px]",
+            isActive ? "font-semibold" : "font-medium",
+          )}
+        >
+          {label}
         </span>
         {badge}
       </button>
@@ -109,8 +127,9 @@ function NavTile({
 }
 
 /**
- * The channel-scoped global nav: a launcher row for Search / Inbox / Activity
- * / Command Center, then New task. Sits above the channel switcher.
+ * The channel-scoped global nav: a 2x2 launcher for Search / Inbox / Activity /
+ * Command Center, then New task below a rule — New task is an action on the
+ * current channel, not one of the global destinations.
  */
 export function ChannelNav({ channelId }: { channelId: string }) {
   const view = useAppView();
@@ -141,53 +160,53 @@ export function ChannelNav({ channelId }: { channelId: string }) {
   const isCommandCenter = view.type === "command-center";
 
   return (
-    <Flex direction="column" className="shrink-0 gap-2 px-2 pt-2 pb-2">
-      <div className="flex gap-1.5">
-        <NavTile
-          icon={<MagnifyingGlass size={16} />}
+    <div className="shrink-0">
+      <div className="grid w-fit grid-cols-2 gap-1.5 px-2 pt-2 pb-2">
+        <NavPill
+          icon={<MagnifyingGlass size={15} />}
           label="Search"
-          caption="Search"
           shortcut={formatHotkey(SHORTCUTS.COMMAND_MENU)}
           isActive={false}
           onClick={withTrack("search", openCommandMenu)}
         />
-        <NavTile
-          icon={<EnvelopeSimple size={16} />}
+        <NavPill
+          icon={<EnvelopeSimple size={15} />}
           label="Inbox"
-          caption="Inbox"
           shortcut={formatHotkey(SHORTCUTS.INBOX)}
           isActive={view.type === "inbox"}
           onClick={withTrack("inbox", navigateToInbox)}
-          badge={<TileBadge count={counts.pulls} />}
+          badge={<PillBadge count={counts.pulls} />}
         />
-        <NavTile
-          icon={<BellIcon size={16} weight={isActivity ? "fill" : "regular"} />}
+        <NavPill
+          icon={<BellIcon size={15} weight={isActivity ? "fill" : "regular"} />}
           label="Activity"
-          caption="Activity"
           isActive={isActivity}
           onClick={withTrack("activity", navigateToActivity)}
-          badge={<TileBadge count={unseenActivity} />}
+          badge={<PillBadge count={unseenActivity} />}
         />
-        <NavTile
+        <NavPill
           icon={
             <Lightning
-              size={16}
+              size={15}
               weight={isCommandCenter ? "fill" : "regular"}
             />
           }
-          label="Command Center"
-          caption="Command"
+          label="Command"
+          fullLabel="Command Center"
           isActive={isCommandCenter}
           onClick={withTrack("command_center", navigateToWebsiteCommandCenter)}
-          badge={<TileBadge count={commandCenterCount} tone="neutral" />}
+          badge={<PillBadge count={commandCenterCount} tone="neutral" />}
         />
       </div>
-      <NewTaskItem
-        isActive={pathname === `/website/${channelId}/new`}
-        onClick={withTrack("new_task", () =>
-          navigateToChannelNewTask(channelId),
-        )}
-      />
-    </Flex>
+      <Separator />
+      <div className="px-2 py-2">
+        <NewTaskItem
+          isActive={pathname === `/website/${channelId}/new`}
+          onClick={withTrack("new_task", () =>
+            navigateToChannelNewTask(channelId),
+          )}
+        />
+      </div>
+    </div>
   );
 }
