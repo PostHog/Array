@@ -4,7 +4,6 @@ import {
   CheckCircleIcon,
   DotsThreeIcon,
   PaperPlaneRightIcon,
-  PlusCircleIcon,
   RobotIcon,
   TrashIcon,
   XCircleIcon,
@@ -333,52 +332,44 @@ export function ThreadArtifactRow({
   );
 }
 
-// A compact lifecycle marker in the Activity timeline (task created / run
-// finished): a small leading glyph — a person's avatar or a status icon — then
-// a muted label and the time. Deliberately lighter than a full message row so
-// the timeline reads as events, not a wall of chunky avatars.
-function LifecycleMarker({
-  leading,
-  label,
+// A lifecycle event in the Activity timeline (task created / run finished) —
+// the same ThreadItem shape as message and artifact rows (gutter avatar +
+// header) so every row in the timeline reads alike. `action` is the muted
+// suffix after the bold title ("created this task").
+function ActivityEventRow({
+  avatar,
+  title,
+  action,
   timestamp,
 }: {
-  leading: ReactNode;
-  label: ReactNode;
+  avatar: ReactNode;
+  title: string;
+  action?: string;
   timestamp: string;
 }) {
   return (
-    <div className="flex items-center gap-2 py-1 pr-3 pl-4">
-      <span className="flex size-5 shrink-0 items-center justify-center">
-        {leading}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-[12px] text-gray-11">
-        {label}
-      </span>
-      <ThreadTimestamp dateTime={timestamp} />
-    </div>
+    <ThreadItem>
+      <ThreadItemGutter>{avatar}</ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>{title}</ThreadItemAuthor>
+          {action && (
+            <span className="text-[13px] text-muted-foreground">{action}</span>
+          )}
+          <ThreadTimestamp dateTime={timestamp} />
+        </ThreadItemHeader>
+      </ThreadItemContent>
+    </ThreadItem>
   );
 }
 
-// The small circular status glyph for lifecycle markers with no person.
-function StatusGlyph({
-  icon,
-  tone,
-}: {
-  icon: ReactNode;
-  tone: "muted" | "success" | "danger";
-}) {
-  const toneClass =
-    tone === "success"
-      ? "text-green-9"
-      : tone === "danger"
-        ? "text-red-9"
-        : "text-gray-10";
+// The gutter avatar for a system lifecycle event (no person): an icon on the
+// same neutral avatar the artifact rows use, so its size matches every row.
+function SystemAvatar({ icon }: { icon: ReactNode }) {
   return (
-    <span
-      className={`flex size-5 items-center justify-center rounded-full bg-gray-3 ${toneClass}`}
-    >
-      {icon}
-    </span>
+    <Avatar size="lg" className="sticky top-2">
+      <AvatarFallback>{icon}</AvatarFallback>
+    </Avatar>
   );
 }
 
@@ -813,22 +804,16 @@ function ThreadConversation({
       key: "task-created",
       ts: createdTs,
       node: (
-        <LifecycleMarker
-          leading={
-            task.created_by ? (
-              <UserAvatar user={task.created_by} size="xs" />
-            ) : (
-              <StatusGlyph icon={<PlusCircleIcon size={12} />} tone="muted" />
-            )
+        <ActivityEventRow
+          avatar={
+            <UserAvatar
+              user={task.created_by}
+              size="lg"
+              className="sticky top-2"
+            />
           }
-          label={
-            <>
-              <span className="font-medium text-gray-12">
-                {task.created_by ? userDisplayName(task.created_by) : "Someone"}
-              </span>{" "}
-              created this task
-            </>
-          }
+          title={task.created_by ? userDisplayName(task.created_by) : "Someone"}
+          action="created this task"
           timestamp={task.created_at}
         />
       ),
@@ -904,20 +889,27 @@ function ThreadConversation({
         key: "run-status",
         ts: updatedTs + 1,
         node: (
-          <LifecycleMarker
-            leading={
-              <StatusGlyph
+          <ActivityEventRow
+            avatar={
+              <SystemAvatar
                 icon={
                   succeeded ? (
-                    <CheckCircleIcon size={12} weight="fill" />
+                    <CheckCircleIcon
+                      size={16}
+                      weight="fill"
+                      className="text-green-9"
+                    />
                   ) : (
-                    <XCircleIcon size={12} weight="fill" />
+                    <XCircleIcon
+                      size={16}
+                      weight="fill"
+                      className="text-red-9"
+                    />
                   )
                 }
-                tone={succeeded ? "success" : "danger"}
               />
             }
-            label={`Task ${runStatus.replace(/_/g, " ")}`}
+            title={`Task ${runStatus.replace(/_/g, " ")}`}
             timestamp={task.updated_at}
           />
         ),
