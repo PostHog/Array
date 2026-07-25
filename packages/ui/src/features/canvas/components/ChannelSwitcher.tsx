@@ -96,7 +96,17 @@ function SwitcherRow({
           <Kbd className="shrink-0">{formatHotkey(`mod+${hotkeySlot}`)}</Kbd>
         )}
       </button>
-      {!isMe && (
+      {isMe ? (
+        // #me is permanently pinned to slot 0, so it shows a star but doesn't
+        // offer to toggle one. Occupying the slot also keeps every row's
+        // trailing edge aligned.
+        <span
+          aria-hidden
+          className="mr-1 flex size-5 shrink-0 items-center justify-center text-gray-10 opacity-40"
+        >
+          <StarIcon size={13} weight="fill" />
+        </span>
+      ) : (
         <button
           type="button"
           aria-label={isStarred ? "Unstar channel" : "Star channel"}
@@ -238,7 +248,10 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
             <button
               type="button"
               aria-label="Switch channel"
-              className="flex w-full items-center gap-1.5 rounded-md border border-border px-2 py-1 text-left transition-colors hover:bg-gray-3 aria-expanded:bg-gray-3"
+              // Fixed height, and the star well below is unconditional: sizing
+              // the row off its contents made a starrable channel 4px taller
+              // than #me, so everything under the switcher shifted on switch.
+              className="flex h-8 w-full items-center gap-1.5 rounded-md border border-border px-2 text-left transition-colors hover:bg-gray-3 aria-expanded:bg-gray-3"
             >
               <span className="flex w-4 shrink-0 items-center justify-center">
                 <HashIcon size={14} className="text-gray-10" />
@@ -246,8 +259,8 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
               <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-gray-12">
                 {current?.name ?? "channel"}
               </span>
-              {/* Well the overlaid star parks in, so it never covers the name. */}
-              {showStar && <span aria-hidden className="size-6 shrink-0" />}
+              {/* Well the star parks in, so it never covers the name. */}
+              <span aria-hidden className="size-6 shrink-0" />
               <CaretUpDownIcon size={12} className="shrink-0 text-gray-10" />
             </button>
           }
@@ -315,6 +328,16 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
         </PopoverContent>
       </Popover>
       {showStar && current && <TriggerStar channel={current} />}
+      {/* #me can't be starred, but it still shows one so the trigger reads the
+          same on every channel. */}
+      {current && !showStar && (
+        <span
+          aria-hidden
+          className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-[26px] flex size-6 items-center justify-center text-gray-10 opacity-40"
+        >
+          <StarIcon size={14} weight="fill" />
+        </span>
+      )}
       <CreateChannelModal open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );

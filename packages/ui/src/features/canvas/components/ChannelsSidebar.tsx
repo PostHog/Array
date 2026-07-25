@@ -140,8 +140,9 @@ export function ChannelsSidebar() {
         {/* active channel → channel list → tasks */}
         {inChannel && currentChannelId ? (
           <>
+            {/* No rule under the nav — the bordered channel switcher directly
+                below already reads as the divider. */}
             <ChannelNav />
-            <Separator />
             <Box className="min-h-0 flex-1 overflow-hidden">
               <ChannelSidebar channelId={currentChannelId} />
             </Box>
