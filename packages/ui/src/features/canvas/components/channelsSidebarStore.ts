@@ -1,8 +1,12 @@
+import { SIDEBAR_MIN_WIDTH } from "@posthog/ui/features/sidebar/constants";
 import { createSidebarStore } from "@posthog/ui/shell/createSidebarStore";
 
 export const useChannelsSidebarStore = createSidebarStore({
   name: "channels-sidebar",
-  defaultWidth: 240,
+  defaultWidth: SIDEBAR_MIN_WIDTH,
+  // Also re-clamps widths persisted before the minimum rose, and the legacy
+  // Code width adopted by the migration below.
+  minWidth: SIDEBAR_MIN_WIDTH,
 });
 
 // One-time migration: the unified layout replaced the Code sidebar (whose
