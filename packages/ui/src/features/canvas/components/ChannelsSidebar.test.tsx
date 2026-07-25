@@ -236,5 +236,26 @@ describe("ChannelsSidebar", () => {
         expect.anything(),
       );
     });
+
+    it("fires again after leaving and re-entering the channels world", () => {
+      mocks.channelsLayout = true;
+      mocks.channels = [ME];
+      const { rerender } = renderSidebar();
+
+      mocks.channelsLayout = false;
+      rerender(
+        <Theme>
+          <ChannelsSidebar />
+        </Theme>,
+      );
+      mocks.channelsLayout = true;
+      rerender(
+        <Theme>
+          <ChannelsSidebar />
+        </Theme>,
+      );
+
+      expect(mocks.track).toHaveBeenCalledTimes(2);
+    });
   });
 });

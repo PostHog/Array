@@ -42,7 +42,11 @@ export function useTrackChannelsSpaceViewed({
   // stays mounted across channel navigation.
   const trackedRef = useRef(false);
   useEffect(() => {
-    if (!enabled || isLoading || trackedRef.current) return;
+    if (!enabled) {
+      trackedRef.current = false;
+      return;
+    }
+    if (isLoading || trackedRef.current) return;
     trackedRef.current = true;
     track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
       channel_count: channelCount,
