@@ -194,9 +194,12 @@ export function ProjectSwitcher({
             <button
               type="button"
               aria-label="Account, project and settings"
-              className="no-drag flex size-7 shrink-0 items-center justify-center rounded-full outline-none transition-colors hover:bg-fill-hover aria-expanded:bg-fill-active"
+              className="no-drag flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-full border border-border py-0.5 pr-2 pl-0.5 outline-none transition-colors hover:bg-fill-hover aria-expanded:bg-fill-active"
             >
               <UserAvatar user={currentUser} size="sm" />
+              <span className="min-w-0 truncate text-[13px] text-gray-12">
+                {currentProject?.name ?? "No project"}
+              </span>
             </button>
           ) : (
             <Item
