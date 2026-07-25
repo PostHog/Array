@@ -231,9 +231,8 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {/* "+" adds a tab. Spaces layout: a menu (New chat is the declared
-                direction, shown disabled; terminals work today). Flag off: the
-                plain add-terminal button, exactly as before. */}
+            {/* Spaces: a menu (New chat is coming, shown disabled). Flag off:
+                the plain add-terminal button. */}
             {content.droppable &&
               onAddTerminal &&
               (spacesOn ? (
@@ -245,8 +244,6 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                       </TabBarButton>
                     }
                   />
-                  {/* Fixed width with room for the "Soon" badge so it isn't
-                      clipped at the menu's edge. */}
                   <DropdownMenuContent
                     align="start"
                     side="bottom"

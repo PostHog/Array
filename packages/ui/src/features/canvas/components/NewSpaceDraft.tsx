@@ -15,10 +15,8 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 
 /**
- * The draft "new space" chooser, Arc/Zen-style: pressing "+" opens a temporary
- * space in the sidebar where you either attach an existing channel (starring
- * it, so its dot persists) or create a new channel. Cancelling returns to the
- * previous space.
+ * The draft "new space" chooser ("+"): attach an existing channel (starring it)
+ * or create a new one. Cancelling returns to the previous space.
  */
 export function NewSpaceDraft() {
   const { spaces, switchTo } = useSpaces();
@@ -46,8 +44,7 @@ export function NewSpaceDraft() {
         description: error instanceof Error ? error.message : String(error),
       });
     });
-    // Clears the draft too (setCurrentChannel dismisses the overrides).
-    switchTo(channel, "draft");
+    switchTo(channel, "draft"); // also dismisses the draft override
   };
 
   return (

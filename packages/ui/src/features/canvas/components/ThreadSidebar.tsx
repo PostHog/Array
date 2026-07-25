@@ -8,11 +8,8 @@ import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { track } from "@posthog/ui/shell/analytics";
 import { useState } from "react";
 
-// The right-hand dock hosting a task's thread: a thin rail when collapsed, a
-// resizable sidebar otherwise. Shared by the channel feed and the task detail
-// route; owns the panel-store size/collapse reads so parents don't re-render
-// on every resize tick. The spaces layout swaps the legacy ThreadPanel for the
-// tabbed ActivityPanel; flag off keeps the thread exactly as before.
+// The right-hand dock for a task's thread (collapsible, resizable). Spaces uses
+// the tabbed ActivityPanel; flag off keeps the legacy ThreadPanel.
 export function ThreadSidebar({
   taskId,
   channelId,

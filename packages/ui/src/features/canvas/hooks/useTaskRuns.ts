@@ -3,11 +3,7 @@ import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 
 const TASK_RUNS_POLL_INTERVAL_MS = 30_000;
 
-/**
- * Every run of a task, newest-or-oldest as the backend returns them. Used to
- * gather artifacts (PRs, plans) produced across all of a task's runs, not just
- * the latest one.
- */
+/** Every run of a task — for gathering artifacts across all runs, not just the latest. */
 export function useTaskRuns(taskId: string | undefined): {
   runs: TaskRun[];
   isLoading: boolean;
