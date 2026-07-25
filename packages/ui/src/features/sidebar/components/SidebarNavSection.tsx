@@ -4,7 +4,7 @@ import {
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
-import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
+import { useCommandCenterActiveCount } from "@posthog/ui/features/command-center/useCommandCenterActiveCount";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
@@ -15,7 +15,6 @@ import {
   orderedNavItems,
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
-import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
   navigateToActivity,
   navigateToCommandCenter,
@@ -117,19 +116,9 @@ export function SidebarNavSection({
   // count — keeps the standalone (Channels) render self-contained without
   // opening a redundant subscription when composed inside SidebarMenu.
   const needsOwnCount = providedActiveCount === undefined;
-  const showAllUsers = useSidebarStore((s) => s.showAllUsers);
-  const showInternal = useSidebarStore((s) => s.showInternal);
-  const { data: allTasks = [] } = useTasks(
-    { showAllUsers, showInternal },
-    { enabled: needsOwnCount },
-  );
-  const commandCenterCells = useCommandCenterStore((s) => s.cells);
-  const ownActiveCount = (() => {
-    const taskIds = new Set(allTasks.map((t) => t.id));
-    return commandCenterCells.filter(
-      (taskId) => taskId != null && taskIds.has(taskId),
-    ).length;
-  })();
+  const ownActiveCount = useCommandCenterActiveCount({
+    enabled: needsOwnCount,
+  });
   const commandCenterActiveCount = providedActiveCount ?? ownActiveCount;
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
@@ -141,6 +130,7 @@ export function SidebarNavSection({
       track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
         item,
         in_more: depth === 1,
+        layout: "code",
       });
       action();
     };

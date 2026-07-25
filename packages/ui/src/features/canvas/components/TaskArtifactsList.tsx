@@ -4,11 +4,11 @@ import {
   PackageIcon,
   SlackLogoIcon,
 } from "@phosphor-icons/react";
-import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
 import {
-  getPrVisualConfig,
-  parsePrNumber,
-} from "@posthog/core/git-interaction/prStatus";
+  parseRunPlans,
+  type RunArtifact,
+} from "@posthog/core/canvas/runArtifactSchemas";
+import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
 import {
   Empty,
   EmptyDescription,
@@ -25,16 +25,15 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useTaskRuns } from "@posthog/ui/features/canvas/hooks/useTaskRuns";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
-import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
-import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
+import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
 import { usePrReviewThreads } from "@posthog/ui/features/pr-review/usePrReviewThreads";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { parseShareLink } from "@posthog/ui/utils/posthogLinks";
+import { parseHttpsUrl, parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 type ArtifactRow =
   | { kind: "pr"; key: string; url: string }
@@ -48,21 +47,11 @@ type ArtifactRow =
     }
   | { kind: "slack"; key: string; url: string };
 
-interface RunArtifact {
-  id?: string;
-  name?: string;
-  type?: string;
-  storage_path?: string;
-}
-
-// Run artifacts live on the run JSON but aren't in the typed TaskRun, so read
-// them past the type. Only plans are surfaced; other types are internal blobs.
+// Run artifacts live on the run JSON but aren't in the typed TaskRun, so the
+// blob is validated at the boundary. Only plans are surfaced; other types are
+// internal blobs.
 function readRunPlans(run: TaskRun): RunArtifact[] {
-  const raw = (run as { artifacts?: unknown }).artifacts;
-  if (!Array.isArray(raw)) return [];
-  return (raw as RunArtifact[]).filter(
-    (artifact) => artifact && artifact.type === "plan",
-  );
+  return parseRunPlans((run as { artifacts?: unknown }).artifacts);
 }
 
 // UUID-ish storage names make poor titles; fall back to a friendly label.
@@ -71,15 +60,6 @@ const UUID_RE =
 function planTitle(name: string | undefined): string {
   if (!name || UUID_RE.test(name)) return "Plan";
   return name;
-}
-
-function parseHttpsUrl(url: string): URL | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -152,18 +132,23 @@ function ArtifactListRow({
   detail,
   external,
   onOpen,
+  onHoverStart,
 }: {
   icon: ReactNode;
   title: string;
   detail?: string | null;
   external?: boolean;
   onOpen?: () => void;
+  /** Fires once intent is shown, for detail a row defers fetching. */
+  onHoverStart?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       disabled={!onOpen}
+      onPointerEnter={onHoverStart}
+      onFocus={onHoverStart}
       className="flex w-full items-center gap-2 rounded-md border border-border bg-muted px-2.5 py-2 text-left text-[13px] transition-colors enabled:hover:bg-gray-3"
     >
       {icon}
@@ -179,18 +164,15 @@ function ArtifactListRow({
 }
 
 function PrRow({ url, taskId }: { url: string; taskId: string }) {
-  const parsed = parseHttpsUrl(url);
-  const safeUrl = parsed?.origin === "https://github.com" ? parsed.href : null;
-  const {
-    meta: { state, merged, draft },
-  } = usePrDetails(safeUrl);
-  const comments = usePrComments(safeUrl);
-  const threads = usePrReviewThreads(safeUrl);
+  const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
   const setReviewMode = useReviewNavigationStore((s) => s.setReviewMode);
 
-  const config = getPrVisualConfig(state ?? "open", merged, draft);
-  const PrIcon = getPrVisualIcon(config.icon);
-  const prNumber = safeUrl ? parsePrNumber(safeUrl) : null;
+  // Comment counts cost two extra round trips per row on top of the PR state,
+  // and a task with several runs renders several rows — so they're fetched only
+  // once the row is hovered. The state label is the signal; the count is detail.
+  const [countsWanted, setCountsWanted] = useState(false);
+  const comments = usePrComments(countsWanted ? safeUrl : null);
+  const threads = usePrReviewThreads(countsWanted ? safeUrl : null);
 
   const commentCount =
     (comments.data?.length ?? 0) +
@@ -199,7 +181,7 @@ function PrRow({ url, taskId }: { url: string; taskId: string }) {
       0,
     );
   const detailParts = [
-    state ? config.label : null,
+    stateLabel,
     comments.data || threads.data
       ? `${commentCount} ${commentCount === 1 ? "comment" : "comments"}`
       : null,
@@ -208,15 +190,16 @@ function PrRow({ url, taskId }: { url: string; taskId: string }) {
   return (
     <ArtifactListRow
       icon={
-        <PrIcon
+        <Icon
           size={14}
           weight="bold"
           className="shrink-0"
-          style={{ color: `var(--${config.color}-9)` }}
+          style={{ color: iconColor }}
         />
       }
-      title={prNumber ? `Pull request #${prNumber}` : "Pull request"}
+      title={title}
       detail={detailParts.join(" · ") || null}
+      onHoverStart={() => setCountsWanted(true)}
       onOpen={() => setReviewMode(taskId, "split")}
     />
   );

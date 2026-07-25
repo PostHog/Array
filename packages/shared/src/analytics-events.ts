@@ -254,10 +254,19 @@ export type SidebarNavItem =
   | "more"
   | "customize_sidebar";
 
+/** Which sidebar shell the click came from, so the two can be compared. */
+export type SidebarLayout = "code" | "channels";
+
 export interface SidebarNavItemClickedProperties {
   item: SidebarNavItem;
   /** True when the row was clicked inside the expanded More section. */
   in_more: boolean;
+  /**
+   * Which shell rendered the row. Both shells fire this event with the same
+   * item names, so without it the layouts are indistinguishable — and comparing
+   * them is the whole point of running one behind a flag.
+   */
+  layout?: SidebarLayout;
 }
 
 export interface SidebarCustomizedProperties {
@@ -996,6 +1005,8 @@ export interface ChannelsSpaceViewedProperties {
   /** Total channels visible when the space mounts. */
   channel_count: number;
   starred_count: number;
+  /** Which shell the space was entered through. */
+  layout?: SidebarLayout;
 }
 
 // Subscription / billing events

@@ -16,7 +16,7 @@ import {
 import { isContentEmpty } from "@posthog/ui/features/message-editor/content";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
-import { navigateToChannelNewTask } from "@posthog/ui/router/navigationBridge";
+import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 
 /**
@@ -64,7 +64,9 @@ export function NewTaskFab({ channelId }: { channelId: string }) {
               item: "new_task",
               in_more: false,
             });
-            navigateToChannelNewTask(channelId);
+            // Through openTaskInput, not the bridge: it's what retires a stale
+            // prefill that would otherwise overwrite the channel draft.
+            openTaskInput({ channelId });
           }}
         >
           <FileTextIcon size={14} />

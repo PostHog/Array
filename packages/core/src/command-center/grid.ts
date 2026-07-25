@@ -49,6 +49,21 @@ export function getTerminalCellCwd(value: string | null): string | null {
   return colon === -1 ? null : decodeURIComponent(rest.slice(colon + 1));
 }
 
+/**
+ * How many cells hold a task that still exists.
+ *
+ * Cells are persisted and only pruned when a task is archived — deleting one
+ * leaves its id behind forever — so a count has to be taken against the live
+ * task list rather than trusting the array's length. Excludes the brainrot and
+ * terminal sentinels, which are ambient chrome rather than parked work.
+ */
+export function countActiveTaskCells(
+  cells: readonly (string | null)[],
+  liveTaskIds: ReadonlySet<string>,
+): number {
+  return cells.filter((cell) => cell != null && liveTaskIds.has(cell)).length;
+}
+
 export function getGridDimensions(preset: LayoutPreset): GridDimensions {
   const [cols, rows] = preset.split("x").map(Number);
   return { cols, rows };

@@ -61,13 +61,18 @@ import {
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
+import {
+  resetCurrentChannel,
+  useCurrentChannelStore,
+} from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { toast } from "@posthog/ui/primitives/toast";
+import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { hostClient } from "../hostClient";
 
 // One actionable entry in a channel's menu, rendered the same whether it
@@ -127,6 +132,12 @@ function useChannelActions(channel: Channel): {
 
       await deleteChannel(channel.id);
       removeStar();
+      // Unscope immediately if this was the current channel — otherwise the
+      // sidebar renders a dead id (and new tasks file against it) until the
+      // channels list refetches. useCurrentChannel is the backstop.
+      if (useCurrentChannelStore.getState().currentChannelId === channel.id) {
+        resetCurrentChannel();
+      }
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "delete",
         surface: "sidebar",
@@ -422,10 +433,7 @@ function ChannelSection({
                     surface: "sidebar",
                     channel_id: channel.id,
                   });
-                  navigate({
-                    to: "/website/$channelId/new",
-                    params: { channelId: channel.id },
-                  });
+                  openTaskInput({ channelId: channel.id });
                 }}
               >
                 <FileTextIcon size={14} />
@@ -560,7 +568,7 @@ function PersonalChannelRow() {
       surface: "sidebar",
       channel_id: channelId,
     });
-    void navigate({ to: "/website/$channelId/new", params: { channelId } });
+    openTaskInput({ channelId });
   };
 
   const newCanvas = async () => {
@@ -756,19 +764,6 @@ export function ChannelsList() {
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
-
-  // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels first load
-  // (so the counts are accurate). The sidebar stays mounted while navigating
-  // between channels, so this naturally fires once per entry into the space.
-  const viewedTrackedRef = useRef(false);
-  useEffect(() => {
-    if (isLoading || viewedTrackedRef.current) return;
-    viewedTrackedRef.current = true;
-    track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
-      channel_count: channels.length,
-      starred_count: starred.length,
-    });
-  }, [isLoading, channels.length, starred.length]);
 
   return (
     // One shared provider groups every row tooltip so that once one shows,

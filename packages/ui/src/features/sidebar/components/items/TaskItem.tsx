@@ -10,6 +10,11 @@ import { NestedButton } from "../../../../primitives/NestedButton";
 import { Tooltip } from "../../../../primitives/Tooltip";
 import type { SidebarPrState } from "../../useTaskPrStatus";
 import { SidebarItem } from "../SidebarItem";
+import {
+  ROW_HOVER_ACTION_CLASS,
+  ROW_HOVER_TOOLBAR_CLASS,
+  ROW_TIMESTAMP_CLASS,
+} from "./rowChrome";
 import { ICON_SIZE, TaskIcon } from "./TaskIcon";
 
 function PrBadge({ url, number }: { url: string; number: number }) {
@@ -73,12 +78,12 @@ function TaskHoverToolbar({
   onArchive,
 }: TaskHoverToolbarProps) {
   return (
-    <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+    <span className={ROW_HOVER_TOOLBAR_CLASS}>
       {onTogglePin && (
         <Tooltip content={isPinned ? "Unpin task" : "Pin task"} side="top">
           <NestedButton
             aria-label={isPinned ? "Unpin task" : "Pin task"}
-            className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+            className={ROW_HOVER_ACTION_CLASS}
             onActivate={onTogglePin}
           >
             <PushPin size={12} weight={isPinned ? "fill" : "regular"} />
@@ -89,7 +94,7 @@ function TaskHoverToolbar({
         <Tooltip content="Archive task" side="top">
           <NestedButton
             aria-label="Archive task"
-            className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+            className={ROW_HOVER_ACTION_CLASS}
             onActivate={onArchive}
           >
             <Archive size={12} />
@@ -159,7 +164,7 @@ export function TaskItem({
   // The PR badge takes the timestamp's slot, so hide the timestamp when shown.
   const timestampNode =
     timestamp && !prBadge ? (
-      <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
+      <span className={ROW_TIMESTAMP_CLASS}>
         {formatRelativeTimeShort(timestamp)}
       </span>
     ) : null;

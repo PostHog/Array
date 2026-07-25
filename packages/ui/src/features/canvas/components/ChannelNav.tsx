@@ -11,8 +11,9 @@ import {
   formatHotkey,
   SHORTCUTS,
 } from "@posthog/ui/features/command/keyboard-shortcuts";
-import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
+import { useCommandCenterActiveCount } from "@posthog/ui/features/command-center/useCommandCenterActiveCount";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
+import { CountBadge } from "@posthog/ui/primitives/CountBadge";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import {
   navigateToActivity,
@@ -26,29 +27,10 @@ import { useMemo } from "react";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
-// Unread counts read red; the command center's filled cells are ambient, so
-// they stay neutral.
-function IconBadge({
-  count,
-  tone = "notification",
-}: {
-  count: number;
-  tone?: "notification" | "neutral";
-}) {
-  if (count <= 0) return null;
-  return (
-    <span
-      className={cn(
-        "-top-1 -right-1 absolute inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 font-semibold text-[9px] tabular-nums leading-none ring-2 ring-chrome",
-        tone === "notification"
-          ? "bg-(--red-9) text-white"
-          : "bg-gray-5 text-gray-11",
-      )}
-    >
-      {count > 99 ? "99+" : count}
-    </span>
-  );
-}
+// Overlaid on a 32px icon button, so smaller than the badge's default sizing and
+// ringed to read against the button beneath it.
+const ICON_BADGE_CLASS =
+  "-top-1 -right-1 absolute h-3.5 min-w-3.5 w-auto px-1 font-semibold text-[9px] ring-2 ring-chrome";
 
 function NavIcon({
   icon,
@@ -102,12 +84,20 @@ export function ChannelNav() {
     () => countUnseenActivity(activityItems, lastSeenAt),
     [activityItems, lastSeenAt],
   );
-  // Its filled grid cells are the ambient "how much is parked there" count.
-  const commandCenterCells = useCommandCenterStore((s) => s.cells);
-  const commandCenterCount = commandCenterCells.filter((c) => c != null).length;
+  // Cells holding a task that still exists — the ambient "how much is parked
+  // there" count. Counting non-empty cells instead would include the brainrot
+  // and terminal sentinels, and would never drop when a parked task is deleted
+  // (the persisted cell keeps its id).
+  const commandCenterCount = useCommandCenterActiveCount();
 
   const withTrack = (item: SidebarNavItem, action: () => void) => () => {
-    track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, { item, in_more: false });
+    // `layout` is what makes this distinguishable from the Code sidebar's
+    // identically-named clicks — the comparison the flag exists to enable.
+    track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
+      item,
+      in_more: false,
+      layout: "channels",
+    });
     action();
   };
 
@@ -122,14 +112,16 @@ export function ChannelNav() {
         shortcut={formatHotkey(SHORTCUTS.INBOX)}
         isActive={view.type === "inbox"}
         onClick={withTrack("inbox", navigateToInbox)}
-        badge={<IconBadge count={counts.pulls} />}
+        badge={<CountBadge count={counts.pulls} className={ICON_BADGE_CLASS} />}
       />
       <NavIcon
         icon={<BellIcon size={16} weight={isActivity ? "fill" : "regular"} />}
         label="Activity"
         isActive={isActivity}
         onClick={withTrack("activity", navigateToActivity)}
-        badge={<IconBadge count={unseenActivity} />}
+        badge={
+          <CountBadge count={unseenActivity} className={ICON_BADGE_CLASS} />
+        }
       />
       <NavIcon
         icon={
@@ -138,7 +130,13 @@ export function ChannelNav() {
         label="Command Center"
         isActive={isCommandCenter}
         onClick={withTrack("command_center", navigateToWebsiteCommandCenter)}
-        badge={<IconBadge count={commandCenterCount} tone="neutral" />}
+        badge={
+          <CountBadge
+            count={commandCenterCount}
+            tone="neutral"
+            className={ICON_BADGE_CLASS}
+          />
+        }
       />
     </div>
   );

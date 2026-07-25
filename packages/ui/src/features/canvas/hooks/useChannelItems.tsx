@@ -1,16 +1,15 @@
-import { FileTextIcon } from "@phosphor-icons/react";
-import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import {
+  buildChannelItems,
+  type ChannelItemModel,
+  type ChannelItemOwner,
+} from "@posthog/core/canvas/channelItems";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import {
-  type ChannelItem,
-  humanizeStatus,
-  statusVariantFor,
-} from "@posthog/ui/features/canvas/components/ChannelItemRow";
-import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import type { ChannelItemActions } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { useChannelFeed } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import {
   useDashboardMutations,
   useDashboards,
@@ -22,25 +21,37 @@ import {
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
 import { toast } from "@posthog/ui/primitives/toast";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 /**
- * A channel's canvases + task feed as merged, newest-first items. The personal
- * "#me" channel is filtered to the current user. Also returns the user's identity
- * for the recent-list filters.
+ * A channel's canvases + task feed as merged, newest-first items, plus the row
+ * actions and the viewer's identity for the recent-list filters.
+ *
+ * The channel's *name* is resolved here rather than accepted as an argument: it
+ * feeds `useBackendChannel`, whose resolve-or-create effect provisions a backend
+ * channel for any name it's handed. A caller with a half-loaded channel list has
+ * nothing truthful to pass, and a placeholder would create a real channel named
+ * after the placeholder. While the name is unknown the hook reports loading and
+ * yields nothing — which also keeps the personal-channel ownership filter from
+ * running against an identity we haven't established yet.
  */
-export function useChannelItems(
-  channelId: string,
-  channelName: string,
-): {
-  items: ChannelItem[];
-  meUuid: string | null;
-  meName: string | null;
+export function useChannelItems(channelId: string): {
+  items: ChannelItemModel[];
+  actions: ChannelItemActions;
+  /** Who the viewer is, for the created-by filter. */
+  me: ChannelItemOwner;
   isLoading: boolean;
+  /** The channel id resolves to no channel in this project. */
+  channelMissing: boolean;
 } {
   const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  const { channels, isLoading: channelsLoading } = useChannels();
+  const channel = channels.find((c) => c.id === channelId);
+  const channelName = channel?.name;
+  const identityKnown = channelName !== undefined;
+  const isPersonal = channelName === PERSONAL_CHANNEL_NAME;
 
   const { dashboards, isLoading: dashboardsLoading } = useDashboards(channelId);
   const { channel: backendChannel, isLoading: channelLoading } =
@@ -55,106 +66,85 @@ export function useChannelItems(
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
 
-  const base = `/website/${channelId}`;
-  const isPersonal = channelName === PERSONAL_CHANNEL_NAME;
   const meUuid = currentUser?.uuid ?? null;
   const meName = currentUser ? userDisplayName(currentUser) : null;
+  const me = useMemo<ChannelItemOwner>(
+    () => ({ uuid: meUuid, name: meName }),
+    [meUuid, meName],
+  );
+  const viewerKnown = meUuid != null || meName != null;
 
-  const items = useMemo<ChannelItem[]>(() => {
-    const canvasItems: ChannelItem[] = dashboards.map(
-      (d: DashboardSummary) => ({
-        key: `canvas:${d.id}`,
-        kind: "canvas",
-        title: d.name,
-        ts: d.updatedAt,
-        pinned: d.pinnedAt != null,
-        icon: iconForTemplate(d.templateId, {
-          size: 15,
-          className: "text-violet-9",
-        }),
-        status: null,
-        rawStatus: null,
-        statusVariant: "default" as const,
-        authorUser: null,
-        authorName: d.createdBy ?? null,
-        isActive: pathname === `${base}/dashboards/${d.id}`,
-        onClick: () =>
+  const items = useMemo<ChannelItemModel[]>(
+    () =>
+      identityKnown
+        ? buildChannelItems({
+            dashboards,
+            feedTasks,
+            archivedTaskIds,
+            pinnedTaskIds,
+            // The personal channel is yours — but don't filter until we know
+            // who you are, or #me flashes everyone's items on a cold load.
+            ownedBy: isPersonal && viewerKnown ? me : null,
+          })
+        : [],
+    [
+      identityKnown,
+      dashboards,
+      feedTasks,
+      archivedTaskIds,
+      pinnedTaskIds,
+      isPersonal,
+      viewerKnown,
+      me,
+    ],
+  );
+
+  const actions = useMemo<ChannelItemActions>(
+    () => ({
+      open: (item) => {
+        if (item.kind === "canvas") {
           void navigate({
             to: "/website/$channelId/dashboards/$dashboardId",
-            params: { channelId, dashboardId: d.id },
-          }),
-        onTogglePin: () => {
-          setCanvasPinned(d.id, d.pinnedAt == null).catch(() => {
-            toast.error("Couldn't update pin");
+            params: { channelId, dashboardId: item.id },
           });
-        },
-      }),
-    );
+        } else {
+          void navigate({
+            to: "/website/$channelId/tasks/$taskId",
+            params: { channelId, taskId: item.id },
+          });
+        }
+      },
+      togglePin: (item) => {
+        const pin =
+          item.kind === "canvas"
+            ? setCanvasPinned(item.id, !item.pinned)
+            : togglePin(item.id);
+        pin.catch(() => {
+          toast.error("Couldn't update pin");
+        });
+      },
+      archive: (item) => {
+        void archiveTask({ taskId: item.id });
+      },
+    }),
+    [channelId, navigate, setCanvasPinned, togglePin, archiveTask],
+  );
 
-    const taskItems: ChannelItem[] = feedTasks.flatMap((task) => {
-      if (archivedTaskIds.has(task.id)) return [];
-      return [
-        {
-          key: `task:${task.id}`,
-          kind: "task" as const,
-          title: task.title || "Untitled task",
-          ts: Date.parse(task.updated_at) || 0,
-          pinned: pinnedTaskIds.has(task.id),
-          icon: <FileTextIcon size={15} className="text-blue-9" />,
-          status: humanizeStatus(task.latest_run?.status),
-          rawStatus: task.latest_run?.status ?? null,
-          statusVariant: statusVariantFor(task.latest_run?.status),
-          authorUser: task.created_by ?? null,
-          authorName: task.created_by ? userDisplayName(task.created_by) : null,
-          isActive: pathname === `${base}/tasks/${task.id}`,
-          onClick: () =>
-            void navigate({
-              to: "/website/$channelId/tasks/$taskId",
-              params: { channelId, taskId: task.id },
-            }),
-          onTogglePin: () => {
-            togglePin(task.id).catch(() => {
-              toast.error("Couldn't update pin");
-            });
-          },
-          onArchive: () => {
-            void archiveTask({ taskId: task.id });
-          },
-        },
-      ];
-    });
-
-    const all = [...canvasItems, ...taskItems].sort((a, b) => b.ts - a.ts);
-
-    // The personal channel is yours: drop items with a known author that isn't
-    // you (unknown authors stay; wait until the current user has loaded).
-    if (!isPersonal || (!meUuid && !meName)) return all;
-    return all.filter((item) => {
-      if (item.authorUser) return item.authorUser.uuid === meUuid;
-      if (item.authorName && meName) return item.authorName === meName;
-      return true;
-    });
-  }, [
-    dashboards,
-    feedTasks,
-    archivedTaskIds,
-    pinnedTaskIds,
-    pathname,
-    base,
-    channelId,
-    navigate,
-    togglePin,
-    archiveTask,
-    setCanvasPinned,
-    isPersonal,
-    meUuid,
-    meName,
-  ]);
+  // A channel that isn't in the list will never resolve, so stop reporting
+  // loading and let the caller say so instead of spinning forever.
+  const channelMissing = !channelsLoading && !channel;
 
   return {
     items,
-    meUuid,
-    meName,
-    isLoading: dashboardsLoading || channelLoading || feedLoading,
+    actions,
+    me,
+    isLoading:
+      !channelMissing &&
+      (channelsLoading ||
+        !identityKnown ||
+        dashboardsLoading ||
+        channelLoading ||
+        feedLoading),
+    channelMissing,
   };
 }

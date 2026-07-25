@@ -1,3 +1,4 @@
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import {
   CATEGORY_LABELS,
   formatHotkeyParts,
@@ -109,7 +110,13 @@ function ShortcutsHeader() {
 }
 
 export function KeyboardShortcutsList() {
-  const shortcutsByCategory = useMemo(() => getShortcutsByCategory(), []);
+  // Several keys change owner with the layout, so the sheet has to know which
+  // one is on rather than listing keys nothing handles.
+  const channelsLayout = useChannelsLayout();
+  const shortcutsByCategory = useMemo(
+    () => getShortcutsByCategory({ channelsLayout }),
+    [channelsLayout],
+  );
 
   const categoryOrder: ShortcutCategory[] = [
     "general",

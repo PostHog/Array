@@ -13,3 +13,13 @@ export const useCurrentChannelStore = create<CurrentChannelState>()((set) => ({
   currentChannelId: null,
   setCurrentChannel: (currentChannelId) => set({ currentChannelId }),
 }));
+
+/**
+ * Unscope the sidebar. Callable outside React because the two moments that
+ * invalidate a scoped channel — a project switch and a logout — happen in the
+ * auth side effects, and `openTaskInput` reads this store to decide where a new
+ * task lands. A channel id must never outlive the project it belongs to.
+ */
+export function resetCurrentChannel(): void {
+  useCurrentChannelStore.setState({ currentChannelId: null });
+}

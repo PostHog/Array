@@ -1,7 +1,11 @@
 import { cn } from "@posthog/quill";
 
+/** Unread counts read red; ambient "how much is parked here" counts stay grey. */
+export type CountBadgeTone = "notification" | "neutral";
+
 interface CountBadgeProps {
   count: number;
+  tone?: CountBadgeTone;
   className?: string;
   title?: string;
 }
@@ -17,14 +21,34 @@ function countBadgeSizeClass(label: string): string {
     : "h-[18px] w-[18px] shrink-0";
 }
 
-export function CountBadge({ count, className, title }: CountBadgeProps) {
+const TONE_CLASS: Record<CountBadgeTone, string> = {
+  notification: "bg-(--red-9) text-(--gray-contrast)",
+  neutral: "bg-gray-5 text-gray-11",
+};
+
+/**
+ * A count pill. The one place the 99+ cap and the hide-at-zero rule live —
+ * every badge that reimplemented them drifted on one or the other.
+ *
+ * Size and position come through `className` (tailwind-merge lets callers
+ * override the defaults), because the surfaces genuinely differ: a nav icon
+ * overlay is not the same shape as a sidebar row's trailing count.
+ */
+export function CountBadge({
+  count,
+  tone = "notification",
+  className,
+  title,
+}: CountBadgeProps) {
+  if (count <= 0) return null;
   const label = formatCount(count);
 
   return (
     <span
       className={cn(
         countBadgeSizeClass(label),
-        "inline-flex items-center justify-center rounded-full bg-(--red-9) font-medium text-(--gray-contrast) text-[10px] tabular-nums leading-none",
+        "inline-flex items-center justify-center rounded-full font-medium text-[10px] tabular-nums leading-none",
+        TONE_CLASS[tone],
         className,
       )}
       title={title}
