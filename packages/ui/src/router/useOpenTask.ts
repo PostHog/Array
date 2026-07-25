@@ -1,6 +1,7 @@
 import { resolveService, resolveServiceOptional } from "@posthog/di/container";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import { useCurrentChannelStore } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import {
   NAVIGATION_TASK_BINDER,
   type NavigationTaskBinder,
@@ -115,7 +116,16 @@ export function openTaskInput(
         : undefined,
     },
   });
-  if (options.space === "website") {
+  // In the channels layout everything you create belongs to the channel you're
+  // in, so every entry point (⌘N, the command menu, the sidebar "+") lands on
+  // that channel's new-task screen rather than an unscoped one. A current
+  // channel only exists while that layout is active — ChannelsSidebar sets it
+  // under the flag and clears it when the flag goes off — so this is gated on
+  // the flag without having to thread it through every caller.
+  const currentChannelId = useCurrentChannelStore.getState().currentChannelId;
+  if (currentChannelId) {
+    nav.navigateToChannelNewTask(currentChannelId);
+  } else if (options.space === "website") {
     nav.navigateToWebsiteNew();
   } else {
     nav.navigateToCode();

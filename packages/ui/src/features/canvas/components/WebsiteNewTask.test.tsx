@@ -46,7 +46,22 @@ vi.mock("@posthog/ui/shell/analytics", () => ({ track }));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ setQueryData: vi.fn() }),
 }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => vi.fn(),
+  // The view reads the matched route so it can pass new-task prefill through.
+  useRouterState: ({
+    select,
+  }: {
+    select: (s: {
+      matches: { routeId: string; params: Record<string, string> }[];
+    }) => unknown;
+  }) =>
+    select({
+      matches: [
+        { routeId: "/website/$channelId/new", params: { channelId: "chan-1" } },
+      ],
+    }),
+}));
 
 import { WebsiteNewTask } from "./WebsiteNewTask";
 
