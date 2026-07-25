@@ -93,11 +93,7 @@ export function exportSettingsArchive(): Uint8Array {
   return createSettingsBackup(categories, state.customSounds);
 }
 
-export function inspectSettingsArchive(
-  bytes: Uint8Array,
-): ParsedSettingsBackup {
-  return parseSettingsBackup(bytes);
-}
+export const inspectSettingsArchive = parseSettingsBackup;
 
 export function changedSettingsCategories(
   backup: ParsedSettingsBackup,
