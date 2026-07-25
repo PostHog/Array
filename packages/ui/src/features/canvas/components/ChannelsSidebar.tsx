@@ -5,6 +5,7 @@ import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTask
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
+import { NewSpaceDraft } from "@posthog/ui/features/canvas/components/NewSpaceDraft";
 import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
 import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -30,7 +31,7 @@ import { useSidebarEdgeHoverPeek } from "@posthog/ui/primitives/hooks/useSidebar
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
-import { useParams } from "@tanstack/react-router";
+import { useParams, useRouterState } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useRef } from "react";
 
 // The unified app sidebar (Code merged into the Bluebird chrome). Top to
@@ -97,20 +98,40 @@ export function ChannelsSidebar() {
   // Spaces layout (prototype): while a channel is active the sidebar scopes to
   // it (Arc-style space). The route is the source of truth — visiting any
   // /website/$channelId page adopts that channel as the current space, and it
-  // sticks across channel-less routes (inbox, activity) until the user leaves
-  // via the all-channels landing (the "#" in the dot row).
+  // sticks across channel-less routes (inbox, activity). Two transient body
+  // overrides sit on top: browsing the full channel list ("#") and the draft
+  // new-space chooser ("+"); picking any space dismisses them.
   const params = useParams({ strict: false });
   const routeChannelId = params.channelId;
   const currentChannelId = useSpaceStore((s) => s.currentChannelId);
   const setCurrentChannel = useSpaceStore((s) => s.setCurrentChannel);
+  const browsing = useSpaceStore((s) => s.browsing);
+  const draftSpace = useSpaceStore((s) => s.draftSpace);
   useEffect(() => {
     if (routeChannelId) setCurrentChannel(routeChannelId);
   }, [routeChannelId, setCurrentChannel]);
-  const inSpace = channelsEnabled && currentChannelId != null;
+  const inSpace =
+    channelsEnabled && currentChannelId != null && !browsing && !draftSpace;
+
+  // Any navigation while a picker override is open dismisses it — the user
+  // moved somewhere, so the picker's moment has passed. This also covers
+  // re-selecting the channel you're already in (the route doesn't change, so
+  // the sync effect above never fires).
+  const historyIndex = useRouterState({
+    select: (s) => s.location.state.__TSR_index,
+  });
+  const prevHistoryIndexRef = useRef(historyIndex);
+  useEffect(() => {
+    if (prevHistoryIndexRef.current === historyIndex) return;
+    prevHistoryIndexRef.current = historyIndex;
+    const state = useSpaceStore.getState();
+    if (state.browsing) state.setBrowsing(false);
+    if (state.draftSpace) state.setDraftSpace(false);
+  }, [historyIndex]);
 
   // The personal "#me" space is the default: on first load with nothing
   // scoped, land there. Once any space has been current (including via the
-  // route), never auto-scope again — "Show channel list" (null) must stick.
+  // route), never auto-scope again, so the pickers can't be hijacked.
   const { channels } = useChannels({ enabled: channelsEnabled });
   const autoScopedRef = useRef(false);
   useEffect(() => {
@@ -118,12 +139,20 @@ export function ChannelsSidebar() {
   }, [currentChannelId]);
   useEffect(() => {
     if (!channelsEnabled || autoScopedRef.current || currentChannelId) return;
+    if (browsing || draftSpace) return;
     const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
     if (me) {
       autoScopedRef.current = true;
       setCurrentChannel(me.id);
     }
-  }, [channelsEnabled, channels, currentChannelId, setCurrentChannel]);
+  }, [
+    channelsEnabled,
+    channels,
+    currentChannelId,
+    browsing,
+    draftSpace,
+    setCurrentChannel,
+  ]);
 
   return (
     <ResizableSidebar
@@ -142,15 +171,19 @@ export function ChannelsSidebar() {
       <Flex direction="column" className="h-full bg-chrome">
         {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by
             the same flag), so this section carries the whole merged nav.
-            Hidden while a space is active: the space sidebar is the whole
-            body then (search/inbox/activity live in the title bar). */}
-        {!inSpace && <SidebarNavSection />}
+            Hidden while a space or the new-space draft is active: those own
+            the whole body (search/inbox/activity live in the title bar). */}
+        {!inSpace && !draftSpace && <SidebarNavSection />}
 
-        {/* Body: inside a space, the space-scoped sidebar; otherwise the
-            channel tree when channels are on, else the task list. Each owns
-            its own scroll region. Gated on the deferred value so the toggle
-            paints before this heavy swap. */}
-        {bodyChannelsEnabled && inSpace && currentChannelId ? (
+        {/* Body precedence: the draft new-space chooser, then the active
+            space, then the channel list (browse mode / landing), else the
+            task list. Each owns its own scroll region. Gated on the deferred
+            value so the toggle paints before this heavy swap. */}
+        {bodyChannelsEnabled && draftSpace ? (
+          <Box className="min-h-0 flex-1 overflow-hidden">
+            <NewSpaceDraft />
+          </Box>
+        ) : bodyChannelsEnabled && inSpace && currentChannelId ? (
           <Box className="min-h-0 flex-1 overflow-hidden">
             <SpaceSidebar channelId={currentChannelId} />
           </Box>

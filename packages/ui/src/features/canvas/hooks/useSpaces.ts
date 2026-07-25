@@ -44,7 +44,8 @@ export function useSpaces(): {
 
   const switchTo = useCallback(
     (channel: Channel) => {
-      if (channel.id === currentChannelId) return;
+      // Re-selecting the current space still goes through setCurrentChannel:
+      // it dismisses the browse/draft overrides and lands on the channel home.
       const from = spaces.findIndex((c) => c.id === currentChannelId);
       const to = spaces.findIndex((c) => c.id === channel.id);
       // Unknown positions (entering from the landing) read as moving right.

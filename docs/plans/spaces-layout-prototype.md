@@ -117,6 +117,6 @@ Replace the docked `ThreadPanel` (in spaces mode) with an `ActivityPanel` in the
 ## How to try it
 
 1. Enable the **Channels** alpha switch in the sidebar (Bluebird flag is default-on in dev). You land in your personal `#me` space — it is always the first item in the dot row.
-2. In the dot row: `#` opens a browse-all-channels menu (pick one to open it as a space); `+` adds a space — choose an existing channel (stars it, so the dot persists) or create a new one. A gear beside the account switcher opens Settings.
+2. In the dot row: `#` toggles the sidebar body into the all-channels list (pick one to open it as a space); `+` opens a draft new space, Arc-style — a hollow dot appears and the sidebar becomes a chooser: attach an existing channel (stars it, so the dot persists) or create a new one. A gear beside the account switcher opens Settings.
 3. Switch spaces by clicking dots, swiping horizontally on the sidebar, or `Ctrl+Alt+←/→`. Hovering a pinned/recent item shows a hover card with kind, status, author, and last update.
 4. Open a task in the space: the right Activity panel has Timeline / Artifacts / Comments; clicking a PR artifact opens its diff. The `+` on the task tab strip shows the new chat/terminal/canvas menu.
