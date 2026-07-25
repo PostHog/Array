@@ -1,10 +1,6 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
-import {
-  getPrVisualConfig,
-  parsePrNumber,
-} from "@posthog/core/git-interaction/prStatus";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
@@ -12,8 +8,7 @@ import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHea
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
-import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
-import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
+import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { track } from "@posthog/ui/shell/analytics";
@@ -159,7 +154,7 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
                   title={item.title}
                   prUrl={item.prUrl}
                   ts={item.ts}
-                  onClick={() => openPr(item.prUrl)}
+                  onClick={openPr}
                 />
               ),
             )}
@@ -171,8 +166,8 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
 }
 
 // A PR artifact row. The PR's lifecycle state (open / draft / merged / closed)
-// is fetched per-URL (deduped + cached by usePrDetails) so the icon and label
-// reflect the live state.
+// comes from usePrArtifact, which also gates the URL — PR links come from run
+// output, so a row must not fetch from whatever host that names.
 function PrArtifactRow({
   title,
   prUrl,
@@ -182,37 +177,28 @@ function PrArtifactRow({
   title: string;
   prUrl: string;
   ts: number;
-  onClick: () => void;
+  onClick: (safeUrl: string) => void;
 }) {
   const {
-    meta: { state, merged, draft },
-  } = usePrDetails(prUrl);
-  const config = getPrVisualConfig(state ?? "open", merged, draft);
-  const PrIcon = getPrVisualIcon(config.icon);
-  const prNumber = parsePrNumber(prUrl);
+    safeUrl,
+    title: prTitle,
+    stateLabel,
+    Icon,
+    iconColor,
+    accentColor,
+  } = usePrArtifact(prUrl);
 
-  const subtitle = [
-    prNumber ? `Pull request #${prNumber}` : "Pull request",
-    // Only show the resolved state once we have it, to avoid a flash of "Open".
-    state ? config.label : null,
-    formatRelativeTimeShort(ts),
-  ]
+  const subtitle = [prTitle, stateLabel, formatRelativeTimeShort(ts)]
     .filter(Boolean)
     .join(" · ");
 
   return (
     <ArtifactRow
-      accent={config.color}
-      icon={
-        <PrIcon
-          size={15}
-          weight="bold"
-          style={{ color: `var(--${config.color}-9)` }}
-        />
-      }
+      accent={accentColor}
+      icon={<Icon size={15} weight="bold" style={{ color: iconColor }} />}
       title={title}
       subtitle={subtitle}
-      onClick={onClick}
+      onClick={safeUrl ? () => onClick(safeUrl) : undefined}
     />
   );
 }
@@ -228,13 +214,15 @@ function ArtifactRow({
   accent: string;
   title: string;
   subtitle: string;
-  onClick: () => void;
+  /** Absent for a row with nowhere safe to go — a non-github PR link. */
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-gray-3"
+      disabled={!onClick}
+      className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors enabled:hover:bg-gray-3"
     >
       <span
         className="flex size-7 shrink-0 items-center justify-center rounded-md"
