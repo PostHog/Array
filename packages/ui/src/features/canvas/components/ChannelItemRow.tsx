@@ -60,7 +60,7 @@ export function statusVariantFor(
 }
 
 const HOVER_ACTION_CLASS =
-  "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12";
+  "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground";
 
 export function ChannelItemRow({ item }: { item: ChannelItem }) {
   return (
@@ -79,7 +79,7 @@ export function ChannelItemRow({ item }: { item: ChannelItem }) {
               onClick={item.onClick}
               endContent={
                 <>
-                  <span className="shrink-0 text-[11px] text-gray-11 group-hover:hidden">
+                  <span className="shrink-0 text-[11px] text-muted-foreground group-hover:hidden">
                     {formatRelativeTimeShort(item.ts)}
                   </span>
                   <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
@@ -122,14 +122,14 @@ export function ChannelItemRow({ item }: { item: ChannelItem }) {
         >
           <PreviewCard.Popup className="w-64 rounded-lg border border-border bg-background p-3 shadow-lg outline-none">
             <div className="flex items-start gap-2.5">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-gray-3">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
                 {item.icon}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="break-words font-medium text-[13px] text-gray-12 leading-snug">
+                <p className="break-words font-medium text-[13px] text-foreground leading-snug">
                   {item.title}
                 </p>
-                <p className="mt-0.5 text-[11px] text-gray-10">
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
                   {item.kind === "canvas" ? "Canvas" : "Task"} · updated{" "}
                   {formatRelativeTimeShort(item.ts)}
                 </p>
@@ -152,10 +152,12 @@ export function ChannelItemRow({ item }: { item: ChannelItem }) {
                   </Avatar>
                 )}
                 <div className="min-w-0">
-                  <p className="truncate text-[12px] text-gray-12">
+                  <p className="truncate text-[12px] text-foreground">
                     {item.authorName ?? "Unknown"}
                   </p>
-                  <p className="text-[10px] text-gray-10">Created by</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Created by
+                  </p>
                 </div>
               </div>
             )}

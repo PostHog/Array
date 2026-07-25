@@ -3,7 +3,6 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
-  HashIcon,
   RepeatIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
@@ -32,6 +31,7 @@ import {
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
@@ -529,7 +529,10 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           id: `channel-${channel.id}`,
           label: channel.name,
           keywords: "channel",
-          icon: <HashIcon size={12} className="text-gray-11" />,
+          icon: channelGlyph(channel.name, {
+            size: 12,
+            className: "text-muted-foreground",
+          }),
           action: "open-channel" as CommandMenuAction,
           channelId: channel.id,
           onRun: () => {

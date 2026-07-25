@@ -7,7 +7,6 @@ import {
   FileTextIcon,
   HashIcon,
   LinkIcon,
-  LockSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
   StarIcon,
@@ -43,6 +42,7 @@ import {
   TooltipTrigger,
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/createCanvasAnalytics";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
@@ -346,18 +346,18 @@ function ChannelSection({
                   params: { channelId: channel.id },
                 });
               }}
-              className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+              className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-foreground"
             >
-              <HashIcon
-                size={14}
-                weight={isUnread ? "bold" : undefined}
-                className={cn(
+              {channelGlyph(channel.name, {
+                size: 14,
+                weight: isUnread ? "bold" : undefined,
+                className: cn(
                   "shrink-0",
                   isUnread || isActive
                     ? "text-foreground"
                     : "text-muted-foreground group-hover/button:text-foreground",
-                )}
-              />
+                ),
+              })}
               <span
                 className={cn(
                   "truncate text-[13px] group-hover/chan:pr-8",
@@ -583,18 +583,18 @@ function PersonalChannelRow() {
         data-selected={isActive || undefined}
         disabled={isCreating}
         onClick={() => void open()}
-        className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+        className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-foreground"
       >
-        <HashIcon
-          size={14}
-          weight={isUnread ? "bold" : undefined}
-          className={cn(
+        {channelGlyph(PERSONAL_CHANNEL_NAME, {
+          size: 14,
+          weight: isUnread ? "bold" : undefined,
+          className: cn(
             "shrink-0",
             isUnread || isActive
               ? "text-foreground"
               : "text-muted-foreground group-hover/button:text-foreground",
-          )}
-        />
+          ),
+        })}
         <span
           className={cn(
             "truncate text-[13px]",
@@ -606,17 +606,6 @@ function PersonalChannelRow() {
         >
           {PERSONAL_CHANNEL_NAME}
         </span>
-        {/* The lock and the hover "+" share the right edge, so fade the lock
-            out as the "+" comes in. */}
-        <LockSimpleIcon
-          size={12}
-          className={cn(
-            "ml-auto shrink-0 text-chrome-foreground transition-opacity",
-            newMenuOpen
-              ? "opacity-0"
-              : "opacity-100 group-hover/chan:opacity-0",
-          )}
-        />
       </Button>
       <div className="absolute top-0 right-1">
         <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>

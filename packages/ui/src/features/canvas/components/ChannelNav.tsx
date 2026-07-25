@@ -42,7 +42,7 @@ function IconBadge({
         "-top-1 -right-1 absolute inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 font-semibold text-[9px] tabular-nums leading-none ring-2 ring-chrome",
         tone === "notification"
           ? "bg-(--red-9) text-white"
-          : "bg-gray-5 text-gray-11",
+          : "bg-muted text-muted-foreground",
       )}
     >
       {count > 99 ? "99+" : count}
@@ -74,8 +74,8 @@ function NavIcon({
         className={cn(
           "relative flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-100",
           isActive
-            ? "bg-fill-selected text-gray-12"
-            : "bg-gray-3 text-gray-11 hover:bg-gray-4 hover:text-gray-12",
+            ? "bg-fill-selected text-foreground"
+            : "text-muted-foreground hover:bg-fill-hover hover:text-foreground",
         )}
       >
         {icon}

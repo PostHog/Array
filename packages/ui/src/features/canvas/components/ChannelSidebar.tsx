@@ -52,10 +52,10 @@ const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
   ] as const;
 
 const HEADER_ICON_BUTTON_CLASS =
-  "flex size-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12";
+  "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground";
 
 const cnHeaderButton = (active: boolean) =>
-  cn(HEADER_ICON_BUTTON_CLASS, active && "bg-gray-3 text-gray-12");
+  cn(HEADER_ICON_BUTTON_CLASS, active && "bg-fill-selected text-foreground");
 
 const RECENTS_CAP = 30;
 

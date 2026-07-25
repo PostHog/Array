@@ -1,7 +1,8 @@
-import { HashIcon, StarIcon } from "@phosphor-icons/react";
+import { StarIcon } from "@phosphor-icons/react";
 import { Button, cn } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelTabs } from "@posthog/ui/features/canvas/components/ChannelTabs";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { useChannelStarToggle } from "@posthog/ui/features/canvas/hooks/useChannelStars";
 import {
   type Channel,
@@ -64,7 +65,10 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
         size="sm"
         className={cn("min-w-0", isHome ? "bg-fill-selected" : "")}
       >
-        <HashIcon size={20} className="shrink-0 text-muted-foreground/80" />
+        {channelGlyph(channelName, {
+          size: 20,
+          className: "shrink-0 text-muted-foreground/80",
+        })}
         <Text className="min-w-0 truncate font-medium" title={channelName}>
           {channelName ?? "Channel"}
         </Text>

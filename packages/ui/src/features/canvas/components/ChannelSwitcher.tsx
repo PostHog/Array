@@ -1,10 +1,5 @@
 import { Popover as BasePopover } from "@base-ui/react/popover";
-import {
-  CaretUpDownIcon,
-  HashIcon,
-  PlusIcon,
-  StarIcon,
-} from "@phosphor-icons/react";
+import { CaretUpDownIcon, PlusIcon, StarIcon } from "@phosphor-icons/react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -20,6 +15,7 @@ import {
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import {
   useChannelStars,
   useChannelStarToggle,
@@ -72,7 +68,7 @@ function SwitcherRow({
   const row = (
     <div
       className={cn(
-        "group flex items-center rounded-md transition-colors hover:bg-gray-3",
+        "group flex items-center rounded-md transition-colors hover:bg-fill-hover",
         active && "bg-fill-selected",
       )}
     >
@@ -82,9 +78,12 @@ function SwitcherRow({
         className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[13px]"
       >
         <span className="flex w-4 shrink-0 items-center justify-center">
-          <HashIcon size={14} className="text-gray-10" />
+          {channelGlyph(channel.name, {
+            size: 14,
+            className: "text-muted-foreground",
+          })}
         </span>
-        <span className="min-w-0 flex-1 truncate text-gray-12">
+        <span className="min-w-0 flex-1 truncate text-foreground">
           {channel.name}
         </span>
         {hotkeySlot != null && (
@@ -96,7 +95,7 @@ function SwitcherRow({
         // still has to be filled to keep the rows aligned.
         <span
           aria-hidden
-          className="mr-1 flex size-5 shrink-0 items-center justify-center text-gray-10 opacity-40"
+          className="mr-1 flex size-5 shrink-0 items-center justify-center text-muted-foreground opacity-40"
         >
           <StarIcon size={13} weight="fill" />
         </span>
@@ -106,7 +105,7 @@ function SwitcherRow({
           aria-label={isStarred ? "Unstar channel" : "Star channel"}
           onClick={trackedToggleStar}
           className={cn(
-            "mr-1 flex size-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:text-gray-12",
+            "mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground",
             !isStarred && "opacity-0 group-hover:opacity-100",
           )}
         >
@@ -148,7 +147,7 @@ function TriggerStar({ channel }: { channel: Channel }) {
       }}
       // Parks in the trigger's reserved well: 8px padding + 12px caret + 6px
       // gap = 26px from the right edge.
-      className="-translate-y-1/2 absolute top-1/2 right-[26px] flex size-6 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
+      className="-translate-y-1/2 absolute top-1/2 right-[26px] flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
     >
       <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
     </button>
@@ -247,16 +246,22 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
               // Fixed height with an unconditional star well: sized off its
               // contents, a starrable channel ran 4px taller than #me and
               // everything below shifted on switch.
-              className="flex h-8 w-full items-center gap-1.5 rounded-md border border-border px-2 text-left transition-colors hover:bg-gray-3 aria-expanded:bg-gray-3"
+              className="flex h-8 w-full items-center gap-1.5 rounded-md border border-border px-2 text-left transition-colors hover:bg-fill-hover aria-expanded:bg-fill-selected"
             >
               <span className="flex w-4 shrink-0 items-center justify-center">
-                <HashIcon size={14} className="text-gray-10" />
+                {channelGlyph(current?.name, {
+                  size: 14,
+                  className: "text-muted-foreground",
+                })}
               </span>
-              <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-gray-12">
+              <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-foreground">
                 {current?.name ?? "channel"}
               </span>
               <span aria-hidden className="size-6 shrink-0" />
-              <CaretUpDownIcon size={12} className="shrink-0 text-gray-10" />
+              <CaretUpDownIcon
+                size={12}
+                className="shrink-0 text-muted-foreground"
+              />
             </button>
           }
         />
@@ -300,7 +305,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
               />
             ))}
             {topFiltered.length === 0 && restFiltered.length === 0 && (
-              <p className="px-2 py-2 text-[12px] text-gray-10">
+              <p className="px-2 py-2 text-[12px] text-muted-foreground">
                 No channels match "{query.trim()}".
               </p>
             )}
@@ -312,7 +317,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
               setOpen(false);
               setCreateOpen(true);
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-gray-11 transition-colors hover:bg-gray-3"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-muted-foreground transition-colors hover:bg-fill-hover"
           >
             <span className="flex w-4 shrink-0 items-center justify-center">
               <PlusIcon size={14} />
@@ -326,7 +331,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
       {current && !showStar && (
         <span
           aria-hidden
-          className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-[26px] flex size-6 items-center justify-center text-gray-10 opacity-40"
+          className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-[26px] flex size-6 items-center justify-center text-muted-foreground opacity-40"
         >
           <StarIcon size={14} weight="fill" />
         </span>
