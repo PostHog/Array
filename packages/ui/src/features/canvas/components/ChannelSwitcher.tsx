@@ -38,11 +38,12 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useMemo, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
-// mod+1..4 jump to the first four starred channels (see SWITCH_STARRED_CHANNEL).
-const STARRED_HOTKEY_SLOTS = 4;
+// mod+0 jumps to #me; mod+1..9 jump to the first nine starred channels
+// (see SWITCH_STARRED_CHANNEL).
+const STARRED_HOTKEY_SLOTS = 9;
 
-// One channel in the switcher; right-click stars/unstars it. Starred channels
-// in the first four slots show their mod+N hotkey.
+// One channel in the switcher; right-click stars/unstars it. #me and the first
+// nine starred channels show their mod+N hotkey.
 function SwitcherRow({
   channel,
   active,
@@ -105,8 +106,8 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
   const current = channels.find((c) => c.id === channelId);
 
-  const { top, rest, starred } = useMemo(() => {
-    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+  const { top, rest, me, starred } = useMemo(() => {
+    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME) ?? null;
     const byPath = new Map(channels.map((c) => [c.path, c]));
     const starred: Channel[] = [];
     for (const ref of starredRefToShortcutId.keys()) {
@@ -120,7 +121,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
     const rest = channels
       .filter((c) => !seen.has(c.id))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return { top, rest, starred };
+    return { top, rest, me, starred };
   }, [channels, starredRefToShortcutId]);
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -141,14 +142,15 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
     });
   };
 
-  // mod+1..4 jump to the Nth starred channel. Same ctrl guard as SWITCH_TASK:
-  // plain ctrl+N belongs to tab switching.
+  // mod+0 → #me, mod+1..9 → the Nth starred channel. Same ctrl guard as
+  // SWITCH_TASK: plain ctrl+N belongs to tab switching.
   useHotkeys(
     SHORTCUTS.SWITCH_STARRED_CHANNEL,
     (event, handler) => {
       if (event.ctrlKey && !event.metaKey) return;
       const slot = Number.parseInt(handler.keys?.[0] ?? "", 10);
-      const channel = starred[slot - 1];
+      if (Number.isNaN(slot)) return;
+      const channel = slot === 0 ? me : starred[slot - 1];
       if (channel && slot <= STARRED_HOTKEY_SLOTS) pick(channel);
     },
     {
@@ -156,10 +158,11 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
       enableOnContentEditable: true,
       preventDefault: true,
     },
-    [starred, pick],
+    [me, starred, pick],
   );
 
   const hotkeySlotFor = (channel: Channel) => {
+    if (me && channel.id === me.id) return 0;
     const index = starred.indexOf(channel);
     return index >= 0 && index < STARRED_HOTKEY_SLOTS ? index + 1 : undefined;
   };
