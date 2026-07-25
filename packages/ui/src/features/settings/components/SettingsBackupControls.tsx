@@ -1,31 +1,42 @@
 import { DownloadSimple, UploadSimple } from "@phosphor-icons/react";
 import {
   MAX_SETTINGS_BACKUP_ARCHIVE_BYTES,
+  type ParsedSettingsBackup,
+  SETTINGS_BACKUP_SERVICE,
   type SettingsBackupCategory,
 } from "@posthog/core/settings/settingsBackup";
-import {
-  applySettingsBackup,
-  changedSettingsCategories,
-  exportSettingsArchive,
-  inspectSettingsArchive,
-  SETTINGS_BACKUP_CATEGORIES,
-} from "@posthog/ui/features/settings/settingsBackup";
+import type { SettingsBackupService } from "@posthog/core/settings/settingsBackupService";
+import { useService } from "@posthog/di/react";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Button, Checkbox, Dialog, Flex, Text } from "@radix-ui/themes";
 import { useRef, useState } from "react";
 
-type InspectedBackup = ReturnType<typeof inspectSettingsArchive>;
+const SETTINGS_BACKUP_CATEGORIES: ReadonlyArray<{
+  id: SettingsBackupCategory;
+  label: string;
+}> = [
+  { id: "notifications", label: "Notifications and sounds" },
+  { id: "agentDefaults", label: "Agent defaults" },
+  { id: "composer", label: "Composer and conversation" },
+  { id: "terminal", label: "Terminal" },
+  { id: "system", label: "System and updates" },
+  { id: "appearance", label: "Appearance and experiments" },
+  { id: "onboarding", label: "Onboarding and dismissed hints" },
+];
 
 export function SettingsBackupControls() {
+  const settingsBackup = useService<SettingsBackupService>(
+    SETTINGS_BACKUP_SERVICE,
+  );
   const inputRef = useRef<HTMLInputElement>(null);
-  const [backup, setBackup] = useState<InspectedBackup | null>(null);
+  const [backup, setBackup] = useState<ParsedSettingsBackup | null>(null);
   const [selected, setSelected] = useState<Set<SettingsBackupCategory>>(
     new Set(),
   );
 
   const exportSettings = () => {
     try {
-      const bytes = exportSettingsArchive();
+      const bytes = settingsBackup.exportArchive();
       const blob = new Blob([bytes as BlobPart], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -46,11 +57,11 @@ export function SettingsBackupControls() {
       if (file.size > MAX_SETTINGS_BACKUP_ARCHIVE_BYTES) {
         throw new Error("Settings archive is too large");
       }
-      const inspected = inspectSettingsArchive(
+      const inspected = settingsBackup.inspectArchive(
         new Uint8Array(await file.arrayBuffer()),
       );
       setBackup(inspected);
-      setSelected(new Set(changedSettingsCategories(inspected)));
+      setSelected(new Set(settingsBackup.changedCategories(inspected)));
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -65,7 +76,7 @@ export function SettingsBackupControls() {
   const importSettings = () => {
     if (!backup || selected.size === 0) return;
     try {
-      applySettingsBackup(backup, selected);
+      settingsBackup.applyBackup(backup, selected);
       setBackup(null);
       toast.success("Settings imported");
     } catch (error) {

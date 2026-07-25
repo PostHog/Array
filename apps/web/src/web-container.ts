@@ -123,6 +123,7 @@ import {
   type TitleGeneratorLogger,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import type { TitleGeneratorService } from "@posthog/core/sessions/titleGeneratorService";
+import { settingsBackupCoreModule } from "@posthog/core/settings/settingsBackup.module";
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
 import { setupCoreModule } from "@posthog/core/setup/setup.module";
 import {
@@ -239,6 +240,7 @@ import {
   localHandoffNotifier,
 } from "@posthog/ui/features/sessions/localHandoffService";
 import { getSessionService } from "@posthog/ui/features/sessions/sessionServiceHost";
+import { settingsUiModule } from "@posthog/ui/features/settings/settings.module";
 import { setupUiModule } from "@posthog/ui/features/setup/setup.module";
 import { taskCreationEffects } from "@posthog/ui/features/task-detail/taskCreationEffectsImpl";
 import { TrpcTaskCreationHost } from "@posthog/ui/features/task-detail/taskCreationHostImpl";
@@ -811,6 +813,9 @@ container.bind(REPORT_MODEL_RESOLVER).toConstantValue({
     }
   },
 } satisfies ReportModelResolver);
+
+container.load(settingsBackupCoreModule);
+container.load(settingsUiModule);
 
 // Fail loudly at composition time if a capability the shared app resolves via
 // service location is unbound, instead of limping to the first navigation that

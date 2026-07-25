@@ -141,6 +141,38 @@ export interface ParsedSettingsBackup {
   soundDataUrls: Record<string, string>;
 }
 
+export interface SettingsBackupState {
+  customSounds: ExportSound[];
+  [field: string]: unknown;
+}
+
+export interface SettingsBackupSettingsStore {
+  getState(): SettingsBackupState;
+  setState(patch: Partial<SettingsBackupState>): void;
+}
+
+export const SETTINGS_BACKUP_SETTINGS_STORE = Symbol.for(
+  "posthog.core.settingsBackup.settingsStore",
+);
+
+export type SettingsBackupTheme = "light" | "dark" | "system";
+
+export interface SettingsBackupThemeStore {
+  getTheme(): SettingsBackupTheme;
+  setTheme(theme: SettingsBackupTheme): void;
+}
+
+export const SETTINGS_BACKUP_THEME_STORE = Symbol.for(
+  "posthog.core.settingsBackup.themeStore",
+);
+
+export const SETTINGS_BACKUP_SERVICE = Symbol.for(
+  "posthog.core.settingsBackup.service",
+);
+
+export const SETTINGS_BACKUP_CATEGORY_IDS =
+  settingsBackupCategorySchema.options;
+
 function extensionForMimeType(mimeType: string): string {
   const subtype = mimeType.split("/")[1]?.split(";")[0] ?? "bin";
   return subtype === "mpeg"
