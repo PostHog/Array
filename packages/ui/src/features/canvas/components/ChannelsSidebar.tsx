@@ -9,6 +9,7 @@ import { NewSpaceDraft } from "@posthog/ui/features/canvas/components/NewSpaceDr
 import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
 import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useSpaceSwipe } from "@posthog/ui/features/canvas/hooks/useSpaces";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -154,6 +155,10 @@ export function ChannelsSidebar() {
     setCurrentChannel,
   ]);
 
+  // Horizontal trackpad swipe anywhere on the sidebar cycles spaces — from a
+  // space, the channel list, or the draft view alike. One space per gesture.
+  const handleSpaceSwipe = useSpaceSwipe(channelsEnabled);
+
   return (
     <ResizableSidebar
       open={open}
@@ -168,12 +173,20 @@ export function ChannelsSidebar() {
       onPeekLeave={() => endSidebarPeek()}
       onPeekDismiss={cancelSidebarPeek}
     >
-      <Flex direction="column" className="h-full bg-chrome">
+      <Flex
+        direction="column"
+        className="h-full bg-chrome"
+        onWheel={handleSpaceSwipe}
+      >
         {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by
-            the same flag), so this section carries the whole merged nav.
-            Hidden while a space or the new-space draft is active: those own
-            the whole body (search/inbox/activity live in the title bar). */}
-        {!inSpace && !draftSpace && <SidebarNavSection />}
+            the same flag), so this section carries the whole merged nav. In
+            channels mode the spaces chrome owns the sidebar (search / inbox /
+            activity live in the title bar) — browse mode shows purely the
+            channel list — so the nav only renders on the pre-scope landing. */}
+        {(!channelsEnabled ||
+          (currentChannelId == null && !browsing && !draftSpace)) && (
+          <SidebarNavSection />
+        )}
 
         {/* Body precedence: the draft new-space chooser, then the active
             space, then the channel list (browse mode / landing), else the
