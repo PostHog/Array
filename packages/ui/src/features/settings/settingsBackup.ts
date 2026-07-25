@@ -52,8 +52,6 @@ const CATEGORY_FIELDS: Record<SettingsBackupCategory, readonly string[]> = {
     "terminalGpuRendering",
   ],
   system: [
-    "allowBypassPermissions",
-    "preventSleepWhileRunning",
     "debugLogsCloudRuns",
     "autoPublishCloudRuns",
     "downloadUpdatesAutomatically",

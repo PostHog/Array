@@ -1,3 +1,4 @@
+import { strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createSettingsBackup, parseSettingsBackup } from "./settingsBackup";
 
@@ -36,5 +37,27 @@ describe("settings backup", () => {
 
   it("rejects data that is not an archive", () => {
     expect(() => parseSettingsBackup(new Uint8Array([1, 2, 3]))).toThrow();
+  });
+
+  it("rejects oversized entries using ZIP metadata", () => {
+    const bytes = zipSync({
+      "manifest.json": strToU8("{}"),
+      "sounds/huge.webm": new Uint8Array(5_000_001),
+    });
+
+    expect(() => parseSettingsBackup(bytes)).toThrow(
+      "Settings archive contains an oversized file",
+    );
+  });
+
+  it("rejects files outside the portable archive allowlist", () => {
+    const bytes = zipSync({
+      "manifest.json": strToU8("{}"),
+      "unexpected.txt": strToU8("surprise"),
+    });
+
+    expect(() => parseSettingsBackup(bytes)).toThrow(
+      "Settings archive contains an unexpected file",
+    );
   });
 });

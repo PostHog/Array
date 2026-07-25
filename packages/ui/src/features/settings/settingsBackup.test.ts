@@ -42,6 +42,8 @@ describe("portable settings backup", () => {
     const serialized = JSON.stringify(backup.manifest);
     expect(serialized).not.toContain("private-repo");
     expect(serialized).not.toContain("/private/repo");
+    expect(serialized).not.toContain("preventSleepWhileRunning");
+    expect(serialized).not.toContain("allowBypassPermissions");
     expect(backup.manifest.categories.composer?.customInstructions).toBe(
       "Be concise",
     );

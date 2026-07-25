@@ -3,6 +3,7 @@ import { z } from "zod";
 
 const MAX_ARCHIVE_BYTES = 25_000_000;
 const MAX_ENTRY_BYTES = 5_000_000;
+const MAX_ARCHIVE_ENTRIES = 101;
 const MANIFEST_PATH = "manifest.json";
 
 export const settingsBackupCategorySchema = z.enum([
@@ -90,8 +91,6 @@ const categoriesSchema = z
       terminalGpuRendering: z.boolean(),
     }),
     system: z.object({
-      allowBypassPermissions: z.boolean(),
-      preventSleepWhileRunning: z.boolean(),
       debugLogsCloudRuns: z.boolean(),
       autoPublishCloudRuns: z.boolean(),
       downloadUpdatesAutomatically: z.boolean(),
@@ -207,7 +206,33 @@ export function createSettingsBackup(
 export function parseSettingsBackup(bytes: Uint8Array): ParsedSettingsBackup {
   if (bytes.byteLength > MAX_ARCHIVE_BYTES)
     throw new Error("Settings archive is too large");
-  const files = unzipSync(bytes);
+  let declaredExpandedBytes = 0;
+  let entryCount = 0;
+  const files = unzipSync(bytes, {
+    filter: ({ name, originalSize }) => {
+      entryCount += 1;
+      if (entryCount > MAX_ARCHIVE_ENTRIES) {
+        throw new Error("Settings archive contains too many files");
+      }
+      if (name.includes("..") || name.startsWith("/") || name.includes("\\")) {
+        throw new Error("Settings archive contains an unsafe path");
+      }
+      if (
+        name !== MANIFEST_PATH &&
+        !/^sounds\/[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(name)
+      ) {
+        throw new Error("Settings archive contains an unexpected file");
+      }
+      if (originalSize > MAX_ENTRY_BYTES) {
+        throw new Error("Settings archive contains an oversized file");
+      }
+      declaredExpandedBytes += originalSize;
+      if (declaredExpandedBytes > MAX_ARCHIVE_BYTES) {
+        throw new Error("Expanded settings archive is too large");
+      }
+      return true;
+    },
+  });
   let expandedBytes = 0;
   for (const [name, contents] of Object.entries(files)) {
     if (name.includes("..") || name.startsWith("/") || name.includes("\\")) {
