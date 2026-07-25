@@ -47,14 +47,10 @@ type ArtifactRow =
     }
   | { kind: "slack"; key: string; url: string };
 
-// Run artifacts live on the run JSON but aren't in the typed TaskRun, so the
-// blob is validated at the boundary. Only plans are surfaced; other types are
-// internal blobs.
 function readRunPlans(run: TaskRun): RunArtifact[] {
   return parseRunPlans((run as { artifacts?: unknown }).artifacts);
 }
 
-// UUID-ish storage names make poor titles; fall back to a friendly label.
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 function planTitle(name: string | undefined): string {
@@ -62,11 +58,6 @@ function planTitle(name: string | undefined): string {
   return name;
 }
 
-/**
- * A task's artifacts across all runs: thread-announced PRs and canvases, every
- * run's output PR, plans, and the originating Slack thread. Internal upload
- * blobs are excluded.
- */
 function buildRows(
   task: Task,
   timeline: ThreadTimelineRow<TaskThreadMessage>[],
@@ -96,7 +87,6 @@ function buildRows(
     }
   }
 
-  // Fall back to latest_run while the runs list is still loading.
   const allRuns =
     runs.length > 0 ? runs : task.latest_run ? [task.latest_run] : [];
   for (const run of allRuns) {
@@ -139,7 +129,6 @@ function ArtifactListRow({
   detail?: string | null;
   external?: boolean;
   onOpen?: () => void;
-  /** Fires once intent is shown, for detail a row defers fetching. */
   onHoverStart?: () => void;
 }) {
   return (
@@ -168,9 +157,6 @@ function PrRow({ url, taskId }: { url: string; taskId: string }) {
   const setReviewMode = useReviewNavigationStore((s) => s.setReviewMode);
   const setSelectedPrUrl = useReviewNavigationStore((s) => s.setSelectedPrUrl);
 
-  // Comment counts cost two extra round trips per row on top of the PR state,
-  // and a task with several runs renders several rows — so they're fetched only
-  // once the row is hovered. The state label is the signal; the count is detail.
   const [countsWanted, setCountsWanted] = useState(false);
   const comments = usePrComments(countsWanted ? safeUrl : null);
   const threads = usePrReviewThreads(countsWanted ? safeUrl : null);
@@ -240,7 +226,6 @@ function CanvasRow({ name, url }: { name: string; url: string | null }) {
   );
 }
 
-// Clicking presigns a fresh URL (needs task + run id + storage path) and opens it.
 function PlanRow({
   taskId,
   runId,

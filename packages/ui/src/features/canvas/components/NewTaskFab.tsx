@@ -19,11 +19,6 @@ import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 
-/**
- * The active channel's create affordance, floated over its item list the way
- * ChannelsFab is over the channel list — hence the upward menu. It lives here
- * rather than the nav stack because it is an action, not a destination.
- */
 export function NewTaskFab({ channelId }: { channelId: string }) {
   const hasDraft = useDraftStore(
     (s) => !isContentEmpty(s.drafts["task-input"]),
@@ -46,7 +41,6 @@ export function NewTaskFab({ channelId }: { channelId: string }) {
               className="absolute right-3 bottom-3 z-10 rounded-full shadow-lg"
             >
               <PlusIcon size={20} weight="bold" />
-              {/* In the button's own foreground, to stay legible on accent. */}
               {hasDraft && (
                 <span
                   aria-hidden
@@ -64,8 +58,6 @@ export function NewTaskFab({ channelId }: { channelId: string }) {
               item: "new_task",
               in_more: false,
             });
-            // Through openTaskInput, not the bridge: it's what retires a stale
-            // prefill that would otherwise overwrite the channel draft.
             openTaskInput({ channelId });
           }}
         >
@@ -74,7 +66,6 @@ export function NewTaskFab({ channelId }: { channelId: string }) {
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => {
-            // Default template; the canvas's composer drives what gets built.
             trackAndCreateCanvas(
               channelId,
               undefined,

@@ -19,12 +19,6 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-/**
- * The flag-gated task panel — Timeline / Artifacts / Comments. Legacy
- * ThreadPanel stays for flag-off; both drive the same conversation through
- * useThreadConversation, so the posting rules can't diverge between them.
- */
-
 type ActivityTab = "timeline" | "artifacts" | "comments";
 
 const ACTIVITY_TABS: readonly { key: ActivityTab; label: string }[] = [
@@ -33,13 +27,11 @@ const ACTIVITY_TABS: readonly { key: ActivityTab; label: string }[] = [
   { key: "comments", label: "Comments" },
 ] as const;
 
-// Artifacts is a read-only list: nothing to post into, and no agent to report on.
 const TABS_WITH_COMPOSER: ReadonlySet<ActivityTab> = new Set([
   "timeline",
   "comments",
 ]);
 
-// Right-align row timestamps via container CSS, leaving the shared rows untouched.
 const TIMESTAMP_END_CLASS =
   "[&_[data-slot=thread-item-timestamp]]:ml-auto [&_[data-slot=thread-item-timestamp]]:shrink-0 [&_[data-slot=thread-item-timestamp]]:pl-2";
 
@@ -117,13 +109,10 @@ function ActivityConversation({
     [taskId],
   );
 
-  // The human thread, without the announcements the Artifacts tab owns.
   const commentRows = useMemo(
     () => timeline.filter((row) => row.kind === "human"),
     [timeline],
   );
-  // Only the Timeline renders these, and `events` churns on every streamed
-  // agent event — so don't process the whole event log for the other tabs.
   const conversationItems = useMemo(
     () =>
       tab === "timeline"

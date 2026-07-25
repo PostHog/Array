@@ -11,14 +11,6 @@ import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTask
 import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useRef } from "react";
 
-/**
- * Fires CHANNELS_SPACE_VIEWED once per entry into the channels space.
- *
- * Lives on the sidebar shell rather than the channel list, because the new
- * layout replaces that list with a per-channel sidebar — leaving the metric to
- * the list would drop space adoption to zero exactly when the flag turns on, and
- * read as a regression. `layout` distinguishes the two shells.
- */
 export function useTrackChannelsSpaceViewed({
   enabled,
   layout,
@@ -29,7 +21,6 @@ export function useTrackChannelsSpaceViewed({
   const { channels: allChannels, isLoading } = useChannels({ enabled });
   const { starredRefToShortcutId } = useChannelStars();
 
-  // The "me" folder is the pinned personal row, not a shared channel.
   const shared = allChannels.filter(
     (c: Channel) => c.name !== PERSONAL_CHANNEL_NAME,
   );
@@ -38,8 +29,6 @@ export function useTrackChannelsSpaceViewed({
     starredRefToShortcutId.has(c.path),
   ).length;
 
-  // Wait for the first load so the counts are real, then latch — the sidebar
-  // stays mounted across channel navigation.
   const trackedRef = useRef(false);
   useEffect(() => {
     if (!enabled) {

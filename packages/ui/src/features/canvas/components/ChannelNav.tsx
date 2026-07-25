@@ -27,8 +27,6 @@ import { useMemo } from "react";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
-// Overlaid on a 32px icon button, so smaller than the badge's default sizing and
-// ringed to read against the button beneath it.
 const ICON_BADGE_CLASS =
   "-top-1 -right-1 absolute h-3.5 min-w-3.5 w-auto px-1 font-semibold text-[9px] ring-2 ring-chrome";
 
@@ -67,10 +65,6 @@ function NavIcon({
   );
 }
 
-/**
- * Global destinations above the channel switcher. Search lives in the title
- * bar, and New task under the switcher, since it acts on the current channel.
- */
 export function ChannelNav() {
   const view = useAppView();
 
@@ -84,15 +78,9 @@ export function ChannelNav() {
     () => countUnseenActivity(activityItems, lastSeenAt),
     [activityItems, lastSeenAt],
   );
-  // Cells holding a task that still exists — the ambient "how much is parked
-  // there" count. Counting non-empty cells instead would include the brainrot
-  // and terminal sentinels, and would never drop when a parked task is deleted
-  // (the persisted cell keeps its id).
   const commandCenterCount = useCommandCenterActiveCount();
 
   const withTrack = (item: SidebarNavItem, action: () => void) => () => {
-    // `layout` is what makes this distinguishable from the Code sidebar's
-    // identically-named clicks — the comparison the flag exists to enable.
     track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
       item,
       in_more: false,

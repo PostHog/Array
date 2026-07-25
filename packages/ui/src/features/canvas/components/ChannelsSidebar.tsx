@@ -84,28 +84,15 @@ export function ChannelsSidebar() {
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-  // The new layout subsumes the channels alpha when on (the toggle is then
-  // hidden); when off, the toggle drives the alpha. `channelsWorld` = the body
-  // shows channels either way.
   const channelsLayout = useChannelsLayout();
   const channelsWorld = channelsLayout || channelsEnabled;
-  // Deferred so the toggle paints before the heavy channel tree (ChannelsList
-  // mounts a provider-laden row per channel) swaps in.
   const bodyChannelsWorld = useDeferredValue(channelsWorld);
-  // The channels *alpha* replaced the task list with the channel tree, so the
-  // Archived row went with it. The new layout keeps its own item list and puts
-  // an Archive action on every row, so it needs the destination back — this is
-  // the only entry point to /code/archived in the app. Reads the deferred value
-  // so the row and the body it belongs to switch on the same paint.
   const showArchivedRow = channelsLayout || !bodyChannelsWorld;
   useTrackChannelsSpaceViewed({
     enabled: channelsWorld,
     layout: channelsLayout ? "channels" : "code",
   });
 
-  // The channels layout's title bar needs more room than the shared floor, so
-  // it raises the minimum here rather than in the constant — leaving the width
-  // of everyone on the old layout untouched.
   const minWidth = channelsLayout ? CHANNELS_SIDEBAR_MIN_WIDTH : undefined;
   useEffect(() => {
     if (channelsLayout && width < CHANNELS_SIDEBAR_MIN_WIDTH) {
@@ -115,14 +102,9 @@ export function ChannelsSidebar() {
 
   const archivedTaskIds = useArchivedTaskIds();
 
-  // The route is the source of truth: a /website/$channelId page adopts that
-  // channel as current. Inert while the flag is off.
   const params = useParams({ strict: false });
   const routeChannelId = params.channelId;
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
-  // Resolves the scoped id against the live list, and clears it when the flag
-  // is off or the channel no longer exists — so `currentChannelId` here is
-  // always a channel we can actually render.
   const { currentChannelId, channels } = useCurrentChannel({
     enabled: channelsLayout,
   });
@@ -132,10 +114,6 @@ export function ChannelsSidebar() {
   }, [channelsLayout, routeChannelId, setCurrentChannel]);
   const inChannel = channelsLayout && currentChannelId != null;
 
-  // Default to the personal "#me" channel on first load, then leave the choice
-  // alone. The latch resets when the layout turns off so a flag that resolves
-  // late (useFeatureFlag re-syncs on every flags payload) can't strand the
-  // sidebar unscoped for the rest of the session.
   const autoScopedRef = useRef(false);
   useEffect(() => {
     if (!channelsLayout) {
@@ -181,10 +159,6 @@ export function ChannelsSidebar() {
           <>
             <ChannelNav />
             <Box className="min-h-0 flex-1 overflow-hidden">
-              {/* The channel sidebar is the whole sidebar under this layout, so
-                  a throw in one row would otherwise take ProjectSwitcher — the
-                  only route to settings and project switching — down with it.
-                  Degrade to the flat channel list instead. */}
               <ErrorBoundary
                 name="channel-sidebar"
                 fallback={<ChannelsList />}

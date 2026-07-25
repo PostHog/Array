@@ -54,7 +54,6 @@ function ActivityEventRow({
   );
 }
 
-// Opaque so it masks the rail behind it.
 function EventNode({ icon }: { icon: ReactNode }) {
   return (
     <span className="relative z-10 flex size-6 items-center justify-center rounded-full bg-gray-3">
@@ -94,10 +93,6 @@ function UserMessageRow({
   );
 }
 
-/**
- * The Timeline tab body: the task's full history (creation, user messages,
- * comments, artifacts, output PR, terminal status) sorted by timestamp on a rail.
- */
 export function ActivityTimeline({
   task,
   timeline,
@@ -146,7 +141,6 @@ export function ActivityTimeline({
       entries.push({
         key: `user-message-${item.id}`,
         ts: item.timestamp,
-        // The session carries no per-message author; the task owner drives it.
         node: (
           <UserMessageRow
             author={task.created_by}
@@ -254,8 +248,6 @@ export function ActivityTimeline({
     <div className="relative">
       <div
         aria-hidden
-        // left = row padding (0.5rem) + gutter (2.5rem) − half the lg avatar
-        // (2.35rem), so the rail lines up with the message avatars.
         className="pointer-events-none absolute top-4 bottom-4 left-[1.825rem] w-px bg-border"
       />
       <div className="relative z-10">

@@ -5,41 +5,24 @@ import type {
 } from "@posthog/shared/domain-types";
 import type { DashboardSummary } from "./dashboardSchemas";
 
-/**
- * A channel's canvases and tasks as one sortable list. Deliberately data-only —
- * no icons, no click handlers — so the memo that builds it depends on data
- * alone and doesn't churn on every navigation.
- */
 export interface ChannelItemModel {
-  /** Stable identity across rebuilds; also the route-activeness key. */
   key: string;
   kind: "task" | "canvas";
   id: string;
   title: string;
-  /** Epoch ms the item was last updated. */
   ts: number;
   pinned: boolean;
-  /** Tasks only: the latest run's status. */
   rawStatus: TaskRunStatus | null;
-  /** The author as a full user when we have one (tasks). */
   authorUser: UserBasic | null;
-  /** The author as a bare display name when that's all we have (canvases). */
   authorName: string | null;
-  /** Canvases only: which template drew it, so the caller can pick an icon. */
   templateId: string | null;
 }
 
-/** Who "me" is, for ownership checks. Either field may be unknown. */
 export interface ChannelItemOwner {
   uuid: string | null;
   name: string | null;
 }
 
-/**
- * Whether an item belongs to `owner`. Items whose author we don't know count as
- * owned — a channel shouldn't hide your own items just because the author field
- * came back empty. Canvases only carry a display name, hence the name fallback.
- */
 function isOwnedBy(
   item: Pick<ChannelItemModel, "authorUser" | "authorName">,
   owner: ChannelItemOwner,
@@ -60,10 +43,6 @@ export function buildChannelItems({
   feedTasks: readonly Task[];
   archivedTaskIds: ReadonlySet<string>;
   pinnedTaskIds: ReadonlySet<string>;
-  /**
-   * Set only for the personal channel, and only once the current user is known
-   * — otherwise the list is returned unfiltered rather than guessing.
-   */
   ownedBy: ChannelItemOwner | null;
 }): ChannelItemModel[] {
   const canvasItems: ChannelItemModel[] = dashboards.map((d) => ({

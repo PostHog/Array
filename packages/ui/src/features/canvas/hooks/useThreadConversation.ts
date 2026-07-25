@@ -30,7 +30,6 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useCallback, useMemo, useState } from "react";
 
-/** Which panel is asking, for analytics. The only difference between them. */
 export type ThreadSurface = "thread_panel" | "activity_panel";
 
 type SessionEvents = ReturnType<typeof useSessionViewState>["events"];
@@ -38,19 +37,15 @@ type SessionEvents = ReturnType<typeof useSessionViewState>["events"];
 export interface ThreadConversation {
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
   agentStatus: ThreadAgentStatus | null;
-  /** Session events behind the timeline, for panels that render them. */
   events: SessionEvents;
   isPromptPending: boolean;
-  /** The thread and its session have both settled. */
   isReady: boolean;
   members: UserBasic[];
   currentUser: { uuid?: string; email?: string } | undefined;
   isTaskAuthor: boolean;
-  /** The task has a live run that a message could still be forwarded to. */
   canForward: boolean;
   draft: string;
   setDraft: (value: string) => void;
-  /** Composer disabled state — empty draft or a post in flight. */
   isSubmitDisabled: boolean;
   submit: () => Promise<void>;
   sendMessageToAgent: (messageId: string) => void;
@@ -58,15 +53,6 @@ export interface ThreadConversation {
   onMentionInsert: (member: UserBasic) => void;
 }
 
-/**
- * Everything a task-thread panel needs: the timeline, the agent's status, and
- * the posting rules.
- *
- * Shared by ThreadPanel and the flag-gated ActivityPanel, which are otherwise
- * two renderings of the same conversation. The rules here — only the task author
- * may @agent while a run is live, a failed post hands the draft back — are the
- * kind that must not exist twice, since only one copy would get the fix.
- */
 export function useThreadConversation(
   task: Task,
   { surface }: { surface: ThreadSurface },
