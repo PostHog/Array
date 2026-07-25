@@ -269,12 +269,21 @@ export function TaskInput({
   const adapter = lastUsedAdapter;
   const prefillRequestKey = initialPromptKey ?? initialPrompt;
 
+  // Applying a prefilled prompt replaces whatever the composer had, so it must
+  // happen exactly once per request — not again on every remount, which would
+  // clobber a draft the user typed in between.
+  const lastAppliedPromptKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!initialPrompt || !prefillRequestKey) return;
+    if (lastAppliedPromptKeyRef.current === prefillRequestKey) return;
+    lastAppliedPromptKeyRef.current = prefillRequestKey;
     useDraftStore.getState().actions.setPendingContent(sessionId, {
       segments: [{ type: "text", text: initialPrompt }],
     });
-  }, [initialPrompt, prefillRequestKey, sessionId]);
+    if (initialPromptKey) {
+      useTaskInputPrefillStore.getState().consumePrompt(initialPromptKey);
+    }
+  }, [initialPrompt, initialPromptKey, prefillRequestKey, sessionId]);
 
   useEffect(() => {
     reportInputHadContentRef.current = false;

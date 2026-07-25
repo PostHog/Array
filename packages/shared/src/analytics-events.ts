@@ -254,10 +254,19 @@ export type SidebarNavItem =
   | "more"
   | "customize_sidebar";
 
+/** Which sidebar shell the click came from, so the two can be compared. */
+export type SidebarLayout = "code" | "channels";
+
 export interface SidebarNavItemClickedProperties {
   item: SidebarNavItem;
   /** True when the row was clicked inside the expanded More section. */
   in_more: boolean;
+  /**
+   * Which shell rendered the row. Both shells fire this event with the same
+   * item names, so without it the layouts are indistinguishable — and comparing
+   * them is the whole point of running one behind a flag.
+   */
+  layout?: SidebarLayout;
 }
 
 export interface SidebarCustomizedProperties {
@@ -906,7 +915,8 @@ export type ChannelActionType =
   | "mention_member"
   | "view_activity"
   | "open_mention"
-  | "canvas_mode_toggle";
+  | "canvas_mode_toggle"
+  | "activity_tab_change";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -925,6 +935,8 @@ export interface ChannelActionProperties {
   suggestion_label?: string;
   /** For canvas_mode_toggle: whether canvas mode is being armed. */
   armed?: boolean;
+  /** For activity_tab_change: the tab landed on. */
+  tab?: string;
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }
@@ -992,6 +1004,8 @@ export interface ChannelsSpaceViewedProperties {
   /** Total channels visible when the space mounts. */
   channel_count: number;
   starred_count: number;
+  /** Which shell the space was entered through. */
+  layout?: SidebarLayout;
 }
 
 // Subscription / billing events

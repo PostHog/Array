@@ -5,6 +5,7 @@ import {
 } from "@posthog/ui/features/auth/authQueries";
 import { useAuthUiStateStore } from "@posthog/ui/features/auth/authUiStateStore";
 import type { IAuthSideEffects } from "@posthog/ui/features/auth/identifiers";
+import { resetCurrentChannel } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { injectable } from "inversify";
@@ -24,6 +25,9 @@ export class WebAuthSideEffects implements IAuthSideEffects {
   onProjectSelected(): void {
     clearAuthScopedQueries();
     void refreshAuthStateQuery();
+    // Before openTaskInput, which files a new task into the scoped channel —
+    // a channel id from the project we just left.
+    resetCurrentChannel();
     openTaskInput();
   }
 
@@ -32,6 +36,7 @@ export class WebAuthSideEffects implements IAuthSideEffects {
     if (previousRegion) {
       useAuthUiStateStore.getState().setStaleRegion(previousRegion);
     }
+    resetCurrentChannel();
     openTaskInput();
     useOnboardingStore.getState().resetSelections();
   }
