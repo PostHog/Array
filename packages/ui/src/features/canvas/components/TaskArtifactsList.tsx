@@ -1,6 +1,6 @@
 import {
   ArrowSquareOutIcon,
-  FileTextIcon,
+  ClipboardTextIcon,
   PackageIcon,
   SlackLogoIcon,
 } from "@phosphor-icons/react";
@@ -16,9 +16,14 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import type { Task, TaskThreadMessage } from "@posthog/shared/domain-types";
+import type {
+  Task,
+  TaskRun,
+  TaskThreadMessage,
+} from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { useTaskRuns } from "@posthog/ui/features/canvas/hooks/useTaskRuns";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
 import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
@@ -35,24 +40,13 @@ type ArtifactRow =
   | { kind: "pr"; key: string; url: string }
   | { kind: "canvas"; key: string; name: string; url: string | null }
   | {
-      kind: "file";
+      kind: "plan";
       key: string;
       name: string;
-      typeLabel: string;
       storagePath: string | null;
       runId: string | null;
     }
   | { kind: "slack"; key: string; url: string };
-
-// Human labels for the artifact types the agent uploads during a run.
-const ARTIFACT_TYPE_LABELS: Record<string, string> = {
-  plan: "Plan",
-  context: "Context",
-  reference: "Reference",
-  output: "Output",
-  artifact: "File",
-  skill_bundle: "Skill",
-};
 
 interface RunArtifact {
   id?: string;
@@ -61,18 +55,24 @@ interface RunArtifact {
   storage_path?: string;
 }
 
-// Run-uploaded artifacts live on the run JSON but aren't in the typed TaskRun,
-// so read them past the type. Skip user attachments (those are task inputs,
-// not things generated during the session).
-function readRunArtifacts(task: Task): RunArtifact[] {
-  const run = task.latest_run as { artifacts?: unknown } | undefined;
-  if (!run || !Array.isArray(run.artifacts)) return [];
-  return (run.artifacts as RunArtifact[]).filter(
-    (artifact) =>
-      artifact &&
-      typeof artifact.name === "string" &&
-      artifact.type !== "user_attachment",
+// A run's uploaded artifacts live on the run JSON but aren't in the typed
+// TaskRun, so read them past the type. Only PLANS are surfaced — the other
+// types are internal blobs (skill packs, raw outputs) with opaque UUID names
+// that don't belong in a human artifacts list.
+function readRunPlans(run: TaskRun): RunArtifact[] {
+  const raw = (run as { artifacts?: unknown }).artifacts;
+  if (!Array.isArray(raw)) return [];
+  return (raw as RunArtifact[]).filter(
+    (artifact) => artifact && artifact.type === "plan",
   );
+}
+
+// UUID-ish storage names make poor titles; fall back to a friendly label.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+function planTitle(name: string | undefined): string {
+  if (!name || UUID_RE.test(name)) return "Plan";
+  return name;
 }
 
 function parseHttpsUrl(url: string): URL | null {
@@ -85,24 +85,31 @@ function parseHttpsUrl(url: string): URL | null {
 }
 
 /**
- * Everything this task produced or is anchored to during the session: PRs and
- * canvases the agent announced on the task thread, the run output's PR as a
- * fallback, the files the agent uploaded on the run, and the originating Slack
- * thread (external link).
+ * A task's artifacts, gathered across ALL of its runs: the PRs and canvases the
+ * agent announced on the task thread, every run's output PR, the plans the
+ * agent produced, and the originating Slack thread. Deliberately curated —
+ * internal upload blobs (skill packs, raw outputs) are excluded.
  */
 function buildRows(
   task: Task,
   timeline: ThreadTimelineRow<TaskThreadMessage>[],
+  runs: TaskRun[],
 ): ArtifactRow[] {
   const rows: ArtifactRow[] = [];
   const seenPrUrls = new Set<string>();
+  const seenPlanKeys = new Set<string>();
 
+  const addPr = (url: string, key: string) => {
+    if (seenPrUrls.has(url)) return;
+    seenPrUrls.add(url);
+    rows.push({ kind: "pr", key, url });
+  };
+
+  // Canvases + PRs the agent announced on the (task-level) thread.
   for (const row of timeline) {
     if (row.kind !== "artifact") continue;
     if (row.artifact.kind === "pr") {
-      if (seenPrUrls.has(row.artifact.url)) continue;
-      seenPrUrls.add(row.artifact.url);
-      rows.push({ kind: "pr", key: row.message.id, url: row.artifact.url });
+      addPr(row.artifact.url, row.message.id);
     } else {
       rows.push({
         kind: "canvas",
@@ -113,24 +120,27 @@ function buildRows(
     }
   }
 
-  const outputPr = task.latest_run?.output?.pr_url;
-  if (typeof outputPr === "string" && outputPr && !seenPrUrls.has(outputPr)) {
-    rows.push({ kind: "pr", key: `output-pr:${outputPr}`, url: outputPr });
-  }
-
-  // Files the agent uploaded during the run (plans, outputs, references, …).
-  const runId = task.latest_run?.id ?? null;
-  for (const artifact of readRunArtifacts(task)) {
-    rows.push({
-      kind: "file",
-      key: `artifact:${artifact.id ?? artifact.storage_path ?? artifact.name}`,
-      name: artifact.name ?? "Artifact",
-      typeLabel: artifact.type
-        ? (ARTIFACT_TYPE_LABELS[artifact.type] ?? "File")
-        : "File",
-      storagePath: artifact.storage_path ?? null,
-      runId,
-    });
+  // PRs and plans from every run of the task (fall back to latest_run while
+  // the runs list is still loading).
+  const allRuns =
+    runs.length > 0 ? runs : task.latest_run ? [task.latest_run] : [];
+  for (const run of allRuns) {
+    const outputPr = run.output?.pr_url;
+    if (typeof outputPr === "string" && outputPr) {
+      addPr(outputPr, `output-pr:${outputPr}`);
+    }
+    for (const plan of readRunPlans(run)) {
+      const key = `plan:${plan.id ?? plan.storage_path ?? plan.name}`;
+      if (seenPlanKeys.has(key)) continue;
+      seenPlanKeys.add(key);
+      rows.push({
+        kind: "plan",
+        key,
+        name: planTitle(plan.name),
+        storagePath: plan.storage_path ?? null,
+        runId: run.id,
+      });
+    }
   }
 
   const slackUrl = task.latest_run?.state?.slack_thread_url;
@@ -246,19 +256,17 @@ function CanvasRow({ name, url }: { name: string; url: string | null }) {
   );
 }
 
-// A file the agent uploaded during the run. Clicking presigns a fresh URL and
-// opens it (download) — the presign endpoint needs the task + run id + path.
-function FileRow({
+// A plan the agent produced during a run. Clicking presigns a fresh URL and
+// opens it — the presign endpoint needs the task + run id + storage path.
+function PlanRow({
   taskId,
   runId,
   name,
-  typeLabel,
   storagePath,
 }: {
   taskId: string;
   runId: string | null;
   name: string;
-  typeLabel: string;
   storagePath: string | null;
 }) {
   const client = useOptionalAuthenticatedClient();
@@ -273,7 +281,7 @@ function FileRow({
           )
           .then((url) => openExternalUrl(url))
           .catch((error: unknown) => {
-            toast.error("Couldn't open artifact", {
+            toast.error("Couldn't open plan", {
               description:
                 error instanceof Error ? error.message : String(error),
             });
@@ -282,9 +290,9 @@ function FileRow({
     : undefined;
   return (
     <ArtifactListRow
-      icon={<FileTextIcon size={14} className="shrink-0 text-gray-11" />}
+      icon={<ClipboardTextIcon size={14} className="shrink-0 text-amber-9" />}
       title={name}
-      detail={typeLabel}
+      detail="Plan"
       external={canOpen}
       onOpen={onOpen}
     />
@@ -298,7 +306,11 @@ export function TaskArtifactsList({
   task: Task;
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
 }) {
-  const rows = useMemo(() => buildRows(task, timeline), [task, timeline]);
+  const { runs } = useTaskRuns(task.id);
+  const rows = useMemo(
+    () => buildRows(task, timeline, runs),
+    [task, timeline, runs],
+  );
 
   if (rows.length === 0) {
     return (
@@ -324,13 +336,12 @@ export function TaskArtifactsList({
           <PrRow key={row.key} url={row.url} taskId={task.id} />
         ) : row.kind === "canvas" ? (
           <CanvasRow key={row.key} name={row.name} url={row.url} />
-        ) : row.kind === "file" ? (
-          <FileRow
+        ) : row.kind === "plan" ? (
+          <PlanRow
             key={row.key}
             taskId={task.id}
             runId={row.runId}
             name={row.name}
-            typeLabel={row.typeLabel}
             storagePath={row.storagePath}
           />
         ) : (
