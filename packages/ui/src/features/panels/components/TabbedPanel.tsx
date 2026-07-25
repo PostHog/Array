@@ -1,6 +1,18 @@
 import { useDroppable } from "@dnd-kit/react";
-import { Plus, SquareSplitHorizontalIcon } from "@phosphor-icons/react";
+import {
+  ChartBarIcon,
+  ChatCircleIcon,
+  Plus,
+  SquareSplitHorizontalIcon,
+  TerminalWindowIcon,
+} from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@posthog/quill";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
@@ -218,12 +230,39 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
+            {/* "+" adds a tab. Only terminals work today; chat and canvas
+                tabs are the layout prototype's declared direction, shown
+                disabled so the menu communicates where this is going. */}
             {content.droppable && onAddTerminal && (
-              <Tooltip content="New terminal" side="bottom">
-                <TabBarButton ariaLabel="Add terminal" onClick={onAddTerminal}>
-                  <Plus size={14} />
-                </TabBarButton>
-              </Tooltip>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <TabBarButton ariaLabel="Add tab" onClick={() => {}}>
+                      <Plus size={14} />
+                    </TabBarButton>
+                  }
+                />
+                <DropdownMenuContent align="start" side="bottom" sideOffset={4}>
+                  <DropdownMenuItem disabled>
+                    <ChatCircleIcon size={14} />
+                    New chat
+                    <span className="ml-auto pl-3 text-muted-foreground text-xs">
+                      Soon
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onAddTerminal}>
+                    <TerminalWindowIcon size={14} />
+                    New terminal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled>
+                    <ChartBarIcon size={14} />
+                    New canvas
+                    <span className="ml-auto pl-3 text-muted-foreground text-xs">
+                      Soon
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {/* Spacer to increase DND area */}
             {content.droppable && (

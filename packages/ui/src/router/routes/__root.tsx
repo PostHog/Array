@@ -28,6 +28,10 @@ import {
   FeedbackModal,
   type FeedbackModalMode,
 } from "@posthog/ui/features/canvas/components/FeedbackModal";
+import {
+  SpacesSearchField,
+  SpacesTitleBarActions,
+} from "@posthog/ui/features/canvas/components/SpacesTitleBar";
 import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDeepLink";
 import { useChannelDeepLink } from "@posthog/ui/features/canvas/hooks/useChannelDeepLink";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
@@ -409,16 +413,17 @@ function RootLayout() {
               </Flex>
             )}
           </Flex>
-          {/* Tabs work in both spaces: channel tabs under /website and plain
-              task tabs in the Code experience. The strip's route→tab effect
-              noops on param-less routes (inbox, agents, new-task), so it's safe
-              to mount everywhere. */}
-          <BrowserTabStrip />
+          {/* Spaces layout (prototype): with channels on, the title-bar center
+              is a persistent search pill (tabs live inside the task view
+              instead of a global strip). Otherwise the browser-tab strip works
+              as before: channel tabs under /website, plain task tabs in Code. */}
+          {channelsEnabled ? <SpacesSearchField /> : <BrowserTabStrip />}
           {/* Gated so an empty right-side group can't claim a no-drag rect
               in the title bar for nothing — every pixel without controls
               should drag the window. */}
           {(billingEnabled || channelsEnabled) && (
             <Flex align="center" gap="2" className="no-drag ml-auto pr-3">
+              {channelsEnabled && <SpacesTitleBarActions />}
               <UsageButton />
               {channelsEnabled && (
                 <Button

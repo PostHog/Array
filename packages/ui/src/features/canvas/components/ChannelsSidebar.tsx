@@ -5,6 +5,9 @@ import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTask
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
+import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
+import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
+import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
@@ -24,6 +27,7 @@ import { useSidebarEdgeHoverPeek } from "@posthog/ui/primitives/hooks/useSidebar
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
+import { useParams } from "@tanstack/react-router";
 import { useDeferredValue, useEffect } from "react";
 
 // The unified app sidebar (Code merged into the Bluebird chrome). Top to
@@ -87,6 +91,20 @@ export function ChannelsSidebar() {
 
   const archivedTaskIds = useArchivedTaskIds();
 
+  // Spaces layout (prototype): while a channel is active the sidebar scopes to
+  // it (Arc-style space). The route is the source of truth — visiting any
+  // /website/$channelId page adopts that channel as the current space, and it
+  // sticks across channel-less routes (inbox, activity) until the user leaves
+  // via the all-channels landing (the "#" in the dot row).
+  const params = useParams({ strict: false });
+  const routeChannelId = params.channelId;
+  const currentChannelId = useSpaceStore((s) => s.currentChannelId);
+  const setCurrentChannel = useSpaceStore((s) => s.setCurrentChannel);
+  useEffect(() => {
+    if (routeChannelId) setCurrentChannel(routeChannelId);
+  }, [routeChannelId, setCurrentChannel]);
+  const inSpace = channelsEnabled && currentChannelId != null;
+
   return (
     <ResizableSidebar
       open={open}
@@ -103,13 +121,20 @@ export function ChannelsSidebar() {
     >
       <Flex direction="column" className="h-full bg-chrome">
         {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by
-            the same flag), so this section carries the whole merged nav. */}
-        <SidebarNavSection />
+            the same flag), so this section carries the whole merged nav.
+            Hidden while a space is active: the space sidebar is the whole
+            body then (search/inbox/activity live in the title bar). */}
+        {!inSpace && <SidebarNavSection />}
 
-        {/* Body: the channel tree when channels are on, otherwise the task
-            list. Each owns its own scroll region. Gated on the deferred value so
-            the toggle paints before this heavy swap. */}
-        {bodyChannelsEnabled ? (
+        {/* Body: inside a space, the space-scoped sidebar; otherwise the
+            channel tree when channels are on, else the task list. Each owns
+            its own scroll region. Gated on the deferred value so the toggle
+            paints before this heavy swap. */}
+        {bodyChannelsEnabled && inSpace && currentChannelId ? (
+          <Box className="min-h-0 flex-1 overflow-hidden">
+            <SpaceSidebar channelId={currentChannelId} />
+          </Box>
+        ) : bodyChannelsEnabled ? (
           <>
             <Separator />
             {/* The fab is a sibling of the scroll region, not a child, so it
@@ -147,6 +172,10 @@ export function ChannelsSidebar() {
         )}
 
         <LoopsPromoCard />
+
+        {/* Arc-style space switcher: one dot per starred channel. Rendered
+            whenever channels are on so the landing shows the dot row too. */}
+        {channelsEnabled && <SpaceDots />}
 
         {/* Workspace switcher pinned to the bottom. Its dropdown carries the
             Settings entry, so there's no separate Settings row. */}
