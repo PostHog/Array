@@ -427,16 +427,6 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
       transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
       className="flex h-full min-h-0 flex-col"
     >
-      <div className="flex flex-col gap-px px-2 pt-2">
-        <SidebarItem
-          depth={0}
-          icon={<PlusIcon size={16} />}
-          label="New task"
-          isActive={pathname === `${base}/new`}
-          onClick={() => navigateToChannelNewTask(channelId)}
-        />
-      </div>
-
       {/* Channel header: the space's identity, click = channel home. */}
       <button
         type="button"
@@ -446,7 +436,7 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
             params: { channelId },
           })
         }
-        className="mx-2 mt-3 flex items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors hover:bg-gray-3"
+        className="mx-2 mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors hover:bg-gray-3"
       >
         <HashIcon size={14} className="shrink-0 text-gray-10" />
         <span className="min-w-0 truncate font-semibold text-[13px] text-gray-12">
@@ -486,6 +476,17 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
               params: { channelId },
             }),
         )}
+      </div>
+
+      {/* New task sits below the space's nav, right above the item lists. */}
+      <div className="flex flex-col gap-px px-2 pt-2">
+        <SidebarItem
+          depth={0}
+          icon={<PlusIcon size={16} />}
+          label="New task"
+          isActive={pathname === `${base}/new`}
+          onClick={() => navigateToChannelNewTask(channelId)}
+        />
       </div>
 
       <div className="scroll-mask-4 mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
