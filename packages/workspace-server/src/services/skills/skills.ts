@@ -579,6 +579,9 @@ export class SkillsService {
     );
 
     const seen = new Set<string>();
+    const explicitRefs = new Set(
+      refs.map((ref) => `${ref.source}:${ref.path}`),
+    );
     const resolved: SkillBundleRef[] = [];
     const queue: SkillBundleRef[] = [...refs];
     // Sanity ceiling on the dependency closure. The `seen` set already
@@ -622,10 +625,19 @@ export class SkillsService {
 
       for (const dependencyName of dependencyNames) {
         const dependencyRef = findUploadableByName(dependencyName, ref);
-        if (
-          dependencyRef &&
-          !seen.has(`${dependencyRef.source}:${dependencyRef.path}`)
-        ) {
+        const dependencyKey = dependencyRef
+          ? `${dependencyRef.source}:${dependencyRef.path}`
+          : null;
+        if (dependencyRef && dependencyKey && !seen.has(dependencyKey)) {
+          const isImplicitSymlink =
+            !explicitRefs.has(dependencyKey) &&
+            (await fs.promises.lstat(dependencyRef.path)).isSymbolicLink();
+          if (isImplicitSymlink) {
+            throw new Error(
+              `The ${ref.name} skill references /${dependencyRef.name}, which is a symlinked local skill. ` +
+                `Select ${dependencyRef.name} explicitly to include it in this cloud run.`,
+            );
+          }
           queue.push(dependencyRef);
         }
       }

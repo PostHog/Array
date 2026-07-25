@@ -739,6 +739,42 @@ describe("resolveSkillBundleDependencies", () => {
     expect(resolved.map((r) => r.path)).toEqual([primary, repoHelper]);
   });
 
+  it("rejects an implicitly resolved symlinked user dependency", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "scoped-parent",
+      withDeps("scoped-parent", ["helper"]),
+    );
+    const target = await createSkill(root, "helper");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    await symlink(target, path.join(userSkillsHome.dir, "helper"), "dir");
+
+    await expect(
+      makeService().resolveSkillBundleDependencies([
+        ref("scoped-parent", primary),
+      ]),
+    ).rejects.toThrow("Select helper explicitly");
+  });
+
+  it("allows an explicitly selected symlinked user dependency", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "scoped-parent",
+      withDeps("scoped-parent", ["helper"]),
+    );
+    const target = await createSkill(root, "helper");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    const helper = path.join(userSkillsHome.dir, "helper");
+    await symlink(target, helper, "dir");
+
+    const resolved = await makeService().resolveSkillBundleDependencies([
+      ref("scoped-parent", primary),
+      { name: "helper", source: "user", path: helper },
+    ]);
+
+    expect(resolved.map((skill) => skill.path)).toEqual([primary, helper]);
+  });
+
   it("expands a tagged skill to include its transitive dependencies", async () => {
     const primary = await createSkill(
       repoSkillsDir,
