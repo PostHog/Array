@@ -223,8 +223,7 @@ function ActivityConversation({
     },
     [taskId],
   );
-  // Comments = the human thread without artifact announcements (those are the
-  // Artifacts tab).
+  // The human thread, without the announcements the Artifacts tab owns.
   const commentRows = useMemo(
     () => timeline.filter((row) => row.kind === "human"),
     [timeline],

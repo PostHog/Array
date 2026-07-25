@@ -21,7 +21,6 @@ import {
   AutocompleteItem,
   AutocompleteList,
   AutocompleteStatus,
-  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -42,7 +41,6 @@ import {
 import { EXTERNAL_LINKS } from "@posthog/shared";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
-import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import {
   useLogoutMutation,
   useSelectProjectMutation,
@@ -60,20 +58,9 @@ import { Avatar, Box } from "@radix-ui/themes";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
-/**
- * The account / project / org menu. Two triggers, same menu body:
- * - "card" (default): the two-line user/project card at the bottom of the
- *   sidebar.
- * - "compact": a single avatar button for the top bar, so the menu doesn't
- *   claim a whole sidebar row.
- */
-export function ProjectSwitcher({
-  variant = "card",
-}: {
-  variant?: "card" | "compact";
-}) {
+/** The account / project / org menu at the bottom of the sidebar. */
+export function ProjectSwitcher() {
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const compact = variant === "compact";
 
   const holdPeek = useHoldSidebarPeek();
   const handleOpenChange = (next: boolean): void => {
@@ -191,50 +178,30 @@ export function ProjectSwitcher({
     <DropdownMenu open={popoverOpen} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         render={
-          compact ? (
-            // A quill Button so height/radius/padding match the sibling
-            // title-bar buttons exactly; a small avatar stands in for an icon.
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Account, project and settings"
-              className="no-drag gap-1.5"
-            >
-              {/* Shrink the avatar below the button height so it sits with the
-                  same breathing room as the sibling buttons' 14px icons. */}
-              <UserAvatar user={currentUser} size="xs" className="size-4!" />
-              {currentProject?.name ?? "No project"}
-            </Button>
-          ) : (
-            <Item
-              size="xs"
-              className="border-border hover:bg-fill-hover aria-expanded:bg-fill-active"
-            >
-              <ItemContent className="select-none gap-0">
-                <ItemTitle>
-                  {currentProject?.name ?? "No project selected"}
-                </ItemTitle>
-                <ItemDescription className="text-[11px]">
-                  {currentUser?.email ?? "No email"}
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <ChevronRightIcon className="size-4 rotate-270 group-aria-expanded/item:rotate-90" />
-              </ItemActions>
-            </Item>
-          )
+          <Item
+            size="xs"
+            className="border-border hover:bg-fill-hover aria-expanded:bg-fill-active"
+          >
+            <ItemContent className="select-none gap-0">
+              <ItemTitle>
+                {currentProject?.name ?? "No project selected"}
+              </ItemTitle>
+              <ItemDescription className="text-[11px]">
+                {currentUser?.email ?? "No email"}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <ChevronRightIcon className="size-4 rotate-270 group-aria-expanded/item:rotate-90" />
+            </ItemActions>
+          </Item>
         }
       />
 
       <DropdownMenuContent
-        align={compact ? "end" : "start"}
+        align="start"
         side="bottom"
-        className={
-          compact
-            ? "w-64 pt-0"
-            : "w-(--anchor-width) max-w-(--anchor-width) pt-0"
-        }
-        sideOffset={compact ? 6 : 4}
+        className="w-(--anchor-width) max-w-(--anchor-width) pt-0"
+        sideOffset={4}
       >
         <Box>
           <Box className="-mx-1 mb-1 border-border border-b">

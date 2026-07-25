@@ -178,7 +178,6 @@ function ArtifactListRow({
   );
 }
 
-// PR row: live state + comment count from GitHub; opens the diff in the review pane.
 function PrRow({ url, taskId }: { url: string; taskId: string }) {
   const parsed = parseHttpsUrl(url);
   const safeUrl = parsed?.origin === "https://github.com" ? parsed.href : null;

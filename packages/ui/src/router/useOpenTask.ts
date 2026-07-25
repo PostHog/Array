@@ -116,12 +116,9 @@ export function openTaskInput(
         : undefined,
     },
   });
-  // In the channels layout everything you create belongs to the channel you're
-  // in, so every entry point (⌘N, the command menu, the sidebar "+") lands on
-  // that channel's new-task screen rather than an unscoped one. A current
-  // channel only exists while that layout is active — ChannelsSidebar sets it
-  // under the flag and clears it when the flag goes off — so this is gated on
-  // the flag without having to thread it through every caller.
+  // In the channels layout every entry point (⌘N, the command menu, the "+")
+  // creates inside the channel you're in. A current channel only exists while
+  // that layout is on (ChannelsSidebar), so this needs no flag of its own.
   const currentChannelId = useCurrentChannelStore.getState().currentChannelId;
   if (currentChannelId) {
     nav.navigateToChannelNewTask(currentChannelId);

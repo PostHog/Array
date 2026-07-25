@@ -14,8 +14,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
-// Star/unstar the channel from its header — the feed-side counterpart to the
-// switcher's hover star.
+// The feed-side counterpart to the switcher's hover star.
 function ChannelStarButton({ channel }: { channel: Channel }) {
   const { isStarred, toggleStar } = useChannelStarToggle(channel);
   return (
@@ -41,9 +40,8 @@ function ChannelStarButton({ channel }: { channel: Channel }) {
   );
 }
 
-// The shared channel header: a clickable "# channel" routing to the channel
-// home, plus a star toggle. The new layout drops the section tab strip (the
-// channel sidebar carries those entries); flag off keeps the strip as before.
+// The shared channel header. The new layout drops the section tab strip — the
+// channel sidebar carries those entries — while flag off keeps it.
 export function ChannelHeader({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const channelsLayout = useChannelsLayout();

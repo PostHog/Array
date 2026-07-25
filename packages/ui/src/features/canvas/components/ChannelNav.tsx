@@ -26,9 +26,8 @@ import { useMemo } from "react";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
-// Inbox/activity counts read as unread (red); the command center's filled cells
-// are ambient, so they stay neutral. Sits proud of the button corner the way a
-// notification badge does, which the row's gap leaves room for.
+// Unread counts read red; the command center's filled cells are ambient, so
+// they stay neutral.
 function IconBadge({
   count,
   tone = "notification",
@@ -51,7 +50,6 @@ function IconBadge({
   );
 }
 
-/** One global destination as a bare icon button; the tooltip names it. */
 function NavIcon({
   icon,
   label,
@@ -88,10 +86,8 @@ function NavIcon({
 }
 
 /**
- * The channel-scoped global destinations — Inbox, Activity, Command Center — as
- * a single row of icon buttons above the channel switcher. Search lives in the
- * title bar next to the history controls, and New task sits under the switcher
- * since it acts on the current channel.
+ * Global destinations above the channel switcher. Search lives in the title
+ * bar, and New task under the switcher, since it acts on the current channel.
  */
 export function ChannelNav() {
   const view = useAppView();
@@ -106,8 +102,7 @@ export function ChannelNav() {
     () => countUnseenActivity(activityItems, lastSeenAt),
     [activityItems, lastSeenAt],
   );
-  // Command Center lives in the /website space here; its filled grid cells are
-  // the ambient "how much is parked in there" count.
+  // Its filled grid cells are the ambient "how much is parked there" count.
   const commandCenterCells = useCommandCenterStore((s) => s.cells);
   const commandCenterCount = commandCenterCells.filter((c) => c != null).length;
 

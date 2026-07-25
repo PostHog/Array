@@ -25,10 +25,6 @@ import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import type { buildConversationItems } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { Fragment, type ReactNode, useMemo } from "react";
 
-// Avatar-column center: row padding (0.5rem) + gutter (2.5rem) − half the lg
-// avatar (2.35rem). The rail sits here so event rows align with message avatars.
-const RAIL_LEFT = "1.825rem";
-
 type ConversationItem = ReturnType<
   typeof buildConversationItems
 >["items"][number];
@@ -258,8 +254,9 @@ export function ActivityTimeline({
     <div className="relative">
       <div
         aria-hidden
-        className="pointer-events-none absolute top-4 bottom-4 w-px bg-border"
-        style={{ left: RAIL_LEFT }}
+        // left = row padding (0.5rem) + gutter (2.5rem) − half the lg avatar
+        // (2.35rem), so the rail lines up with the message avatars.
+        className="pointer-events-none absolute top-4 bottom-4 left-[1.825rem] w-px bg-border"
       />
       <div className="relative z-10">
         <ThreadItemGroup>

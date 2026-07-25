@@ -73,10 +73,9 @@ export function GlobalEventHandlers({
   const sidebarData = useSidebarData({ activeView: view });
   const visualTaskOrder = useVisualTaskOrder(sidebarData);
 
-  // With channels on, mod+1-9 belongs to the browser tab strip (it switches to
-  // the Nth tab); in the new layout mod+1-4 belongs to starred channels
-  // (ChannelSwitcher). Yield those keys so task-switching only owns them in
-  // the Code nav.
+  // mod+N belongs to the browser tab strip with channels on, and to the
+  // starred channels in the new layout (ChannelSwitcher), so task-switching
+  // only owns those keys in the Code nav.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
