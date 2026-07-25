@@ -1,5 +1,5 @@
-import { ArchiveIcon } from "@phosphor-icons/react";
-import { Separator } from "@posthog/quill";
+import { ArchiveIcon, GearSixIcon } from "@phosphor-icons/react";
+import { Button, Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
@@ -7,10 +7,13 @@ import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsLis
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
 import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
+import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
 import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
@@ -28,7 +31,7 @@ import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
 import { useParams } from "@tanstack/react-router";
-import { useDeferredValue, useEffect } from "react";
+import { useDeferredValue, useEffect, useRef } from "react";
 
 // The unified app sidebar (Code merged into the Bluebird chrome). Top to
 // bottom: workspace switcher, the merged global nav, the "Enable channels"
@@ -105,6 +108,23 @@ export function ChannelsSidebar() {
   }, [routeChannelId, setCurrentChannel]);
   const inSpace = channelsEnabled && currentChannelId != null;
 
+  // The personal "#me" space is the default: on first load with nothing
+  // scoped, land there. Once any space has been current (including via the
+  // route), never auto-scope again — "Show channel list" (null) must stick.
+  const { channels } = useChannels({ enabled: channelsEnabled });
+  const autoScopedRef = useRef(false);
+  useEffect(() => {
+    if (currentChannelId) autoScopedRef.current = true;
+  }, [currentChannelId]);
+  useEffect(() => {
+    if (!channelsEnabled || autoScopedRef.current || currentChannelId) return;
+    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+    if (me) {
+      autoScopedRef.current = true;
+      setCurrentChannel(me.id);
+    }
+  }, [channelsEnabled, channels, currentChannelId, setCurrentChannel]);
+
   return (
     <ResizableSidebar
       open={open}
@@ -177,10 +197,27 @@ export function ChannelsSidebar() {
             whenever channels are on so the landing shows the dot row too. */}
         {channelsEnabled && <SpaceDots />}
 
-        {/* Workspace switcher pinned to the bottom. Its dropdown carries the
-            Settings entry, so there's no separate Settings row. */}
+        {/* Workspace switcher pinned to the bottom. In spaces mode a Configure
+            gear sits beside it (per the mockup); otherwise its dropdown still
+            carries the Settings entry. */}
         <Box className="shrink-0 px-2 pb-2">
-          <ProjectSwitcher />
+          {channelsEnabled ? (
+            <Flex align="center" gap="1">
+              <Button
+                variant="default"
+                size="icon-sm"
+                aria-label="Settings"
+                onClick={() => openSettings()}
+              >
+                <GearSixIcon size={14} />
+              </Button>
+              <Box className="min-w-0 flex-1">
+                <ProjectSwitcher />
+              </Box>
+            </Flex>
+          ) : (
+            <ProjectSwitcher />
+          )}
         </Box>
       </Flex>
     </ResizableSidebar>
