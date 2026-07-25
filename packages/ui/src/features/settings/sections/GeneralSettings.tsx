@@ -7,6 +7,7 @@ import {
   COLLAPSE_MODE_OPTIONS,
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import { SettingsBackupControls } from "@posthog/ui/features/settings/components/SettingsBackupControls";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
@@ -246,6 +247,13 @@ export function GeneralSettings() {
           </Button>
         </SettingRow>
       )}
+
+      <SettingRow
+        label="Settings backup"
+        description="Export your portable preferences and custom notification sounds, or import them on another machine. Credentials and local repository history are excluded."
+      >
+        <SettingsBackupControls />
+      </SettingRow>
 
       {/* Appearance */}
       <Text className="mb-2 pt-4 font-medium text-sm">Appearance</Text>

@@ -25,6 +25,7 @@
     "@posthog/platform": "workspace:*",
     "@posthog/shared": "workspace:*",
     "@posthog/workspace-client": "workspace:*",
+    "fflate": "^0.8.2",
     "fuse.js": "^7.1.0",
     "inversify": "catalog:",
     "reflect-metadata": "catalog:",

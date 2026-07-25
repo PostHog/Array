@@ -828,6 +828,9 @@ importers:
       '@posthog/workspace-client':
         specifier: workspace:*
         version: link:../workspace-client
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       fuse.js:
         specifier: ^7.1.0
         version: 7.1.0
