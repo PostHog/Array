@@ -396,6 +396,25 @@ function RootLayout() {
             </Flex>
             {(localWorkspaces || channelsLayout) && (
               <Flex align="center" gap="2" className="no-drag">
+                {/* Search rides the title bar rather than the sidebar nav —
+                    it's chrome, not a destination — and leads the history
+                    controls so those stay against the sidebar edge. */}
+                {channelsLayout && (
+                  <Tooltip
+                    content="Search"
+                    shortcut={formatHotkey(SHORTCUTS.COMMAND_MENU)}
+                    side="bottom"
+                  >
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Search"
+                      onClick={toggleCommandMenu}
+                    >
+                      <MagnifyingGlass size={14} />
+                    </Button>
+                  </Tooltip>
+                )}
                 {localWorkspaces && (
                   <ButtonGroup className="no-drag">
                     <Button
@@ -417,25 +436,6 @@ function RootLayout() {
                       <CaretRightIcon size={14} />
                     </Button>
                   </ButtonGroup>
-                )}
-                {/* Search rides the title bar beside the history controls
-                    rather than the sidebar nav — it's chrome, not a
-                    destination. */}
-                {channelsLayout && (
-                  <Tooltip
-                    content="Search"
-                    shortcut={formatHotkey(SHORTCUTS.COMMAND_MENU)}
-                    side="bottom"
-                  >
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label="Search"
-                      onClick={toggleCommandMenu}
-                    >
-                      <MagnifyingGlass size={14} />
-                    </Button>
-                  </Tooltip>
                 )}
               </Flex>
             )}
