@@ -8,6 +8,10 @@ import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/
 import { NewSpaceDraft } from "@posthog/ui/features/canvas/components/NewSpaceDraft";
 import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
 import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
+import {
+  useChannelStarMutations,
+  useChannelStars,
+} from "@posthog/ui/features/canvas/hooks/useChannelStars";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useSpaceSwipe } from "@posthog/ui/features/canvas/hooks/useSpaces";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
@@ -107,9 +111,38 @@ export function ChannelsSidebar() {
   const setCurrentChannel = useSpaceStore((s) => s.setCurrentChannel);
   const browsing = useSpaceStore((s) => s.browsing);
   const draftSpace = useSpaceStore((s) => s.draftSpace);
+  const { channels } = useChannels({ enabled: channelsEnabled });
+  const { starredRefToShortcutId } = useChannelStars({
+    enabled: channelsEnabled,
+  });
+  const { star } = useChannelStarMutations();
   useEffect(() => {
-    if (routeChannelId) setCurrentChannel(routeChannelId);
-  }, [routeChannelId, setCurrentChannel]);
+    if (!routeChannelId) return;
+    // Read the store fresh: setCurrentChannel clears `browsing` below, so the
+    // closure value would already be stale. Picking a channel from the
+    // all-channels browse list adopts it as a pinned space (a permanent dot),
+    // not just a transient visit.
+    const wasBrowsing = useSpaceStore.getState().browsing;
+    setCurrentChannel(routeChannelId);
+    if (wasBrowsing) {
+      const channel = channels.find((c) => c.id === routeChannelId);
+      if (
+        channel &&
+        channel.name !== PERSONAL_CHANNEL_NAME &&
+        !starredRefToShortcutId.has(channel.path)
+      ) {
+        star(channel).catch(() => {
+          // Non-fatal: the space still opens, it just isn't pinned.
+        });
+      }
+    }
+  }, [
+    routeChannelId,
+    setCurrentChannel,
+    channels,
+    starredRefToShortcutId,
+    star,
+  ]);
   const inSpace =
     channelsEnabled && currentChannelId != null && !browsing && !draftSpace;
 
@@ -132,7 +165,6 @@ export function ChannelsSidebar() {
   // The personal "#me" space is the default: on first load with nothing
   // scoped, land there. Once any space has been current (including via the
   // route), never auto-scope again, so the pickers can't be hijacked.
-  const { channels } = useChannels({ enabled: channelsEnabled });
   const autoScopedRef = useRef(false);
   useEffect(() => {
     if (currentChannelId) autoScopedRef.current = true;
