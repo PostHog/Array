@@ -27,6 +27,7 @@ import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadC
 import { useSpaceEmojiStore } from "@posthog/ui/features/canvas/stores/spaceEmojiStore";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { toast } from "@posthog/ui/primitives/toast";
+import { useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 
@@ -188,6 +189,7 @@ function SpaceDot({
  * swipes cycle spaces.
  */
 export function SpaceDots() {
+  const navigate = useNavigate();
   const { spaces, currentChannelId, switchTo, cycle } = useSpaces();
   const { channels } = useChannels();
   const { createChannel } = useChannelMutations();
@@ -215,6 +217,24 @@ export function SpaceDots() {
   const hasMe = spaces.some((c) => c.name === PERSONAL_CHANNEL_NAME);
   const overrideOpen = browsing || draftSpace;
 
+  // The "#" directory is a preview: while it's open the sidebar lists every
+  // channel and clicking one just shows its activity in the main view. Closing
+  // it returns to the current space (or the landing) so the preview leaves no
+  // trace — no space scoped, nothing pinned.
+  const toggleBrowsing = () => {
+    if (!browsing) {
+      setBrowsing(true);
+      return;
+    }
+    const current = channels.find((c) => c.id === currentChannelId);
+    if (current) {
+      switchTo(current);
+    } else {
+      setBrowsing(false);
+      void navigate({ to: "/website" });
+    }
+  };
+
   // Open (creating on first use) the personal space — only needed while the
   // "#me" channel doesn't exist yet; afterwards it's a regular dot.
   const openPersonalSpace = () => {
@@ -239,7 +259,7 @@ export function SpaceDots() {
                 type="button"
                 aria-label="All channels"
                 aria-pressed={browsing}
-                onClick={() => setBrowsing(!browsing)}
+                onClick={toggleBrowsing}
                 className={cn(
                   RAIL_BUTTON_CLASS,
                   browsing && "bg-gray-3 text-gray-12",

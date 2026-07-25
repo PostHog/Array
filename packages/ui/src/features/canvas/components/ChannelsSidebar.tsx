@@ -8,10 +8,6 @@ import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/
 import { NewSpaceDraft } from "@posthog/ui/features/canvas/components/NewSpaceDraft";
 import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
 import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
-import {
-  useChannelStarMutations,
-  useChannelStars,
-} from "@posthog/ui/features/canvas/hooks/useChannelStars";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useSpaceSwipe } from "@posthog/ui/features/canvas/hooks/useSpaces";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
@@ -112,44 +108,21 @@ export function ChannelsSidebar() {
   const browsing = useSpaceStore((s) => s.browsing);
   const draftSpace = useSpaceStore((s) => s.draftSpace);
   const { channels } = useChannels({ enabled: channelsEnabled });
-  const { starredRefToShortcutId } = useChannelStars({
-    enabled: channelsEnabled,
-  });
-  const { star } = useChannelStarMutations();
   useEffect(() => {
     if (!routeChannelId) return;
-    // Read the store fresh: setCurrentChannel clears `browsing` below, so the
-    // closure value would already be stale. Picking a channel from the
-    // all-channels browse list adopts it as a pinned space (a permanent dot),
-    // not just a transient visit.
-    const wasBrowsing = useSpaceStore.getState().browsing;
+    // Browsing the all-channels list is a preview: clicking a channel shows its
+    // activity in the main view but keeps the directory open in the sidebar and
+    // does NOT scope to (or pin) it. Only non-browse navigation (a dot, a deep
+    // link, in-space nav) adopts a channel as the current space.
+    if (useSpaceStore.getState().browsing) return;
     setCurrentChannel(routeChannelId);
-    if (wasBrowsing) {
-      const channel = channels.find((c) => c.id === routeChannelId);
-      if (
-        channel &&
-        channel.name !== PERSONAL_CHANNEL_NAME &&
-        !starredRefToShortcutId.has(channel.path)
-      ) {
-        star(channel).catch(() => {
-          // Non-fatal: the space still opens, it just isn't pinned.
-        });
-      }
-    }
-  }, [
-    routeChannelId,
-    setCurrentChannel,
-    channels,
-    starredRefToShortcutId,
-    star,
-  ]);
+  }, [routeChannelId, setCurrentChannel]);
   const inSpace =
     channelsEnabled && currentChannelId != null && !browsing && !draftSpace;
 
-  // Any navigation while a picker override is open dismisses it — the user
-  // moved somewhere, so the picker's moment has passed. This also covers
-  // re-selecting the channel you're already in (the route doesn't change, so
-  // the sync effect above never fires).
+  // Leaving the channels world (navigating to a non-channel route) closes the
+  // pickers. Previewing a channel from the browse list keeps the directory
+  // open, so a navigation that lands on a channel route is left alone.
   const historyIndex = useRouterState({
     select: (s) => s.location.state.__TSR_index,
   });
@@ -157,10 +130,11 @@ export function ChannelsSidebar() {
   useEffect(() => {
     if (prevHistoryIndexRef.current === historyIndex) return;
     prevHistoryIndexRef.current = historyIndex;
+    if (routeChannelId) return;
     const state = useSpaceStore.getState();
     if (state.browsing) state.setBrowsing(false);
     if (state.draftSpace) state.setDraftSpace(false);
-  }, [historyIndex]);
+  }, [historyIndex, routeChannelId]);
 
   // The personal "#me" space is the default: on first load with nothing
   // scoped, land there. Once any space has been current (including via the
