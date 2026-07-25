@@ -99,6 +99,9 @@ export function SidebarItem({
         "group flex w-full cursor-default text-left text-[13px] leading-snug transition-colors",
         "focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-8",
         "disabled:opacity-100 data-active:bg-fill-selected data-selected:bg-(--gray-3)",
+        // Quill's Button pins a fixed single-line height, which would clip the
+        // second line — opt out and grow with the content instead.
+        subtitle && "h-auto! min-h-7 py-1",
         isDimmed && "opacity-50",
       )}
       data-active={isActive || undefined}
@@ -130,7 +133,7 @@ export function SidebarItem({
           {endContent}
         </span>
         {subtitle ? (
-          <span className="truncate text-gray-10 group-data-active:text-gray-11">
+          <span className="truncate text-[11px] text-gray-10 leading-tight group-data-active:text-gray-11">
             {subtitle}
           </span>
         ) : null}
