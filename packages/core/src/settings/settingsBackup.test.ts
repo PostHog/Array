@@ -60,4 +60,37 @@ describe("settings backup", () => {
       "Settings archive contains an unexpected file",
     );
   });
+
+  it("rejects repeated references to the same sound file", () => {
+    const manifest = {
+      format: "posthog-code-settings",
+      version: 1,
+      exportedAt: "2026-07-25T00:00:00.000Z",
+      categories: {},
+      sounds: [
+        {
+          id: "first",
+          name: "First",
+          durationMs: 100,
+          file: "sounds/shared.webm",
+          mimeType: "audio/webm",
+        },
+        {
+          id: "second",
+          name: "Second",
+          durationMs: 100,
+          file: "sounds/shared.webm",
+          mimeType: "audio/webm",
+        },
+      ],
+    };
+    const bytes = zipSync({
+      "manifest.json": strToU8(JSON.stringify(manifest)),
+      "sounds/shared.webm": new Uint8Array([1, 2, 3]),
+    });
+
+    expect(() => parseSettingsBackup(bytes)).toThrow(
+      "Settings archive contains duplicate sound references",
+    );
+  });
 });

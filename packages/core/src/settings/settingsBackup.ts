@@ -284,7 +284,14 @@ export function parseSettingsBackup(bytes: Uint8Array): ParsedSettingsBackup {
     JSON.parse(new TextDecoder().decode(rawManifest)),
   );
   const soundDataUrls: Record<string, string> = {};
+  const soundIds = new Set<string>();
+  const soundFiles = new Set<string>();
   for (const sound of manifest.sounds) {
+    if (soundIds.has(sound.id) || soundFiles.has(sound.file)) {
+      throw new Error("Settings archive contains duplicate sound references");
+    }
+    soundIds.add(sound.id);
+    soundFiles.add(sound.file);
     const soundBytes = files[sound.file];
     if (!soundBytes)
       throw new Error(`Settings archive is missing ${sound.file}`);
