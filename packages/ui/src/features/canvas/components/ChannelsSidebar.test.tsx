@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   archivedTaskIds: new Set<string>(),
   navigateToArchived: vi.fn(),
   track: vi.fn(),
+  routeChannelId: undefined as string | undefined,
 }));
 
 vi.mock("@posthog/ui/shell/analytics", () => ({
@@ -73,7 +74,9 @@ vi.mock("@posthog/ui/features/loops/components/LoopsPromoCard", () => ({
 vi.mock("@posthog/ui/features/workspace/useWorkspace", () => ({
   useWorkspaces: () => ({ data: {}, isFetched: true }),
 }));
-vi.mock("@tanstack/react-router", () => ({ useParams: () => ({}) }));
+vi.mock("@tanstack/react-router", () => ({
+  useParams: () => ({ channelId: mocks.routeChannelId }),
+}));
 
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -100,6 +103,7 @@ describe("ChannelsSidebar", () => {
     mocks.channelsLoading = false;
     mocks.archivedTaskIds = new Set();
     mocks.track.mockClear();
+    mocks.routeChannelId = undefined;
     useCurrentChannelStore.setState({ currentChannelId: null });
     useSidebarStore.setState({ channelsEnabled: false, open: true });
   });
@@ -142,6 +146,16 @@ describe("ChannelsSidebar", () => {
   });
 
   describe("auto-scoping to #me", () => {
+    it("keeps a deep-linked channel instead of overwriting it with #me", () => {
+      mocks.channelsLayout = true;
+      mocks.channels = [ME, { id: "eng-id", name: "eng", path: "/eng" }];
+      mocks.routeChannelId = "eng-id";
+
+      renderSidebar();
+
+      expect(useCurrentChannelStore.getState().currentChannelId).toBe("eng-id");
+    });
+
     it("scopes to the personal channel once the list lands", () => {
       mocks.channelsLayout = true;
       mocks.channels = [ME];

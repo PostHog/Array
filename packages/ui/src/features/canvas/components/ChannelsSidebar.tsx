@@ -142,12 +142,22 @@ export function ChannelsSidebar() {
       autoScopedRef.current = false;
       return;
     }
-    if (autoScopedRef.current || currentChannelId) return;
+    // A route-scoped channel wins over the default. Both effects run from the
+    // same render on a cold deep link, so without this guard the route effect
+    // writes its channel and this later effect immediately overwrites it with
+    // #me using the stale `currentChannelId` captured by that render.
+    if (routeChannelId || autoScopedRef.current || currentChannelId) return;
     const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
     if (!me) return;
     autoScopedRef.current = true;
     setCurrentChannel(me.id);
-  }, [channelsLayout, channels, currentChannelId, setCurrentChannel]);
+  }, [
+    channelsLayout,
+    channels,
+    currentChannelId,
+    routeChannelId,
+    setCurrentChannel,
+  ]);
 
   return (
     <ResizableSidebar

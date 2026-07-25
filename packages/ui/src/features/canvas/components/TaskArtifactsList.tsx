@@ -166,6 +166,7 @@ function ArtifactListRow({
 function PrRow({ url, taskId }: { url: string; taskId: string }) {
   const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
   const setReviewMode = useReviewNavigationStore((s) => s.setReviewMode);
+  const setSelectedPrUrl = useReviewNavigationStore((s) => s.setSelectedPrUrl);
 
   // Comment counts cost two extra round trips per row on top of the PR state,
   // and a task with several runs renders several rows — so they're fetched only
@@ -200,7 +201,14 @@ function PrRow({ url, taskId }: { url: string; taskId: string }) {
       title={title}
       detail={detailParts.join(" · ") || null}
       onHoverStart={() => setCountsWanted(true)}
-      onOpen={() => setReviewMode(taskId, "split")}
+      onOpen={
+        safeUrl
+          ? () => {
+              setSelectedPrUrl(taskId, safeUrl);
+              setReviewMode(taskId, "split");
+            }
+          : undefined
+      }
     />
   );
 }

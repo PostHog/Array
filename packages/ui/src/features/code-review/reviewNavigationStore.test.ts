@@ -7,8 +7,25 @@ describe("reviewNavigationStore", () => {
       activeFilePaths: {},
       scrollRequests: {},
       reviewModes: {},
+      selectedPrUrls: {},
       commentFileFilters: {},
     });
+  });
+
+  it("keeps a selected PR until the review closes", () => {
+    const store = useReviewNavigationStore.getState();
+    store.setSelectedPrUrl("task-1", "https://github.com/acme/repo/pull/2");
+    store.setReviewMode("task-1", "split");
+
+    expect(useReviewNavigationStore.getState().selectedPrUrls["task-1"]).toBe(
+      "https://github.com/acme/repo/pull/2",
+    );
+
+    store.setReviewMode("task-1", "closed");
+
+    expect(
+      useReviewNavigationStore.getState().selectedPrUrls["task-1"],
+    ).toBeUndefined();
   });
 
   it("clears the comment filter when navigating to a file", () => {
