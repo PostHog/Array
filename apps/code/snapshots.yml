@@ -656,6 +656,10 @@ snapshots:
         hash: v1.k4693efd2.652a862f983b5a26fdae2db7ddbeb3a010b40c6aa60838b3d78b1e5bfb34461a.9lntiWhIQkA0nsv4Gv_lCuuaMRv3AT-iSRtLI4_Cmqc
     sessions-sessionresourcesbar--with-non-clickable-chip--light:
         hash: v1.k4693efd2.078d4821b28831de54cba9c531d9985735a4860b4a5ebbe91e4e4ed25777c9e8.YUdnyHcXhnJ14FbUyBQzQysd6QVAwACJ9b_PO4UyBeQ
+    settings-generalsettings--default--dark:
+        hash: v1.k4693efd2.13706266c98505cf5999b4e1d1c887013791bf488fb9f6e0a0950b27566556f8.EEvZvMhz6R300-ZV3D03xde94sSEm6Sozr4U9E30XAU
+    settings-generalsettings--default--light:
+        hash: v1.k4693efd2.4d9d1e6bb5f67845b6d5a9f409d3ed491f57f71b49df3e72540cb96cc304dce3.40yKs7tdaCGKxVPX59xxVw9qErvdn6FXLW4DlYLkLOc
     settings-personalizationsettings--default--dark:
         hash: v1.k4693efd2.83f056d4ca47fa1c4b73848fa2fc5347e9f11511deb8a0fe901df03798d7784b.K4R_ibHfGDOhnHGKn0NqsozWJyjmu6s16QCCzuyUybY
     settings-personalizationsettings--default--light:
