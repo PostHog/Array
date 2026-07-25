@@ -69,7 +69,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
           {channelName ?? "Channel"}
         </Text>
       </Button>
-      {channel && channel.name !== PERSONAL_CHANNEL_NAME && (
+      {channelsLayout && channel && channel.name !== PERSONAL_CHANNEL_NAME && (
         <ChannelStarButton channel={channel} />
       )}
       {!channelsLayout && <ChannelTabs channelId={channelId} />}

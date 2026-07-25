@@ -5,6 +5,7 @@ export const useChannelsSidebarStore = createSidebarStore({
   name: "channels-sidebar",
   defaultWidth: SIDEBAR_MIN_WIDTH,
   // Also re-clamps the legacy Code width adopted by the migration below.
+  // The channels layout raises the floor further, at runtime (ChannelsSidebar).
   minWidth: SIDEBAR_MIN_WIDTH,
 });
 

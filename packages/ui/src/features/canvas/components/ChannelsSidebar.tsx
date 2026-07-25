@@ -18,6 +18,7 @@ import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/Project
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
 import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
+import { CHANNELS_SIDEBAR_MIN_WIDTH } from "@posthog/ui/features/sidebar/constants";
 import {
   beginSidebarPeek,
   cancelSidebarPeek,
@@ -90,6 +91,16 @@ export function ChannelsSidebar() {
   // mounts a provider-laden row per channel) swaps in.
   const bodyChannelsWorld = useDeferredValue(channelsWorld);
 
+  // The channels layout's title bar needs more room than the shared floor, so
+  // it raises the minimum here rather than in the constant — leaving the width
+  // of everyone on the old layout untouched.
+  const minWidth = channelsLayout ? CHANNELS_SIDEBAR_MIN_WIDTH : undefined;
+  useEffect(() => {
+    if (channelsLayout && width < CHANNELS_SIDEBAR_MIN_WIDTH) {
+      setWidth(CHANNELS_SIDEBAR_MIN_WIDTH);
+    }
+  }, [channelsLayout, width, setWidth]);
+
   const archivedTaskIds = useArchivedTaskIds();
 
   // The route is the source of truth: a /website/$channelId page adopts that
@@ -134,6 +145,7 @@ export function ChannelsSidebar() {
       isResizing={isResizing}
       setIsResizing={setIsResizing}
       side="left"
+      minWidth={minWidth}
       setOpen={setOpen}
       peek={peek}
       onPeekEnter={beginSidebarPeek}
