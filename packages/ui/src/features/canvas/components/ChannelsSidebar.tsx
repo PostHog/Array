@@ -140,7 +140,7 @@ export function ChannelsSidebar() {
         {/* active channel → channel list → tasks */}
         {inChannel && currentChannelId ? (
           <>
-            <ChannelNav channelId={currentChannelId} />
+            <ChannelNav />
             <Separator />
             <Box className="min-h-0 flex-1 overflow-hidden">
               <ChannelSidebar channelId={currentChannelId} />

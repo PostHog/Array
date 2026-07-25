@@ -2,6 +2,7 @@ import {
   ArrowSquareOut,
   CaretLeftIcon,
   CaretRightIcon,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button, ButtonGroup } from "@posthog/quill";
@@ -34,6 +35,10 @@ import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannels
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
 import { GlobalFilePicker } from "@posthog/ui/features/command/GlobalFilePicker";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
+import {
+  formatHotkey,
+  SHORTCUTS,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
 import { ConnectivityBanner } from "@posthog/ui/features/connectivity/ConnectivityBanner";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
 import { useOpenTargetDeepLink } from "@posthog/ui/features/deep-links/useOpenTargetDeepLink";
@@ -59,6 +64,7 @@ import { UpdateAvailableModal } from "@posthog/ui/features/updates/UpdateAvailab
 import { WhatsNewModal } from "@posthog/ui/features/updates/WhatsNewModal";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
@@ -388,28 +394,49 @@ function RootLayout() {
                 )}
               </Button>
             </Flex>
-            {localWorkspaces && (
+            {(localWorkspaces || channelsLayout) && (
               <Flex align="center" gap="2" className="no-drag">
-                <ButtonGroup className="no-drag">
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label="Back"
-                    disabled={!canGoBack}
-                    onClick={() => router.history.back()}
+                {localWorkspaces && (
+                  <ButtonGroup className="no-drag">
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Back"
+                      disabled={!canGoBack}
+                      onClick={() => router.history.back()}
+                    >
+                      <CaretLeftIcon size={14} />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Forward"
+                      disabled={!canGoForward}
+                      onClick={() => router.history.forward()}
+                    >
+                      <CaretRightIcon size={14} />
+                    </Button>
+                  </ButtonGroup>
+                )}
+                {/* Search rides the title bar beside the history controls
+                    rather than the sidebar nav — it's chrome, not a
+                    destination. */}
+                {channelsLayout && (
+                  <Tooltip
+                    content="Search"
+                    shortcut={formatHotkey(SHORTCUTS.COMMAND_MENU)}
+                    side="bottom"
                   >
-                    <CaretLeftIcon size={14} />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label="Forward"
-                    disabled={!canGoForward}
-                    onClick={() => router.history.forward()}
-                  >
-                    <CaretRightIcon size={14} />
-                  </Button>
-                </ButtonGroup>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Search"
+                      onClick={toggleCommandMenu}
+                    >
+                      <MagnifyingGlass size={14} />
+                    </Button>
+                  </Tooltip>
+                )}
               </Flex>
             )}
           </Flex>

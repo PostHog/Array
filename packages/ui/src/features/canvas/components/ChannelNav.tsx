@@ -1,11 +1,6 @@
-import {
-  BellIcon,
-  EnvelopeSimple,
-  Lightning,
-  MagnifyingGlass,
-} from "@phosphor-icons/react";
+import { BellIcon, EnvelopeSimple, Lightning } from "@phosphor-icons/react";
 import { countUnseenActivity } from "@posthog/core/canvas/mentionActivity";
-import { cn, Separator } from "@posthog/quill";
+import { cn } from "@posthog/quill";
 import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
@@ -18,39 +13,23 @@ import {
 } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
-import { NewTaskItem } from "@posthog/ui/features/sidebar/components/items/NewTaskItem";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import {
   navigateToActivity,
-  navigateToChannelNewTask,
   navigateToInbox,
   navigateToWebsiteCommandCenter,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
-import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
-import { useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useMemo } from "react";
+import type { ReactNode } from "react";
+import { useMemo } from "react";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
-/*
- * Landscape pills in a 2x2 rather than a row of squares: a square small enough
- * to fit four across SIDEBAR_MIN_WIDTH leaves ~44px of caption, which truncates
- * the longest label ("Command Center" → "Comm…"). Segmented-control practice is
- * to size every cell to the longest label and keep labels to one or two words,
- * so the cells run landscape at a legible 11px and the label is abbreviated to
- * "Command" — the tooltip carries the full name.
- *
- * Width is fixed, not fluid: two 104px pills plus the gap come to 214px, inside
- * the 224px that SIDEBAR_MIN_WIDTH leaves after padding, and they stay that size
- * as the sidebar widens instead of ballooning.
- */
-const PILL_WIDTH_CLASS = "w-[104px]";
-
 // Inbox/activity counts read as unread (red); the command center's filled cells
-// are ambient, so they stay neutral.
-function PillBadge({
+// are ambient, so they stay neutral. Sits proud of the button corner the way a
+// notification badge does, which the row's gap leaves room for.
+function IconBadge({
   count,
   tone = "notification",
 }: {
@@ -61,7 +40,7 @@ function PillBadge({
   return (
     <span
       className={cn(
-        "ml-auto inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full px-1 font-semibold text-[9px] tabular-nums leading-none",
+        "-top-1 -right-1 absolute inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 font-semibold text-[9px] tabular-nums leading-none ring-2 ring-chrome",
         tone === "notification"
           ? "bg-(--red-9) text-white"
           : "bg-gray-5 text-gray-11",
@@ -72,15 +51,10 @@ function PillBadge({
   );
 }
 
-/**
- * One global destination. The selected state layers a fill with brighter text
- * rather than relying on colour alone, and the tooltip carries the full name
- * plus shortcut — which is what `label` is abbreviated from.
- */
-function NavPill({
+/** One global destination as a bare icon button; the tooltip names it. */
+function NavIcon({
   icon,
   label,
-  fullLabel,
   shortcut,
   isActive,
   onClick,
@@ -88,38 +62,25 @@ function NavPill({
 }: {
   icon: ReactNode;
   label: string;
-  fullLabel?: string;
   shortcut?: string;
   isActive: boolean;
   onClick: () => void;
   badge?: ReactNode;
 }) {
-  const name = fullLabel ?? label;
   return (
-    <Tooltip content={name} shortcut={shortcut} side="bottom">
+    <Tooltip content={label} shortcut={shortcut} side="bottom">
       <button
         type="button"
-        aria-label={name}
+        aria-label={label}
         onClick={onClick}
         className={cn(
-          PILL_WIDTH_CLASS,
-          "flex h-8 items-center gap-2 rounded-lg px-2 text-left transition-colors duration-100",
+          "relative flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-100",
           isActive
             ? "bg-fill-selected text-gray-12"
             : "bg-gray-3 text-gray-11 hover:bg-gray-4 hover:text-gray-12",
         )}
       >
-        <span className="flex shrink-0 items-center justify-center">
-          {icon}
-        </span>
-        <span
-          className={cn(
-            "min-w-0 truncate text-[11px]",
-            isActive ? "font-semibold" : "font-medium",
-          )}
-        >
-          {label}
-        </span>
+        {icon}
         {badge}
       </button>
     </Tooltip>
@@ -127,14 +88,13 @@ function NavPill({
 }
 
 /**
- * The channel-scoped global nav: a 2x2 launcher for Search / Inbox / Activity /
- * Command Center, then New task below a rule — New task is an action on the
- * current channel, not one of the global destinations.
+ * The channel-scoped global destinations — Inbox, Activity, Command Center — as
+ * a single row of icon buttons above the channel switcher. Search lives in the
+ * title bar next to the history controls, and New task sits under the switcher
+ * since it acts on the current channel.
  */
-export function ChannelNav({ channelId }: { channelId: string }) {
+export function ChannelNav() {
   const view = useAppView();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const openCommandMenu = useCommandMenuStore((s) => s.open);
 
   const { counts } = useInboxAllReports({
     ignoreFilters: true,
@@ -160,53 +120,31 @@ export function ChannelNav({ channelId }: { channelId: string }) {
   const isCommandCenter = view.type === "command-center";
 
   return (
-    <div className="shrink-0">
-      <div className="grid w-fit grid-cols-2 gap-1.5 px-2 pt-2 pb-2">
-        <NavPill
-          icon={<MagnifyingGlass size={15} />}
-          label="Search"
-          shortcut={formatHotkey(SHORTCUTS.COMMAND_MENU)}
-          isActive={false}
-          onClick={withTrack("search", openCommandMenu)}
-        />
-        <NavPill
-          icon={<EnvelopeSimple size={15} />}
-          label="Inbox"
-          shortcut={formatHotkey(SHORTCUTS.INBOX)}
-          isActive={view.type === "inbox"}
-          onClick={withTrack("inbox", navigateToInbox)}
-          badge={<PillBadge count={counts.pulls} />}
-        />
-        <NavPill
-          icon={<BellIcon size={15} weight={isActivity ? "fill" : "regular"} />}
-          label="Activity"
-          isActive={isActivity}
-          onClick={withTrack("activity", navigateToActivity)}
-          badge={<PillBadge count={unseenActivity} />}
-        />
-        <NavPill
-          icon={
-            <Lightning
-              size={15}
-              weight={isCommandCenter ? "fill" : "regular"}
-            />
-          }
-          label="Command"
-          fullLabel="Command Center"
-          isActive={isCommandCenter}
-          onClick={withTrack("command_center", navigateToWebsiteCommandCenter)}
-          badge={<PillBadge count={commandCenterCount} tone="neutral" />}
-        />
-      </div>
-      <Separator />
-      <div className="px-2 py-2">
-        <NewTaskItem
-          isActive={pathname === `/website/${channelId}/new`}
-          onClick={withTrack("new_task", () =>
-            navigateToChannelNewTask(channelId),
-          )}
-        />
-      </div>
+    <div className="flex shrink-0 gap-2 px-2 pt-2 pb-2">
+      <NavIcon
+        icon={<EnvelopeSimple size={16} />}
+        label="Inbox"
+        shortcut={formatHotkey(SHORTCUTS.INBOX)}
+        isActive={view.type === "inbox"}
+        onClick={withTrack("inbox", navigateToInbox)}
+        badge={<IconBadge count={counts.pulls} />}
+      />
+      <NavIcon
+        icon={<BellIcon size={16} weight={isActivity ? "fill" : "regular"} />}
+        label="Activity"
+        isActive={isActivity}
+        onClick={withTrack("activity", navigateToActivity)}
+        badge={<IconBadge count={unseenActivity} />}
+      />
+      <NavIcon
+        icon={
+          <Lightning size={16} weight={isCommandCenter ? "fill" : "regular"} />
+        }
+        label="Command Center"
+        isActive={isCommandCenter}
+        onClick={withTrack("command_center", navigateToWebsiteCommandCenter)}
+        badge={<IconBadge count={commandCenterCount} tone="neutral" />}
+      />
     </div>
   );
 }

@@ -19,12 +19,16 @@ import {
   Skeleton,
 } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { ChannelSwitcher } from "@posthog/ui/features/canvas/components/ChannelSwitcher";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { NewTaskItem } from "@posthog/ui/features/sidebar/components/items/NewTaskItem";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
+import { navigateToChannelNewTask } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
@@ -248,6 +252,19 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChannelSwitcher channelId={channelId} />
+
+      <div className="px-2 pt-2">
+        <NewTaskItem
+          isActive={pathname === `${base}/new`}
+          onClick={() => {
+            track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
+              item: "new_task",
+              in_more: false,
+            });
+            navigateToChannelNewTask(channelId);
+          }}
+        />
+      </div>
 
       <div className="flex flex-col gap-px px-2 pt-1">
         {sectionRow(
