@@ -42,6 +42,12 @@ import { useHotkeys } from "react-hotkeys-hook";
 // (see SWITCH_STARRED_CHANNEL).
 const STARRED_HOTKEY_SLOTS = 9;
 
+// The popover opens to the right of the sidebar, anchored to the trigger —
+// which is inset from the sidebar edge by the row's `mx-2`. Clearing that 8px
+// plus an 8px gap lands the panel just past the content pane's left border
+// instead of hovering over the sidebar.
+const POPOVER_SIDE_OFFSET = 16;
+
 // One channel in the switcher: click switches, the star toggles (hover-revealed
 // unless starred), right-click offers the same. #me and the first nine starred
 // channels show their mod+N hotkey.
@@ -120,8 +126,11 @@ function SwitcherRow({
   );
 }
 
-// Star toggle for the current channel, sitting beside the switcher trigger so
+// Star toggle for the current channel, overlaid inside the switcher trigger so
 // the header stays consistent with the switcher rows and the feed header.
+// Deliberately an overlay rather than a sibling: a sibling would shrink the
+// trigger, and the popover anchors to the trigger's right edge (see
+// POPOVER_SIDE_OFFSET).
 function TriggerStar({ channel }: { channel: Channel }) {
   const { isStarred, toggleStar } = useChannelStarToggle(channel);
   return (
@@ -136,7 +145,9 @@ function TriggerStar({ channel }: { channel: Channel }) {
         });
         toggleStar();
       }}
-      className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12"
+      // Parks in the `size-6` well the trigger reserves: 8px trigger padding +
+      // 12px caret + 6px gap = 26px in from the row's right edge.
+      className="-translate-y-1/2 absolute top-1/2 right-[26px] flex size-6 items-center justify-center rounded text-gray-10 transition-colors hover:bg-gray-4 hover:text-gray-12"
     >
       <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
     </button>
@@ -217,15 +228,17 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
     return index >= 0 && index < STARRED_HOTKEY_SLOTS ? index + 1 : undefined;
   };
 
+  const showStar = current != null && current.name !== PERSONAL_CHANNEL_NAME;
+
   return (
-    <div className="mx-2 mt-2 flex items-center gap-1">
+    <div className="relative mx-2 mt-2">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
             <button
               type="button"
               aria-label="Switch channel"
-              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-left transition-colors hover:bg-gray-3 aria-expanded:bg-gray-3"
+              className="flex w-full items-center gap-1.5 rounded-md border border-border px-2 py-1 text-left transition-colors hover:bg-gray-3 aria-expanded:bg-gray-3"
             >
               <span className="flex w-4 shrink-0 items-center justify-center">
                 <HashIcon size={14} className="text-gray-10" />
@@ -233,17 +246,16 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
               <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-gray-12">
                 {current?.name ?? "channel"}
               </span>
-              <CaretUpDownIcon
-                size={12}
-                className="ml-1 shrink-0 text-gray-10"
-              />
+              {/* Well the overlaid star parks in, so it never covers the name. */}
+              {showStar && <span aria-hidden className="size-6 shrink-0" />}
+              <CaretUpDownIcon size={12} className="shrink-0 text-gray-10" />
             </button>
           }
         />
         <PopoverContent
           align="start"
           side="right"
-          sideOffset={6}
+          sideOffset={POPOVER_SIDE_OFFSET}
           // quill's popover ships `gap-4` plus unlayered `padding`/`width` CSS
           // that beats plain utilities, hence the `!` overrides — this is a
           // menu, not a card, so it gets menu-tight spacing.
@@ -302,9 +314,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
           </button>
         </PopoverContent>
       </Popover>
-      {current && current.name !== PERSONAL_CHANNEL_NAME && (
-        <TriggerStar channel={current} />
-      )}
+      {showStar && current && <TriggerStar channel={current} />}
       <CreateChannelModal open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );

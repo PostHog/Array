@@ -12,7 +12,10 @@ import {
 } from "@posthog/shared/analytics-events";
 import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
 import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
-import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
+import {
+  formatHotkey,
+  SHORTCUTS,
+} from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { NewTaskItem } from "@posthog/ui/features/sidebar/components/items/NewTaskItem";
@@ -26,14 +29,20 @@ import {
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
-import { Box, Flex } from "@radix-ui/themes";
+import { Flex } from "@radix-ui/themes";
 import { useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useMemo } from "react";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
+// Tiles are a fixed 48px so they read the same at any sidebar width. Four of
+// them plus gaps fit inside SIDEBAR_MIN_WIDTH (240 - 16 padding = 224 ≥ 210),
+// so the row never wraps; a wider sidebar just leaves trailing space.
+const TILE_CLASS =
+  "relative flex size-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border border-border bg-gray-2 text-gray-11 transition-colors hover:bg-gray-3 hover:text-gray-12";
+
 // A corner count on a nav tile — red for unread-style counts, neutral for
-// ambient counts like the command center's filled cells.
+// ambient ones like the command center's filled cells.
 function TileBadge({
   count,
   tone = "notification",
@@ -45,7 +54,7 @@ function TileBadge({
   return (
     <span
       className={cn(
-        "absolute top-0.5 right-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none",
+        "absolute top-0.5 right-0.5 inline-flex h-3 min-w-3 items-center justify-center rounded-full px-[3px] text-[8px] leading-none",
         tone === "notification"
           ? "bg-(--red-9) text-white"
           : "bg-gray-5 text-gray-12",
@@ -56,12 +65,15 @@ function TileBadge({
   );
 }
 
-// An Arc-style square icon tile: label lives in the tooltip, count in the
-// corner. Used for the channel-scoped global nav (search / inbox / activity /
-// command center).
+/**
+ * A launcher tile: icon over a short caption, so the destination is legible
+ * without hovering. The tooltip carries the full name and shortcut, which is
+ * what `caption` is abbreviated from.
+ */
 function NavTile({
   icon,
   label,
+  caption,
   shortcut,
   isActive,
   onClick,
@@ -69,6 +81,7 @@ function NavTile({
 }: {
   icon: ReactNode;
   label: string;
+  caption: string;
   shortcut?: string;
   isActive: boolean;
   onClick: () => void;
@@ -81,11 +94,14 @@ function NavTile({
         aria-label={label}
         onClick={onClick}
         className={cn(
-          "relative flex aspect-square items-center justify-center rounded-lg border border-border bg-gray-2 text-gray-11 transition-colors hover:bg-gray-3 hover:text-gray-12",
+          TILE_CLASS,
           isActive && "border-transparent bg-fill-selected text-gray-12",
         )}
       >
         {icon}
+        <span className="max-w-full truncate px-0.5 text-[10px] leading-none">
+          {caption}
+        </span>
         {badge}
       </button>
     </Tooltip>
@@ -93,9 +109,8 @@ function NavTile({
 }
 
 /**
- * The channel-scoped global nav: New task on top, then an Arc-style tile grid
- * for Search / Inbox / Activity / Command Center. Shown above the channel
- * switcher.
+ * The channel-scoped global nav: a launcher row for Search / Inbox / Activity
+ * / Command Center, then New task. Sits above the channel switcher.
  */
 export function ChannelNav({ channelId }: { channelId: string }) {
   const view = useAppView();
@@ -112,8 +127,8 @@ export function ChannelNav({ channelId }: { channelId: string }) {
     () => countUnseenActivity(activityItems, lastSeenAt),
     [activityItems, lastSeenAt],
   );
-  // Command Center lives in the /website space here; count the filled grid
-  // cells as its active indicator.
+  // Command Center lives in the /website space here; its filled grid cells are
+  // the ambient "how much is parked in there" count.
   const commandCenterCells = useCommandCenterStore((s) => s.cells);
   const commandCenterCount = commandCenterCells.filter((c) => c != null).length;
 
@@ -122,57 +137,57 @@ export function ChannelNav({ channelId }: { channelId: string }) {
     action();
   };
 
+  const isActivity = view.type === "activity";
+  const isCommandCenter = view.type === "command-center";
+
   return (
     <Flex direction="column" className="shrink-0 gap-2 px-2 pt-2 pb-2">
-      <Box>
-        <NewTaskItem
-          isActive={pathname === `/website/${channelId}/new`}
-          onClick={withTrack("new_task", () =>
-            navigateToChannelNewTask(channelId),
-          )}
-        />
-      </Box>
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="flex gap-1.5">
         <NavTile
-          icon={<MagnifyingGlass size={18} />}
+          icon={<MagnifyingGlass size={16} />}
           label="Search"
-          shortcut={SHORTCUTS.COMMAND_MENU}
+          caption="Search"
+          shortcut={formatHotkey(SHORTCUTS.COMMAND_MENU)}
           isActive={false}
           onClick={withTrack("search", openCommandMenu)}
         />
         <NavTile
-          icon={<EnvelopeSimple size={18} />}
+          icon={<EnvelopeSimple size={16} />}
           label="Inbox"
-          shortcut={SHORTCUTS.INBOX}
+          caption="Inbox"
+          shortcut={formatHotkey(SHORTCUTS.INBOX)}
           isActive={view.type === "inbox"}
           onClick={withTrack("inbox", navigateToInbox)}
           badge={<TileBadge count={counts.pulls} />}
         />
         <NavTile
-          icon={
-            <BellIcon
-              size={18}
-              weight={view.type === "activity" ? "fill" : "regular"}
-            />
-          }
+          icon={<BellIcon size={16} weight={isActivity ? "fill" : "regular"} />}
           label="Activity"
-          isActive={view.type === "activity"}
+          caption="Activity"
+          isActive={isActivity}
           onClick={withTrack("activity", navigateToActivity)}
           badge={<TileBadge count={unseenActivity} />}
         />
         <NavTile
           icon={
             <Lightning
-              size={18}
-              weight={view.type === "command-center" ? "fill" : "regular"}
+              size={16}
+              weight={isCommandCenter ? "fill" : "regular"}
             />
           }
           label="Command Center"
-          isActive={view.type === "command-center"}
+          caption="Command"
+          isActive={isCommandCenter}
           onClick={withTrack("command_center", navigateToWebsiteCommandCenter)}
           badge={<TileBadge count={commandCenterCount} tone="neutral" />}
         />
       </div>
+      <NewTaskItem
+        isActive={pathname === `/website/${channelId}/new`}
+        onClick={withTrack("new_task", () =>
+          navigateToChannelNewTask(channelId),
+        )}
+      />
     </Flex>
   );
 }
