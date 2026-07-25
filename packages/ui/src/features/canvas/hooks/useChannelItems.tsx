@@ -64,7 +64,9 @@ export function useChannelItems(channelId: string): {
   const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
   const { setPinned: setCanvasPinned } = useDashboardMutations();
   const client = useOptionalAuthenticatedClient();
-  const { data: currentUser } = useCurrentUser({ client });
+  const { data: currentUser, isLoading: viewerLoading } = useCurrentUser({
+    client,
+  });
 
   const meUuid = currentUser?.uuid ?? null;
   const meName = currentUser ? userDisplayName(currentUser) : null;
@@ -76,7 +78,7 @@ export function useChannelItems(channelId: string): {
 
   const items = useMemo<ChannelItemModel[]>(
     () =>
-      identityKnown
+      identityKnown && (!isPersonal || viewerKnown)
         ? buildChannelItems({
             dashboards,
             feedTasks,
@@ -144,7 +146,8 @@ export function useChannelItems(channelId: string): {
         !identityKnown ||
         dashboardsLoading ||
         channelLoading ||
-        feedLoading),
+        feedLoading ||
+        (isPersonal && viewerLoading)),
     channelMissing,
   };
 }

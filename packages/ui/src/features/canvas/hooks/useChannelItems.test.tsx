@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   dashboards: { dashboards: [] as unknown[], isLoading: false },
   feed: { tasks: [] as unknown[], isLoading: false },
   currentUser: undefined as { uuid: string; first_name?: string } | undefined,
+  currentUserLoading: false,
   useBackendChannel: vi.fn(),
   // Stable identities, mirroring the real hooks — a fresh function per render
   // would hide the very memoization this file asserts.
@@ -51,7 +52,10 @@ vi.mock("@posthog/ui/features/auth/authClient", () => ({
   useOptionalAuthenticatedClient: () => undefined,
 }));
 vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
-  useCurrentUser: () => ({ data: mocks.currentUser }),
+  useCurrentUser: () => ({
+    data: mocks.currentUser,
+    isLoading: mocks.currentUserLoading,
+  }),
 }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
@@ -80,6 +84,7 @@ describe("useChannelItems", () => {
     mocks.dashboards = { dashboards: [], isLoading: false };
     mocks.feed = { tasks: [], isLoading: false };
     mocks.currentUser = undefined;
+    mocks.currentUserLoading = false;
   });
 
   // The bug this pins: a placeholder channel name reaches useBackendChannel,
@@ -133,7 +138,7 @@ describe("useChannelItems", () => {
     expect(result.current.items.map((i) => i.id)).toEqual(["mine"]);
   });
 
-  it("does not filter #me before the viewer is known", () => {
+  it("keeps #me private while the viewer is loading", () => {
     mocks.channels = {
       channels: [{ id: "c1", name: "me", path: "/me" }],
       isLoading: false,
@@ -146,14 +151,12 @@ describe("useChannelItems", () => {
       isLoading: false,
     };
     mocks.currentUser = undefined;
+    mocks.currentUserLoading = true;
 
     const { result } = renderHook(() => useChannelItems("c1"));
 
-    // Showing everything briefly is wrong too, but the personal channel is
-    // still loading at this point so nothing is rendered — assert the honest
-    // loading signal rather than an empty-looking channel.
-    expect(result.current.isLoading).toBe(false);
-    expect(result.current.items).toHaveLength(2);
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.items).toEqual([]);
   });
 
   it("reports a channel that is not in the project rather than spinning", () => {
