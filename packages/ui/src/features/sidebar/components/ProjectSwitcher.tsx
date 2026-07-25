@@ -21,6 +21,7 @@ import {
   AutocompleteItem,
   AutocompleteList,
   AutocompleteStatus,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -191,16 +192,17 @@ export function ProjectSwitcher({
       <DropdownMenuTrigger
         render={
           compact ? (
-            <button
-              type="button"
+            // A quill Button so height/radius/padding match the sibling
+            // title-bar buttons exactly; a small avatar stands in for an icon.
+            <Button
+              variant="outline"
+              size="sm"
               aria-label="Account, project and settings"
-              className="no-drag flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-full border border-border py-0.5 pr-2 pl-0.5 outline-none transition-colors hover:bg-fill-hover aria-expanded:bg-fill-active"
+              className="no-drag gap-1.5"
             >
-              <UserAvatar user={currentUser} size="sm" />
-              <span className="min-w-0 truncate text-[13px] text-gray-12">
-                {currentProject?.name ?? "No project"}
-              </span>
-            </button>
+              <UserAvatar user={currentUser} size="xs" />
+              {currentProject?.name ?? "No project"}
+            </Button>
           ) : (
             <Item
               size="xs"
