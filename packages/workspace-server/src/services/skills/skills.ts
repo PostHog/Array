@@ -500,10 +500,15 @@ export class SkillsService {
   ): Promise<BundleLocalSkillOutput> {
     const skillDir = await this.resolveKnownSkillDir(input.path);
     await this.assertRepoSkillStaysInRepo(skillDir);
+    const parent = path.dirname(skillDir);
+    const allowRootSymlink = [getUserSkillsDir(), getCodexSkillsDir()].some(
+      (root) => path.resolve(root) === parent,
+    );
     return bundleLocalSkill({
       name: input.name,
       source: input.source,
       skillPath: skillDir,
+      allowRootSymlink,
     });
   }
 

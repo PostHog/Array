@@ -9,6 +9,7 @@ import { WatcherService } from "../watcher/service";
 import { SkillsService } from "./skills";
 
 const codexHome = vi.hoisted(() => ({ dir: "" }));
+const marketplaceHome = vi.hoisted(() => ({ dir: "" }));
 const userSkillsHome = vi.hoisted(() => ({ dir: "" }));
 
 vi.mock("../posthog-plugin/codex-mirror", async (importOriginal) => {
@@ -19,7 +20,11 @@ vi.mock("../posthog-plugin/codex-mirror", async (importOriginal) => {
 
 vi.mock("./skill-discovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./skill-discovery")>();
-  return { ...actual, getUserSkillsDir: () => userSkillsHome.dir };
+  return {
+    ...actual,
+    getMarketplaceInstallPaths: async () => [marketplaceHome.dir],
+    getUserSkillsDir: () => userSkillsHome.dir,
+  };
 });
 
 let root: string;
@@ -54,6 +59,7 @@ beforeEach(async () => {
   folderPath = path.join(root, "repo");
   repoSkillsDir = path.join(folderPath, ".claude", "skills");
   codexHome.dir = path.join(root, "codex-skills");
+  marketplaceHome.dir = path.join(root, "marketplace");
   userSkillsHome.dir = path.join(root, "user-skills");
   await mkdir(path.join(pluginPath, "skills"), { recursive: true });
   await mkdir(repoSkillsDir, { recursive: true });
@@ -552,6 +558,22 @@ describe("write-path guard", () => {
     });
 
     expect(bundled.fileName).toBe("linked.zip");
+  });
+
+  it("rejects a symlinked marketplace skill root", async () => {
+    const target = await createSkill(root, "linked");
+    const marketplaceSkillsDir = path.join(marketplaceHome.dir, "skills");
+    await mkdir(marketplaceSkillsDir, { recursive: true });
+    const linkPath = path.join(marketplaceSkillsDir, "linked");
+    await symlink(target, linkPath, "dir");
+
+    await expect(
+      makeService().bundleLocalSkill({
+        name: "linked",
+        source: "marketplace",
+        path: linkPath,
+      }),
+    ).rejects.toThrow("not a symlink");
   });
 
   it.each([
