@@ -3,7 +3,6 @@ import {
   HashIcon,
   PlusIcon,
   StarIcon,
-  UserIcon,
 } from "@phosphor-icons/react";
 import {
   ContextMenu,
@@ -33,14 +32,6 @@ import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { useMemo, useState } from "react";
 
-function ChannelGlyph({ channel }: { channel: Channel }) {
-  return channel.name === PERSONAL_CHANNEL_NAME ? (
-    <UserIcon size={14} className="text-gray-10" />
-  ) : (
-    <HashIcon size={14} className="text-gray-10" />
-  );
-}
-
 // One channel in the switcher; right-click stars/unstars it.
 function SwitcherRow({
   channel,
@@ -64,7 +55,7 @@ function SwitcherRow({
       )}
     >
       <span className="flex w-4 shrink-0 items-center justify-center">
-        <ChannelGlyph channel={channel} />
+        <HashIcon size={14} className="text-gray-10" />
       </span>
       <span className="min-w-0 truncate text-gray-12">{channel.name}</span>
     </button>
@@ -141,19 +132,18 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
             <button
               type="button"
               aria-label="Switch channel"
-              className="mx-2 mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors hover:bg-gray-3 aria-expanded:bg-gray-3"
+              className="mx-2 mt-2 flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-left transition-colors hover:bg-gray-3 aria-expanded:bg-gray-3"
             >
               <span className="flex w-4 shrink-0 items-center justify-center">
-                {current ? (
-                  <ChannelGlyph channel={current} />
-                ) : (
-                  <HashIcon size={14} className="text-gray-10" />
-                )}
+                <HashIcon size={14} className="text-gray-10" />
               </span>
-              <span className="min-w-0 truncate font-semibold text-[13px] text-gray-12">
+              <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-gray-12">
                 {current?.name ?? "channel"}
               </span>
-              <CaretUpDownIcon size={12} className="shrink-0 text-gray-10" />
+              <CaretUpDownIcon
+                size={12}
+                className="ml-1 shrink-0 text-gray-10"
+              />
             </button>
           }
         />
@@ -183,7 +173,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
               />
             ))}
             {topFiltered.length > 0 && restFiltered.length > 0 && (
-              <Separator className="my-1" />
+              <Separator className="-mx-1 my-1" />
             )}
             {restFiltered.map((channel) => (
               <SwitcherRow
@@ -199,7 +189,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
               </p>
             )}
           </div>
-          <Separator className="my-1" />
+          <Separator className="-mx-1 my-1" />
           <button
             type="button"
             onClick={() => {
