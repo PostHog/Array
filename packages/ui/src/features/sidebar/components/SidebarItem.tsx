@@ -38,9 +38,11 @@ interface SidebarItemProps {
 function SidebarItemLabel({
   label,
   grow,
+  className,
 }: {
   label: React.ReactNode;
   grow: boolean;
+  className?: string;
 }) {
   const canTooltip = typeof label === "string" || typeof label === "number";
 
@@ -56,7 +58,10 @@ function SidebarItemLabel({
   }, []);
 
   const span = (
-    <span ref={measureRef} className={cn("min-w-0 truncate", grow && "flex-1")}>
+    <span
+      ref={measureRef}
+      className={cn("min-w-0 truncate", grow && "flex-1", className)}
+    >
       {label}
     </span>
   );
@@ -133,9 +138,13 @@ export function SidebarItem({
           {endContent}
         </span>
         {subtitle ? (
-          <span className="truncate text-[11px] text-gray-10 leading-tight group-data-active:text-gray-11">
-            {subtitle}
-          </span>
+          // Shares the label's truncate-plus-tooltip treatment, so a long
+          // `repository · branch` stays readable when it doesn't fit.
+          <SidebarItemLabel
+            label={subtitle}
+            grow={false}
+            className="text-[11px] text-gray-10 leading-tight group-data-active:text-gray-11"
+          />
         ) : null}
       </span>
     </Button>
