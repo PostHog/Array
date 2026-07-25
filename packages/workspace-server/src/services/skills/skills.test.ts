@@ -538,22 +538,20 @@ describe("write-path guard", () => {
     ).rejects.toThrow("resolves outside its repository");
   });
 
-  it("rejects a symlinked skill root outside repo roots", async () => {
-    // Non-repo roots have no repository anchor, so the bundler's own
-    // leaf-symlink check is the guard there.
+  it("bundles a symlinked user skill root", async () => {
     const target = await createSkill(root, "linked");
     await mkdir(userSkillsHome.dir, { recursive: true });
     const linkPath = path.join(userSkillsHome.dir, "linked");
     await symlink(target, linkPath, "dir");
     const service = makeService();
 
-    await expect(
-      service.bundleLocalSkill({
-        name: "linked",
-        source: "user",
-        path: linkPath,
-      }),
-    ).rejects.toThrow("not a symlink");
+    const bundled = await service.bundleLocalSkill({
+      name: "linked",
+      source: "user",
+      path: linkPath,
+    });
+
+    expect(bundled.fileName).toBe("linked.zip");
   });
 
   it.each([
