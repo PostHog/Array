@@ -20,7 +20,11 @@ import { useMemo } from "react";
 export function SpacesSearchField() {
   const toggleCommandMenu = useCommandMenuStore((s) => s.toggle);
   return (
-    <Flex align="center" justify="start" className="min-w-0 flex-1 px-3">
+    // No left padding: the pill's left edge lines up with the content pane /
+    // task column (the title-bar-left block is exactly the sidebar width, so
+    // this flex starts at the pane's left edge). Right padding keeps it off
+    // the empty draggable middle.
+    <Flex align="center" justify="start" className="min-w-0 flex-1 pr-3">
       <button
         type="button"
         onClick={toggleCommandMenu}
