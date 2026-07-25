@@ -261,7 +261,10 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
 
   const { dashboards } = useDashboards(channelId);
   const { tasks: filedTasks } = useChannelTasks(channelId);
-  const { data: tasks } = useTasks();
+  // All users' tasks, not just mine: a channel's filed tasks belong to the
+  // whole team, and rows are dropped when the task can't be resolved — the
+  // default mine-only list silently hid everyone else's work.
+  const { data: tasks } = useTasks({ showAllUsers: true });
   const archivedTaskIds = useArchivedTaskIds();
   const { pinnedTaskIds, togglePin } = usePinnedTasks();
   const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
