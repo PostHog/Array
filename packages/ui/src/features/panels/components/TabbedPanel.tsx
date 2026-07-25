@@ -1,6 +1,5 @@
 import { useDroppable } from "@dnd-kit/react";
 import {
-  ChartBarIcon,
   ChatCircleIcon,
   Plus,
   SquareSplitHorizontalIcon,
@@ -230,9 +229,9 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {/* "+" adds a tab. Only terminals work today; chat and canvas
-                tabs are the layout prototype's declared direction, shown
-                disabled so the menu communicates where this is going. */}
+            {/* "+" adds a tab. Only terminals work today; a chat tab is the
+                layout prototype's declared direction, shown disabled so the
+                menu communicates where this is going. */}
             {content.droppable && onAddTerminal && (
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -242,24 +241,24 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                     </TabBarButton>
                   }
                 />
-                <DropdownMenuContent align="start" side="bottom" sideOffset={4}>
+                {/* Fixed width with room for the "Soon" badge so it isn't
+                    clipped at the menu's edge. */}
+                <DropdownMenuContent
+                  align="start"
+                  side="bottom"
+                  sideOffset={4}
+                  className="w-48"
+                >
                   <DropdownMenuItem disabled>
                     <ChatCircleIcon size={14} />
                     New chat
-                    <span className="ml-auto pl-3 text-muted-foreground text-xs">
+                    <span className="ml-auto shrink-0 pl-3 text-muted-foreground text-xs">
                       Soon
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={onAddTerminal}>
                     <TerminalWindowIcon size={14} />
                     New terminal
-                  </DropdownMenuItem>
-                  <DropdownMenuItem disabled>
-                    <ChartBarIcon size={14} />
-                    New canvas
-                    <span className="ml-auto pl-3 text-muted-foreground text-xs">
-                      Soon
-                    </span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
