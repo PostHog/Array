@@ -12,31 +12,23 @@ import {
   PopoverContent,
   PopoverTrigger,
   Separator,
+  Skeleton,
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
-import {
-  useChannelStars,
-  useChannelStarToggle,
-} from "@posthog/ui/features/canvas/hooks/useChannelStars";
+import { useChannelStarToggle } from "@posthog/ui/features/canvas/hooks/useChannelStars";
 import {
   type Channel,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useStarredChannelSlots } from "@posthog/ui/features/canvas/hooks/useStarredChannelSlots";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useCurrentChannelStore } from "@posthog/ui/features/canvas/stores/currentChannelStore";
-import {
-  formatHotkey,
-  SHORTCUTS,
-} from "@posthog/ui/features/command/keyboard-shortcuts";
+import { formatHotkey } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { navigateToChannel } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
-import { useMemo, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
-
-// mod+0 is #me, mod+1..9 the starred channels (see SWITCH_STARRED_CHANNEL).
-const STARRED_HOTKEY_SLOTS = 9;
+import { useState } from "react";
 
 // Clears the row's 8px `mx-2` inset plus an 8px gap, so the panel lands past
 // the sidebar edge rather than over it.
@@ -162,33 +154,17 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const { channels } = useChannels();
-  const { starredRefToShortcutId } = useChannelStars();
+  const { channels, isLoading: isLoadingChannels } = useChannels();
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
   const current = channels.find((c) => c.id === channelId);
-
-  const { top, rest, me, starred } = useMemo(() => {
-    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME) ?? null;
-    const byPath = new Map(channels.map((c) => [c.path, c]));
-    const starred: Channel[] = [];
-    for (const ref of starredRefToShortcutId.keys()) {
-      const channel = byPath.get(ref);
-      if (channel && channel.name !== PERSONAL_CHANNEL_NAME) {
-        starred.push(channel);
-      }
-    }
-    const top = me ? [me, ...starred] : starred;
-    const seen = new Set(top.map((c) => c.id));
-    const rest = channels
-      .filter((c) => !seen.has(c.id))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    return { top, rest, me, starred };
-  }, [channels, starredRefToShortcutId]);
+  // ChannelHotkeys owns the keys these slots describe; sharing the derivation
+  // keeps the advertised key and the key that fires in agreement.
+  const { slots, rest, slotFor } = useStarredChannelSlots();
 
   const normalizedQuery = query.trim().toLowerCase();
   const matches = (c: Channel) =>
     !normalizedQuery || c.name.toLowerCase().includes(normalizedQuery);
-  const topFiltered = top.filter(matches);
+  const topFiltered = slots.filter(matches);
   const restFiltered = rest.filter(matches);
 
   const pick = (channel: Channel) => {
@@ -201,30 +177,6 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
       surface: "sidebar",
       channel_id: channel.id,
     });
-  };
-
-  // Same ctrl guard as SWITCH_TASK: plain ctrl+N belongs to tab switching.
-  useHotkeys(
-    SHORTCUTS.SWITCH_STARRED_CHANNEL,
-    (event, handler) => {
-      if (event.ctrlKey && !event.metaKey) return;
-      const slot = Number.parseInt(handler.keys?.[0] ?? "", 10);
-      if (Number.isNaN(slot)) return;
-      const channel = slot === 0 ? me : starred[slot - 1];
-      if (channel && slot <= STARRED_HOTKEY_SLOTS) pick(channel);
-    },
-    {
-      enableOnFormTags: true,
-      enableOnContentEditable: true,
-      preventDefault: true,
-    },
-    [me, starred, pick],
-  );
-
-  const hotkeySlotFor = (channel: Channel) => {
-    if (me && channel.id === me.id) return 0;
-    const index = starred.indexOf(channel);
-    return index >= 0 && index < STARRED_HOTKEY_SLOTS ? index + 1 : undefined;
   };
 
   const showStar = current != null && current.name !== PERSONAL_CHANNEL_NAME;
@@ -255,7 +207,15 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
                 })}
               </span>
               <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-foreground">
-                {current?.name ?? "channel"}
+                {current ? (
+                  current.name
+                ) : isLoadingChannels ? (
+                  // A placeholder word here would read as a real channel named
+                  // "channel"; a skeleton says "still loading" honestly.
+                  <Skeleton className="h-3.5 w-24" />
+                ) : (
+                  "Unavailable"
+                )}
               </span>
               <span aria-hidden className="size-6 shrink-0" />
               <CaretUpDownIcon
@@ -290,7 +250,7 @@ export function ChannelSwitcher({ channelId }: { channelId: string }) {
                 channel={channel}
                 active={channel.id === channelId}
                 onPick={() => pick(channel)}
-                hotkeySlot={hotkeySlotFor(channel)}
+                hotkeySlot={slotFor(channel)}
               />
             ))}
             {topFiltered.length > 0 && restFiltered.length > 0 && (

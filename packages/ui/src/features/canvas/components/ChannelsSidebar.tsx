@@ -7,9 +7,10 @@ import { ChannelSidebar } from "@posthog/ui/features/canvas/components/ChannelSi
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
-import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
+import { useCurrentChannel } from "@posthog/ui/features/canvas/hooks/useCurrentChannel";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useTrackChannelsSpaceViewed } from "@posthog/ui/features/canvas/hooks/useTrackChannelsSpaceViewed";
 import { useCurrentChannelStore } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
@@ -27,6 +28,7 @@ import {
 } from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import { ErrorBoundary } from "@posthog/ui/primitives/ErrorBoundary";
 import { useSidebarEdgeHoverPeek } from "@posthog/ui/primitives/hooks/useSidebarEdgeHoverPeek";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
@@ -90,6 +92,16 @@ export function ChannelsSidebar() {
   // Deferred so the toggle paints before the heavy channel tree (ChannelsList
   // mounts a provider-laden row per channel) swaps in.
   const bodyChannelsWorld = useDeferredValue(channelsWorld);
+  // The channels *alpha* replaced the task list with the channel tree, so the
+  // Archived row went with it. The new layout keeps its own item list and puts
+  // an Archive action on every row, so it needs the destination back — this is
+  // the only entry point to /code/archived in the app. Reads the deferred value
+  // so the row and the body it belongs to switch on the same paint.
+  const showArchivedRow = channelsLayout || !bodyChannelsWorld;
+  useTrackChannelsSpaceViewed({
+    enabled: channelsWorld,
+    layout: channelsLayout ? "channels" : "code",
+  });
 
   // The channels layout's title bar needs more room than the shared floor, so
   // it raises the minimum here rather than in the constant — leaving the width
@@ -107,34 +119,34 @@ export function ChannelsSidebar() {
   // channel as current. Inert while the flag is off.
   const params = useParams({ strict: false });
   const routeChannelId = params.channelId;
-  const currentChannelId = useCurrentChannelStore((s) => s.currentChannelId);
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
-  const { channels } = useChannels({ enabled: channelsLayout });
+  // Resolves the scoped id against the live list, and clears it when the flag
+  // is off or the channel no longer exists — so `currentChannelId` here is
+  // always a channel we can actually render.
+  const { currentChannelId, channels } = useCurrentChannel({
+    enabled: channelsLayout,
+  });
   useEffect(() => {
     if (!channelsLayout || !routeChannelId) return;
     setCurrentChannel(routeChannelId);
   }, [channelsLayout, routeChannelId, setCurrentChannel]);
-  // Flags resolve after first paint and can flip mid-session. Clearing keeps
-  // "a channel is current" a reliable stand-in for the flag — openTaskInput
-  // routes creates on it.
-  useEffect(() => {
-    if (!channelsLayout) setCurrentChannel(null);
-  }, [channelsLayout, setCurrentChannel]);
   const inChannel = channelsLayout && currentChannelId != null;
 
-  // Default to the personal "#me" channel on first load; once any channel has
-  // been current, never auto-scope again.
+  // Default to the personal "#me" channel on first load, then leave the choice
+  // alone. The latch resets when the layout turns off so a flag that resolves
+  // late (useFeatureFlag re-syncs on every flags payload) can't strand the
+  // sidebar unscoped for the rest of the session.
   const autoScopedRef = useRef(false);
   useEffect(() => {
-    if (currentChannelId) autoScopedRef.current = true;
-  }, [currentChannelId]);
-  useEffect(() => {
-    if (!channelsLayout || autoScopedRef.current || currentChannelId) return;
-    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
-    if (me) {
-      autoScopedRef.current = true;
-      setCurrentChannel(me.id);
+    if (!channelsLayout) {
+      autoScopedRef.current = false;
+      return;
     }
+    if (autoScopedRef.current || currentChannelId) return;
+    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+    if (!me) return;
+    autoScopedRef.current = true;
+    setCurrentChannel(me.id);
   }, [channelsLayout, channels, currentChannelId, setCurrentChannel]);
 
   return (
@@ -159,7 +171,17 @@ export function ChannelsSidebar() {
           <>
             <ChannelNav />
             <Box className="min-h-0 flex-1 overflow-hidden">
-              <ChannelSidebar channelId={currentChannelId} />
+              {/* The channel sidebar is the whole sidebar under this layout, so
+                  a throw in one row would otherwise take ProjectSwitcher — the
+                  only route to settings and project switching — down with it.
+                  Degrade to the flat channel list instead. */}
+              <ErrorBoundary
+                name="channel-sidebar"
+                fallback={<ChannelsList />}
+                resetKey={currentChannelId}
+              >
+                <ChannelSidebar channelId={currentChannelId} />
+              </ErrorBoundary>
             </Box>
           </>
         ) : bodyChannelsWorld ? (
@@ -180,7 +202,7 @@ export function ChannelsSidebar() {
 
         <UpdateBanner />
 
-        {!channelsWorld && archivedTaskIds.size > 0 && (
+        {showArchivedRow && archivedTaskIds.size > 0 && (
           <Box className="shrink-0 border-border border-t">
             <button
               type="button"

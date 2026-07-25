@@ -77,6 +77,12 @@ export interface TaskInputNavigationOptions {
   // Which space's new-task screen to open. Both render the same TaskInput; the
   // channels variant keeps the channels chrome instead of switching to Code.
   space?: "code" | "website";
+  /**
+   * Create inside this channel. Callers that already know the channel should
+   * say so rather than relying on the sidebar's scope agreeing with them — and
+   * routing through here is what clears any stale prefill.
+   */
+  channelId?: string;
 }
 
 /**
@@ -119,9 +125,15 @@ export function openTaskInput(
   // In the channels layout every entry point (⌘N, the command menu, the "+")
   // creates inside the channel you're in. A current channel only exists while
   // that layout is on (ChannelsSidebar), so this needs no flag of its own.
-  const currentChannelId = useCurrentChannelStore.getState().currentChannelId;
-  if (currentChannelId) {
-    nav.navigateToChannelNewTask(currentChannelId);
+  // Precedence: an explicit channel wins; asking for Code explicitly opts out
+  // of channel scoping; otherwise the scoped channel decides.
+  const channelId =
+    options.channelId ??
+    (options.space === "code"
+      ? null
+      : useCurrentChannelStore.getState().currentChannelId);
+  if (channelId) {
+    nav.navigateToChannelNewTask(channelId);
   } else if (options.space === "website") {
     nav.navigateToWebsiteNew();
   } else {

@@ -1,50 +1,28 @@
-import {
-  ArrowSquareOutIcon,
-  CaretRightIcon,
-  XIcon,
-} from "@phosphor-icons/react";
-import {
-  buildThreadTimeline,
-  deriveThreadAgentStatus,
-  hasAgentMention,
-  shouldSuspendThreadSession,
-} from "@posthog/core/canvas/threadTimeline";
-import { Button, cn } from "@posthog/quill";
+import { CaretRightIcon } from "@phosphor-icons/react";
+import { Button, cn, Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import type { Task, UserBasic } from "@posthog/shared/domain-types";
-import { isTerminalStatus } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
+import type { Task } from "@posthog/shared/domain-types";
 import { ActivityTimeline } from "@posthog/ui/features/canvas/components/ActivityTimeline";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { TaskArtifactsList } from "@posthog/ui/features/canvas/components/TaskArtifactsList";
 import {
   AgentStatusLine,
   ThreadLoadingState,
+  ThreadPanelHeader,
   ThreadReplyComposer,
   ThreadTimeline,
 } from "@posthog/ui/features/canvas/components/ThreadPanel";
-import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
-import {
-  useDeleteTaskThreadMessage,
-  usePostTaskThreadMessage,
-  usePostTaskThreadMessageToAgent,
-  useSendTaskThreadMessageToAgent,
-  useTaskThread,
-} from "@posthog/ui/features/canvas/hooks/useTaskThread";
+import { useThreadConversation } from "@posthog/ui/features/canvas/hooks/useThreadConversation";
 import { buildConversationItems } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
-import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
-import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
-import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * The flag-gated task panel — Timeline / Artifacts / Comments. Legacy
- * ThreadPanel stays for flag-off; its row/composer primitives are reused here.
+ * ThreadPanel stays for flag-off; both drive the same conversation through
+ * useThreadConversation, so the posting rules can't diverge between them.
  */
 
 type ActivityTab = "timeline" | "artifacts" | "comments";
@@ -55,57 +33,15 @@ const ACTIVITY_TABS: readonly { key: ActivityTab; label: string }[] = [
   { key: "comments", label: "Comments" },
 ] as const;
 
+// Artifacts is a read-only list: nothing to post into, and no agent to report on.
+const TABS_WITH_COMPOSER: ReadonlySet<ActivityTab> = new Set([
+  "timeline",
+  "comments",
+]);
+
 // Right-align row timestamps via container CSS, leaving the shared rows untouched.
 const TIMESTAMP_END_CLASS =
   "[&_[data-slot=thread-item-timestamp]]:ml-auto [&_[data-slot=thread-item-timestamp]]:shrink-0 [&_[data-slot=thread-item-timestamp]]:pl-2";
-
-function ActivityHeader({
-  onClose,
-  onToggleCollapsed,
-  onOpenFull,
-}: {
-  onClose?: () => void;
-  onToggleCollapsed?: () => void;
-  onOpenFull?: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-1 border-border border-b px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <span className="block font-medium text-sm">Activity</span>
-      </div>
-      {onOpenFull && (
-        <Button
-          variant="default"
-          size="icon-sm"
-          aria-label="Open full task"
-          onClick={onOpenFull}
-        >
-          <ArrowSquareOutIcon size={14} />
-        </Button>
-      )}
-      {onToggleCollapsed && (
-        <Button
-          variant="default"
-          size="icon-sm"
-          aria-label="Collapse activity"
-          onClick={onToggleCollapsed}
-        >
-          <CaretRightIcon size={14} />
-        </Button>
-      )}
-      {onClose && (
-        <Button
-          variant="default"
-          size="icon-sm"
-          aria-label="Close activity"
-          onClick={onClose}
-        >
-          <XIcon size={14} />
-        </Button>
-      )}
-    </div>
-  );
-}
 
 function ActivityTabsRow({
   tab,
@@ -115,19 +51,19 @@ function ActivityTabsRow({
   onTabChange: (tab: ActivityTab) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-px border-border border-b px-2 py-1.5">
-      {ACTIVITY_TABS.map((t) => (
-        <Button
-          key={t.key}
-          variant="default"
-          size="sm"
-          data-selected={tab === t.key || undefined}
-          className={cn(tab === t.key && "bg-fill-selected")}
-          onClick={() => onTabChange(t.key)}
-        >
-          {t.label}
-        </Button>
-      ))}
+    <div className="shrink-0 border-border border-b px-2 py-1.5">
+      <Tabs
+        value={tab}
+        onValueChange={(value: string) => onTabChange(value as ActivityTab)}
+      >
+        <TabsList variant="line" className="h-auto gap-0.5">
+          {ACTIVITY_TABS.map((t) => (
+            <TabsTrigger key={t.key} value={t.key} className="px-2.5 py-1">
+              <span className="font-medium text-[13px]">{t.label}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     </div>
   );
 }
@@ -148,67 +84,24 @@ function ActivityConversation({
   showTaskSummary: boolean;
 }) {
   const taskId = task.id;
-  const client = useOptionalAuthenticatedClient();
-  const { data: currentUser } = useCurrentUser({ client });
-
-  const { messages, isLoading } = useTaskThread(taskId);
-  const { postMessage, isPosting } = usePostTaskThreadMessage(taskId);
-  const { postMessageToAgent, isPostingToAgent } =
-    usePostTaskThreadMessageToAgent(taskId);
-  const { deleteMessage } = useDeleteTaskThreadMessage(taskId);
-  const { sendToAgent, isSending } = useSendTaskThreadMessageToAgent(taskId);
-  const isSendingToAgent = isPostingToAgent || isSending;
-  const { members } = useOrgMembers();
-
   const {
-    session,
-    repoPath,
-    isCloud,
+    timeline,
+    agentStatus,
     events,
-    cloudStatus,
     isPromptPending,
-    isInitializing,
-    hasError,
-    errorTitle,
-  } = useSessionViewState(taskId, task);
-  useSessionConnection({
-    taskId,
-    task,
-    session,
-    repoPath,
-    isCloud,
-    isSuspended: shouldSuspendThreadSession({
-      isCloud,
-      hasRun: Boolean(task.latest_run?.id),
-      hasSession: Boolean(session),
-    }),
-  });
-  const pendingPermissions = usePendingPermissionsForTask(taskId);
-
-  const agentStatus = useMemo(
-    () =>
-      deriveThreadAgentStatus({
-        hasActivity: events.length > 0 || !!task.latest_run,
-        hasError,
-        cloudStatus,
-        errorTitle,
-        pendingPermissionCount: pendingPermissions.size,
-        isPromptPending,
-        isInitializing,
-      }),
-    [
-      events.length,
-      task.latest_run,
-      hasError,
-      cloudStatus,
-      errorTitle,
-      pendingPermissions.size,
-      isPromptPending,
-      isInitializing,
-    ],
-  );
-
-  const timeline = useMemo(() => buildThreadTimeline(messages), [messages]);
+    isReady,
+    members,
+    currentUser,
+    isTaskAuthor,
+    canForward,
+    draft,
+    setDraft,
+    isSubmitDisabled,
+    submit,
+    sendMessageToAgent,
+    deleteMessage,
+    onMentionInsert,
+  } = useThreadConversation(task, { surface: "activity_panel" });
 
   const [tab, setTab] = useState<ActivityTab>("timeline");
   const handleTabChange = useCallback(
@@ -223,101 +116,63 @@ function ActivityConversation({
     },
     [taskId],
   );
+
   // The human thread, without the announcements the Artifacts tab owns.
   const commentRows = useMemo(
     () => timeline.filter((row) => row.kind === "human"),
     [timeline],
   );
-
-  const [draft, setDraft] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const handleMentionInsert = useCallback(
-    (member: UserBasic) => {
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "mention_member",
-        surface: "activity_panel",
-        task_id: taskId,
-        mentioned_user_id: member.uuid,
-      });
-    },
-    [taskId],
+  // Only the Timeline renders these, and `events` churns on every streamed
+  // agent event — so don't process the whole event log for the other tabs.
+  const conversationItems = useMemo(
+    () =>
+      tab === "timeline"
+        ? buildConversationItems(events, isPromptPending).items
+        : [],
+    [tab, events, isPromptPending],
   );
 
+  const scrollRef = useRef<HTMLDivElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline, events.length, agentStatus?.phase, tab]);
 
-  const isTaskAuthor =
-    !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
-  const canForward =
-    !!task.latest_run &&
-    !isTerminalStatus(task.latest_run.status) &&
-    !isSendingToAgent;
+  const showComposer = TABS_WITH_COMPOSER.has(tab);
 
-  const submit = async () => {
-    const content = draft.trim();
-    if (!content || isPosting || isSendingToAgent) return;
-    const sendToAgentRequested = hasAgentMention(content);
-    if (sendToAgentRequested && (!isTaskAuthor || !canForward)) {
-      toast.error("Couldn't send to agent", {
-        description:
-          "Only the task author can @agent while the task has an active run.",
-      });
-      return;
+  const body = () => {
+    if (tab === "artifacts") {
+      return <TaskArtifactsList task={task} timeline={timeline} />;
     }
-    setDraft("");
-    try {
-      if (sendToAgentRequested) {
-        const { sendError } = await postMessageToAgent(content);
-        if (sendError) {
-          toast.error("Message posted, but couldn't send it to the agent", {
-            description:
-              sendError instanceof Error
-                ? sendError.message
-                : String(sendError),
-          });
-        }
-      } else {
-        await postMessage(content);
-      }
-    } catch (error) {
-      setDraft(content);
-      toast.error("Couldn't post message", {
-        description: error instanceof Error ? error.message : String(error),
-      });
+    if (tab === "comments") {
+      return (
+        <ThreadTimeline
+          timeline={commentRows}
+          isReady={isReady}
+          currentUserUuid={currentUser?.uuid}
+          currentUserEmail={currentUser?.email}
+          isTaskAuthor={isTaskAuthor}
+          canForward={canForward}
+          onSendToAgent={sendMessageToAgent}
+          onDelete={deleteMessage}
+        />
+      );
     }
+    if (!isReady) return <ThreadLoadingState />;
+    return (
+      <ActivityTimeline
+        task={task}
+        timeline={timeline}
+        conversationItems={conversationItems}
+        currentUserUuid={currentUser?.uuid}
+        currentUserEmail={currentUser?.email}
+        isTaskAuthor={isTaskAuthor}
+        canForward={canForward}
+        onSendToAgent={sendMessageToAgent}
+        onDelete={deleteMessage}
+      />
+    );
   };
-
-  const handleSendToAgent = useCallback(
-    (messageId: string) => {
-      sendToAgent(messageId).catch((error: unknown) => {
-        toast.error("Couldn't send message to agent", {
-          description: error instanceof Error ? error.message : String(error),
-        });
-      });
-    },
-    [sendToAgent],
-  );
-
-  const handleDelete = useCallback(
-    (messageId: string) => {
-      deleteMessage(messageId).catch((error: unknown) => {
-        toast.error("Couldn't delete message", {
-          description: error instanceof Error ? error.message : String(error),
-        });
-      });
-    },
-    [deleteMessage],
-  );
-
-  const isReady = !isInitializing && !isLoading;
-
-  const conversationItems = useMemo(
-    () => buildConversationItems(events, isPromptPending).items,
-    [events, isPromptPending],
-  );
 
   return (
     <div
@@ -326,7 +181,8 @@ function ActivityConversation({
         TIMESTAMP_END_CLASS,
       )}
     >
-      <ActivityHeader
+      <ThreadPanelHeader
+        title="Activity"
         onOpenFull={onOpenFull}
         onToggleCollapsed={onToggleCollapsed}
         onClose={onClose}
@@ -338,56 +194,25 @@ function ActivityConversation({
           <TaskCard task={task} channelId={channelId} inThread />
         </div>
       )}
-      {tab === "artifacts" ? (
-        <div className="flex-1 overflow-y-auto">
-          <TaskArtifactsList task={task} timeline={timeline} />
-        </div>
-      ) : tab === "comments" ? (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          <ThreadTimeline
-            timeline={commentRows}
-            isReady={isReady}
-            currentUserUuid={currentUser?.uuid}
-            currentUserEmail={currentUser?.email}
-            isTaskAuthor={isTaskAuthor}
-            canForward={canForward}
-            onSendToAgent={handleSendToAgent}
-            onDelete={handleDelete}
-          />
-        </div>
-      ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {!isReady ? (
-            <ThreadLoadingState />
-          ) : (
-            <ActivityTimeline
-              task={task}
-              timeline={timeline}
-              conversationItems={conversationItems}
-              currentUserUuid={currentUser?.uuid}
-              currentUserEmail={currentUser?.email}
-              isTaskAuthor={isTaskAuthor}
-              canForward={canForward}
-              onSendToAgent={handleSendToAgent}
-              onDelete={handleDelete}
-            />
-          )}
-        </div>
-      )}
+      <div
+        ref={scrollRef}
+        aria-busy={!isReady}
+        className="flex-1 overflow-y-auto"
+      >
+        {body()}
+      </div>
 
-      {tab !== "artifacts" && agentStatus && (
-        <AgentStatusLine status={agentStatus} />
-      )}
+      {showComposer && agentStatus && <AgentStatusLine status={agentStatus} />}
 
-      {tab !== "artifacts" && (
+      {showComposer && (
         <ThreadReplyComposer
           draft={draft}
           onDraftChange={setDraft}
           onSubmit={submit}
           members={members}
           allowAgentMention={isTaskAuthor && canForward}
-          onMentionInsert={handleMentionInsert}
-          disabled={!draft.trim() || isPosting || isSendingToAgent}
+          onMentionInsert={onMentionInsert}
+          disabled={isSubmitDisabled}
         />
       )}
     </div>

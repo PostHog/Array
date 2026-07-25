@@ -22,7 +22,9 @@ import { UsageLimitModal } from "@posthog/ui/features/billing/UsageLimitModal";
 import { BlankTabView } from "@posthog/ui/features/browser-tabs/BlankTabView";
 import { BrowserTabStrip } from "@posthog/ui/features/browser-tabs/BrowserTabStrip";
 import { BrowserTabsDndProvider } from "@posthog/ui/features/browser-tabs/BrowserTabsDnd";
+import { TabShortcutFallback } from "@posthog/ui/features/browser-tabs/TabShortcutFallback";
 import { useActiveTabIsBlank } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
+import { ChannelHotkeys } from "@posthog/ui/features/canvas/components/ChannelHotkeys";
 import { ChannelsSidebar } from "@posthog/ui/features/canvas/components/ChannelsSidebar";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
 import {
@@ -327,6 +329,9 @@ function RootLayout() {
           onToggleCommandMenu={toggleCommandMenu}
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
+        {/* The settings shell has never mounted the tab strip, so nothing here
+            was stopping Cmd+W from closing the window. */}
+        <TabShortcutFallback enabled />
         {billingEnabled && <UsageLimitModal />}
         <UsageBillingAnnouncementModal />
         <UpdateAvailableModal />
@@ -441,8 +446,14 @@ function RootLayout() {
             )}
           </Flex>
           {/* The new layout has no global tab strip (tabs live inside the
-              task view); search/inbox/activity live in the sidebar nav. */}
-          {!channelsLayout && <BrowserTabStrip />}
+              task view); search/inbox/activity live in the sidebar nav. The
+              strip is also the only global owner of Cmd+W, so something has to
+              keep holding that key when it isn't mounted. */}
+          {channelsLayout ? (
+            <TabShortcutFallback enabled />
+          ) : (
+            <BrowserTabStrip />
+          )}
           {/* Gated so an empty right-side group can't claim a no-drag rect
               in the title bar for nothing — every pixel without controls
               should drag the window. */}
@@ -510,6 +521,10 @@ function RootLayout() {
           onToggleCommandMenu={toggleCommandMenu}
           onToggleShortcutsSheet={toggleShortcutsSheet}
         />
+        {/* Renders nothing — owns ⌘1-9 under the channels layout. Mounted here
+            rather than in the switcher, which only exists once a channel is
+            already scoped. */}
+        <ChannelHotkeys />
         {/* Renders nothing — wires the ⌥↑/⌥↓ task-cycling shortcuts. */}
         <SpaceSwitcher
           tasks={visualTaskOrder}

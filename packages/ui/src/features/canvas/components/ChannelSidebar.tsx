@@ -6,6 +6,9 @@ import {
   PackageIcon,
   RepeatIcon,
 } from "@phosphor-icons/react";
+import type { CreatedByFilter } from "@posthog/core/canvas/channelItems";
+import { filterChannelItems } from "@posthog/core/canvas/channelItems";
+import { RUN_STATUS_FILTER_OPTIONS } from "@posthog/core/canvas/runStatus";
 import {
   cn,
   DropdownMenu,
@@ -15,34 +18,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Empty,
+  EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   MenuLabel,
   Skeleton,
 } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
+import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { ChannelSwitcher } from "@posthog/ui/features/canvas/components/ChannelSwitcher";
 import { NewTaskFab } from "@posthog/ui/features/canvas/components/NewTaskFab";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
-import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
-
-type CreatedByFilter = "anyone" | "me" | "others";
-
-const STATUS_FILTER_OPTIONS: readonly {
-  value: string | null;
-  label: string;
-}[] = [
-  { value: null, label: "Any status" },
-  { value: "in_progress", label: "In progress" },
-  { value: "completed", label: "Completed" },
-  { value: "failed", label: "Failed" },
-  { value: "cancelled", label: "Cancelled" },
-] as const;
+import { type ReactNode, useMemo, useState } from "react";
 
 const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
   [
@@ -76,8 +69,8 @@ function RecentSectionHeader({
   onQueryChange: (value: string) => void;
   createdByFilter: CreatedByFilter;
   onCreatedByChange: (value: CreatedByFilter) => void;
-  statusFilter: string | null;
-  onStatusChange: (value: string | null) => void;
+  statusFilter: TaskRunStatus | null;
+  onStatusChange: (value: TaskRunStatus | null) => void;
   filtersActive: boolean;
 }) {
   return (
@@ -131,10 +124,12 @@ function RecentSectionHeader({
             <DropdownMenuRadioGroup
               value={statusFilter ?? "any"}
               onValueChange={(value) =>
-                onStatusChange(value === "any" ? null : value)
+                onStatusChange(
+                  value === "any" ? null : (value as TaskRunStatus),
+                )
               }
             >
-              {STATUS_FILTER_OPTIONS.map((option) => (
+              {RUN_STATUS_FILTER_OPTIONS.map((option) => (
                 <DropdownMenuRadioItem
                   key={option.value ?? "any"}
                   value={option.value ?? "any"}
@@ -195,43 +190,35 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
 
-  const { channels } = useChannels();
-  const channelName =
-    channels.find((c) => c.id === channelId)?.name ?? "channel";
-
-  const { items, meUuid, meName, isLoading } = useChannelItems(
-    channelId,
-    channelName,
-  );
+  const { items, actions, me, isLoading, channelMissing } =
+    useChannelItems(channelId);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [createdByFilter, setCreatedByFilter] =
     useState<CreatedByFilter>("anyone");
-  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<TaskRunStatus | null>(null);
   const filtersActive = createdByFilter !== "anyone" || statusFilter !== null;
 
   const base = `/website/${channelId}`;
-  const pinnedItems = items.filter((i) => i.pinned);
+  // Activeness is a key comparison rather than a flag baked into each item, so
+  // navigating doesn't rebuild the list.
+  const activeKey = useMemo(() => {
+    const dashboard = pathname.match(/\/dashboards\/([^/]+)$/);
+    if (dashboard) return `canvas:${dashboard[1]}`;
+    const task = pathname.match(/\/tasks\/([^/]+)$/);
+    return task ? `task:${task[1]}` : null;
+  }, [pathname]);
 
-  const normalizedQuery = query.trim().toLowerCase();
-  const recentItems = items
-    .filter((i) => {
-      if (i.pinned) return false;
-      if (normalizedQuery && !i.title.toLowerCase().includes(normalizedQuery)) {
-        return false;
-      }
-      if (createdByFilter !== "anyone") {
-        const isMine = i.authorUser
-          ? i.authorUser.uuid === meUuid
-          : i.authorName != null && meName != null && i.authorName === meName;
-        if (createdByFilter === "me" && !isMine) return false;
-        if (createdByFilter === "others" && isMine) return false;
-      }
-      if (statusFilter && i.rawStatus !== statusFilter) return false;
-      return true;
-    })
-    .slice(0, RECENTS_CAP);
+  const pinnedItems = useMemo(() => items.filter((i) => i.pinned), [items]);
+  const recentItems = useMemo(
+    () =>
+      filterChannelItems(
+        items.filter((i) => !i.pinned),
+        { query, createdBy: createdByFilter, status: statusFilter, me },
+      ).slice(0, RECENTS_CAP),
+    [items, query, createdByFilter, statusFilter, me],
+  );
 
   const sectionRow = (
     label: string,
@@ -295,15 +282,37 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
 
       {/* Relative so the FAB can float over the list. */}
       <div className="relative mt-2 min-h-0 flex-1">
-        <div className="scroll-mask-4 h-full overflow-y-auto px-2 pb-2">
+        <div
+          aria-busy={isLoading}
+          className="scroll-mask-4 h-full overflow-y-auto px-2 pb-2"
+        >
           {isLoading && items.length === 0 && <ChannelItemsSkeleton />}
+
+          {channelMissing && (
+            <Empty className="border-0 py-6">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <PackageIcon size={18} />
+                </EmptyMedia>
+                <EmptyTitle>Channel unavailable</EmptyTitle>
+                <EmptyDescription>
+                  It may have been deleted, or belong to another project.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
 
           {pinnedItems.length > 0 && (
             <>
               <MenuLabel>Pinned</MenuLabel>
               <div className="flex flex-col gap-px">
                 {pinnedItems.map((item) => (
-                  <ChannelItemRow key={item.key} item={item} />
+                  <ChannelItemRow
+                    key={item.key}
+                    item={item}
+                    isActive={item.key === activeKey}
+                    actions={actions}
+                  />
                 ))}
               </div>
             </>
@@ -328,23 +337,40 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
               {recentItems.length > 0 ? (
                 <div className="flex flex-col gap-px">
                   {recentItems.map((item) => (
-                    <ChannelItemRow key={item.key} item={item} />
+                    <ChannelItemRow
+                      key={item.key}
+                      item={item}
+                      isActive={item.key === activeKey}
+                      actions={actions}
+                    />
                   ))}
                 </div>
               ) : (
-                <Empty className="px-2 py-1 text-subtle-foreground text-xs">
-                  <EmptyHeader className="text-left">
-                    Nothing matches the current search or filters.
+                <Empty className="border-0 py-6">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <MagnifyingGlass size={18} />
+                    </EmptyMedia>
+                    <EmptyTitle>No matches</EmptyTitle>
+                    <EmptyDescription>
+                      Try a different search or clear the filters.
+                    </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               )}
             </>
           )}
 
-          {!isLoading && items.length === 0 && (
-            <Empty className="px-2 py-1 text-subtle-foreground text-xs">
-              <EmptyHeader className="text-left">
-                Tasks and canvases you create in this channel show up here.
+          {!isLoading && !channelMissing && items.length === 0 && (
+            <Empty className="border-0 py-6">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <ChatsCircleIcon size={18} />
+                </EmptyMedia>
+                <EmptyTitle>Nothing here yet</EmptyTitle>
+                <EmptyDescription>
+                  Tasks and canvases you create in this channel show up here.
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}

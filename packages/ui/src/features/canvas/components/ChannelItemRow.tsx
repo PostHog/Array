@@ -1,68 +1,70 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
-import { Archive, PushPin } from "@phosphor-icons/react";
+import { Archive, FileTextIcon, PushPin } from "@phosphor-icons/react";
+import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
+import {
+  runStatusLabel,
+  runStatusVariant,
+} from "@posthog/core/canvas/runStatus";
 import { Avatar, AvatarFallback, Badge } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
-import type { UserBasic } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import type { ReactNode } from "react";
 
-type StatusVariant = "default" | "destructive" | "info" | "success" | "warning";
-
-export interface ChannelItem {
-  key: string;
-  kind: "task" | "canvas";
-  title: string;
-  ts: number;
-  pinned: boolean;
-  icon: ReactNode;
-  isActive: boolean;
-  /** Run status ("In progress", …) for the hover card; tasks only. */
-  status: string | null;
-  /** Raw run status value, for the status filter. */
-  rawStatus: string | null;
-  statusVariant: StatusVariant;
-  /** Who created it — the full user when known (tasks), else a name. */
-  authorUser: UserBasic | null;
-  authorName: string | null;
-  onClick: () => void;
-  onTogglePin: () => void;
-  /** Tasks only — canvases can't be archived. */
-  onArchive?: () => void;
+/**
+ * What a row can do. One object per channel rather than closures per item, so
+ * the item list stays plain data and doesn't rebuild on every navigation.
+ */
+export interface ChannelItemActions {
+  open: (item: ChannelItemModel) => void;
+  togglePin: (item: ChannelItemModel) => void;
+  archive: (item: ChannelItemModel) => void;
 }
 
-export function humanizeStatus(
-  status: string | null | undefined,
-): string | null {
-  if (!status) return null;
-  const text = status.replace(/_/g, " ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-export function statusVariantFor(
-  status: string | null | undefined,
-): StatusVariant {
-  if (!status) return "default";
-  const value = status.toLowerCase();
-  if (value.includes("complete")) return "success";
-  if (value.includes("fail") || value.includes("error")) return "destructive";
-  if (
-    value.includes("progress") ||
-    value.includes("running") ||
-    value.includes("pending") ||
-    value.includes("start")
-  ) {
-    return "info";
-  }
-  return "default";
-}
-
+// The channel sidebar's own chrome. Deliberately not shared with the Code
+// sidebar's TaskItem: that one is still on the absolute gray scale, while these
+// rows use the theme's fill/foreground tokens.
 const HOVER_ACTION_CLASS =
   "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground";
+const HOVER_TOOLBAR_CLASS =
+  "hidden shrink-0 items-center gap-0.5 group-hover:flex";
+const TIMESTAMP_CLASS =
+  "shrink-0 text-[11px] text-muted-foreground group-hover:hidden";
 
-export function ChannelItemRow({ item }: { item: ChannelItem }) {
+function itemIcon(item: ChannelItemModel): ReactNode {
+  return item.kind === "canvas" ? (
+    // Matches the schema's own default for boards saved before templating.
+    iconForTemplate(item.templateId ?? "freeform", {
+      size: 15,
+      className: "text-violet-9",
+    })
+  ) : (
+    <FileTextIcon size={15} className="text-blue-9" />
+  );
+}
+
+function authorLabel(item: ChannelItemModel): string | null {
+  if (item.authorUser) return userDisplayName(item.authorUser);
+  return item.authorName;
+}
+
+export function ChannelItemRow({
+  item,
+  isActive,
+  actions,
+}: {
+  item: ChannelItemModel;
+  isActive: boolean;
+  actions: ChannelItemActions;
+}) {
+  const icon = itemIcon(item);
+  const statusLabel = runStatusLabel(item.rawStatus);
+  const author = authorLabel(item);
+
   return (
     <PreviewCard.Root>
       <PreviewCard.Trigger
@@ -72,22 +74,22 @@ export function ChannelItemRow({ item }: { item: ChannelItem }) {
           <div className="min-w-0">
             <SidebarItem
               depth={0}
-              icon={item.icon}
+              icon={icon}
               // A non-string label opts out of SidebarItem's truncation tooltip.
               label={<span>{item.title}</span>}
-              isActive={item.isActive}
-              onClick={item.onClick}
+              isActive={isActive}
+              onClick={() => actions.open(item)}
               endContent={
                 <>
-                  <span className="shrink-0 text-[11px] text-muted-foreground group-hover:hidden">
+                  <span className={TIMESTAMP_CLASS}>
                     {formatRelativeTimeShort(item.ts)}
                   </span>
-                  <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  <span className={HOVER_TOOLBAR_CLASS}>
                     <Tooltip content={item.pinned ? "Unpin" : "Pin"} side="top">
                       <NestedButton
                         aria-label={item.pinned ? "Unpin" : "Pin"}
                         className={HOVER_ACTION_CLASS}
-                        onActivate={item.onTogglePin}
+                        onActivate={() => actions.togglePin(item)}
                       >
                         <PushPin
                           size={12}
@@ -95,12 +97,13 @@ export function ChannelItemRow({ item }: { item: ChannelItem }) {
                         />
                       </NestedButton>
                     </Tooltip>
-                    {item.onArchive && (
+                    {/* Canvases can't be archived. */}
+                    {item.kind === "task" && (
                       <Tooltip content="Archive task" side="top">
                         <NestedButton
                           aria-label="Archive task"
                           className={HOVER_ACTION_CLASS}
-                          onActivate={item.onArchive}
+                          onActivate={() => actions.archive(item)}
                         >
                           <Archive size={12} />
                         </NestedButton>
@@ -123,7 +126,7 @@ export function ChannelItemRow({ item }: { item: ChannelItem }) {
           <PreviewCard.Popup className="w-64 rounded-lg border border-border bg-background p-3 shadow-lg outline-none">
             <div className="flex items-start gap-2.5">
               <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                {item.icon}
+                {icon}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="break-words font-medium text-[13px] text-foreground leading-snug">
@@ -135,25 +138,27 @@ export function ChannelItemRow({ item }: { item: ChannelItem }) {
                 </p>
               </div>
             </div>
-            {item.status && (
+            {statusLabel && (
               <div className="mt-2">
-                <Badge variant={item.statusVariant}>{item.status}</Badge>
+                <Badge variant={runStatusVariant(item.rawStatus)}>
+                  {statusLabel}
+                </Badge>
               </div>
             )}
-            {(item.authorUser || item.authorName) && (
+            {author && (
               <div className="mt-2.5 flex items-center gap-2 border-border border-t pt-2.5">
                 {item.authorUser ? (
                   <UserAvatar user={item.authorUser} />
                 ) : (
                   <Avatar>
                     <AvatarFallback>
-                      {(item.authorName ?? "?").charAt(0).toUpperCase()}
+                      {author.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                 )}
                 <div className="min-w-0">
                   <p className="truncate text-[12px] text-foreground">
-                    {item.authorName ?? "Unknown"}
+                    {author}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
                     Created by
