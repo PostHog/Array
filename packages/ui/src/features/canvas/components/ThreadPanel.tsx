@@ -1,10 +1,14 @@
 import {
   ArrowSquareOutIcon,
   CaretRightIcon,
+  CheckCircleIcon,
   DotsThreeIcon,
   PaperPlaneRightIcon,
+  PlusCircleIcon,
   RobotIcon,
   TrashIcon,
+  UserIcon,
+  XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
@@ -75,6 +79,7 @@ import {
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
 import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
+import { buildConversationItems } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
 import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
 import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
@@ -86,7 +91,15 @@ import { parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 export function ThreadMessageRow({
   message,
@@ -316,6 +329,44 @@ export function ThreadArtifactRow({
             <PrArtifactCard url={artifact.url} />
           )}
         </ThreadItemBody>
+      </ThreadItemContent>
+    </ThreadItem>
+  );
+}
+
+// A condensed history row in the Activity timeline (task created, user
+// message, run finished, …) — the "what happened" events the mockup asks for,
+// derived from the task and its session rather than the human thread.
+function ActivityEventRow({
+  icon,
+  label,
+  detail,
+  timestamp,
+}: {
+  icon: ReactNode;
+  label: string;
+  detail?: string | null;
+  timestamp: string;
+}) {
+  return (
+    <ThreadItem>
+      <ThreadItemGutter>
+        <Avatar size="lg" className="sticky top-2">
+          <AvatarFallback>{icon}</AvatarFallback>
+        </Avatar>
+      </ThreadItemGutter>
+      <ThreadItemContent>
+        <ThreadItemHeader>
+          <ThreadItemAuthor>{label}</ThreadItemAuthor>
+          <ThreadTimestamp dateTime={timestamp} />
+        </ThreadItemHeader>
+        {detail && (
+          <ThreadItemBody>
+            <span className="line-clamp-3 whitespace-pre-wrap break-words text-[13px] text-gray-11">
+              {detail}
+            </span>
+          </ThreadItemBody>
+        )}
       </ThreadItemContent>
     </ThreadItem>
   );
@@ -636,7 +687,7 @@ function ThreadConversation({
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [timeline, agentStatus?.phase]);
+  }, [timeline, events.length, agentStatus?.phase, tab]);
 
   const isTaskAuthor =
     !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
@@ -679,23 +730,152 @@ function ThreadConversation({
     }
   };
 
-  const handleSendToAgent = (messageId: string) => {
-    sendToAgent(messageId).catch((error: unknown) => {
-      toast.error("Couldn't send message to agent", {
-        description: error instanceof Error ? error.message : String(error),
+  const handleSendToAgent = useCallback(
+    (messageId: string) => {
+      sendToAgent(messageId).catch((error: unknown) => {
+        toast.error("Couldn't send message to agent", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
-  };
+    },
+    [sendToAgent],
+  );
 
-  const handleDelete = (messageId: string) => {
-    deleteMessage(messageId).catch((error: unknown) => {
-      toast.error("Couldn't delete message", {
-        description: error instanceof Error ? error.message : String(error),
+  const handleDelete = useCallback(
+    (messageId: string) => {
+      deleteMessage(messageId).catch((error: unknown) => {
+        toast.error("Couldn't delete message", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
-  };
+    },
+    [deleteMessage],
+  );
 
   const isReady = !isInitializing && !isLoading;
+
+  // The Timeline tab is the task's full history, not just the human thread:
+  // creation, the user messages sent to the agent (from the session — what
+  // used to live "inside the thread" of a task), the thread's human comments
+  // and artifact announcements, the run-output PR as a fallback, and the
+  // run's terminal status.
+  const conversationItems = useMemo(
+    () => buildConversationItems(events, isPromptPending).items,
+    [events, isPromptPending],
+  );
+  const activityNodes = useMemo(() => {
+    const nodes: { key: string; ts: number; node: ReactNode }[] = [];
+    const createdTs = Date.parse(task.created_at) || 0;
+    nodes.push({
+      key: "task-created",
+      ts: createdTs,
+      node: (
+        <ActivityEventRow
+          icon={<PlusCircleIcon size={14} />}
+          label={`${
+            task.created_by ? userDisplayName(task.created_by) : "Someone"
+          } created this task`}
+          detail={task.title || null}
+          timestamp={task.created_at}
+        />
+      ),
+    });
+
+    for (const item of conversationItems) {
+      if (item.type !== "user_message") continue;
+      nodes.push({
+        key: `user-message-${item.id}`,
+        ts: item.timestamp,
+        node: (
+          <ActivityEventRow
+            icon={<UserIcon size={14} />}
+            label="User message"
+            detail={item.content}
+            timestamp={new Date(item.timestamp).toISOString()}
+          />
+        ),
+      });
+    }
+
+    let hasPrArtifact = false;
+    for (const row of timeline) {
+      if (row.kind === "artifact" && row.artifact.kind === "pr") {
+        hasPrArtifact = true;
+      }
+      nodes.push({
+        key: `thread-${row.message.id}`,
+        ts: row.timestamp,
+        node:
+          row.kind === "human" ? (
+            <ThreadMessageRow
+              message={row.message}
+              isTaskAuthor={isTaskAuthor}
+              isOwnMessage={
+                !!currentUser?.uuid &&
+                currentUser.uuid === row.message.author?.uuid
+              }
+              currentUserEmail={currentUser?.email}
+              canForward={canForward}
+              onSendToAgent={() => handleSendToAgent(row.message.id)}
+              onDelete={() => handleDelete(row.message.id)}
+            />
+          ) : (
+            <ThreadArtifactRow
+              artifact={row.artifact}
+              createdAt={row.message.created_at}
+            />
+          ),
+      });
+    }
+
+    const updatedTs = Date.parse(task.updated_at) || createdTs;
+    const outputPr = task.latest_run?.output?.pr_url;
+    if (typeof outputPr === "string" && outputPr && !hasPrArtifact) {
+      nodes.push({
+        key: "output-pr",
+        ts: updatedTs,
+        node: (
+          <ThreadArtifactRow
+            artifact={{ kind: "pr", url: outputPr }}
+            createdAt={task.updated_at}
+          />
+        ),
+      });
+    }
+
+    const runStatus = task.latest_run?.status;
+    if (runStatus && isTerminalStatus(runStatus)) {
+      nodes.push({
+        key: "run-status",
+        ts: updatedTs + 1,
+        node: (
+          <ActivityEventRow
+            icon={
+              runStatus === "completed" ? (
+                <CheckCircleIcon size={14} />
+              ) : (
+                <XCircleIcon size={14} />
+              )
+            }
+            label={`Task ${runStatus.replace(/_/g, " ")}`}
+            timestamp={task.updated_at}
+          />
+        ),
+      });
+    }
+
+    return nodes.sort((a, b) => a.ts - b.ts);
+  }, [
+    conversationItems,
+    timeline,
+    task,
+    isTaskAuthor,
+    canForward,
+    currentUser?.uuid,
+    currentUser?.email,
+    handleSendToAgent,
+    handleDelete,
+  ]);
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
@@ -715,10 +895,10 @@ function ThreadConversation({
         <div className="flex-1 overflow-y-auto">
           <TaskArtifactsList task={task} timeline={timeline} />
         </div>
-      ) : (
+      ) : tab === "comments" ? (
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <ThreadTimeline
-            timeline={tab === "comments" ? commentRows : timeline}
+            timeline={commentRows}
             isReady={isReady}
             currentUserUuid={currentUser?.uuid}
             currentUserEmail={currentUser?.email}
@@ -727,6 +907,18 @@ function ThreadConversation({
             onSendToAgent={handleSendToAgent}
             onDelete={handleDelete}
           />
+        </div>
+      ) : (
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          {!isReady ? (
+            <ThreadLoadingState />
+          ) : (
+            <ThreadItemGroup>
+              {activityNodes.map((entry) => (
+                <Fragment key={entry.key}>{entry.node}</Fragment>
+              ))}
+            </ThreadItemGroup>
+          )}
         </div>
       )}
 

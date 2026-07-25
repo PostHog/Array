@@ -41,6 +41,7 @@ import {
   useDashboardMutations,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -278,6 +279,9 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
   const filtersActive = createdByFilter !== "anyone" || statusFilter !== null;
 
   const base = `/website/${channelId}`;
+  const isPersonal = channelName === PERSONAL_CHANNEL_NAME;
+  const meUuid = currentUser?.uuid ?? null;
+  const meName = currentUser ? userDisplayName(currentUser) : null;
 
   const items = useMemo<SpaceItem[]>(() => {
     const canvasItems: SpaceItem[] = dashboards.map((d: DashboardSummary) => ({
@@ -347,7 +351,18 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
       },
     );
 
-    return [...canvasItems, ...taskItems].sort((a, b) => b.ts - a.ts);
+    const all = [...canvasItems, ...taskItems].sort((a, b) => b.ts - a.ts);
+
+    // The personal space is *yours*: the shared "me" folder can hold other
+    // people's items, so drop anything whose author is known and isn't you.
+    // Unknown authors stay (better to over-show than hide your own work), and
+    // nothing is dropped until the current user has actually loaded.
+    if (!isPersonal || (!meUuid && !meName)) return all;
+    return all.filter((item) => {
+      if (item.authorUser) return item.authorUser.uuid === meUuid;
+      if (item.authorName && meName) return item.authorName === meName;
+      return true;
+    });
   }, [
     dashboards,
     filedTasks,
@@ -361,13 +376,14 @@ export function SpaceSidebar({ channelId }: { channelId: string }) {
     togglePin,
     archiveTask,
     setCanvasPinned,
+    isPersonal,
+    meUuid,
+    meName,
   ]);
 
   const pinnedItems = items.filter((i) => i.pinned);
 
   // The Recent list honors the header's search + filters; Pinned stays as-is.
-  const meUuid = currentUser?.uuid ?? null;
-  const meName = currentUser ? userDisplayName(currentUser) : null;
   const normalizedQuery = query.trim().toLowerCase();
   const recentItems = items
     .filter((i) => !i.pinned)
