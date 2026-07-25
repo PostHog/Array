@@ -42,8 +42,9 @@ import { useHotkeys } from "react-hotkeys-hook";
 // (see SWITCH_STARRED_CHANNEL).
 const STARRED_HOTKEY_SLOTS = 9;
 
-// One channel in the switcher; right-click stars/unstars it. #me and the first
-// nine starred channels show their mod+N hotkey.
+// One channel in the switcher: click switches, the star toggles (hover-revealed
+// unless starred), right-click offers the same. #me and the first nine starred
+// channels show their mod+N hotkey.
 function SwitcherRow({
   channel,
   active,
@@ -58,25 +59,51 @@ function SwitcherRow({
   const isMe = channel.name === PERSONAL_CHANNEL_NAME;
   const { isStarred, toggleStar } = useChannelStarToggle(channel);
 
+  const trackedToggleStar = () => {
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: isStarred ? "unstar" : "star",
+      surface: "sidebar",
+      channel_id: channel.id,
+    });
+    toggleStar();
+  };
+
   const row = (
-    <button
-      type="button"
-      onClick={onPick}
+    <div
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors hover:bg-gray-3",
+        "group flex items-center rounded-md transition-colors hover:bg-gray-3",
         active && "bg-fill-selected",
       )}
     >
-      <span className="flex w-4 shrink-0 items-center justify-center">
-        <HashIcon size={14} className="text-gray-10" />
-      </span>
-      <span className="min-w-0 flex-1 truncate text-gray-12">
-        {channel.name}
-      </span>
-      {hotkeySlot != null && (
-        <Kbd className="shrink-0">{formatHotkey(`mod+${hotkeySlot}`)}</Kbd>
+      <button
+        type="button"
+        onClick={onPick}
+        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[13px]"
+      >
+        <span className="flex w-4 shrink-0 items-center justify-center">
+          <HashIcon size={14} className="text-gray-10" />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-gray-12">
+          {channel.name}
+        </span>
+        {hotkeySlot != null && (
+          <Kbd className="shrink-0">{formatHotkey(`mod+${hotkeySlot}`)}</Kbd>
+        )}
+      </button>
+      {!isMe && (
+        <button
+          type="button"
+          aria-label={isStarred ? "Unstar channel" : "Star channel"}
+          onClick={trackedToggleStar}
+          className={cn(
+            "mr-1 flex size-5 shrink-0 items-center justify-center rounded text-gray-10 transition-colors hover:text-gray-12",
+            !isStarred && "opacity-0 group-hover:opacity-100",
+          )}
+        >
+          <StarIcon size={13} weight={isStarred ? "fill" : "regular"} />
+        </button>
       )}
-    </button>
+    </div>
   );
 
   if (isMe) return row;
@@ -84,7 +111,7 @@ function SwitcherRow({
     <ContextMenu>
       <ContextMenuTrigger render={row} />
       <ContextMenuContent>
-        <ContextMenuItem onClick={toggleStar}>
+        <ContextMenuItem onClick={trackedToggleStar}>
           <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
           {isStarred ? "Unstar channel" : "Star channel"}
         </ContextMenuItem>

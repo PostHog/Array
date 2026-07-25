@@ -1,5 +1,6 @@
 import {
   BookOpenTextIcon,
+  ChatsCircleIcon,
   FunnelSimple as FunnelSimpleIcon,
   MagnifyingGlass,
   PackageIcon,
@@ -249,6 +250,13 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
       <ChannelSwitcher channelId={channelId} />
 
       <div className="flex flex-col gap-px px-2 pt-1">
+        {sectionRow(
+          "Feed",
+          <ChatsCircleIcon size={16} />,
+          base,
+          () =>
+            void navigate({ to: "/website/$channelId", params: { channelId } }),
+        )}
         {sectionRow(
           "Context",
           <BookOpenTextIcon size={16} />,
