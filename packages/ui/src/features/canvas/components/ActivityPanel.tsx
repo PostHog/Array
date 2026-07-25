@@ -43,7 +43,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * The spaces-layout task panel — Timeline / Artifacts / Comments. Legacy
+ * The flag-gated task panel — Timeline / Artifacts / Comments. Legacy
  * ThreadPanel stays for flag-off; its row/composer primitives are reused here.
  */
 

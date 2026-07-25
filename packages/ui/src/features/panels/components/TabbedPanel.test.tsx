@@ -19,8 +19,8 @@ vi.mock("./PanelDropZones", () => ({
   PanelDropZones: () => null,
 }));
 
-vi.mock("@posthog/ui/features/canvas/hooks/useSpacesLayout", () => ({
-  useSpacesLayout: () => false,
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => false,
 }));
 
 vi.mock("./PanelTab", () => ({

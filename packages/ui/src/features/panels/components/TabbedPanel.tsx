@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@posthog/quill";
-import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
 import type { PanelContent } from "@posthog/ui/features/panels/panelTypes";
@@ -100,7 +100,7 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   emptyState,
 }) => {
   const hostClient = useHostTRPCClient();
-  const spacesOn = useSpacesLayout();
+  const channelsLayout = useChannelsLayout();
   const [mountedTabs, setMountedTabs] = useState<{
     scopeKey: string;
     tabIds: Set<string>;
@@ -231,11 +231,11 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
                 badge={tab.badge}
               />
             ))}
-            {/* Spaces: a menu (New chat is coming, shown disabled). Flag off:
+            {/* Flag on: a menu (New chat is coming, shown disabled). Flag off:
                 the plain add-terminal button. */}
             {content.droppable &&
               onAddTerminal &&
-              (spacesOn ? (
+              (channelsLayout ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={

@@ -4,12 +4,12 @@ import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTask
 import { useArchiveTask } from "@posthog/ui/features/archive/useArchiveTask";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
-import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import {
+  type ChannelItem,
   humanizeStatus,
-  type SpaceItem,
   statusVariantFor,
-} from "@posthog/ui/features/canvas/components/SpaceItemRow";
+} from "@posthog/ui/features/canvas/components/ChannelItemRow";
+import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useChannelFeed } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import {
   useDashboardMutations,
@@ -26,14 +26,14 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 /**
- * A space's canvases + task feed as merged, newest-first items. The personal
- * "#me" space is filtered to the current user. Also returns the user's identity
+ * A channel's canvases + task feed as merged, newest-first items. The personal
+ * "#me" channel is filtered to the current user. Also returns the user's identity
  * for the recent-list filters.
  */
-export function useSpaceItems(
+export function useChannelItems(
   channelId: string,
   channelName: string,
-): { items: SpaceItem[]; meUuid: string | null; meName: string | null } {
+): { items: ChannelItem[]; meUuid: string | null; meName: string | null } {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -52,36 +52,38 @@ export function useSpaceItems(
   const meUuid = currentUser?.uuid ?? null;
   const meName = currentUser ? userDisplayName(currentUser) : null;
 
-  const items = useMemo<SpaceItem[]>(() => {
-    const canvasItems: SpaceItem[] = dashboards.map((d: DashboardSummary) => ({
-      key: `canvas:${d.id}`,
-      kind: "canvas",
-      title: d.name,
-      ts: d.updatedAt,
-      pinned: d.pinnedAt != null,
-      icon: iconForTemplate(d.templateId, {
-        size: 15,
-        className: "text-violet-9",
-      }),
-      status: null,
-      rawStatus: null,
-      statusVariant: "default" as const,
-      authorUser: null,
-      authorName: d.createdBy ?? null,
-      isActive: pathname === `${base}/dashboards/${d.id}`,
-      onClick: () =>
-        void navigate({
-          to: "/website/$channelId/dashboards/$dashboardId",
-          params: { channelId, dashboardId: d.id },
+  const items = useMemo<ChannelItem[]>(() => {
+    const canvasItems: ChannelItem[] = dashboards.map(
+      (d: DashboardSummary) => ({
+        key: `canvas:${d.id}`,
+        kind: "canvas",
+        title: d.name,
+        ts: d.updatedAt,
+        pinned: d.pinnedAt != null,
+        icon: iconForTemplate(d.templateId, {
+          size: 15,
+          className: "text-violet-9",
         }),
-      onTogglePin: () => {
-        setCanvasPinned(d.id, d.pinnedAt == null).catch(() => {
-          toast.error("Couldn't update pin");
-        });
-      },
-    }));
+        status: null,
+        rawStatus: null,
+        statusVariant: "default" as const,
+        authorUser: null,
+        authorName: d.createdBy ?? null,
+        isActive: pathname === `${base}/dashboards/${d.id}`,
+        onClick: () =>
+          void navigate({
+            to: "/website/$channelId/dashboards/$dashboardId",
+            params: { channelId, dashboardId: d.id },
+          }),
+        onTogglePin: () => {
+          setCanvasPinned(d.id, d.pinnedAt == null).catch(() => {
+            toast.error("Couldn't update pin");
+          });
+        },
+      }),
+    );
 
-    const taskItems: SpaceItem[] = feedTasks.flatMap((task) => {
+    const taskItems: ChannelItem[] = feedTasks.flatMap((task) => {
       if (archivedTaskIds.has(task.id)) return [];
       return [
         {
@@ -116,7 +118,7 @@ export function useSpaceItems(
 
     const all = [...canvasItems, ...taskItems].sort((a, b) => b.ts - a.ts);
 
-    // The personal space is yours: drop items with a known author that isn't
+    // The personal channel is yours: drop items with a known author that isn't
     // you (unknown authors stay; wait until the current user has loaded).
     if (!isPersonal || (!meUuid && !meName)) return all;
     return all.filter((item) => {

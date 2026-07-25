@@ -2,17 +2,15 @@ import { ArchiveIcon } from "@phosphor-icons/react";
 import { Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { ChannelNav } from "@posthog/ui/features/canvas/components/ChannelNav";
+import { ChannelSidebar } from "@posthog/ui/features/canvas/components/ChannelSidebar";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
-import { NewSpaceDraft } from "@posthog/ui/features/canvas/components/NewSpaceDraft";
-import { SpaceDots } from "@posthog/ui/features/canvas/components/SpaceDots";
-import { SpaceSidebar } from "@posthog/ui/features/canvas/components/SpaceSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
-import { useSpaceSwipe } from "@posthog/ui/features/canvas/hooks/useSpaces";
-import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
-import { useSpaceStore } from "@posthog/ui/features/canvas/stores/spaceStore";
+import { useCurrentChannelStore } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
@@ -83,74 +81,44 @@ export function ChannelsSidebar() {
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-  // Spaces subsumes the channels world when on (the toggle is then hidden);
-  // when off, the toggle drives the old Channels alpha. `channelsWorld` = the
-  // body shows channels either way.
-  const spacesOn = useSpacesLayout();
-  const channelsWorld = spacesOn || channelsEnabled;
+  // The new layout subsumes the channels alpha when on (the toggle is then
+  // hidden); when off, the toggle drives the alpha. `channelsWorld` = the body
+  // shows channels either way.
+  const channelsLayout = useChannelsLayout();
+  const channelsWorld = channelsLayout || channelsEnabled;
   // Deferred so the toggle paints before the heavy channel tree (ChannelsList
   // mounts a provider-laden row per channel) swaps in.
   const bodyChannelsWorld = useDeferredValue(channelsWorld);
 
   const archivedTaskIds = useArchivedTaskIds();
 
-  // Spaces scoping (see spaceStore for the model): the route is the source of
-  // truth — a /website/$channelId page adopts that channel as the current
-  // space. Inert while the flag is off.
+  // Channel scoping: the route is the source of truth — a /website/$channelId
+  // page adopts that channel as current. Inert while the flag is off.
   const params = useParams({ strict: false });
   const routeChannelId = params.channelId;
-  const currentChannelId = useSpaceStore((s) => s.currentChannelId);
-  const setCurrentChannel = useSpaceStore((s) => s.setCurrentChannel);
-  const browsing = useSpaceStore((s) => s.browsing);
-  const draftSpace = useSpaceStore((s) => s.draftSpace);
-  const { channels } = useChannels({ enabled: spacesOn });
+  const currentChannelId = useCurrentChannelStore((s) => s.currentChannelId);
+  const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
+  const { channels } = useChannels({ enabled: channelsLayout });
   useEffect(() => {
-    if (!spacesOn || !routeChannelId) return;
-    // Browsing is a preview — it shows a channel's activity without scoping to
-    // it, so don't adopt the route while the directory is open.
-    if (useSpaceStore.getState().browsing) return;
+    if (!channelsLayout || !routeChannelId) return;
     setCurrentChannel(routeChannelId);
-  }, [spacesOn, routeChannelId, setCurrentChannel]);
-  const inSpace =
-    spacesOn && currentChannelId != null && !browsing && !draftSpace;
+  }, [channelsLayout, routeChannelId, setCurrentChannel]);
+  const inChannel = channelsLayout && currentChannelId != null;
 
-  const historyIndex = useRouterState({
-    select: (s) => s.location.state.__TSR_index,
-  });
-  const prevHistoryIndexRef = useRef(historyIndex);
-  useEffect(() => {
-    if (prevHistoryIndexRef.current === historyIndex) return;
-    prevHistoryIndexRef.current = historyIndex;
-    if (!spacesOn || routeChannelId) return;
-    const state = useSpaceStore.getState();
-    if (state.browsing) state.setBrowsing(false);
-    if (state.draftSpace) state.setDraftSpace(false);
-  }, [historyIndex, routeChannelId, spacesOn]);
-
-  // Default to the personal "#me" space on first load; once any space has been
-  // current, never auto-scope again so the pickers can't be hijacked.
+  // Default to the personal "#me" channel on first load; once any channel has
+  // been current, never auto-scope again.
   const autoScopedRef = useRef(false);
   useEffect(() => {
     if (currentChannelId) autoScopedRef.current = true;
   }, [currentChannelId]);
   useEffect(() => {
-    if (!spacesOn || autoScopedRef.current || currentChannelId) return;
-    if (browsing || draftSpace) return;
+    if (!channelsLayout || autoScopedRef.current || currentChannelId) return;
     const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
     if (me) {
       autoScopedRef.current = true;
       setCurrentChannel(me.id);
     }
-  }, [
-    spacesOn,
-    channels,
-    currentChannelId,
-    browsing,
-    draftSpace,
-    setCurrentChannel,
-  ]);
-
-  const handleSpaceSwipe = useSpaceSwipe(spacesOn);
+  }, [channelsLayout, channels, currentChannelId, setCurrentChannel]);
 
   return (
     <ResizableSidebar
@@ -166,25 +134,18 @@ export function ChannelsSidebar() {
       onPeekLeave={() => endSidebarPeek()}
       onPeekDismiss={cancelSidebarPeek}
     >
-      <Flex
-        direction="column"
-        className="h-full bg-chrome"
-        onWheel={handleSpaceSwipe}
-      >
-        {(!spacesOn ||
-          (currentChannelId == null && !browsing && !draftSpace)) && (
-          <SidebarNavSection />
-        )}
+      <Flex direction="column" className="h-full bg-chrome">
+        {!inChannel && <SidebarNavSection />}
 
-        {/* draft chooser → active space (spaces only) → channel list → tasks */}
-        {bodyChannelsWorld && spacesOn && draftSpace ? (
-          <Box className="min-h-0 flex-1 overflow-hidden">
-            <NewSpaceDraft />
-          </Box>
-        ) : bodyChannelsWorld && inSpace && currentChannelId ? (
-          <Box className="min-h-0 flex-1 overflow-hidden">
-            <SpaceSidebar channelId={currentChannelId} />
-          </Box>
+        {/* active channel → channel list → tasks */}
+        {inChannel && currentChannelId ? (
+          <>
+            <ChannelNav />
+            <Separator />
+            <Box className="min-h-0 flex-1 overflow-hidden">
+              <ChannelSidebar channelId={currentChannelId} />
+            </Box>
+          </>
         ) : bodyChannelsWorld ? (
           <>
             <Separator />
@@ -220,10 +181,8 @@ export function ChannelsSidebar() {
 
         <LoopsPromoCard />
 
-        {spacesOn && <SpaceDots />}
-
-        {/* In the spaces layout the account switcher moves to the title bar. */}
-        {!spacesOn && (
+        {/* In the new layout the account switcher moves to the title bar. */}
+        {!channelsLayout && (
           <Box className="shrink-0 px-2 pb-2">
             <ProjectSwitcher />
           </Box>

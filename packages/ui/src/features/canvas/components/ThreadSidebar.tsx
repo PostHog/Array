@@ -2,14 +2,14 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { ActivityPanel } from "@posthog/ui/features/canvas/components/ActivityPanel";
 import { ThreadPanel } from "@posthog/ui/features/canvas/components/ThreadPanel";
-import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useThreadPanelStore } from "@posthog/ui/features/canvas/stores/threadPanelStore";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { track } from "@posthog/ui/shell/analytics";
 import { useState } from "react";
 
-// The right-hand dock for a task's thread (collapsible, resizable). Spaces uses
-// the tabbed ActivityPanel; flag off keeps the legacy ThreadPanel.
+// The right-hand dock for a task's thread (collapsible, resizable). Flag on
+// swaps the legacy ThreadPanel for the tabbed ActivityPanel.
 export function ThreadSidebar({
   taskId,
   channelId,
@@ -31,14 +31,14 @@ export function ThreadSidebar({
   const setWidth = useThreadPanelStore((s) => s.setWidth);
   const setCollapsed = useThreadPanelStore((s) => s.setCollapsed);
   const [isResizing, setIsResizing] = useState(false);
-  const spacesOn = useSpacesLayout();
-  const Panel = spacesOn ? ActivityPanel : ThreadPanel;
+  const channelsLayout = useChannelsLayout();
+  const Panel = channelsLayout ? ActivityPanel : ThreadPanel;
 
   const toggleCollapsed = (next: boolean) => {
     setCollapsed(next);
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: next ? "collapse_thread" : "expand_thread",
-      surface: spacesOn ? "activity_panel" : "thread_panel",
+      surface: channelsLayout ? "activity_panel" : "thread_panel",
       task_id: taskId,
     });
   };

@@ -3,7 +3,7 @@ import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
-import { useSpacesLayout } from "@posthog/ui/features/canvas/hooks/useSpacesLayout";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
@@ -75,9 +75,9 @@ export function SidebarNavSection({
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
   const setChannelsEnabled = useSidebarStore((s) => s.setChannelsEnabled);
-  // The spaces layout subsumes the channels world: while its flag is on, the
+  // The new channels layout subsumes the alpha: while its flag is on, the
   // "Enable channels" toggle is meaningless, so its row is hidden.
-  const spacesOn = useSpacesLayout();
+  const channelsLayout = useChannelsLayout();
 
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
@@ -156,9 +156,8 @@ export function SidebarNavSection({
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
     inbox: true,
     "command-center": true,
-    // Hidden while the spaces flag is on — spaces subsume channels, so the
-    // opt-in toggle would be a no-op.
-    contexts: bluebirdEnabled && !spacesOn,
+    // Hidden while the new layout is on — the opt-in toggle would be a no-op.
+    contexts: bluebirdEnabled && !channelsLayout,
     // Activity (the mentions feed) is a channels surface, so it only appears
     // once channels are enabled.
     activity: channelsEnabled,

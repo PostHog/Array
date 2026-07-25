@@ -39,10 +39,10 @@ vi.mock("@posthog/ui/router/useAppView", () => ({ useAppView }));
 vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
   useFeatureFlag: () => true,
 }));
-// These tests pin the legacy layout (spaces flag off), where the "Enable
-// channels" toggle row is present.
-vi.mock("@posthog/ui/features/canvas/hooks/useSpacesLayout", () => ({
-  useSpacesLayout: () => false,
+// These tests pin the legacy layout (flag off), where the "Enable channels"
+// toggle row is present.
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => false,
 }));
 vi.mock("@posthog/ui/router/navigationBridge", () => ({
   navigateToActivity,
