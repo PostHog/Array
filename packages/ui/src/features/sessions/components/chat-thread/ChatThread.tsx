@@ -970,6 +970,7 @@ export function ChatThread({ events, ...props }: ChatThreadProps) {
 
   return (
     <ChatThreadRenderer
+      key={props.taskId}
       {...props}
       conversationItems={items}
       footerEvents={[]}
@@ -985,6 +986,7 @@ export function AcpChatThread({ events, ...props }: AcpChatThreadProps) {
 
   return (
     <ChatThreadRenderer
+      key={props.taskId}
       {...props}
       conversationItems={items}
       footerEvents={events}
