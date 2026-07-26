@@ -1,7 +1,9 @@
 import { Button, cn } from "@posthog/quill";
 import type { SidebarItemAction } from "@posthog/ui/features/sidebar/types";
-import { OverflowTickerText } from "@posthog/ui/primitives/OverflowTickerText";
-import { useState } from "react";
+import {
+  OverflowTickerText,
+  useOverflowTickerReveal,
+} from "@posthog/ui/primitives/OverflowTickerText";
 
 export const INDENT_SIZE = 8;
 
@@ -46,8 +48,7 @@ export function SidebarItem({
   endContent,
   disabled,
 }: SidebarItemProps) {
-  const [isHovered, setIsHovered] = useState(false);
-  const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
+  const { reveal, hoverProps, focusProps } = useOverflowTickerReveal();
 
   return (
     <Button
@@ -69,12 +70,8 @@ export function SidebarItem({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
-      onPointerEnter={() => setIsHovered(true)}
-      onPointerLeave={() => setIsHovered(false)}
-      onFocus={(e) =>
-        setIsKeyboardFocused(e.currentTarget.matches(":focus-visible"))
-      }
-      onBlur={() => setIsKeyboardFocused(false)}
+      {...hoverProps}
+      {...focusProps}
       disabled={disabled}
     >
       {icon ? (
@@ -85,7 +82,7 @@ export function SidebarItem({
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-h-[18px] items-center gap-1">
           <OverflowTickerText
-            reveal={isHovered || isKeyboardFocused}
+            reveal={reveal}
             className={cn(!badge && "flex-1")}
           >
             {label}
