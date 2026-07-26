@@ -1,8 +1,5 @@
 import { BellIcon } from "@phosphor-icons/react";
-import { countUnseenActivity } from "@posthog/core/canvas/taskActivity";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
-import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
-import { useMemo } from "react";
 import { SidebarItem } from "../SidebarItem";
 import { SidebarCountBadge } from "./SidebarCountBadge";
 
@@ -20,12 +17,7 @@ export function ActivityItem({
   onClick,
   depth = 0,
 }: ActivityItemProps) {
-  const { items } = useTaskActivity();
-  const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);
-  const unseen = useMemo(
-    () => countUnseenActivity(items, lastSeenAt),
-    [items, lastSeenAt],
-  );
+  const { unreadCount } = useTaskActivity();
   return (
     <SidebarItem
       depth={depth}
@@ -34,8 +26,8 @@ export function ActivityItem({
         <>
           Activity
           <SidebarCountBadge
-            count={unseen}
-            title={`${unseen} new ${unseen === 1 ? "update" : "updates"}`}
+            count={unreadCount}
+            title={`${unreadCount} new ${unreadCount === 1 ? "update" : "updates"}`}
           />
         </>
       }

@@ -1,11 +1,8 @@
 import {
-  mergeTaskActivity,
   type TaskActivityItem,
   toTaskActivityItems,
 } from "@posthog/core/canvas/taskActivity";
-import type { TaskActivity } from "@posthog/shared/domain-types";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
-import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 const ACTIVITY_POLL_INTERVAL_MS = 60_000;
@@ -19,22 +16,12 @@ const TASK_ACTIVITY_QUERY_KEY = ["task-activity"] as const;
  */
 export function useTaskActivity(options?: { enabled?: boolean }): {
   items: TaskActivityItem[];
+  unreadCount: number;
   isLoading: boolean;
 } {
-  const queryClient = useQueryClient();
   const query = useAuthenticatedQuery(
     TASK_ACTIVITY_QUERY_KEY,
-    async (client) => {
-      const previous =
-        queryClient.getQueryData<TaskActivity[]>(TASK_ACTIVITY_QUERY_KEY) ?? [];
-      // The most recent activity already held becomes the low-water mark, so
-      // repolls ask the backend only for what changed.
-      const since = previous[0]?.activity_at;
-      const incoming = await client.getTaskActivity(
-        since ? { since } : undefined,
-      );
-      return mergeTaskActivity(previous, incoming);
-    },
+    (client) => client.getTaskActivity(),
     {
       enabled: options?.enabled ?? true,
       refetchInterval: ACTIVITY_POLL_INTERVAL_MS,
@@ -42,8 +29,12 @@ export function useTaskActivity(options?: { enabled?: boolean }): {
     },
   );
   const items = useMemo(
-    () => toTaskActivityItems(query.data ?? []),
+    () => toTaskActivityItems(query.data?.results ?? []),
     [query.data],
   );
-  return { items, isLoading: query.isLoading };
+  return {
+    items,
+    unreadCount: query.data?.unread_count ?? 0,
+    isLoading: query.isLoading,
+  };
 }

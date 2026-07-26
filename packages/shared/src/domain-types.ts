@@ -152,6 +152,7 @@ export type TaskActivityKind =
  * `TaskActivityDTO`.
  */
 export interface TaskActivity {
+  id: string;
   task_id: string;
   task_title: string;
   channel_id?: string | null;
@@ -161,6 +162,12 @@ export interface TaskActivity {
   snippet: string;
   latest_author?: UserBasic | null;
   latest_message_id?: string | null;
+  is_unread: boolean;
+}
+
+export interface TaskActivityPage {
+  results: TaskActivity[];
+  unread_count: number;
 }
 
 export type TaskRunStatus =

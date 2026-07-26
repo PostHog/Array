@@ -86,7 +86,7 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
-  TaskActivity,
+  TaskActivityPage,
   TaskChannel,
   TaskMention,
   TaskRun,
@@ -2509,13 +2509,10 @@ export class PostHogAPIClient {
 
   // Tasks the current user is involved in (created, mentioned, or messaged),
   // one row per task, newest activity first.
-  async getTaskActivity(options?: { since?: string }): Promise<TaskActivity[]> {
+  async getTaskActivity(): Promise<TaskActivityPage> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/task_activity/`;
     const url = new URL(`${this.api.baseUrl}${urlPath}`);
-    if (options?.since) {
-      url.searchParams.set("since", options.since);
-    }
     const response = await this.api.fetcher.fetch({
       method: "get",
       url,
@@ -2524,7 +2521,22 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(`Failed to fetch task activity: ${response.statusText}`);
     }
-    return (await response.json()) as TaskActivity[];
+    return (await response.json()) as TaskActivityPage;
+  }
+
+  async markTaskActivityRead(): Promise<void> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_activity/mark_read/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to mark task activity read: ${response.statusText}`,
+      );
+    }
   }
 
   async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {

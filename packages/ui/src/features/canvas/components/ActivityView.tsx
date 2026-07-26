@@ -16,9 +16,9 @@ import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
 import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
-import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
@@ -28,7 +28,7 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 function ChannelSuffix({ channelName }: { channelName: string | null }) {
   if (!channelName) return null;
@@ -164,6 +164,7 @@ export function ActivityView() {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const { items, isLoading } = useTaskActivity();
+  const { mutate: markRead } = useMarkTaskActivityRead();
   // Items carry backend channel names only; the desktop folder-channel id
   // (needed for /website navigation and copy-link) is resolved here, where
   // the single useChannels subscription lives.
@@ -182,13 +183,6 @@ export function ActivityView() {
     channelName
       ? (folderIdByName.get(normalizeChannelName(channelName)) ?? null)
       : null;
-  const markSeen = useActivitySeenStore((s) => s.markSeen);
-  // Snapshot before marking seen so rows that were new on arrival keep their
-  // dot for this visit.
-  const [seenAtOpen] = useState(
-    () => useActivitySeenStore.getState().lastSeenAt,
-  );
-
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "view_activity",
@@ -196,11 +190,9 @@ export function ActivityView() {
     });
   }, []);
 
-  // Re-mark as items stream in so the badge stays cleared while reading.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run per new item
   useEffect(() => {
-    markSeen();
-  }, [markSeen, items.length]);
+    if (items.some((item) => item.isUnread)) markRead();
+  }, [items, markRead]);
 
   return (
     <div className="h-full overflow-y-auto bg-gray-1">
@@ -236,7 +228,7 @@ export function ActivityView() {
                   key={item.taskId}
                   item={item}
                   folderChannelId={folderChannelIdFor(item.channelName)}
-                  isNew={!seenAtOpen || item.activityAt > seenAtOpen}
+                  isNew={item.isUnread}
                   currentUserEmail={currentUser?.email}
                 />
               ))}
