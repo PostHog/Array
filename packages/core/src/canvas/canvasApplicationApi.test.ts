@@ -65,6 +65,26 @@ describe("CanvasApplicationApi", () => {
     await expect(api.getCurrentSource("canvas-1")).resolves.toBeNull();
   });
 
+  it("publishes focused source patches against an exact base version", async () => {
+    const { api, fetch } = service(
+      Response.json({ version, build }, { status: 201 }),
+    );
+
+    await expect(
+      api.patch("canvas-1", {
+        patch: { upsertFiles: { "src/App.tsx": "export default () => null" } },
+        expectedCurrentVersionId: "version-1",
+        taskId: "task-1",
+        taskRunId: "run-2",
+      }),
+    ).resolves.toEqual({ version, build });
+    expect(fetch).toHaveBeenCalledWith("canvas-1/canvas/source/", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: expect.stringContaining('"expectedCurrentVersionId":"version-1"'),
+    });
+  });
+
   it("validates source without publishing it", async () => {
     const { api, fetch } = service(
       Response.json({ ok: true, diagnostics: [], manifest: null }),

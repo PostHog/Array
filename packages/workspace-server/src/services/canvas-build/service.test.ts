@@ -91,6 +91,83 @@ describe("CanvasBuildService", () => {
     expect(result.ok).toBe(true);
   });
 
+  it.each([
+    ["d3", "7.9.0", 'import { scaleLinear } from "d3"; scaleLinear();'],
+    [
+      "date-fns",
+      "4.1.0",
+      'import { format } from "date-fns"; format(new Date(), "yyyy");',
+    ],
+    ["echarts", "6.1.0", 'import * as echarts from "echarts"; void echarts;'],
+    [
+      "lodash-es",
+      "4.18.1",
+      'import { groupBy } from "lodash-es"; groupBy([]);',
+    ],
+    ["zod", "4.4.3", 'import { z } from "zod"; z.string();'],
+  ])("bundles admitted package %s", async (name, version, source) => {
+    const result = await service.build({
+      canvasId: `canvas-${name}`,
+      sourceVersionId: null,
+      project: project(source, { dependencies: { [name]: version } }),
+      mode: "validate",
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("bundles imported image and WebAssembly assets", async () => {
+    const result = await service.build({
+      canvasId: "canvas-assets",
+      sourceVersionId: null,
+      project: project(
+        'import image from "../assets/pixel.png"; import wasm from "../assets/module.wasm"; document.body.dataset.image = image; document.body.dataset.wasm = String(wasm.length);',
+        {
+          assets: {
+            "assets/pixel.png": {
+              encoding: "base64",
+              contentType: "image/png",
+              content: "iVBORw0KGgo=",
+            },
+            "assets/module.wasm": {
+              encoding: "base64",
+              contentType: "application/wasm",
+              content: "AGFzbQEAAAA=",
+            },
+          },
+        },
+      ),
+      mode: "validate",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.artifactFiles?.["assets/main.js"]).toContain(
+      "data:image/png;base64",
+    );
+  });
+
+  it("compiles a module worker imported with the worker query", async () => {
+    const result = await service.build({
+      canvasId: "canvas-worker",
+      sourceVersionId: null,
+      project: project(
+        'import workerUrl from "./worker.ts?worker"; new Worker(workerUrl, { type: "module" });',
+        {
+          files: {
+            "index.html": '<script type="module" src="/src/main.ts"></script>',
+            "src/main.ts":
+              'import workerUrl from "./worker.ts?worker"; new Worker(workerUrl, { type: "module" });',
+            "src/worker.ts": 'self.postMessage("ready")',
+          },
+        },
+      ),
+      mode: "validate",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.artifactFiles?.["assets/main.js"]).toContain("new Blob");
+  });
+
   it("rejects imported packages that are not declared", async () => {
     const result = await service.build({
       canvasId: "canvas-undeclared",
@@ -109,8 +186,8 @@ describe("CanvasBuildService", () => {
     const result = await service.build({
       canvasId: "canvas-workspace-package",
       sourceVersionId: null,
-      project: project('import "zod";', {
-        dependencies: { zod: "4.3.6" },
+      project: project('import "left-pad";', {
+        dependencies: { "left-pad": "1.3.0" },
       }),
       mode: "validate",
     });

@@ -1,5 +1,6 @@
 import {
   type CanvasHistory,
+  type CanvasPatchPublishRequest,
   type CanvasPersistedBuild,
   type CanvasPublishRequest,
   type CanvasPublishResult,
@@ -7,6 +8,7 @@ import {
   type CanvasSourceSnapshot,
   type CanvasValidationResult,
   canvasHistorySchema,
+  canvasPatchPublishRequestSchema,
   canvasPersistedBuildSchema,
   canvasPublishRequestSchema,
   canvasPublishResultSchema,
@@ -74,6 +76,32 @@ export class CanvasApplicationApi {
     }
     if (!response.ok) {
       throw new Error(`Failed to publish canvas source (${response.status})`);
+    }
+    return canvasPublishResultSchema.parse(await response.json());
+  }
+
+  async patch(
+    canvasId: string,
+    input: CanvasPatchPublishRequest,
+  ): Promise<CanvasPublishResult> {
+    const payload = canvasPatchPublishRequestSchema.parse(input);
+    const response = await this.fs.fetch(
+      `${encodeURIComponent(canvasId)}/canvas/source/`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (response.status === 409) {
+      const conflict = canvasVersionConflictSchema.parse(await response.json());
+      throw new CanvasVersionConflictError(
+        conflict.detail,
+        conflict.currentVersionId,
+      );
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to patch canvas source (${response.status})`);
     }
     return canvasPublishResultSchema.parse(await response.json());
   }

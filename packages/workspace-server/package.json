@@ -34,17 +34,21 @@
     "@trpc/server": "catalog:",
     "better-sqlite3": "^12.8.0",
     "drizzle-orm": "^0.45.1",
+    "d3": "7.9.0",
+    "date-fns": "4.1.0",
+    "echarts": "6.1.0",
     "esbuild": "0.28.1",
     "fflate": "^0.8.2",
     "hono": "catalog:",
     "ignore": "^7.0.5",
     "inversify": "catalog:",
+    "lodash-es": "4.18.1",
     "node-pty": "1.1.0",
     "reflect-metadata": "catalog:",
     "smol-toml": "^1.6.0",
     "superjson": "catalog:",
     "three": "0.183.2",
-    "zod": "^4.1.12"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@inversifyjs/strongly-typed": "2.2.0",

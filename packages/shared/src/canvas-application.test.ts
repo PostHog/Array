@@ -29,6 +29,35 @@ describe("canvasSourceProjectSchema", () => {
     expect(canvasSourceProjectSchema.parse(validProject)).toEqual(validProject);
   });
 
+  it("accepts bounded binary assets with explicit media types", () => {
+    const project = {
+      ...validProject,
+      assets: {
+        "assets/pixel.png": {
+          encoding: "base64",
+          contentType: "image/png",
+          content: "iVBORw0KGgo=",
+        },
+      },
+    };
+
+    expect(canvasSourceProjectSchema.parse(project)).toEqual(project);
+  });
+
+  it.each([
+    ["invalid base64", "%%%", "image/png"],
+    ["active content", "PHN2Zy8+", "text/html"],
+  ])("rejects an unsafe asset with %s", (_label, content, contentType) => {
+    expect(() =>
+      canvasSourceProjectSchema.parse({
+        ...validProject,
+        assets: {
+          "assets/file.bin": { encoding: "base64", contentType, content },
+        },
+      }),
+    ).toThrow();
+  });
+
   it.each([
     ["absolute path", "/etc/passwd"],
     ["parent traversal", "src/../secret.ts"],

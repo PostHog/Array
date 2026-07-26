@@ -6,6 +6,7 @@ import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import {
   canvasApplicationBuildInputSchema,
   canvasApplicationIdInputSchema,
+  canvasApplicationPatchInputSchema,
   canvasApplicationPublishInputSchema,
   canvasApplicationValidateInputSchema,
   canvasHistorySchema,
@@ -32,6 +33,15 @@ export const canvasApplicationRouter = router({
       return ctx.container
         .get<CanvasApplicationApi>(CANVAS_APPLICATION_API)
         .publish(canvasId, request);
+    }),
+  patch: publicProcedure
+    .input(canvasApplicationPatchInputSchema)
+    .output(canvasPublishResultSchema)
+    .mutation(({ ctx, input }) => {
+      const { canvasId, ...request } = input;
+      return ctx.container
+        .get<CanvasApplicationApi>(CANVAS_APPLICATION_API)
+        .patch(canvasId, request);
     }),
   validate: publicProcedure
     .input(canvasApplicationValidateInputSchema)

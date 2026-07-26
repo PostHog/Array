@@ -13,9 +13,11 @@ description: Validate, preview, and safely publish a PostHog canvas source proje
    error. Revalidate until clean.
 4. Preview the candidate artifact when the tool provides one. Exercise its main
    interactions and data paths.
-5. Publish exactly once in this run with the complete source project and
-   `expectedCurrentVersionId`. Sandbox runs are attributed automatically; only
-   pass task and run IDs when the tool explicitly requires them.
+5. For a focused edit, publish file and asset changes with
+   `canvas-source-patch`; use `canvas-source-publish` for a new canvas or a
+   project-wide rewrite. Always pass `expectedCurrentVersionId`. Sandbox runs
+   are attributed automatically; only pass task and run IDs when the tool
+   explicitly requires them.
 6. Never publish a locally built executable artifact. Cloud rebuilds the source
    and is authoritative.
 7. If publishing returns `version_conflict`, do not overwrite or retry against

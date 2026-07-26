@@ -23,6 +23,10 @@ framework choice for the user.
    user-visible requirement.
 5. Keep `index.html` as the entry and use exact dependency versions. Never add
    Node built-ins, remote scripts, lifecycle scripts, or secrets.
+   The pinned browser catalog includes React, Quill, Three.js, D3, ECharts,
+   date-fns, lodash-es, and Zod. Store images, fonts, and Wasm in the `assets`
+   map as canonical base64 with an explicit media type. Import self-contained
+   TypeScript workers with the `?worker` suffix.
 6. Read and follow `[[querying-canvas-data]]` when PostHog data is needed.
 7. Read and follow the relevant implementation skill:
    `[[building-react-quill-canvases]]` or `[[building-html-canvases]]`.

@@ -11,15 +11,20 @@ import {
   canvasBuildRequestSchema,
   canvasBuildResultSchema,
 } from "@posthog/shared/canvas-application";
-import { build, type Loader, type Plugin } from "esbuild";
+import { build, type Loader, type Plugin, transform } from "esbuild";
 import { injectable } from "inversify";
 
 const require = createRequire(import.meta.url);
 const ADMITTED_DEPENDENCIES = new Map([
   ["@posthog/quill", "0.3.0-beta.24"],
+  ["d3", "7.9.0"],
+  ["date-fns", "4.1.0"],
+  ["echarts", "6.1.0"],
+  ["lodash-es", "4.18.1"],
   ["react", "19.2.6"],
   ["react-dom", "19.2.6"],
   ["three", "0.183.2"],
+  ["zod", "4.4.3"],
 ]);
 const JS_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".css"];
 const NODE_BUILTINS = new Set([
@@ -128,7 +133,7 @@ function normalizeProjectPath(filePath: string): string {
 }
 
 function resolveProjectFile(
-  files: Record<string, string>,
+  files: Record<string, unknown>,
   importer: string,
   specifier: string,
 ): string | null {
@@ -145,6 +150,15 @@ function resolveProjectFile(
     ),
   ];
   return candidates.find((entry) => entry in files) ?? null;
+}
+
+function assetLoader(contentType: string): Loader {
+  if (
+    contentType === "application/wasm" ||
+    contentType === "application/octet-stream"
+  )
+    return "binary";
+  return "dataurl";
 }
 
 function extractImportSpecifiers(source: string): string[] {
@@ -322,17 +336,32 @@ function virtualProjectPlugin(project: CanvasSourceProject): Plugin {
           args.namespace === "canvas" &&
           (args.path.startsWith(".") || args.path.startsWith("/"))
         ) {
+          const workerImport = args.path.endsWith("?worker");
+          const requestedPath = workerImport
+            ? args.path.slice(0, -7)
+            : args.path;
           const resolved = resolveProjectFile(
             project.files,
             args.importer,
-            args.path,
+            requestedPath,
           );
+          if (resolved) {
+            return {
+              path: resolved,
+              namespace: workerImport ? "canvas-worker" : "canvas",
+            };
+          }
+          const asset = resolveProjectFile(
+            project.assets ?? {},
+            args.importer,
+            requestedPath,
+          );
+          if (asset) return { path: asset, namespace: "canvas-asset" };
           if (!resolved) {
             return {
               errors: [{ text: `Canvas source file not found: ${args.path}` }],
             };
           }
-          return { path: resolved, namespace: "canvas" };
         }
         if (args.namespace === "canvas") {
           const name = packageName(args.path);
@@ -365,6 +394,47 @@ function virtualProjectPlugin(project: CanvasSourceProject): Plugin {
         loader: loaderFor(args.path),
         resolveDir: "/",
       }));
+      pluginBuild.onLoad(
+        { filter: /.*/, namespace: "canvas-asset" },
+        (args) => {
+          const asset = project.assets?.[args.path];
+          if (!asset)
+            return {
+              errors: [{ text: `Canvas asset not found: ${args.path}` }],
+            };
+          return {
+            contents: Uint8Array.from(Buffer.from(asset.content, "base64")),
+            loader: assetLoader(asset.contentType),
+          };
+        },
+      );
+      pluginBuild.onLoad(
+        { filter: /.*/, namespace: "canvas-worker" },
+        async (args) => {
+          const source = project.files[args.path];
+          if (source === undefined)
+            return {
+              errors: [{ text: `Canvas worker not found: ${args.path}` }],
+            };
+          if (extractImportSpecifiers(source).length > 0) {
+            return {
+              errors: [
+                { text: "Canvas workers must be self-contained modules" },
+              ],
+            };
+          }
+          const compiled = await transform(source, {
+            format: "esm",
+            loader: loaderFor(args.path),
+            target: "es2022",
+            minify: true,
+          });
+          return {
+            contents: `export default URL.createObjectURL(new Blob([${JSON.stringify(compiled.code)}],{type:"text/javascript"}));`,
+            loader: "js",
+          };
+        },
+      );
     },
   };
 }

@@ -6,6 +6,8 @@ export const CANVAS_MAX_FILES = 128;
 export const CANVAS_MAX_FILE_BYTES = 1_000_000;
 export const CANVAS_MAX_SOURCE_BYTES = 5_000_000;
 export const CANVAS_MAX_DEPENDENCIES = 64;
+export const CANVAS_MAX_ASSET_BYTES = 10_000_000;
+export const CANVAS_MAX_PROJECT_BYTES = 18_500_000;
 
 const exactPackageVersion =
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -40,6 +42,49 @@ const projectPathSchema = z
   .string()
   .max(240)
   .refine(isSafeProjectPath, "Path must be project-relative and normalized");
+
+const base64Schema = z
+  .string()
+  .regex(
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/,
+    "Asset content must be canonical base64",
+  );
+
+export const canvasAssetSchema = z
+  .object({
+    encoding: z.literal("base64"),
+    contentType: z.enum([
+      "application/wasm",
+      "application/octet-stream",
+      "font/otf",
+      "font/ttf",
+      "font/woff",
+      "font/woff2",
+      "image/avif",
+      "image/gif",
+      "image/jpeg",
+      "image/png",
+      "image/svg+xml",
+      "image/webp",
+    ]),
+    content: base64Schema,
+  })
+  .strict();
+
+const canvasAssetsSchema = z
+  .record(projectPathSchema, canvasAssetSchema)
+  .refine(
+    (assets) => Object.keys(assets).length <= CANVAS_MAX_FILES,
+    `Canvas projects may contain at most ${CANVAS_MAX_FILES} assets`,
+  )
+  .refine(
+    (assets) =>
+      Object.values(assets).reduce(
+        (total, asset) => total + Math.floor((asset.content.length * 3) / 4),
+        0,
+      ) <= CANVAS_MAX_ASSET_BYTES,
+    `Canvas assets may contain at most ${CANVAS_MAX_ASSET_BYTES} decoded bytes`,
+  );
 
 const httpsOriginSchema = z.string().superRefine((value, ctx) => {
   try {
@@ -119,6 +164,7 @@ export const canvasSourceProjectSchema = z
   .object({
     schemaVersion: z.literal(CANVAS_SOURCE_SCHEMA_VERSION),
     files: sourceFilesSchema,
+    assets: canvasAssetsSchema.optional(),
     entryHtml: z.literal("index.html"),
     dependencies: dependenciesSchema,
     canvasSdkVersion: z.literal(CANVAS_SDK_VERSION),
@@ -133,10 +179,19 @@ export const canvasSourceProjectSchema = z
         message: "Canvas HTML entry is missing from source files",
       });
     }
-    if (utf8Bytes(JSON.stringify(project)) > CANVAS_MAX_SOURCE_BYTES) {
+    for (const path of Object.keys(project.assets ?? {})) {
+      if (path in project.files) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["assets", path],
+          message: "Asset paths must not collide with source files",
+        });
+      }
+    }
+    if (utf8Bytes(JSON.stringify(project)) > CANVAS_MAX_PROJECT_BYTES) {
       ctx.addIssue({
         code: "custom",
-        message: `Canvas projects may contain at most ${CANVAS_MAX_SOURCE_BYTES} bytes`,
+        message: `Serialized canvas projects may contain at most ${CANVAS_MAX_PROJECT_BYTES} bytes`,
       });
     }
   });
@@ -240,6 +295,37 @@ export const canvasPublishRequestSchema = z
   })
   .strict();
 
+export const canvasSourcePatchSchema = z
+  .object({
+    upsertFiles: z.record(projectPathSchema, z.string()).optional(),
+    deleteFiles: z.array(projectPathSchema).max(CANVAS_MAX_FILES).optional(),
+    upsertAssets: z.record(projectPathSchema, canvasAssetSchema).optional(),
+    deleteAssets: z.array(projectPathSchema).max(CANVAS_MAX_FILES).optional(),
+    dependencies: dependenciesSchema.optional(),
+    capabilities: canvasCapabilitiesSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (patch) =>
+      patch.dependencies !== undefined ||
+      patch.capabilities !== undefined ||
+      Object.keys(patch.upsertFiles ?? {}).length > 0 ||
+      (patch.deleteFiles?.length ?? 0) > 0 ||
+      Object.keys(patch.upsertAssets ?? {}).length > 0 ||
+      (patch.deleteAssets?.length ?? 0) > 0,
+    "A canvas source patch must contain at least one change",
+  );
+
+export const canvasPatchPublishRequestSchema = z
+  .object({
+    patch: canvasSourcePatchSchema,
+    expectedCurrentVersionId: z.string().min(1),
+    taskId: z.string().min(1),
+    taskRunId: z.string().min(1),
+    prompt: z.string().max(10_000).optional(),
+  })
+  .strict();
+
 export const canvasPublishResultSchema = z
   .object({
     version: canvasSourceVersionSchema,
@@ -284,6 +370,10 @@ export const canvasApplicationPublishInputSchema = canvasPublishRequestSchema
   .extend({ canvasId: z.string().min(1) })
   .strict();
 
+export const canvasApplicationPatchInputSchema = canvasPatchPublishRequestSchema
+  .extend({ canvasId: z.string().min(1) })
+  .strict();
+
 export const canvasApplicationValidateInputSchema = z
   .object({
     canvasId: z.string().min(1),
@@ -305,6 +395,9 @@ export type CanvasSourceVersion = z.infer<typeof canvasSourceVersionSchema>;
 export type CanvasPersistedBuild = z.infer<typeof canvasPersistedBuildSchema>;
 export type CanvasSourceSnapshot = z.infer<typeof canvasSourceSnapshotSchema>;
 export type CanvasPublishRequest = z.infer<typeof canvasPublishRequestSchema>;
+export type CanvasPatchPublishRequest = z.infer<
+  typeof canvasPatchPublishRequestSchema
+>;
 export type CanvasPublishResult = z.infer<typeof canvasPublishResultSchema>;
 export type CanvasValidationResult = z.infer<
   typeof canvasValidationResultSchema

@@ -573,6 +573,13 @@ and every live canvas references a reproducible immutable build.
 Exit criterion: arbitrary client-only browser applications are supported within
 documented resource and security limits.
 
+Implemented scope: the guarded catalog covers React, Quill, Three.js, D3,
+ECharts, date-fns, lodash-es, and Zod. Projects may carry bounded base64 image,
+font, and WebAssembly assets and compile self-contained TypeScript module
+workers. Focused edits use optimistic-concurrency-guarded source patches.
+External network access remains denied until a separate user-facing capability
+approval flow is available.
+
 ## Testing and observability
 
 - Schema compatibility and migration tests for legacy canvas metadata.
