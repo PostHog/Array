@@ -5,6 +5,32 @@ import { useEffect, useRef, useState } from "react";
 const TICKER_SPEED_PX_PER_SECOND = 50;
 const TICKER_FADE_PX = 24;
 
+function tickerMask(overflowPx: number, isTicking: boolean, showsEnd: boolean) {
+  if (overflowPx === 0) return undefined;
+  const fadeIn = `transparent, black ${TICKER_FADE_PX}px`;
+  const fadeOut = `black calc(100% - ${TICKER_FADE_PX}px), transparent`;
+  if (!isTicking) return `linear-gradient(to right, ${fadeOut})`;
+  if (showsEnd) return `linear-gradient(to right, ${fadeIn})`;
+  return `linear-gradient(to right, ${fadeIn}, ${fadeOut})`;
+}
+
+export function useOverflowTickerReveal() {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
+  return {
+    reveal: isHovered || isKeyboardFocused,
+    hoverProps: {
+      onPointerEnter: () => setIsHovered(true),
+      onPointerLeave: () => setIsHovered(false),
+    },
+    focusProps: {
+      onFocus: (e: React.FocusEvent<HTMLElement>) =>
+        setIsKeyboardFocused(e.currentTarget.matches(":focus-visible")),
+      onBlur: () => setIsKeyboardFocused(false),
+    },
+  };
+}
+
 export function OverflowTickerText({
   reveal,
   className,
@@ -23,6 +49,11 @@ export function OverflowTickerText({
     setPrevReveal(reveal);
     if (!reveal) setReachedEnd(false);
   }
+  const [prevOverflowPx, setPrevOverflowPx] = useState(overflowPx);
+  if (overflowPx !== prevOverflowPx) {
+    setPrevOverflowPx(overflowPx);
+    setReachedEnd(false);
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -40,28 +71,22 @@ export function OverflowTickerText({
 
   const prefersReducedMotion = useReducedMotion();
   const isTicking = reveal && overflowPx > 0;
-  const showsEnd = reachedEnd || (isTicking && prefersReducedMotion);
+  const showsEnd = reachedEnd || (isTicking && prefersReducedMotion === true);
+  const maskImage = tickerMask(overflowPx, isTicking, showsEnd);
 
   return (
     <span
       ref={containerRef}
       className={cn("min-w-0 overflow-hidden whitespace-nowrap", className)}
-      style={{
-        maskImage:
-          overflowPx === 0
-            ? undefined
-            : isTicking
-              ? showsEnd
-                ? `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px)`
-                : `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px, black calc(100% - ${TICKER_FADE_PX}px), transparent)`
-              : `linear-gradient(to right, black calc(100% - ${TICKER_FADE_PX}px), transparent)`,
-      }}
+      style={{ maskImage, WebkitMaskImage: maskImage }}
     >
       <span
         ref={contentRef}
         className="inline-block"
         onTransitionEnd={(e) => {
-          if (e.propertyName === "transform") setReachedEnd(true);
+          if (e.target === e.currentTarget && e.propertyName === "transform") {
+            setReachedEnd(true);
+          }
         }}
         style={
           isTicking
