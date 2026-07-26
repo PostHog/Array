@@ -15,8 +15,6 @@ import {
   type StickyAnchorState,
   type ThreadScrollResume,
 } from "@posthog/ui/features/sessions/components/chat-thread/threadVirtualization";
-import { MessageScrollbarRail } from "@posthog/ui/features/sessions/components/scrollbar-rail/MessageScrollbarRail";
-import { useMessageRailMarkers } from "@posthog/ui/features/sessions/components/scrollbar-rail/useMessageRailMarkers";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import {
@@ -48,10 +46,9 @@ const SETTLE_TO_INDEX_ATTEMPTS = 8;
 
 type ThreadVirtualizer = Virtualizer<HTMLDivElement, Element>;
 
-/** A user message's position in the flat row list, for the sticky anchor and the scrollbar rail. */
+/** A user message's position in the flat row list, used to derive the sticky-header anchor. */
 interface UserRow {
   id: string;
-  content: string;
   index: number;
 }
 
@@ -296,15 +293,13 @@ function WindowedDebugBadge({
  * button and edge state read real element measurements), while everything item-based gets a
  * windowed implementation here: follow-bottom via `anchorTo: "end"` + `followOnAppend` (the legacy
  * `VirtualizedList` recipe), message jumps via `scrollToIndex`, the sticky header via
- * `computeStickyAnchor` over the virtualizer's measurements, and the scrollbar rail via its
- * existing interpolate-unmounted-rows path.
+ * `computeStickyAnchor` over the virtualizer's measurements.
  */
 export function VirtualThreadScrollBody({
   items,
   flatRows,
   renderRow,
   footer,
-  keyboardFocusedMessageId,
   onUserInteract,
   renderNav,
   resumeRef,
@@ -314,7 +309,6 @@ export function VirtualThreadScrollBody({
   renderRow: (row: FlatThreadRow) => ReactNode;
   /** Status row (duration / context usage) pinned as the last item in the thread. */
   footer?: ReactNode;
-  keyboardFocusedMessageId?: string | null;
   /** Clears keyboard-focused message state on any pointer interaction with the thread. */
   onUserInteract?: () => void;
   /**
@@ -326,8 +320,6 @@ export function VirtualThreadScrollBody({
   resumeRef: RefObject<ThreadScrollResume>;
 }) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
-  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
   const footerRef = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef(false);
   const lastScrollTopRef = useRef(0);
@@ -357,7 +349,7 @@ export function VirtualThreadScrollBody({
     const result: UserRow[] = [];
     flatRows.forEach((row, index) => {
       if (row.item.type === "user_message") {
-        result.push({ id: row.item.id, content: row.item.content, index });
+        result.push({ id: row.item.id, index });
       }
     });
     return result;
@@ -436,15 +428,6 @@ export function VirtualThreadScrollBody({
     settleAtEnd,
   });
 
-  const railMarkers = useMessageRailMarkers({
-    contentEl,
-    scrollEl: viewportEl,
-    userMessages: userRows,
-    onJump: jumpToMessage,
-    activeId: keyboardFocusedMessageId,
-    rowAttribute: "data-message-id",
-  });
-
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
@@ -471,22 +454,11 @@ export function VirtualThreadScrollBody({
           offscreen={stickyState.offscreen}
           onJump={jumpToMessage}
         />
-        <MessageScrollbarRail markers={railMarkers} />
-        <ChatMessageScrollerViewport
-          ref={(el: HTMLDivElement | null) => {
-            viewportRef.current = el;
-            setViewportEl(el);
-          }}
-          onScroll={handleScroll}
-        >
+        <ChatMessageScrollerViewport ref={viewportRef} onScroll={handleScroll}>
           {/* `block` overrides the content's flex+gap layout — spacing moves into the rows
               (pb-4) and the virtual paddings, so translateY offsets are the whole layout. */}
           <ChatMessageScrollerContent className="block" density="default">
-            <div
-              ref={setContentEl}
-              className="relative w-full"
-              style={{ height: totalSize }}
-            >
+            <div className="relative w-full" style={{ height: totalSize }}>
               {virtualItems.map((virtualItem) => {
                 const row = flatRows[virtualItem.index];
                 if (!row) return null;

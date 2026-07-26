@@ -30,6 +30,10 @@ describe("toSdkModelId", () => {
     expect(toSdkModelId("claude-sonnet-5")).toBe("claude-sonnet-5");
   });
 
+  it("passes claude-opus-5 through unchanged (no SDK alias)", () => {
+    expect(toSdkModelId("claude-opus-5")).toBe("claude-opus-5");
+  });
+
   it("passes deprecated gateway IDs through unchanged", () => {
     expect(toSdkModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
     expect(toSdkModelId("claude-sonnet-4-5")).toBe("claude-sonnet-4-5");
@@ -62,6 +66,13 @@ describe("model capability flags", () => {
     },
     {
       modelId: "claude-opus-4-8",
+      oneMContext: true,
+      effort: true,
+      xhighEffort: true,
+      mcpInjection: true,
+    },
+    {
+      modelId: "claude-opus-5",
       oneMContext: true,
       effort: true,
       xhighEffort: true,
@@ -123,6 +134,7 @@ describe("resolveEffortForModel", () => {
     ["claude-fable-5", undefined, "high"],
     ["claude-opus-4-8", undefined, "high"],
     ["claude-opus-4-7", undefined, "high"],
+    ["claude-opus-5", undefined, "high"],
     ["claude-sonnet-4-6", undefined, "high"],
     ["claude-sonnet-5", undefined, "high"],
     ["@cf/zai-org/glm-5.2", undefined, "high"],

@@ -48,7 +48,16 @@ export function classifyAgentError(
   return "agent_error";
 }
 
-/** Hard API rejection: the assembled prompt exceeds the model's context window. */
+/**
+ * Hard API rejection: the prompt exceeds the model's context window
+ * (Anthropic phrasing, or the LLM gateway's HTTP 413). Retrying the same
+ * transcript can never succeed; callers must shrink the prompt.
+ */
 export function isPromptTooLongError(error: unknown): boolean {
-  return /prompt is too long/i.test(getErrorMessage(error));
+  const message = getErrorMessage(error);
+  return (
+    /prompt is too long/i.test(message) ||
+    /exceeded this model context window limit/i.test(message) ||
+    /API Error:\s*413\b/i.test(message)
+  );
 }

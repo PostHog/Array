@@ -39,7 +39,9 @@ export namespace LoopSchemas {
     | "rate_capped"
     | "team_rate_capped"
     | "disabled"
-    | "gate_blocked";
+    | "gate_blocked"
+    | "owner_inactive"
+    | "owner_changed";
   export type LoopRunStatusEnum =
     | "not_started"
     | "queued"
@@ -48,6 +50,7 @@ export namespace LoopSchemas {
     | "failed"
     | "cancelled";
   export type LoopRunEnvironmentEnum = "local" | "cloud";
+  export type LoopSkillSourceEnum = "user" | "repo" | "marketplace" | "codex";
 
   export type LoopRepositoryEntry = {
     github_integration_id: number;
@@ -180,8 +183,9 @@ export namespace LoopSchemas {
     sandbox_environment_id: string | null;
     enabled: boolean;
     /** Why the loop was paused when it wasn't the owner who paused it (e.g.
-     * "owner_deactivated", "github_integration_disconnected"), or null for a normal pause.
-     * Cleared when the loop is re-enabled. Read-only. */
+     * "owner_deactivated", "github_integration_disconnected", "usage_limited",
+     * "repeated_failures"), or null for a normal pause. Cleared when the loop is
+     * re-enabled. Read-only. */
     disabled_reason: string | null;
     overlap_policy: LoopOverlapPolicyEnum;
     behaviors: LoopBehaviors;
@@ -202,6 +206,32 @@ export namespace LoopSchemas {
     created_at: string;
     updated_at: string;
     triggers: Array<LoopTrigger>;
+    /** Skill bundles attached to this loop, seeded into every fired run's sandbox.
+     * Replaced wholesale via `replaceLoopSkillBundles`, never through the loop write.
+     * Optional because a backend that predates skill bundles omits the field; treat
+     * absence as an empty list. */
+    skill_bundles?: Array<LoopSkillBundle>;
+  };
+
+  /** A skill bundle attached to a loop. `content_sha256` is the stored snapshot's
+   * digest, so a client can detect drift from the local copy of the skill. */
+  export type LoopSkillBundle = {
+    id: string;
+    skill_name: string;
+    skill_source: LoopSkillSourceEnum;
+    size: number;
+    content_sha256: string;
+    uploaded_at: string;
+  };
+
+  /** One zipped local skill in a skill-bundle replace request. */
+  export type LoopSkillBundleUpload = {
+    file_name: string;
+    skill_name: string;
+    skill_source: LoopSkillSourceEnum;
+    content_sha256: string;
+    bundle_format: "zip";
+    content_base64: string;
   };
 
   /** Request body for create (all required fields present) and partial_update
@@ -389,6 +419,8 @@ const loopRunsPath = (projectId: string, loopId: string): string =>
   `/api/projects/${projectId}/loops/${loopId}/runs/`;
 const loopPreviewPath = (projectId: string, loopId: string): string =>
   `/api/projects/${projectId}/loops/${loopId}/preview/`;
+const loopSkillBundlesPath = (projectId: string, loopId: string): string =>
+  `/api/projects/${projectId}/loops/${loopId}/skill_bundles/`;
 
 function idempotencyHeader(
   idempotencyKey: string | undefined,
@@ -576,6 +608,17 @@ export async function listLoopRuns(
 ): Promise<LoopSchemas.LoopRunPage> {
   return loopsRequest(client, "get", loopRunsPath(projectId, loopId), {
     query,
+  });
+}
+
+export async function replaceLoopSkillBundles(
+  client: ApiClient,
+  projectId: string,
+  loopId: string,
+  bundles: Array<LoopSchemas.LoopSkillBundleUpload>,
+): Promise<LoopSchemas.Loop> {
+  return loopsRequest(client, "put", loopSkillBundlesPath(projectId, loopId), {
+    body: { bundles },
   });
 }
 

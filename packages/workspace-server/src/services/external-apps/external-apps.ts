@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,6 +14,42 @@ import type { DetectedApplication } from "./schemas";
 import type { AppDefinition } from "./types";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+export interface OpenCommand {
+  file: string;
+  args: string[];
+}
+
+// argv, never a shell string: these paths come from the opened repository.
+export function resolveOpenCommand(
+  platform: NodeJS.Platform,
+  app: { id: string; path: string },
+  targetPath: string,
+  isFile: boolean,
+): OpenCommand | null {
+  if (platform === "darwin") {
+    if (app.id === "finder" && isFile) {
+      return { file: "open", args: ["-R", targetPath] };
+    }
+    if (app.id === "gitkraken") {
+      // GitKraken ignores positional args; it needs `--args -p <path>`.
+      return {
+        file: "open",
+        args: ["-na", app.path, "--args", "-p", targetPath],
+      };
+    }
+    return { file: "open", args: ["-a", app.path, targetPath] };
+  }
+  if (platform === "win32") {
+    if (app.id === "explorer" && isFile) {
+      // Explorer needs `/select,<path>` as a single token.
+      return { file: "explorer.exe", args: [`/select,${targetPath}`] };
+    }
+    return { file: app.path, args: [targetPath] };
+  }
+  return null;
+}
 
 const LOCALAPPDATA = process.env.LOCALAPPDATA ?? "";
 const PROGRAMFILES = process.env.PROGRAMFILES ?? "C:\\Program Files";
@@ -620,27 +656,17 @@ export class ExternalAppsService {
         isFile = false;
       }
 
-      let command: string;
-
-      if (process.platform === "darwin") {
-        if (appToOpen.id === "finder" && isFile) {
-          command = `open -R "${targetPath}"`;
-        } else if (appToOpen.id === "gitkraken") {
-          // GitKraken ignores positional args; it needs `--args -p <path>`.
-          command = `open -na "${appToOpen.path}" --args -p "${targetPath}"`;
-        } else {
-          command = `open -a "${appToOpen.path}" "${targetPath}"`;
-        }
-      } else if (process.platform === "win32") {
-        command =
-          appToOpen.id === "explorer" && isFile
-            ? `explorer.exe /select,"${targetPath}"`
-            : `"${appToOpen.path}" "${targetPath}"`;
-      } else {
+      const command = resolveOpenCommand(
+        process.platform,
+        appToOpen,
+        targetPath,
+        isFile,
+      );
+      if (!command) {
         return { success: false, error: "Unsupported platform" };
       }
 
-      await execAsync(command);
+      await execFileAsync(command.file, command.args);
       return { success: true };
     } catch (error) {
       return {

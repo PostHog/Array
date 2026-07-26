@@ -1,5 +1,4 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
-import { contentToXml } from "@posthog/core/message-editor/content";
 import {
   createLatestPlanTracker,
   SESSION_SERVICE,
@@ -32,6 +31,11 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import {
+  isSubmittedContentUnchanged,
+  shouldSubmitComposerOptimistically,
+  submitComposerPrompt,
+} from "@posthog/ui/features/sessions/components/submitComposerPrompt";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/useEditQueuedMessage";
@@ -302,7 +306,7 @@ export function SessionView({
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
   const editorRef = useRef<PromptInputHandle>(null);
   const sendInFlightRef = useRef(false);
-  const [isSendingPrompt, setIsSendingPrompt] = useState(false);
+  const composerSubmissionRef = useRef(0);
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -318,17 +322,36 @@ export function SessionView({
       if (!text.trim() || sendInFlightRef.current) return;
 
       sendInFlightRef.current = true;
-      setIsSendingPrompt(true);
+      const submissionId = ++composerSubmissionRef.current;
+      const editor = editorRef.current;
+      const submittedContent = editor?.getContent() ?? null;
+      if (
+        editor &&
+        shouldSubmitComposerOptimistically(submittedContent, text)
+      ) {
+        const sendPromise = submitComposerPrompt(
+          editor,
+          submittedContent,
+          () => onSendPrompt(text),
+          () => submissionId === composerSubmissionRef.current,
+        );
+        sendInFlightRef.current = false;
+        await sendPromise;
+        return;
+      }
+
       try {
         if (await onSendPrompt(text)) {
-          const editor = editorRef.current;
-          if (editor && contentToXml(editor.getContent()) === text) {
-            editor.clear();
+          const currentEditor = editorRef.current;
+          if (
+            currentEditor &&
+            isSubmittedContentUnchanged(currentEditor.getContent(), text)
+          ) {
+            currentEditor.clear();
           }
         }
       } finally {
         sendInFlightRef.current = false;
-        setIsSendingPrompt(false);
       }
     },
     [onSendPrompt],
@@ -692,7 +715,7 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline || isSendingPrompt
+                            handoffInProgress || !isOnline
                           }
                           clearOnSubmit={false}
                           submitTooltipOverride={

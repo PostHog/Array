@@ -45,6 +45,10 @@ import {
   wasCreatedByLogin,
   wasCreatedRecently,
 } from "@posthog/agent/pr-url-detector";
+import {
+  formatConversationForResume,
+  resumeFromLog,
+} from "@posthog/agent/resume";
 import type * as AgentTypes from "@posthog/agent/types";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
@@ -244,6 +248,7 @@ function buildClaudeCodeOptions(args: {
   effort?: EffortLevel;
   plugins: { type: "local"; path: string }[];
   disallowedTools?: string[];
+  settingSources?: ("user" | "project" | "local")[];
 }) {
   return {
     ...(args.additionalDirectories?.length && {
@@ -252,6 +257,9 @@ function buildClaudeCodeOptions(args: {
     ...(args.effort && { effort: args.effort }),
     ...(args.disallowedTools?.length && {
       disallowedTools: args.disallowedTools,
+    }),
+    ...(args.settingSources?.length && {
+      settingSources: args.settingSources,
     }),
     plugins: args.plugins,
   };
@@ -274,6 +282,7 @@ interface SessionConfig {
   systemPromptOverride?: string;
   /** Tool names denied for this session (passed to the Claude SDK). */
   disallowedTools?: string[];
+  settingSources?: ("user" | "project" | "local")[];
   /** Effort level for Claude sessions */
   effort?: EffortLevel;
   /** Model to use for the session (e.g. "claude-sonnet-4-6") */
@@ -775,6 +784,7 @@ If a repository IS genuinely required, attach one in this priority order:
       customInstructions,
       systemPromptOverride,
       disallowedTools,
+      settingSources,
       effort,
       model,
       jsonSchema,
@@ -845,6 +855,8 @@ If a repository IS genuinely required, attach one in this priority order:
       debug: isDevBuild(),
       onLog: this.onAgentLog,
     });
+    let fallbackResumeContext: string | undefined;
+    let hydratedResumeContext: string | undefined;
 
     try {
       const systemPrompt = this.buildSystemPrompt(
@@ -1004,10 +1016,18 @@ If a repository IS genuinely required, attach one in this priority order:
         effort,
         plugins,
         disallowedTools,
+        settingSources,
       });
 
       let configOptions: SessionConfigOption[] | undefined;
       let agentSessionId: string | undefined;
+
+      if (isReconnect && !config.sessionId) {
+        fallbackResumeContext = await this.loadFallbackResumeContext(
+          agent,
+          config,
+        );
+      }
 
       // Imported Claude Code CLI session: the transcript JSONL was copied
       // into CLAUDE_CONFIG_DIR at import time, so load it directly and let
@@ -1065,7 +1085,7 @@ If a repository IS genuinely required, attach one in this priority order:
         if (adapter !== "codex") {
           const posthogAPI = agent.getPosthogAPI();
           if (posthogAPI) {
-            const hasSession = await hydrateSessionJsonl({
+            const hydration = await hydrateSessionJsonl({
               sessionId: existingSessionId,
               cwd: repoPath,
               taskId,
@@ -1074,11 +1094,19 @@ If a repository IS genuinely required, attach one in this priority order:
               posthogAPI,
               log: this.log,
             });
-            if (!hasSession) {
+            if (hydration.conversation) {
+              hydratedResumeContext = this.formatFallbackResumeContext(
+                hydration.conversation,
+              );
+            }
+            if (!hydration.hasSession) {
               this.log.info(
                 "No session JSONL to resume, creating new session instead",
                 { taskId, taskRunId },
               );
+              fallbackResumeContext ??=
+                hydratedResumeContext ??
+                (await this.loadFallbackResumeContext(agent, config));
               config.sessionId = undefined;
             }
           }
@@ -1169,6 +1197,7 @@ If a repository IS genuinely required, attach one in this priority order:
         toolInstallations,
         evaluatedPrUrls: new Set(),
         prAttachChain: Promise.resolve(),
+        pendingContext: fallbackResumeContext,
       };
 
       this.sessions.set(taskRunId, session);
@@ -1179,6 +1208,16 @@ If a repository IS genuinely required, attach one in this priority order:
       }
       return session;
     } catch (err) {
+      if (
+        fallbackResumeContext === undefined &&
+        isReconnect &&
+        !isRetry &&
+        !isAuthError(err)
+      ) {
+        fallbackResumeContext =
+          hydratedResumeContext ??
+          (await this.loadFallbackResumeContext(agent, config));
+      }
       try {
         await agent.cleanup();
       } catch {
@@ -1231,11 +1270,46 @@ If a repository IS genuinely required, attach one in this priority order:
           sessionId: config.sessionId,
         });
         config.sessionId = undefined;
-        return this.getOrCreateSession(config, false, false);
+        const session = await this.getOrCreateSession(config, false, false);
+        session.pendingContext = fallbackResumeContext;
+        return session;
       }
       if (isReconnect) return null;
       throw err;
     }
+  }
+
+  private async loadFallbackResumeContext(
+    agent: Agent,
+    config: SessionConfig,
+  ): Promise<string | undefined> {
+    const apiClient = agent.getPosthogAPI();
+    if (!apiClient) return undefined;
+
+    try {
+      const state = await resumeFromLog({
+        taskId: config.taskId,
+        runId: config.taskRunId,
+        repositoryPath: config.repoPath,
+        apiClient,
+      });
+      return this.formatFallbackResumeContext(state.conversation);
+    } catch (err) {
+      this.log.warn("Failed to restore conversation for fallback session", {
+        taskId: config.taskId,
+        taskRunId: config.taskRunId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
+
+  private formatFallbackResumeContext(
+    conversation: Parameters<typeof formatConversationForResume>[0],
+  ): string | undefined {
+    const history = formatConversationForResume(conversation);
+    if (!history) return undefined;
+    return `You are resuming a previous conversation after the native session could not be restored. Here is the conversation history from the previous session:\n\n${history}\n\nContinue from where you left off when responding to the user's next message.`;
   }
 
   private async filterReachableMcpServers<
@@ -1341,12 +1415,13 @@ If a repository IS genuinely required, attach one in this priority order:
 
     // Prepend pending context if present
     let finalPrompt = prompt;
-    if (session.pendingContext) {
+    const pendingContext = session.pendingContext;
+    if (pendingContext) {
       this.log.info("Prepending context to prompt", { sessionId });
       finalPrompt = [
         {
           type: "text",
-          text: `_${session.pendingContext}_\n\n`,
+          text: `_${pendingContext}_\n\n`,
           _meta: { ui: { hidden: true } },
         },
         ...prompt,
@@ -1360,14 +1435,21 @@ If a repository IS genuinely required, attach one in this priority order:
     this.sleepService.acquire(sessionId);
 
     try {
-      const result = await session.clientSideConnection.prompt({
-        sessionId: getAgentSessionId(session),
-        prompt: finalPrompt,
-      });
-      return {
-        stopReason: result.stopReason,
-        _meta: result._meta as PromptOutput["_meta"],
-      };
+      try {
+        const result = await session.clientSideConnection.prompt({
+          sessionId: getAgentSessionId(session),
+          prompt: finalPrompt,
+        });
+        return {
+          stopReason: result.stopReason,
+          _meta: result._meta as PromptOutput["_meta"],
+        };
+      } catch (err) {
+        if (pendingContext && session.pendingContext === undefined) {
+          session.pendingContext = pendingContext;
+        }
+        throw err;
+      }
     } finally {
       session.promptPending = false;
       session.lastActivityAt = Date.now();
@@ -2056,6 +2138,8 @@ For git operations while detached:
           : undefined,
       disallowedTools:
         "disallowedTools" in params ? params.disallowedTools : undefined,
+      settingSources:
+        "settingSources" in params ? params.settingSources : undefined,
       effort: "effort" in params ? params.effort : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,

@@ -15,6 +15,7 @@ import type {
   ConversationItem,
   TurnContext,
 } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
 import { ConversationSearchBar } from "@posthog/ui/features/sessions/components/ConversationSearchBar";
 import {
   PROMPT_RECALL_HINT_KEY,
@@ -34,8 +35,6 @@ import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-
 import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
-import { MessageScrollbarRail } from "@posthog/ui/features/sessions/components/scrollbar-rail/MessageScrollbarRail";
-import { useMessageRailMarkers } from "@posthog/ui/features/sessions/components/scrollbar-rail/useMessageRailMarkers";
 import {
   type RenderItem,
   SessionUpdateView,
@@ -75,8 +74,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useReducer,
   useRef,
+  useState,
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
@@ -108,57 +107,6 @@ export interface ConversationViewProps {
   promptRecallRef?: RefObject<PromptRecallHandler | null>;
 }
 
-interface ConversationViewState {
-  showScrollButton: boolean;
-  jumpPickerOpen: boolean;
-  keyboardFocusedMessageId: string | null;
-  scrollElements: {
-    scrollEl: HTMLElement | null;
-    contentEl: HTMLElement | null;
-  };
-}
-
-type ConversationViewAction =
-  | { type: "set-show-scroll-button"; value: boolean }
-  | { type: "set-jump-picker-open"; value: boolean }
-  | { type: "set-keyboard-focused-message"; value: string | null }
-  | {
-      type: "set-scroll-elements";
-      value: ConversationViewState["scrollElements"];
-    };
-
-const INITIAL_CONVERSATION_VIEW_STATE: ConversationViewState = {
-  showScrollButton: false,
-  jumpPickerOpen: false,
-  keyboardFocusedMessageId: null,
-  scrollElements: { scrollEl: null, contentEl: null },
-};
-
-function conversationViewReducer(
-  state: ConversationViewState,
-  action: ConversationViewAction,
-): ConversationViewState {
-  switch (action.type) {
-    case "set-show-scroll-button":
-      return state.showScrollButton === action.value
-        ? state
-        : { ...state, showScrollButton: action.value };
-    case "set-jump-picker-open":
-      return state.jumpPickerOpen === action.value
-        ? state
-        : { ...state, jumpPickerOpen: action.value };
-    case "set-keyboard-focused-message":
-      return state.keyboardFocusedMessageId === action.value
-        ? state
-        : { ...state, keyboardFocusedMessageId: action.value };
-    case "set-scroll-elements":
-      return state.scrollElements.scrollEl === action.value.scrollEl &&
-        state.scrollElements.contentEl === action.value.contentEl
-        ? state
-        : { ...state, scrollElements: action.value };
-  }
-}
-
 export function ConversationView({
   events,
   isPromptPending,
@@ -187,10 +135,7 @@ export function ConversationView({
 
   const listRef = useRef<VirtualizedListHandle>(null);
   const isAtBottomRef = useRef(true);
-  const [viewState, dispatchViewState] = useReducer(
-    conversationViewReducer,
-    INITIAL_CONVERSATION_VIEW_STATE,
-  );
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const debugLogsCloudRuns = useSettingsStore((s) => s.debugLogsCloudRuns);
   const showDebugLogs = debugLogsCloudRuns;
 
@@ -225,16 +170,14 @@ export function ConversationView({
   }
   const firstUserMessageId = firstUserMessageIdRef.current;
 
-  const initialItemIdsRef = useRef<Set<string> | null>(null);
-  if (initialItemIdsRef.current === null) {
-    initialItemIdsRef.current = new Set<string>();
-    for (const item of conversationItems) {
-      if (item.type === "user_message") {
-        initialItemIdsRef.current.add(item.id);
-      }
-    }
-  }
-  const initialItemIds = initialItemIdsRef.current;
+  const [initialItemIds] = useState(
+    () =>
+      new Set(
+        conversationItems
+          .filter((i) => i.type === "user_message")
+          .map((i) => i.id),
+      ),
+  );
 
   const pendingPermissions = usePendingPermissionsForTask(taskId ?? "");
   const pendingPermissionsCount = pendingPermissions.size;
@@ -293,10 +236,6 @@ export function ConversationView({
         id != null ? itemIdToRowIndexRef.current.get(id) : undefined;
       listRef.current?.scrollToIndex(rowIdx ?? index);
     },
-    // Search doesn't read scroll/content geometry, so these forward to the real
-    // handle purely to satisfy the (now-extended) VirtualizedListHandle shape.
-    getScrollElement: () => listRef.current?.getScrollElement() ?? null,
-    getContentElement: () => listRef.current?.getContentElement() ?? null,
   });
 
   const search = useConversationSearch({
@@ -305,8 +244,10 @@ export function ConversationView({
     listRef: searchListRef,
   });
 
-  const { jumpPickerOpen, keyboardFocusedMessageId, scrollElements } =
-    viewState;
+  const [jumpPickerOpen, setJumpPickerOpen] = useState(false);
+  const [keyboardFocusedMessageId, setKeyboardFocusedMessageId] = useState<
+    string | null
+  >(null);
 
   const userMessages = useMemo(() => {
     const result: Array<{ id: string; index: number; content: string }> = [];
@@ -352,10 +293,7 @@ export function ConversationView({
       if (!nextMessage) return;
 
       useSettingsStore.getState().markHintLearned(PROMPT_RECALL_HINT_KEY);
-      dispatchViewState({
-        type: "set-keyboard-focused-message",
-        value: nextMessage.id,
-      });
+      setKeyboardFocusedMessageId(nextMessage.id);
       scrollToUserMessage(nextMessage.id, nextMessage.index);
     },
     [keyboardFocusedMessageId, userMessages, scrollToUserMessage],
@@ -363,11 +301,7 @@ export function ConversationView({
 
   useHotkeys(
     SHORTCUTS.MESSAGE_JUMP,
-    () =>
-      dispatchViewState({
-        type: "set-jump-picker-open",
-        value: !jumpPickerOpen,
-      }),
+    () => setJumpPickerOpen((prev) => !prev),
     THREAD_HOTKEY_OPTIONS,
   );
 
@@ -384,73 +318,34 @@ export function ConversationView({
   );
 
   const clearKeyboardFocus = useCallback(() => {
-    dispatchViewState({ type: "set-keyboard-focused-message", value: null });
+    setKeyboardFocusedMessageId(null);
   }, []);
 
   const handleJumpToMessage = useCallback(
     (id: string) => {
       const message = userMessages.find((entry) => entry.id === id);
       if (!message) return;
-      dispatchViewState({ type: "set-keyboard-focused-message", value: id });
+      setKeyboardFocusedMessageId(id);
       scrollToUserMessage(id, message.index);
     },
     [userMessages, scrollToUserMessage],
   );
 
-  // The scrollbar marker rail needs the VirtualizedList's scroll + content
-  // elements. Resolve them from the list ref callback so the rail renders as
-  // soon as the imperative handle is attached, without mount-time state setup.
-  const setListRef = useCallback((handle: VirtualizedListHandle | null) => {
-    listRef.current = handle;
-    dispatchViewState({
-      type: "set-scroll-elements",
-      value: {
-        scrollEl: handle?.getScrollElement() ?? null,
-        contentEl: handle?.getContentElement() ?? null,
-      },
-    });
-  }, []);
-
-  const railUserMessages = useMemo(
-    () =>
-      userMessages.map((m) => ({
-        id: m.id,
-        content: m.content,
-        index: m.index,
-      })),
-    [userMessages],
-  );
-  const railMarkers = useMessageRailMarkers({
-    contentEl: scrollElements.contentEl,
-    scrollEl: scrollElements.scrollEl,
-    userMessages: railUserMessages,
-    onJump: (id) => {
-      const message = userMessages.find((entry) => entry.id === id);
-      if (!message) return;
-      dispatchViewState({ type: "set-keyboard-focused-message", value: id });
-      scrollToUserMessage(id, message.index);
-    },
-    activeId: keyboardFocusedMessageId,
-  });
-
   const handleScrollStateChange = useCallback((isAtBottom: boolean) => {
     isAtBottomRef.current = isAtBottom;
-    dispatchViewState({
-      type: "set-show-scroll-button",
-      value: !isAtBottom,
-    });
+    setShowScrollButton(!isAtBottom);
   }, []);
 
   const scrollToBottom = useCallback(() => {
     listRef.current?.scrollToBottom();
-    dispatchViewState({ type: "set-show-scroll-button", value: false });
+    setShowScrollButton(false);
   }, []);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && isAtBottomRef.current) {
         listRef.current?.scrollToBottom();
-        dispatchViewState({ type: "set-show-scroll-button", value: false });
+        setShowScrollButton(false);
       }
     };
 
@@ -558,6 +453,7 @@ export function ConversationView({
 
   const footer = (
     <div className={compact ? "pb-1" : "pb-16"}>
+      <CloudArtifactDownloads taskId={taskId} task={task} />
       <SessionFooter
         task={task}
         isPromptPending={isPromptPending}
@@ -607,16 +503,14 @@ export function ConversationView({
 
         <MessageJumpPicker
           open={jumpPickerOpen}
-          onOpenChange={(open) =>
-            dispatchViewState({ type: "set-jump-picker-open", value: open })
-          }
+          onOpenChange={setJumpPickerOpen}
           items={items}
           onJumpToMessage={handleJumpToMessage}
         />
 
         <SessionTaskIdProvider taskId={taskId}>
           <VirtualizedList<ThreadRow>
-            ref={setListRef}
+            ref={listRef}
             items={threadRows}
             getItemKey={getRowKey}
             renderItem={renderRow}
@@ -629,8 +523,7 @@ export function ConversationView({
             scrollX={scrollX}
           />
         </SessionTaskIdProvider>
-        <MessageScrollbarRail markers={railMarkers} />
-        {viewState.showScrollButton && (
+        {showScrollButton && (
           <Box className="absolute right-6 bottom-4 z-10">
             <Tooltip>
               <TooltipTrigger

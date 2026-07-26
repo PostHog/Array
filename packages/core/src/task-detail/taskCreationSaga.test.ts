@@ -29,6 +29,7 @@ const mockHost = vi.hoisted(() => ({
   uploadRunAttachments: vi.fn(),
   setProvisioningActive: vi.fn(),
   clearProvisioning: vi.fn(),
+  confirmEnvironmentSetup: vi.fn(async () => true),
   dispatchSetupAction: vi.fn(),
   importClaudeCliSession: vi.fn(),
   deleteClaudeCliImport: vi.fn(),

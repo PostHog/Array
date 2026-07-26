@@ -43,9 +43,15 @@ export const MODELS: ModelOption[] = [
     supportsReasoning: true,
   },
   {
+    value: "claude-opus-5",
+    label: "Claude Opus 5",
+    description: "Most capable, slower",
+    supportsReasoning: true,
+  },
+  {
     value: "claude-opus-4-8",
     label: "Claude Opus 4.8",
-    description: "Most capable, slower",
+    description: "Previous Opus generation",
     supportsReasoning: true,
   },
   {

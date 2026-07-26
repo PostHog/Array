@@ -885,7 +885,7 @@ export class AgentServer {
     }
 
     try {
-      const hasSession = await hydrateSessionJsonl({
+      const { hasSession } = await hydrateSessionJsonl({
         sessionId: priorSessionId,
         cwd,
         taskId: payload.task_id,

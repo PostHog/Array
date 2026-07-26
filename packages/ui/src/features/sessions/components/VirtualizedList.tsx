@@ -35,14 +35,6 @@ interface VirtualizedListProps<T> {
 export interface VirtualizedListHandle {
   scrollToBottom: () => void;
   scrollToIndex: (index: number) => void;
-  /** The scrolling element (the `overflow-y-auto` viewport). Exposed so a
-   * scrollbar marker rail can read `scrollTop`/`scrollHeight` and refresh on
-   * scroll. `null` until the list mounts. */
-  getScrollElement: () => HTMLDivElement | null;
-  /** The inner content element whose height == the virtual total size. Rows
-   * (and their `data-conversation-item-id` stamps) live inside this, so a
-   * marker rail measures row offsets against it. `null` until the list mounts. */
-  getContentElement: () => HTMLDivElement | null;
 }
 
 const AT_BOTTOM_THRESHOLD = 50;
@@ -71,7 +63,6 @@ function VirtualizedListInner<T>(
   ref: React.ForwardedRef<VirtualizedListHandle>,
 ) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const isAtBottomRef = useRef(true);
@@ -165,8 +156,6 @@ function VirtualizedListInner<T>(
         isAtBottomRef.current = false;
         virtualizer.scrollToIndex(index, { align: "center" });
       },
-      getScrollElement: () => parentRef.current,
-      getContentElement: () => contentRef.current,
     }),
     [virtualizer, settleAtEnd],
   );
@@ -269,7 +258,6 @@ function VirtualizedListInner<T>(
         style={{ scrollbarGutter: "stable" }}
       >
         <div
-          ref={contentRef}
           style={{
             height: totalSize,
             position: "relative",

@@ -35,6 +35,7 @@ import {
   type StoredLogEntry,
   sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
+  type TaskRunArtifact,
   type TaskRunStatus,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -1599,7 +1600,7 @@ export class SessionService {
   /** Deduplicates concurrent manifest reads when a message renders many images. */
   private cloudAttachmentManifestRequests = new Map<
     string,
-    Promise<Array<{ id?: string; storage_path?: string }>>
+    Promise<TaskRunArtifact[]>
   >();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
@@ -4673,6 +4674,7 @@ export class SessionService {
         cloudStatus: run.status,
         cloudStage: run.stage ?? null,
         cloudOutput: run.output ?? null,
+        cloudArtifacts: run.artifacts ?? [],
         cloudErrorMessage: run.error_message,
         logUrl: run.log_url ?? session.logUrl,
       });
@@ -7293,22 +7295,34 @@ export class SessionService {
     }
   }
 
+  async getCloudRunArtifacts(
+    taskId: string,
+    runId: string,
+  ): Promise<TaskRunArtifact[]> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") return [];
+
+    return this.getCloudAttachmentManifest(
+      authStatus.auth.client,
+      `${authStatus.auth.apiHost}:${authStatus.auth.projectId}`,
+      taskId,
+      runId,
+    );
+  }
+
   private getCloudAttachmentManifest(
     client: AuthClient,
     authIdentity: string,
     taskId: string,
     runId: string,
-  ): Promise<Array<{ id?: string; storage_path?: string }>> {
+  ): Promise<TaskRunArtifact[]> {
     const key = `${authIdentity}:${taskId}:${runId}`;
     const existing = this.cloudAttachmentManifestRequests.get(key);
     if (existing) return existing;
 
     const request = client
       .getTaskRun(taskId, runId)
-      .then(
-        (run: { artifacts?: Array<{ id?: string; storage_path?: string }> }) =>
-          run.artifacts ?? [],
-      );
+      .then((run: { artifacts?: TaskRunArtifact[] }) => run.artifacts ?? []);
     this.cloudAttachmentManifestRequests.set(key, request);
 
     const clear = () => {

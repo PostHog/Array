@@ -5,6 +5,8 @@ import {
   RepeatIcon,
 } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@posthog/quill";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
@@ -15,8 +17,9 @@ import {
   navigateToNewLoop,
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
+import { track } from "@posthog/ui/shell/analytics";
 import { Flex, Heading, Text } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLoopBuilderSessions } from "../hooks/useLoopBuilderSessions";
 import { useLoopLimits, useLoops } from "../hooks/useLoops";
 import {
@@ -84,9 +87,13 @@ export function LoopsListView() {
   );
   useSetHeaderContent(headerContent);
 
-  const builderSessions = useLoopBuilderSessions();
+  const { sessions: builderSessions, isSettled: builderSessionsSettled } =
+    useLoopBuilderSessions();
 
   const allLoops = loops ?? [];
+  const personalLoops = allLoops.filter(
+    (loop) => loop.visibility === "personal",
+  );
   const teamLoops = allLoops.filter((loop) => loop.visibility === "team");
   const {
     members,
@@ -94,6 +101,35 @@ export function LoopsListView() {
     isError: membersError,
     isComplete: membersComplete,
   } = useOrgMembers({ enabled: teamLoops.length > 0 });
+
+  const hasTrackedListViewedRef = useRef(false);
+  useEffect(() => {
+    if (
+      isLoading ||
+      isError ||
+      !builderSessionsSettled ||
+      hasTrackedListViewedRef.current
+    )
+      return;
+    hasTrackedListViewedRef.current = true;
+    track(ANALYTICS_EVENTS.LOOP_LIST_VIEWED, {
+      loop_count: allLoops.length,
+      personal_loop_count: personalLoops.length,
+      team_loop_count: teamLoops.length,
+      is_at_limit: limits?.atLimit ?? false,
+      loop_limit: limits?.max,
+      builder_session_count: builderSessions.length,
+    });
+  }, [
+    isLoading,
+    isError,
+    builderSessionsSettled,
+    allLoops.length,
+    personalLoops.length,
+    teamLoops.length,
+    limits,
+    builderSessions.length,
+  ]);
 
   return (
     <LoopsListViewPresentation
@@ -154,11 +190,11 @@ export function LoopsListViewPresentation({
         <Flex
           direction="column"
           gap="6"
-          className="mx-auto w-full max-w-5xl px-8 py-8"
+          className="@container mx-auto w-full max-w-5xl px-8 py-8"
         >
-          <Flex align="center" justify="between" gap="3">
+          <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
             <Flex direction="column" gap="1" className="min-w-0">
-              <Flex align="center" gap="2">
+              <Flex align="center" gap="2" wrap="wrap">
                 <Heading className="font-bold text-2xl">Loops</Heading>
                 <Flex
                   align="center"
@@ -169,7 +205,7 @@ export function LoopsListViewPresentation({
                     weight="fill"
                     className="text-(--accent-11)"
                   />
-                  <Text className="font-medium text-(--accent-11) text-[11px]">
+                  <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
                     Runs entirely in the cloud
                   </Text>
                 </Flex>
@@ -191,7 +227,7 @@ export function LoopsListViewPresentation({
               <PlusIcon size={14} />
               Create manually
             </Button>
-          </Flex>
+          </div>
 
           {isLoading ? (
             <LoopsSkeleton />
@@ -205,23 +241,21 @@ export function LoopsListViewPresentation({
               }
             />
           ) : loops.length > 0 ? (
-            <Flex direction="column" gap="5">
-              {personalLoops.length > 0 ? (
-                <LoopListSection title="Personal loops" loops={personalLoops} />
-              ) : null}
-              {teamLoops.length > 0 ? (
-                <LoopListSection
-                  title="Team loops"
-                  loops={teamLoops}
-                  members={members}
-                  membersLoading={membersLoading}
-                  membersError={membersError}
-                  membersComplete={membersComplete}
-                />
-              ) : null}
-            </Flex>
+            <LoopListTabs
+              personalLoops={personalLoops}
+              teamLoops={teamLoops}
+              members={members}
+              membersLoading={membersLoading}
+              membersError={membersError}
+              membersComplete={membersComplete}
+              onCreate={onStartBlank}
+              disabledReason={limitReason}
+            />
           ) : (
-            <LoopsEmptyState />
+            <LoopsEmptyState
+              onCreate={onStartBlank}
+              disabledReason={limitReason}
+            />
           )}
 
           <LoopTemplatesSection onSelect={onStartFromTemplate} />
@@ -232,7 +266,7 @@ export function LoopsListViewPresentation({
         <Flex
           direction="column"
           gap="2"
-          className="mx-auto w-full max-w-5xl px-8 pb-6"
+          className="mx-auto w-full max-w-5xl px-8 pt-3 pb-6"
         >
           {builderSessions.map((session) => (
             <BuilderSessionRow
@@ -246,6 +280,69 @@ export function LoopsListViewPresentation({
         </Flex>
       </div>
     </Flex>
+  );
+}
+
+function LoopListTabs({
+  personalLoops,
+  teamLoops,
+  members,
+  membersLoading,
+  membersError,
+  membersComplete,
+  onCreate,
+  disabledReason,
+}: {
+  personalLoops: LoopSchemas.Loop[];
+  teamLoops: LoopSchemas.Loop[];
+  members: UserBasic[];
+  membersLoading: boolean;
+  membersError: boolean;
+  membersComplete: boolean;
+  onCreate: () => void;
+  disabledReason: string | null;
+}) {
+  return (
+    <Tabs defaultValue="personal" className="flex flex-col gap-5">
+      <TabsList variant="line" className="h-auto gap-0.5">
+        <TabsTrigger value="personal" className="gap-1.5 px-2.5 py-2">
+          <span className="font-medium text-[13px]">
+            My loops ({personalLoops.length})
+          </span>
+        </TabsTrigger>
+        <TabsTrigger value="team" className="gap-1.5 px-2.5 py-2">
+          <span className="font-medium text-[13px]">
+            Team loops ({teamLoops.length})
+          </span>
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="personal">
+        {personalLoops.length > 0 ? (
+          <LoopListSection loops={personalLoops} />
+        ) : (
+          <LoopsEmptyState
+            onCreate={onCreate}
+            disabledReason={disabledReason}
+          />
+        )}
+      </TabsContent>
+      <TabsContent value="team">
+        {teamLoops.length > 0 ? (
+          <LoopListSection
+            loops={teamLoops}
+            members={members}
+            membersLoading={membersLoading}
+            membersError={membersError}
+            membersComplete={membersComplete}
+          />
+        ) : (
+          <LoopsEmptyNotice
+            title="No team loops yet."
+            hint="Loops shared with your team will appear here."
+          />
+        )}
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -308,14 +405,12 @@ function BuilderSessionRow({
 }
 
 function LoopListSection({
-  title,
   loops,
   members = EMPTY_MEMBERS,
   membersLoading = false,
   membersError = false,
   membersComplete = true,
 }: {
-  title: string;
   loops: LoopSchemas.Loop[];
   members?: UserBasic[];
   membersLoading?: boolean;
@@ -327,9 +422,6 @@ function LoopListSection({
 
   return (
     <Flex direction="column" gap="3">
-      <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
-        {title}
-      </Text>
       <Flex direction="column" gap="2">
         {visibleLoops.map((loop) => (
           <LoopRow
