@@ -11,6 +11,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type WheelEvent,
 } from "react";
 
 interface VirtualizedListProps<T> {
@@ -39,9 +40,6 @@ export interface VirtualizedListHandle {
 
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
-// Render rows well ahead so tall, async rows (markdown, code, diffs) measure and
-// paint off-screen instead of shifting and stuttering as they enter view. 12
-// erases the scroll-up shift empirically; higher only adds DOM cost.
 const OVERSCAN = 12;
 // A real upward drift, not a 1-frame measure transient: the DOM bottom sits
 // this far below the viewport. Well above any single append's measure gap.
@@ -114,6 +112,16 @@ function VirtualizedListInner<T>(
       return getItemKey ? getItemKey(item, index) : index;
     },
   });
+
+  const measureElementImmediately = useCallback(
+    (node: HTMLDivElement | null) => {
+      virtualizer.measureElement(node);
+      if (!node) return;
+      const index = Number(node.dataset.index);
+      virtualizer.resizeItem(index, node.offsetHeight);
+    },
+    [virtualizer],
+  );
 
   const settleAtEnd = useCallback(() => {
     if (settleRafRef.current !== null) {
@@ -234,6 +242,17 @@ function VirtualizedListInner<T>(
     onScrollStateChangeRef.current?.(isAtBottomRef.current);
   }, [virtualizer]);
 
+  const handleWheelCapture = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      if (event.deltaY < 0) isAtBottomRef.current = false;
+    },
+    [],
+  );
+
+  const handleTouchMoveCapture = useCallback(() => {
+    isAtBottomRef.current = false;
+  }, []);
+
   const virtualItems = virtualizer.getVirtualItems();
 
   const renderedIndices = useMemo(() => {
@@ -254,6 +273,8 @@ function VirtualizedListInner<T>(
       <div
         ref={parentRef}
         onScroll={handleScroll}
+        onWheelCapture={handleWheelCapture}
+        onTouchMoveCapture={handleTouchMoveCapture}
         className={`scroll-mask-8 flex-1 overflow-y-auto ${scrollX ? "overflow-x-auto" : "overflow-x-hidden"}`}
         style={{ scrollbarGutter: "stable" }}
       >
@@ -272,7 +293,7 @@ function VirtualizedListInner<T>(
             return (
               <div
                 key={virtualItem.key}
-                ref={virtualizer.measureElement}
+                ref={measureElementImmediately}
                 data-index={virtualItem.index}
                 style={{
                   position: "absolute",
