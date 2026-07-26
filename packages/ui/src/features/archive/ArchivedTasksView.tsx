@@ -11,7 +11,6 @@ import type { RestoreOutcome } from "@posthog/core/archive/archivedTasksControll
 import {
   type ArchivedTaskWithDetails,
   deriveUniqueRepos,
-  filterAndSortArchivedTasks,
   formatRelativeDate,
   mergeArchivedWithTasks,
   type ArchiveSortColumn as SortColumn,
@@ -35,12 +34,17 @@ import {
 } from "@radix-ui/themes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { DotsCircleSpinner } from "../../primitives/DotsCircleSpinner";
 import { Tooltip } from "../../primitives/Tooltip";
 import { toast } from "../../primitives/toast";
-import { useTaskSummaries, useTasks } from "../tasks/useTasks";
+import { useTasks } from "../tasks/useTasks";
+import {
+  getVisibleArchivedTasks,
+  shouldLoadMoreArchivedTasks,
+} from "./archiveListPagination";
+import { useArchivedTaskSummaries } from "./useArchivedTaskSummaries";
 import { useUnarchiveTask } from "./useUnarchiveTask";
 
 const ICON_SIZE = 12;
@@ -187,23 +191,31 @@ export type { ArchivedTaskWithDetails };
 export interface ArchivedTasksViewPresentationProps {
   items: ArchivedTaskWithDetails[];
   isLoading: boolean;
+  loadedCount?: number;
   branchNotFound: BranchNotFoundPrompt | null;
   onUnarchive: (taskId: string) => void;
   onDelete: (taskId: string) => void;
   onContextMenu: (item: ArchivedTaskWithDetails, e: React.MouseEvent) => void;
   onBranchNotFoundClose: () => void;
   onRecreateBranch: () => void;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function ArchivedTasksViewPresentation({
   items,
   isLoading,
+  loadedCount = items.length,
   branchNotFound,
   onUnarchive,
   onDelete,
   onContextMenu,
   onBranchNotFoundClose,
   onRecreateBranch,
+  hasNextPage = false,
+  isFetchingNextPage = false,
+  onLoadMore,
 }: ArchivedTasksViewPresentationProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<SortState>({
@@ -232,22 +244,44 @@ export function ArchivedTasksViewPresentation({
     [itemsWithRepo],
   );
 
-  const filteredItems = useMemo(
+  const visibleItems = useMemo(
     () =>
-      filterAndSortArchivedTasks(itemsWithRepo, {
-        searchQuery,
-        repoFilter,
-        sort,
-      }),
-    [itemsWithRepo, searchQuery, repoFilter, sort],
+      getVisibleArchivedTasks(
+        itemsWithRepo,
+        { searchQuery, repoFilter, sort },
+        loadedCount,
+      ),
+    [itemsWithRepo, searchQuery, repoFilter, sort, loadedCount],
   );
   const rowVirtualizer = useVirtualizer({
-    count: filteredItems.length,
+    count: visibleItems.length,
     getScrollElement: () => tableViewportRef.current,
     estimateSize: () => 37,
     overscan: 12,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
+  const lastVirtualRowIndex = virtualRows[virtualRows.length - 1]?.index;
+  const hasActiveFilter = searchQuery.trim() !== "" || repoFilter !== null;
+  useEffect(() => {
+    if (
+      shouldLoadMoreArchivedTasks(
+        lastVirtualRowIndex,
+        visibleItems.length,
+        hasActiveFilter,
+      ) &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      onLoadMore?.();
+    }
+  }, [
+    visibleItems.length,
+    hasActiveFilter,
+    hasNextPage,
+    isFetchingNextPage,
+    lastVirtualRowIndex,
+    onLoadMore,
+  ]);
   const topSpacerHeight = virtualRows[0]?.start ?? 0;
   const bottomSpacerHeight =
     rowVirtualizer.getTotalSize() -
@@ -294,7 +328,7 @@ export function ArchivedTasksViewPresentation({
               Loading archived tasks...
             </Text>
           </Flex>
-        ) : filteredItems.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <Flex align="center" justify="center" py="8">
             <Text className="text-[13px] text-gray-10">
               {items.length === 0 ? "No archived tasks" : "No matching tasks"}
@@ -337,7 +371,7 @@ export function ArchivedTasksViewPresentation({
                 </Table.Row>
               )}
               {virtualRows.map((virtualRow) => {
-                const item = filteredItems[virtualRow.index];
+                const item = visibleItems[virtualRow.index];
                 return (
                   <Table.Row
                     key={item.archived.taskId}
@@ -496,8 +530,14 @@ export function ArchivedTasksView() {
     () => archivedTasks.map((task) => task.taskId),
     [archivedTasks],
   );
-  const { data: archivedTaskDetails = [], isLoading: isLoadingTasks } =
-    useTaskSummaries(archivedTaskIds);
+  const {
+    summaries: archivedTaskDetails,
+    loadedCount,
+    isLoading: isLoadingTasks,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useArchivedTaskSummaries(archivedTaskIds);
   const { restore, remove, runContextMenuAction } = useUnarchiveTask();
 
   useSetHeaderContent(
@@ -594,12 +634,16 @@ export function ArchivedTasksView() {
     <ArchivedTasksViewPresentation
       items={items}
       isLoading={isLoading}
+      loadedCount={loadedCount}
       branchNotFound={branchNotFound}
       onUnarchive={onUnarchive}
       onDelete={onDelete}
       onContextMenu={handleContextMenu}
       onBranchNotFoundClose={() => setBranchNotFound(null)}
       onRecreateBranch={handleRecreateBranch}
+      hasNextPage={hasNextPage}
+      isFetchingNextPage={isFetchingNextPage}
+      onLoadMore={() => void fetchNextPage({ cancelRefetch: false })}
     />
   );
 }
