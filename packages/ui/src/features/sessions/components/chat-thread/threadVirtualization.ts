@@ -21,6 +21,14 @@ export type TurnRow = ThreadItem | AgentTurn;
  * action). A single exchange is therefore several rows — measured at roughly 5 on a
  * tool-heavy thread — so this number is well below the equivalent turn count.
  *
+ * 250 comes from the prompts-per-task distribution (30 days, 9,458 tasks): p50 is 3 prompts, p90
+ * is 17, p99 is 72, and the worst thread on record is 2,007. At ~5 rows per exchange, 250 rows is
+ * ~50 prompts — the top 1.6% of threads, which carry 23% of all prompting. Lower thresholds
+ * windowed a large share of ordinary conversations for no measured gain: at 51 rows both
+ * renderers hold the same frame budget (p50 8.3ms, one dropped frame in 300), and upstream
+ * MessageScroller documents the non-virtualized path as comfortable into the low thousands of
+ * turns. Windowing is for the tail that actually degrades, not the median thread.
+ *
  * Below it, every row stays mounted and the full quill scroller engine drives anchoring and
  * visibility — `content-visibility: auto` keeps paint cheap and the DOM small enough that React
  * commits stay fast. Past it, the unbounded DOM plus a full-thread reconcile per streamed chunk
@@ -28,7 +36,7 @@ export type TurnRow = ThreadItem | AgentTurn;
  * one-way ratchet per mounted thread: crossing the threshold flips once and never flips back,
  * so the two modes can't flap against each other mid-session.
  */
-export const CHAT_THREAD_VIRTUALIZATION_THRESHOLD = 50;
+export const CHAT_THREAD_VIRTUALIZATION_THRESHOLD = 250;
 
 /**
  * How far below the viewport top a user message may sit while still counting as the current
