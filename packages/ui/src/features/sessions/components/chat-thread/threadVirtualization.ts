@@ -16,6 +16,11 @@ export type TurnRow = ThreadItem | AgentTurn;
 /**
  * Flat-row count past which the thread switches to the windowed (virtualized) renderer.
  *
+ * Counted in {@link FlatThreadRow}s, not turns or messages: a user message is one row, and an
+ * agent turn contributes one row per item it holds (each prose block, each tool group, each git
+ * action). A single exchange is therefore several rows — measured at roughly 5 on a
+ * tool-heavy thread — so this number is well below the equivalent turn count.
+ *
  * Below it, every row stays mounted and the full quill scroller engine drives anchoring and
  * visibility — `content-visibility: auto` keeps paint cheap and the DOM small enough that React
  * commits stay fast. Past it, the unbounded DOM plus a full-thread reconcile per streamed chunk
@@ -23,7 +28,7 @@ export type TurnRow = ThreadItem | AgentTurn;
  * one-way ratchet per mounted thread: crossing the threshold flips once and never flips back,
  * so the two modes can't flap against each other mid-session.
  */
-export const CHAT_THREAD_VIRTUALIZATION_THRESHOLD = 150;
+export const CHAT_THREAD_VIRTUALIZATION_THRESHOLD = 50;
 
 /**
  * How far below the viewport top a user message may sit while still counting as the current

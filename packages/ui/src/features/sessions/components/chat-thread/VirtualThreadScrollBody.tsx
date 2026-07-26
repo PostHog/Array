@@ -3,7 +3,6 @@ import {
   ChatMessageScrollerButton,
   ChatMessageScrollerContent,
   ChatMessageScrollerViewport,
-  cn,
 } from "@posthog/quill";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { VirtualStickyHeader } from "@posthog/ui/features/sessions/components/chat-thread/ThreadStickyHeader";
@@ -266,25 +265,6 @@ function useFollowBottom({
 }
 
 /**
- * Dev-build overlay confirming the windowed renderer is live, and how much of the thread it is
- * actually mounting. A mounted count that tracks the total instead of staying flat means windowing
- * isn't doing its job.
- */
-function WindowedDebugBadge({
-  mounted,
-  total,
-}: {
-  mounted: number;
-  total: number;
-}) {
-  return (
-    <div className="pointer-events-none absolute top-2 left-2 z-20 rounded bg-amber-9 px-1.5 py-0.5 font-mono text-[10px] text-white leading-none">
-      windowed {mounted}/{total}
-    </div>
-  );
-}
-
-/**
  * Windowed scroll body for long threads, following the upstream MessageScroller guidance:
  * virtualization lives outside the primitive — the quill viewport stays the scroll element and a
  * `@tanstack/react-virtual` virtualizer owns the rows inside `ChatMessageScrollerContent`.
@@ -433,21 +413,9 @@ export function VirtualThreadScrollBody({
   return (
     <>
       <ChatMessageScroller
-        // The dev-only ring makes it obvious at a glance which renderer is live — the two bodies
-        // are otherwise pixel-identical, so "did the threshold actually trip?" is unanswerable
-        // without it. Inset so it doesn't shift layout.
-        className={cn(
-          "group/thread",
-          import.meta.env.DEV && "ring-1 ring-amber-8 ring-inset",
-        )}
+        className="group/thread"
         onPointerDownCapture={onUserInteract}
       >
-        {import.meta.env.DEV && (
-          <WindowedDebugBadge
-            mounted={virtualItems.length}
-            total={flatRows.length}
-          />
-        )}
         <VirtualStickyHeader
           items={items}
           anchorId={stickyState.anchorId}

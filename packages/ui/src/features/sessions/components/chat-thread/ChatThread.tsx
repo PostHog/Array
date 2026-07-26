@@ -1037,17 +1037,11 @@ function ChatThreadRenderer({
   // stays there for the life of this mount (see CHAT_THREAD_VIRTUALIZATION_THRESHOLD). Long
   // sessions start virtualized from the first render; a live session flips once mid-stream,
   // resuming from the scroll state the non-virtualized body recorded.
-  //
-  // The threshold is overridable from Advanced settings in dev builds: lowering it below an open
-  // thread's row count flips that thread on the spot, which is how the handoff gets exercised
-  // without a 150-row conversation. Raising it back doesn't un-flip — reopen the session.
-  const thresholdOverride = useSettingsStore(
-    (s) => s.chatThreadVirtualizationThreshold,
-  );
-  const threshold = thresholdOverride ?? CHAT_THREAD_VIRTUALIZATION_THRESHOLD;
   const flatCount = useMemo(() => countFlatRows(rows), [rows]);
-  const [virtualized, setVirtualized] = useState(() => flatCount > threshold);
-  if (!virtualized && flatCount > threshold) {
+  const [virtualized, setVirtualized] = useState(
+    () => flatCount > CHAT_THREAD_VIRTUALIZATION_THRESHOLD,
+  );
+  if (!virtualized && flatCount > CHAT_THREAD_VIRTUALIZATION_THRESHOLD) {
     setVirtualized(true);
   }
   const flatRows = useMemo(
