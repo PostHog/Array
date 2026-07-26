@@ -160,6 +160,7 @@ function useStickyAnchor(
   virtualizer: ThreadVirtualizer,
   viewportRef: RefObject<HTMLDivElement | null>,
   userRows: readonly UserRow[],
+  totalSize: number,
 ) {
   const [state, setState] = useState<StickyAnchorState>({
     anchorId: null,
@@ -197,7 +198,11 @@ function useStickyAnchor(
     });
   }, [recompute]);
 
-  // Re-derive on mount and whenever the row set changes (content growth moves every anchor below).
+  // Re-derive on mount, whenever the row set changes, and whenever the measurement cache moves —
+  // `totalSize` is its cheapest proxy. Async markdown/diff/tool content can grow a mounted row
+  // with no scroll and no row-set change, shifting every anchor below it; without this trigger
+  // the pill holds the stale anchor until the next scroll.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: totalSize is the remeasure trigger, not a body dependency
   useEffect(() => {
     schedule();
     return () => {
@@ -206,7 +211,7 @@ function useStickyAnchor(
         frameRef.current = null;
       }
     };
-  }, [schedule]);
+  }, [schedule, totalSize]);
 
   return { state, schedule };
 }
@@ -372,8 +377,10 @@ export function VirtualThreadScrollBody({
     settleAtEnd();
   }, [flatRows.length, settleAtEnd, settleToIndex, resumeRef]);
 
+  const totalSize = virtualizer.getTotalSize();
+
   const { state: stickyState, schedule: scheduleStickyRecompute } =
-    useStickyAnchor(virtualizer, viewportRef, userRows);
+    useStickyAnchor(virtualizer, viewportRef, userRows, totalSize);
 
   const handleScroll = useCallback(() => {
     const el = viewportRef.current;
@@ -399,7 +406,6 @@ export function VirtualThreadScrollBody({
     scheduleStickyRecompute();
   }, [virtualizer, scheduleStickyRecompute, isAtBottomRef]);
 
-  const totalSize = virtualizer.getTotalSize();
   useFollowBottom({
     virtualizer,
     totalSize,
