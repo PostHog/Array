@@ -3,29 +3,47 @@
 > Status: proposed
 > Scope: evolve single-file, runtime-compiled React canvases into built browser
 > applications. Support React, Quill, and generic HTML in one application model;
-> leave hosted backends and full micro-apps as an explicit future direction.
+> hosted backends and full micro-apps are outside the initial scope.
 
 ## Summary
 
-A canvas should be an arbitrary browser application, not a dashboard schema or
-a React-only document. The user describes the experience; the agent chooses the
-implementation. A single application project can use React, Quill, plain DOM
-APIs, WebGL, or any combination, and a build service turns it into an immutable
-HTML/CSS/JavaScript artifact.
+A canvas is an arbitrary client-side browser application. Its source is a small
+web project that may use React, Quill, plain DOM APIs, WebGL, or any combination.
+A build service compiles the project into an immutable HTML/CSS/JavaScript
+artifact that runs in the sandboxed canvas host.
 
-HTML is the deployment format, not an authoring choice shown to the user or a
-separate canvas kind. Requiring agents to hand-author only final HTML would give
-up React's component model, Quill's accessibility and design-system behavior,
-and build-time validation. Requiring every implementation to use React would add
-structure where a static document or direct WebGL program does not need it. One
-web-project contract and one build recipe support both without encoding that
-implementation decision into product state.
+HTML is the common deployment format. Framework selection remains an
+implementation detail rather than a product mode: React supplies a component
+model for stateful interfaces, Quill supplies accessible PostHog UI primitives,
+and direct browser APIs avoid unnecessary framework structure for documents,
+graphics, and focused experiments. One source-project contract and one build
+recipe support all of these approaches.
 
-Canvas authoring is also a reusable agent capability. The skills for creating,
-building, validating, and publishing a canvas must be available to every task,
-not injected only by the canvas composer. A canvas-initiated task invokes the
-same skills with a preselected target; an ordinary task can discover and invoke
-them when the user asks it to create or update a canvas.
+Canvas authoring is a reusable agent capability. Bundled skills teach every task
+how to create, build, validate, and publish canvases. Canvas-initiated tasks use
+the same capability with a preselected target; tasks started elsewhere can
+resolve or create a target through the canvas tools.
+
+## Current state
+
+A canvas is currently a `dashboard` entry in PostHog's desktop file system. Its
+`meta.code` field contains one agent-authored React/TSX file, and `meta.versions`
+contains full-file history. The canvas composer starts a repository-less cloud
+task with a large embedded authoring contract. The task explores PostHog data,
+creates insights, and publishes complete source through the
+`desktop-file-system-canvas-partial-update` MCP tool.
+
+The client sends the stored source to a null-origin iframe. The iframe downloads
+Babel, Tailwind, and allowlisted modules, compiles the source in the browser,
+and mounts its default React export. PostHog data and side effects cross a
+schema-validated `postMessage` bridge so private project credentials remain in
+the host.
+
+This design proves the authoring and sandbox model, but the single-file React
+contract, runtime compilation, CDN dependencies, canvas-specific prompt, and
+late runtime validation limit reliability and the range of applications that
+can be produced. The proposed pipeline retains the sandbox and data bridge while
+replacing source storage, agent guidance, validation, and deployment.
 
 ## Goals
 
@@ -40,7 +58,7 @@ them when the user asks it to create or update a canvas.
 - Preserve task history, canvas version history, undo, and guarded concurrent
   publishing.
 - Keep the architecture open to hosted serverless backends later without
-  designing or shipping that runtime now.
+  including that runtime in this project.
 
 ## Non-goals
 
@@ -56,10 +74,8 @@ them when the user asks it to create or update a canvas.
 
 ### One application model
 
-There is one canvas kind: a browser application. The user is never asked to
-choose React versus HTML, and the choice is not persisted as a mode. Every task
-can create a canvas, so the decision must work without a canvas-specific
-creation screen.
+There is one canvas kind: a browser application. Framework selection is not
+persisted as a mode and does not require a canvas-specific creation screen.
 
 The agent chooses the least complex implementation that meets the request:
 
@@ -73,9 +89,9 @@ The agent chooses the least complex implementation that meets the request:
   island.
 
 These are skill heuristics, not validation rules. The build pipeline treats all
-of them as the same web project and produces the same artifact contract. The
-agent should not ask the user to choose a framework unless the choice changes a
-user-visible requirement that cannot be inferred from the request.
+of them as the same web project and produces the same artifact contract.
+Framework selection requires clarification only when it changes a user-visible
+requirement that cannot be inferred from the request.
 
 ### Canvas source project
 
@@ -214,8 +230,8 @@ the SDK gains version negotiation through the artifact manifest.
 
 ## Skills available to every task
 
-Canvas behavior should be represented by bundled skills rather than a canvas-
-specific mega-prompt. Split the current prompt contract into focused skills:
+Canvas behavior is represented by bundled skills instead of a canvas-specific
+mega-prompt. The current prompt contract is split into focused skills:
 
 - `building-canvases` — routes intent, chooses suitable implementation patterns,
   and explains the source-project and iteration workflow.
@@ -307,8 +323,8 @@ The existing `useGenerateFreeformCanvas` orchestration moves into
   adapter so this phase can ship before the build service.
 - Move generation orchestration from the UI hook into core.
 
-Exit criterion: a generic task can intentionally create or edit today's React
-canvas using bundled skills and guarded publishing.
+Exit criterion: a generic task can intentionally create or edit a legacy
+single-file React canvas using bundled skills and guarded publishing.
 
 ### Phase 2 — Deterministic local build and preview
 
@@ -363,31 +379,31 @@ documented resource and security limits.
 - Record build queue time, build duration, cache hit rate, artifact size,
   diagnostic category, first-render success, and rollback rate.
 
-## Future direction: hosted micro-apps
+## Future extension: hosted micro-apps
 
 The manifest and artifact model should later admit a `fullstack` deployment with
 hosted serverless functions, scoped secrets, storage, scheduled jobs, and
 outbound-network permissions. That work requires a separate threat model,
 capability/approval UX, quotas, billing, logs, tracing, and lifecycle ownership.
 
-Do not encode backend assumptions into the browser build pipeline now. The
-useful compatibility point is that a future deployment can reference the same
-immutable frontend artifact and add separately versioned backend resources.
+Backend execution is a separate deployment concern and does not change the
+browser build contract. A future deployment can reference the same immutable
+frontend artifact and add separately versioned backend resources.
 
 ## Decisions and open questions
 
-Decided:
+Architecture decisions:
 
 - Preserve arbitrary code; do not replace it with a dashboard/component schema.
-- There is one browser-application source model and one build recipe. The agent,
-  not the user or persisted canvas type, chooses React, Quill, plain HTML, or a
-  mixture based on the requested experience.
+- There is one browser-application source model and one build recipe. The agent
+  selects React, Quill, plain HTML, or a mixture based on the requested
+  experience; the selection is not a persisted canvas type.
 - Build commands are selected by the platform, not supplied by generated code.
 - Skills are available to every task; canvas mode only supplies target context.
 - Failed builds never replace the last-known-good artifact.
 - Publishing uses mandatory optimistic concurrency.
 
-Open before Phase 3:
+Design questions to resolve before Phase 3:
 
 1. Whether source projects remain in `desktop_file_system.meta` initially or
    move immediately to normalized source-version tables.
