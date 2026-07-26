@@ -35,12 +35,13 @@ import {
 } from "@radix-ui/themes";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { DotsCircleSpinner } from "../../primitives/DotsCircleSpinner";
 import { Tooltip } from "../../primitives/Tooltip";
 import { toast } from "../../primitives/toast";
-import { useTaskSummaries, useTasks } from "../tasks/useTasks";
+import { useTasks } from "../tasks/useTasks";
+import { useArchivedTaskSummaries } from "./useArchivedTaskSummaries";
 import { useUnarchiveTask } from "./useUnarchiveTask";
 
 const ICON_SIZE = 12;
@@ -193,6 +194,9 @@ export interface ArchivedTasksViewPresentationProps {
   onContextMenu: (item: ArchivedTaskWithDetails, e: React.MouseEvent) => void;
   onBranchNotFoundClose: () => void;
   onRecreateBranch: () => void;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function ArchivedTasksViewPresentation({
@@ -204,6 +208,9 @@ export function ArchivedTasksViewPresentation({
   onContextMenu,
   onBranchNotFoundClose,
   onRecreateBranch,
+  hasNextPage = false,
+  isFetchingNextPage = false,
+  onLoadMore,
 }: ArchivedTasksViewPresentationProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<SortState>({
@@ -248,6 +255,23 @@ export function ArchivedTasksViewPresentation({
     overscan: 12,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
+  const lastVirtualRowIndex = virtualRows[virtualRows.length - 1]?.index;
+  useEffect(() => {
+    if (
+      lastVirtualRowIndex !== undefined &&
+      lastVirtualRowIndex >= filteredItems.length - 10 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      onLoadMore?.();
+    }
+  }, [
+    filteredItems.length,
+    hasNextPage,
+    isFetchingNextPage,
+    lastVirtualRowIndex,
+    onLoadMore,
+  ]);
   const topSpacerHeight = virtualRows[0]?.start ?? 0;
   const bottomSpacerHeight =
     rowVirtualizer.getTotalSize() -
@@ -496,8 +520,14 @@ export function ArchivedTasksView() {
     () => archivedTasks.map((task) => task.taskId),
     [archivedTasks],
   );
-  const { data: archivedTaskDetails = [], isLoading: isLoadingTasks } =
-    useTaskSummaries(archivedTaskIds);
+  const {
+    summaries: archivedTaskDetails,
+    loadedCount,
+    isLoading: isLoadingTasks,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useArchivedTaskSummaries(archivedTaskIds);
   const { restore, remove, runContextMenuAction } = useUnarchiveTask();
 
   useSetHeaderContent(
@@ -509,11 +539,11 @@ export function ArchivedTasksView() {
 
   const items = useMemo(
     () =>
-      mergeArchivedWithTasks(archivedTasks, [
+      mergeArchivedWithTasks(archivedTasks.slice(0, loadedCount), [
         ...listedTasks,
         ...archivedTaskDetails,
       ]),
-    [archivedTasks, listedTasks, archivedTaskDetails],
+    [archivedTasks, listedTasks, archivedTaskDetails, loadedCount],
   );
 
   const isLoading = isLoadingArchived || isLoadingTasks;
@@ -600,6 +630,9 @@ export function ArchivedTasksView() {
       onContextMenu={handleContextMenu}
       onBranchNotFoundClose={() => setBranchNotFound(null)}
       onRecreateBranch={handleRecreateBranch}
+      hasNextPage={hasNextPage}
+      isFetchingNextPage={isFetchingNextPage}
+      onLoadMore={() => void fetchNextPage({ cancelRefetch: false })}
     />
   );
 }
