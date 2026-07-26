@@ -248,6 +248,7 @@ function buildClaudeCodeOptions(args: {
   effort?: EffortLevel;
   plugins: { type: "local"; path: string }[];
   disallowedTools?: string[];
+  settingSources?: ("user" | "project" | "local")[];
 }) {
   return {
     ...(args.additionalDirectories?.length && {
@@ -256,6 +257,9 @@ function buildClaudeCodeOptions(args: {
     ...(args.effort && { effort: args.effort }),
     ...(args.disallowedTools?.length && {
       disallowedTools: args.disallowedTools,
+    }),
+    ...(args.settingSources?.length && {
+      settingSources: args.settingSources,
     }),
     plugins: args.plugins,
   };
@@ -278,6 +282,7 @@ interface SessionConfig {
   systemPromptOverride?: string;
   /** Tool names denied for this session (passed to the Claude SDK). */
   disallowedTools?: string[];
+  settingSources?: ("user" | "project" | "local")[];
   /** Effort level for Claude sessions */
   effort?: EffortLevel;
   /** Model to use for the session (e.g. "claude-sonnet-4-6") */
@@ -779,6 +784,7 @@ If a repository IS genuinely required, attach one in this priority order:
       customInstructions,
       systemPromptOverride,
       disallowedTools,
+      settingSources,
       effort,
       model,
       jsonSchema,
@@ -1010,6 +1016,7 @@ If a repository IS genuinely required, attach one in this priority order:
         effort,
         plugins,
         disallowedTools,
+        settingSources,
       });
 
       let configOptions: SessionConfigOption[] | undefined;
@@ -2131,6 +2138,8 @@ For git operations while detached:
           : undefined,
       disallowedTools:
         "disallowedTools" in params ? params.disallowedTools : undefined,
+      settingSources:
+        "settingSources" in params ? params.settingSources : undefined,
       effort: "effort" in params ? params.effort : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
