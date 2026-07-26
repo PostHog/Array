@@ -26,13 +26,31 @@ describe("orderedNavItems", () => {
   });
 
   it("inserts an id missing from a full stored order after its default predecessor", () => {
-    const withoutLoops = CUSTOMIZABLE_NAV_ITEM_IDS.filter(
-      (id) => id !== "loops",
+    const withoutConfigure = CUSTOMIZABLE_NAV_ITEM_IDS.filter(
+      (id) => id !== "configure",
     ).reverse();
 
-    const ids = orderedNavItems(withoutLoops).map((item) => item.id);
+    const ids = orderedNavItems(withoutConfigure).map((item) => item.id);
 
-    expect(ids.indexOf("loops")).toBe(ids.indexOf("inbox") + 1);
+    expect(ids.indexOf("configure")).toBe(ids.indexOf("command-center") + 1);
+  });
+
+  it("keeps Activity directly below Inbox in an existing persisted order", () => {
+    const ids = orderedNavItems([
+      "inbox",
+      "loops",
+      "command-center",
+      "activity",
+      "configure",
+    ]).map((item) => item.id);
+
+    expect(ids.indexOf("activity")).toBe(ids.indexOf("inbox") + 1);
+    expect(ids.filter((id) => id !== "activity")).toEqual([
+      "inbox",
+      "loops",
+      "command-center",
+      "configure",
+    ]);
   });
 
   it("inserts a missing id with no present predecessor at the start", () => {
