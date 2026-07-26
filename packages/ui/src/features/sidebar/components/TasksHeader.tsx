@@ -251,7 +251,7 @@ export function TasksHeader() {
             <Button
               type="button"
               size="xs"
-              className="px-1.5 font-normal normal-case"
+              className="px-1.5 font-normal text-gray-10 normal-case hover:text-gray-12 data-[active]:bg-accent-4 data-[active]:font-medium data-[active]:text-gray-12 data-[active]:shadow-sm"
               aria-pressed={channelsEnabled}
               data-active={channelsEnabled || undefined}
               onClick={() => handleModeChange(true)}
@@ -261,7 +261,7 @@ export function TasksHeader() {
             <Button
               type="button"
               size="xs"
-              className="px-1.5 font-normal normal-case"
+              className="px-1.5 font-normal text-gray-10 normal-case hover:text-gray-12 data-[active]:bg-accent-4 data-[active]:font-medium data-[active]:text-gray-12 data-[active]:shadow-sm"
               aria-pressed={!channelsEnabled}
               data-active={!channelsEnabled || undefined}
               onClick={() => handleModeChange(false)}

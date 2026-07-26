@@ -48,20 +48,22 @@ describe("TasksHeader", () => {
       </Theme>,
     );
 
-    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    const listOption = screen.getByRole("button", { name: "List" });
+    const channelsOption = screen.getByRole("button", { name: "Channels" });
+    expect(listOption).toHaveAttribute("aria-pressed", "true");
+    expect(listOption).toHaveAttribute("data-active", "true");
+    expect(listOption).toHaveClass("data-[active]:bg-accent-4");
+    expect(listOption).toHaveClass("data-[active]:font-medium");
+    expect(channelsOption).not.toHaveAttribute("data-active");
     expect(
       screen.getByRole("button", { name: "Filter tasks" }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Channels" }));
+    await user.click(channelsOption);
 
-    expect(screen.getByRole("button", { name: "Channels" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(channelsOption).toHaveAttribute("aria-pressed", "true");
+    expect(channelsOption).toHaveAttribute("data-active", "true");
+    expect(listOption).not.toHaveAttribute("data-active");
     expect(
       screen.queryByRole("button", { name: "Filter tasks" }),
     ).not.toBeInTheDocument();
