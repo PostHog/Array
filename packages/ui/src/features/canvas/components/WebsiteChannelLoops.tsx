@@ -157,7 +157,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
         <Flex
           direction="column"
           gap="2"
-          className="mx-auto w-full max-w-3xl px-8 pb-6"
+          className="mx-auto w-full max-w-3xl px-8 pt-3 pb-6"
         >
           <LoopBuilderComposer
             context={{ folderId: channelId, name: contextName }}

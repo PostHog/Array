@@ -113,7 +113,6 @@ describe("SidebarNavSection", () => {
   it.each([
     ["inbox", "Inbox"],
     ["command-center", "Command Center"],
-    ["contexts", "Channels"],
     ["activity", "Activity"],
     ["configure", "Configure"],
     ["loops", "Loops"],
@@ -124,8 +123,7 @@ describe("SidebarNavSection", () => {
     expect(screen.queryByText(label)).not.toBeInTheDocument();
   });
 
-  it("renders top-level items in the stored order", () => {
-    useSidebarStore.setState({ navItemOrder: ["activity", "inbox"] });
+  it("renders Activity directly under Inbox by default", () => {
     renderNav();
 
     const labels = screen
@@ -134,7 +132,8 @@ describe("SidebarNavSection", () => {
     const position = (label: string) =>
       labels.findIndex((text) => text.includes(label));
 
-    expect(position("Activity")).toBeLessThan(position("Inbox"));
+    expect(position("Inbox")).toBeLessThan(position("Activity"));
+    expect(position("Activity")).toBeLessThan(position("Loops"));
     expect(position("Inbox")).toBeLessThan(position("Loops"));
   });
 
@@ -151,31 +150,18 @@ describe("SidebarNavSection", () => {
     );
   });
 
-  it.each([
-    [false, true, "enter_space"],
-    [true, false, "leave_space"],
-  ] as const)(
-    "toggling contexts from %s tracks the toggle and %s",
-    async (initial, expected, spaceAction) => {
-      const user = userEvent.setup();
-      useSidebarStore.setState({ channelsEnabled: initial });
-      renderNav();
+  it("does not render the Channels mode toggle in navigation", () => {
+    renderNav();
 
-      await user.click(screen.getByRole("switch"));
+    expect(screen.queryByText("Channels")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
 
-      expect(useSidebarStore.getState().channelsEnabled).toBe(expected);
-      expect(track).toHaveBeenCalledWith(
-        ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED,
-        { item: "contexts", in_more: false },
-      );
-      expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "toggle_channels",
-        surface: "nav",
-      });
-      expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: spaceAction,
-        surface: "nav",
-      });
-    },
-  );
+  it("keeps Activity visible when Tasks mode is selected", () => {
+    useSidebarStore.setState({ channelsEnabled: false });
+
+    renderNav();
+
+    expect(screen.getByText("Activity")).toBeInTheDocument();
+  });
 });
