@@ -126,6 +126,27 @@ export const CANVAS_BUILD_CONTRACT_FIXTURES: CanvasBuildContractFixture[] = [
     expected: { status: "ready" },
   },
   {
+    name: "asset imports (svg data-url + json)",
+    project: project({
+      [CANVAS_ENTRY_HTML]: HTML_SHELL(
+        '    <div id="root"></div>\n    <script type="module" src="/src/main.ts"></script>',
+      ),
+      "src/main.ts": [
+        'import logo from "./logo.svg";',
+        'import config from "./config.json";',
+        'const img = document.createElement("img");',
+        "img.src = logo;",
+        "img.alt = config.title;",
+        'document.getElementById("root")?.append(img);',
+        "export {};",
+      ].join("\n"),
+      "src/logo.svg":
+        '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#f54d00"/></svg>',
+      "src/config.json": '{ "title": "hedgehog" }',
+    }),
+    expected: { status: "ready" },
+  },
+  {
     name: "import of a non-admitted package",
     project: project(
       {

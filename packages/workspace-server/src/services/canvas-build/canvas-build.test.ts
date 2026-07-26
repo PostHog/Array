@@ -97,6 +97,24 @@ describe("CanvasBuildService", () => {
     expect(imports).not.toContain("dayjs");
   });
 
+  it("inlines svg and json asset imports into the bundle", async () => {
+    const fixture = CANVAS_BUILD_CONTRACT_FIXTURES.find(
+      (f) => f.name === "asset imports (svg data-url + json)",
+    );
+    if (!fixture) throw new Error("asset fixture missing");
+    const result = await service.buildCanvas({
+      project: fixture.project,
+      mode: "validate",
+    });
+
+    expect(result.status).toBe("ready");
+    const js = result.files?.find((f) => f.path.endsWith(".js"));
+    // The svg became a data URL and the json a literal — no asset fetches at
+    // runtime and nothing left for the sandbox CSP to block.
+    expect(js?.content).toContain("data:image/svg+xml");
+    expect(js?.content).toContain("hedgehog");
+  });
+
   it("reports bundle errors with the failing file and line", async () => {
     const project = createCanvasStarterProject();
     project.files["src/main.ts"] =

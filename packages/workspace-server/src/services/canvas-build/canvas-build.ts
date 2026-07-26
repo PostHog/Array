@@ -61,7 +61,10 @@ const LOADERS: Record<string, esbuild.Loader> = {
   ".jsx": "jsx",
   ".css": "css",
   ".json": "json",
-  ".svg": "text",
+  // Inlined assets: importing an svg yields a data URL usable directly as an
+  // img/css source. Binary formats need a binary source representation and
+  // land with the build-service schema evolution.
+  ".svg": "dataurl",
   ".txt": "text",
 };
 
