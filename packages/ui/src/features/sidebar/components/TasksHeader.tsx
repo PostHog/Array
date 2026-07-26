@@ -35,7 +35,6 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
-import { SegmentedControl } from "@radix-ui/themes";
 import { useState } from "react";
 
 const log = logger.scope("tasks-header");
@@ -228,8 +227,8 @@ export function TasksHeader() {
     (state) => state.setChannelsEnabled,
   );
 
-  const handleModeChange = (value: string) => {
-    const showChannels = value === "channels";
+  const handleModeChange = (showChannels: boolean) => {
+    if (showChannels === channelsEnabled) return;
     setChannelsEnabled(showChannels);
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "toggle_channels",
@@ -243,21 +242,35 @@ export function TasksHeader() {
 
   return (
     <div className="shrink-0 px-2">
-      <MenuLabel className="flex items-center justify-between pt-0 pr-0 pb-0.5">
+      <div className="flex min-h-7 items-center justify-between pb-0.5">
         {bluebirdEnabled ? (
-          <SegmentedControl.Root
-            size="1"
-            value={channelsEnabled ? "channels" : "tasks"}
-            onValueChange={handleModeChange}
+          <fieldset
+            className="m-0 flex min-w-0 items-center gap-px rounded border-0 bg-fill-secondary p-px"
             aria-label="Sidebar content"
           >
-            <SegmentedControl.Item value="tasks">Tasks</SegmentedControl.Item>
-            <SegmentedControl.Item value="channels">
+            <Button
+              type="button"
+              size="xs"
+              className="px-1.5 font-normal normal-case"
+              aria-pressed={channelsEnabled}
+              data-active={channelsEnabled || undefined}
+              onClick={() => handleModeChange(true)}
+            >
               Channels
-            </SegmentedControl.Item>
-          </SegmentedControl.Root>
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              className="px-1.5 font-normal normal-case"
+              aria-pressed={!channelsEnabled}
+              data-active={!channelsEnabled || undefined}
+              onClick={() => handleModeChange(false)}
+            >
+              List
+            </Button>
+          </fieldset>
         ) : (
-          <span>Tasks</span>
+          <span className="font-medium text-xs">List</span>
         )}
         {!channelsEnabled && (
           <span className="flex items-center">
@@ -266,7 +279,7 @@ export function TasksHeader() {
             <TaskFilterMenu />
           </span>
         )}
-      </MenuLabel>
+      </div>
     </div>
   );
 }

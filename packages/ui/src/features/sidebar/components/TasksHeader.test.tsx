@@ -48,14 +48,20 @@ describe("TasksHeader", () => {
       </Theme>,
     );
 
-    expect(screen.getByRole("radio", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       screen.getByRole("button", { name: "Filter tasks" }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("radio", { name: "Channels" }));
+    await user.click(screen.getByRole("button", { name: "Channels" }));
 
-    expect(screen.getByRole("radio", { name: "Channels" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Channels" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       screen.queryByRole("button", { name: "Filter tasks" }),
     ).not.toBeInTheDocument();
@@ -74,7 +80,7 @@ describe("TasksHeader", () => {
       </Theme>,
     );
 
-    expect(screen.getByText("Tasks")).toBeInTheDocument();
+    expect(screen.getByText("List")).toBeInTheDocument();
     expect(screen.queryByText("Channels")).not.toBeInTheDocument();
   });
 });
