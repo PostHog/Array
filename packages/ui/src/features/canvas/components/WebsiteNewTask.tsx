@@ -6,6 +6,7 @@ import { ChannelContextPanel } from "@posthog/ui/features/canvas/components/Chan
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import { useBackendChannel } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -29,6 +30,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
   const { fileTask } = useChannelTaskMutations();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
+  const { channel: backendChannel } = useBackendChannel(channelName);
 
   // Surface the channel breadcrumb in the shared header, same as the other
   // channel scenes ("# channel / New task").
@@ -112,6 +114,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
           onTaskCreated={onTaskCreated}
           channelContext={channelContext}
           channelName={channelName}
+          channelId={backendChannel?.id}
           channelContextId={channelId}
           allowNoRepo
           // So a prompt handed to openTaskInput survives routing into a channel.
