@@ -64,6 +64,7 @@ export {
   type WindowBounds,
   windowBoundsSchema,
 } from "./browser-tabs-schemas";
+export * from "./canvas-contracts";
 export type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 export {
   CLOUD_PROMPT_PREFIX,
