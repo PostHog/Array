@@ -134,6 +134,8 @@ Source versions and deployable builds are distinct:
 interface CanvasSourceVersion {
   id: string;
   parentVersionId: string | null;
+  taskId: string;
+  taskRunId: string;
   sourceHash: string;
   sourceObjectKey: string;
   sourceSize: number;
@@ -157,12 +159,32 @@ The canvas points separately to `currentSourceVersionId` and
 last-known-good artifact.
 
 The artifact manifest records entry HTML, emitted assets, content hashes,
-dependency versions, canvas SDK version, and declared PostHog resources. It is
-not a general permission model yet, but it must be extensible for one.
+dependency versions, canvas SDK version, and the validated capability manifest.
 
 The source-project schema is the API and agent-workspace representation. A
 source version stores a pointer to its serialized project rather than embedding
 the project in the database record.
+
+### Run and history model
+
+Each canvas generation or edit attempt executes as a fresh `TaskRun`. A run may
+publish at most one source version to a canvas. A task may group related
+conversation, but a later edit does not reuse the run that produced an earlier
+version. Tasks initiated outside the canvas use the same rule: the active run is
+attributed to its publish, and a subsequent requested edit starts another run.
+
+Several tasks and runs may edit the same canvas concurrently. Every run records
+the source version it read, and guarded publishing rejects a run whose base is
+no longer current. Conflict recovery starts another run against the new head;
+it does not mutate the provenance of either completed attempt.
+
+The canvas history is canonical. Each entry combines the source version and its
+builds and shows prompt summary, author, task/run attribution, timestamps,
+build status, diagnostics, active/pinned state, and preview/restore/rebuild
+actions. The task thread receives compact system updates that link to the canvas
+history entry. It does not duplicate source or full build diagnostics. This
+model supports one canvas edited by many runs without making any single task the
+owner of its history.
 
 ## Storage architecture
 
@@ -268,7 +290,8 @@ deletion after the recovery grace period.
 
 ## End-to-end flow
 
-1. A user starts from a canvas or asks any task to create/update one.
+1. A user starts from a canvas or asks any task to create/update one, producing
+   a fresh run for this attempt.
 2. The agent invokes the canvas-authoring skill and resolves or creates a target
    canvas through explicit tools.
 3. The agent reads the source project and its current source-version ID.
@@ -315,7 +338,8 @@ arbitrary browser output.
 5. Scan emitted assets for size, source maps, and forbidden URL schemes.
 6. Load the artifact in a headless version of the canvas sandbox.
 7. Require a successful first render and collect console/runtime diagnostics.
-8. Extract the declared insight/query references into the artifact manifest.
+8. Validate the declared capabilities against static extraction and observed
+   smoke-test behavior, then freeze them into the artifact manifest.
 9. In publish mode, upload content-addressed assets and return their integrity
    hashes. In validate mode, retain artifacts only for a short-lived preview.
 
@@ -323,6 +347,46 @@ Build workers have bounded CPU, memory, time, output size, and dependency count.
 Package installation has network access only to the configured registry/cache;
 the build itself runs without network access. Package lifecycle scripts are
 disabled.
+
+### Capability manifest and data validation
+
+Each source project declares the PostHog and network capabilities its artifact
+requires. The initial manifest includes saved insight IDs, permission to execute
+inline queries, captured event names, and external network origins:
+
+```ts
+interface CanvasCapabilities {
+  posthog: {
+    insights: string[];
+    inlineQueries: boolean;
+    captureEvents: string[];
+  };
+  network: {
+    origins: string[];
+  };
+}
+```
+
+Validation combines three sources of evidence:
+
+1. The explicit declaration produced with the source project.
+2. Static extraction of recognizable `ph.loadInsight`, `ph.query`,
+   `ph.capture`, and network references from source and emitted code.
+3. Calls observed while smoke tests exercise the candidate artifact.
+
+Extracted or observed behavior that is not declared fails the build. Declared
+capabilities that are not observed remain valid because smoke tests cannot cover
+every interaction branch. Dynamic behavior is supported through an explicit
+broader capability, such as inline-query access or an additional network origin,
+rather than by silently learning permissions from one test run. Capability
+expansion is surfaced for approval when policy requires it.
+
+The host data bridge and artifact CSP enforce the validated manifest at runtime.
+A canvas cannot call an undeclared insight, execute an inline query without that
+capability, capture an undeclared event, or connect to an undeclared origin. The
+same manifest is used for authenticated canvas views and future shared views;
+the viewer's authorization may further reduce the allowed operations but never
+expand the artifact's declaration.
 
 ### Dependency policy
 
@@ -513,10 +577,13 @@ documented resource and security limits.
   failure.
 - Red/green tests for concurrency: two agents edit the same base; the second
   publish receives a conflict and leaves the first build untouched.
+- History tests verify that each edit has distinct task-run attribution and that
+  thread updates link to the canonical canvas version.
 - Contract tests run the same fixtures through local and cloud build adapters.
 - End-to-end tests create canvases from both the canvas UI and a generic task.
 - Security tests cover iframe isolation, CSP, credential absence, package
-  scripts, path traversal, artifact integrity, and task/project authorization.
+  scripts, path traversal, artifact integrity, task/project authorization, and
+  rejection of undeclared data/network capabilities.
 - Record build queue time, build duration, cache hit rate, artifact size,
   diagnostic category, first-render success, and rollback rate.
 
@@ -531,9 +598,7 @@ Backend execution is a separate deployment concern and does not change the
 browser build contract. A future deployment can reference the same immutable
 frontend artifact and add separately versioned backend resources.
 
-## Decisions and open questions
-
-Architecture decisions:
+## Architecture decisions
 
 - Preserve arbitrary code; do not replace it with a dashboard/component schema.
 - There is one browser-application source model and one build recipe. The agent
@@ -553,8 +618,8 @@ Architecture decisions:
 - All referenced source versions are retained. Compiled artifacts are bounded
   to active, rollback, pinned, and recent builds according to the retention
   policy.
-
-Design questions to resolve before Phase 3:
-
-1. How source and build versions appear in task threads and canvas history.
-2. Which data calls must be declared statically versus learned during validation.
+- Every canvas generation or edit has a distinct run and source-version
+  attribution. Canvas history is canonical; task threads link to it with compact
+  updates.
+- Data and network access use a declared capability manifest checked through
+  static extraction and smoke-test observation, then enforced at runtime.
