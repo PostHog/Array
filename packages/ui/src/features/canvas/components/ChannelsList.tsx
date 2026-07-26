@@ -372,7 +372,7 @@ function ChannelSection({
               <OverflowTickerText
                 reveal={isHovered || isKeyboardFocused}
                 className={cn(
-                  "text-[13px] group-hover/chan:mr-8",
+                  "text-[13px] group-hover/chan:mr-11",
                   // Bold is unread's alone; full contrast is shared with the
                   // channel you're in. Either way there's no hover brighten
                   // left to do, so those rows skip it.
@@ -380,7 +380,7 @@ function ChannelSection({
                   isUnread || isActive
                     ? "text-foreground"
                     : "text-muted-foreground group-hover/button:text-foreground",
-                  menuOpen && "mr-8",
+                  menuOpen && "mr-11",
                 )}
               >
                 {channel.name}
