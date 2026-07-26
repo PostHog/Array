@@ -139,6 +139,30 @@ export interface TaskMention {
   created_at: string;
 }
 
+/** Which signal produced an activity row; mirrors the backend `activity_kind`. */
+export type TaskActivityKind =
+  | "awaiting_input"
+  | "message"
+  | "mention"
+  | "created";
+
+/**
+ * One task the current user is involved in, from the backend task-activity feed
+ * (`/task_activity/`). One row per task, newest activity first. Mirrors
+ * `TaskActivityDTO`.
+ */
+export interface TaskActivity {
+  task_id: string;
+  task_title: string;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  activity_at: string;
+  activity_kind: TaskActivityKind;
+  snippet: string;
+  latest_author?: UserBasic | null;
+  latest_message_id?: string | null;
+}
+
 export type TaskRunStatus =
   | "not_started"
   | "queued"

@@ -1,6 +1,6 @@
 import { BellIcon } from "@phosphor-icons/react";
-import { countUnseenActivity } from "@posthog/core/canvas/mentionActivity";
-import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
+import { countUnseenActivity } from "@posthog/core/canvas/taskActivity";
+import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
 import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
 import { useMemo } from "react";
 import { SidebarItem } from "../SidebarItem";
@@ -12,15 +12,15 @@ interface ActivityItemProps {
   depth?: number;
 }
 
-// The Activity nav row with its unread-mentions dot. Owns the mentions
-// subscription so the query mounts once here; the badge counts thread mentions
-// newer than the last time the Activity page was opened.
+// The Activity nav row with its unread dot. Owns the task-activity subscription
+// so the query mounts once here; the badge counts tasks whose activity is newer
+// than the last time the Activity page was opened.
 export function ActivityItem({
   isActive,
   onClick,
   depth = 0,
 }: ActivityItemProps) {
-  const { items } = useMentionActivity();
+  const { items } = useTaskActivity();
   const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);
   const unseen = useMemo(
     () => countUnseenActivity(items, lastSeenAt),
@@ -35,7 +35,7 @@ export function ActivityItem({
           Activity
           <SidebarCountBadge
             count={unseen}
-            title={`${unseen} new ${unseen === 1 ? "mention" : "mentions"}`}
+            title={`${unseen} new ${unseen === 1 ? "update" : "updates"}`}
           />
         </>
       }

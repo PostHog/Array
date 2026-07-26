@@ -86,6 +86,7 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
+  TaskActivity,
   TaskChannel,
   TaskMention,
   TaskRun,
@@ -2504,6 +2505,26 @@ export class PostHogAPIClient {
       throw new Error(`Failed to fetch task mentions: ${response.statusText}`);
     }
     return (await response.json()) as TaskMention[];
+  }
+
+  // Tasks the current user is involved in (created, mentioned, or messaged),
+  // one row per task, newest activity first.
+  async getTaskActivity(options?: { since?: string }): Promise<TaskActivity[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_activity/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options?.since) {
+      url.searchParams.set("since", options.since);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task activity: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskActivity[];
   }
 
   async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {
