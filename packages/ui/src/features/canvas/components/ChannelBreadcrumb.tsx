@@ -1,10 +1,10 @@
-import { HashIcon } from "@phosphor-icons/react";
 import {
   Button,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@posthog/quill";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { Flex, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
@@ -52,7 +52,10 @@ export function ChannelBreadcrumb({
 
   const channelSegment = (
     <>
-      <HashIcon size={12} className="mt-px shrink-0 text-muted-foreground/80" />
+      {channelGlyph(channelName, {
+        size: 12,
+        className: "mt-px shrink-0 text-muted-foreground/80",
+      })}
       <Text
         className="min-w-0 truncate whitespace-nowrap font-medium text-[13px]"
         title={channelName}

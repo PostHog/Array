@@ -58,7 +58,7 @@ import { Avatar, Box } from "@radix-ui/themes";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
-// The two-line user/project card used at the bottom of the sidebar.
+/** The account / project / org menu at the bottom of the sidebar. */
 export function ProjectSwitcher() {
   const [popoverOpen, setPopoverOpen] = useState(false);
 

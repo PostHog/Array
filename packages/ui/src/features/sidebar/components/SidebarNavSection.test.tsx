@@ -39,6 +39,11 @@ vi.mock("@posthog/ui/router/useAppView", () => ({ useAppView }));
 vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
   useFeatureFlag: () => true,
 }));
+// These tests pin the legacy layout (flag off), where the "Enable channels"
+// toggle row is present.
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => false,
+}));
 vi.mock("@posthog/ui/router/navigationBridge", () => ({
   navigateToActivity,
   navigateToAgents,
@@ -145,9 +150,10 @@ describe("SidebarNavSection", () => {
     await user.click(screen.getByRole("button", { name: /Inbox/ }));
 
     expect(navigateToInbox).toHaveBeenCalledTimes(1);
+    // `layout` separates these from ChannelNav's identically-named clicks.
     expect(track).toHaveBeenCalledWith(
       ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED,
-      { item: "inbox", in_more: false },
+      { item: "inbox", in_more: false, layout: "code" },
     );
   });
 

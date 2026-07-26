@@ -3,7 +3,8 @@ import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
-import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
+import { useCommandCenterActiveCount } from "@posthog/ui/features/command-center/useCommandCenterActiveCount";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
@@ -14,7 +15,6 @@ import {
   orderedNavItems,
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
-import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import {
   navigateToActivity,
   navigateToCommandCenter,
@@ -74,6 +74,9 @@ export function SidebarNavSection({
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
   const setChannelsEnabled = useSidebarStore((s) => s.setChannelsEnabled);
+  // The new channels layout subsumes the alpha: while its flag is on, the
+  // "Enable channels" toggle is meaningless, so its row is hidden.
+  const channelsLayout = useChannelsLayout();
 
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
@@ -113,19 +116,9 @@ export function SidebarNavSection({
   // count — keeps the standalone (Channels) render self-contained without
   // opening a redundant subscription when composed inside SidebarMenu.
   const needsOwnCount = providedActiveCount === undefined;
-  const showAllUsers = useSidebarStore((s) => s.showAllUsers);
-  const showInternal = useSidebarStore((s) => s.showInternal);
-  const { data: allTasks = [] } = useTasks(
-    { showAllUsers, showInternal },
-    { enabled: needsOwnCount },
-  );
-  const commandCenterCells = useCommandCenterStore((s) => s.cells);
-  const ownActiveCount = (() => {
-    const taskIds = new Set(allTasks.map((t) => t.id));
-    return commandCenterCells.filter(
-      (taskId) => taskId != null && taskIds.has(taskId),
-    ).length;
-  })();
+  const ownActiveCount = useCommandCenterActiveCount({
+    enabled: needsOwnCount,
+  });
   const commandCenterActiveCount = providedActiveCount ?? ownActiveCount;
 
   const openCommandMenu = useCommandMenuStore((s) => s.open);
@@ -137,6 +130,7 @@ export function SidebarNavSection({
       track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
         item,
         in_more: depth === 1,
+        layout: "code",
       });
       action();
     };
@@ -152,7 +146,8 @@ export function SidebarNavSection({
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
     inbox: true,
     "command-center": true,
-    contexts: bluebirdEnabled,
+    // Hidden while the new layout is on — the opt-in toggle would be a no-op.
+    contexts: bluebirdEnabled && !channelsLayout,
     // Activity (the mentions feed) is a channels surface, so it only appears
     // once channels are enabled.
     activity: channelsEnabled,

@@ -7,7 +7,6 @@ import {
   FileTextIcon,
   HashIcon,
   LinkIcon,
-  LockSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
   StarIcon,
@@ -43,6 +42,7 @@ import {
   TooltipTrigger,
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
 import { trackAndCreateCanvas } from "@posthog/ui/features/canvas/createCanvasAnalytics";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
@@ -61,13 +61,18 @@ import {
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
+import {
+  resetCurrentChannel,
+  useCurrentChannelStore,
+} from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { toast } from "@posthog/ui/primitives/toast";
+import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { hostClient } from "../hostClient";
 
 // One actionable entry in a channel's menu, rendered the same whether it
@@ -127,6 +132,12 @@ function useChannelActions(channel: Channel): {
 
       await deleteChannel(channel.id);
       removeStar();
+      // Unscope immediately if this was the current channel — otherwise the
+      // sidebar renders a dead id (and new tasks file against it) until the
+      // channels list refetches. useCurrentChannel is the backstop.
+      if (useCurrentChannelStore.getState().currentChannelId === channel.id) {
+        resetCurrentChannel();
+      }
       track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
         action_type: "delete",
         surface: "sidebar",
@@ -346,18 +357,18 @@ function ChannelSection({
                   params: { channelId: channel.id },
                 });
               }}
-              className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+              className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-foreground"
             >
-              <HashIcon
-                size={14}
-                weight={isUnread ? "bold" : undefined}
-                className={cn(
+              {channelGlyph(channel.name, {
+                size: 14,
+                weight: isUnread ? "bold" : undefined,
+                className: cn(
                   "shrink-0",
                   isUnread || isActive
                     ? "text-foreground"
                     : "text-muted-foreground group-hover/button:text-foreground",
-                )}
-              />
+                ),
+              })}
               <span
                 className={cn(
                   "truncate text-[13px] group-hover/chan:pr-8",
@@ -422,10 +433,7 @@ function ChannelSection({
                     surface: "sidebar",
                     channel_id: channel.id,
                   });
-                  navigate({
-                    to: "/website/$channelId/new",
-                    params: { channelId: channel.id },
-                  });
+                  openTaskInput({ channelId: channel.id });
                 }}
               >
                 <FileTextIcon size={14} />
@@ -560,7 +568,7 @@ function PersonalChannelRow() {
       surface: "sidebar",
       channel_id: channelId,
     });
-    void navigate({ to: "/website/$channelId/new", params: { channelId } });
+    openTaskInput({ channelId });
   };
 
   const newCanvas = async () => {
@@ -583,18 +591,18 @@ function PersonalChannelRow() {
         data-selected={isActive || undefined}
         disabled={isCreating}
         onClick={() => void open()}
-        className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
+        className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-foreground"
       >
-        <HashIcon
-          size={14}
-          weight={isUnread ? "bold" : undefined}
-          className={cn(
+        {channelGlyph(PERSONAL_CHANNEL_NAME, {
+          size: 14,
+          weight: isUnread ? "bold" : undefined,
+          className: cn(
             "shrink-0",
             isUnread || isActive
               ? "text-foreground"
               : "text-muted-foreground group-hover/button:text-foreground",
-          )}
-        />
+          ),
+        })}
         <span
           className={cn(
             "truncate text-[13px]",
@@ -606,17 +614,6 @@ function PersonalChannelRow() {
         >
           {PERSONAL_CHANNEL_NAME}
         </span>
-        {/* The lock and the hover "+" share the right edge, so fade the lock
-            out as the "+" comes in. */}
-        <LockSimpleIcon
-          size={12}
-          className={cn(
-            "ml-auto shrink-0 text-chrome-foreground transition-opacity",
-            newMenuOpen
-              ? "opacity-0"
-              : "opacity-100 group-hover/chan:opacity-0",
-          )}
-        />
       </Button>
       <div className="absolute top-0 right-1">
         <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
@@ -756,19 +753,6 @@ export function ChannelsList() {
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
-
-  // Fire CHANNELS_SPACE_VIEWED once per space mount, after channels first load
-  // (so the counts are accurate). The sidebar stays mounted while navigating
-  // between channels, so this naturally fires once per entry into the space.
-  const viewedTrackedRef = useRef(false);
-  useEffect(() => {
-    if (isLoading || viewedTrackedRef.current) return;
-    viewedTrackedRef.current = true;
-    track(ANALYTICS_EVENTS.CHANNELS_SPACE_VIEWED, {
-      channel_count: channels.length,
-      starred_count: starred.length,
-    });
-  }, [isLoading, channels.length, starred.length]);
 
   return (
     // One shared provider groups every row tooltip so that once one shows,
