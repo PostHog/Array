@@ -18,6 +18,11 @@ export function OverflowTickerText({
   const contentRef = useRef<HTMLSpanElement>(null);
   const [overflowPx, setOverflowPx] = useState(0);
   const [reachedEnd, setReachedEnd] = useState(false);
+  const [prevReveal, setPrevReveal] = useState(reveal);
+  if (reveal !== prevReveal) {
+    setPrevReveal(reveal);
+    if (!reveal) setReachedEnd(false);
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -32,10 +37,6 @@ export function OverflowTickerText({
     observer.observe(content);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!reveal) setReachedEnd(false);
-  }, [reveal]);
 
   const prefersReducedMotion = useReducedMotion();
   const isTicking = reveal && overflowPx > 0;
