@@ -34,11 +34,11 @@ interface SidebarItemProps {
 function SidebarItemLabel({
   label,
   grow,
-  isRowHovered,
+  revealOverflow,
 }: {
   label: React.ReactNode;
   grow: boolean;
-  isRowHovered: boolean;
+  revealOverflow: boolean;
 }) {
   const containerRef = useRef<HTMLSpanElement>(null);
   const contentRef = useRef<HTMLSpanElement>(null);
@@ -60,10 +60,10 @@ function SidebarItemLabel({
   }, []);
 
   useEffect(() => {
-    if (!isRowHovered) setReachedEnd(false);
-  }, [isRowHovered]);
+    if (!revealOverflow) setReachedEnd(false);
+  }, [revealOverflow]);
 
-  const isTicking = isRowHovered && overflowPx > 0;
+  const isTicking = revealOverflow && overflowPx > 0;
 
   return (
     <span
@@ -124,6 +124,7 @@ export function SidebarItem({
   disabled,
 }: SidebarItemProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
 
   return (
     <Button
@@ -147,6 +148,10 @@ export function SidebarItem({
       onContextMenu={onContextMenu}
       onPointerEnter={() => setIsHovered(true)}
       onPointerLeave={() => setIsHovered(false)}
+      onFocus={(e) =>
+        setIsKeyboardFocused(e.currentTarget.matches(":focus-visible"))
+      }
+      onBlur={() => setIsKeyboardFocused(false)}
       disabled={disabled}
     >
       {icon ? (
@@ -159,7 +164,7 @@ export function SidebarItem({
           <SidebarItemLabel
             label={label}
             grow={!badge}
-            isRowHovered={isHovered}
+            revealOverflow={isHovered || isKeyboardFocused}
           />
           {badge ? (
             <span className="mr-auto ml-1 flex shrink-0 items-center">
