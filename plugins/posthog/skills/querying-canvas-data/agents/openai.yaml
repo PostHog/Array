@@ -1,0 +1,4 @@
+interface:
+  display_name: "Query canvas data"
+  short_description: "Connect canvas apps to validated PostHog data"
+  default_prompt: "Use $querying-canvas-data to connect this canvas to PostHog data."

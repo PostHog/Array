@@ -168,6 +168,89 @@ export const canvasBuildResultSchema = z
   })
   .strict();
 
+export const canvasSourceVersionSchema = z
+  .object({
+    id: z.string().min(1),
+    parentVersionId: z.string().min(1).nullable(),
+    taskId: z.string().min(1),
+    taskRunId: z.string().min(1),
+    sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceSize: z.number().int().nonnegative(),
+    prompt: z.string().max(10_000).optional(),
+    createdAt: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const canvasPersistedBuildSchema = z
+  .object({
+    id: z.string().min(1),
+    sourceVersionId: z.string().min(1),
+    status: z.enum(["queued", "building", "ready", "failed"]),
+    artifactUrl: z.url().optional(),
+    integrity: z
+      .string()
+      .regex(/^sha256-[A-Za-z0-9+/=]+$/)
+      .optional(),
+    diagnostics: z.array(canvasDiagnosticSchema).max(500),
+    manifest: canvasArtifactManifestSchema.optional(),
+    createdAt: z.number().int().nonnegative(),
+    completedAt: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export const canvasSourceSnapshotSchema = z
+  .object({
+    version: canvasSourceVersionSchema,
+    project: canvasSourceProjectSchema,
+  })
+  .strict();
+
+export const canvasPublishRequestSchema = z
+  .object({
+    project: canvasSourceProjectSchema,
+    expectedCurrentVersionId: z.string().min(1).nullable(),
+    taskId: z.string().min(1),
+    taskRunId: z.string().min(1),
+    prompt: z.string().max(10_000).optional(),
+  })
+  .strict();
+
+export const canvasPublishResultSchema = z
+  .object({
+    version: canvasSourceVersionSchema,
+    build: canvasPersistedBuildSchema,
+  })
+  .strict();
+
+export const canvasHistorySchema = z
+  .object({
+    currentSourceVersionId: z.string().min(1).nullable(),
+    activeBuildId: z.string().min(1).nullable(),
+    versions: z.array(canvasSourceVersionSchema),
+    builds: z.array(canvasPersistedBuildSchema),
+  })
+  .strict();
+
+export const canvasVersionConflictSchema = z
+  .object({
+    code: z.literal("version_conflict"),
+    detail: z.string(),
+    currentVersionId: z.string().nullable(),
+  })
+  .strict();
+
+export const canvasApplicationIdInputSchema = z
+  .object({ canvasId: z.string().min(1) })
+  .strict();
+
+export const canvasApplicationBuildInputSchema = canvasApplicationIdInputSchema
+  .extend({ buildId: z.string().min(1) })
+  .strict();
+
+export const canvasApplicationPublishInputSchema = canvasPublishRequestSchema
+  .extend({ canvasId: z.string().min(1) })
+  .strict();
+
 export type CanvasCapabilities = z.infer<typeof canvasCapabilitiesSchema>;
 export type CanvasSourceProject = z.infer<typeof canvasSourceProjectSchema>;
 export type CanvasDiagnostic = z.infer<typeof canvasDiagnosticSchema>;
@@ -178,6 +261,13 @@ export type CanvasArtifactManifest = z.infer<
 export type CanvasBuildMode = z.infer<typeof canvasBuildModeSchema>;
 export type CanvasBuildRequest = z.infer<typeof canvasBuildRequestSchema>;
 export type CanvasBuildResult = z.infer<typeof canvasBuildResultSchema>;
+export type CanvasSourceVersion = z.infer<typeof canvasSourceVersionSchema>;
+export type CanvasPersistedBuild = z.infer<typeof canvasPersistedBuildSchema>;
+export type CanvasSourceSnapshot = z.infer<typeof canvasSourceSnapshotSchema>;
+export type CanvasPublishRequest = z.infer<typeof canvasPublishRequestSchema>;
+export type CanvasPublishResult = z.infer<typeof canvasPublishResultSchema>;
+export type CanvasHistory = z.infer<typeof canvasHistorySchema>;
+export type CanvasVersionConflict = z.infer<typeof canvasVersionConflictSchema>;
 
 const LEGACY_REACT_VERSION = "19.2.6";
 const LEGACY_QUILL_VERSION = "0.3.0-beta.24";

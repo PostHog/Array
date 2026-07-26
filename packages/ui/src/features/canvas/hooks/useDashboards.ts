@@ -1,3 +1,4 @@
+import { isPlaceholderCanvasName } from "@posthog/core/canvas/canvasGenerationService";
 import type {
   DashboardRecord,
   DashboardSummary,
@@ -19,10 +20,7 @@ export const UNTITLED_CANVAS_NAME = "Untitled canvas";
 
 // True when a canvas name is a placeholder (never user-chosen), so auto-naming
 // from a generation prompt is safe and won't clobber a real title.
-export function isPlaceholderCanvasName(name: string): boolean {
-  const trimmed = name.trim();
-  return trimmed === UNTITLED_CANVAS_NAME || trimmed === "Untitled dashboard";
-}
+export { isPlaceholderCanvasName };
 
 /** Saved canvases for a channel (file-backed freeform React apps). */
 export function useDashboards(channelId: string | undefined): {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build HTML canvases"
+  short_description: "Build semantic HTML, graphics, and WebGL canvases"
+  default_prompt: "Use $building-html-canvases to build this browser canvas."

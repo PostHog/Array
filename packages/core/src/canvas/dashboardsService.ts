@@ -789,6 +789,10 @@ function toRecord(entry: FsEntry): DashboardRecord {
     code: meta.code,
     versions: meta.versions,
     currentVersionId: meta.currentVersionId,
+    currentSourceVersionId: meta.currentSourceVersionId,
+    activeBuildId: meta.activeBuildId,
+    activeBuildArtifactUrl: meta.activeBuildArtifactUrl,
+    activeBuildCapabilities: meta.activeBuildCapabilities,
     context: meta.context,
     generationTaskId: meta.generationTaskId,
     // Prefer our stamped meta; fall back to the FS row's creator if present.

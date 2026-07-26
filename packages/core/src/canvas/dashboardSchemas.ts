@@ -1,3 +1,4 @@
+import { canvasCapabilitiesSchema } from "@posthog/shared/canvas-application";
 import { z } from "zod";
 import { freeformVersionSchema } from "./freeformSchemas";
 
@@ -15,6 +16,10 @@ export const dashboardRecordSchema = z.object({
   code: z.string().optional(),
   versions: z.array(freeformVersionSchema).optional(),
   currentVersionId: z.string().optional(),
+  currentSourceVersionId: z.string().nullish(),
+  activeBuildId: z.string().nullish(),
+  activeBuildArtifactUrl: z.url().nullish(),
+  activeBuildCapabilities: canvasCapabilitiesSchema.nullish(),
   // The live author-written context (markdown) passed to the agent.
   context: z.string().optional(),
   // Id of the task currently generating this canvas (freeform gen runs as a
@@ -45,6 +50,10 @@ export const dashboardFileMetaSchema = z.object({
   code: z.string().optional(),
   versions: z.array(freeformVersionSchema).optional(),
   currentVersionId: z.string().optional(),
+  currentSourceVersionId: z.string().nullish(),
+  activeBuildId: z.string().nullish(),
+  activeBuildArtifactUrl: z.url().nullish(),
+  activeBuildCapabilities: canvasCapabilitiesSchema.nullish(),
   // The live author-written context (markdown) passed to the agent.
   context: z.string().optional(),
   // Id of the task currently generating this canvas (see dashboardRecordSchema).

@@ -44,6 +44,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { BuiltCanvas } from "./BuiltCanvas";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
 import { CanvasGenerateHero } from "./CanvasGenerateHero";
 import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
@@ -198,10 +199,17 @@ export function FreeformCanvasView({
   // The data bridge is a pure function; the QueryClient (its read cache) is
   // injected here rather than resolved inside it.
   const queryClient = useQueryClient();
+  const activeBuildCapabilities =
+    dashboard?.activeBuildCapabilities ?? undefined;
   const onDataRequest = useCallback(
     (method: string, payload: unknown) =>
-      handleFreeformDataRequest(method, payload, queryClient),
-    [queryClient],
+      handleFreeformDataRequest(
+        method,
+        payload,
+        queryClient,
+        activeBuildCapabilities,
+      ),
+    [queryClient, activeBuildCapabilities],
   );
 
   const onError = useCallback(
@@ -236,20 +244,20 @@ export function FreeformCanvasView({
   // Deriving from the record rather than waiting on the seed also means a seed
   // that never runs can't strand the canvas on a spinner.
   const renderCode = code || dashboard?.code || "";
-  const showCanvas = !!renderCode;
+  const showCanvas = !!(dashboard?.activeBuildArtifactUrl || renderCode);
   // `isGenerating` keys off the effective task (the optimistic bridge right after
   // submit, then the polled record) and short-circuits on a terminal run — so a
   // failed/cancelled run can't strand the canvas body on the spinner.
-  const showGeneratingState = !renderCode && isGenerating;
+  const showGeneratingState = !showCanvas && isGenerating;
   // While the record is still being fetched we don't yet know whether the canvas
   // has content, so show a spinner instead of the empty state / hero. Bounded by
   // the query, so it resolves once the fetch settles.
-  const showLoadingState = !renderCode && !isGenerating && dashboardLoading;
+  const showLoadingState = !showCanvas && !isGenerating && dashboardLoading;
   // The empty-canvas landing: a centered composer with suggestions. Held back
   // until the record settles (so it doesn't flash over a canvas that has content)
   // and only when no run is in flight. After submit it floats into the panel.
   const showHero =
-    interactive && !renderCode && !effectiveTaskId && !dashboardLoading;
+    interactive && !showCanvas && !effectiveTaskId && !dashboardLoading;
   // The side panel only exists once there's a canvas or an active run.
   const showPanel = interactive && (showCanvas || !!effectiveTaskId);
 
@@ -375,15 +383,25 @@ export function FreeformCanvasView({
             // this placeholder just reserves the viewport box and owns scroll via
             // the host's overlay, so the canvas survives navigation without a reload.
             <Box className="h-full w-full">
-              <CanvasFramePlaceholder
-                dashboardId={dashboardId}
-                code={renderCode}
-                analytics={analytics}
-                onDataRequest={onDataRequest}
-                onError={onError}
-                onRendered={onRendered}
-                onNavigate={onNavigate}
-              />
+              {dashboard?.activeBuildArtifactUrl ? (
+                <BuiltCanvas
+                  artifactUrl={dashboard.activeBuildArtifactUrl}
+                  onDataRequest={onDataRequest}
+                  onError={onError}
+                  onRendered={onRendered}
+                  onNavigate={onNavigate}
+                />
+              ) : (
+                <CanvasFramePlaceholder
+                  dashboardId={dashboardId}
+                  code={renderCode}
+                  analytics={analytics}
+                  onDataRequest={onDataRequest}
+                  onError={onError}
+                  onRendered={onRendered}
+                  onNavigate={onNavigate}
+                />
+              )}
             </Box>
           ) : (
             <ScrollArea className="h-full">

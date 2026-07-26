@@ -5,6 +5,7 @@ import { analyticsRouter } from "./routers/analytics.router";
 import { archiveRouter } from "./routers/archive.router";
 import { authRouter } from "./routers/auth.router";
 import { browserTabsRouter } from "./routers/browser-tabs.router";
+import { canvasApplicationRouter } from "./routers/canvas-application.router";
 import { canvasDataRouter } from "./routers/canvas-data.router";
 import { canvasTemplatesRouter } from "./routers/canvas-templates.router";
 import { channelTasksRouter } from "./routers/channel-tasks.router";
@@ -60,6 +61,7 @@ export const hostRouter = router({
   auth: authRouter,
   browserTabs: browserTabsRouter,
   canvasData: canvasDataRouter,
+  canvasApplication: canvasApplicationRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
   claudeCliSessions: claudeCliSessionsRouter,

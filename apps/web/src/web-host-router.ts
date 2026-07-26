@@ -3,6 +3,7 @@ import type { TeamSkillsService } from "@posthog/core/skills/teamSkillsService";
 import { resolveService } from "@posthog/di/container";
 import { analyticsRouter } from "@posthog/host-router/routers/analytics.router";
 import { authRouter } from "@posthog/host-router/routers/auth.router";
+import { canvasApplicationRouter } from "@posthog/host-router/routers/canvas-application.router";
 import { canvasDataRouter } from "@posthog/host-router/routers/canvas-data.router";
 import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templates.router";
 import { channelTasksRouter } from "@posthog/host-router/routers/channel-tasks.router";
@@ -473,6 +474,7 @@ export const webHostRouter = router({
   // core services (bound via canvasCoreModule in web-container), which reach the
   // PostHog desktop_file_system API through authenticatedFetch — no Node backend.
   canvasData: canvasDataRouter,
+  canvasApplication: canvasApplicationRouter,
   canvasTemplates: canvasTemplatesRouter,
   channelTasks: channelTasksRouter,
   cloudTask: cloudTaskRouter,

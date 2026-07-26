@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build React canvases"
+  short_description: "Build accessible React and Quill canvas apps"
+  default_prompt: "Use $building-react-quill-canvases to build this canvas with React and Quill."

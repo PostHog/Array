@@ -1,0 +1,4 @@
+interface:
+  display_name: "Publish canvases"
+  short_description: "Validate and safely publish canvas applications"
+  default_prompt: "Use $validating-and-publishing-canvases to validate and publish this canvas."

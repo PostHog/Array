@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build canvases"
+  short_description: "Create and update browser application canvases"
+  default_prompt: "Use $building-canvases to create a canvas for this request."

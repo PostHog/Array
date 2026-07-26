@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   canvasCapabilitiesSchema,
+  canvasPublishRequestSchema,
   canvasSourceProjectSchema,
+  canvasSourceVersionSchema,
   createLegacyReactCanvasProject,
 } from "./canvas-application";
 
@@ -105,5 +107,57 @@ describe("createLegacyReactCanvasProject", () => {
     expect(project.files["src/main.tsx"]).toContain("createRoot");
     expect(project.dependencies.react).toMatch(/^\d+\.\d+\.\d+/);
     expect(() => canvasSourceProjectSchema.parse(project)).not.toThrow();
+  });
+});
+
+describe("canvas cloud persistence contracts", () => {
+  it("parses attributed source versions and guarded publish requests", () => {
+    const project = createLegacyReactCanvasProject(
+      "export default function App() { return null; }",
+    );
+    expect(
+      canvasSourceVersionSchema.parse({
+        id: "version-1",
+        parentVersionId: null,
+        taskId: "task-1",
+        taskRunId: "run-1",
+        sourceHash: "a".repeat(64),
+        sourceSize: 100,
+        createdAt: 1,
+      }).taskRunId,
+    ).toBe("run-1");
+    expect(
+      canvasPublishRequestSchema.parse({
+        project,
+        expectedCurrentVersionId: null,
+        taskId: "task-1",
+        taskRunId: "run-1",
+      }).expectedCurrentVersionId,
+    ).toBeNull();
+  });
+
+  it("requires task and run attribution on every source version", () => {
+    expect(() =>
+      canvasSourceVersionSchema.parse({
+        id: "version-1",
+        parentVersionId: null,
+        sourceHash: "a".repeat(64),
+        sourceSize: 100,
+        createdAt: 1,
+      }),
+    ).toThrow();
+  });
+
+  it("requires an optimistic-concurrency base when publishing", () => {
+    const project = createLegacyReactCanvasProject(
+      "export default function App() { return null; }",
+    );
+    expect(() =>
+      canvasPublishRequestSchema.parse({
+        project,
+        taskId: "task-1",
+        taskRunId: "run-1",
+      }),
+    ).toThrow();
   });
 });
