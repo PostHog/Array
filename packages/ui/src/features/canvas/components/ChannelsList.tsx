@@ -63,6 +63,7 @@ import {
 import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
+import { OverflowTickerText } from "@posthog/ui/primitives/OverflowTickerText";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
@@ -310,6 +311,8 @@ function ChannelSection({
   // The "+" dropdown (New task / New canvas). Keeps the hover actions pinned
   // while open.
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
   const createAndOpenCanvas = useCreateAndOpenDashboard(channel.id);
   // Shared by the "..." dropdown and the right-click context menu so both offer
   // the same star / edit / rename / delete actions.
@@ -324,7 +327,11 @@ function ChannelSection({
   } = useChannelActions(channel);
 
   return (
-    <Box className="group/chan relative">
+    <Box
+      className="group/chan relative"
+      onPointerEnter={() => setIsHovered(true)}
+      onPointerLeave={() => setIsHovered(false)}
+    >
       {/* A single, non-expandable row: the "# name" navigates straight to the
           channel home. Right-clicking opens the same actions as the "..." menu. */}
       <ContextMenu>
@@ -346,6 +353,10 @@ function ChannelSection({
                   params: { channelId: channel.id },
                 });
               }}
+              onFocus={(e) =>
+                setIsKeyboardFocused(e.currentTarget.matches(":focus-visible"))
+              }
+              onBlur={() => setIsKeyboardFocused(false)}
               className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-gray-12"
             >
               <HashIcon
@@ -358,9 +369,10 @@ function ChannelSection({
                     : "text-muted-foreground group-hover/button:text-foreground",
                 )}
               />
-              <span
+              <OverflowTickerText
+                reveal={isHovered || isKeyboardFocused}
                 className={cn(
-                  "truncate text-[13px] group-hover/chan:pr-8",
+                  "text-[13px] group-hover/chan:mr-8",
                   // Bold is unread's alone; full contrast is shared with the
                   // channel you're in. Either way there's no hover brighten
                   // left to do, so those rows skip it.
@@ -368,11 +380,11 @@ function ChannelSection({
                   isUnread || isActive
                     ? "text-foreground"
                     : "text-muted-foreground group-hover/button:text-foreground",
-                  menuOpen && "pr-8",
+                  menuOpen && "mr-8",
                 )}
               >
                 {channel.name}
-              </span>
+              </OverflowTickerText>
             </Button>
           }
         />

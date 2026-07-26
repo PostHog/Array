@@ -1,12 +1,9 @@
 import { Button, cn } from "@posthog/quill";
 import type { SidebarItemAction } from "@posthog/ui/features/sidebar/types";
-import { useReducedMotion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { OverflowTickerText } from "@posthog/ui/primitives/OverflowTickerText";
+import { useState } from "react";
 
 export const INDENT_SIZE = 8;
-
-const TICKER_SPEED_PX_PER_SECOND = 50;
-const TICKER_FADE_PX = 24;
 
 export function getSidebarItemPaddingLeft(depth: number): string {
   return `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`;
@@ -30,83 +27,6 @@ interface SidebarItemProps {
   badge?: React.ReactNode;
   endContent?: React.ReactNode;
   disabled?: boolean;
-}
-
-function SidebarItemLabel({
-  label,
-  grow,
-  revealOverflow,
-}: {
-  label: React.ReactNode;
-  grow: boolean;
-  revealOverflow: boolean;
-}) {
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const contentRef = useRef<HTMLSpanElement>(null);
-  const [overflowPx, setOverflowPx] = useState(0);
-  const [reachedEnd, setReachedEnd] = useState(false);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    const content = contentRef.current;
-    if (!container || !content) return;
-    const measure = () => {
-      setOverflowPx(Math.max(0, container.scrollWidth - container.clientWidth));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(container);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!revealOverflow) setReachedEnd(false);
-  }, [revealOverflow]);
-
-  const prefersReducedMotion = useReducedMotion();
-  const isTicking = revealOverflow && overflowPx > 0;
-  const showsEnd = reachedEnd || (isTicking && prefersReducedMotion);
-
-  return (
-    <span
-      ref={containerRef}
-      className={cn(
-        "min-w-0 overflow-hidden whitespace-nowrap",
-        grow && "flex-1",
-      )}
-      style={{
-        maskImage:
-          overflowPx === 0
-            ? undefined
-            : isTicking
-              ? showsEnd
-                ? `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px)`
-                : `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px, black calc(100% - ${TICKER_FADE_PX}px), transparent)`
-              : `linear-gradient(to right, black calc(100% - ${TICKER_FADE_PX}px), transparent)`,
-      }}
-    >
-      <span
-        ref={contentRef}
-        className="inline-block"
-        onTransitionEnd={(e) => {
-          if (e.propertyName === "transform") setReachedEnd(true);
-        }}
-        style={
-          isTicking
-            ? {
-                transform: `translateX(-${overflowPx}px)`,
-                transitionProperty: prefersReducedMotion ? "none" : "transform",
-                transitionTimingFunction: "linear",
-                transitionDuration: `${overflowPx / TICKER_SPEED_PX_PER_SECOND}s`,
-              }
-            : { transform: "translateX(0)", transitionProperty: "none" }
-        }
-      >
-        {label}
-      </span>
-    </span>
-  );
 }
 
 export function SidebarItem({
@@ -164,11 +84,12 @@ export function SidebarItem({
       ) : null}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-h-[18px] items-center gap-1">
-          <SidebarItemLabel
-            label={label}
-            grow={!badge}
-            revealOverflow={isHovered || isKeyboardFocused}
-          />
+          <OverflowTickerText
+            reveal={isHovered || isKeyboardFocused}
+            className={cn(!badge && "flex-1")}
+          >
+            {label}
+          </OverflowTickerText>
           {badge ? (
             <span className="mr-auto ml-1 flex shrink-0 items-center">
               {badge}
