@@ -15,6 +15,8 @@ import {
   WATCHER_SERVICE,
 } from "./di/tokens";
 import { removeLegacyNodeShimDirs } from "./services/agent/legacy-node-shim";
+import { CANVAS_BUILD_SERVICE } from "./services/canvas-build/identifiers";
+import type { CanvasBuildService } from "./services/canvas-build/service";
 import type { ConnectivityService } from "./services/connectivity/service";
 import type { EnvironmentService } from "./services/environment/service";
 import type { FocusService } from "./services/focus/service";
@@ -75,6 +77,7 @@ const router = createAppRouter({
   localLogsService: container.get<LocalLogsService>(LOCAL_LOGS_SERVICE),
   connectivityService: container.get<ConnectivityService>(CONNECTIVITY_SERVICE),
   environmentService: container.get<EnvironmentService>(ENVIRONMENT_SERVICE),
+  canvasBuildService: container.get<CanvasBuildService>(CANVAS_BUILD_SERVICE),
 });
 const app = createApp({ sharedSecret, router });
 

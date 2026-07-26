@@ -1,5 +1,7 @@
 import "reflect-metadata";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
+import { CANVAS_BUILD_SERVICE } from "../services/canvas-build/identifiers";
+import { CanvasBuildService } from "../services/canvas-build/service";
 import { ConnectivityService } from "../services/connectivity/service";
 import { EnvironmentService } from "../services/environment/service";
 import { FocusService } from "../services/focus/service";
@@ -30,6 +32,7 @@ export interface WorkspaceServerBindings {
   [LOGS_SERVICE]: LocalLogsService;
   [CONNECTIVITY_SERVICE]: ConnectivityService;
   [ENVIRONMENT_SERVICE]: EnvironmentService;
+  [CANVAS_BUILD_SERVICE]: CanvasBuildService;
 }
 
 export const container = new TypedContainer<WorkspaceServerBindings>();
@@ -42,3 +45,4 @@ container.bind(LOCAL_LOGS_SERVICE).to(LocalLogsService).inSingletonScope();
 container.bind(LOGS_SERVICE).toService(LOCAL_LOGS_SERVICE);
 container.bind(CONNECTIVITY_SERVICE).to(ConnectivityService).inSingletonScope();
 container.bind(ENVIRONMENT_SERVICE).to(EnvironmentService).inSingletonScope();
+container.bind(CANVAS_BUILD_SERVICE).to(CanvasBuildService).inSingletonScope();

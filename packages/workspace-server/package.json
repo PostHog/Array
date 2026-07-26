@@ -34,6 +34,7 @@
     "@trpc/server": "catalog:",
     "better-sqlite3": "^12.8.0",
     "drizzle-orm": "^0.45.1",
+    "esbuild": "0.27.4",
     "fflate": "^0.8.2",
     "hono": "catalog:",
     "ignore": "^7.0.5",
@@ -42,6 +43,7 @@
     "reflect-metadata": "catalog:",
     "smol-toml": "^1.6.0",
     "superjson": "catalog:",
+    "three": "0.183.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {

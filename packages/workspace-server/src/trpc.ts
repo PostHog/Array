@@ -1,6 +1,11 @@
+import {
+  canvasBuildRequestSchema,
+  canvasBuildResultSchema,
+} from "@posthog/shared/canvas-application";
 import { initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { z } from "zod";
+import type { CanvasBuildService } from "./services/canvas-build/service";
 import { connectivityStatusOutput } from "./services/connectivity/schemas";
 import type { ConnectivityService } from "./services/connectivity/service";
 import {
@@ -188,6 +193,7 @@ export interface WorkspaceServerServices {
   localLogsService: LocalLogsService;
   connectivityService: ConnectivityService;
   environmentService: EnvironmentService;
+  canvasBuildService: CanvasBuildService;
 }
 
 export function createAppRouter({
@@ -199,6 +205,7 @@ export function createAppRouter({
   localLogsService: localLogsServiceInst,
   connectivityService: connectivityServiceInst,
   environmentService: environmentServiceInst,
+  canvasBuildService: canvasBuildServiceInst,
 }: WorkspaceServerServices) {
   const focusService = () => focusServiceInst;
   const focusSyncService = () => focusSyncServiceInst;
@@ -208,6 +215,7 @@ export function createAppRouter({
   const localLogsService = () => localLogsServiceInst;
   const connectivityService = () => connectivityServiceInst;
   const environmentService = () => environmentServiceInst;
+  const canvasBuildService = () => canvasBuildServiceInst;
 
   return t.router({
     focus: t.router({
@@ -989,6 +997,12 @@ export function createAppRouter({
         .mutation(({ input }) =>
           environmentService().deleteEnvironment(input.repoPath, input.id),
         ),
+    }),
+    canvasBuild: t.router({
+      build: t.procedure
+        .input(canvasBuildRequestSchema)
+        .output(canvasBuildResultSchema)
+        .mutation(({ input }) => canvasBuildService().build(input)),
     }),
   });
 }
