@@ -1,6 +1,10 @@
 import type { AuthService } from "@posthog/core/auth/auth";
 import { AUTH_SERVICE } from "@posthog/core/auth/auth.module";
 import { inject, injectable } from "inversify";
+import {
+  type CanvasBuildLifecycle,
+  canvasBuildLifecycleSchema,
+} from "./canvasBuildSchemas";
 import type {
   DashboardFileMeta,
   DashboardRecord,
@@ -337,6 +341,40 @@ export class DashboardsService {
     if (!res.ok) {
       throw new Error(`Failed to set channel home canvas (${res.status})`);
     }
+  }
+
+  // Read a canvas's build lifecycle (pointers + recent builds). Publishing
+  // queues a build server-side; callers poll this until it settles.
+  async getBuilds(id: string): Promise<CanvasBuildLifecycle> {
+    const res = await this.fs.fetch(`${encodeURIComponent(id)}/canvas/builds/`);
+    if (!res.ok)
+      throw new Error(`Failed to load canvas builds (${res.status})`);
+    const body = (await res.json()) as {
+      published_build_id: string | null;
+      current_source_version_id: string | null;
+      builds: {
+        id: string;
+        source_version_id: string;
+        build_status: string;
+        diagnostics?: unknown[];
+        pinned: boolean;
+        created_at: string;
+        finished_at: string | null;
+      }[];
+    };
+    return canvasBuildLifecycleSchema.parse({
+      publishedBuildId: body.published_build_id,
+      currentSourceVersionId: body.current_source_version_id,
+      builds: body.builds.map((build) => ({
+        id: build.id,
+        sourceVersionId: build.source_version_id,
+        buildStatus: build.build_status,
+        diagnostics: build.diagnostics ?? [],
+        pinned: build.pinned,
+        createdAt: build.created_at,
+        finishedAt: build.finished_at,
+      })),
+    });
   }
 
   async delete(id: string): Promise<void> {

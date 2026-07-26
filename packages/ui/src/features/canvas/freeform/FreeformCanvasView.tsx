@@ -44,6 +44,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { CanvasBuildStatus } from "./CanvasBuildStatus";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
 import { CanvasGenerateHero } from "./CanvasGenerateHero";
 import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
@@ -311,6 +312,7 @@ export function FreeformCanvasView({
               )}
             </Flex>
             <Flex align="center" gap="2">
+              <CanvasBuildStatus dashboardId={dashboardId} />
               {isGenerating && effectiveTaskId ? (
                 <>
                   <SpinnerGapIcon

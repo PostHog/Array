@@ -1,3 +1,4 @@
+import { canvasBuildLifecycleSchema } from "@posthog/core/canvas/canvasBuildSchemas";
 import {
   createDashboardInput,
   dashboardIdInput,
@@ -29,6 +30,14 @@ export const dashboardsRouter = router({
     .output(dashboardRecordSchema.nullable())
     .query(({ ctx, input }) =>
       ctx.container.get<IDashboardsService>(DASHBOARDS_SERVICE).get(input.id),
+    ),
+  builds: publicProcedure
+    .input(dashboardIdInput)
+    .output(canvasBuildLifecycleSchema)
+    .query(({ ctx, input }) =>
+      ctx.container
+        .get<IDashboardsService>(DASHBOARDS_SERVICE)
+        .getBuilds(input.id),
     ),
   create: publicProcedure
     .input(createDashboardInput)
