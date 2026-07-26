@@ -245,6 +245,27 @@ referenced historical source and builds for undo, audit, and rollback.
 Full build logs and large diagnostic payloads belong in log/object storage with
 a bounded summary in the database.
 
+### Retention
+
+Source and build retention have different policies:
+
+- Retain every referenced source version for the lifetime of the canvas so
+  history, attribution, undo, and deterministic rebuild remain available.
+- Retain the active and immediately previous successful build for instant
+  rollback.
+- Retain explicitly pinned builds for the lifetime of the canvas.
+- Retain other successful builds for 30 days, then delete their artifacts. They
+  remain rebuildable from the source archive, dependency lock, and versioned
+  build image.
+- Retain failed and preview artifacts for 24 hours for diagnosis, then delete
+  them.
+- Apply the product's standard log-retention policy to full build logs.
+
+Project storage and build quotas still require sizing from production data, but
+quota enforcement must not delete referenced source history or the active and
+rollback builds. Canvas/project deletion schedules all associated objects for
+deletion after the recovery grace period.
+
 ## End-to-end flow
 
 1. A user starts from a canvas or asks any task to create/update one.
@@ -301,7 +322,39 @@ arbitrary browser output.
 Build workers have bounded CPU, memory, time, output size, and dependency count.
 Package installation has network access only to the configured registry/cache;
 the build itself runs without network access. Package lifecycle scripts are
-disabled initially.
+disabled.
+
+### Dependency policy
+
+Canvas projects may request packages from npm rather than being restricted to a
+permanent allowlist. Each exact package version passes a guarded admission
+process before it enters the build cache:
+
+- vulnerability, provenance, package-age, license, and suspicious-file checks;
+- compressed, installed, and browser-bundle size limits;
+- rejection of native binaries and unsupported build-time behavior;
+- lifecycle scripts disabled during installation;
+- isolated builds without PostHog, project, or customer credentials;
+- an explicit approval when a dependency expands runtime capabilities, such as
+  access to a new external network origin.
+
+Admission decisions are cached by exact package version and policy version.
+Previously admitted versions do not bypass a newer policy or security block.
+Platform-supported dependencies such as React, Quill, Three.js, and the canvas
+SDK use the same pinned resolver but may be pre-admitted.
+
+### Build authority
+
+Cloud builds are authoritative for publication. Desktop and web may run the
+same versioned build contract locally for fast validation and preview, but they
+publish source projects, not executable artifacts. The cloud resolves the
+locked dependencies, rebuilds the source in the canonical isolated environment,
+and uploads the only artifact that can become the canvas's active build.
+
+This boundary avoids trusting client-produced JavaScript and gives every live
+canvas one compiler, resolver, SDK, package policy, and audit path. Local and
+cloud adapters run shared contract fixtures to catch toolchain drift before a
+publish produces different diagnostics.
 
 ### Runtime
 
@@ -419,6 +472,8 @@ single-file React canvas using bundled skills and guarded publishing.
   canvas SDK dependencies.
 - Implement the shared build contract in workspace-server for development and
   local-agent validation.
+- Implement guarded npm admission and the pinned dependency resolver used by
+  both local previews and cloud builds.
 - Bundle dependencies, remove browser Babel/Tailwind from candidate previews,
   run a headless smoke test, and return structured diagnostics.
 - Render preview artifacts through the existing iframe host.
@@ -440,9 +495,8 @@ and every live canvas references a reproducible immutable build.
 
 ### Phase 4 — Package and runtime expansion
 
-- Replace the fixed runtime whitelist with package policy: pinned versions,
-  risk/size checks, cached review results, and explicit approval when a build
-  expands capabilities.
+- Expand package-policy coverage and dependency/update UX using observed build
+  requests and admission failures.
 - Add first-class assets, workers, WebAssembly, WebGL/Three.js test coverage,
   and dependency/update UX.
 - Add source editing and diff-aware agent edits without weakening guarded
@@ -492,13 +546,15 @@ Architecture decisions:
 - The database stores canvas lifecycle metadata and object pointers. Private
   source archives and built artifacts are immutable object-storage content with
   separate access policies.
+- npm dependencies use guarded admission, exact versions, disabled lifecycle
+  scripts, isolated builds, and approval for expanded runtime capabilities.
+- Local builds provide validation and previews; canonical cloud rebuilds produce
+  the only artifacts eligible for publication.
+- All referenced source versions are retained. Compiled artifacts are bounded
+  to active, rollback, pinned, and recent builds according to the retention
+  policy.
 
 Design questions to resolve before Phase 3:
 
-1. Which package registry and review policy back dependency resolution.
-2. Whether cloud is the only authoritative publisher or local builds may upload
-   an artifact that cloud independently verifies.
-3. Source and artifact retention, maximum source/build size, and per-project
-   storage/build quotas.
-4. How source and build versions appear in task threads and canvas history.
-5. Which data calls must be declared statically versus learned during validation.
+1. How source and build versions appear in task threads and canvas history.
+2. Which data calls must be declared statically versus learned during validation.
