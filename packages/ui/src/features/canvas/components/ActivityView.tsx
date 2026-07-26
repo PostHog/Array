@@ -84,7 +84,7 @@ function ActivityRow({
   item: TaskActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
   folderChannelId: string | null;
-  onOpen: (taskId: string) => void;
+  onOpen: (item: TaskActivityItem) => void;
   currentUserEmail?: string | null;
 }) {
   const openTask = () => {
@@ -94,7 +94,7 @@ function ActivityRow({
       channel_id: folderChannelId ?? undefined,
       task_id: item.taskId,
     });
-    onOpen(item.taskId);
+    onOpen(item);
     // The channel thread route is the deep-link target; tasks whose channel
     // folder is gone fall back to the plain task view.
     if (folderChannelId) {
@@ -164,12 +164,14 @@ function ActivityRow({
 export function ActivityView() {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { items, isLoading } = useTaskActivity();
+  const { items, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    useTaskActivity();
   const { mutate: markTasksRead } = useMarkTaskActivityRead();
   // Opening a row is what marks it read. The server does the same when the task is
   // reached any other way, so the feed converges either way.
   const markRead = useCallback(
-    (taskId: string) => markTasksRead([taskId]),
+    (item: TaskActivityItem) =>
+      markTasksRead([{ task_id: item.taskId, seen_before: item.activityAt }]),
     [markTasksRead],
   );
   // Items carry backend channel names only; the desktop folder-channel id
@@ -235,6 +237,17 @@ export function ActivityView() {
                   currentUserEmail={currentUser?.email}
                 />
               ))}
+              {hasNextPage && (
+                <Button
+                  variant="outline"
+                  className="mt-3 self-center"
+                  loading={isFetchingNextPage}
+                  disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}
+                >
+                  Load more
+                </Button>
+              )}
             </div>
           )}
         </div>
