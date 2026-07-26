@@ -134,7 +134,9 @@ Source versions and deployable builds are distinct:
 interface CanvasSourceVersion {
   id: string;
   parentVersionId: string | null;
-  project: CanvasSourceProject;
+  sourceHash: string;
+  sourceObjectKey: string;
+  sourceSize: number;
   prompt?: string;
   createdAt: number;
 }
@@ -143,7 +145,7 @@ interface CanvasBuild {
   id: string;
   sourceVersionId: string;
   status: "queued" | "building" | "ready" | "failed";
-  artifactUrl?: string;
+  artifactObjectPrefix?: string;
   integrity?: string;
   diagnostics: CanvasDiagnostic[];
   manifest?: CanvasArtifactManifest;
@@ -157,6 +159,91 @@ last-known-good artifact.
 The artifact manifest records entry HTML, emitted assets, content hashes,
 dependency versions, canvas SDK version, and declared PostHog resources. It is
 not a general permission model yet, but it must be extensible for one.
+
+The source-project schema is the API and agent-workspace representation. A
+source version stores a pointer to its serialized project rather than embedding
+the project in the database record.
+
+## Storage architecture
+
+The relational database stores control-plane state; object storage stores
+content. Neither multi-file source projects nor compiled HTML/JavaScript/CSS
+artifacts belong in `desktop_file_system.meta` or another database JSON column.
+
+### Database
+
+Database records contain:
+
+- canvas identity, channel/project ownership, title, and permissions;
+- current source-version and active-build pointers;
+- immutable source-version metadata: parent, content hash, object key, byte
+  size, author/task attribution, prompt summary, and timestamps;
+- build lifecycle metadata: source version, status, artifact prefix, integrity,
+  bounded diagnostics, dependency/SDK versions, and timestamps;
+- the bounded artifact manifest and declared PostHog resource references.
+
+This state needs relational constraints, transactions, authorization filters,
+and efficient list queries. Large text blobs and emitted assets provide none of
+those benefits and would increase database storage, replication, backup, and
+query costs.
+
+The existing desktop file-system row remains the canvas's navigation identity
+during migration. Its metadata holds only compatibility fields and pointers;
+normalized source-version and build tables own the new lifecycle.
+
+### Private source objects
+
+Each source project is serialized deterministically as a compressed archive,
+hashed, and uploaded under an immutable project-scoped key. Source objects are
+private, encrypted at rest, and downloadable only through an authenticated API
+after project and canvas authorization. They may contain proprietary logic,
+internal names, or other material that must not be exposed by the user-content
+runtime.
+
+Content addressing deduplicates identical versions within a project and makes
+the database hash verifiable. Deduplication must not cross project or tenant
+boundaries because shared object identity can leak whether another tenant has
+the same source.
+
+### Built artifact objects
+
+Build output is uploaded as immutable content-addressed files under a build
+prefix: entry HTML, JavaScript and CSS chunks, images, fonts, source-map policy
+metadata, and the artifact manifest. These objects are served from the dedicated
+user-content origin with immutable cache headers and integrity metadata.
+
+An artifact is private by default. The canvas host obtains short-lived access or
+loads it through an authorized artifact endpoint. A future sharing feature may
+grant a separate share capability; an unguessable object key alone is not an
+authorization mechanism. Source archives are never served from the
+user-content origin.
+
+### Atomic publish and build activation
+
+Publishing uses an upload-then-commit protocol:
+
+1. Serialize and hash the complete source project.
+2. Upload the immutable source object. Reusing an existing project-scoped hash
+   is safe and idempotent.
+3. In a database transaction, lock the canvas, compare
+   `expected_current_version_id`, insert the source version and queued build,
+   and advance the current source pointer.
+4. If the transaction conflicts or fails, leave the uploaded object unreferenced
+   for garbage collection; never partially publish a database version.
+5. The build worker reads the source by object key, validates and builds it, then
+   uploads immutable artifact objects.
+6. In a second transaction, mark the build ready and advance the active-build
+   pointer only if the build is still eligible for that canvas. A stale or failed
+   build cannot replace a newer or last-known-good artifact.
+
+Object storage does not participate in database transactions, so immutable
+uploads before pointer changes and idempotent workers are required. A periodic
+collector deletes unreferenced source uploads, failed/expired preview artifacts,
+and superseded builds after a recovery grace period. Retention policy may keep
+referenced historical source and builds for undo, audit, and rollback.
+
+Full build logs and large diagnostic payloads belong in log/object storage with
+a bounded summary in the database.
 
 ## End-to-end flow
 
@@ -290,12 +377,12 @@ The existing `useGenerateFreeformCanvas` orchestration moves into
 ### `posthog/posthog`
 
 - Django models/API: source versions, build records, optimistic concurrency,
-  artifact metadata, and task/canvas attribution.
+  object pointers, artifact metadata, and task/canvas attribution.
 - Build workers: isolated dependency resolution, compilation, validation,
   preview, and artifact upload.
 - MCP: typed canvas source/build/publish tools available to any authorized task.
 - Object storage/CDN: immutable, content-addressed browser artifacts on the
-  user-content origin.
+  user-content origin plus private source archives in a separate namespace.
 - Task runtime: bundles the canvas skills into ordinary cloud tasks and forwards
   task identity on canvas writes.
 
@@ -402,14 +489,16 @@ Architecture decisions:
 - Skills are available to every task; canvas mode only supplies target context.
 - Failed builds never replace the last-known-good artifact.
 - Publishing uses mandatory optimistic concurrency.
+- The database stores canvas lifecycle metadata and object pointers. Private
+  source archives and built artifacts are immutable object-storage content with
+  separate access policies.
 
 Design questions to resolve before Phase 3:
 
-1. Whether source projects remain in `desktop_file_system.meta` initially or
-   move immediately to normalized source-version tables.
-2. Which package registry and review policy back dependency resolution.
-3. Whether cloud is the only authoritative publisher or local builds may upload
+1. Which package registry and review policy back dependency resolution.
+2. Whether cloud is the only authoritative publisher or local builds may upload
    an artifact that cloud independently verifies.
-4. Artifact retention, maximum source/build size, and per-project build quotas.
-5. How source and build versions appear in task threads and canvas history.
-6. Which data calls must be declared statically versus learned during validation.
+3. Source and artifact retention, maximum source/build size, and per-project
+   storage/build quotas.
+4. How source and build versions appear in task threads and canvas history.
+5. Which data calls must be declared statically versus learned during validation.
