@@ -266,7 +266,7 @@ export function LoopsListViewPresentation({
         <Flex
           direction="column"
           gap="2"
-          className="mx-auto w-full max-w-5xl px-8 pb-6"
+          className="mx-auto w-full max-w-5xl px-8 pt-3 pb-6"
         >
           {builderSessions.map((session) => (
             <BuilderSessionRow
