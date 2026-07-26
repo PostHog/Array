@@ -2,22 +2,24 @@
 
 > Status: proposed
 > Scope: evolve single-file, runtime-compiled React canvases into built browser
-> applications. Support React with Quill and generic HTML now; leave hosted
-> backends and full micro-apps as an explicit future direction.
+> applications. Support React, Quill, and generic HTML in one application model;
+> leave hosted backends and full micro-apps as an explicit future direction.
 
 ## Summary
 
 A canvas should be an arbitrary browser application, not a dashboard schema or
-a React-only document. Authors choose either a React + Quill starter or a generic
-HTML starter, agents may add browser-safe dependencies, and a build service
-turns the source project into an immutable HTML/CSS/JavaScript artifact. The
-same sandboxed canvas host renders both kinds.
+a React-only document. The user describes the experience; the agent chooses the
+implementation. A single application project can use React, Quill, plain DOM
+APIs, WebGL, or any combination, and a build service turns it into an immutable
+HTML/CSS/JavaScript artifact.
 
-HTML is the deployment format, not the only authoring format. Requiring agents
-to hand-author only final HTML would give up React's component model, Quill's
-accessibility and design-system behavior, and build-time validation. Keeping a
-small set of source templates while converging them on one browser artifact
-preserves those benefits without constraining what a canvas can become.
+HTML is the deployment format, not an authoring choice shown to the user or a
+separate canvas kind. Requiring agents to hand-author only final HTML would give
+up React's component model, Quill's accessibility and design-system behavior,
+and build-time validation. Requiring every implementation to use React would add
+structure where a static document or direct WebGL program does not need it. One
+web-project contract and one build recipe support both without encoding that
+implementation decision into product state.
 
 Canvas authoring is also a reusable agent capability. The skills for creating,
 building, validating, and publishing a canvas must be available to every task,
@@ -29,7 +31,8 @@ them when the user asks it to create or update a canvas.
 
 - Support arbitrary browser experiences, including data visualizations,
   documents, forms, games, WebGL, Three.js, and other client-only applications.
-- Provide first-class React + Quill and generic HTML authoring templates.
+- Make React, Quill, TypeScript, HTML, CSS, and browser APIs available within one
+  canvas application model.
 - Compile source ahead of time into an immutable, reproducible browser bundle.
 - Validate builds before replacing the last-known-good canvas version.
 - Keep PostHog credentials outside generated code and the canvas iframe.
@@ -51,27 +54,28 @@ them when the user asks it to create or update a canvas.
 
 ## Product model
 
-### Source kinds
+### One application model
 
-The initial source kinds are:
+There is one canvas kind: a browser application. The user is never asked to
+choose React versus HTML, and the choice is not persisted as a mode. Every task
+can create a canvas, so the decision must work without a canvas-specific
+creation screen.
 
-1. **React + Quill** — TypeScript/JSX with React, Quill, and the existing canvas
-   data SDK available. This is the recommended default for PostHog data products
-   and application-like interfaces.
-2. **Generic HTML** — HTML, CSS, and JavaScript with no framework requirement.
-   This is the recommended default for documents, experiments, graphics, WebGL,
-   and small experiences where a framework adds little value.
+The agent chooses the least complex implementation that meets the request:
 
-Both are source templates, not runtime modes. They build to the same artifact
-contract and run in the same sandbox. A React canvas may emit any HTML and use
-canvas/WebGL; an HTML canvas may use bundled libraries such as Three.js. The
-choice controls the starter files and authoring guidance, not the product's
-capability ceiling.
+- Prefer React + Quill for PostHog data products, forms, application-like state,
+  reusable interface components, and experiences that should match PostHog.
+- Prefer semantic HTML/CSS and direct browser APIs for static documents, small
+  experiments, graphics, and WebGL programs where React adds no useful
+  structure.
+- Mix them when appropriate. React can own application chrome while Three.js
+  owns a canvas element; a mostly static page can mount one interactive React
+  island.
 
-The creation UI offers **React + Quill** and **HTML** explicitly. Prompt-based
-creation may recommend one based on intent, but the selected source kind is
-visible and changeable before the first build. Do not silently infer a permanent
-kind from the first prompt.
+These are skill heuristics, not validation rules. The build pipeline treats all
+of them as the same web project and produces the same artifact contract. The
+agent should not ask the user to choose a framework unless the choice changes a
+user-visible requirement that cannot be inferred from the request.
 
 ### Canvas source project
 
@@ -80,23 +84,28 @@ Replace `meta.code` as the canonical write format with a small source project:
 ```ts
 interface CanvasSourceProject {
   schemaVersion: 1;
-  sourceKind: "react" | "html";
   files: Record<string, string>;
-  entrypoint: string;
+  entryHtml: "index.html";
   dependencies: Record<string, string>;
   canvasSdkVersion: string;
 }
 ```
 
-Initial templates remain intentionally small:
+New canvases start from one intentionally small project:
 
 ```text
-React + Quill                 Generic HTML
-├── package.json              ├── package.json
-├── src/main.tsx              ├── index.html
-└── src/App.tsx               ├── src/main.js
-                              └── src/style.css
+canvas/
+├── package.json
+├── index.html
+├── src/main.ts
+└── src/style.css
 ```
+
+The starter is neutral: `index.html` loads the entry module, and the entry can
+remain vanilla TypeScript or import React and mount an application. React,
+Quill, and the canvas SDK are platform-supported dependencies with pinned
+versions, but tree-shaking keeps unused code out of the artifact. The agent may
+add files and dependencies without changing the canvas's kind.
 
 Dependencies are exact versions resolved by the build service. Lockfile and
 resolver metadata belong to the build record, not agent-authored source.
@@ -168,9 +177,10 @@ buildCanvas({
 })
 ```
 
-The service selects the build recipe from `sourceKind`; agents cannot supply a
-build command. This keeps the initial pipeline deterministic while still
-allowing arbitrary browser output.
+The service owns one build recipe rooted at `index.html`; agents cannot supply a
+build command. The recipe handles JavaScript, TypeScript, JSX/TSX, CSS, static
+assets, and dependencies. This keeps the pipeline deterministic while allowing
+arbitrary browser output.
 
 ### Build stages
 
@@ -207,8 +217,8 @@ the SDK gains version negotiation through the artifact manifest.
 Canvas behavior should be represented by bundled skills rather than a canvas-
 specific mega-prompt. Split the current prompt contract into focused skills:
 
-- `building-canvases` — routes intent, selects React or HTML, explains the
-  source-project and iteration workflow.
+- `building-canvases` — routes intent, chooses suitable implementation patterns,
+  and explains the source-project and iteration workflow.
 - `building-react-quill-canvases` — React, Quill, theming, accessibility, and
   canvas SDK patterns.
 - `building-html-canvases` — semantic HTML, CSS, browser APIs, canvas/WebGL, and
@@ -250,8 +260,8 @@ validates a project, and publishes it without using the canvas composer.
   schemas with no I/O.
 - `@posthog/core`: canvas generation orchestration, source/build decisions,
   conflict handling, and an injectable `CanvasApplicationService`.
-- `@posthog/ui`: creation template picker, source/build status, preview, and the
-  thin iframe host. Hooks wrap one service operation or state selector.
+- `@posthog/ui`: source/build status, preview, and the thin iframe host. Hooks
+  wrap one service operation or state selector; there is no framework picker.
 - `@posthog/workspace-server`: local/dev build adapter and preview artifact
   hosting. It implements the same build contract as cloud, rather than owning
   canvas business rules.
@@ -275,8 +285,8 @@ The existing `useGenerateFreeformCanvas` orchestration moves into
 
 ## Migration and compatibility
 
-- Treat existing `meta.code` canvases as `sourceKind: "react"` with a synthetic
-  one-file source project.
+- Treat existing `meta.code` canvases as a synthetic web project whose entry
+  mounts the stored default React component.
 - Continue rendering them through the current runtime path until their first
   successful build.
 - The first edit/build creates a source version and built artifact; retain legacy
@@ -302,15 +312,17 @@ canvas using bundled skills and guarded publishing.
 
 ### Phase 2 — Deterministic local build and preview
 
-- Add React + Quill and HTML starter projects.
+- Add the neutral web-project starter with platform-supported React, Quill, and
+  canvas SDK dependencies.
 - Implement the shared build contract in workspace-server for development and
   local-agent validation.
 - Bundle dependencies, remove browser Babel/Tailwind from candidate previews,
   run a headless smoke test, and return structured diagnostics.
 - Render preview artifacts through the existing iframe host.
 
-Exit criterion: both starter kinds and a Three.js HTML example build and render
-without runtime compilation or CDN imports.
+Exit criterion: the same starter contract produces a React + Quill data canvas,
+a semantic HTML document, and a Three.js experience without runtime compilation
+or CDN imports.
 
 ### Phase 3 — Cloud builds and immutable artifacts
 
@@ -367,8 +379,9 @@ immutable frontend artifact and add separately versioned backend resources.
 Decided:
 
 - Preserve arbitrary code; do not replace it with a dashboard/component schema.
-- HTML is the common build output, while React + Quill and HTML remain distinct
-  authoring templates.
+- There is one browser-application source model and one build recipe. The agent,
+  not the user or persisted canvas type, chooses React, Quill, plain HTML, or a
+  mixture based on the requested experience.
 - Build commands are selected by the platform, not supplied by generated code.
 - Skills are available to every task; canvas mode only supplies target context.
 - Failed builds never replace the last-known-good artifact.
