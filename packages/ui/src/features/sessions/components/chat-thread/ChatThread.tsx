@@ -66,6 +66,7 @@ import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/
 import { VirtualThreadScrollBody } from "@posthog/ui/features/sessions/components/chat-thread/VirtualThreadScrollBody";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
+import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
 import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
@@ -210,11 +211,7 @@ function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
     // git operation or a skill button click (see handlePromptRequest) — they open a turn just
     // like a user message, so they break the agent card too rather than render inside it as if
     // they were agent output. Same boundary set as the legacy view's buildThreadGroups.
-    if (
-      row.type === "user_message" ||
-      row.type === "git_action" ||
-      row.type === "skill_button_action"
-    ) {
+    if (isUserInitiatedConversationItem(row)) {
       flush();
       out.push(row);
     } else {
@@ -973,6 +970,7 @@ export function ChatThread({ events, ...props }: ChatThreadProps) {
 
   return (
     <ChatThreadRenderer
+      key={props.taskId}
       {...props}
       conversationItems={items}
       footerEvents={[]}
@@ -988,6 +986,7 @@ export function AcpChatThread({ events, ...props }: AcpChatThreadProps) {
 
   return (
     <ChatThreadRenderer
+      key={props.taskId}
       {...props}
       conversationItems={items}
       footerEvents={events}
