@@ -134,7 +134,9 @@ export function ChannelsSidebar() {
   const channelsLayout = useChannelsLayout();
   const channelsWorld = channelsLayout || channelsEnabled;
   const bodyChannelsWorld = useDeferredValue(channelsWorld);
-  const showArchivedRow = channelsLayout || !bodyChannelsWorld;
+  // Under the layout the row moves into the account menu (ProjectSwitcher),
+  // beside Settings — the bottom of the sidebar belongs to the channel list.
+  const showArchivedRow = !channelsLayout && !bodyChannelsWorld;
   useTrackChannelsSpaceViewed({
     enabled: channelsWorld,
     layout: channelsLayout ? "channels" : "code",

@@ -57,6 +57,7 @@ import {
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useStarredChannelSlots } from "@posthog/ui/features/canvas/hooks/useStarredChannelSlots";
 import {
@@ -773,13 +774,18 @@ export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
   // ChannelHotkeys owns the keys these slots describe; sharing the derivation
-  // keeps the advertised key and the key that fires in agreement.
+  // keeps the advertised key and the key that fires in agreement — including
+  // the fact that it only binds them under the layout, so off it the list
+  // advertises nothing.
   const { slotFor } = useStarredChannelSlots();
+  // Search and the shortcut hints belong to the slider, where this list is a
+  // pane you switch channels from. The alpha still renders it as a plain tree.
+  const channelsLayout = useChannelsLayout();
 
   const isUnread = useIsChannelUnread();
 
   const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = channelsLayout ? query.trim().toLowerCase() : "";
   const matches = (name: string) =>
     !normalizedQuery || name.toLowerCase().includes(normalizedQuery);
 
@@ -802,15 +808,17 @@ export function ChannelsList() {
     // moving to the next row reveals its tooltip instantly (no re-delay).
     <TooltipProvider delay={600}>
       <Flex direction="column" className="h-full min-h-0">
-        <Box className="shrink-0 px-2 pt-2">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search channels…"
-            aria-label="Search channels"
-            className="h-7 text-[13px]"
-          />
-        </Box>
+        {channelsLayout && (
+          <Box className="shrink-0 px-2 pt-1">
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search channels…"
+              aria-label="Search channels"
+              className="h-7 text-[13px]"
+            />
+          </Box>
+        )}
         {/* Bottom padding clears the floating create button (ChannelsFab), so
             the last channel stays reachable at full scroll. */}
         <Flex
@@ -838,7 +846,9 @@ export function ChannelsList() {
             </>
           ) : (
             <>
-              <PersonalChannelRow hotkeySlot={me ? slotFor(me) : undefined} />
+              <PersonalChannelRow
+                hotkeySlot={channelsLayout && me ? slotFor(me) : undefined}
+              />
 
               {starred.length > 0 && (
                 <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
@@ -847,7 +857,7 @@ export function ChannelsList() {
                       key={channel.id}
                       channel={channel}
                       isUnread={isUnread(channel.name)}
-                      hotkeySlot={slotFor(channel)}
+                      hotkeySlot={channelsLayout ? slotFor(channel) : undefined}
                     />
                   ))}
                 </ChannelGroup>

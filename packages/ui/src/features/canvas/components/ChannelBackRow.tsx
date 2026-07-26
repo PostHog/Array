@@ -50,7 +50,7 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
   const showStar = current != null && current.name !== PERSONAL_CHANNEL_NAME;
 
   return (
-    <div className="relative mx-2 mt-2">
+    <div className="relative mx-2 mt-1">
       <Tooltip content="Back to channels" side="bottom">
         <button
           type="button"
@@ -65,8 +65,9 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
           }}
           // Fixed height with an unconditional star well: sized off its
           // contents, a starrable channel ran 4px taller than #me and
-          // everything below shifted on switch.
-          className="flex h-8 w-full items-center gap-1.5 rounded-md border border-border px-2 text-left transition-colors hover:bg-fill-hover"
+          // everything below shifted on switch. No border — it's a row in the
+          // sidebar like the ones under it, not a control sitting on top.
+          className="flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left transition-colors hover:bg-fill-hover"
         >
           <CaretLeftIcon
             size={12}

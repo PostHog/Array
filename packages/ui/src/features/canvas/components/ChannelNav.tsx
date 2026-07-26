@@ -93,7 +93,7 @@ export function ChannelNav() {
   const isCommandCenter = view.type === "command-center";
 
   return (
-    <div className="flex shrink-0 gap-2 px-2 pt-2 pb-2">
+    <div className="flex shrink-0 gap-2 px-2 pt-2 pb-1">
       <NavIcon
         icon={<EnvelopeSimple size={16} />}
         label="Inbox"
