@@ -891,6 +891,8 @@ export type ChannelActionType =
   | "leave_feedback"
   | "nav_click"
   | "open_channel"
+  /** Slid the sidebar back from a channel to the channel list. */
+  | "browse_channels"
   | "collapse_channel"
   | "view_more_tasks"
   | "create"

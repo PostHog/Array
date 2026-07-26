@@ -1,5 +1,5 @@
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -80,6 +80,10 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import {
+  showChannelList,
+  useChannelPaneStore,
+} from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import { useCurrentChannelStore } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { ChannelsSidebar } from "./ChannelsSidebar";
@@ -105,7 +109,66 @@ describe("ChannelsSidebar", () => {
     mocks.track.mockClear();
     mocks.routeChannelId = undefined;
     useCurrentChannelStore.setState({ currentChannelId: null });
+    useChannelPaneStore.setState({ pane: "channel" });
     useSidebarStore.setState({ channelsEnabled: false, open: true });
+  });
+
+  // The sidebar is a two-pane slider: the channel list, and the channel you're
+  // in. Both stay mounted, so "which one is showing" is the offscreen pane
+  // being inert rather than unmounted.
+  describe("the channel-list slider", () => {
+    const ENG = { id: "eng-id", name: "eng", path: "/eng" };
+    const listIsInteractive = () =>
+      !screen.getByTestId("channels-list").parentElement?.hasAttribute("inert");
+
+    beforeEach(() => {
+      mocks.channelsLayout = true;
+      mocks.channels = [ME, ENG];
+    });
+
+    it("rests on the channel you're in", () => {
+      mocks.routeChannelId = ENG.id;
+      renderSidebar();
+      expect(screen.getByTestId("channel-sidebar").textContent).toBe(ENG.id);
+      expect(listIsInteractive()).toBe(false);
+    });
+
+    // Browsing the list is a sidebar move, not a navigation: the channel stays
+    // scoped, so the main pane keeps showing what it was showing.
+    it("shows the list on the way back, without leaving the channel", () => {
+      mocks.routeChannelId = ENG.id;
+      renderSidebar();
+
+      act(() => showChannelList());
+
+      expect(listIsInteractive()).toBe(true);
+      expect(useCurrentChannelStore.getState().currentChannelId).toBe(ENG.id);
+    });
+
+    // Opening a channel from anywhere — a deep link, a mention, ⌘1-9 — has to
+    // land on the channel even if the list was left open.
+    it("follows the route back into a channel", () => {
+      mocks.routeChannelId = ENG.id;
+      const { rerender } = renderSidebar();
+      act(() => showChannelList());
+
+      mocks.routeChannelId = ME.id;
+      rerender(
+        <Theme>
+          <ChannelsSidebar />
+        </Theme>,
+      );
+
+      expect(listIsInteractive()).toBe(false);
+      expect(screen.getByTestId("channel-sidebar").textContent).toBe(ME.id);
+    });
+
+    it("stays on the list while no channel resolves", () => {
+      mocks.channels = [ENG];
+      renderSidebar();
+      expect(listIsInteractive()).toBe(true);
+      expect(screen.queryByTestId("channel-sidebar")).toBeNull();
+    });
   });
 
   describe("the Archived row", () => {

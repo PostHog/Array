@@ -1,5 +1,5 @@
 import { ArchiveIcon } from "@phosphor-icons/react";
-import { Separator } from "@posthog/quill";
+import { cn, Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelNav } from "@posthog/ui/features/canvas/components/ChannelNav";
@@ -11,6 +11,10 @@ import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannels
 import { useCurrentChannel } from "@posthog/ui/features/canvas/hooks/useCurrentChannel";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useTrackChannelsSpaceViewed } from "@posthog/ui/features/canvas/hooks/useTrackChannelsSpaceViewed";
+import {
+  showChannelPane,
+  useChannelPaneStore,
+} from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import { useCurrentChannelStore } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
@@ -35,6 +39,49 @@ import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
 import { useParams } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useRef } from "react";
+
+/**
+ * The sidebar slider: the channel list and the channel you're in, laid out side
+ * by side in a track that translates between them.
+ *
+ * Both panes stay mounted so the slide has something to slide, and so coming
+ * back to the list doesn't rebuild every row's menus and dialogs. The offscreen
+ * one is `inert`, keeping it out of the tab order and off screen readers.
+ */
+function ChannelPanes({
+  channelId,
+  showList,
+}: {
+  channelId: string | null;
+  showList: boolean;
+}) {
+  return (
+    <Box className="min-h-0 flex-1 overflow-hidden">
+      <div
+        className={cn(
+          "flex h-full w-[200%] transition-transform duration-200 ease-out motion-reduce:transition-none",
+          showList ? "translate-x-0" : "-translate-x-1/2",
+        )}
+      >
+        <div className="relative h-full w-1/2 min-w-0" inert={!showList}>
+          <ChannelsList />
+          <ChannelsFab />
+        </div>
+        <div className="h-full w-1/2 min-w-0" inert={showList}>
+          {channelId && (
+            <ErrorBoundary
+              name="channel-sidebar"
+              fallback={<ChannelsList />}
+              resetKey={channelId}
+            >
+              <ChannelSidebar channelId={channelId} />
+            </ErrorBoundary>
+          )}
+        </div>
+      </div>
+    </Box>
+  );
+}
 
 export function ChannelsSidebar() {
   const width = useChannelsSidebarStore((state) => state.width);
@@ -111,8 +158,16 @@ export function ChannelsSidebar() {
   useEffect(() => {
     if (!channelsLayout || !routeChannelId) return;
     setCurrentChannel(routeChannelId);
+    // Landing on a channel — a deep link, a mention, ⌘1-9 — is a request to see
+    // it, so the slider follows the route even if the list was being browsed.
+    showChannelPane();
   }, [channelsLayout, routeChannelId, setCurrentChannel]);
-  const inChannel = channelsLayout && currentChannelId != null;
+
+  // Browsing the list is view state, not navigation: you stay in the channel
+  // (route and main pane unchanged) while you look around. With no channel to
+  // slide to there's only the list.
+  const pane = useChannelPaneStore((s) => s.pane);
+  const showList = pane === "list" || currentChannelId == null;
 
   const autoScopedRef = useRef(false);
   useEffect(() => {
@@ -153,28 +208,18 @@ export function ChannelsSidebar() {
       onPeekDismiss={cancelSidebarPeek}
     >
       <Flex direction="column" className="h-full bg-chrome">
-        {!inChannel && <SidebarNavSection />}
+        {!channelsLayout && <SidebarNavSection />}
 
-        {inChannel && currentChannelId ? (
+        {channelsLayout ? (
           <>
             <ChannelNav />
-            <Box className="min-h-0 flex-1 overflow-hidden">
-              <ErrorBoundary
-                name="channel-sidebar"
-                fallback={<ChannelsList />}
-                resetKey={currentChannelId}
-              >
-                <ChannelSidebar channelId={currentChannelId} />
-              </ErrorBoundary>
-            </Box>
+            <ChannelPanes channelId={currentChannelId} showList={showList} />
           </>
         ) : bodyChannelsWorld ? (
           <>
             <Separator />
             <Box className="relative min-h-0 flex-1">
-              <Box className="scroll-mask-4 h-full overflow-y-auto">
-                <ChannelsList />
-              </Box>
+              <ChannelsList />
               <ChannelsFab />
             </Box>
           </>

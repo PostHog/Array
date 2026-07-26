@@ -28,8 +28,8 @@ import {
 } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
+import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBackRow";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
-import { ChannelSwitcher } from "@posthog/ui/features/canvas/components/ChannelSwitcher";
 import { NewTaskFab } from "@posthog/ui/features/canvas/components/NewTaskFab";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -182,8 +182,8 @@ function ChannelItemsSkeleton() {
 }
 
 /**
- * The sidebar body while a channel is active: the switcher, the channel's
- * sections, then its pinned and recent tasks & canvases.
+ * The channel pane of the sidebar slider: the way back to the channel list,
+ * the channel's sections, then its pinned and recent tasks & canvases.
  */
 export function ChannelSidebar({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
@@ -237,7 +237,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ChannelSwitcher channelId={channelId} />
+      <ChannelBackRow channelId={channelId} />
 
       <div className="flex flex-col gap-px px-2 pt-2">
         {sectionRow(
