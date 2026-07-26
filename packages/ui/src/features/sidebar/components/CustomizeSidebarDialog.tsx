@@ -4,7 +4,6 @@ import {
   Bell,
   DotsSixVertical,
   EnvelopeSimple,
-  HashIcon,
   Lightning,
   RepeatIcon,
   SlidersHorizontal,
@@ -31,7 +30,6 @@ const ITEM_ICONS: Record<
 > = {
   inbox: EnvelopeSimple,
   "command-center": Lightning,
-  contexts: HashIcon,
   activity: Bell,
   configure: SlidersHorizontal,
   loops: RepeatIcon,
@@ -75,7 +73,6 @@ export function CustomizeSidebarSettings() {
   const items = orderedNavItems(previewOrder ?? navItemOrder).filter(
     ({ id }) => {
       if (id === "loops") return loopsEnabled;
-      if (id === "contexts") return bluebirdEnabled;
       if (id === "activity") return bluebirdEnabled && channelsEnabled;
       return true;
     },

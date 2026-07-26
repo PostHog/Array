@@ -17,12 +17,6 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
     defaultVisible: true,
   },
   {
-    id: "contexts",
-    label: "Channels",
-    analyticsId: "contexts",
-    defaultVisible: true,
-  },
-  {
     id: "activity",
     label: "Activity",
     analyticsId: "activity",

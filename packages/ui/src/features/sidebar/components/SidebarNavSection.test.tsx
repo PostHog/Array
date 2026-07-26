@@ -113,7 +113,6 @@ describe("SidebarNavSection", () => {
   it.each([
     ["inbox", "Inbox"],
     ["command-center", "Command Center"],
-    ["contexts", "Channels"],
     ["activity", "Activity"],
     ["configure", "Configure"],
     ["loops", "Loops"],
@@ -151,31 +150,10 @@ describe("SidebarNavSection", () => {
     );
   });
 
-  it.each([
-    [false, true, "enter_space"],
-    [true, false, "leave_space"],
-  ] as const)(
-    "toggling contexts from %s tracks the toggle and %s",
-    async (initial, expected, spaceAction) => {
-      const user = userEvent.setup();
-      useSidebarStore.setState({ channelsEnabled: initial });
-      renderNav();
+  it("does not render the Channels mode toggle in navigation", () => {
+    renderNav();
 
-      await user.click(screen.getByRole("switch"));
-
-      expect(useSidebarStore.getState().channelsEnabled).toBe(expected);
-      expect(track).toHaveBeenCalledWith(
-        ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED,
-        { item: "contexts", in_more: false },
-      );
-      expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "toggle_channels",
-        surface: "nav",
-      });
-      expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: spaceAction,
-        surface: "nav",
-      });
-    },
-  );
+    expect(screen.queryByText("Channels")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
 });

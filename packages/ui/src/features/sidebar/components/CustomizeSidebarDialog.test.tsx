@@ -162,7 +162,6 @@ describe("CustomizeSidebarSettings", () => {
       "loops",
       "inbox",
       "command-center",
-      "contexts",
       "activity",
       "configure",
     ]);

@@ -22,14 +22,18 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   MenuLabel,
+  Switch,
 } from "@posthog/quill";
-import type { WorkspaceMode } from "@posthog/shared";
+import { PROJECT_BLUEBIRD_FLAG, type WorkspaceMode } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
 import { useState } from "react";
@@ -214,15 +218,49 @@ function TaskFilterMenu() {
 }
 
 export function TasksHeader() {
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((state) => state.channelsEnabled) && bluebirdEnabled;
+  const setChannelsEnabled = useSidebarStore(
+    (state) => state.setChannelsEnabled,
+  );
+
+  const handleModeChange = (checked: boolean) => {
+    setChannelsEnabled(checked);
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "toggle_channels",
+      surface: "nav",
+    });
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: checked ? "enter_space" : "leave_space",
+      surface: "nav",
+    });
+  };
+
   return (
     <div className="shrink-0 px-2">
       <MenuLabel className="flex items-center justify-between pt-0 pr-0 pb-0.5">
-        Tasks
-        <span className="flex items-center">
-          <AddFolderButton />
-          <TaskSearchButton />
-          <TaskFilterMenu />
+        <span className="flex items-center gap-2">
+          {channelsEnabled ? "Channels" : "Tasks"}
+          {bluebirdEnabled && (
+            <Switch
+              size="sm"
+              checked={channelsEnabled}
+              aria-label={channelsEnabled ? "Show tasks" : "Show channels"}
+              onCheckedChange={handleModeChange}
+            />
+          )}
         </span>
+        {!channelsEnabled && (
+          <span className="flex items-center">
+            <AddFolderButton />
+            <TaskSearchButton />
+            <TaskFilterMenu />
+          </span>
+        )}
       </MenuLabel>
     </div>
   );

@@ -32,7 +32,6 @@ import type { ReactNode } from "react";
 import { ActivityItem } from "./items/ActivityItem";
 import { CommandCenterItem } from "./items/CommandCenterItem";
 import { ConfigureItem } from "./items/ConfigureItem";
-import { ContextsItem } from "./items/ContextsItem";
 import { InboxItem } from "./items/InboxItem";
 import { LoopsItem } from "./items/LoopsItem";
 import { NewTaskItem } from "./items/NewTaskItem";
@@ -65,15 +64,13 @@ export function SidebarNavSection({
   // Loops stays behind the loops flag; default on in dev so local builds
   // keep the nav item. Also gates the per-channel Loops tab (see ChannelTabs).
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
-  // Channels stay behind project-bluebird: the "Enable channels" nav row (and
-  // the Canvas row it reveals) only appear where the canvas backend is wired.
+  // Channels stay behind project-bluebird, including channel-only nav items.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-  const setChannelsEnabled = useSidebarStore((s) => s.setChannelsEnabled);
 
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
@@ -152,30 +149,11 @@ export function SidebarNavSection({
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
     inbox: true,
     "command-center": true,
-    contexts: bluebirdEnabled,
     // Activity (the mentions feed) is a channels surface, so it only appears
     // once channels are enabled.
     activity: channelsEnabled,
     configure: true,
     loops: loopsEnabled,
-  };
-
-  const handleChannelsToggle = (depth: 0 | 1) => (checked: boolean) => {
-    setChannelsEnabled(checked);
-    track(ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED, {
-      item: "contexts",
-      in_more: depth === 1,
-    });
-    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-      action_type: "toggle_channels",
-      surface: "nav",
-    });
-    // This toggle replaced the old Code/Channels space boundary; keep firing
-    // the legacy enter/leave events so space-adoption dashboards stay continuous.
-    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-      action_type: checked ? "enter_space" : "leave_space",
-      surface: "nav",
-    });
   };
 
   // One renderer per customizable item, used for both the top level (depth 0)
@@ -198,13 +176,6 @@ export function SidebarNavSection({
         isActive={isCommandCenterActive}
         onClick={withNavTrack("command_center", goCommandCenter, depth)}
         activeCount={commandCenterActiveCount}
-      />
-    ),
-    contexts: (depth) => (
-      <ContextsItem
-        depth={depth}
-        checked={channelsEnabled}
-        onCheckedChange={handleChannelsToggle(depth)}
       />
     ),
     activity: (depth) => (
