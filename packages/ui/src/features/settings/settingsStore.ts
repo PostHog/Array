@@ -249,6 +249,12 @@ interface SettingsStore {
   // the virtualized ConversationView. Local A/B toggle while the rebuild bakes.
   useNewChatThread: boolean;
   setUseNewChatThread: (enabled: boolean) => void;
+  // Debug override for CHAT_THREAD_VIRTUALIZATION_THRESHOLD. null uses the shipped default;
+  // lowering it makes a short thread window immediately, and lowering it below an open thread's
+  // row count flips that thread mid-session, which is how the non-virtualized -> windowed handoff
+  // is exercised without waiting for a 150-row conversation.
+  chatThreadVirtualizationThreshold: number | null;
+  setChatThreadVirtualizationThreshold: (threshold: number | null) => void;
   setHedgehogMode: (enabled: boolean) => void;
   setSlotMachineMode: (enabled: boolean) => void;
   setBrainrotMode: (enabled: boolean) => void;
@@ -469,6 +475,9 @@ export const useSettingsStore = create<SettingsStore>()(
       lastSeenChangelogVersion: null,
       useNewChatThread: false,
       setUseNewChatThread: (enabled) => set({ useNewChatThread: enabled }),
+      chatThreadVirtualizationThreshold: null,
+      setChatThreadVirtualizationThreshold: (threshold) =>
+        set({ chatThreadVirtualizationThreshold: threshold }),
       setHedgehogMode: (enabled) => set({ hedgehogMode: enabled }),
       setSlotMachineMode: (enabled) => set({ slotMachineMode: enabled }),
       setBrainrotMode: (enabled) => set({ brainrotMode: enabled }),
@@ -588,6 +597,8 @@ export const useSettingsStore = create<SettingsStore>()(
         dismissibleUpdateBanners: state.dismissibleUpdateBanners,
         lastSeenChangelogVersion: state.lastSeenChangelogVersion,
         useNewChatThread: state.useNewChatThread,
+        chatThreadVirtualizationThreshold:
+          state.chatThreadVirtualizationThreshold,
 
         // Onboarding hints
         hints: state.hints,

@@ -3,6 +3,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useLoopsPromoStore } from "@posthog/ui/features/loops/loopsPromoStore";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
+import { CHAT_THREAD_VIRTUALIZATION_THRESHOLD } from "@posthog/ui/features/sessions/components/chat-thread/threadVirtualization";
 import {
   DEV_MODE_CLIENT,
   type DevModeClient,
@@ -13,7 +14,14 @@ import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useSetupStore } from "@posthog/ui/features/setup/setupStore";
 import { useTourStore } from "@posthog/ui/features/tour/tourStore";
 import { clearApplicationStorage } from "@posthog/ui/utils/clearStorage";
-import { Button, Checkbox, Flex, Switch, Text } from "@radix-ui/themes";
+import {
+  Button,
+  Checkbox,
+  Flex,
+  Switch,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 
@@ -135,7 +143,7 @@ export function AdvancedSettings() {
       <SettingRow
         label="Use new chat thread (experimental)"
         description="Render conversations with the new ChatX (quill) primitives instead of the virtualized thread"
-        noBorder={!devModeClient}
+        noBorder={!devModeClient && !import.meta.env.DEV}
       >
         <Switch
           checked={useNewChatThread}
@@ -143,8 +151,51 @@ export function AdvancedSettings() {
           size="1"
         />
       </SettingRow>
+      {import.meta.env.DEV && (
+        <ChatThreadVirtualizationRow noBorder={!devModeClient} />
+      )}
       {devModeClient && <DevModeRow client={devModeClient} />}
     </Flex>
+  );
+}
+
+/**
+ * Dev-only override for the chat thread's virtualization threshold. Lowering it below an open
+ * thread's row count flips that thread to the windowed renderer on the spot, which is the only
+ * practical way to exercise the non-virtualized -> windowed handoff without a 150-row
+ * conversation. The switch is a one-way ratchet per mount, so raising the number back doesn't
+ * un-flip an already-windowed thread — reopen the session for that.
+ */
+function ChatThreadVirtualizationRow({ noBorder }: { noBorder: boolean }) {
+  const threshold = useSettingsStore(
+    (s) => s.chatThreadVirtualizationThreshold,
+  );
+  const setThreshold = useSettingsStore(
+    (s) => s.setChatThreadVirtualizationThreshold,
+  );
+
+  return (
+    <SettingRow
+      label="Chat thread virtualization threshold"
+      description={`Row count past which the new chat thread switches to windowed rendering. Blank uses the default (${CHAT_THREAD_VIRTUALIZATION_THRESHOLD}). Lower it below an open thread's row count to flip it mid-session.`}
+      noBorder={noBorder}
+    >
+      <TextField.Root
+        type="number"
+        min={0}
+        size="1"
+        className="w-[120px]"
+        placeholder={String(CHAT_THREAD_VIRTUALIZATION_THRESHOLD)}
+        value={threshold == null ? "" : String(threshold)}
+        onChange={(event) => {
+          const raw = event.currentTarget.value.trim();
+          const parsed = Number.parseInt(raw, 10);
+          setThreshold(
+            raw === "" || Number.isNaN(parsed) ? null : Math.max(0, parsed),
+          );
+        }}
+      />
+    </SettingRow>
   );
 }
 

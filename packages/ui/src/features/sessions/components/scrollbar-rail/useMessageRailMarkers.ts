@@ -27,12 +27,12 @@ interface MeasuredOffset {
  * and recomputes the fractional positions whenever the content scrolls, resizes,
  * or the DOM mutates (rows entering/leaving the virtualization window).
  *
- * Rows not yet rendered (virtualized views, e.g. the legacy `ConversationView`)
- * have no DOM node and therefore no measured offset; their markers are placed
- * by linearly interpolating between the nearest measured neighbours using their
- * item indices, which is accurate enough for a click target and self-corrects the
- * moment the row renders. (Non-virtualized views like the new `ChatThread`
- * render every row, so every marker is measured directly.)
+ * Rows not yet rendered (windowed views: the legacy `ConversationView`, and
+ * `ChatThread` once it passes its virtualization threshold) have no DOM node and
+ * therefore no measured offset; their markers are placed by linearly interpolating
+ * between the nearest measured neighbours using their item indices, which is
+ * accurate enough for a click target and self-corrects the moment the row renders.
+ * A short `ChatThread` renders every row, so every marker is measured directly.
  *
  * @param contentEl       The scroll container's inner content element (the tall
  *                        div whose height == total content height). Offsets are

@@ -26,6 +26,23 @@ export type TurnRow = ThreadItem | AgentTurn;
 export const CHAT_THREAD_VIRTUALIZATION_THRESHOLD = 150;
 
 /**
+ * How far below the viewport top a user message may sit while still counting as the current
+ * anchor — shared by the engine (`scrollPreviousItemPeek`) and the windowed sticky header.
+ */
+export const SCROLL_PREVIOUS_ITEM_PEEK = 64;
+
+/**
+ * Where the non-virtualized body was when the thread crossed the virtualization threshold, so the
+ * windowed body can resume there. Recorded by row identity, not pixels: the two bodies don't share
+ * a scroll coordinate space (virtual offsets are row-size estimates until rows mount).
+ */
+export interface ThreadScrollResume {
+  atBottom: boolean;
+  /** Id of the user message the engine was anchored to, or null if above the first one. */
+  anchorId: string | null;
+}
+
+/**
  * One row of the virtualized thread. Agent turns are flattened to one row per item — a single
  * turn can contain thousands of tool calls (autonomous sessions), so windowing at turn
  * granularity would still mount an unbounded card. The turn's visual grouping survives via
