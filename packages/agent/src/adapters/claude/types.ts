@@ -10,6 +10,7 @@ import type {
   Query,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import type { PostHogProductId } from "../../posthog-products";
 import type { AgentMode } from "../../types";
 import type { Pushable } from "../../utils/streams";
@@ -20,7 +21,7 @@ import type { McpToolApprovals } from "./mcp/tool-metadata";
 import type { SettingsManager } from "./session/settings";
 import type { CodeExecutionMode } from "./tools";
 
-export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+export type { EffortLevel };
 
 export type AccumulatedUsage = {
   inputTokens: number;

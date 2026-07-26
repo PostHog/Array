@@ -86,7 +86,11 @@ import {
   estimateSkillsTokens,
   estimateSystemPrompt,
 } from "./context-breakdown";
-import { isSteerMeta, promptToClaude } from "./conversion/acp-to-sdk";
+import {
+  appendUltrathinkKeyword,
+  isSteerMeta,
+  promptToClaude,
+} from "./conversion/acp-to-sdk";
 import {
   handleResultMessage,
   handleStreamEvent,
@@ -124,6 +128,7 @@ import {
   supports1MContext,
   supportsFastMode,
   supportsMcpInjection,
+  toSdkEffort,
   toSdkModelId,
 } from "./session/models";
 import {
@@ -475,6 +480,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     if (commandMatch && !isLocalOnlyCommand) {
       await this.refreshSlashCommandsForPrompt(commandMatch[1]);
+    }
+
+    // Slash commands are left untouched so the keyword can't corrupt parsing.
+    if (this.session.effort === "ultrathink" && !commandMatch) {
+      appendUltrathinkKeyword(userMessage);
     }
 
     if (this.session.queryClosed) {
@@ -1756,10 +1766,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     } else if (params.configId === "effort") {
       const newEffort = resolvedValue as EffortLevel;
       this.session.effort = newEffort;
-      this.session.queryOptions.effort = newEffort;
+      // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
+      this.session.queryOptions.effort = toSdkEffort(newEffort);
       await this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
-        effortLevel: newEffort,
+        // @ts-expect-error SDK Settings.effortLevel omits "max"/"ultracode" but runtime accepts them
+        effortLevel: toSdkEffort(newEffort),
       });
     } else if (params.configId === "fast") {
       // SDK flag first: a rejected control request leaves state untouched.
@@ -2272,10 +2283,11 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const resolvedEffort = resolveEffortForModel(resolvedModelId, effort);
     if (resolvedEffort && resolvedEffort !== effort) {
       this.session.effort = resolvedEffort;
-      this.session.queryOptions.effort = resolvedEffort;
+      // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
+      this.session.queryOptions.effort = toSdkEffort(resolvedEffort);
       await this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
-        effortLevel: resolvedEffort,
+        // @ts-expect-error SDK Settings.effortLevel omits "max"/"ultracode" but runtime accepts them
+        effortLevel: toSdkEffort(resolvedEffort),
       });
     }
 
@@ -2579,10 +2591,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // when the prior level is invalid for the newly selected model.
     if (!this.session.effort || resolvedValue !== currentValue) {
       this.session.effort = resolvedValue as EffortLevel;
-      this.session.queryOptions.effort = resolvedValue as EffortLevel;
+      // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
+      this.session.queryOptions.effort = toSdkEffort(
+        resolvedValue as EffortLevel,
+      );
       void this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
-        effortLevel: resolvedValue,
+        // @ts-expect-error SDK Settings.effortLevel omits "max"/"ultracode" but runtime accepts them
+        effortLevel: toSdkEffort(resolvedValue as EffortLevel),
       });
     }
 

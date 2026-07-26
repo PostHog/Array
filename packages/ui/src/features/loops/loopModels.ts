@@ -1,5 +1,8 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
+import {
+  getReasoningEffortOptions,
+  isCloudReasoningEffort,
+} from "@posthog/agent/adapters/reasoning-effort";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { flattenSelectOptions, isRestrictedModelOption } from "@posthog/shared";
 
@@ -120,7 +123,11 @@ export function loopReasoningEffortOptions(
 ): { value: LoopSchemas.LoopReasoningEffortEnum; label: string }[] {
   const effectiveModel = model || LOOP_DEFAULT_MODELS[adapter].id;
   const options = getReasoningEffortOptions(adapter, effectiveModel) ?? [];
-  return options.map((option) => ({ value: option.value, label: option.name }));
+  return options.flatMap((option) =>
+    isCloudReasoningEffort(option.value)
+      ? [{ value: option.value, label: option.name }]
+      : [],
+  );
 }
 
 /** The effort unchanged when the effective model supports it, else null

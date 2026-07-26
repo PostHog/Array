@@ -5456,6 +5456,8 @@ export class SessionService {
         high: "High",
         xhigh: "Extra High",
         max: "Max",
+        ultracode: "Ultracode",
+        ultrathink: "Ultrathink",
       };
       const selectedValue = existingValues.find(
         (value) => value.value === preferredValue,

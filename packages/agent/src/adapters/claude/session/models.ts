@@ -1,3 +1,7 @@
+import {
+  DEFAULT_OPTION_META_KEY,
+  OPTION_DOCS_URL_META_KEY,
+} from "@posthog/shared";
 import type { EffortLevel } from "../types";
 
 export const DEFAULT_MODEL = "opus";
@@ -43,6 +47,8 @@ const EXTENDED_EFFORT_LEVELS: readonly EffortLevel[] = [
   ...STANDARD_EFFORT_LEVELS,
   "xhigh",
   "max",
+  "ultracode",
+  "ultrathink",
 ];
 const MODEL_EFFORT_LEVELS: Readonly<Record<string, readonly EffortLevel[]>> = {
   "claude-opus-4-7": EXTENDED_EFFORT_LEVELS,
@@ -90,6 +96,7 @@ export function fastModeStateEnabled(state: string | undefined): boolean {
 interface EffortOption {
   value: EffortLevel;
   name: string;
+  _meta?: Record<string, unknown>;
 }
 
 const EFFORT_LABELS: Record<EffortLevel, string> = {
@@ -98,13 +105,45 @@ const EFFORT_LABELS: Record<EffortLevel, string> = {
   high: "High",
   xhigh: "Extra High",
   max: "Max",
+  ultracode: "Ultracode",
+  ultrathink: "Ultrathink",
 };
+
+const EFFORT_DOCS_URLS: Partial<Record<EffortLevel, string>> = {
+  ultracode: "https://code.claude.com/docs/en/workflows",
+  ultrathink:
+    "https://code.claude.com/docs/en/model-config#use-ultrathink-for-one-off-deep-reasoning",
+};
+
+function effortOptionMeta(
+  value: EffortLevel,
+): Record<string, unknown> | undefined {
+  const docsUrl = EFFORT_DOCS_URLS[value];
+  const meta: Record<string, unknown> = {
+    ...(value === DEFAULT_EFFORT ? { [DEFAULT_OPTION_META_KEY]: true } : {}),
+    ...(docsUrl ? { [OPTION_DOCS_URL_META_KEY]: docsUrl } : {}),
+  };
+  return Object.keys(meta).length > 0 ? meta : undefined;
+}
 
 export function getEffortOptions(modelId: string): EffortOption[] | null {
   const levels = MODEL_EFFORT_LEVELS[modelId];
   return (
-    levels?.map((value) => ({ value, name: EFFORT_LABELS[value] })) ?? null
+    levels?.map((value) => ({
+      value,
+      name: EFFORT_LABELS[value],
+      _meta: effortOptionMeta(value),
+    })) ?? null
   );
+}
+
+// The SDK's effort union lags the CLI: "ultracode" is accepted at runtime
+// (xhigh plus workflow orchestration) while "ultrathink" is only a prompt
+// keyword, so Ultrathink sessions run at max budget and inject the keyword.
+export function toSdkEffort(
+  effort: EffortLevel,
+): Exclude<EffortLevel, "ultrathink"> {
+  return effort === "ultrathink" ? "max" : effort;
 }
 
 // Model alias resolution — lets callers use human-friendly aliases like

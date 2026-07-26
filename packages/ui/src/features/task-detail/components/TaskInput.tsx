@@ -1434,7 +1434,6 @@ export function TaskInput({
                     ) : (
                       <ReasoningLevelSelector
                         thoughtOption={thoughtOption}
-                        adapter={adapter}
                         onChange={handleThoughtChange}
                         disabled={isCreatingTask}
                         isLoading={isPreviewLoading}

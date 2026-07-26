@@ -426,7 +426,6 @@ export const ChannelHomeComposer = forwardRef<
           !isLoading && (
             <ReasoningLevelSelector
               thoughtOption={thoughtOption}
-              adapter={adapter}
               onChange={handleThoughtChange}
               disabled={isBusy}
             />

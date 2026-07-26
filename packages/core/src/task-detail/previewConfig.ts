@@ -19,6 +19,8 @@ const EFFORT_RANK: Record<string, number> = {
   high: 2,
   xhigh: 3,
   max: 4,
+  ultracode: 5,
+  ultrathink: 6,
 };
 
 export function clampEffortToAvailable(

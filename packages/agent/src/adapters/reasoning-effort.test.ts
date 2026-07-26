@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isSupportedReasoningEffort } from "./reasoning-effort";
+import {
+  isCloudReasoningEffort,
+  isSupportedReasoningEffort,
+  toCloudReasoningEffort,
+} from "./reasoning-effort";
 
 describe("isSupportedReasoningEffort", () => {
   it("accepts xhigh for the codex gpt-5.5 family", () => {
@@ -50,5 +54,58 @@ describe("isSupportedReasoningEffort", () => {
     expect(
       isSupportedReasoningEffort("claude", "@cf/zai-org/glm-5.2", effort),
     ).toBe(expected);
+  });
+
+  it.each([
+    ["claude-opus-4-8", "ultracode", true],
+    ["claude-opus-4-8", "ultrathink", true],
+    ["claude-sonnet-4-6", "ultracode", false],
+    ["claude-sonnet-4-6", "ultrathink", false],
+    ["@cf/zai-org/glm-5.2", "ultracode", false],
+  ])(
+    "gates the ultra tiers on Claude model %s (%s)",
+    (modelId, effort, expected) => {
+      expect(isSupportedReasoningEffort("claude", modelId, effort)).toBe(
+        expected,
+      );
+    },
+  );
+
+  it("never offers the ultra tiers on codex models", () => {
+    expect(
+      isSupportedReasoningEffort("codex", "gpt-5.6-sol", "ultracode"),
+    ).toBe(false);
+    expect(
+      isSupportedReasoningEffort("codex", "gpt-5.6-sol", "ultrathink"),
+    ).toBe(false);
+  });
+});
+
+describe("toCloudReasoningEffort", () => {
+  it.each([
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"],
+    ["max", "max"],
+    ["ultracode", "xhigh"],
+    ["ultrathink", "max"],
+  ] as const)("clamps %s to %s", (effort, expected) => {
+    expect(toCloudReasoningEffort(effort)).toBe(expected);
+  });
+});
+
+describe("isCloudReasoningEffort", () => {
+  it.each([
+    ["low", true],
+    ["medium", true],
+    ["high", true],
+    ["xhigh", true],
+    ["max", true],
+    ["ultracode", false],
+    ["ultrathink", false],
+    ["ultra", false],
+  ])("isCloudReasoningEffort(%s) === %s", (effort, expected) => {
+    expect(isCloudReasoningEffort(effort)).toBe(expected);
   });
 });

@@ -1,40 +1,56 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import {
+  DEFAULT_OPTION_META_KEY,
+  OPTION_DOCS_URL_META_KEY,
+} from "@posthog/shared";
 import { Theme } from "@radix-ui/themes";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 
-function codexThoughtOption(
+const openUrlInBrowser = vi.hoisted(() => vi.fn());
+vi.mock("@posthog/ui/utils/browser", () => ({ openUrlInBrowser }));
+
+const ultrathinkDocsUrl =
+  "https://code.claude.com/docs/en/model-config#use-ultrathink-for-one-off-deep-reasoning";
+
+function thoughtOption(
   overrides?: Partial<SessionConfigOption>,
 ): SessionConfigOption {
   return {
     type: "select",
     id: "effort",
-    name: "Reasoning effort",
+    name: "Effort",
     category: "thought_level",
     currentValue: "high",
     options: [
-      { name: "low", value: "low" },
-      { name: "high", value: "high" },
-      { name: "max", value: "max" },
+      { name: "Low", value: "low" },
+      {
+        name: "High",
+        value: "high",
+        _meta: { [DEFAULT_OPTION_META_KEY]: true },
+      },
+      { name: "Max", value: "max" },
+      {
+        name: "Ultrathink",
+        value: "ultrathink",
+        _meta: { [OPTION_DOCS_URL_META_KEY]: ultrathinkDocsUrl },
+      },
     ],
     ...overrides,
   } as unknown as SessionConfigOption;
 }
 
 describe("ReasoningLevelSelector", () => {
-  it("renders the active level as the trigger label for a codex thought_level option", () => {
+  it("renders the active level as the trigger label", () => {
     render(
       <Theme>
-        <ReasoningLevelSelector
-          thoughtOption={codexThoughtOption()}
-          adapter="codex"
-        />
+        <ReasoningLevelSelector thoughtOption={thoughtOption()} />
       </Theme>,
     );
     expect(
-      screen.getByRole("button", { name: "Reasoning: high" }),
+      screen.getByRole("button", { name: "Reasoning: High" }),
     ).toBeInTheDocument();
   });
 
@@ -44,44 +60,65 @@ describe("ReasoningLevelSelector", () => {
     render(
       <Theme>
         <ReasoningLevelSelector
-          thoughtOption={codexThoughtOption()}
-          adapter="codex"
+          thoughtOption={thoughtOption()}
           onChange={onChange}
         />
       </Theme>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Reasoning: high" }));
-    const lowItem = await screen.findByRole("menuitemradio", { name: "low" });
+    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    const lowItem = await screen.findByRole("menuitemradio", { name: "Low" });
     await user.click(lowItem);
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("low"));
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the 'Effort' label for the claude adapter", () => {
+  it("marks the adapter default level with a Default badge", async () => {
+    const user = userEvent.setup();
+    render(
+      <Theme>
+        <ReasoningLevelSelector thoughtOption={thoughtOption()} />
+      </Theme>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    const highItem = await screen.findByRole("menuitemradio", {
+      name: /High/,
+    });
+    expect(highItem).toHaveTextContent("Default");
+  });
+
+  it("opens the docs link without selecting the level", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
     render(
       <Theme>
         <ReasoningLevelSelector
-          thoughtOption={codexThoughtOption({ currentValue: "medium" })}
-          adapter="claude"
+          thoughtOption={thoughtOption()}
+          onChange={onChange}
         />
       </Theme>,
     );
-    expect(
-      screen.getByRole("button", { name: "Effort: medium" }),
-    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    const docsButton = await screen.findByRole("button", {
+      name: "Learn more about Ultrathink",
+    });
+    await user.click(docsButton);
+
+    expect(openUrlInBrowser).toHaveBeenCalledWith(ultrathinkDocsUrl);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it.each([
     ["undefined option", undefined],
-    ["non-select type", codexThoughtOption({ type: "boolean" })],
-    ["empty options", codexThoughtOption({ options: [] })],
+    ["non-select type", thoughtOption({ type: "boolean" })],
+    ["empty options", thoughtOption({ options: [] })],
   ])("renders no trigger for %s", (_label, option) => {
     render(
       <ReasoningLevelSelector
         thoughtOption={option as SessionConfigOption | undefined}
-        adapter="codex"
       />,
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();

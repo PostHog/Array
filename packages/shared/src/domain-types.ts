@@ -26,6 +26,8 @@ export const effortLevelSchema = z.enum([
   "high",
   "xhigh",
   "max",
+  "ultracode",
+  "ultrathink",
 ]);
 export type EffortLevel = z.infer<typeof effortLevelSchema>;
 

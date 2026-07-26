@@ -48,7 +48,6 @@ import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/
 import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
-  useAdapterForTask,
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
   useSessionSelector,
@@ -187,7 +186,6 @@ export function SessionView({
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
-  const adapter = useAdapterForTask(taskId);
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
@@ -750,7 +748,6 @@ export function SessionView({
                             thoughtOption ? (
                               <ReasoningLevelSelector
                                 thoughtOption={thoughtOption}
-                                adapter={adapter}
                                 onChange={handleThoughtChange}
                                 disabled={!isRunning}
                               />
