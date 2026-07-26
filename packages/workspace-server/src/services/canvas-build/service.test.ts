@@ -41,7 +41,17 @@ describe("CanvasBuildService", () => {
     expect(result.diagnostics).toEqual([]);
     expect(result.artifactFiles?.["index.html"]).not.toContain("/src/main.ts");
     expect(Object.keys(result.artifactFiles ?? {})).toContain("assets/main.js");
+    expect(result.artifactFiles?.["index.html"]).toContain(
+      "Content-Security-Policy",
+    );
+    expect(result.artifactFiles?.["index.html"]).toContain(
+      "./assets/canvas-runtime.js",
+    );
+    expect(result.artifactFiles?.["assets/canvas-runtime.js"]).toContain(
+      'channel="posthog-canvas"',
+    );
     expect(result.manifest?.files.map((file) => file.path)).toEqual([
+      "assets/canvas-runtime.js",
       "assets/main.js",
       "index.html",
     ]);
@@ -156,6 +166,9 @@ describe("CanvasBuildService", () => {
     });
 
     expect(result.ok).toBe(true);
+    expect(result.artifactFiles?.["index.html"]).toContain(
+      "connect-src https://example.com",
+    );
   });
 
   it("rejects remote scripts in source HTML", async () => {

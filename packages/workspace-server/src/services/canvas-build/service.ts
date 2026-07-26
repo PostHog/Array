@@ -25,6 +25,8 @@ const MODULE_SCRIPT =
 const ANY_REMOTE_SCRIPT =
   /<script\b[^>]*\bsrc=["'](?:https?:)?\/\/[^"']+["'][^>]*>/i;
 const INLINE_SCRIPT = /<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i;
+const CANVAS_RUNTIME_PATH = "assets/canvas-runtime.js";
+const CANVAS_RUNTIME = `(()=>{const channel="posthog-canvas",pending=new Map;let sequence=0;const post=(message)=>parent.postMessage({channel,...message},"*");const call=(method,payload)=>new Promise((resolve,reject)=>{const id=String(++sequence);pending.set(id,{resolve,reject});post({type:"data-request",id,method,payload});});window.ph={loadInsight:(shortId,options)=>call("loadInsight",{shortId,dateRange:options?.dateRange}),query:(query,params)=>call("query",typeof query==="string"?{hogql:query,params:params??{}}:{query,params:params??{}}),capture:(event,properties,distinctId)=>call("capture",{event,properties:properties??{},distinctId}),openExternal:(url)=>post({type:"open-external",url}),navigate:{toTask:(taskId)=>post({type:"navigate",nav:{target:"task",taskId}}),toNewTask:()=>post({type:"navigate",nav:{target:"new-task"}}),toCanvas:(dashboardId)=>post({type:"navigate",nav:{target:"canvas",dashboardId}}),toNewCanvas:()=>post({type:"navigate",nav:{target:"new-canvas"}})}};addEventListener("message",(event)=>{if(event.source!==parent||event.data?.channel!==channel||event.data?.type!=="data-response")return;const request=pending.get(event.data.id);if(!request)return;pending.delete(event.data.id);event.data.ok?request.resolve(event.data.result):request.reject(new Error(event.data.error??"Canvas request failed"));});addEventListener("error",(event)=>post({type:"error",message:event.message||"Canvas runtime error",stack:event.error?.stack}));addEventListener("unhandledrejection",(event)=>post({type:"error",message:event.reason instanceof Error?event.reason.message:String(event.reason),stack:event.reason instanceof Error?event.reason.stack:undefined}));addEventListener("DOMContentLoaded",()=>post({type:"ready"}));addEventListener("load",()=>post({type:"rendered"}));})();`;
 
 function sha256(content: string): string {
   return createHash("sha256").update(content).digest("hex");
@@ -36,6 +38,40 @@ function contentType(filePath: string): string {
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".json")) return "application/json; charset=utf-8";
   return "application/octet-stream";
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+}
+
+function contentSecurityPolicy(project: CanvasSourceProject): string {
+  const origins = project.capabilities.network.origins.join(" ");
+  const connect = origins || "'none'";
+  const externalAssets = origins ? ` ${origins}` : "";
+  return [
+    "default-src 'none'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "form-action 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    `connect-src ${connect}`,
+    `img-src 'self' data: blob:${externalAssets}`,
+    "font-src 'self' data:",
+    "media-src 'self' data: blob:",
+    "worker-src 'self' blob:",
+  ].join("; ");
+}
+
+function injectHead(html: string, markup: string): string {
+  if (/<head(?:\s[^>]*)?>/i.test(html)) {
+    return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}${markup}`);
+  }
+  const doctype = html.match(/^\s*<!doctype[^>]*>/i)?.[0];
+  if (doctype) {
+    return html.replace(doctype, `${doctype}<head>${markup}</head>`);
+  }
+  return `<head>${markup}</head>${html}`;
 }
 
 function diagnostic(
@@ -448,6 +484,13 @@ export class CanvasBuildService {
     }
 
     artifactFiles["index.html"] = builtHtml;
+    artifactFiles[CANVAS_RUNTIME_PATH] = CANVAS_RUNTIME;
+    const csp = contentSecurityPolicy(project);
+    const runtimeMarkup = `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(csp)}" /><script src="./${CANVAS_RUNTIME_PATH}"></script>`;
+    artifactFiles["index.html"] = injectHead(
+      artifactFiles["index.html"] ?? "",
+      runtimeMarkup,
+    );
     const files: CanvasArtifactFile[] = Object.entries(artifactFiles)
       .map(([filePath, content]) => ({
         path: filePath,

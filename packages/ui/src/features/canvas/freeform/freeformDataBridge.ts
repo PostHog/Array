@@ -3,6 +3,7 @@ import type {
   CanvasDataQueryInput,
   CanvasLoadInsightInput,
 } from "@posthog/core/canvas/freeformSchemas";
+import type { CanvasCapabilities } from "@posthog/shared/canvas-application";
 import type { QueryClient } from "@tanstack/react-query";
 import { hostClient } from "../hostClient";
 
@@ -64,9 +65,15 @@ export async function handleFreeformDataRequest(
   method: string,
   payload: unknown,
   queryClient: QueryClient,
+  capabilities?: CanvasCapabilities,
 ): Promise<unknown> {
   switch (method) {
     case "query": {
+      if (capabilities && !capabilities.posthog.inlineQueries) {
+        throw new Error(
+          "Inline canvas queries are not allowed by this artifact",
+        );
+      }
       const input = payload as CanvasDataQueryInput;
       const hasQuery = input?.query != null && typeof input.query === "object";
       const hasHogql =
@@ -90,6 +97,14 @@ export async function handleFreeformDataRequest(
       if (!input?.shortId || typeof input.shortId !== "string") {
         throw new Error("ph.loadInsight(shortId) requires an insight short id");
       }
+      if (
+        capabilities &&
+        !capabilities.posthog.insights.includes(input.shortId)
+      ) {
+        throw new Error(
+          `Insight "${input.shortId}" is not declared by this artifact`,
+        );
+      }
       const args = { shortId: input.shortId, dateRange: input.dateRange };
       return cachedRead(queryClient, "loadInsight", args, () =>
         hostClient().canvasData.loadInsight.mutate(args),
@@ -99,6 +114,14 @@ export async function handleFreeformDataRequest(
       const input = payload as CanvasCaptureInput;
       if (!input?.event || typeof input.event !== "string") {
         throw new Error("ph.capture(event) requires an event name");
+      }
+      if (
+        capabilities &&
+        !capabilities.posthog.captureEvents.includes(input.event)
+      ) {
+        throw new Error(
+          `Capture event "${input.event}" is not declared by this artifact`,
+        );
       }
       // A side-effect, never cached.
       return hostClient().canvasData.capture.mutate({
