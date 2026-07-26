@@ -1,6 +1,9 @@
 import type { ArchivedTaskWithRepo } from "@posthog/core/archive/archiveListView";
 import { describe, expect, it } from "vitest";
-import { getVisibleArchivedTasks } from "./archiveListPagination";
+import {
+  getVisibleArchivedTasks,
+  shouldLoadMoreArchivedTasks,
+} from "./archiveListPagination";
 
 function item(
   id: string,
@@ -58,5 +61,15 @@ describe("getVisibleArchivedTasks", () => {
         1,
       ).map((entry) => entry.archived.taskId),
     ).toEqual(["newer"]);
+  });
+});
+
+describe("shouldLoadMoreArchivedTasks", () => {
+  it("loads near the unfiltered boundary", () => {
+    expect(shouldLoadMoreArchivedTasks(40, 50, false)).toBe(true);
+  });
+
+  it("does not load from the end of filtered results", () => {
+    expect(shouldLoadMoreArchivedTasks(0, 1, true)).toBe(false);
   });
 });

@@ -11,3 +11,15 @@ export function getVisibleArchivedTasks(
 ): ArchivedTaskWithRepo[] {
   return filterAndSortArchivedTasks(items, filters).slice(0, loadedCount);
 }
+
+export function shouldLoadMoreArchivedTasks(
+  lastVirtualRowIndex: number | undefined,
+  visibleItemCount: number,
+  hasActiveFilter: boolean,
+): boolean {
+  return (
+    !hasActiveFilter &&
+    lastVirtualRowIndex !== undefined &&
+    lastVirtualRowIndex >= visibleItemCount - 10
+  );
+}

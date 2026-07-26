@@ -40,7 +40,10 @@ import { DotsCircleSpinner } from "../../primitives/DotsCircleSpinner";
 import { Tooltip } from "../../primitives/Tooltip";
 import { toast } from "../../primitives/toast";
 import { useTasks } from "../tasks/useTasks";
-import { getVisibleArchivedTasks } from "./archiveListPagination";
+import {
+  getVisibleArchivedTasks,
+  shouldLoadMoreArchivedTasks,
+} from "./archiveListPagination";
 import { useArchivedTaskSummaries } from "./useArchivedTaskSummaries";
 import { useUnarchiveTask } from "./useUnarchiveTask";
 
@@ -258,10 +261,14 @@ export function ArchivedTasksViewPresentation({
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
   const lastVirtualRowIndex = virtualRows[virtualRows.length - 1]?.index;
+  const hasActiveFilter = searchQuery.trim() !== "" || repoFilter !== null;
   useEffect(() => {
     if (
-      lastVirtualRowIndex !== undefined &&
-      lastVirtualRowIndex >= visibleItems.length - 10 &&
+      shouldLoadMoreArchivedTasks(
+        lastVirtualRowIndex,
+        visibleItems.length,
+        hasActiveFilter,
+      ) &&
       hasNextPage &&
       !isFetchingNextPage
     ) {
@@ -269,6 +276,7 @@ export function ArchivedTasksViewPresentation({
     }
   }, [
     visibleItems.length,
+    hasActiveFilter,
     hasNextPage,
     isFetchingNextPage,
     lastVirtualRowIndex,
