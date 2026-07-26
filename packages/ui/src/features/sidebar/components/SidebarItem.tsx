@@ -43,6 +43,7 @@ function SidebarItemLabel({
   const containerRef = useRef<HTMLSpanElement>(null);
   const contentRef = useRef<HTMLSpanElement>(null);
   const [overflowPx, setOverflowPx] = useState(0);
+  const [reachedEnd, setReachedEnd] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -58,9 +59,11 @@ function SidebarItemLabel({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!isRowHovered) setReachedEnd(false);
+  }, [isRowHovered]);
+
   const isTicking = isRowHovered && overflowPx > 0;
-  // Overshoot by the fade width so the title's end stops clear of the right fade.
-  const scrollDistance = overflowPx + TICKER_FADE_PX;
 
   return (
     <span
@@ -74,20 +77,25 @@ function SidebarItemLabel({
           overflowPx === 0
             ? undefined
             : isTicking
-              ? `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px, black calc(100% - ${TICKER_FADE_PX}px), transparent)`
+              ? reachedEnd
+                ? `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px)`
+                : `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px, black calc(100% - ${TICKER_FADE_PX}px), transparent)`
               : `linear-gradient(to right, black calc(100% - ${TICKER_FADE_PX}px), transparent)`,
       }}
     >
       <span
         ref={contentRef}
         className="inline-block"
+        onTransitionEnd={(e) => {
+          if (e.propertyName === "transform") setReachedEnd(true);
+        }}
         style={
           isTicking
             ? {
-                transform: `translateX(-${scrollDistance}px)`,
+                transform: `translateX(-${overflowPx}px)`,
                 transitionProperty: "transform",
                 transitionTimingFunction: "linear",
-                transitionDuration: `${scrollDistance / TICKER_SPEED_PX_PER_SECOND}s`,
+                transitionDuration: `${overflowPx / TICKER_SPEED_PX_PER_SECOND}s`,
               }
             : { transform: "translateX(0)", transitionProperty: "none" }
         }
