@@ -224,16 +224,17 @@ export function ConversationView({
     () => [...new Set(rowKeepMounted.map((index) => rowToTurnIndex[index]))],
     [rowKeepMounted, rowToTurnIndex],
   );
-  const itemIdToTurnIndex = useMemo(
-    () =>
-      new Map(
-        [...grouping.idToRowIndex].map(([id, rowIndex]) => [
-          id,
-          rowToTurnIndex[rowIndex] ?? rowIndex,
-        ]),
-      ),
-    [grouping.idToRowIndex, rowToTurnIndex],
-  );
+  const itemIdToTurnIndex = useMemo(() => {
+    const result = new Map<string, number>();
+    for (const [id, rowIndex] of grouping.idToRowIndex) {
+      const turnIndex = rowToTurnIndex[rowIndex];
+      if (turnIndex === undefined) {
+        throw new Error(`Missing turn for conversation row ${rowIndex}`);
+      }
+      result.set(id, turnIndex);
+    }
+    return result;
+  }, [grouping.idToRowIndex, rowToTurnIndex]);
 
   // Changing the global mode wipes ephemeral per-chip overrides.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on collapseMode only
@@ -247,15 +248,15 @@ export function ConversationView({
   // since grouped rows != items.
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  const itemIdToRowIndexRef = useRef(itemIdToTurnIndex);
-  itemIdToRowIndexRef.current = itemIdToTurnIndex;
+  const itemIdToTurnIndexRef = useRef(itemIdToTurnIndex);
+  itemIdToTurnIndexRef.current = itemIdToTurnIndex;
   const searchListRef = useRef<VirtualizedListHandle>({
     scrollToBottom: () => listRef.current?.scrollToBottom(),
     scrollToIndex: (index: number) => {
       const id = itemsRef.current[index]?.id;
-      const rowIdx =
-        id != null ? itemIdToRowIndexRef.current.get(id) : undefined;
-      listRef.current?.scrollToIndex(rowIdx ?? index);
+      const turnIndex =
+        id != null ? itemIdToTurnIndexRef.current.get(id) : undefined;
+      listRef.current?.scrollToIndex(turnIndex ?? index);
     },
   });
 
@@ -286,8 +287,8 @@ export function ConversationView({
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
   const scrollToUserMessage = useCallback((id: string, itemIndex: number) => {
-    const rowIndex = itemIdToRowIndexRef.current.get(id) ?? itemIndex;
-    listRef.current?.scrollToIndex(rowIndex);
+    const turnIndex = itemIdToTurnIndexRef.current.get(id) ?? itemIndex;
+    listRef.current?.scrollToIndex(turnIndex);
   }, []);
 
   const handleNavigateMessage = useCallback(
@@ -476,7 +477,11 @@ export function ConversationView({
     (turn: ConversationTurn) => (
       <div>
         {turn.rows.map((row) => (
-          <div key={row.id} className="py-1.5">
+          <div
+            key={row.id}
+            className="py-1.5"
+            data-conversation-item-id={row.id}
+          >
             {renderRow(row)}
           </div>
         ))}

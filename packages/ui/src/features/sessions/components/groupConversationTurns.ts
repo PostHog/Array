@@ -1,3 +1,4 @@
+import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
 import type { ThreadRow } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 
 export interface ConversationTurn {
@@ -6,12 +7,7 @@ export interface ConversationTurn {
 }
 
 function startsConversationTurn(row: ThreadRow): boolean {
-  if (row.kind !== "item") return false;
-  return (
-    row.item.type === "user_message" ||
-    row.item.type === "git_action" ||
-    row.item.type === "skill_button_action"
-  );
+  return row.kind === "item" && isUserInitiatedConversationItem(row.item);
 }
 
 export function groupRowsIntoTurns(rows: ThreadRow[]): {

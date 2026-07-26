@@ -4,6 +4,7 @@ import {
   type CSSProperties,
   forwardRef,
   type ReactNode,
+  type TouchEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -65,6 +66,7 @@ function VirtualizedListInner<T>(
   const initializedRef = useRef(false);
   const isAtBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const settlingRef = useRef(false);
   const settleRafRef = useRef<number | null>(null);
   const onScrollStateChangeRef = useRef(onScrollStateChange);
@@ -249,9 +251,29 @@ function VirtualizedListInner<T>(
     [],
   );
 
-  const handleTouchMoveCapture = useCallback(() => {
-    isAtBottomRef.current = false;
-  }, []);
+  const handleTouchStartCapture = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const touch = event.touches[0];
+      touchStartRef.current = touch
+        ? { x: touch.clientX, y: touch.clientY }
+        : null;
+    },
+    [],
+  );
+
+  const handleTouchMoveCapture = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const start = touchStartRef.current;
+      const touch = event.touches[0];
+      if (!start || !touch) return;
+      const deltaX = touch.clientX - start.x;
+      const deltaY = touch.clientY - start.y;
+      if (deltaY > 0 && Math.abs(deltaY) > Math.abs(deltaX)) {
+        isAtBottomRef.current = false;
+      }
+    },
+    [],
+  );
 
   const virtualItems = virtualizer.getVirtualItems();
 
@@ -274,6 +296,7 @@ function VirtualizedListInner<T>(
         ref={parentRef}
         onScroll={handleScroll}
         onWheelCapture={handleWheelCapture}
+        onTouchStartCapture={handleTouchStartCapture}
         onTouchMoveCapture={handleTouchMoveCapture}
         className={`scroll-mask-8 flex-1 overflow-y-auto ${scrollX ? "overflow-x-auto" : "overflow-x-hidden"}`}
         style={{ scrollbarGutter: "stable" }}
