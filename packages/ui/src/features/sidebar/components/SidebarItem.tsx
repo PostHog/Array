@@ -1,15 +1,11 @@
-import {
-  Button,
-  cn,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@posthog/quill";
+import { Button, cn } from "@posthog/quill";
 import type { SidebarItemAction } from "@posthog/ui/features/sidebar/types";
-import { useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export const INDENT_SIZE = 8;
+
+const TICKER_SPEED_PX_PER_SECOND = 50;
+const TICKER_FADE_PX = 24;
 
 export function getSidebarItemPaddingLeft(depth: number): string {
   return `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`;
@@ -38,40 +34,67 @@ interface SidebarItemProps {
 function SidebarItemLabel({
   label,
   grow,
+  isRowHovered,
 }: {
   label: React.ReactNode;
   grow: boolean;
+  isRowHovered: boolean;
 }) {
-  const canTooltip = typeof label === "string" || typeof label === "number";
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const contentRef = useRef<HTMLSpanElement>(null);
+  const [overflowPx, setOverflowPx] = useState(0);
 
-  const measureRef = useCallback((el: HTMLSpanElement | null) => {
-    if (!el) return;
-    const update = () => {
-      el.style.pointerEvents = el.scrollWidth > el.clientWidth ? "" : "none";
+  useEffect(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+    const measure = () => {
+      setOverflowPx(Math.max(0, container.scrollWidth - container.clientWidth));
     };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    observer.observe(content);
     return () => observer.disconnect();
   }, []);
 
-  const span = (
-    <span ref={measureRef} className={cn("min-w-0 truncate", grow && "flex-1")}>
-      {label}
-    </span>
-  );
-
-  if (!canTooltip) return span;
+  const isTicking = isRowHovered && overflowPx > 0;
+  // Overshoot by the fade width so the title's end stops clear of the right fade.
+  const scrollDistance = overflowPx + TICKER_FADE_PX;
 
   return (
-    <TooltipProvider delay={600}>
-      <Tooltip>
-        <TooltipTrigger render={span} />
-        <TooltipContent side="top" className="max-w-[900px] break-words">
-          {label}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <span
+      ref={containerRef}
+      className={cn(
+        "min-w-0 overflow-hidden whitespace-nowrap",
+        grow && "flex-1",
+      )}
+      style={{
+        maskImage:
+          overflowPx === 0
+            ? undefined
+            : isTicking
+              ? `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px, black calc(100% - ${TICKER_FADE_PX}px), transparent)`
+              : `linear-gradient(to right, black calc(100% - ${TICKER_FADE_PX}px), transparent)`,
+      }}
+    >
+      <span
+        ref={contentRef}
+        className="inline-block"
+        style={
+          isTicking
+            ? {
+                transform: `translateX(-${scrollDistance}px)`,
+                transitionProperty: "transform",
+                transitionTimingFunction: "linear",
+                transitionDuration: `${scrollDistance / TICKER_SPEED_PX_PER_SECOND}s`,
+              }
+            : { transform: "translateX(0)", transitionProperty: "none" }
+        }
+      >
+        {label}
+      </span>
+    </span>
   );
 }
 
@@ -92,6 +115,8 @@ export function SidebarItem({
   endContent,
   disabled,
 }: SidebarItemProps) {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
     <Button
       type="button"
@@ -112,6 +137,8 @@ export function SidebarItem({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      onPointerEnter={() => setIsHovered(true)}
+      onPointerLeave={() => setIsHovered(false)}
       disabled={disabled}
     >
       {icon ? (
@@ -121,7 +148,11 @@ export function SidebarItem({
       ) : null}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-h-[18px] items-center gap-1">
-          <SidebarItemLabel label={label} grow={!badge} />
+          <SidebarItemLabel
+            label={label}
+            grow={!badge}
+            isRowHovered={isHovered}
+          />
           {badge ? (
             <span className="mr-auto ml-1 flex shrink-0 items-center">
               {badge}
