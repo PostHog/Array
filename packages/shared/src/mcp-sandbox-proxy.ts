@@ -5,14 +5,9 @@
  *
  *   Host (renderer) → Outer iframe (sandbox proxy) → Inner iframe (MCP App)
  *
- * The outer iframe is served from the host's custom protocol, giving it an
- * isolated origin separate from the renderer. The inner iframe uses
- * allow-same-origin so the proxy can write HTML via document.write() — srcdoc
- * creates an opaque origin that breaks WebGL canvas operations (toDataURL) and
- * cross-origin resource access.
- *
- * Because the proxy's origin differs from the renderer's origin, the app cannot
- * traverse `window.parent.parent` to access the host's DOM, storage, or cookies.
+ * The host sandboxes the outer iframe without allow-same-origin, so both frames
+ * get opaque origins: the app cannot reach the host's DOM, storage or cookies,
+ * nor another app's frame.
  *
  * The HTML string itself is portable browser JavaScript with no host APIs; the
  * protocol that serves it is the host-specific seam.
@@ -56,8 +51,22 @@ export const sandboxProxyHtml: string = `<!DOCTYPE html>
 
       var inner = document.createElement("iframe");
       inner.style.cssText = "width:100%; height:100%; border:none;";
-      inner.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+      inner.setAttribute("sandbox", "allow-scripts allow-forms");
       document.body.appendChild(inner);
+
+      // contentWindow survives navigation, so an app that calls
+      // location.replace() would keep the bridge. Only the first load of our
+      // srcdoc may use it; any later one is the app navigating away.
+      var appLoaded = false;
+      var bridgeClosed = false;
+      function onInnerLoad() {
+        if (!appLoaded) {
+          appLoaded = true;
+          return;
+        }
+        bridgeClosed = true;
+        log("Inner frame navigated, bridge closed");
+      }
 
       // Build Permission Policy allow attribute from permissions object.
       // Maps McpUiResourcePermissions keys to Permission Policy feature names.
@@ -98,32 +107,26 @@ export const sandboxProxyHtml: string = `<!DOCTYPE html>
               inner.setAttribute("allow", allowValue);
             }
 
-            // Use document.write() instead of srcdoc to preserve origin.
-            // srcdoc creates an opaque origin that breaks WebGL canvas operations
-            // like toDataURL() and cross-origin resource access.
-            var doc = inner.contentDocument;
-            log("Writing HTML to inner iframe", {
-              htmlLength: params.html.length,
-              hasContentDocument: !!doc
+            log("Setting inner iframe srcdoc", {
+              htmlLength: params.html.length
             });
 
-            doc.open();
-            doc.write(params.html);
-            doc.close();
+            inner.addEventListener("load", onInnerLoad);
+            inner.setAttribute("srcdoc", params.html);
 
-            log("HTML written to inner iframe");
+            log("HTML handed to inner iframe");
           }
         } else {
           // Forward all other messages to inner iframe
           log("Forwarding host -> inner", {
             method: data.method,
             id: data.id,
-            hasInner: !!(inner && inner.contentWindow),
-            targetOrigin: location.origin
+            hasInner: !!(inner && inner.contentWindow)
           });
 
-          if (inner && inner.contentWindow) {
-            inner.contentWindow.postMessage(data, location.origin);
+          // An opaque origin serializes to "null", which postMessage rejects.
+          if (!bridgeClosed && inner && inner.contentWindow) {
+            inner.contentWindow.postMessage(data, "*");
           }
         }
       }
@@ -141,6 +144,12 @@ export const sandboxProxyHtml: string = `<!DOCTYPE html>
           });
           handleParentMessage(data);
         } else if (event.source === inner.contentWindow) {
+          if (bridgeClosed) {
+            log("Dropping message from navigated inner frame", {
+              method: data.method
+            });
+            return;
+          }
           log("Relaying inner -> host", {
             method: data.method,
             id: data.id,
