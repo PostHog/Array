@@ -86,6 +86,7 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
+  TaskActivityMarkReadResult,
   TaskActivityPage,
   TaskChannel,
   TaskMention,
@@ -2524,19 +2525,27 @@ export class PostHogAPIClient {
     return (await response.json()) as TaskActivityPage;
   }
 
-  async markTaskActivityRead(): Promise<void> {
+  // Read state is per task, so callers name the tasks the user has seen rather than
+  // clearing the whole feed.
+  async markTaskActivityRead(
+    taskIds: string[],
+  ): Promise<TaskActivityMarkReadResult> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/task_activity/mark_read/`;
     const response = await this.api.fetcher.fetch({
       method: "post",
       url: new URL(`${this.api.baseUrl}${urlPath}`),
       path: urlPath,
+      overrides: {
+        body: JSON.stringify({ task_ids: taskIds }),
+      },
     });
     if (!response.ok) {
       throw new Error(
         `Failed to mark task activity read: ${response.statusText}`,
       );
     }
+    return (await response.json()) as TaskActivityMarkReadResult;
   }
 
   async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {

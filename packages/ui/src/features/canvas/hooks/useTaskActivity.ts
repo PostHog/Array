@@ -6,7 +6,7 @@ import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMemo } from "react";
 
 const ACTIVITY_POLL_INTERVAL_MS = 60_000;
-const TASK_ACTIVITY_QUERY_KEY = ["task-activity"] as const;
+export const TASK_ACTIVITY_QUERY_KEY = ["task-activity"] as const;
 
 /**
  * Tasks the current user is involved in — created, @-mentioned in, or messaged

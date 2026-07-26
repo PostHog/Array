@@ -28,7 +28,7 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 function ChannelSuffix({ channelName }: { channelName: string | null }) {
   if (!channelName) return null;
@@ -78,14 +78,13 @@ function activityHeadline(item: TaskActivityItem): ReactNode {
 function ActivityRow({
   item,
   folderChannelId,
-  isNew,
+  onOpen,
   currentUserEmail,
 }: {
   item: TaskActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
   folderChannelId: string | null;
-  /** Activity arrived since the viewer last opened this page. */
-  isNew: boolean;
+  onOpen: (taskId: string) => void;
   currentUserEmail?: string | null;
 }) {
   const openTask = () => {
@@ -95,6 +94,7 @@ function ActivityRow({
       channel_id: folderChannelId ?? undefined,
       task_id: item.taskId,
     });
+    onOpen(item.taskId);
     // The channel thread route is the deep-link target; tasks whose channel
     // folder is gone fall back to the plain task view.
     if (folderChannelId) {
@@ -113,7 +113,7 @@ function ActivityRow({
       >
         <span className="relative mt-0.5 shrink-0">
           <UserAvatar user={item.author} size="xs" />
-          {isNew && (
+          {item.isUnread && (
             <span
               className="-top-0.5 -right-0.5 absolute h-2 w-2 rounded-full bg-(--red-9)"
               title="New activity"
@@ -159,12 +159,19 @@ function ActivityRow({
 }
 
 // The Activity page: every task the viewer is involved in — created, mentioned
-// in, or messaged in — newest activity first. Opening it clears the sidebar badge.
+// in, or messaged in — newest activity first. Rows clear as they are opened, not
+// when the page is; merely landing here shouldn't dismiss what you haven't read.
 export function ActivityView() {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const { items, isLoading } = useTaskActivity();
-  const { mutate: markRead } = useMarkTaskActivityRead();
+  const { mutate: markTasksRead } = useMarkTaskActivityRead();
+  // Opening a row is what marks it read. The server does the same when the task is
+  // reached any other way, so the feed converges either way.
+  const markRead = useCallback(
+    (taskId: string) => markTasksRead([taskId]),
+    [markTasksRead],
+  );
   // Items carry backend channel names only; the desktop folder-channel id
   // (needed for /website navigation and copy-link) is resolved here, where
   // the single useChannels subscription lives.
@@ -189,10 +196,6 @@ export function ActivityView() {
       surface: "activity",
     });
   }, []);
-
-  useEffect(() => {
-    if (items.some((item) => item.isUnread)) markRead();
-  }, [items, markRead]);
 
   return (
     <div className="h-full overflow-y-auto bg-gray-1">
@@ -228,7 +231,7 @@ export function ActivityView() {
                   key={item.taskId}
                   item={item}
                   folderChannelId={folderChannelIdFor(item.channelName)}
-                  isNew={item.isUnread}
+                  onOpen={markRead}
                   currentUserEmail={currentUser?.email}
                 />
               ))}

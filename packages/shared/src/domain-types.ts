@@ -167,6 +167,12 @@ export interface TaskActivity {
 
 export interface TaskActivityPage {
   results: TaskActivity[];
+  /** Unread tasks across the whole feed, not just this page. Backs the sidebar badge. */
+  unread_count: number;
+}
+
+export interface TaskActivityMarkReadResult {
+  marked_read: number;
   unread_count: number;
 }
 
