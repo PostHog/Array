@@ -11,6 +11,7 @@ import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingSt
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
 import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
+import { TasksHeader } from "@posthog/ui/features/sidebar/components/TasksHeader";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import {
   beginSidebarPeek,
@@ -27,9 +28,8 @@ import { Box, Flex } from "@radix-ui/themes";
 import { useDeferredValue, useEffect } from "react";
 
 // The unified app sidebar (Code merged into the Bluebird chrome). Top to
-// bottom: workspace switcher, the merged global nav, the "Enable channels"
-// opt-in, then the body — the task list by default, swapped for the channel
-// tree once channels are enabled — and Settings pinned to the bottom.
+// bottom: the merged global nav, the Tasks/Channels body header, then the
+// selected list and the workspace switcher pinned to the bottom.
 export function ChannelsSidebar() {
   const width = useChannelsSidebarStore((state) => state.width);
   const setWidth = useChannelsSidebarStore((state) => state.setWidth);
@@ -69,7 +69,7 @@ export function ChannelsSidebar() {
   // while peeked (route without it), a stale peek would greet the remount.
   useEffect(() => () => cancelSidebarPeek(), []);
 
-  // Channels stay behind project-bluebird: the toggle only appears where the
+  // Channels stay behind project-bluebird: the switch only appears where the
   // canvas backend is wired, and a persisted "on" is ignored when the flag is
   // off so the sidebar can't strand a user on an unsupported feature.
   const bluebirdEnabled = useFeatureFlag(
@@ -78,7 +78,7 @@ export function ChannelsSidebar() {
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-  // The Switch (in SidebarNavSection) reads the live value and flips instantly.
+  // The Switch in TasksHeader reads the live value and flips instantly.
   // Swapping the sidebar body mounts a heavy tree (ChannelsList: the channels
   // query + a provider-laden row per channel), so defer that decision: the
   // urgent commit keeps the current body and paints the toggle, then the tree
@@ -102,9 +102,8 @@ export function ChannelsSidebar() {
       onPeekDismiss={cancelSidebarPeek}
     >
       <Flex direction="column" className="h-full bg-chrome">
-        {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by
-            the same flag), so this section carries the whole merged nav. */}
         <SidebarNavSection />
+        <TasksHeader />
 
         {/* Body: the channel tree when channels are on, otherwise the task
             list. Each owns its own scroll region. Gated on the deferred value so
