@@ -11,7 +11,6 @@ import type { RestoreOutcome } from "@posthog/core/archive/archivedTasksControll
 import {
   type ArchivedTaskWithDetails,
   deriveUniqueRepos,
-  filterAndSortArchivedTasks,
   formatRelativeDate,
   mergeArchivedWithTasks,
   type ArchiveSortColumn as SortColumn,
@@ -41,6 +40,7 @@ import { DotsCircleSpinner } from "../../primitives/DotsCircleSpinner";
 import { Tooltip } from "../../primitives/Tooltip";
 import { toast } from "../../primitives/toast";
 import { useTasks } from "../tasks/useTasks";
+import { getVisibleArchivedTasks } from "./archiveListPagination";
 import { useArchivedTaskSummaries } from "./useArchivedTaskSummaries";
 import { useUnarchiveTask } from "./useUnarchiveTask";
 
@@ -188,6 +188,7 @@ export type { ArchivedTaskWithDetails };
 export interface ArchivedTasksViewPresentationProps {
   items: ArchivedTaskWithDetails[];
   isLoading: boolean;
+  loadedCount?: number;
   branchNotFound: BranchNotFoundPrompt | null;
   onUnarchive: (taskId: string) => void;
   onDelete: (taskId: string) => void;
@@ -202,6 +203,7 @@ export interface ArchivedTasksViewPresentationProps {
 export function ArchivedTasksViewPresentation({
   items,
   isLoading,
+  loadedCount = items.length,
   branchNotFound,
   onUnarchive,
   onDelete,
@@ -239,17 +241,17 @@ export function ArchivedTasksViewPresentation({
     [itemsWithRepo],
   );
 
-  const filteredItems = useMemo(
+  const visibleItems = useMemo(
     () =>
-      filterAndSortArchivedTasks(itemsWithRepo, {
-        searchQuery,
-        repoFilter,
-        sort,
-      }),
-    [itemsWithRepo, searchQuery, repoFilter, sort],
+      getVisibleArchivedTasks(
+        itemsWithRepo,
+        { searchQuery, repoFilter, sort },
+        loadedCount,
+      ),
+    [itemsWithRepo, searchQuery, repoFilter, sort, loadedCount],
   );
   const rowVirtualizer = useVirtualizer({
-    count: filteredItems.length,
+    count: visibleItems.length,
     getScrollElement: () => tableViewportRef.current,
     estimateSize: () => 37,
     overscan: 12,
@@ -259,14 +261,14 @@ export function ArchivedTasksViewPresentation({
   useEffect(() => {
     if (
       lastVirtualRowIndex !== undefined &&
-      lastVirtualRowIndex >= filteredItems.length - 10 &&
+      lastVirtualRowIndex >= visibleItems.length - 10 &&
       hasNextPage &&
       !isFetchingNextPage
     ) {
       onLoadMore?.();
     }
   }, [
-    filteredItems.length,
+    visibleItems.length,
     hasNextPage,
     isFetchingNextPage,
     lastVirtualRowIndex,
@@ -318,7 +320,7 @@ export function ArchivedTasksViewPresentation({
               Loading archived tasks...
             </Text>
           </Flex>
-        ) : filteredItems.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <Flex align="center" justify="center" py="8">
             <Text className="text-[13px] text-gray-10">
               {items.length === 0 ? "No archived tasks" : "No matching tasks"}
@@ -361,7 +363,7 @@ export function ArchivedTasksViewPresentation({
                 </Table.Row>
               )}
               {virtualRows.map((virtualRow) => {
-                const item = filteredItems[virtualRow.index];
+                const item = visibleItems[virtualRow.index];
                 return (
                   <Table.Row
                     key={item.archived.taskId}
@@ -539,11 +541,11 @@ export function ArchivedTasksView() {
 
   const items = useMemo(
     () =>
-      mergeArchivedWithTasks(archivedTasks.slice(0, loadedCount), [
+      mergeArchivedWithTasks(archivedTasks, [
         ...listedTasks,
         ...archivedTaskDetails,
       ]),
-    [archivedTasks, listedTasks, archivedTaskDetails, loadedCount],
+    [archivedTasks, listedTasks, archivedTaskDetails],
   );
 
   const isLoading = isLoadingArchived || isLoadingTasks;
@@ -624,6 +626,7 @@ export function ArchivedTasksView() {
     <ArchivedTasksViewPresentation
       items={items}
       isLoading={isLoading}
+      loadedCount={loadedCount}
       branchNotFound={branchNotFound}
       onUnarchive={onUnarchive}
       onDelete={onDelete}
