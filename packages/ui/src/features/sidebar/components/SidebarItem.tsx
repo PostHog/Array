@@ -1,5 +1,6 @@
 import { Button, cn } from "@posthog/quill";
 import type { SidebarItemAction } from "@posthog/ui/features/sidebar/types";
+import { useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 
 export const INDENT_SIZE = 8;
@@ -63,7 +64,9 @@ function SidebarItemLabel({
     if (!revealOverflow) setReachedEnd(false);
   }, [revealOverflow]);
 
+  const prefersReducedMotion = useReducedMotion();
   const isTicking = revealOverflow && overflowPx > 0;
+  const showsEnd = reachedEnd || (isTicking && prefersReducedMotion);
 
   return (
     <span
@@ -77,7 +80,7 @@ function SidebarItemLabel({
           overflowPx === 0
             ? undefined
             : isTicking
-              ? reachedEnd
+              ? showsEnd
                 ? `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px)`
                 : `linear-gradient(to right, transparent, black ${TICKER_FADE_PX}px, black calc(100% - ${TICKER_FADE_PX}px), transparent)`
               : `linear-gradient(to right, black calc(100% - ${TICKER_FADE_PX}px), transparent)`,
@@ -93,7 +96,7 @@ function SidebarItemLabel({
           isTicking
             ? {
                 transform: `translateX(-${overflowPx}px)`,
-                transitionProperty: "transform",
+                transitionProperty: prefersReducedMotion ? "none" : "transform",
                 transitionTimingFunction: "linear",
                 transitionDuration: `${overflowPx / TICKER_SPEED_PX_PER_SECOND}s`,
               }
