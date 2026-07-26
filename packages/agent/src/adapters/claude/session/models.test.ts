@@ -2,6 +2,7 @@ import { isDefaultSelectOption, selectOptionDocsUrl } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EFFORT,
+  getContextWindowOptions,
   getEffortOptions,
   resolveEffortForModel,
   resolveModelPreference,
@@ -184,6 +185,20 @@ describe("getEffortOptions", () => {
       "model-config",
     );
     expect(selectOptionDocsUrl(byValue.get("low")?._meta)).toBeUndefined();
+  });
+});
+
+describe("getContextWindowOptions", () => {
+  it("returns null for models without 1M support", () => {
+    expect(getContextWindowOptions("claude-haiku-4-5")).toBeNull();
+    expect(getContextWindowOptions("@cf/zai-org/glm-5.2")).toBeNull();
+  });
+
+  it("offers 200k and 1M with 1M as the default", () => {
+    const options = getContextWindowOptions("claude-opus-5") ?? [];
+    expect(options.map((o) => o.value)).toEqual(["200k", "1m"]);
+    expect(isDefaultSelectOption(options[1]?._meta)).toBe(true);
+    expect(isDefaultSelectOption(options[0]?._meta)).toBe(false);
   });
 });
 

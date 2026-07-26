@@ -48,6 +48,7 @@ import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/
 import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
+  useConfigOptionForTask,
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
   useSessionSelector,
@@ -186,6 +187,8 @@ export function SessionView({
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
+  const contextWindowOption = useConfigOptionForTask(taskId, "_context_window");
+  const fastModeOption = useConfigOptionForTask(taskId, "_fast_mode");
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
@@ -230,6 +233,14 @@ export function SessionView({
       sessionService.setSessionConfigOption(taskId, thoughtOption.id, value);
     },
     [taskId, thoughtOption, sessionService],
+  );
+
+  const handleConfigOptionChange = useCallback(
+    (configId: string, value: string) => {
+      if (!taskId) return;
+      sessionService.setSessionConfigOption(taskId, configId, value);
+    },
+    [taskId, sessionService],
   );
 
   const sessionId = taskId ?? "default";
@@ -748,7 +759,10 @@ export function SessionView({
                             thoughtOption ? (
                               <ReasoningLevelSelector
                                 thoughtOption={thoughtOption}
+                                contextWindowOption={contextWindowOption}
+                                fastModeOption={fastModeOption}
                                 onChange={handleThoughtChange}
+                                onConfigOptionChange={handleConfigOptionChange}
                                 disabled={!isRunning}
                               />
                             ) : null

@@ -111,6 +111,63 @@ describe("ReasoningLevelSelector", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("renders context window and fast mode sections that emit config changes", async () => {
+    const onConfigOptionChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption()}
+          contextWindowOption={
+            {
+              type: "select",
+              id: "context_window",
+              name: "Context Window",
+              currentValue: "1m",
+              options: [
+                { name: "200k", value: "200k" },
+                {
+                  name: "1M",
+                  value: "1m",
+                  _meta: { [DEFAULT_OPTION_META_KEY]: true },
+                },
+              ],
+            } as unknown as SessionConfigOption
+          }
+          fastModeOption={
+            {
+              type: "select",
+              id: "fast",
+              name: "Fast Mode",
+              currentValue: "off",
+              options: [
+                { name: "On", value: "on" },
+                { name: "Off", value: "off" },
+              ],
+            } as unknown as SessionConfigOption
+          }
+          onConfigOptionChange={onConfigOptionChange}
+        />
+      </Theme>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    expect(
+      await screen.findByRole("menuitemradio", { name: "On" }),
+    ).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("menuitemradio", { name: "200k" }),
+    );
+
+    await waitFor(() =>
+      expect(onConfigOptionChange).toHaveBeenCalledWith(
+        "context_window",
+        "200k",
+      ),
+    );
+    expect(onConfigOptionChange).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["undefined option", undefined],
     ["non-select type", thoughtOption({ type: "boolean" })],

@@ -119,9 +119,12 @@ import {
   resolveInitialModelId,
 } from "./session/model-config";
 import {
+  CONTEXT_WINDOW_1M_BETA,
+  CONTEXT_WINDOW_200K_TOKENS,
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   fastModeStateEnabled,
+  getContextWindowOptions,
   getEffortOptions,
   resolveEffortForModel,
   resolveModelPreference,
@@ -1762,6 +1765,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.session.lastContextWindowSize =
         this.getContextWindowForModel(resolvedValue);
       this.rebuildEffortConfigOption(resolvedValue);
+      this.rebuildContextWindowConfigOption(resolvedValue);
       this.rebuildFastModeConfigOption(resolvedValue);
     } else if (params.configId === "effort") {
       const newEffort = resolvedValue as EffortLevel;
@@ -1772,6 +1776,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         // @ts-expect-error SDK Settings.effortLevel omits "max"/"ultracode" but runtime accepts them
         effortLevel: toSdkEffort(newEffort),
       });
+    } else if (params.configId === "context_window") {
+      const enable1M = resolvedValue === "1m";
+      // queryOptions is read per prompt, so this applies from the next turn.
+      this.session.queryOptions.betas = enable1M
+        ? [CONTEXT_WINDOW_1M_BETA]
+        : undefined;
+      this.session.lastContextWindowSize = enable1M
+        ? this.getContextWindowForModel(this.session.modelId ?? "")
+        : CONTEXT_WINDOW_200K_TOKENS;
     } else if (params.configId === "fast") {
       // SDK flag first: a rejected control request leaves state untouched.
       const enabled = resolvedValue === "on";
@@ -2292,7 +2305,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     if (supports1MContext(resolvedModelId)) {
-      options.betas = ["context-1m-2025-08-07"];
+      options.betas = [CONTEXT_WINDOW_1M_BETA];
     }
 
     const availableModes = getAvailableModes();
@@ -2472,6 +2485,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       });
     }
 
+    const contextOption = this.contextWindowConfigOption(
+      modelOptions.currentModelId,
+    );
+    if (contextOption) {
+      configOptions.push(contextOption);
+    }
+
     if (supportsFastMode(modelOptions.currentModelId)) {
       configOptions.push(this.fastModeConfigOption(fastModeEnabled ?? false));
     }
@@ -2479,16 +2499,53 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     return configOptions;
   }
 
+  private contextWindowConfigOption(
+    modelId: string,
+  ): SessionConfigOption | null {
+    const contextOptions = getContextWindowOptions(modelId);
+    if (!contextOptions) return null;
+    const is1M = this.session.queryOptions.betas?.includes(
+      CONTEXT_WINDOW_1M_BETA,
+    );
+    return {
+      id: "context_window",
+      name: "Context Window",
+      type: "select",
+      currentValue: is1M ? "1m" : "200k",
+      options: contextOptions,
+      category: "_context_window" as SessionConfigOptionCategory,
+      description: "Choose the context window size for this session",
+    };
+  }
+
+  private rebuildContextWindowConfigOption(modelId: string): void {
+    const withoutContext = this.session.configOptions.filter(
+      (o) => o.id !== "context_window",
+    );
+    if (!supports1MContext(modelId)) {
+      this.session.queryOptions.betas = undefined;
+      this.session.configOptions = withoutContext;
+      return;
+    }
+    // Switching onto a 1M-capable model restores the default 1M window.
+    this.session.queryOptions.betas = [CONTEXT_WINDOW_1M_BETA];
+    const contextOption = this.contextWindowConfigOption(modelId);
+    this.session.configOptions = contextOption
+      ? [...withoutContext, contextOption]
+      : withoutContext;
+  }
+
   private fastModeConfigOption(enabled: boolean): SessionConfigOption {
     return {
       id: "fast",
-      name: "Fast mode",
+      name: "Fast Mode",
       type: "select",
       currentValue: enabled ? "on" : "off",
       options: [
         { value: "on", name: "On" },
         { value: "off", name: "Off" },
       ],
+      category: "_fast_mode" as SessionConfigOptionCategory,
       description: "Faster responses on supported models",
     };
   }

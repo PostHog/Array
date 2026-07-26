@@ -38,6 +38,25 @@ export function supports1MContext(modelId: string): boolean {
   return MODELS_WITH_1M_CONTEXT.has(modelId);
 }
 
+export const CONTEXT_WINDOW_1M_BETA = "context-1m-2025-08-07";
+export const CONTEXT_WINDOW_200K_TOKENS = 200_000;
+
+interface ContextWindowOption {
+  value: string;
+  name: string;
+  _meta?: Record<string, unknown>;
+}
+
+export function getContextWindowOptions(
+  modelId: string,
+): ContextWindowOption[] | null {
+  if (!supports1MContext(modelId)) return null;
+  return [
+    { value: "200k", name: "200k" },
+    { value: "1m", name: "1M", _meta: { [DEFAULT_OPTION_META_KEY]: true } },
+  ];
+}
+
 const STANDARD_EFFORT_LEVELS: readonly EffortLevel[] = [
   "low",
   "medium",
