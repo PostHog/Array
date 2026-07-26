@@ -54,6 +54,8 @@ describe("TasksHeader", () => {
     expect(listOption).toHaveAttribute("data-active", "true");
     expect(listOption).toHaveClass("data-[active]:bg-accent-4");
     expect(listOption).toHaveClass("data-[active]:font-medium");
+    expect(listOption).toHaveClass("text-xs");
+    expect(channelsOption).toHaveClass("text-xs");
     expect(channelsOption).not.toHaveAttribute("data-active");
     expect(
       screen.getByRole("button", { name: "Filter tasks" }),
