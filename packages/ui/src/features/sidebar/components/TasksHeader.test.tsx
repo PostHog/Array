@@ -4,11 +4,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { track } = vi.hoisted(() => ({ track: vi.fn() }));
+const { featureFlagEnabled, track } = vi.hoisted(() => ({
+  featureFlagEnabled: { value: true },
+  track: vi.fn(),
+}));
 
 vi.mock("@posthog/ui/shell/analytics", () => ({ track }));
 vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
-  useFeatureFlag: () => true,
+  useFeatureFlag: () => featureFlagEnabled.value,
 }));
 vi.mock("@posthog/host-router/react", () => ({
   useHostTRPCClient: () => ({ os: { selectDirectory: { query: vi.fn() } } }),
@@ -33,6 +36,7 @@ import { TasksHeader } from "./TasksHeader";
 describe("TasksHeader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    featureFlagEnabled.value = true;
     useSidebarStore.setState({ channelsEnabled: false });
   });
 
@@ -44,14 +48,14 @@ describe("TasksHeader", () => {
       </Theme>,
     );
 
-    expect(screen.getByText("Tasks")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Tasks" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Filter tasks" }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("switch", { name: "Show channels" }));
+    await user.click(screen.getByRole("radio", { name: "Channels" }));
 
-    expect(screen.getByText("Channels")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Channels" })).toBeChecked();
     expect(
       screen.queryByRole("button", { name: "Filter tasks" }),
     ).not.toBeInTheDocument();
@@ -59,5 +63,18 @@ describe("TasksHeader", () => {
       action_type: "toggle_channels",
       surface: "nav",
     });
+  });
+
+  it("hides the mode selector when Channels is unavailable", () => {
+    featureFlagEnabled.value = false;
+
+    render(
+      <Theme>
+        <TasksHeader />
+      </Theme>,
+    );
+
+    expect(screen.getByText("Tasks")).toBeInTheDocument();
+    expect(screen.queryByText("Channels")).not.toBeInTheDocument();
   });
 });

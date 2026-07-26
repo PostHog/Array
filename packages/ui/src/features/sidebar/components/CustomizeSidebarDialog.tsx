@@ -48,7 +48,6 @@ export function CustomizeSidebarSettings() {
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const channelsEnabled = useSidebarStore((s) => s.channelsEnabled);
   const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
   const navItemOrder = useSidebarStore((s) => s.navItemOrder);
   const setNavItemVisible = useSidebarStore((s) => s.setNavItemVisible);
@@ -73,7 +72,7 @@ export function CustomizeSidebarSettings() {
   const items = orderedNavItems(previewOrder ?? navItemOrder).filter(
     ({ id }) => {
       if (id === "loops") return loopsEnabled;
-      if (id === "activity") return bluebirdEnabled && channelsEnabled;
+      if (id === "activity") return bluebirdEnabled;
       return true;
     },
   );

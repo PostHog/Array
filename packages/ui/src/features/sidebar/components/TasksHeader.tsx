@@ -22,7 +22,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   MenuLabel,
-  Switch,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG, type WorkspaceMode } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -36,6 +35,7 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
+import { SegmentedControl } from "@radix-ui/themes";
 import { useState } from "react";
 
 const log = logger.scope("tasks-header");
@@ -228,14 +228,15 @@ export function TasksHeader() {
     (state) => state.setChannelsEnabled,
   );
 
-  const handleModeChange = (checked: boolean) => {
-    setChannelsEnabled(checked);
+  const handleModeChange = (value: string) => {
+    const showChannels = value === "channels";
+    setChannelsEnabled(showChannels);
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "toggle_channels",
       surface: "nav",
     });
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-      action_type: checked ? "enter_space" : "leave_space",
+      action_type: showChannels ? "enter_space" : "leave_space",
       surface: "nav",
     });
   };
@@ -243,17 +244,21 @@ export function TasksHeader() {
   return (
     <div className="shrink-0 px-2">
       <MenuLabel className="flex items-center justify-between pt-0 pr-0 pb-0.5">
-        <span className="flex items-center gap-2">
-          {channelsEnabled ? "Channels" : "Tasks"}
-          {bluebirdEnabled && (
-            <Switch
-              size="sm"
-              checked={channelsEnabled}
-              aria-label={channelsEnabled ? "Show tasks" : "Show channels"}
-              onCheckedChange={handleModeChange}
-            />
-          )}
-        </span>
+        {bluebirdEnabled ? (
+          <SegmentedControl.Root
+            size="1"
+            value={channelsEnabled ? "channels" : "tasks"}
+            onValueChange={handleModeChange}
+            aria-label="Sidebar content"
+          >
+            <SegmentedControl.Item value="tasks">Tasks</SegmentedControl.Item>
+            <SegmentedControl.Item value="channels">
+              Channels
+            </SegmentedControl.Item>
+          </SegmentedControl.Root>
+        ) : (
+          <span>Tasks</span>
+        )}
         {!channelsEnabled && (
           <span className="flex items-center">
             <AddFolderButton />

@@ -1,4 +1,4 @@
-import { LOOPS_FLAG } from "@posthog/shared";
+import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { Theme } from "@radix-ui/themes";
 import { act, render, screen } from "@testing-library/react";
@@ -110,6 +110,17 @@ describe("CustomizeSidebarSettings", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps Activity customizable when Tasks mode is selected", () => {
+    featureFlags.set(PROJECT_BLUEBIRD_FLAG, true);
+    useSidebarStore.setState({ channelsEnabled: false });
+
+    renderSettings();
+
+    expect(
+      screen.getByRole("checkbox", { name: "Activity" }),
+    ).toBeInTheDocument();
+  });
+
   it("unchecking a visible item demotes it and tracks the change", async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -161,8 +172,8 @@ describe("CustomizeSidebarSettings", () => {
     expect(useSidebarStore.getState().navItemOrder).toEqual([
       "loops",
       "inbox",
-      "command-center",
       "activity",
+      "command-center",
       "configure",
     ]);
     expect(track).toHaveBeenCalledWith(ANALYTICS_EVENTS.SIDEBAR_REORDERED, {

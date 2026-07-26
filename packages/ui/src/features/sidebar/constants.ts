@@ -5,6 +5,12 @@ export const SIDEBAR_MIN_WIDTH = 240;
 export const CUSTOMIZABLE_NAV_ITEMS = [
   { id: "inbox", label: "Inbox", analyticsId: "inbox", defaultVisible: true },
   {
+    id: "activity",
+    label: "Activity",
+    analyticsId: "activity",
+    defaultVisible: true,
+  },
+  {
     id: "loops",
     label: "Loops",
     analyticsId: "loops",
@@ -14,12 +20,6 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
     id: "command-center",
     label: "Command Center",
     analyticsId: "command_center",
-    defaultVisible: true,
-  },
-  {
-    id: "activity",
-    label: "Activity",
-    analyticsId: "activity",
     defaultVisible: true,
   },
   {

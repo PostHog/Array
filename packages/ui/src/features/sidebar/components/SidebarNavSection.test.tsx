@@ -123,8 +123,7 @@ describe("SidebarNavSection", () => {
     expect(screen.queryByText(label)).not.toBeInTheDocument();
   });
 
-  it("renders top-level items in the stored order", () => {
-    useSidebarStore.setState({ navItemOrder: ["activity", "inbox"] });
+  it("renders Activity directly under Inbox by default", () => {
     renderNav();
 
     const labels = screen
@@ -133,7 +132,8 @@ describe("SidebarNavSection", () => {
     const position = (label: string) =>
       labels.findIndex((text) => text.includes(label));
 
-    expect(position("Activity")).toBeLessThan(position("Inbox"));
+    expect(position("Inbox")).toBeLessThan(position("Activity"));
+    expect(position("Activity")).toBeLessThan(position("Loops"));
     expect(position("Inbox")).toBeLessThan(position("Loops"));
   });
 
@@ -155,5 +155,13 @@ describe("SidebarNavSection", () => {
 
     expect(screen.queryByText("Channels")).not.toBeInTheDocument();
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("keeps Activity visible when Tasks mode is selected", () => {
+    useSidebarStore.setState({ channelsEnabled: false });
+
+    renderNav();
+
+    expect(screen.getByText("Activity")).toBeInTheDocument();
   });
 });

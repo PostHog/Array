@@ -69,9 +69,6 @@ export function SidebarNavSection({
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const channelsEnabled =
-    useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-
   // When this section renders inside the Channels space, the destinations that
   // have a /website mirror stay in that space; everything else (and the whole
   // section in the Code space) uses the canonical routes. Inbox and New task
@@ -149,9 +146,7 @@ export function SidebarNavSection({
   const navItemAvailable: Record<CustomizableNavItemId, boolean> = {
     inbox: true,
     "command-center": true,
-    // Activity (the mentions feed) is a channels surface, so it only appears
-    // once channels are enabled.
-    activity: channelsEnabled,
+    activity: bluebirdEnabled,
     configure: true,
     loops: loopsEnabled,
   };
