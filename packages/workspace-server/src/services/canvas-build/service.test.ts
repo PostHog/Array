@@ -105,6 +105,36 @@ describe("CanvasBuildService", () => {
     );
   });
 
+  it("rejects workspace dependencies outside the admitted canvas set", async () => {
+    const result = await service.build({
+      canvasId: "canvas-workspace-package",
+      sourceVersionId: null,
+      project: project('import "zod";', {
+        dependencies: { zod: "4.3.6" },
+      }),
+      mode: "validate",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "dependency_unavailable" }),
+    );
+  });
+
+  it("rejects undeclared packages in dynamic imports", async () => {
+    const result = await service.build({
+      canvasId: "canvas-dynamic",
+      sourceVersionId: null,
+      project: project('void import("react");'),
+      mode: "validate",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "compile_error" }),
+    );
+  });
+
   it.each(['import "node:fs";', 'import "fs";'])(
     "rejects Node built-ins: %s",
     async (source) => {
@@ -121,6 +151,22 @@ describe("CanvasBuildService", () => {
       );
     },
   );
+
+  it("rejects package subpath traversal", async () => {
+    const result = await service.build({
+      canvasId: "canvas-traversal",
+      sourceVersionId: null,
+      project: project('import "react/../../outside";', {
+        dependencies: { react: "19.2.6" },
+      }),
+      mode: "validate",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "forbidden_import" }),
+    );
+  });
 
   it.each([
     ["insight", 'ph.loadInsight("abc")', "undeclared_insight"],
@@ -145,7 +191,7 @@ describe("CanvasBuildService", () => {
     );
   });
 
-  it("accepts declared data and network capabilities", async () => {
+  it("accepts declared data capabilities but blocks external egress until approval exists", async () => {
     const result = await service.build({
       canvasId: "canvas-capabilities",
       sourceVersionId: null,
@@ -165,9 +211,9 @@ describe("CanvasBuildService", () => {
       mode: "validate",
     });
 
-    expect(result.ok).toBe(true);
-    expect(result.artifactFiles?.["index.html"]).toContain(
-      "connect-src https://example.com",
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "network_capability_unavailable" }),
     );
   });
 
@@ -187,6 +233,31 @@ describe("CanvasBuildService", () => {
     expect(result.ok).toBe(false);
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ code: "remote_script" }),
+    );
+  });
+
+  it.each([
+    [
+      "inline event handler",
+      '<button onclick="alert(1)">Go</button>',
+      "inline_event_handler",
+    ],
+    [
+      "JavaScript URL",
+      '<a href="javascript:alert(1)">Go</a>',
+      "javascript_url",
+    ],
+  ])("rejects an unsafe %s", async (_label, html, code) => {
+    const result = await service.build({
+      canvasId: "canvas-unsafe-html",
+      sourceVersionId: null,
+      project: project("", { files: { "index.html": html } }),
+      mode: "validate",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code }),
     );
   });
 });

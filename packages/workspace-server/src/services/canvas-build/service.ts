@@ -15,6 +15,12 @@ import { build, type Loader, type Plugin } from "esbuild";
 import { injectable } from "inversify";
 
 const require = createRequire(import.meta.url);
+const ADMITTED_DEPENDENCIES = new Map([
+  ["@posthog/quill", "0.3.0-beta.24"],
+  ["react", "19.2.6"],
+  ["react-dom", "19.2.6"],
+  ["three", "0.183.2"],
+]);
 const JS_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".css"];
 const NODE_BUILTINS = new Set([
   ...builtinModules,
@@ -25,8 +31,10 @@ const MODULE_SCRIPT =
 const ANY_REMOTE_SCRIPT =
   /<script\b[^>]*\bsrc=["'](?:https?:)?\/\/[^"']+["'][^>]*>/i;
 const INLINE_SCRIPT = /<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i;
+const INLINE_EVENT_HANDLER = /\son[a-z]+\s*=/i;
+const JAVASCRIPT_URL = /\b(?:href|src)\s*=\s*["']\s*javascript:/i;
 const CANVAS_RUNTIME_PATH = "assets/canvas-runtime.js";
-const CANVAS_RUNTIME = `(()=>{const channel="posthog-canvas",pending=new Map;let sequence=0;const post=(message)=>parent.postMessage({channel,...message},"*");const call=(method,payload)=>new Promise((resolve,reject)=>{const id=String(++sequence);pending.set(id,{resolve,reject});post({type:"data-request",id,method,payload});});window.ph={loadInsight:(shortId,options)=>call("loadInsight",{shortId,dateRange:options?.dateRange}),query:(query,params)=>call("query",typeof query==="string"?{hogql:query,params:params??{}}:{query,params:params??{}}),capture:(event,properties,distinctId)=>call("capture",{event,properties:properties??{},distinctId}),openExternal:(url)=>post({type:"open-external",url}),navigate:{toTask:(taskId)=>post({type:"navigate",nav:{target:"task",taskId}}),toNewTask:()=>post({type:"navigate",nav:{target:"new-task"}}),toCanvas:(dashboardId)=>post({type:"navigate",nav:{target:"canvas",dashboardId}}),toNewCanvas:()=>post({type:"navigate",nav:{target:"new-canvas"}})}};addEventListener("message",(event)=>{if(event.source!==parent||event.data?.channel!==channel||event.data?.type!=="data-response")return;const request=pending.get(event.data.id);if(!request)return;pending.delete(event.data.id);event.data.ok?request.resolve(event.data.result):request.reject(new Error(event.data.error??"Canvas request failed"));});addEventListener("error",(event)=>post({type:"error",message:event.message||"Canvas runtime error",stack:event.error?.stack}));addEventListener("unhandledrejection",(event)=>post({type:"error",message:event.reason instanceof Error?event.reason.message:String(event.reason),stack:event.reason instanceof Error?event.reason.stack:undefined}));addEventListener("DOMContentLoaded",()=>post({type:"ready"}));addEventListener("load",()=>post({type:"rendered"}));})();`;
+const CANVAS_RUNTIME = `(()=>{const channel="posthog-canvas",pending=new Map;let sequence=0;const post=(message)=>parent.postMessage({channel,...message},"*");const call=(method,payload)=>new Promise((resolve,reject)=>{const id=String(++sequence);pending.set(id,{resolve,reject});post({type:"data-request",id,method,payload});});window.ph={loadInsight:(shortId,options)=>call("loadInsight",{shortId,dateRange:options?.dateRange}),query:(query,params)=>call("query",typeof query==="string"?{hogql:query,params:params??{}}:{query,params:params??{}}),capture:(event,properties,distinctId)=>call("capture",{event,properties:properties??{},distinctId}),openExternal:(url)=>post({type:"open-external",url}),navigate:{toTask:(taskId)=>post({type:"navigate",nav:{target:"task",taskId}}),toNewTask:()=>post({type:"navigate",nav:{target:"new-task"}}),toCanvas:(dashboardId)=>post({type:"navigate",nav:{target:"canvas",dashboardId}}),toNewCanvas:()=>post({type:"navigate",nav:{target:"new-canvas"}})}};addEventListener("message",(event)=>{if(event.source!==parent||event.data?.channel!==channel||event.data?.type!=="data-response")return;const request=pending.get(event.data.id);if(!request)return;pending.delete(event.data.id);event.data.ok?request.resolve(event.data.result):request.reject(new Error(event.data.error??"Canvas request failed"));});addEventListener("click",(event)=>{const anchor=event.target instanceof Element?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();const url=anchor.href;if(url)post({type:"open-external",url});});addEventListener("error",(event)=>post({type:"error",message:event.message||"Canvas runtime error",stack:event.error?.stack}));addEventListener("unhandledrejection",(event)=>post({type:"error",message:event.reason instanceof Error?event.reason.message:String(event.reason),stack:event.reason instanceof Error?event.reason.stack:undefined}));addEventListener("DOMContentLoaded",()=>post({type:"ready"}));addEventListener("load",()=>post({type:"rendered"}));})();`;
 
 function sha256(content: string): string {
   return createHash("sha256").update(content).digest("hex");
@@ -79,7 +87,7 @@ function diagnostic(
   message: string,
   file?: string,
 ): CanvasDiagnostic {
-  return { severity: "error", code, message, file };
+  return { severity: "error", code, message: message.slice(0, 10_000), file };
 }
 
 function packageName(specifier: string): string {
@@ -160,7 +168,9 @@ function validateDependencies(
       if (specifier.startsWith(".") || specifier.startsWith("/")) continue;
       if (
         NODE_BUILTINS.has(specifier) ||
-        NODE_BUILTINS.has(packageName(specifier))
+        NODE_BUILTINS.has(packageName(specifier)) ||
+        specifier.includes("\\") ||
+        specifier.split("/").includes("..")
       ) {
         diagnostics.push(
           diagnostic(
@@ -189,6 +199,15 @@ function validateDependencies(
   }
 
   for (const [name, declaredVersion] of Object.entries(project.dependencies)) {
+    if (ADMITTED_DEPENDENCIES.get(name) !== declaredVersion) {
+      diagnostics.push(
+        diagnostic(
+          "dependency_unavailable",
+          `Package "${name}" at ${declaredVersion} is not admitted to the local canvas build cache`,
+        ),
+      );
+      continue;
+    }
     try {
       const installedVersion = installedPackageVersion(name);
       if (!installedVersion) throw new Error("Package manifest not found");
@@ -220,6 +239,15 @@ function validateCapabilities(
   const declaredInsights = new Set(project.capabilities.posthog.insights);
   const declaredEvents = new Set(project.capabilities.posthog.captureEvents);
   const declaredOrigins = new Set(project.capabilities.network.origins);
+
+  if (declaredOrigins.size > 0) {
+    diagnostics.push(
+      diagnostic(
+        "network_capability_unavailable",
+        "External network access is unavailable until canvas capability approval is implemented",
+      ),
+    );
+  }
 
   for (const [file, source] of Object.entries(project.files)) {
     for (const match of source.matchAll(
@@ -307,6 +335,20 @@ function virtualProjectPlugin(project: CanvasSourceProject): Plugin {
           return { path: resolved, namespace: "canvas" };
         }
         if (args.namespace === "canvas") {
+          const name = packageName(args.path);
+          if (
+            NODE_BUILTINS.has(args.path) ||
+            NODE_BUILTINS.has(name) ||
+            args.path.includes("\\") ||
+            args.path.split("/").includes("..") ||
+            !project.dependencies[name]
+          ) {
+            return {
+              errors: [
+                { text: `Canvas dependency is not declared: ${args.path}` },
+              ],
+            };
+          }
           try {
             return { path: require.resolve(args.path) };
           } catch {
@@ -348,7 +390,7 @@ function esbuildDiagnostics(error: unknown): CanvasDiagnostic[] {
   return errors.map((entry) => ({
     severity: "error" as const,
     code: "compile_error",
-    message: entry.text ?? "Canvas compilation failed",
+    message: (entry.text ?? "Canvas compilation failed").slice(0, 10_000),
     file: entry.location?.file
       ? normalizeProjectPath(entry.location.file)
       : undefined,
@@ -386,8 +428,29 @@ export class CanvasBuildService {
         ),
       );
     }
+    if (INLINE_EVENT_HANDLER.test(html)) {
+      diagnostics.push(
+        diagnostic(
+          "inline_event_handler",
+          "Inline HTML event handlers are blocked; register events from a local module",
+          project.entryHtml,
+        ),
+      );
+    }
+    if (JAVASCRIPT_URL.test(html)) {
+      diagnostics.push(
+        diagnostic(
+          "javascript_url",
+          "JavaScript URLs are not allowed in canvas HTML",
+          project.entryHtml,
+        ),
+      );
+    }
     if (diagnostics.length > 0) {
-      return canvasBuildResultSchema.parse({ ok: false, diagnostics });
+      return canvasBuildResultSchema.parse({
+        ok: false,
+        diagnostics: diagnostics.slice(0, 500),
+      });
     }
 
     const moduleMatches = [...html.matchAll(MODULE_SCRIPT)];
@@ -479,7 +542,10 @@ export class CanvasBuildService {
           );
         }
       } catch (error) {
-        return { ok: false, diagnostics: esbuildDiagnostics(error) };
+        return {
+          ok: false,
+          diagnostics: esbuildDiagnostics(error).slice(0, 500),
+        };
       }
     }
 

@@ -17,8 +17,9 @@ description: Author framework-light PostHog canvas applications with semantic HT
   resources.
 - Keep asset and bundle sizes bounded. Prefer generated geometry and optimized
   local assets over unbounded remote resources.
-- Declare saved insights, capture events, inline-query permission, and external
-  origins in the canvas capability manifest.
+- Declare saved insights, capture events, and inline-query permission. Route
+  host-mediated actions through the `ph` SDK. Direct external network origins
+  are unavailable until capability approval is implemented.
 - Treat React as an available library, not a prohibited one. A focused React
   island is valid when it simplifies one interactive region.
 

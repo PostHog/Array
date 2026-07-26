@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canvasCapabilitiesSchema,
+  canvasPersistedBuildSchema,
   canvasPublishRequestSchema,
   canvasSourceProjectSchema,
   canvasSourceVersionSchema,
@@ -60,6 +61,15 @@ describe("canvasSourceProjectSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects unsupported canvas SDK versions", () => {
+    expect(() =>
+      canvasSourceProjectSchema.parse({
+        ...validProject,
+        canvasSdkVersion: "2.0.0",
+      }),
+    ).toThrow();
+  });
 });
 
 describe("canvasCapabilitiesSchema", () => {
@@ -111,6 +121,34 @@ describe("createLegacyReactCanvasProject", () => {
 });
 
 describe("canvas cloud persistence contracts", () => {
+  it("parses nullable fields emitted for queued builds and source metadata", () => {
+    expect(
+      canvasPersistedBuildSchema.parse({
+        id: "build-1",
+        sourceVersionId: "version-1",
+        status: "queued",
+        artifactUrl: null,
+        integrity: null,
+        diagnostics: [],
+        manifest: null,
+        createdAt: 1,
+        completedAt: null,
+      }),
+    ).toMatchObject({ status: "queued", artifactUrl: null });
+    expect(
+      canvasSourceVersionSchema.parse({
+        id: "version-1",
+        parentVersionId: null,
+        taskId: "task-1",
+        taskRunId: "run-1",
+        sourceHash: "a".repeat(64),
+        sourceSize: 100,
+        prompt: null,
+        createdAt: 1,
+      }).prompt,
+    ).toBeNull();
+  });
+
   it("parses attributed source versions and guarded publish requests", () => {
     const project = createLegacyReactCanvasProject(
       "export default function App() { return null; }",

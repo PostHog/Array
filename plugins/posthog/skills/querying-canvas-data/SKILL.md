@@ -1,6 +1,6 @@
 ---
 name: querying-canvas-data
-description: Connect canvas applications to real PostHog data through the injected ph SDK and a declared capability manifest. Use when a canvas displays insights, trends, funnels, retention, web analytics, HogQL, captures interaction events, or needs approved network access.
+description: Connect canvas applications to real PostHog data through the injected ph SDK and a declared capability manifest. Use when a canvas displays insights, trends, funnels, retention, web analytics, HogQL, or captures interaction events.
 ---
 
 # Querying canvas data
@@ -14,8 +14,9 @@ description: Connect canvas applications to real PostHog data through the inject
    `capabilities.posthog.inlineQueries` to `true` and keep results bounded.
 5. Declare every `ph.capture` event in
    `capabilities.posthog.captureEvents`.
-6. Declare each HTTPS origin used by browser networking in
-   `capabilities.network.origins`. Do not load executable remote scripts.
+6. Keep `capabilities.network.origins` empty. Direct external egress is disabled
+   until a user-facing capability approval flow exists. Never load remote
+   executable scripts.
 
 Typed insight results are series objects; SQL results are row arrays. Inspect
 the actual result instead of assuming their shapes. Own date controls in the

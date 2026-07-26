@@ -1,6 +1,6 @@
 # Canvas Application Build Pipeline — Implementation Plan
 
-> Status: proposed
+> Status: initial implementation
 > Scope: evolve single-file, runtime-compiled React canvases into built browser
 > applications. Support React, Quill, and generic HTML in one application model;
 > hosted backends and full micro-apps are outside the initial scope.
@@ -104,6 +104,7 @@ interface CanvasSourceProject {
   entryHtml: "index.html";
   dependencies: Record<string, string>;
   canvasSdkVersion: string;
+  capabilities: CanvasCapabilities;
 }
 ```
 
@@ -154,8 +155,8 @@ interface CanvasBuild {
 }
 ```
 
-The canvas points separately to `currentSourceVersionId` and
-`publishedBuildId`. A failed build records diagnostics but never replaces the
+The canvas points separately to `currentSourceVersionId` and `activeBuildId`. A
+failed build records diagnostics but never replaces the
 last-known-good artifact.
 
 The artifact manifest records entry HTML, emitted assets, content hashes,
@@ -229,7 +230,7 @@ the same source.
 
 ### Built artifact objects
 
-Build output is uploaded as immutable content-addressed files under a build
+Build output is uploaded as immutable files under a build
 prefix: entry HTML, JavaScript and CSS chunks, images, fonts, source-map policy
 metadata, and the artifact manifest. These objects are served from the dedicated
 user-content origin with immutable cache headers and integrity metadata.
@@ -297,14 +298,15 @@ deletion after the recovery grace period.
 3. The agent reads the source project and its current source-version ID.
 4. It edits the source files in its task workspace and runs the canvas build
    validation tool as often as needed.
-5. The build service installs only allowed, pinned browser dependencies in an
-   isolated environment, bundles the project, and returns structured diagnostics.
+5. The build service resolves only pre-admitted, pinned browser dependencies,
+   bundles the project in a bounded subprocess without executing canvas source,
+   and returns structured diagnostics.
 6. The agent previews or smoke-tests the candidate artifact and repairs errors.
 7. The agent publishes the complete source project with
    `expected_current_version_id`.
 8. PostHog atomically appends the source version and creates a build. A stale
    base returns `409 version_conflict`; it never silently overwrites newer work.
-9. When the build becomes ready, PostHog advances `publishedBuildId` and emits a
+9. When the build becomes ready, PostHog advances `activeBuildId` and emits a
    canvas/task update. On failure, the previous build remains live.
 10. The app loads the immutable artifact in the existing null-origin sandbox and
     brokers PostHog data, capture, navigation, and safe external-open requests.
@@ -331,17 +333,19 @@ arbitrary browser output.
 
 ### Build stages
 
-1. Validate the source-project schema, paths, file count, and total size.
-2. Resolve exact dependency versions against an allow/policy layer.
-3. Bundle with esbuild or Vite in an isolated worker with no project credentials.
-4. Generate a strict CSP and reject unsupported dynamic egress patterns.
-5. Scan emitted assets for size, source maps, and forbidden URL schemes.
-6. Load the artifact in a headless version of the canvas sandbox.
-7. Require a successful first render and collect console/runtime diagnostics.
-8. Validate the declared capabilities against static extraction and observed
-   smoke-test behavior, then freeze them into the artifact manifest.
-9. In publish mode, upload content-addressed assets and return their integrity
-   hashes. In validate mode, retain artifacts only for a short-lived preview.
+1. Validate the source-project schema, paths, file count, dependency count, and
+   total size.
+2. Resolve exact versions from the pre-admitted dependency set.
+3. Bundle with esbuild in a bounded subprocess with no project credentials and
+   without executing canvas source.
+4. Generate a strict CSP, reject inline and remote executable scripts, and keep
+   direct external egress disabled until capability approval exists.
+5. Independently verify emitted paths, sizes, hashes, content types, source-map
+   policy, and manifest completeness in the cloud worker.
+6. Freeze the statically validated capabilities into the artifact manifest.
+7. In publish mode, upload immutable assets and return their integrity hashes.
+   Validation mode returns diagnostics and the manifest without retaining or
+   returning executable artifacts.
 
 Build workers have bounded CPU, memory, time, output size, and dependency count.
 Package installation has network access only to the configured registry/cache;
@@ -350,9 +354,9 @@ disabled.
 
 ### Capability manifest and data validation
 
-Each source project declares the PostHog and network capabilities its artifact
-requires. The initial manifest includes saved insight IDs, permission to execute
-inline queries, captured event names, and external network origins:
+Each source project declares the PostHog capabilities its artifact requires. The
+manifest shape reserves network origins for a later approval flow; the initial
+implementation requires that list to remain empty:
 
 ```ts
 interface CanvasCapabilities {
@@ -367,19 +371,16 @@ interface CanvasCapabilities {
 }
 ```
 
-Validation combines three sources of evidence:
+Validation combines two sources of evidence:
 
 1. The explicit declaration produced with the source project.
 2. Static extraction of recognizable `ph.loadInsight`, `ph.query`,
    `ph.capture`, and network references from source and emitted code.
-3. Calls observed while smoke tests exercise the candidate artifact.
-
-Extracted or observed behavior that is not declared fails the build. Declared
-capabilities that are not observed remain valid because smoke tests cannot cover
-every interaction branch. Dynamic behavior is supported through an explicit
-broader capability, such as inline-query access or an additional network origin,
-rather than by silently learning permissions from one test run. Capability
-expansion is surfaced for approval when policy requires it.
+Extracted behavior that is not declared fails the build. Declared capabilities
+that static analysis cannot observe remain valid because not every interaction
+branch is statically recognizable. Dynamic PostHog queries use the explicit
+inline-query capability. Direct network access fails closed until capability
+expansion can be surfaced for user approval.
 
 The host data bridge and artifact CSP enforce the validated manifest at runtime.
 A canvas cannot call an undeclared insight, execute an inline query without that
@@ -390,9 +391,12 @@ expand the artifact's declaration.
 
 ### Dependency policy
 
-Canvas projects may request packages from npm rather than being restricted to a
-permanent allowlist. Each exact package version passes a guarded admission
-process before it enters the build cache:
+The initial build image contains a deliberately small pre-admitted set of exact
+package versions: React, React DOM, Quill, and Three.js. Undeclared packages and
+other versions fail validation, and package lifecycle scripts are disabled.
+
+A later package-expansion phase can admit more exact npm versions through a
+guarded process before they enter the build cache:
 
 - vulnerability, provenance, package-age, license, and suspicious-file checks;
 - compressed, installed, and browser-bundle size limits;
@@ -404,8 +408,7 @@ process before it enters the build cache:
 
 Admission decisions are cached by exact package version and policy version.
 Previously admitted versions do not bypass a newer policy or security block.
-Platform-supported dependencies such as React, Quill, Three.js, and the canvas
-SDK use the same pinned resolver but may be pre-admitted.
+Platform-supported dependencies and the canvas SDK use the same pinned resolver.
 
 ### Build authority
 
@@ -457,7 +460,7 @@ tool sequence. Add concise canvas tools that any task can call:
 
 - list/get/create canvas
 - get source project and current version
-- validate candidate source project
+- validate candidate source project with the authoritative cloud recipe
 - publish candidate source project with an expected version
 - read build status and diagnostics
 
@@ -511,7 +514,7 @@ The existing `useGenerateFreeformCanvas` orchestration moves into
   successful build.
 - The first edit/build creates a source version and built artifact; retain legacy
   code and history during the rollout for rollback.
-- New clients prefer `publishedBuildId` but fall back to legacy `meta.code`.
+- New clients prefer `activeBuildId` but fall back to legacy `meta.code`.
 - Roll out reads before writes, then make built artifacts the default for new
   canvases, and remove runtime compilation only after old supported clients age
   out.
@@ -539,7 +542,7 @@ single-file React canvas using bundled skills and guarded publishing.
 - Implement guarded npm admission and the pinned dependency resolver used by
   both local previews and cloud builds.
 - Bundle dependencies, remove browser Babel/Tailwind from candidate previews,
-  run a headless smoke test, and return structured diagnostics.
+  and return structured compile and policy diagnostics.
 - Render preview artifacts through the existing iframe host.
 
 Exit criterion: the same starter contract produces a React + Quill data canvas,
@@ -548,7 +551,8 @@ or CDN imports.
 
 ### Phase 3 — Cloud builds and immutable artifacts
 
-- Add source/build persistence and guarded publish APIs in `posthog/posthog`.
+- Add source/build persistence, validation, and guarded publish APIs in
+  `posthog/posthog`.
 - Run isolated cloud builds and upload content-addressed artifacts.
 - Advance the live build only after validation succeeds; preserve the last-good
   build on failure.

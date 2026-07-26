@@ -7,10 +7,12 @@ import {
   canvasApplicationBuildInputSchema,
   canvasApplicationIdInputSchema,
   canvasApplicationPublishInputSchema,
+  canvasApplicationValidateInputSchema,
   canvasHistorySchema,
   canvasPersistedBuildSchema,
   canvasPublishResultSchema,
   canvasSourceSnapshotSchema,
+  canvasValidationResultSchema,
 } from "@posthog/shared/canvas-application";
 
 export const canvasApplicationRouter = router({
@@ -31,6 +33,14 @@ export const canvasApplicationRouter = router({
         .get<CanvasApplicationApi>(CANVAS_APPLICATION_API)
         .publish(canvasId, request);
     }),
+  validate: publicProcedure
+    .input(canvasApplicationValidateInputSchema)
+    .output(canvasValidationResultSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.container
+        .get<CanvasApplicationApi>(CANVAS_APPLICATION_API)
+        .validate(input.canvasId, input.project),
+    ),
   history: publicProcedure
     .input(canvasApplicationIdInputSchema)
     .output(canvasHistorySchema)

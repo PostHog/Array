@@ -19,11 +19,9 @@ describe("buildFreeformGenerationPrompt", () => {
 
     const extracted = extractCanvasInstructions(prompt);
     expect(extracted?.stripped).toBe("add a retention chart");
-    // The authoring contract + publishing rules are collapsed into the tag body.
-    expect(extracted?.body).toContain("PUBLISHING");
-    expect(extracted?.body).toContain(
-      "desktop-file-system-canvas-partial-update",
-    );
+    expect(extracted?.body).toContain("$building-canvases");
+    expect(extracted?.body).toContain("canvas-source-validate");
+    expect(extracted?.body).toContain("canvas-source-publish");
   });
 
   it("folds the current code into the tag when editing", () => {
@@ -34,6 +32,6 @@ describe("buildFreeformGenerationPrompt", () => {
     const extracted = extractCanvasInstructions(prompt);
     expect(extracted?.stripped).toBe("add a retention chart");
     expect(extracted?.body).toContain("export const App = () => null;");
-    expect(extracted?.body).toContain("Edit the freeform React canvas");
+    expect(extracted?.body).toContain("legacy React");
   });
 });

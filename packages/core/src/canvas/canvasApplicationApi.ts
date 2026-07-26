@@ -3,12 +3,16 @@ import {
   type CanvasPersistedBuild,
   type CanvasPublishRequest,
   type CanvasPublishResult,
+  type CanvasSourceProject,
   type CanvasSourceSnapshot,
+  type CanvasValidationResult,
   canvasHistorySchema,
   canvasPersistedBuildSchema,
   canvasPublishRequestSchema,
   canvasPublishResultSchema,
+  canvasSourceProjectSchema,
   canvasSourceSnapshotSchema,
+  canvasValidationResultSchema,
   canvasVersionConflictSchema,
 } from "@posthog/shared/canvas-application";
 import { inject, injectable } from "inversify";
@@ -72,6 +76,25 @@ export class CanvasApplicationApi {
       throw new Error(`Failed to publish canvas source (${response.status})`);
     }
     return canvasPublishResultSchema.parse(await response.json());
+  }
+
+  async validate(
+    canvasId: string,
+    project: CanvasSourceProject,
+  ): Promise<CanvasValidationResult> {
+    const payload = canvasSourceProjectSchema.parse(project);
+    const response = await this.fs.fetch(
+      `${encodeURIComponent(canvasId)}/canvas/validate/`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to validate canvas source (${response.status})`);
+    }
+    return canvasValidationResultSchema.parse(await response.json());
   }
 
   async history(canvasId: string): Promise<CanvasHistory> {

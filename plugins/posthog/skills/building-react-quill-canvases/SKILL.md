@@ -17,7 +17,8 @@ description: Author React and PostHog Quill canvas applications. Use when a canv
 - Use exact dependency versions in the source project. Do not import Node APIs,
   initialize a PostHog client, fetch credentials, or load remote scripts.
 - Use the injected `ph` global for PostHog operations. Declare every insight,
-  capture event, inline-query permission, and external origin in capabilities.
+  capture event and inline-query permission in capabilities. Keep network
+  origins empty until capability approval is available.
 - Keep data results bounded and aggregate before rendering.
 - Let Three.js or other browser libraries own their DOM/canvas element when
   mixing them with React; dispose renderers, animation frames, and listeners.

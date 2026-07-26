@@ -65,6 +65,26 @@ describe("CanvasApplicationApi", () => {
     await expect(api.getCurrentSource("canvas-1")).resolves.toBeNull();
   });
 
+  it("validates source without publishing it", async () => {
+    const { api, fetch } = service(
+      Response.json({ ok: true, diagnostics: [], manifest: null }),
+    );
+    const project = createLegacyReactCanvasProject(
+      "export default function App() { return null; }",
+    );
+
+    await expect(api.validate("canvas-1", project)).resolves.toEqual({
+      ok: true,
+      diagnostics: [],
+      manifest: null,
+    });
+    expect(fetch).toHaveBeenCalledWith("canvas-1/canvas/validate/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(project),
+    });
+  });
+
   it("raises a typed conflict without losing the current head", async () => {
     const { api } = service(
       Response.json(

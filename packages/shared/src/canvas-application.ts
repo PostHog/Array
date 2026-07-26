@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 export const CANVAS_SOURCE_SCHEMA_VERSION = 1 as const;
+export const CANVAS_SDK_VERSION = "1.0.0" as const;
 export const CANVAS_MAX_FILES = 128;
 export const CANVAS_MAX_FILE_BYTES = 1_000_000;
 export const CANVAS_MAX_SOURCE_BYTES = 5_000_000;
+export const CANVAS_MAX_DEPENDENCIES = 64;
 
 const exactPackageVersion =
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -18,7 +20,16 @@ function unique(values: string[]): string[] {
 }
 
 function isSafeProjectPath(value: string): boolean {
-  if (!value || value.startsWith("/") || value.includes("\\")) return false;
+  if (
+    !value ||
+    value.startsWith("/") ||
+    value.includes("\\") ||
+    [...value].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    })
+  )
+    return false;
   const segments = value.split("/");
   return segments.every(
     (segment) => segment.length > 0 && segment !== "." && segment !== "..",
@@ -90,10 +101,19 @@ const sourceFilesSchema = z
     `Canvas projects may contain at most ${CANVAS_MAX_SOURCE_BYTES} bytes`,
   );
 
-const dependenciesSchema = z.record(
-  z.string().regex(packageName, "Invalid package name"),
-  z.string().regex(exactPackageVersion, "Dependency version must be exact"),
-);
+const dependenciesSchema = z
+  .record(
+    z.string().max(214).regex(packageName, "Invalid package name"),
+    z
+      .string()
+      .max(100)
+      .regex(exactPackageVersion, "Dependency version must be exact"),
+  )
+  .refine(
+    (dependencies) =>
+      Object.keys(dependencies).length <= CANVAS_MAX_DEPENDENCIES,
+    `Canvas projects may declare at most ${CANVAS_MAX_DEPENDENCIES} dependencies`,
+  );
 
 export const canvasSourceProjectSchema = z
   .object({
@@ -101,9 +121,7 @@ export const canvasSourceProjectSchema = z
     files: sourceFilesSchema,
     entryHtml: z.literal("index.html"),
     dependencies: dependenciesSchema,
-    canvasSdkVersion: z
-      .string()
-      .regex(exactPackageVersion, "Canvas SDK version must be exact"),
+    canvasSdkVersion: z.literal(CANVAS_SDK_VERSION),
     capabilities: canvasCapabilitiesSchema,
   })
   .strict()
@@ -113,6 +131,12 @@ export const canvasSourceProjectSchema = z
         code: "custom",
         path: ["entryHtml"],
         message: "Canvas HTML entry is missing from source files",
+      });
+    }
+    if (utf8Bytes(JSON.stringify(project)) > CANVAS_MAX_SOURCE_BYTES) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Canvas projects may contain at most ${CANVAS_MAX_SOURCE_BYTES} bytes`,
       });
     }
   });
@@ -176,7 +200,7 @@ export const canvasSourceVersionSchema = z
     taskRunId: z.string().min(1),
     sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
     sourceSize: z.number().int().nonnegative(),
-    prompt: z.string().max(10_000).optional(),
+    prompt: z.string().max(10_000).nullable().optional(),
     createdAt: z.number().int().nonnegative(),
   })
   .strict();
@@ -186,15 +210,16 @@ export const canvasPersistedBuildSchema = z
     id: z.string().min(1),
     sourceVersionId: z.string().min(1),
     status: z.enum(["queued", "building", "ready", "failed"]),
-    artifactUrl: z.url().optional(),
+    artifactUrl: z.url().nullable().optional(),
     integrity: z
       .string()
       .regex(/^sha256-[A-Za-z0-9+/=]+$/)
+      .nullable()
       .optional(),
     diagnostics: z.array(canvasDiagnosticSchema).max(500),
-    manifest: canvasArtifactManifestSchema.optional(),
+    manifest: canvasArtifactManifestSchema.nullable().optional(),
     createdAt: z.number().int().nonnegative(),
-    completedAt: z.number().int().nonnegative().optional(),
+    completedAt: z.number().int().nonnegative().nullable().optional(),
   })
   .strict();
 
@@ -219,6 +244,14 @@ export const canvasPublishResultSchema = z
   .object({
     version: canvasSourceVersionSchema,
     build: canvasPersistedBuildSchema,
+  })
+  .strict();
+
+export const canvasValidationResultSchema = z
+  .object({
+    ok: z.boolean(),
+    diagnostics: z.array(canvasDiagnosticSchema).max(500),
+    manifest: canvasArtifactManifestSchema.nullable(),
   })
   .strict();
 
@@ -251,6 +284,13 @@ export const canvasApplicationPublishInputSchema = canvasPublishRequestSchema
   .extend({ canvasId: z.string().min(1) })
   .strict();
 
+export const canvasApplicationValidateInputSchema = z
+  .object({
+    canvasId: z.string().min(1),
+    project: canvasSourceProjectSchema,
+  })
+  .strict();
+
 export type CanvasCapabilities = z.infer<typeof canvasCapabilitiesSchema>;
 export type CanvasSourceProject = z.infer<typeof canvasSourceProjectSchema>;
 export type CanvasDiagnostic = z.infer<typeof canvasDiagnosticSchema>;
@@ -266,6 +306,9 @@ export type CanvasPersistedBuild = z.infer<typeof canvasPersistedBuildSchema>;
 export type CanvasSourceSnapshot = z.infer<typeof canvasSourceSnapshotSchema>;
 export type CanvasPublishRequest = z.infer<typeof canvasPublishRequestSchema>;
 export type CanvasPublishResult = z.infer<typeof canvasPublishResultSchema>;
+export type CanvasValidationResult = z.infer<
+  typeof canvasValidationResultSchema
+>;
 export type CanvasHistory = z.infer<typeof canvasHistorySchema>;
 export type CanvasVersionConflict = z.infer<typeof canvasVersionConflictSchema>;
 
@@ -291,7 +334,7 @@ export function createLegacyReactCanvasProject(
       react: LEGACY_REACT_VERSION,
       "react-dom": LEGACY_REACT_VERSION,
     },
-    canvasSdkVersion: "1.0.0",
+    canvasSdkVersion: CANVAS_SDK_VERSION,
     capabilities: {
       posthog: { insights: [], inlineQueries: true, captureEvents: [] },
       network: { origins: [] },
