@@ -79,6 +79,12 @@ export function orderedNavItems(
     }
     result.splice(insertAt, 0, item.id);
   }
+  const activityIndex = result.indexOf("activity");
+  const inboxIndex = result.indexOf("inbox");
+  if (activityIndex !== inboxIndex + 1) {
+    result.splice(activityIndex, 1);
+    result.splice(result.indexOf("inbox") + 1, 0, "activity");
+  }
   return result.flatMap((id) => {
     const item = byId.get(id);
     return item ? [item] : [];
