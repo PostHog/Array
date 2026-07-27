@@ -190,6 +190,7 @@ import {
   BROWSER_TABS_CLIENT,
   type BrowserTabsClient,
 } from "@posthog/ui/features/browser-tabs/browserTabsClient";
+import { taskActivityUiModule } from "@posthog/ui/features/canvas/task-activity/taskActivity.module";
 import {
   REVIEW_HOST,
   type ReviewHost,
@@ -779,6 +780,7 @@ container.bind(REVIEW_HOST).toConstantValue(webReviewHost);
 // (notificationsUiModule) is resolved by SessionService on task events and by
 // the settings test harness; it needs these three providers.
 container.load(notificationsUiModule);
+container.load(taskActivityUiModule);
 container.bind(NOTIFICATIONS_SERVICE).toConstantValue(webNotifications);
 container
   .bind(NOTIFICATION_SETTINGS_PROVIDER)

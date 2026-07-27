@@ -1,4 +1,5 @@
 import { isValidConfigValue } from "@posthog/core/task-detail/configOptions";
+import { useService } from "@posthog/di/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -45,7 +46,7 @@ import {
   normalizeChannelName,
   PERSONAL_CHANNEL_NAME,
 } from "../hooks/useTaskChannels";
-import { useTaskCompletionTrackerStore } from "../stores/taskCompletionTrackerStore";
+import { TaskActivityContribution } from "../task-activity/taskActivity.contribution";
 import type { PendingKickoff } from "./ChannelFeedView";
 
 export interface ChannelHomeComposerHandle {
@@ -93,6 +94,7 @@ export const ChannelHomeComposer = forwardRef<
   const [editorIsEmpty, setEditorIsEmpty] = useState(true);
   const { isOnline } = useConnectivity();
   const navigate = useNavigate();
+  const taskActivity = useService(TaskActivityContribution);
 
   // Canvas mode, armed from the mode selector (like Autoresearch on the
   // new-task composer): the next submit generates a canvas from the prompt —
@@ -265,16 +267,14 @@ export const ChannelHomeComposer = forwardRef<
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
-      useTaskCompletionTrackerStore
-        .getState()
-        .track({ taskId: task.id, title: task.title });
+      taskActivity.track(task);
       // onTaskCreated swaps the real card in; drop the matching "Starting…"
       // row in the same tick so the two never show at once.
       onTaskCreated(task);
       const id = pendingIdsRef.current.shift();
       if (id) onPendingEnd(id);
     },
-    [onTaskCreated, onPendingEnd],
+    [onTaskCreated, onPendingEnd, taskActivity],
   );
 
   const { isCreatingTask, canSubmit, handleSubmit } = useTaskCreation({

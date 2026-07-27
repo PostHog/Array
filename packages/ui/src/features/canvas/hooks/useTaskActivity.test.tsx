@@ -3,7 +3,7 @@ import type {
   TaskActivityPage,
 } from "@posthog/shared/domain-types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,23 +11,13 @@ const mockClient = vi.hoisted(() => ({
   getTaskActivity: vi.fn(),
   markTaskActivityRead: vi.fn(),
 }));
-const subscribeToTaskCompletion = vi.hoisted(() => vi.fn());
-const notify = vi.hoisted(() => vi.fn());
 
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
   useOptionalAuthenticatedClient: () => mockClient,
 }));
-vi.mock("@posthog/di/react", () => ({
-  useServiceOptional: () => ({ notify, subscribeToTaskCompletion }),
-}));
 
-import { useTaskCompletionTrackerStore } from "../stores/taskCompletionTrackerStore";
 import { useMarkTaskActivityRead } from "./useMarkTaskActivityRead";
-import {
-  TASK_ACTIVITY_QUERY_KEY,
-  TaskActivityNotificationSync,
-  useTaskActivity,
-} from "./useTaskActivity";
+import { TASK_ACTIVITY_QUERY_KEY, useTaskActivity } from "./useTaskActivity";
 
 function activity(overrides: Partial<TaskActivity>): TaskActivity {
   return {
@@ -58,46 +48,6 @@ describe("task activity hooks", () => {
         mutations: { retry: false },
       },
     });
-    subscribeToTaskCompletion.mockReturnValue(vi.fn());
-    useTaskCompletionTrackerStore.setState({ tracked: {} });
-  });
-
-  it("invalidates activity when a task completion notification fires", () => {
-    vi.useFakeTimers();
-    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
-    render(<TaskActivityNotificationSync />, { wrapper });
-    const listener = subscribeToTaskCompletion.mock.calls[0]?.[0];
-
-    listener();
-
-    expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: TASK_ACTIVITY_QUERY_KEY,
-    });
-    act(() => vi.advanceTimersByTime(2_000));
-    expect(invalidateQueries).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
-  });
-
-  it("notifies when a channel task reaches completed activity", async () => {
-    useTaskCompletionTrackerStore.getState().track({
-      taskId: "task-1",
-      title: "Channel task",
-    });
-    mockClient.getTaskActivity.mockResolvedValue({
-      results: [activity({ activity_kind: "completed" })],
-      unread_count: 1,
-    });
-
-    render(<TaskActivityNotificationSync />, { wrapper });
-
-    await waitFor(() =>
-      expect(notify).toHaveBeenCalledWith({
-        body: '"Channel task" finished',
-        target: { kind: "task", taskId: "task-1" },
-        toast: { level: "success" },
-      }),
-    );
-    expect(useTaskCompletionTrackerStore.getState().tracked).toEqual({});
   });
 
   it("loads every activity page", async () => {
