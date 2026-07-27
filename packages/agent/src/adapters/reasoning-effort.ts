@@ -1,5 +1,9 @@
 import type { Adapter } from "@posthog/shared";
-import { getEffortOptions as getClaudeEffortOptions } from "./claude/session/models";
+import {
+  getContextWindowOptions as getClaudeContextWindowOptions,
+  getEffortOptions as getClaudeEffortOptions,
+  getFastModeOptions as getClaudeFastModeOptions,
+} from "./claude/session/models";
 import { getReasoningEffortOptions as getCodexReasoningEffortOptions } from "./codex-app-server/models";
 
 export type SupportedReasoningEffort =
@@ -11,8 +15,7 @@ export type SupportedReasoningEffort =
   | "ultracode"
   | "ultrathink";
 
-// The cloud task API only accepts the base tiers; ultracode runs the model at
-// xhigh and ultrathink at max, so cloud runs clamp to those equivalents.
+// The loops API only accepts the base tiers, so loop config filters to these.
 export type CloudReasoningEffort = Exclude<
   SupportedReasoningEffort,
   "ultracode" | "ultrathink"
@@ -48,6 +51,26 @@ export function isSupportedReasoningEffort(
   );
 }
 
+export interface SessionToggleOption {
+  value: string;
+  name: string;
+  _meta?: Record<string, unknown>;
+}
+
+export function getContextWindowOptions(
+  adapter: Adapter,
+  modelId: string,
+): SessionToggleOption[] | null {
+  return adapter === "codex" ? null : getClaudeContextWindowOptions(modelId);
+}
+
+export function getFastModeOptions(
+  adapter: Adapter,
+  modelId: string,
+): SessionToggleOption[] | null {
+  return adapter === "codex" ? null : getClaudeFastModeOptions(modelId);
+}
+
 export function isCloudReasoningEffort(
   value: string,
 ): value is CloudReasoningEffort {
@@ -58,12 +81,4 @@ export function isCloudReasoningEffort(
     value === "xhigh" ||
     value === "max"
   );
-}
-
-export function toCloudReasoningEffort(
-  value: SupportedReasoningEffort,
-): CloudReasoningEffort {
-  if (value === "ultracode") return "xhigh";
-  if (value === "ultrathink") return "max";
-  return value;
 }

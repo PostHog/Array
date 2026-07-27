@@ -633,6 +633,8 @@ export function TaskInput({
     modeOption,
     modelOption,
     thoughtOption,
+    contextWindowOption,
+    fastModeOption,
     isLoading: isPreviewLoading,
     setConfigOption,
   } = usePreviewConfig(adapter);
@@ -778,6 +780,16 @@ export function TaskInput({
   )
     ? (selectedPiThinkingLevel ?? "high")
     : piThinkingLevels[0];
+  const currentContextWindow =
+    contextWindowOption?.type === "select" &&
+    (contextWindowOption.currentValue === "200k" ||
+      contextWindowOption.currentValue === "1m")
+      ? contextWindowOption.currentValue
+      : undefined;
+  const currentFastMode =
+    fastModeOption?.type === "select"
+      ? fastModeOption.currentValue === "on"
+      : undefined;
 
   const autoresearchEnabled = useAutoresearchEnabled();
   const armedAutoresearchDraft = useAutoresearchDraftStore(
@@ -931,6 +943,8 @@ export function TaskInput({
     executionMode: runtime === "pi" ? undefined : currentExecutionMode,
     model: taskModel,
     reasoningLevel: taskReasoningLevel,
+    contextWindow: runtime === "pi" ? undefined : currentContextWindow,
+    fastMode: runtime === "pi" ? undefined : currentFastMode,
     onTaskCreated,
     onTaskCreatedEffect: handleAutoresearchTaskCreated,
     environmentId: selectedEnvironment,
@@ -1434,7 +1448,10 @@ export function TaskInput({
                     ) : (
                       <ReasoningLevelSelector
                         thoughtOption={thoughtOption}
+                        contextWindowOption={contextWindowOption}
+                        fastModeOption={fastModeOption}
                         onChange={handleThoughtChange}
+                        onConfigOptionChange={setConfigOption}
                         disabled={isCreatingTask}
                         isLoading={isPreviewLoading}
                       />

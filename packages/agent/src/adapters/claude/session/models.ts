@@ -101,10 +101,24 @@ export function supportsMcpInjection(modelId: string): boolean {
   return !MODELS_TO_EXCLUDE_MCP_TOOLS.has(modelId);
 }
 
-const MODELS_WITH_FAST_MODE = new Set(["claude-opus-4-7", "claude-opus-4-8"]);
+const MODELS_WITH_FAST_MODE = new Set([
+  "claude-opus-4-7",
+  "claude-opus-4-8",
+  "claude-opus-5",
+]);
 
 export function supportsFastMode(modelId: string): boolean {
   return MODELS_WITH_FAST_MODE.has(modelId);
+}
+
+export function getFastModeOptions(
+  modelId: string,
+): { value: string; name: string }[] | null {
+  if (!supportsFastMode(modelId)) return null;
+  return [
+    { value: "on", name: "On" },
+    { value: "off", name: "Off" },
+  ];
 }
 
 // cooldown keeps the toggle on (user intent); only an explicit off clears it.

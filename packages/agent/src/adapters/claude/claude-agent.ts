@@ -2304,8 +2304,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       });
     }
 
-    if (supports1MContext(resolvedModelId)) {
+    if (supports1MContext(resolvedModelId) && meta?.contextWindow !== "200k") {
       options.betas = [CONTEXT_WINDOW_1M_BETA];
+    }
+
+    if (meta?.fastMode && supportsFastMode(resolvedModelId)) {
+      this.session.fastModeEnabled = true;
+      await this.session.query.applyFlagSettings({ fastMode: true });
     }
 
     const availableModes = getAvailableModes();

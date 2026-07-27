@@ -336,6 +336,8 @@ export function GeneralSettings() {
             <Select.Item value="high">High</Select.Item>
             <Select.Item value="xhigh">Extra High</Select.Item>
             <Select.Item value="max">Max</Select.Item>
+            <Select.Item value="ultracode">Ultracode</Select.Item>
+            <Select.Item value="ultrathink">Ultrathink</Select.Item>
           </Select.Content>
         </Select.Root>
       </SettingRow>

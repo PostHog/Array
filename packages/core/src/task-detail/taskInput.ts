@@ -23,6 +23,8 @@ export interface PrepareTaskInputOptions {
   runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   customImageId?: string;
@@ -65,6 +67,8 @@ export function prepareTaskInput(
     runtime: options.runtime ?? "acp",
     model: options.model,
     reasoningLevel: options.reasoningLevel,
+    contextWindow: options.contextWindow,
+    fastMode: options.fastMode,
     environmentId: options.environmentId ?? undefined,
     sandboxEnvironmentId: options.sandboxEnvironmentId,
     customImageId: options.customImageId,

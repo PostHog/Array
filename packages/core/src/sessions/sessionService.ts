@@ -396,6 +396,8 @@ export interface ConnectParams {
   adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   /**
    * Session ID of an imported Claude Code CLI transcript already copied into
    * the app's Claude config dir. The agent loads it and replays its history.
@@ -1704,6 +1706,8 @@ export class SessionService {
     session.model = params.model;
     session.executionMode = params.executionMode;
     session.reasoningLevel = params.reasoningLevel;
+    session.contextWindow = params.contextWindow;
+    session.fastMode = params.fastMode;
     if (params.initialPrompt?.length) {
       session.initialPrompt = params.initialPrompt;
     }
@@ -1718,6 +1722,8 @@ export class SessionService {
       adapter,
       model,
       reasoningLevel,
+      contextWindow,
+      fastMode,
       importedSessionId,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
@@ -1831,6 +1837,8 @@ export class SessionService {
           model,
           reasoningLevel,
           importedSessionId,
+          contextWindow,
+          fastMode,
         );
       }
     } catch (error) {
@@ -2345,6 +2353,8 @@ export class SessionService {
     model?: string,
     reasoningLevel?: string,
     importedSessionId?: string,
+    contextWindow?: "200k" | "1m",
+    fastMode?: boolean,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -2376,6 +2386,8 @@ export class SessionService {
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
+      contextWindow,
+      fastMode,
       model: preferredModel,
       importedSessionId,
     });
@@ -5249,6 +5261,8 @@ export class SessionService {
         adapter,
         model,
         reasoningLevel,
+        contextWindow,
+        fastMode,
       } = session;
       await this.teardownSession(session.taskRunId);
       const authStatus = await this.getAuthCredentialsStatus();
@@ -5270,6 +5284,9 @@ export class SessionService {
         adapter,
         model,
         reasoningLevel,
+        undefined,
+        contextWindow,
+        fastMode,
       );
       return;
     }

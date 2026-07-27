@@ -117,14 +117,68 @@ export interface ApplyConfigChangeArgs {
   configId: string;
   value: string;
   effortOptions: EffortOption[] | undefined;
+  contextWindowOptions?: EffortOption[];
+  fastModeOptions?: EffortOption[];
   settings: PreviewSettingsSnapshot;
+}
+
+interface ToggleOptionSpec {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  options: EffortOption[] | undefined;
+  defaultValue: string;
+}
+
+function syncToggleOption(
+  options: SessionConfigOption[],
+  spec: ToggleOptionSpec,
+): SessionConfigOption[] {
+  const idx = options.findIndex((o) => o.id === spec.id);
+  if (!spec.options) {
+    return idx >= 0 ? options.filter((o) => o.id !== spec.id) : options;
+  }
+  if (idx >= 0) {
+    const current = options[idx];
+    const currentValue =
+      current.type === "select" &&
+      spec.options.some((o) => o.value === current.currentValue)
+        ? current.currentValue
+        : spec.defaultValue;
+    return options.map((o, i) =>
+      i === idx
+        ? ({ ...o, currentValue, options: spec.options } as SessionConfigOption)
+        : o,
+    );
+  }
+  return [
+    ...options,
+    {
+      id: spec.id,
+      name: spec.name,
+      type: "select",
+      currentValue: spec.defaultValue,
+      options: spec.options,
+      category: spec.category,
+      description: spec.description,
+    } as SessionConfigOption,
+  ];
 }
 
 export function applyConfigChange(
   options: SessionConfigOption[],
   args: ApplyConfigChangeArgs,
 ): SessionConfigOption[] {
-  const { adapter, configId, value, effortOptions, settings } = args;
+  const {
+    adapter,
+    configId,
+    value,
+    effortOptions,
+    contextWindowOptions,
+    fastModeOptions,
+    settings,
+  } = args;
 
   let updated = options.map((opt) =>
     opt.id === configId
@@ -190,6 +244,23 @@ export function applyConfigChange(
   } else if (!effortOptions && existingIdx >= 0) {
     updated = updated.filter((o) => o.category !== "thought_level");
   }
+
+  updated = syncToggleOption(updated, {
+    id: "context_window",
+    name: "Context Window",
+    category: "_context_window",
+    description: "Choose the context window size for this session",
+    options: contextWindowOptions,
+    defaultValue: "1m",
+  });
+  updated = syncToggleOption(updated, {
+    id: "fast",
+    name: "Fast Mode",
+    category: "_fast_mode",
+    description: "Faster responses on supported models",
+    options: fastModeOptions,
+    defaultValue: "off",
+  });
 
   return updated;
 }

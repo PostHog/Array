@@ -1715,6 +1715,14 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       posthogExecPermissionRegex: this.posthogExecPermissionRegexSource,
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
+      ...(runtimeAdapter === "claude" &&
+        this.config.contextWindow && {
+          contextWindow: this.config.contextWindow,
+        }),
+      ...(runtimeAdapter === "claude" &&
+        this.config.fastMode !== undefined && {
+          fastMode: this.config.fastMode,
+        }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
 

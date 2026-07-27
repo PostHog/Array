@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   isCloudReasoningEffort,
   isSupportedReasoningEffort,
-  toCloudReasoningEffort,
 } from "./reasoning-effort";
 
 describe("isSupportedReasoningEffort", () => {
@@ -78,20 +77,6 @@ describe("isSupportedReasoningEffort", () => {
     expect(
       isSupportedReasoningEffort("codex", "gpt-5.6-sol", "ultrathink"),
     ).toBe(false);
-  });
-});
-
-describe("toCloudReasoningEffort", () => {
-  it.each([
-    ["low", "low"],
-    ["medium", "medium"],
-    ["high", "high"],
-    ["xhigh", "xhigh"],
-    ["max", "max"],
-    ["ultracode", "xhigh"],
-    ["ultrathink", "max"],
-  ] as const)("clamps %s to %s", (effort, expected) => {
-    expect(toCloudReasoningEffort(effort)).toBe(expected);
   });
 });
 

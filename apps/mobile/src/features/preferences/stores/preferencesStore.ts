@@ -46,6 +46,8 @@ export type DefaultReasoningEffort =
   | "high"
   | "xhigh"
   | "max"
+  | "ultracode"
+  | "ultrathink"
   | "last_used";
 
 interface PreferencesState {

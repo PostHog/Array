@@ -28,6 +28,8 @@ export type DefaultReasoningEffort =
   | "high"
   | "xhigh"
   | "max"
+  | "ultracode"
+  | "ultrathink"
   | "last_used";
 
 export type SendMessagesWith = "enter" | "cmd+enter";

@@ -79,6 +79,8 @@ export const startSessionInput = z.object({
   disallowedTools: z.array(z.string()).optional(),
   settingSources: z.array(z.enum(["user", "project", "local"])).optional(),
   effort: effortLevelSchema.optional(),
+  contextWindow: z.enum(["200k", "1m"]).optional(),
+  fastMode: z.boolean().optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
   /**

@@ -108,6 +108,8 @@ const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
   { value: "high", label: "High" },
   { value: "xhigh", label: "Extra High" },
   { value: "max", label: "Max" },
+  { value: "ultracode", label: "Ultracode" },
+  { value: "ultrathink", label: "Ultrathink" },
 ];
 
 function themeLabel(theme: ThemePreference): string {

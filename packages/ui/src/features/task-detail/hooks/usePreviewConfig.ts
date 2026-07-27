@@ -1,5 +1,9 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
+import {
+  getContextWindowOptions,
+  getFastModeOptions,
+  getReasoningEffortOptions,
+} from "@posthog/agent/adapters/reasoning-effort";
 import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
 import {
   applyConfigChange,
@@ -30,6 +34,8 @@ interface PreviewConfigResult {
   modeOption: SessionConfigOption | undefined;
   modelOption: SessionConfigOption | undefined;
   thoughtOption: SessionConfigOption | undefined;
+  contextWindowOption: SessionConfigOption | undefined;
+  fastModeOption: SessionConfigOption | undefined;
   isLoading: boolean;
   setConfigOption: (configId: string, value: string) => void;
 }
@@ -130,6 +136,10 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
             value: restorableModel,
             effortOptions:
               getReasoningEffortOptions(adapter, restorableModel) ?? undefined,
+            contextWindowOptions:
+              getContextWindowOptions(adapter, restorableModel) ?? undefined,
+            fastModeOptions:
+              getFastModeOptions(adapter, restorableModel) ?? undefined,
             settings: {
               defaultInitialTaskMode: "",
               lastUsedInitialTaskMode: undefined,
@@ -155,10 +165,16 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
 
   const setConfigOption = useCallback(
     (configId: string, value: string) => {
-      const effortOptions =
-        configId === "model"
-          ? (getReasoningEffortOptions(adapter, value) ?? undefined)
-          : undefined;
+      const isModelChange = configId === "model";
+      const effortOptions = isModelChange
+        ? (getReasoningEffortOptions(adapter, value) ?? undefined)
+        : undefined;
+      const contextWindowOptions = isModelChange
+        ? (getContextWindowOptions(adapter, value) ?? undefined)
+        : undefined;
+      const fastModeOptions = isModelChange
+        ? (getFastModeOptions(adapter, value) ?? undefined)
+        : undefined;
       const { lastUsedReasoningEffort, defaultReasoningEffort } =
         useSettingsStore.getState();
       setConfigOptions((prev) =>
@@ -167,6 +183,8 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
           configId,
           value,
           effortOptions,
+          contextWindowOptions,
+          fastModeOptions,
           settings: {
             defaultInitialTaskMode: "",
             lastUsedInitialTaskMode: undefined,
@@ -182,12 +200,19 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const modeOption = getOptionByCategory(configOptions, "mode");
   const modelOption = getOptionByCategory(configOptions, "model");
   const thoughtOption = getOptionByCategory(configOptions, "thought_level");
+  const contextWindowOption = getOptionByCategory(
+    configOptions,
+    "_context_window",
+  );
+  const fastModeOption = getOptionByCategory(configOptions, "_fast_mode");
 
   return {
     configOptions,
     modeOption,
     modelOption,
     thoughtOption,
+    contextWindowOption,
+    fastModeOption,
     isLoading,
     setConfigOption,
   };

@@ -650,6 +650,8 @@ export interface CloudRunOptions {
   piRuntime?: boolean;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   sandboxEnvironmentId?: string;
   customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
@@ -769,6 +771,12 @@ function buildCloudRunRequestBody(
       );
     }
     body.reasoning_effort = options.reasoningLevel;
+  }
+  if (options?.adapter && options.contextWindow) {
+    body.context_window = options.contextWindow;
+  }
+  if (options?.adapter && options.fastMode !== undefined) {
+    body.fast_mode = options.fastMode;
   }
   if (options?.adapter && options.initialPermissionMode) {
     body.initial_permission_mode = resolveCloudInitialPermissionMode(

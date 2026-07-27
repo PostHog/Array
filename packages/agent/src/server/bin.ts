@@ -41,8 +41,20 @@ const envSchema = z.object({
   POSTHOG_CODE_RUNTIME_ADAPTER: z.enum(["claude", "codex"]).optional(),
   POSTHOG_CODE_MODEL: z.string().optional(),
   POSTHOG_CODE_REASONING_EFFORT: z
-    .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+    .enum([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultracode",
+      "ultrathink",
+    ])
     .optional(),
+  POSTHOG_CODE_CONTEXT_WINDOW: z.enum(["200k", "1m"]).optional(),
+  POSTHOG_CODE_FAST_MODE: z.enum(["true", "false"]).optional(),
   POSTHOG_AGENT_STATE_DIR: z.string().startsWith("/").optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
   POSTHOG_TASK_RUN_SESSION_TOKEN: z.string().min(1).optional(),
@@ -271,6 +283,11 @@ program
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,
       model: env.POSTHOG_CODE_MODEL,
       reasoningEffort: env.POSTHOG_CODE_REASONING_EFFORT,
+      contextWindow: env.POSTHOG_CODE_CONTEXT_WINDOW,
+      fastMode:
+        env.POSTHOG_CODE_FAST_MODE === undefined
+          ? undefined
+          : env.POSTHOG_CODE_FAST_MODE === "true",
     };
     const server =
       env.POSTHOG_AGENT_RUNTIME === "pi"

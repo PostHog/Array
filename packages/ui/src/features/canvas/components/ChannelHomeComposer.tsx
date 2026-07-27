@@ -163,8 +163,15 @@ export const ChannelHomeComposer = forwardRef<
     [setLastUsedWorkspaceMode, setLastUsedLocalWorkspaceMode],
   );
 
-  const { modeOption, modelOption, thoughtOption, isLoading, setConfigOption } =
-    usePreviewConfig(adapter);
+  const {
+    modeOption,
+    modelOption,
+    thoughtOption,
+    contextWindowOption,
+    fastModeOption,
+    isLoading,
+    setConfigOption,
+  } = usePreviewConfig(adapter);
 
   const currentModel =
     modelOption?.type === "select" ? modelOption.currentValue : undefined;
@@ -180,6 +187,16 @@ export const ChannelHomeComposer = forwardRef<
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+  const currentContextWindow =
+    contextWindowOption?.type === "select" &&
+    (contextWindowOption.currentValue === "200k" ||
+      contextWindowOption.currentValue === "1m")
+      ? contextWindowOption.currentValue
+      : undefined;
+  const currentFastMode =
+    fastModeOption?.type === "select"
+      ? fastModeOption.currentValue === "on"
+      : undefined;
 
   const queryClient = useQueryClient();
   const apiClient = useOptionalAuthenticatedClient();
@@ -287,6 +304,8 @@ export const ChannelHomeComposer = forwardRef<
     executionMode: currentExecutionMode,
     model: currentModel,
     reasoningLevel: currentReasoningLevel,
+    contextWindow: currentContextWindow,
+    fastMode: currentFastMode,
     allowNoRepo: true,
     channelContext,
     channelName,
@@ -426,7 +445,10 @@ export const ChannelHomeComposer = forwardRef<
           !isLoading && (
             <ReasoningLevelSelector
               thoughtOption={thoughtOption}
+              contextWindowOption={contextWindowOption}
+              fastModeOption={fastModeOption}
               onChange={handleThoughtChange}
+              onConfigOptionChange={setConfigOption}
               disabled={isBusy}
             />
           )
