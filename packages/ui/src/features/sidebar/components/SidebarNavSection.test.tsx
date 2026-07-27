@@ -67,13 +67,8 @@ vi.mock("@posthog/ui/features/inbox/hooks/useInboxAllReports", () => ({
 vi.mock("@posthog/ui/features/tasks/useTasks", () => ({
   useTasks: () => ({ data: [] }),
 }));
-vi.mock("@posthog/ui/features/canvas/hooks/useMentionActivity", () => ({
-  useMentionActivity: () => ({ items: [] }),
-}));
-vi.mock("@posthog/ui/features/canvas/stores/activitySeenStore", () => ({
-  useActivitySeenStore: (
-    selector: (s: { lastSeenAt: number | null }) => unknown,
-  ) => selector({ lastSeenAt: null }),
+vi.mock("@posthog/ui/features/canvas/hooks/useTaskActivity", () => ({
+  useTaskActivity: () => ({ items: [], unreadCount: 0, isLoading: false }),
 }));
 vi.mock("@tanstack/react-router", () => ({
   useRouterState: () => false,
