@@ -157,8 +157,10 @@ export function MessageMinimap({
       <DropdownMenu open={open} onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger
           openOnHover
-          delay={120}
-          closeDelay={80}
+          // Short both ways: the list opens over the rail, so there is no travel to protect
+          // against, and a lingering close reads as lag when you flick past.
+          delay={50}
+          closeDelay={30}
           aria-label={`Jump to one of your ${entries.length} messages`}
           // Keyboard focus expands too, matching hover. Guarded against the close-then-refocus loop.
           onFocus={(event) => {
