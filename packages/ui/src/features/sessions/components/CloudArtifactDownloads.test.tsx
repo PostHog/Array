@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CloudArtifactDownloads } from "./CloudArtifactDownloads";
 
 const getCloudAttachmentPreviewUrl = vi.fn();
-const navigate = vi.fn();
+const openArtifactTab = vi.fn();
 const fetchedArtifacts = [
   {
     id: "output-1",
@@ -42,9 +42,8 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: fetchedArtifacts }),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => navigate,
-  useParams: () => ({}),
+vi.mock("@posthog/ui/features/panels/panelLayoutStore", () => ({
+  usePanelLayoutStore: () => openArtifactTab,
 }));
 
 const task = {
@@ -58,6 +57,7 @@ const task = {
 describe("CloudArtifactDownloads", () => {
   beforeEach(() => {
     getCloudAttachmentPreviewUrl.mockReset();
+    openArtifactTab.mockReset();
     vi.restoreAllMocks();
   });
 
@@ -112,16 +112,10 @@ describe("CloudArtifactDownloads", () => {
 
     fireEvent.click(screen.getByText("report.pdf"));
 
-    expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "/code/tasks/$taskId/artifacts/$runId/$artifactId",
-        params: {
-          taskId: "task-1",
-          runId: "run-1",
-          artifactId: "output-1",
-        },
-        search: { name: "report.pdf" },
-      }),
-    );
+    expect(openArtifactTab).toHaveBeenCalledWith("task-1", {
+      runId: "run-1",
+      artifactId: "output-1",
+      name: "report.pdf",
+    });
   });
 });

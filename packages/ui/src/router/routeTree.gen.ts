@@ -78,9 +78,7 @@ import { Route as CodeAgentsApplicationsIdOrSlugConfigurationRouteImport } from 
 import { Route as CodeAgentsApplicationsIdOrSlugChatRouteImport } from './routes/code/agents/applications/$idOrSlug/chat'
 import { Route as CodeAgentsApplicationsIdOrSlugApprovalsRouteImport } from './routes/code/agents/applications/$idOrSlug/approvals'
 import { Route as CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.index'
-import { Route as CodeTasksTaskIdArtifactsRunIdArtifactIdRouteImport } from './routes/code/tasks/$taskId.artifacts.$runId.$artifactId'
 import { Route as CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport } from './routes/code/agents/applications/$idOrSlug/sessions.$sessionId'
-import { Route as WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRouteImport } from './routes/website/$channelId/tasks/$taskId.artifacts.$runId.$artifactId'
 
 const WebsiteRoute = WebsiteRouteImport.update({
   id: '/website',
@@ -448,23 +446,11 @@ const CodeAgentsApplicationsIdOrSlugSessionsIndexRoute =
     path: '/sessions/',
     getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
   } as any)
-const CodeTasksTaskIdArtifactsRunIdArtifactIdRoute =
-  CodeTasksTaskIdArtifactsRunIdArtifactIdRouteImport.update({
-    id: '/artifacts/$runId/$artifactId',
-    path: '/artifacts/$runId/$artifactId',
-    getParentRoute: () => CodeTasksTaskIdRoute,
-  } as any)
 const CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute =
   CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport.update({
     id: '/sessions/$sessionId',
     path: '/sessions/$sessionId',
     getParentRoute: () => CodeAgentsApplicationsIdOrSlugRoute,
-  } as any)
-const WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute =
-  WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRouteImport.update({
-    id: '/artifacts/$runId/$artifactId',
-    path: '/artifacts/$runId/$artifactId',
-    getParentRoute: () => WebsiteChannelIdTasksTaskIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -497,7 +483,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/loops/$loopId': typeof CodeLoopsLoopIdRouteWithChildren
   '/code/loops/new': typeof CodeLoopsNewRoute
-  '/code/tasks/$taskId': typeof CodeTasksTaskIdRouteWithChildren
+  '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
@@ -520,7 +506,7 @@ export interface FileRoutesByFullPath {
   '/code/loops/$loopId/edit': typeof CodeLoopsLoopIdEditRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
-  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRouteWithChildren
+  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
   '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
   '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed/': typeof CodeInboxDismissedIndexRoute
@@ -537,9 +523,7 @@ export interface FileRoutesByFullPath {
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
-  '/code/tasks/$taskId/artifacts/$runId/$artifactId': typeof CodeTasksTaskIdArtifactsRunIdArtifactIdRoute
   '/code/agents/applications/$idOrSlug/sessions/': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
-  '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId': typeof WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -561,7 +545,7 @@ export interface FileRoutesByTo {
   '/website': typeof WebsiteIndexRoute
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
   '/code/loops/new': typeof CodeLoopsNewRoute
-  '/code/tasks/$taskId': typeof CodeTasksTaskIdRouteWithChildren
+  '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
@@ -582,7 +566,7 @@ export interface FileRoutesByTo {
   '/code/loops/$loopId/edit': typeof CodeLoopsLoopIdEditRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
-  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRouteWithChildren
+  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
   '/code/agents/applications': typeof CodeAgentsApplicationsIndexRoute
   '/code/agents/scouts': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed': typeof CodeInboxDismissedIndexRoute
@@ -599,9 +583,7 @@ export interface FileRoutesByTo {
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
-  '/code/tasks/$taskId/artifacts/$runId/$artifactId': typeof CodeTasksTaskIdArtifactsRunIdArtifactIdRoute
   '/code/agents/applications/$idOrSlug/sessions': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
-  '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId': typeof WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -634,7 +616,7 @@ export interface FileRoutesById {
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
   '/code/loops/$loopId': typeof CodeLoopsLoopIdRouteWithChildren
   '/code/loops/new': typeof CodeLoopsNewRoute
-  '/code/tasks/$taskId': typeof CodeTasksTaskIdRouteWithChildren
+  '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
@@ -657,7 +639,7 @@ export interface FileRoutesById {
   '/code/loops/$loopId/edit': typeof CodeLoopsLoopIdEditRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
-  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRouteWithChildren
+  '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
   '/code/agents/applications/': typeof CodeAgentsApplicationsIndexRoute
   '/code/agents/scouts/': typeof CodeAgentsScoutsIndexRoute
   '/code/inbox/dismissed/': typeof CodeInboxDismissedIndexRoute
@@ -674,9 +656,7 @@ export interface FileRoutesById {
   '/code/agents/applications/$idOrSlug/': typeof CodeAgentsApplicationsIdOrSlugIndexRoute
   '/code/agents/scouts/$skillName/': typeof CodeAgentsScoutsSkillNameIndexRoute
   '/code/agents/applications/$idOrSlug/sessions/$sessionId': typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute
-  '/code/tasks/$taskId/artifacts/$runId/$artifactId': typeof CodeTasksTaskIdArtifactsRunIdArtifactIdRoute
   '/code/agents/applications/$idOrSlug/sessions/': typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRoute
-  '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId': typeof WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -750,9 +730,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
-    | '/code/tasks/$taskId/artifacts/$runId/$artifactId'
     | '/code/agents/applications/$idOrSlug/sessions/'
-    | '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -812,9 +790,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/scouts/$skillName'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
-    | '/code/tasks/$taskId/artifacts/$runId/$artifactId'
     | '/code/agents/applications/$idOrSlug/sessions'
-    | '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId'
   id:
     | '__root__'
     | '/'
@@ -886,9 +862,7 @@ export interface FileRouteTypes {
     | '/code/agents/applications/$idOrSlug/'
     | '/code/agents/scouts/$skillName/'
     | '/code/agents/applications/$idOrSlug/sessions/$sessionId'
-    | '/code/tasks/$taskId/artifacts/$runId/$artifactId'
     | '/code/agents/applications/$idOrSlug/sessions/'
-    | '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -908,7 +882,7 @@ export interface RootRouteChildren {
   SettingsIndexRoute: typeof SettingsIndexRoute
   CodeLoopsLoopIdRoute: typeof CodeLoopsLoopIdRouteWithChildren
   CodeLoopsNewRoute: typeof CodeLoopsNewRoute
-  CodeTasksTaskIdRoute: typeof CodeTasksTaskIdRouteWithChildren
+  CodeTasksTaskIdRoute: typeof CodeTasksTaskIdRoute
   CodeLoopsIndexRoute: typeof CodeLoopsIndexRoute
   CodeTasksPendingKeyRoute: typeof CodeTasksPendingKeyRoute
 }
@@ -1398,13 +1372,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsIndexRouteImport
       parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
     }
-    '/code/tasks/$taskId/artifacts/$runId/$artifactId': {
-      id: '/code/tasks/$taskId/artifacts/$runId/$artifactId'
-      path: '/artifacts/$runId/$artifactId'
-      fullPath: '/code/tasks/$taskId/artifacts/$runId/$artifactId'
-      preLoaderRoute: typeof CodeTasksTaskIdArtifactsRunIdArtifactIdRouteImport
-      parentRoute: typeof CodeTasksTaskIdRoute
-    }
     '/code/agents/applications/$idOrSlug/sessions/$sessionId': {
       id: '/code/agents/applications/$idOrSlug/sessions/$sessionId'
       path: '/sessions/$sessionId'
@@ -1412,30 +1379,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeAgentsApplicationsIdOrSlugSessionsSessionIdRouteImport
       parentRoute: typeof CodeAgentsApplicationsIdOrSlugRoute
     }
-    '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId': {
-      id: '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId'
-      path: '/artifacts/$runId/$artifactId'
-      fullPath: '/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId'
-      preLoaderRoute: typeof WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRouteImport
-      parentRoute: typeof WebsiteChannelIdTasksTaskIdRoute
-    }
   }
 }
-
-interface WebsiteChannelIdTasksTaskIdRouteChildren {
-  WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute: typeof WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute
-}
-
-const WebsiteChannelIdTasksTaskIdRouteChildren: WebsiteChannelIdTasksTaskIdRouteChildren =
-  {
-    WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute:
-      WebsiteChannelIdTasksTaskIdArtifactsRunIdArtifactIdRoute,
-  }
-
-const WebsiteChannelIdTasksTaskIdRouteWithChildren =
-  WebsiteChannelIdTasksTaskIdRoute._addFileChildren(
-    WebsiteChannelIdTasksTaskIdRouteChildren,
-  )
 
 interface WebsiteRouteChildren {
   WebsiteActivityRoute: typeof WebsiteActivityRoute
@@ -1452,7 +1397,7 @@ interface WebsiteRouteChildren {
   WebsiteChannelIdNewRoute: typeof WebsiteChannelIdNewRoute
   WebsiteChannelIdIndexRoute: typeof WebsiteChannelIdIndexRoute
   WebsiteChannelIdDashboardsDashboardIdRoute: typeof WebsiteChannelIdDashboardsDashboardIdRoute
-  WebsiteChannelIdTasksTaskIdRoute: typeof WebsiteChannelIdTasksTaskIdRouteWithChildren
+  WebsiteChannelIdTasksTaskIdRoute: typeof WebsiteChannelIdTasksTaskIdRoute
 }
 
 const WebsiteRouteChildren: WebsiteRouteChildren = {
@@ -1471,8 +1416,7 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteChannelIdIndexRoute: WebsiteChannelIdIndexRoute,
   WebsiteChannelIdDashboardsDashboardIdRoute:
     WebsiteChannelIdDashboardsDashboardIdRoute,
-  WebsiteChannelIdTasksTaskIdRoute:
-    WebsiteChannelIdTasksTaskIdRouteWithChildren,
+  WebsiteChannelIdTasksTaskIdRoute: WebsiteChannelIdTasksTaskIdRoute,
 }
 
 const WebsiteRouteWithChildren =
@@ -1673,19 +1617,6 @@ const CodeLoopsLoopIdRouteWithChildren = CodeLoopsLoopIdRoute._addFileChildren(
   CodeLoopsLoopIdRouteChildren,
 )
 
-interface CodeTasksTaskIdRouteChildren {
-  CodeTasksTaskIdArtifactsRunIdArtifactIdRoute: typeof CodeTasksTaskIdArtifactsRunIdArtifactIdRoute
-}
-
-const CodeTasksTaskIdRouteChildren: CodeTasksTaskIdRouteChildren = {
-  CodeTasksTaskIdArtifactsRunIdArtifactIdRoute:
-    CodeTasksTaskIdArtifactsRunIdArtifactIdRoute,
-}
-
-const CodeTasksTaskIdRouteWithChildren = CodeTasksTaskIdRoute._addFileChildren(
-  CodeTasksTaskIdRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
@@ -1703,7 +1634,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsIndexRoute: SettingsIndexRoute,
   CodeLoopsLoopIdRoute: CodeLoopsLoopIdRouteWithChildren,
   CodeLoopsNewRoute: CodeLoopsNewRoute,
-  CodeTasksTaskIdRoute: CodeTasksTaskIdRouteWithChildren,
+  CodeTasksTaskIdRoute: CodeTasksTaskIdRoute,
   CodeLoopsIndexRoute: CodeLoopsIndexRoute,
   CodeTasksPendingKeyRoute: CodeTasksPendingKeyRoute,
 }

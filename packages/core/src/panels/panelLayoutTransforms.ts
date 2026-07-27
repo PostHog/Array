@@ -312,6 +312,59 @@ export function openReadonlyTabInSplit(
   return { panelTree: splitTree, focusedPanelId: newPanelId };
 }
 
+/** Opens read-only content beside Chat in the task's main panel. */
+export function openReadonlyTab(
+  layout: TaskLayout,
+  tabId: string,
+  label: string,
+  data: TabData,
+): Partial<TaskLayout> {
+  const existingTab = findTabInTree(layout.panelTree, tabId);
+  if (existingTab) {
+    const panelTree = updateTreeNode(
+      layout.panelTree,
+      existingTab.panelId,
+      (panel) => {
+        if (panel.type !== "leaf") return panel;
+        return {
+          ...panel,
+          content: { ...panel.content, activeTabId: tabId },
+        };
+      },
+    );
+    return { panelTree, focusedPanelId: existingTab.panelId };
+  }
+
+  const mainPanel = getLeafPanel(
+    layout.panelTree,
+    DEFAULT_PANEL_IDS.MAIN_PANEL,
+  );
+  if (!mainPanel) return {};
+
+  const panelTree = updateTreeNode(layout.panelTree, mainPanel.id, (panel) => {
+    if (panel.type !== "leaf") return panel;
+    return {
+      ...panel,
+      content: {
+        ...panel.content,
+        tabs: [
+          ...panel.content.tabs,
+          {
+            id: tabId,
+            label,
+            data,
+            component: null,
+            draggable: true,
+            closeable: true,
+          },
+        ],
+        activeTabId: tabId,
+      },
+    };
+  });
+  return { panelTree, focusedPanelId: mainPanel.id };
+}
+
 export function addRecentFile(
   recentFiles: string[] | undefined,
   filePath: string,

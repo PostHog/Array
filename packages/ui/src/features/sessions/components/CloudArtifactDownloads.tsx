@@ -11,12 +11,12 @@ import {
   getAuthIdentity,
   useAuthStateValue,
 } from "@posthog/ui/features/auth/store";
+import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { useSessionSelector } from "@posthog/ui/features/sessions/sessionStore";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 
 function formatFileSize(size: number | undefined): string | null {
@@ -34,8 +34,7 @@ export function CloudArtifactDownloads({
   task: Task | undefined;
 }) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
-  const navigate = useNavigate();
-  const { channelId } = useParams({ strict: false }) as { channelId?: string };
+  const openArtifactTab = usePanelLayoutStore((state) => state.openArtifactTab);
   const sessionArtifacts = useSessionSelector(
     taskId,
     (session) => session?.cloudArtifacts,
@@ -104,29 +103,13 @@ export function CloudArtifactDownloads({
   const previewArtifact = useCallback(
     (artifact: TaskRunArtifact): void => {
       if (!taskId || !runId || !artifact.id) return;
-      const search = { name: artifact.name };
-      const state = (previous: object) => ({
-        ...previous,
-        tabId: undefined,
-        openArtifactInNewTab: true,
-      });
-      if (channelId) {
-        navigate({
-          to: "/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId",
-          params: { channelId, taskId, runId, artifactId: artifact.id },
-          search,
-          state,
-        });
-        return;
-      }
-      navigate({
-        to: "/code/tasks/$taskId/artifacts/$runId/$artifactId",
-        params: { taskId, runId, artifactId: artifact.id },
-        search,
-        state,
+      openArtifactTab(taskId, {
+        runId,
+        artifactId: artifact.id,
+        name: artifact.name,
       });
     },
-    [channelId, navigate, runId, taskId],
+    [openArtifactTab, runId, taskId],
   );
 
   if (!runId || artifacts.length === 0) return null;

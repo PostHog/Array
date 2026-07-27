@@ -41,7 +41,6 @@ import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useIsWorkspaceCloudRun } from "@posthog/ui/features/workspace/useWorkspace";
-import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -74,32 +73,6 @@ import { useTabsSnapshot } from "./useBrowserTabs";
 declare module "@tanstack/history" {
   interface HistoryState {
     tabId?: string;
-    openArtifactInNewTab?: boolean;
-  }
-}
-
-type ArtifactTabTarget = {
-  taskId: string;
-  runId: string;
-  artifactId: string;
-  name: string;
-  channelId?: string;
-};
-
-const ARTIFACT_VIEW_PREFIX = "artifact:";
-
-function artifactAppView(target: ArtifactTabTarget): string {
-  return `${ARTIFACT_VIEW_PREFIX}${encodeURIComponent(JSON.stringify(target))}`;
-}
-
-function parseArtifactAppView(value: string | null): ArtifactTabTarget | null {
-  if (!value?.startsWith(ARTIFACT_VIEW_PREFIX)) return null;
-  try {
-    return JSON.parse(
-      decodeURIComponent(value.slice(ARTIFACT_VIEW_PREFIX.length)),
-    ) as ArtifactTabTarget;
-  } catch {
-    return null;
   }
 }
 
@@ -181,19 +154,11 @@ export function BrowserTabStrip() {
     channelId?: string;
     dashboardId?: string;
     taskId?: string;
-    runId?: string;
-    artifactId?: string;
   };
   const historyTabId = useRouterState({
     select: (s) => s.location.state.tabId,
   });
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const routeSearch = useRouterState({ select: (s) => s.location.search }) as {
-    name?: string;
-  };
-  const openArtifactInNewTab = useRouterState({
-    select: (s) => s.location.state.openArtifactInNewTab,
-  });
   // Tabs work in both spaces: channel-scoped tabs live under /website, while a
   // plain task tab (no channel) belongs to the Code experience. The space
   // decides where a task/blank tab navigates.
@@ -202,20 +167,7 @@ export function BrowserTabStrip() {
   // are tab targets too. useAppView normalizes both the /code routes and
   // their /website mirrors to the same view.type, so a tab survives either space.
   const view = useAppView();
-  const routeArtifact =
-    params.taskId && params.runId && params.artifactId
-      ? artifactAppView({
-          taskId: params.taskId,
-          runId: params.runId,
-          artifactId: params.artifactId,
-          name: routeSearch.name ?? "Artifact",
-          channelId: params.channelId,
-        })
-      : null;
-  const routeAppView: string | null =
-    routeArtifact ?? (isAppView(view.type) ? view.type : null);
-  const routeTaskId = routeArtifact ? null : (params.taskId ?? null);
-  const routeChannelId = routeArtifact ? null : (params.channelId ?? null);
+  const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
 
   const { channels } = useChannels();
   const { createChannel } = useChannelMutations();
@@ -354,37 +306,6 @@ export function BrowserTabStrip() {
     const mirrorActive = mirrorWin?.activeTabId
       ? mirrorTabs.find((t) => t.id === mirrorWin.activeTabId)
       : undefined;
-    if (openArtifactInNewTab && routeArtifact) {
-      const mintedId = crypto.randomUUID();
-      let openedTabId: string = mintedId;
-      const input = {
-        windowId,
-        dashboardId: null,
-        taskId: null,
-        channelId: null,
-        channelSection: null,
-        appView: routeArtifact,
-      };
-      applyLocalTransform((snapshot) => {
-        const result = openOrFocusLocal(snapshot, {
-          ...input,
-          makeId: () => mintedId,
-          now: Date.now,
-        });
-        openedTabId = result.tabId;
-        return result.snapshot;
-      });
-      void persistWrite(() =>
-        openOrFocus.mutateAsync({ ...input, tabId: mintedId }),
-      );
-      const loc = router.history.location;
-      const { openArtifactInNewTab: _, ...state } = loc.state as {
-        tabId?: string;
-        openArtifactInNewTab?: boolean;
-      };
-      router.history.replace(loc.href, { ...state, tabId: openedTabId });
-      return;
-    }
     const decision = decideTabNavigation({
       historyTabId: historyTabId ?? null,
       // Validates history tags: back/forward can replay an entry tagged with a
@@ -414,8 +335,8 @@ export function BrowserTabStrip() {
           }
         : null,
       routeDashboardId: params.dashboardId ?? null,
-      routeTaskId,
-      routeChannelId,
+      routeTaskId: params.taskId ?? null,
+      routeChannelId: params.channelId ?? null,
       routeChannelSection,
       routeAppView,
     });
@@ -495,11 +416,9 @@ export function BrowserTabStrip() {
     // fresh inside, deliberately NOT a dependency (see the comment above).
     windowId,
     historyTabId,
+    params.channelId,
     params.dashboardId,
-    routeTaskId,
-    routeChannelId,
-    routeArtifact,
-    openArtifactInNewTab,
+    params.taskId,
     routeChannelSection,
     routeAppView,
     openOrFocus.mutateAsync,
@@ -561,16 +480,6 @@ export function BrowserTabStrip() {
         const section = isActive ? routeChannelSection : t.channelSection;
         const appView = isActive ? routeAppView : t.appView;
         const channel = channelName(channelId);
-        const artifact = parseArtifactAppView(appView);
-        if (artifact) {
-          return {
-            id: t.id,
-            label: artifact.name,
-            icon: <FileIcon filename={artifact.name} size={14} />,
-            channelName: channelName(artifact.channelId ?? null),
-            pinned,
-          };
-        }
         if (taskId) {
           const task = findTask(taskId);
           return {
@@ -643,26 +552,6 @@ export function BrowserTabStrip() {
   // pushes a plain entry (the empty placeholder renders from the active tab).
   const goToTab = (tab: TabRef) => {
     const state = (prev: object) => ({ ...prev, tabId: tab.id });
-    const artifact = parseArtifactAppView(tab.appView);
-    if (artifact) {
-      const search = { name: artifact.name };
-      if (artifact.channelId) {
-        navigate({
-          to: "/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId",
-          params: { ...artifact, channelId: artifact.channelId },
-          search,
-          state,
-        });
-      } else {
-        navigate({
-          to: "/code/tasks/$taskId/artifacts/$runId/$artifactId",
-          params: artifact,
-          search,
-          state,
-        });
-      }
-      return;
-    }
     if (tab.taskId && tab.channelId) {
       navigate({
         to: "/website/$channelId/tasks/$taskId",

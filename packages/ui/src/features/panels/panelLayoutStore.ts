@@ -7,6 +7,7 @@ import {
   closeTabsToRight as coreCloseTabsToRight,
   keepTab as coreKeepTab,
   moveTab as coreMoveTab,
+  openReadonlyTab as coreOpenReadonlyTab,
   openReadonlyTabInSplit as coreOpenReadonlyTabInSplit,
   openTab as coreOpenTab,
   openTabInSplit as coreOpenTabInSplit,
@@ -64,6 +65,10 @@ export interface PanelLayoutStore {
     instructions: { body: string },
   ) => void;
   openAutoresearchTab: (taskId: string) => void;
+  openArtifactTab: (
+    taskId: string,
+    artifact: { runId: string; artifactId: string; name: string },
+  ) => void;
   keepTab: (taskId: string, panelId: string, tabId: string) => void;
   closeTab: (taskId: string, panelId: string, tabId: string) => void;
   closeOtherTabs: (taskId: string, panelId: string, tabId: string) => void;
@@ -287,6 +292,21 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
                   type: "autoresearch",
                 },
               ) as Partial<TaskLayout>,
+          ),
+        );
+      },
+
+      openArtifactTab: (taskId, artifact) => {
+        const tabId = `artifact-${artifact.artifactId}`;
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (layout) =>
+              coreOpenReadonlyTab(layout, tabId, artifact.name, {
+                type: "artifact",
+                ...artifact,
+              }) as Partial<TaskLayout>,
           ),
         );
       },
