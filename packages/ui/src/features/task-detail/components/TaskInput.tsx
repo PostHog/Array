@@ -110,6 +110,8 @@ interface TaskInputProps {
   channelContext?: string;
   /** Display name of the channel the CONTEXT.md came from (for the chip). */
   channelName?: string;
+  /** Backend channel UUID that owns the created task and feed entry. */
+  channelId?: string;
   /**
    * Desktop file-system folder id that owns the channel's CONTEXT.md. When set,
    * the injected context lets the agent publish upkeep corrections addressed to
@@ -154,6 +156,7 @@ export function TaskInput({
   reportAssociation,
   channelContext,
   channelName,
+  channelId,
   channelContextId,
   allowNoRepo,
   suggestions,
@@ -887,6 +890,7 @@ export function TaskInput({
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
+    channelId,
     channelContextId,
     allowNoRepo,
   });
