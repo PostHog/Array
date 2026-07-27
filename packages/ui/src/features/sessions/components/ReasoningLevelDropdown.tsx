@@ -24,7 +24,7 @@ import {
 } from "@posthog/quill";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 
 export interface ReasoningLevelOption {
   value: string;
@@ -230,18 +230,15 @@ export function ReasoningSliderFace({
   const matchedIndex = stops.findIndex((stop) => stop.key === currentKey);
   const activeIndex =
     matchedIndex >= 0 ? matchedIndex : Math.floor((stops.length - 1) / 2);
-  // Continuous position so the thumb tracks the pointer fluidly; the nearest
-  // notch is applied live and the thumb snaps to it on release.
-  const [position, setPosition] = useState<number>(activeIndex);
-  const draggingRef = useRef(false);
+  // Continuous drag position so the thumb tracks the pointer fluidly; outside
+  // a drag the thumb derives from the current selection, so releasing snaps
+  // it to the notch the live-applied selection landed on.
+  const [dragPosition, setDragPosition] = useState<number | null>(null);
+  const position = dragPosition ?? activeIndex;
   const nearestIndex = Math.min(
     stops.length - 1,
     Math.max(0, Math.round(position)),
   );
-
-  useEffect(() => {
-    if (!draggingRef.current) setPosition(activeIndex);
-  }, [activeIndex]);
 
   const applyNotch = (notch: number) => {
     const stop = stops[notch];
@@ -250,7 +247,7 @@ export function ReasoningSliderFace({
 
   const nudge = (delta: number) => {
     const next = Math.min(stops.length - 1, Math.max(0, nearestIndex + delta));
-    setPosition(next);
+    setDragPosition(null);
     applyNotch(next);
   };
 
@@ -348,21 +345,18 @@ export function ReasoningSliderFace({
           onValueChange={(next: number | readonly number[]) => {
             const raw = Array.isArray(next) ? next[0] : next;
             if (typeof raw !== "number") return;
-            draggingRef.current = true;
-            setPosition(raw);
+            setDragPosition(raw);
             // Applied per notch crossing so the trigger pill tracks the drag.
             applyNotch(Math.round(raw));
           }}
           onValueCommitted={(next: number | readonly number[]) => {
             const raw = Array.isArray(next) ? next[0] : next;
-            draggingRef.current = false;
-            if (typeof raw !== "number") return;
-            const notch = Math.min(
-              stops.length - 1,
-              Math.max(0, Math.round(raw)),
-            );
-            setPosition(notch);
-            applyNotch(notch);
+            if (typeof raw === "number") {
+              applyNotch(
+                Math.min(stops.length - 1, Math.max(0, Math.round(raw))),
+              );
+            }
+            setDragPosition(null);
           }}
         />
         <div className="-translate-y-1/2 pointer-events-none absolute inset-x-2 top-1/2 flex justify-between">

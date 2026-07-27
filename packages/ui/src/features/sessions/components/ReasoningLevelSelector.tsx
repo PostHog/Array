@@ -107,7 +107,7 @@ function AnimatedHeight({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function toDropdownOptions(
+function toDropdownOptions(
   option: SessionConfigOption,
 ): ReasoningLevelOption[] {
   if (option.type !== "select") return [];
@@ -269,6 +269,7 @@ export function ReasoningLevelSelector({
         valueLabel:
           options.find((entry) => entry.value === option.currentValue)?.label ??
           option.currentValue,
+        defaultValue: options.find((entry) => entry.isDefault)?.value,
         options,
       },
     ];
@@ -294,11 +295,8 @@ export function ReasoningLevelSelector({
         }
       }
       for (const row of toggleRows) {
-        const rowDefault = row.options.find(
-          (option) => option.isDefault,
-        )?.value;
-        if (rowDefault && rowDefault !== row.value) {
-          onConfigOptionChange?.(row.id, rowDefault);
+        if (row.defaultValue && row.defaultValue !== row.value) {
+          onConfigOptionChange?.(row.id, row.defaultValue);
         }
       }
       if (fastSelect && fastSelect.currentValue !== "off") {
@@ -451,8 +449,8 @@ export function ReasoningLevelSelector({
                           ? modelGroups.map((group, index) => (
                               <Fragment key={group.group}>
                                 {index > 0 && <DropdownMenuSeparator />}
-                                {[...group.options]
-                                  .sort((a, b) =>
+                                {group.options
+                                  .toSorted((a, b) =>
                                     compareModelsForPicker(a.value, b.value),
                                   )
                                   .map((model) => (
@@ -463,8 +461,8 @@ export function ReasoningLevelSelector({
                                   ))}
                               </Fragment>
                             ))
-                          : [...modelEntries]
-                              .sort((a, b) =>
+                          : modelEntries
+                              .toSorted((a, b) =>
                                 compareModelsForPicker(a.value, b.value),
                               )
                               .map((model) => (
