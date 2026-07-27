@@ -500,10 +500,12 @@ export class SkillsService {
   ): Promise<BundleLocalSkillOutput> {
     const skillDir = await this.resolveKnownSkillDir(input.path);
     await this.assertRepoSkillStaysInRepo(skillDir);
+    const allowRootSymlink = await this.isUnderUserSkillRoot(skillDir);
     return bundleLocalSkill({
       name: input.name,
       source: input.source,
       skillPath: skillDir,
+      allowRootSymlink,
     });
   }
 
@@ -518,20 +520,45 @@ export class SkillsService {
   private async assertRepoSkillStaysInRepo(skillDir: string): Promise<void> {
     const parent = path.dirname(skillDir);
     const folders = await this.folders.getFolders();
-    const owningFolder = folders.find(
-      (folder) =>
+    const realSkill = await fs.promises.realpath(skillDir);
+    const foldersWithRealPaths = await Promise.all(
+      folders.map(async (folder) => ({
+        folder,
+        realPath: await fs.promises.realpath(path.resolve(folder.path)),
+      })),
+    );
+    const lexicalOwner = foldersWithRealPaths.find(
+      ({ folder }) =>
         path.resolve(path.join(folder.path, ".claude", "skills")) === parent,
     );
-    if (!owningFolder) return;
-    const [realSkill, realFolder] = await Promise.all([
-      fs.promises.realpath(skillDir),
-      fs.promises.realpath(path.resolve(owningFolder.path)),
-    ]);
-    if (!realSkill.startsWith(realFolder + path.sep)) {
+    if (lexicalOwner) {
+      if (!realSkill.startsWith(lexicalOwner.realPath + path.sep)) {
+        throw new Error(
+          "Access denied: repository skill resolves outside its repository",
+        );
+      }
+      return;
+    }
+
+    const resolvedOwner = foldersWithRealPaths.find(
+      ({ realPath }) =>
+        realSkill === realPath || realSkill.startsWith(realPath + path.sep),
+    );
+    if (resolvedOwner && realSkill === resolvedOwner.realPath) {
       throw new Error(
         "Access denied: repository skill resolves outside its repository",
       );
     }
+  }
+
+  private async isUnderUserSkillRoot(skillDir: string): Promise<boolean> {
+    const parent = await fs.promises.realpath(path.dirname(skillDir));
+    const roots = await Promise.all(
+      [getUserSkillsDir(), getCodexSkillsDir()].map((root) =>
+        fs.promises.realpath(root).catch(() => path.resolve(root)),
+      ),
+    );
+    return roots.includes(parent);
   }
 
   /**
@@ -574,6 +601,9 @@ export class SkillsService {
     );
 
     const seen = new Set<string>();
+    const explicitRefs = new Set(
+      refs.map((ref) => `${ref.source}:${ref.path}`),
+    );
     const resolved: SkillBundleRef[] = [];
     const queue: SkillBundleRef[] = [...refs];
     // Sanity ceiling on the dependency closure. The `seen` set already
@@ -617,10 +647,19 @@ export class SkillsService {
 
       for (const dependencyName of dependencyNames) {
         const dependencyRef = findUploadableByName(dependencyName, ref);
-        if (
-          dependencyRef &&
-          !seen.has(`${dependencyRef.source}:${dependencyRef.path}`)
-        ) {
+        const dependencyKey = dependencyRef
+          ? `${dependencyRef.source}:${dependencyRef.path}`
+          : null;
+        if (dependencyRef && dependencyKey && !seen.has(dependencyKey)) {
+          const isImplicitSymlink =
+            !explicitRefs.has(dependencyKey) &&
+            (await fs.promises.lstat(dependencyRef.path)).isSymbolicLink();
+          if (isImplicitSymlink) {
+            throw new Error(
+              `The ${ref.name} skill references /${dependencyRef.name}, which is a symlinked local skill. ` +
+                `Select ${dependencyRef.name} explicitly to include it in this cloud run.`,
+            );
+          }
           queue.push(dependencyRef);
         }
       }

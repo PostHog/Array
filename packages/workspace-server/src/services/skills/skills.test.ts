@@ -9,6 +9,7 @@ import { WatcherService } from "../watcher/service";
 import { SkillsService } from "./skills";
 
 const codexHome = vi.hoisted(() => ({ dir: "" }));
+const marketplaceHome = vi.hoisted(() => ({ dir: "" }));
 const userSkillsHome = vi.hoisted(() => ({ dir: "" }));
 
 vi.mock("../posthog-plugin/codex-mirror", async (importOriginal) => {
@@ -19,7 +20,11 @@ vi.mock("../posthog-plugin/codex-mirror", async (importOriginal) => {
 
 vi.mock("./skill-discovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./skill-discovery")>();
-  return { ...actual, getUserSkillsDir: () => userSkillsHome.dir };
+  return {
+    ...actual,
+    getMarketplaceInstallPaths: async () => [marketplaceHome.dir],
+    getUserSkillsDir: () => userSkillsHome.dir,
+  };
 });
 
 let root: string;
@@ -27,12 +32,16 @@ let pluginPath: string;
 let folderPath: string;
 let repoSkillsDir: string;
 
-function makeService(): SkillsService {
+function makeService(openFolders: string[] = [folderPath]): SkillsService {
   const plugin = {
     getPluginPath: () => pluginPath,
   } as unknown as PosthogPluginService;
   const folders = {
-    getFolders: async () => [{ path: folderPath, name: "my-repo" }],
+    getFolders: async () =>
+      openFolders.map((folder, index) => ({
+        path: folder,
+        name: `repo-${index}`,
+      })),
   } as unknown as FoldersService;
   return new SkillsService(plugin, folders, new WatcherService());
 }
@@ -54,6 +63,7 @@ beforeEach(async () => {
   folderPath = path.join(root, "repo");
   repoSkillsDir = path.join(folderPath, ".claude", "skills");
   codexHome.dir = path.join(root, "codex-skills");
+  marketplaceHome.dir = path.join(root, "marketplace");
   userSkillsHome.dir = path.join(root, "user-skills");
   await mkdir(path.join(pluginPath, "skills"), { recursive: true });
   await mkdir(repoSkillsDir, { recursive: true });
@@ -520,6 +530,23 @@ describe("write-path guard", () => {
     ).rejects.toThrow("resolves outside its repository");
   });
 
+  it("rejects a repo skill that resolves into another open repository", async () => {
+    const targetRepo = path.join(root, "target-repo");
+    const targetSkillsDir = path.join(targetRepo, ".claude", "skills");
+    await createSkill(targetSkillsDir, "escapee");
+    await rm(repoSkillsDir, { recursive: true, force: true });
+    await symlink(targetSkillsDir, repoSkillsDir, "dir");
+    const service = makeService([targetRepo, folderPath]);
+
+    await expect(
+      service.bundleLocalSkill({
+        name: "escapee",
+        source: "repo",
+        path: path.join(repoSkillsDir, "escapee"),
+      }),
+    ).rejects.toThrow("resolves outside its repository");
+  });
+
   it("rejects a symlinked repo skill root", async () => {
     // A repository could commit `.claude/skills/foo` as a symlink to a
     // directory outside the repo; bundling must refuse to follow it rather
@@ -538,19 +565,65 @@ describe("write-path guard", () => {
     ).rejects.toThrow("resolves outside its repository");
   });
 
-  it("rejects a symlinked skill root outside repo roots", async () => {
-    // Non-repo roots have no repository anchor, so the bundler's own
-    // leaf-symlink check is the guard there.
+  it("bundles a symlinked user skill root", async () => {
     const target = await createSkill(root, "linked");
     await mkdir(userSkillsHome.dir, { recursive: true });
     const linkPath = path.join(userSkillsHome.dir, "linked");
     await symlink(target, linkPath, "dir");
     const service = makeService();
 
+    const bundled = await service.bundleLocalSkill({
+      name: "linked",
+      source: "user",
+      path: linkPath,
+    });
+
+    expect(bundled.fileName).toBe("linked.zip");
+  });
+
+  it("bundles a user skill through a symlinked user skills directory", async () => {
+    const realUserSkillsDir = path.join(root, "real-user-skills");
+    const target = await createSkill(root, "linked");
+    await mkdir(realUserSkillsDir, { recursive: true });
+    await symlink(realUserSkillsDir, userSkillsHome.dir, "dir");
+    const linkPath = path.join(userSkillsHome.dir, "linked");
+    await symlink(target, linkPath, "dir");
+
+    const bundled = await makeService().bundleLocalSkill({
+      name: "linked",
+      source: "user",
+      path: linkPath,
+    });
+
+    expect(bundled.fileName).toBe("linked.zip");
+  });
+
+  it("rejects an open workspace root reached through a user skill symlink", async () => {
+    await writeFile(path.join(folderPath, "SKILL.md"), "workspace");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    const linkPath = path.join(userSkillsHome.dir, "workspace");
+    await symlink(folderPath, linkPath, "dir");
+
     await expect(
-      service.bundleLocalSkill({
-        name: "linked",
+      makeService().bundleLocalSkill({
+        name: "workspace",
         source: "user",
+        path: linkPath,
+      }),
+    ).rejects.toThrow("resolves outside its repository");
+  });
+
+  it("rejects a symlinked marketplace skill root", async () => {
+    const target = await createSkill(root, "linked");
+    const marketplaceSkillsDir = path.join(marketplaceHome.dir, "skills");
+    await mkdir(marketplaceSkillsDir, { recursive: true });
+    const linkPath = path.join(marketplaceSkillsDir, "linked");
+    await symlink(target, linkPath, "dir");
+
+    await expect(
+      makeService().bundleLocalSkill({
+        name: "linked",
+        source: "marketplace",
         path: linkPath,
       }),
     ).rejects.toThrow("not a symlink");
@@ -717,6 +790,42 @@ describe("resolveSkillBundleDependencies", () => {
     ]);
 
     expect(resolved.map((r) => r.path)).toEqual([primary, repoHelper]);
+  });
+
+  it("rejects an implicitly resolved symlinked user dependency", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "scoped-parent",
+      withDeps("scoped-parent", ["helper"]),
+    );
+    const target = await createSkill(root, "helper");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    await symlink(target, path.join(userSkillsHome.dir, "helper"), "dir");
+
+    await expect(
+      makeService().resolveSkillBundleDependencies([
+        ref("scoped-parent", primary),
+      ]),
+    ).rejects.toThrow("Select helper explicitly");
+  });
+
+  it("allows an explicitly selected symlinked user dependency", async () => {
+    const primary = await createSkill(
+      repoSkillsDir,
+      "scoped-parent",
+      withDeps("scoped-parent", ["helper"]),
+    );
+    const target = await createSkill(root, "helper");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    const helper = path.join(userSkillsHome.dir, "helper");
+    await symlink(target, helper, "dir");
+
+    const resolved = await makeService().resolveSkillBundleDependencies([
+      ref("scoped-parent", primary),
+      { name: "helper", source: "user", path: helper },
+    ]);
+
+    expect(resolved.map((skill) => skill.path)).toEqual([primary, helper]);
   });
 
   it("expands a tagged skill to include its transitive dependencies", async () => {

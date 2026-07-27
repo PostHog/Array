@@ -22,16 +22,17 @@ function getSafeSkillFileName(name: string): string {
   return safeName.length > 0 ? safeName : "skill";
 }
 
-async function assertSkillRoot(skillPath: string): Promise<string> {
+async function assertSkillRoot(
+  skillPath: string,
+  allowRootSymlink: boolean,
+): Promise<string> {
   const lexical = path.resolve(skillPath);
   const parentReal = await fs.promises.realpath(path.dirname(lexical));
   const root = await fs.promises.realpath(lexical);
-  // A symlinked skill root bundles whatever it points at, so a repository could
-  // commit `.claude/skills/foo -> ~/.claude/skills/foo` and exfiltrate a
-  // directory from outside the repo into an uploaded bundle. Only the skill
-  // directory itself must be real; symlinked ancestors (e.g. /tmp on macOS)
-  // stay legal.
-  if (root !== path.join(parentReal, path.basename(lexical))) {
+  if (
+    !allowRootSymlink &&
+    root !== path.join(parentReal, path.basename(lexical))
+  ) {
     throw new Error(
       "Local skill bundle root must be a real directory, not a symlink",
     );
@@ -134,12 +135,14 @@ export async function bundleLocalSkill({
   name,
   source,
   skillPath,
+  allowRootSymlink = false,
 }: {
   name: string;
   source: UploadableSkillSource;
   skillPath: string;
+  allowRootSymlink?: boolean;
 }): Promise<BundleLocalSkillOutput> {
-  const root = await assertSkillRoot(skillPath);
+  const root = await assertSkillRoot(skillPath, allowRootSymlink);
   const acc: SkillFileAccumulator = { files: {}, totalBytes: 0 };
   await collectSkillFiles(root, root, acc);
   const files = acc.files;
