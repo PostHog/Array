@@ -281,8 +281,8 @@ export function ReasoningSliderFace({
         )}
       </div>
       <div className="flex items-center justify-between gap-2 text-muted-foreground/60 text-xs">
-        <span>Faster</span>
-        <span>Smarter</span>
+        <span>Faster ($)</span>
+        <span>Smarter ($$$)</span>
       </div>
       <div
         className="relative py-1"

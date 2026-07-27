@@ -102,8 +102,8 @@ describe("ReasoningLevelSelector", () => {
 
     await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
     expect(await screen.findByRole("slider")).toBeInTheDocument();
-    expect(screen.getByText("Faster")).toBeInTheDocument();
-    expect(screen.getByText("Smarter")).toBeInTheDocument();
+    expect(screen.getByText("Faster ($)")).toBeInTheDocument();
+    expect(screen.getByText("Smarter ($$$)")).toBeInTheDocument();
     expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument();
   });
 
