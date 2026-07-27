@@ -319,8 +319,11 @@ export class TaskCreationSaga extends Saga<
       );
     }
 
-    if (!hasProvisioning && !shouldStartCloudRun && this.deps.onTaskReady) {
-      this.deps.onTaskReady({ task, workspace });
+    if (!hasProvisioning && !shouldStartCloudRun) {
+      if (!taskId && workspaceMode === "cloud") {
+        await this.deps.sessionService.watchCreatedCloudTask(task);
+      }
+      this.deps.onTaskReady?.({ task, workspace });
     }
 
     if (hasProvisioning) {
@@ -469,8 +472,9 @@ export class TaskCreationSaga extends Saga<
         },
       });
 
-      if (!hasProvisioning && this.deps.onTaskReady) {
-        this.deps.onTaskReady({ task, workspace });
+      if (!hasProvisioning) {
+        await this.deps.sessionService.watchCreatedCloudTask(task);
+        this.deps.onTaskReady?.({ task, workspace });
       }
     }
 

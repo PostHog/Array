@@ -6758,6 +6758,37 @@ export class SessionService {
     return () => {};
   }
 
+  public async watchCreatedCloudTask(task: Task): Promise<void> {
+    const run = task.latest_run;
+    if (run?.environment !== "cloud") return;
+
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") return;
+
+    this.updateSessionTaskTitle(
+      task.id,
+      task.title || task.description || "Cloud Task",
+    );
+    this.watchCloudTask(
+      task.id,
+      run.id,
+      authStatus.auth.apiHost,
+      authStatus.auth.projectId,
+      undefined,
+      run.log_url,
+      typeof run.state?.initial_permission_mode === "string"
+        ? run.state.initial_permission_mode
+        : undefined,
+      run.runtime_adapter === "codex" ? "codex" : "claude",
+      run.model ?? undefined,
+      task.description ?? undefined,
+      undefined,
+      run.status,
+      run.reasoning_effort ?? undefined,
+      run.state,
+    );
+  }
+
   private logReconcileSkipOnce(
     taskId: string,
     reason: string,
