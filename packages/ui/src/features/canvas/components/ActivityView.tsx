@@ -40,7 +40,7 @@ function ChannelSuffix({ channelName }: { channelName: string | null }) {
     <>
       {" in "}
       <Text as="span" size="1" weight="medium">
-        {channelName}
+        #{channelName}
       </Text>
     </>
   );

@@ -47,4 +47,16 @@ describe("activityHeadline", () => {
     );
     expect(getByText(expected)).toBeInTheDocument();
   });
+
+  it("prefixes channel names with a hash", () => {
+    const { getByText } = render(
+      <div>
+        {activityHeadline(
+          item({ activityKind: "completed", channelName: "me" }),
+          "me@posthog.com",
+        )}
+      </div>,
+    );
+    expect(getByText("#me")).toBeInTheDocument();
+  });
 });

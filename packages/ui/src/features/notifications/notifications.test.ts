@@ -125,7 +125,7 @@ describe("notifyPromptComplete", () => {
     const unsubscribe = bus.subscribeToTaskCompletion(listener);
 
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
-    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(TASK_ID);
 
     unsubscribe();
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID);

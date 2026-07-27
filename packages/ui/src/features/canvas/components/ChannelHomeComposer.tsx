@@ -45,6 +45,7 @@ import {
   normalizeChannelName,
   PERSONAL_CHANNEL_NAME,
 } from "../hooks/useTaskChannels";
+import { useTaskCompletionTrackerStore } from "../stores/taskCompletionTrackerStore";
 import type { PendingKickoff } from "./ChannelFeedView";
 
 export interface ChannelHomeComposerHandle {
@@ -264,6 +265,9 @@ export const ChannelHomeComposer = forwardRef<
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
+      useTaskCompletionTrackerStore
+        .getState()
+        .track({ taskId: task.id, title: task.title });
       // onTaskCreated swaps the real card in; drop the matching "Starting…"
       // row in the same tick so the two never show at once.
       onTaskCreated(task);

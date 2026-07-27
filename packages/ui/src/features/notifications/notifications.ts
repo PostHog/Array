@@ -58,7 +58,9 @@ export interface NotificationDescriptor {
 // only appears while the app is focused).
 @injectable()
 export class NotificationBus {
-  private readonly taskCompletionListeners = new Set<() => void>();
+  private readonly taskCompletionListeners = new Set<
+    (taskId?: string) => void
+  >();
 
   constructor(
     @inject(NOTIFICATIONS_SERVICE)
@@ -134,14 +136,14 @@ export class NotificationBus {
     });
     for (const listener of this.taskCompletionListeners) {
       try {
-        listener();
+        listener(taskId);
       } catch (error) {
         log.error("Task completion subscriber failed", { error });
       }
     }
   }
 
-  subscribeToTaskCompletion(listener: () => void): () => void {
+  subscribeToTaskCompletion(listener: (taskId?: string) => void): () => void {
     this.taskCompletionListeners.add(listener);
     return () => this.taskCompletionListeners.delete(listener);
   }
