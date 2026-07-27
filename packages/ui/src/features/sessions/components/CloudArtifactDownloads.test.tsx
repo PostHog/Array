@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CloudArtifactDownloads } from "./CloudArtifactDownloads";
 
 const getCloudAttachmentPreviewUrl = vi.fn();
+const openArtifactTab = vi.fn();
 const fetchedArtifacts = [
   {
     id: "output-1",
@@ -41,6 +42,10 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: fetchedArtifacts }),
 }));
 
+vi.mock("@posthog/ui/features/panels/panelLayoutStore", () => ({
+  usePanelLayoutStore: () => openArtifactTab,
+}));
+
 const task = {
   id: "task-1",
   latest_run: {
@@ -52,6 +57,7 @@ const task = {
 describe("CloudArtifactDownloads", () => {
   beforeEach(() => {
     getCloudAttachmentPreviewUrl.mockReset();
+    openArtifactTab.mockReset();
     vi.restoreAllMocks();
   });
 
@@ -95,5 +101,21 @@ describe("CloudArtifactDownloads", () => {
       "run-1",
       "output-1",
     );
+  });
+
+  it("opens an artifact preview in a new tab", () => {
+    render(
+      <Theme>
+        <CloudArtifactDownloads taskId="task-1" task={task} />
+      </Theme>,
+    );
+
+    fireEvent.click(screen.getByText("report.pdf"));
+
+    expect(openArtifactTab).toHaveBeenCalledWith("task-1", {
+      runId: "run-1",
+      artifactId: "output-1",
+      name: "report.pdf",
+    });
   });
 });
