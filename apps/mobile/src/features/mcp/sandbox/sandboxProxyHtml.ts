@@ -47,8 +47,20 @@ export const sandboxProxyHtml = `<!DOCTYPE html>
   }
 
   var inner = document.createElement("iframe");
-  inner.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+  inner.setAttribute("sandbox", "allow-scripts allow-forms");
   document.body.appendChild(inner);
+
+  // contentWindow survives navigation, so an app that calls location.replace()
+  // would keep the bridge. Only the first load of our srcdoc may use it.
+  var appLoaded = false;
+  var bridgeClosed = false;
+  function onInnerLoad() {
+    if (!appLoaded) {
+      appLoaded = true;
+      return;
+    }
+    bridgeClosed = true;
+  }
 
   function buildAllowAttribute(permissions) {
     if (!permissions || typeof permissions !== "object") return "";
@@ -77,19 +89,16 @@ export const sandboxProxyHtml = `<!DOCTYPE html>
         var allowValue = buildAllowAttribute(params.permissions);
         if (allowValue) inner.setAttribute("allow", allowValue);
 
-        var doc = inner.contentDocument;
-        if (doc) {
-          doc.open();
-          doc.write(params.html);
-          doc.close();
-        }
+        inner.addEventListener("load", onInnerLoad);
+        inner.setAttribute("srcdoc", params.html);
       }
       return;
     }
 
     // All other host messages get relayed into the inner iframe untouched.
-    if (inner.contentWindow) {
-      inner.contentWindow.postMessage(data, location.origin || "*");
+    if (!bridgeClosed && inner.contentWindow) {
+      // An opaque origin serializes to "null", which postMessage rejects.
+      inner.contentWindow.postMessage(data, "*");
     }
   };
 
@@ -98,6 +107,7 @@ export const sandboxProxyHtml = `<!DOCTYPE html>
     var data = event.data;
     if (!data || typeof data !== "object") return;
     if (event.source !== inner.contentWindow) return;
+    if (bridgeClosed) return;
     postToHost(data);
   });
 

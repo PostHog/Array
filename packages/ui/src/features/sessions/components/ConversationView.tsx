@@ -26,6 +26,10 @@ import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/
 import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
+import {
+  type ConversationTurn,
+  groupRowsIntoTurns,
+} from "@posthog/ui/features/sessions/components/groupConversationTurns";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
 import type {
   ThreadGrouping,
@@ -212,7 +216,25 @@ export function ConversationView({
   );
   const threadRows = grouping.rows;
   const rowKeepMounted = grouping.keepMounted;
-  const itemIdToRowIndex = grouping.idToRowIndex;
+  const { turns, rowToTurnIndex } = useMemo(
+    () => groupRowsIntoTurns(threadRows),
+    [threadRows],
+  );
+  const turnKeepMounted = useMemo(
+    () => [...new Set(rowKeepMounted.map((index) => rowToTurnIndex[index]))],
+    [rowKeepMounted, rowToTurnIndex],
+  );
+  const itemIdToTurnIndex = useMemo(() => {
+    const result = new Map<string, number>();
+    for (const [id, rowIndex] of grouping.idToRowIndex) {
+      const turnIndex = rowToTurnIndex[rowIndex];
+      if (turnIndex === undefined) {
+        throw new Error(`Missing turn for conversation row ${rowIndex}`);
+      }
+      result.set(id, turnIndex);
+    }
+    return result;
+  }, [grouping.idToRowIndex, rowToTurnIndex]);
 
   // Changing the global mode wipes ephemeral per-chip overrides.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on collapseMode only
@@ -226,15 +248,15 @@ export function ConversationView({
   // since grouped rows != items.
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  const itemIdToRowIndexRef = useRef(itemIdToRowIndex);
-  itemIdToRowIndexRef.current = itemIdToRowIndex;
+  const itemIdToTurnIndexRef = useRef(itemIdToTurnIndex);
+  itemIdToTurnIndexRef.current = itemIdToTurnIndex;
   const searchListRef = useRef<VirtualizedListHandle>({
     scrollToBottom: () => listRef.current?.scrollToBottom(),
     scrollToIndex: (index: number) => {
       const id = itemsRef.current[index]?.id;
-      const rowIdx =
-        id != null ? itemIdToRowIndexRef.current.get(id) : undefined;
-      listRef.current?.scrollToIndex(rowIdx ?? index);
+      const turnIndex =
+        id != null ? itemIdToTurnIndexRef.current.get(id) : undefined;
+      listRef.current?.scrollToIndex(turnIndex ?? index);
     },
   });
 
@@ -265,8 +287,8 @@ export function ConversationView({
   // Grouped rows != items, so scroll by the row the message landed in (same
   // mapping search uses), falling back to the raw item index.
   const scrollToUserMessage = useCallback((id: string, itemIndex: number) => {
-    const rowIndex = itemIdToRowIndexRef.current.get(id) ?? itemIndex;
-    listRef.current?.scrollToIndex(rowIndex);
+    const turnIndex = itemIdToTurnIndexRef.current.get(id) ?? itemIndex;
+    listRef.current?.scrollToIndex(turnIndex);
   }, []);
 
   const handleNavigateMessage = useCallback(
@@ -409,7 +431,7 @@ export function ConversationView({
     ],
   );
 
-  const getRowKey = useCallback((row: ThreadRow) => row.id, []);
+  const getTurnKey = useCallback((turn: ConversationTurn) => turn.id, []);
 
   const renderRow = useCallback(
     (row: ThreadRow) => {
@@ -449,6 +471,23 @@ export function ConversationView({
       );
     },
     [renderItem, sessionViewActions],
+  );
+
+  const renderTurn = useCallback(
+    (turn: ConversationTurn) => (
+      <div>
+        {turn.rows.map((row) => (
+          <div
+            key={row.id}
+            className="py-1.5"
+            data-conversation-item-id={row.id}
+          >
+            {renderRow(row)}
+          </div>
+        ))}
+      </div>
+    ),
+    [renderRow],
   );
 
   const footer = (
@@ -509,15 +548,15 @@ export function ConversationView({
         />
 
         <SessionTaskIdProvider taskId={taskId}>
-          <VirtualizedList<ThreadRow>
+          <VirtualizedList<ConversationTurn>
             ref={listRef}
-            items={threadRows}
-            getItemKey={getRowKey}
-            renderItem={renderRow}
+            items={turns}
+            getItemKey={getTurnKey}
+            renderItem={renderTurn}
             onScrollStateChange={handleScrollStateChange}
-            keepMounted={rowKeepMounted}
+            keepMounted={turnKeepMounted}
             className="absolute inset-0 bg-background"
-            itemClassName="mx-auto px-2 py-1.5"
+            itemClassName="mx-auto px-2"
             itemStyle={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
             footer={footer}
             scrollX={scrollX}

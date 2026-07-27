@@ -259,6 +259,7 @@ See [docs/conventions.md](./docs/conventions.md).
 - Colocate tests as `.test.ts` or `.test.tsx`.
 - Put E2E tests in `tests/e2e/`.
 - Drive and screenshot the real running app (live data) with agent-browser over CDP `:9222`: run `pnpm app:cdp` or use the `test-electron-app` skill.
+- Treat virtualized-list overscan as a performance setting, not a scroll-correctness fix; preserve the visible anchor when measured row heights change.
 - After touching `@posthog/platform`, rebuild or typecheck its `dist/`.
 - After touching `packages/core`, run `biome lint packages/core` and verify zero `noRestrictedImports`.
 

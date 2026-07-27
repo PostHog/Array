@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyCspToHtml,
   buildCspMetaTag,
   buildCspString,
   escapeAttr,
@@ -160,5 +161,28 @@ describe("buildCspMetaTag", () => {
     expect(tag).toContain("connect-src example.com");
     // Verify it's inside a proper attribute
     expect(tag).toMatch(/content="[^"]+"/);
+  });
+});
+
+describe("applyCspToHtml", () => {
+  it("prepends the CSP meta when there is no doctype", () => {
+    const out = applyCspToHtml("<html><body>hi</body></html>");
+    expect(out.startsWith(buildCspMetaTag())).toBe(true);
+  });
+
+  it("inserts the CSP meta after a leading doctype (no quirks mode)", () => {
+    const out = applyCspToHtml("<!doctype html><html><head></head></html>");
+    expect(out.startsWith("<!doctype html>")).toBe(true);
+    expect(out).toBe(
+      `<!doctype html>${buildCspMetaTag()}<html><head></head></html>`,
+    );
+  });
+
+  it("handles a doctype with leading whitespace and mixed case", () => {
+    const out = applyCspToHtml("  <!DOCTYPE html>\n<html></html>");
+    expect(out.startsWith("  <!DOCTYPE html>")).toBe(true);
+    expect(out.indexOf("<!DOCTYPE html>")).toBeLessThan(
+      out.indexOf(buildCspMetaTag()),
+    );
   });
 });

@@ -1,6 +1,6 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { Theme } from "@radix-ui/themes";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LoopsListViewPresentation } from "./LoopsListView";
@@ -58,6 +58,9 @@ describe("LoopsListViewPresentation", () => {
     expect(
       within(controlledPanel(teamTab)).getByText("team loop"),
     ).toBeVisible();
-    expect(controlledPanel(personalTab)).toHaveAttribute("inert");
+    // The deselected panel is inert, then unmounts when its transition ends.
+    await waitFor(() =>
+      expect(screen.queryByText("personal loop")).not.toBeInTheDocument(),
+    );
   });
 });
