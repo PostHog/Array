@@ -60,6 +60,7 @@ describe("task activity hooks", () => {
   });
 
   it("invalidates activity when a task completion notification fires", () => {
+    vi.useFakeTimers();
     const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
     render(<TaskActivityNotificationSync />, { wrapper });
     const listener = subscribeToTaskCompletion.mock.calls[0]?.[0];
@@ -69,6 +70,9 @@ describe("task activity hooks", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: TASK_ACTIVITY_QUERY_KEY,
     });
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   it("loads every activity page", async () => {

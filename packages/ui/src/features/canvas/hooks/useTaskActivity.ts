@@ -11,6 +11,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 
 const ACTIVITY_POLL_INTERVAL_MS = 60_000;
+const COMPLETION_RECONCILE_DELAY_MS = 2_000;
 export const TASK_ACTIVITY_QUERY_KEY = ["task-activity"] as const;
 
 export function TaskActivityNotificationSync(): null {
@@ -19,9 +20,20 @@ export function TaskActivityNotificationSync(): null {
 
   useEffect(() => {
     if (!notificationBus) return;
-    return notificationBus.subscribeToTaskCompletion(() => {
+    let reconcileTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = notificationBus.subscribeToTaskCompletion(() => {
       void queryClient.invalidateQueries({ queryKey: TASK_ACTIVITY_QUERY_KEY });
+      clearTimeout(reconcileTimer);
+      reconcileTimer = setTimeout(() => {
+        void queryClient.invalidateQueries({
+          queryKey: TASK_ACTIVITY_QUERY_KEY,
+        });
+      }, COMPLETION_RECONCILE_DELAY_MS);
     });
+    return () => {
+      unsubscribe();
+      clearTimeout(reconcileTimer);
+    };
   }, [notificationBus, queryClient]);
 
   return null;

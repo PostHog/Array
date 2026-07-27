@@ -5,6 +5,7 @@ import {
 } from "@posthog/platform/notifications";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openNotificationTarget } from "@posthog/ui/router/navigationBridge";
+import { logger } from "@posthog/ui/shell/logger";
 import {
   playbackRateForTaskDuration,
   playCompletionSound,
@@ -21,6 +22,7 @@ import {
 import { routeNotification } from "./routeNotification";
 
 const MAX_TITLE_LENGTH = 50;
+const log = logger.scope("notifications");
 
 // In-app toast presentation for the focused-but-elsewhere tier. Only levels that
 // support an action link are allowed (the bus derives the action from `target`).
@@ -124,13 +126,19 @@ export class NotificationBus {
     durationMs?: number,
   ): void {
     if (stopReason !== "end_turn") return;
-    for (const listener of this.taskCompletionListeners) listener();
     this.notify({
       body: `"${this.truncateTitle(taskTitle)}" finished`,
       target: taskId ? { kind: "task", taskId } : undefined,
       toast: { level: "success" },
       soundDurationMs: durationMs,
     });
+    for (const listener of this.taskCompletionListeners) {
+      try {
+        listener();
+      } catch (error) {
+        log.error("Task completion subscriber failed", { error });
+      }
+    }
   }
 
   subscribeToTaskCompletion(listener: () => void): () => void {

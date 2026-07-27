@@ -131,6 +131,18 @@ describe("notifyPromptComplete", () => {
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
     expect(listener).toHaveBeenCalledOnce();
   });
+
+  it("delivers the notification when an activity subscriber fails", () => {
+    const { bus, notify } = makeBus({ hasFocus: false });
+    bus.subscribeToTaskCompletion(() => {
+      throw new Error("activity refresh failed");
+    });
+
+    expect(() =>
+      bus.notifyPromptComplete("My task", "end_turn", TASK_ID),
+    ).not.toThrow();
+    expect(notify).toHaveBeenCalledOnce();
+  });
 });
 
 describe("native tier settings gating (app unfocused)", () => {
