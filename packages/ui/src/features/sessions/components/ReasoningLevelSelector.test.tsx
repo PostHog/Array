@@ -11,6 +11,9 @@ import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 
 const openUrlInBrowser = vi.hoisted(() => vi.fn());
 vi.mock("@posthog/ui/utils/browser", () => ({ openUrlInBrowser }));
+vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
+  useFeatureFlag: () => true,
+}));
 
 const ultracodeDocsUrl = "https://code.claude.com/docs/en/workflows";
 
@@ -204,6 +207,7 @@ describe("ReasoningLevelSelector", () => {
       <Theme>
         <ReasoningLevelSelector
           thoughtOption={thoughtOption()}
+          adapter="claude"
           fastModeOption={fastOption("off")}
           onConfigOptionChange={onConfigOptionChange}
         />

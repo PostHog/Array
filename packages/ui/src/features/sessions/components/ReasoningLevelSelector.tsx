@@ -28,12 +28,14 @@ import {
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import {
+  FAST_MODE_FLAG,
   isDefaultSelectOption,
   isRestrictedModelOption,
   selectOptionDocsUrl,
 } from "@posthog/shared";
 import { EFFORT_LEVEL_LABELS } from "@posthog/shared/domain-types";
 import { gateRestrictedModelPick } from "@posthog/ui/features/billing/modelGate";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { ModelRadioItem } from "@posthog/ui/features/sessions/components/ModelRadioItem";
 import type { AgentAdapter } from "@posthog/ui/features/settings/settingsStore";
 import { AnimatePresence, motion } from "framer-motion";
@@ -136,6 +138,7 @@ export function ReasoningLevelSelector({
   const pendingChangeRef = useRef<(() => void) | null>(null);
   const displayThought = useRetainedConfigOption(thoughtOption);
   const displayModel = useRetainedConfigOption(modelOption);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG, true);
 
   // Genuinely no reasoning levels for this harness/model: hide. While the
   // preview config reloads (a harness switch) keep showing the last value,
@@ -226,12 +229,19 @@ export function ReasoningLevelSelector({
   const fastSelect =
     fastModeOption?.type === "select" ? fastModeOption : undefined;
   const fastActive = fastSelect?.currentValue === "on";
+  // The toggle slot stays mounted across notch drags (its presence depends on
+  // the adapter, not the current model) so the popup never reflows; models
+  // without fast mode just disable it.
   const fastToggle =
-    fastSelect && onConfigOptionChange
+    adapter === "claude" && fastModeFlagEnabled && onConfigOptionChange
       ? {
           active: fastActive,
-          onToggle: () =>
-            onConfigOptionChange(fastSelect.id, fastActive ? "off" : "on"),
+          disabled: !fastSelect,
+          onToggle: () => {
+            if (fastSelect) {
+              onConfigOptionChange(fastSelect.id, fastActive ? "off" : "on");
+            }
+          },
         }
       : undefined;
 

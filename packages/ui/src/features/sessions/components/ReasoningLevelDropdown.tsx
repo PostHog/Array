@@ -216,7 +216,7 @@ export function ReasoningSliderFace({
   currentKey?: string;
   onSelect: (key: string) => void;
   onAdvanced: () => void;
-  fastToggle?: { active: boolean; onToggle: () => void };
+  fastToggle?: { active: boolean; disabled?: boolean; onToggle: () => void };
 }) {
   const matchedIndex = stops.findIndex((stop) => stop.key === currentKey);
   const activeIndex =
@@ -261,8 +261,12 @@ export function ReasoningSliderFace({
             type="button"
             aria-label="Toggle fast mode"
             aria-pressed={fastToggle.active}
+            disabled={fastToggle.disabled}
             className={cn(
               "rounded-md border border-border p-1.5",
+              // Hidden, not unmounted: the slot keeps its size so sliding
+              // across models never reflows the popup.
+              fastToggle.disabled && "invisible",
               fastToggle.active
                 ? "text-amber-11"
                 : "text-muted-foreground hover:text-foreground",
