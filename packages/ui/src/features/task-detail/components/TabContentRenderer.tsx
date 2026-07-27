@@ -6,6 +6,7 @@ import {
   LazyReviewPage as ReviewPage,
 } from "../../code-review/components/LazyReviewPages";
 import type { Tab } from "../../panels/panelTypes";
+import { ArtifactPreview } from "../../sessions/components/ArtifactPreview";
 import { useIsWorkspaceCloudRun } from "../../workspace/useWorkspace";
 import { ActionPanel } from "./ActionPanel";
 import { CanvasInstructionsTab } from "./CanvasInstructionsTab";
@@ -75,6 +76,16 @@ export function TabContentRenderer({
 
     case "autoresearch":
       return <AutoresearchPanel taskId={taskId} />;
+
+    case "artifact":
+      return (
+        <ArtifactPreview
+          taskId={taskId}
+          runId={data.runId}
+          artifactId={data.artifactId}
+          name={tab.label}
+        />
+      );
 
     case "other":
       switch (tab.id) {

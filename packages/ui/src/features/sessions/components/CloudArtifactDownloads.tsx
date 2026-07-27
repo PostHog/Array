@@ -11,6 +11,7 @@ import {
   getAuthIdentity,
   useAuthStateValue,
 } from "@posthog/ui/features/auth/store";
+import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { useSessionSelector } from "@posthog/ui/features/sessions/sessionStore";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { toast } from "@posthog/ui/primitives/toast";
@@ -33,6 +34,7 @@ export function CloudArtifactDownloads({
   task: Task | undefined;
 }) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const openArtifactTab = usePanelLayoutStore((state) => state.openArtifactTab);
   const sessionArtifacts = useSessionSelector(
     taskId,
     (session) => session?.cloudArtifacts,
@@ -115,7 +117,19 @@ export function CloudArtifactDownloads({
               gap="3"
               className="min-w-0 rounded-md bg-background px-2 py-1.5"
             >
-              <Flex align="center" gap="2" className="min-w-0">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                disabled={!canDownload}
+                onClick={() => {
+                  if (!taskId || !artifact.id) return;
+                  openArtifactTab(taskId, {
+                    runId,
+                    artifactId: artifact.id,
+                    name: artifact.name,
+                  });
+                }}
+              >
                 <FileIcon filename={artifact.name} size={16} />
                 <Text className="truncate text-[13px]">{artifact.name}</Text>
                 {size !== null && (
@@ -123,7 +137,7 @@ export function CloudArtifactDownloads({
                     {size}
                   </Text>
                 )}
-              </Flex>
+              </button>
               <Button
                 size="sm"
                 variant="outline"

@@ -222,16 +222,15 @@ export function openTabInSplit(
   return { panelTree: finalTree, focusedPanelId: newPanelId, ...metadata };
 }
 
-// Opens a read-only snapshot (channel CONTEXT.md, canvas generation
-// instructions, …) as a tab in the right-side split (creating the split if
-// needed), mirroring openTabInSplit but carrying the content inline in the
-// tab's data instead of deriving it from the tab id. Re-opening the same tab id
-// just activates the existing tab.
-export function openReadonlyTabInSplit(
+// Opens read-only content with inline tab data. Most callers use the right-side
+// split; generated artifacts opt into the main panel beside Chat. Re-opening
+// the same tab id just activates the existing tab.
+export function openReadonlyTab(
   layout: TaskLayout,
   tabId: string,
   label: string,
   data: TabData,
+  placement: "main" | "split" = "split",
 ): Partial<TaskLayout> {
   const buildTab = (): Tab => ({
     id: tabId,
@@ -256,6 +255,30 @@ export function openReadonlyTabInSplit(
       },
     );
     return { panelTree: updatedTree, focusedPanelId: existingTab.panelId };
+  }
+
+  if (placement === "main") {
+    const mainPanel = getLeafPanel(
+      layout.panelTree,
+      DEFAULT_PANEL_IDS.MAIN_PANEL,
+    );
+    if (!mainPanel) return {};
+    const panelTree = updateTreeNode(
+      layout.panelTree,
+      mainPanel.id,
+      (panel) => {
+        if (panel.type !== "leaf") return panel;
+        return {
+          ...panel,
+          content: {
+            ...panel.content,
+            tabs: [...panel.content.tabs, buildTab()],
+            activeTabId: tabId,
+          },
+        };
+      },
+    );
+    return { panelTree, focusedPanelId: mainPanel.id };
   }
 
   const nonMainPanel = findNonMainLeafPanel(layout.panelTree);
