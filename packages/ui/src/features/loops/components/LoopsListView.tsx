@@ -249,14 +249,9 @@ export function LoopsListViewPresentation({
                 membersLoading={membersLoading}
                 membersError={membersError}
                 membersComplete={membersComplete}
-                onCreate={onStartBlank}
-                disabledReason={limitReason}
               />
             ) : (
-              <LoopsEmptyState
-                onCreate={onStartBlank}
-                disabledReason={limitReason}
-              />
+              <LoopsEmptyState />
             )}
           </Flex>
 
@@ -292,8 +287,6 @@ function LoopListTabs({
   membersLoading,
   membersError,
   membersComplete,
-  onCreate,
-  disabledReason,
 }: {
   personalLoops: LoopSchemas.Loop[];
   teamLoops: LoopSchemas.Loop[];
@@ -301,8 +294,6 @@ function LoopListTabs({
   membersLoading: boolean;
   membersError: boolean;
   membersComplete: boolean;
-  onCreate: () => void;
-  disabledReason: string | null;
 }) {
   return (
     <Tabs defaultValue="personal" className="flex flex-col gap-5">
@@ -322,10 +313,7 @@ function LoopListTabs({
         {personalLoops.length > 0 ? (
           <LoopListSection loops={personalLoops} />
         ) : (
-          <LoopsEmptyState
-            onCreate={onCreate}
-            disabledReason={disabledReason}
-          />
+          <LoopsEmptyState />
         )}
       </TabsContent>
       <TabsContent value="team">
