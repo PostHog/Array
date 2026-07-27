@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ArtifactPreview } from "./ArtifactPreview";
+import { ArtifactPreview, markdownDocument } from "./ArtifactPreview";
 
 const previewBlob = new Blob(["<h1>Artifact content</h1>"], {
   type: "text/html",
@@ -37,5 +37,17 @@ describe("ArtifactPreview", () => {
     const frame = screen.getByTitle("Preview of report.html");
     expect(frame).toHaveAttribute("src", "blob:preview");
     expect(frame).toHaveAttribute("sandbox", "");
+  });
+
+  it("renders GFM Markdown while escaping embedded HTML", () => {
+    const document = markdownDocument(
+      "# Report\n\n**Ready**\n\n| Name | Value |\n| --- | --- |\n| Cost | 12 |\n\n<script>alert('no')</script>",
+    );
+
+    expect(document).toContain("<h1>Report</h1>");
+    expect(document).toContain("<strong>Ready</strong>");
+    expect(document).toContain("<table>");
+    expect(document).toContain("&lt;script&gt;");
+    expect(document).not.toContain("<script>");
   });
 });
