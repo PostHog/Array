@@ -40,6 +40,7 @@ function createHarness() {
       if (existing) sessions[taskRunId] = { ...existing, ...patch };
     }),
     appendOptimisticItem: vi.fn(),
+    updateOptimisticItem: vi.fn(),
     clearOptimisticItems: vi.fn(),
   };
   const promptMutate = vi.fn();

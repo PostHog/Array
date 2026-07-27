@@ -33,6 +33,7 @@ export type OptimisticItem =
       content: string;
       timestamp: number;
       pinToTop?: boolean;
+      deliveryStatus?: "sending" | "sent" | "failed";
     }
   | {
       type: "skill_button_action";

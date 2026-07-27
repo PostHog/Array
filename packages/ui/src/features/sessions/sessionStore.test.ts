@@ -116,6 +116,57 @@ describe("dequeueMessages", () => {
   });
 });
 
+describe("optimistic message delivery", () => {
+  beforeEach(() => {
+    useSessionStore.setState((state) => {
+      state.sessions = {};
+      state.taskIdIndex = {};
+    });
+    sessionStoreSetters.setSession({
+      taskRunId: "run-123",
+      taskId: "task-123",
+      taskTitle: "Test",
+      channel: "agent-event:run-123",
+      events: [],
+      startedAt: 0,
+      status: "connected",
+      isPromptPending: false,
+      isCompacting: false,
+      promptStartedAt: null,
+      pendingPermissions: new Map(),
+      pausedDurationMs: 0,
+      messageQueue: [],
+      optimisticItems: [],
+    });
+  });
+
+  it("updates only the matching optimistic message", () => {
+    const messageId = sessionStoreSetters.appendOptimisticItem("run-123", {
+      type: "user_message",
+      content: "Hello",
+      timestamp: 1,
+      deliveryStatus: "sending",
+    });
+    sessionStoreSetters.appendOptimisticItem("run-123", {
+      type: "user_message",
+      content: "Later",
+      timestamp: 2,
+      deliveryStatus: "sending",
+    });
+
+    sessionStoreSetters.updateOptimisticItem("run-123", messageId, {
+      deliveryStatus: "failed",
+    });
+
+    expect(
+      useSessionStore.getState().sessions["run-123"].optimisticItems,
+    ).toEqual([
+      expect.objectContaining({ content: "Hello", deliveryStatus: "failed" }),
+      expect.objectContaining({ content: "Later", deliveryStatus: "sending" }),
+    ]);
+  });
+});
+
 describe("updateCloudStatus", () => {
   beforeEach(() => {
     useSessionStore.setState((state) => {

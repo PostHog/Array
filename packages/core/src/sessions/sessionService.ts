@@ -283,6 +283,11 @@ export interface ISessionStore {
         ? Omit<T, "id">
         : never
       : never,
+  ): string;
+  updateOptimisticItem(
+    taskRunId: string,
+    itemId: string,
+    patch: Partial<OptimisticItem>,
   ): void;
   clearOptimisticItems(taskRunId: string): void;
   clearTailOptimisticItems(taskRunId: string): void;
@@ -4095,6 +4100,17 @@ export class SessionService {
     }
     const { auth } = authStatus;
 
+    const optimisticItemId = this.d.store.appendOptimisticItem(
+      session.taskRunId,
+      {
+        type: "user_message",
+        content: transport.promptText,
+        timestamp: Date.now(),
+        pinToTop: false,
+        deliveryStatus: "sending",
+      },
+    );
+
     this.watchCloudTask(
       session.taskId,
       session.taskRunId,
@@ -4106,13 +4122,21 @@ export class SessionService {
       session.adapter ?? "claude",
     );
 
-    const artifactIds = await this.d.h.uploadRunAttachments(
-      auth.client,
-      session.taskId,
-      session.taskRunId,
-      transport.filePaths,
-      transport.skillBundles,
-    );
+    let artifactIds: string[];
+    try {
+      artifactIds = await this.d.h.uploadRunAttachments(
+        auth.client,
+        session.taskId,
+        session.taskRunId,
+        transport.filePaths,
+        transport.skillBundles,
+      );
+    } catch (error) {
+      this.d.store.updateOptimisticItem(session.taskRunId, optimisticItemId, {
+        deliveryStatus: "failed",
+      });
+      throw error;
+    }
     const params: Record<string, unknown> = {};
     if (transport.messageText) {
       params.content = transport.messageText;
@@ -4138,13 +4162,6 @@ export class SessionService {
       });
       this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
     }
-    this.d.store.appendOptimisticItem(session.taskRunId, {
-      type: "user_message",
-      content: transport.promptText,
-      timestamp: Date.now(),
-      pinToTop: false,
-    });
-
     this.d.track(ANALYTICS_EVENTS.PROMPT_SENT, {
       task_id: session.taskId,
       is_initial: session.events.length === 0,
@@ -4167,6 +4184,10 @@ export class SessionService {
         throw new Error(result.error ?? "Failed to send cloud command");
       }
 
+      this.d.store.updateOptimisticItem(session.taskRunId, optimisticItemId, {
+        deliveryStatus: "sent",
+      });
+
       const commandResult = result.result as
         | { queued?: boolean; steered?: boolean; stopReason?: string }
         | undefined;
@@ -4182,7 +4203,9 @@ export class SessionService {
           promptStartedAt: null,
         });
       }
-      this.d.store.clearTailOptimisticItems(session.taskRunId);
+      this.d.store.updateOptimisticItem(session.taskRunId, optimisticItemId, {
+        deliveryStatus: "failed",
+      });
       const currentSessionAfterFailure = this.getSessionByRunId(
         session.taskRunId,
       );

@@ -136,6 +136,7 @@ function createHarness() {
     },
     clearTailOptimisticItems: vi.fn(),
     appendOptimisticItem: vi.fn(),
+    updateOptimisticItem: vi.fn(),
     replaceOptimisticWithEvent: vi.fn(),
     clearMessageQueue: vi.fn(),
   };

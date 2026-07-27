@@ -90,7 +90,8 @@ const mockSessionStoreSetters = vi.hoisted(() => ({
   getSessionByTaskId: vi.fn(),
   getSessions: vi.fn(() => ({})),
   clearAll: vi.fn(),
-  appendOptimisticItem: vi.fn(),
+  appendOptimisticItem: vi.fn(() => "optimistic-message-1"),
+  updateOptimisticItem: vi.fn(),
   clearOptimisticItems: vi.fn(),
   clearTailOptimisticItems: vi.fn(),
   replaceOptimisticWithEvent: vi.fn(),
@@ -6153,6 +6154,34 @@ describe("SessionService", () => {
       );
     });
 
+    it("keeps a failed cloud message visible with an error state", async () => {
+      const service = getSessionService();
+      mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
+        createMockSession({
+          isCloud: true,
+          cloudStatus: "in_progress",
+          status: "connected",
+        }),
+      );
+      mockTrpcCloudTask.sendCommand.mutate.mockResolvedValue({
+        success: false,
+        error: "Delivery failed",
+      });
+
+      await expect(service.sendPrompt("task-123", "Hello")).rejects.toThrow(
+        "Delivery failed",
+      );
+
+      expect(mockSessionStoreSetters.updateOptimisticItem).toHaveBeenCalledWith(
+        "run-123",
+        "optimistic-message-1",
+        { deliveryStatus: "failed" },
+      );
+      expect(
+        mockSessionStoreSetters.clearTailOptimisticItems,
+      ).not.toHaveBeenCalled();
+    });
+
     it("queues a cloud steer when the sandbox lacks the capability", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
@@ -6537,7 +6566,19 @@ describe("SessionService", () => {
           type: "user_message",
           content: "read this\n\nAttached files: test.txt",
           pinToTop: false,
+          deliveryStatus: "sending",
         }),
+      );
+      expect(
+        mockSessionStoreSetters.appendOptimisticItem.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(
+        mockTrpcFs.readFileAsBase64.query.mock.invocationCallOrder[0],
+      );
+      expect(mockSessionStoreSetters.updateOptimisticItem).toHaveBeenCalledWith(
+        "run-123",
+        "optimistic-message-1",
+        { deliveryStatus: "sent" },
       );
 
       expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
