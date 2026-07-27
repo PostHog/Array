@@ -58,6 +58,7 @@ import {
 } from "../loopDisplay";
 import { formatLoopModel } from "../loopModels";
 import { loopSkillBundles, primaryLoopSkillBundle } from "../loopSkill";
+import { InlineLoopScheduleEditor } from "./InlineLoopScheduleEditor";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
@@ -455,15 +456,19 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
 
         <SummaryRow label="Triggers">
           {loop.triggers.length === 0 ? (
-            "No triggers configured"
+            <InlineLoopScheduleEditor loop={loop} />
           ) : (
             <Flex direction="column" gap="1">
               {loop.triggers.map((trigger) => (
-                <Text key={trigger.id} className="text-[12.5px] text-gray-12">
-                  <TriggerDescription trigger={trigger} />
-                  {!trigger.enabled ? " (disabled)" : ""}
-                </Text>
+                <EditableTriggerSummary
+                  key={trigger.id}
+                  loop={loop}
+                  trigger={trigger}
+                />
               ))}
+              {!loop.triggers.some((trigger) => trigger.type === "schedule") ? (
+                <InlineLoopScheduleEditor loop={loop} />
+              ) : null}
             </Flex>
           )}
         </SummaryRow>
@@ -475,6 +480,25 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         ) : null}
       </Flex>
     </Flex>
+  );
+}
+
+function EditableTriggerSummary({
+  loop,
+  trigger,
+}: {
+  loop: LoopSchemas.Loop;
+  trigger: LoopSchemas.LoopTrigger;
+}) {
+  if (trigger.type === "schedule") {
+    return <InlineLoopScheduleEditor loop={loop} schedule={trigger} />;
+  }
+
+  return (
+    <Text className="text-[12.5px] text-gray-12">
+      <TriggerDescription trigger={trigger} />
+      {!trigger.enabled ? " (disabled)" : ""}
+    </Text>
   );
 }
 

@@ -339,7 +339,7 @@ const WEEKDAY_OPTIONS = [
   { value: "6", label: "Saturday" },
 ];
 
-function ScheduleTriggerFields({
+export function ScheduleTriggerFields({
   config,
   disabled,
   onChange,
@@ -460,24 +460,26 @@ function ScheduleTriggerFields({
             />
           </SubField>
         ) : null}
+
+        {frequency !== "once" ? (
+          <SubField label="Timezone" className="w-[260px]">
+            <TimezonePicker
+              value={timezone}
+              disabled={disabled}
+              size="lg"
+              className="w-full max-w-full"
+              onValueChange={(value) =>
+                onChange({ ...config, timezone: value })
+              }
+            />
+          </SubField>
+        ) : null}
       </Flex>
 
       {frequency === "custom" ? (
         <Text className="self-start rounded-(--radius-1) border border-border bg-(--gray-2) px-2 py-1 text-[12px] text-gray-12 [font-family:var(--font-mono)]">
           {config.cron_expression}
         </Text>
-      ) : null}
-
-      {frequency !== "once" ? (
-        <SubField label="Timezone">
-          <TimezonePicker
-            value={timezone}
-            disabled={disabled}
-            size="lg"
-            className="w-[260px] max-w-full"
-            onValueChange={(value) => onChange({ ...config, timezone: value })}
-          />
-        </SubField>
       ) : null}
 
       {nextRun && nextRunLabel ? (
