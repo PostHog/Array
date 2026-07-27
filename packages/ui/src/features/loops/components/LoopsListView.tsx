@@ -192,71 +192,73 @@ export function LoopsListViewPresentation({
           gap="6"
           className="@container mx-auto w-full max-w-5xl px-8 py-8"
         >
-          <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
-            <Flex direction="column" gap="1" className="min-w-0">
-              <Flex align="center" gap="2" wrap="wrap">
-                <Heading className="font-bold text-2xl">Loops</Heading>
-                <Flex
-                  align="center"
-                  className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
-                >
-                  <CloudIcon
-                    size={12}
-                    weight="fill"
-                    className="text-(--accent-11)"
-                  />
-                  <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
-                    Runs entirely in the cloud
-                  </Text>
+          <Flex direction="column" gap="4">
+            <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
+              <Flex direction="column" gap="1" className="min-w-0">
+                <Flex align="center" gap="2" wrap="wrap">
+                  <Heading className="font-bold text-2xl">Loops</Heading>
+                  <Flex
+                    align="center"
+                    className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
+                  >
+                    <CloudIcon
+                      size={12}
+                      weight="fill"
+                      className="text-(--accent-11)"
+                    />
+                    <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
+                      Runs entirely in the cloud
+                    </Text>
+                  </Flex>
                 </Flex>
+                <Text color="gray" className="max-w-2xl text-sm">
+                  Put your work on autopilot. Loops run on a schedule, on an API
+                  call, or when something happens on GitHub. You can finally
+                  close the laptop!
+                </Text>
               </Flex>
-              <Text color="gray" className="max-w-2xl text-sm">
-                Put your work on autopilot. Loops run on a schedule, on an API
-                call, or when something happens on GitHub. You can finally close
-                the laptop!
-              </Text>
-            </Flex>
-            <Button
-              variant="soft"
-              color="gray"
-              size="2"
-              onClick={onStartBlank}
-              disabled={limitReason != null}
-              disabledReason={limitReason}
-            >
-              <PlusIcon size={14} />
-              Create manually
-            </Button>
-          </div>
+              <Button
+                variant="soft"
+                color="gray"
+                size="2"
+                onClick={onStartBlank}
+                disabled={limitReason != null}
+                disabledReason={limitReason}
+              >
+                <PlusIcon size={14} />
+                Create manually
+              </Button>
+            </div>
 
-          {isLoading ? (
-            <LoopsSkeleton />
-          ) : error ? (
-            <LoopsEmptyNotice
-              title="Couldn't load loops."
-              hint={
-                error instanceof Error
-                  ? error.message
-                  : "The loops API returned an error."
-              }
-            />
-          ) : loops.length > 0 ? (
-            <LoopListTabs
-              personalLoops={personalLoops}
-              teamLoops={teamLoops}
-              members={members}
-              membersLoading={membersLoading}
-              membersError={membersError}
-              membersComplete={membersComplete}
-              onCreate={onStartBlank}
-              disabledReason={limitReason}
-            />
-          ) : (
-            <LoopsEmptyState
-              onCreate={onStartBlank}
-              disabledReason={limitReason}
-            />
-          )}
+            {isLoading ? (
+              <LoopsSkeleton />
+            ) : error ? (
+              <LoopsEmptyNotice
+                title="Couldn't load loops."
+                hint={
+                  error instanceof Error
+                    ? error.message
+                    : "The loops API returned an error."
+                }
+              />
+            ) : loops.length > 0 ? (
+              <LoopListTabs
+                personalLoops={personalLoops}
+                teamLoops={teamLoops}
+                members={members}
+                membersLoading={membersLoading}
+                membersError={membersError}
+                membersComplete={membersComplete}
+                onCreate={onStartBlank}
+                disabledReason={limitReason}
+              />
+            ) : (
+              <LoopsEmptyState
+                onCreate={onStartBlank}
+                disabledReason={limitReason}
+              />
+            )}
+          </Flex>
 
           <LoopTemplatesSection onSelect={onStartFromTemplate} />
         </Flex>
