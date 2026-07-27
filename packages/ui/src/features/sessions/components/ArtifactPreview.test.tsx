@@ -1,6 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ArtifactPreview, markdownDocument } from "./ArtifactPreview";
+import { ArtifactPreview } from "./ArtifactPreview";
+import {
+  artifactHtmlDocument,
+  markdownDocument,
+} from "./artifactPreviewDocument";
 
 const previewBlob = new Blob(["<h1>Artifact content</h1>"], {
   type: "text/html",
@@ -108,5 +112,18 @@ describe("ArtifactPreview", () => {
     expect(document).toContain("<table>");
     expect(document).toContain("&lt;script&gt;");
     expect(document).not.toContain("<script>");
+    expect(document).toContain("default-src &#39;none&#39;");
+  });
+
+  it("blocks network subresources in HTML artifacts", () => {
+    const document = artifactHtmlDocument(
+      '<!doctype html><img src="https://internal.example/secret">',
+    );
+
+    expect(document.indexOf("Content-Security-Policy")).toBeLessThan(
+      document.indexOf("<img"),
+    );
+    expect(document).toContain("connect-src &#39;none&#39;");
+    expect(document).toContain("frame-src &#39;none&#39;");
   });
 });
