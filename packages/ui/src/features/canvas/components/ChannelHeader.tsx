@@ -22,7 +22,7 @@ function ChannelStarButton({ channel }: { channel: Channel }) {
     <Button
       type="button"
       size="icon-sm"
-      aria-label={isStarred ? "Unstar channel" : "Star channel"}
+      aria-label={isStarred ? "Unstar space" : "Star space"}
       onClick={() => {
         track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
           action_type: isStarred ? "unstar" : "star",
@@ -70,7 +70,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
           className: "shrink-0 text-muted-foreground/80",
         })}
         <Text className="min-w-0 truncate font-medium" title={channelName}>
-          {channelName ?? "Channel"}
+          {channelName ?? (channelsLayout ? "Space" : "Channel")}
         </Text>
       </Button>
       {channelsLayout && channel && channel.name !== PERSONAL_CHANNEL_NAME && (

@@ -28,9 +28,9 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   id: "task-1",
   task_number: 1,
   slug: "task-1",
-  title: "Add feedback modal to channels view",
+  title: "Add feedback modal to spaces view",
   description:
-    "Add a feedback modal to the channels view so people can share thoughts without leaving the feed",
+    "Add a feedback modal to the spaces view so people can share thoughts without leaving the feed",
   created_at: "2026-07-17T12:00:00.000Z",
   updated_at: "2026-07-17T12:00:00.000Z",
   origin_product: "user_created",
@@ -39,7 +39,7 @@ const task = (overrides: Partial<Task> = {}): Task => ({
 });
 
 const meta: Meta<typeof TaskFeedRow> = {
-  title: "Channels/TaskFeedRow",
+  title: "Spaces/TaskFeedRow",
   component: TaskFeedRow,
   decorators: [
     (Story) => (
@@ -56,7 +56,7 @@ type Story = StoryObj<typeof TaskFeedRow>;
 export const HumanStarted: Story = {
   args: {
     task: task(),
-    children: <MockTaskCard title="Add feedback modal to channels view" />,
+    children: <MockTaskCard title="Add feedback modal to spaces view" />,
   },
 };
 
@@ -65,7 +65,7 @@ export const HumanEmailOnly: Story = {
     task: task({
       created_by: user({ first_name: undefined, last_name: undefined }),
       title: "Make background color configurable",
-      description: "Make the channel background color configurable in settings",
+      description: "Make the space background color configurable in settings",
     }),
     children: <MockTaskCard title="Make background color configurable" />,
   },
@@ -86,9 +86,9 @@ export const LongPrompt: Story = {
   args: {
     task: task({
       description:
-        "Rework the channel feed so each row reads as the person who started the task rather than the agent, show a preview of their prompt under the header, keep the task card below, and make sure long prompts truncate cleanly instead of pushing the card down the feed",
+        "Rework the space feed so each row reads as the person who started the task rather than the agent, show a preview of their prompt under the header, keep the task card below, and make sure long prompts truncate cleanly instead of pushing the card down the feed",
     }),
-    children: <MockTaskCard title="Rework the channel feed attribution" />,
+    children: <MockTaskCard title="Rework the space feed attribution" />,
   },
 };
 

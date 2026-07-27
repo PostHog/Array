@@ -40,6 +40,10 @@ vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
     channels: [{ id: "chan-1", name: "project-bluebird" }],
   }),
 }));
+
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => true,
+}));
 vi.mock("@posthog/ui/features/canvas/hooks/useChannelTasks", () => ({
   useChannelTaskMutations: () => ({ fileTask: vi.fn() }),
 }));
@@ -104,7 +108,7 @@ describe("WebsiteNewTask context panel", () => {
   it("opens the context panel and tracks view_context when the chip is clicked", async () => {
     const user = userEvent.setup();
     useFolderInstructions.mockReturnValue({
-      data: { content: "# Channel context\n\nBackground." },
+      data: { content: "# Space context\n\nBackground." },
     });
     renderNewTask();
 

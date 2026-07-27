@@ -51,7 +51,7 @@ describe("ChannelBackRow", () => {
     const user = userEvent.setup();
     renderRow(ENG.id);
 
-    await user.click(screen.getByRole("button", { name: "Back to channels" }));
+    await user.click(screen.getByRole("button", { name: "Back to spaces" }));
 
     expect(useChannelPaneStore.getState().pane).toBe("list");
   });
@@ -60,12 +60,12 @@ describe("ChannelBackRow", () => {
   // change height (and everything below it shift) when you switch channels.
   it("offers a star on shared channels only", () => {
     renderRow(ENG.id);
-    expect(screen.getByRole("button", { name: "Star channel" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Star space" })).toBeTruthy();
 
     renderRow(ME.id);
-    expect(
-      screen.getAllByRole("button", { name: "Star channel" }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Star space" })).toHaveLength(
+      1,
+    );
   });
 
   // A channel the project doesn't have must not read as one that's still

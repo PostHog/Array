@@ -110,6 +110,8 @@ function useChannelActions(channel: Channel): {
   confirmDelete: () => Promise<boolean>;
   isDeleting: boolean;
 } {
+  const spacesLayout = useChannelsLayout();
+  const noun = spacesLayout ? "space" : "channel";
   const [renameOpen, setRenameOpen] = useState(false);
   // "Delete channel" opens a confirmation dialog rather than deleting inline —
   // the action is destructive and irreversible.
@@ -166,7 +168,7 @@ function useChannelActions(channel: Channel): {
         channel_id: channel.id,
         success: false,
       });
-      toast.error("Couldn't delete channel", {
+      toast.error(`Couldn't delete ${noun}`, {
         description: error instanceof Error ? error.message : String(error),
       });
       return false;
@@ -176,7 +178,7 @@ function useChannelActions(channel: Channel): {
   const actions: ChannelActionItem[] = [
     {
       key: "star",
-      label: isStarred ? "Unstar channel" : "Star channel",
+      label: isStarred ? `Unstar ${noun}` : `Star ${noun}`,
       icon: <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />,
       onSelect: () => {
         track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -195,14 +197,14 @@ function useChannelActions(channel: Channel): {
     },
     {
       key: "rename",
-      label: "Rename channel…",
+      label: `Rename ${noun}…`,
       icon: <PencilSimpleIcon size={14} />,
       separatorBefore: true,
       onSelect: () => setRenameOpen(true),
     },
     {
       key: "delete",
-      label: "Delete channel…",
+      label: `Delete ${noun}…`,
       icon: <TrashIcon size={14} />,
       variant: "destructive",
       onSelect: () => setConfirmDeleteOpen(true),
@@ -324,6 +326,8 @@ function ChannelSection({
   /** ⌘1-9 slot, shown as a hint while the row isn't hovered. */
   hotkeySlot?: number;
 }) {
+  const spacesLayout = useChannelsLayout();
+  const noun = spacesLayout ? "space" : "channel";
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
@@ -506,17 +510,17 @@ function ChannelSection({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {channel.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the channel and can’t be undone.
+              This permanently deletes the {noun} and can’t be undone.
               <ul className="list-disc ps-4">
                 <li>
-                  The channel and its{" "}
+                  The {noun} and its{" "}
                   <span className="font-medium">CONTEXT.md</span> are deleted.
                 </li>
                 <li>
-                  Every canvas saved in this channel is permanently deleted.
+                  Every canvas saved in this {noun} is permanently deleted.
                 </li>
                 <li>
-                  Filed tasks are removed from the channel, but the tasks
+                  Filed tasks are removed from the {noun}, but the tasks
                   themselves are not deleted.
                 </li>
               </ul>
@@ -535,7 +539,7 @@ function ChannelSection({
                 })
               }
             >
-              Delete channel
+              Delete {noun}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -828,8 +832,8 @@ export function ChannelsList() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search channels…"
-              aria-label="Search channels"
+              placeholder="Search spaces…"
+              aria-label="Search spaces"
               className="h-7 text-[13px]"
             />
           </Box>
@@ -854,7 +858,8 @@ export function ChannelsList() {
               {noMatches && (
                 <Empty className="px-2 py-1 text-subtle-foreground text-xs">
                   <EmptyHeader className="text-left">
-                    No channels match “{query.trim()}”.
+                    No {channelsLayout ? "spaces" : "channels"} match “
+                    {query.trim()}”.
                   </EmptyHeader>
                 </Empty>
               )}
@@ -884,13 +889,13 @@ export function ChannelsList() {
 
               <ChannelGroup
                 sectionId={CHANNELS_SECTION_ID}
-                label="Channels"
+                label={channelsLayout ? "Spaces" : "Channels"}
                 flat={channelsLayout}
               >
                 {!isLoading && channels.length === 0 && (
                   <Empty className="px-2 py-1 text-subtle-foreground text-xs">
                     <EmptyHeader className="text-left">
-                      No channels yet.
+                      No {channelsLayout ? "spaces" : "channels"} yet.
                     </EmptyHeader>
                   </Empty>
                 )}

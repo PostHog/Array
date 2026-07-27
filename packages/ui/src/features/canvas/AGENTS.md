@@ -25,18 +25,18 @@ The root `AGENTS.md` architecture rules still apply.
 - **Suffix `…` on anything that opens another step.** A menu item or button whose
   click opens a follow-up surface — a dialog, a nested menu, a picker, a
   confirmation — gets a trailing ellipsis (`…`, the character, not three dots) to
-  signal it isn't the final action: `New…`, `Rename channel…`, `Delete channel…`,
+  signal it isn't the final action: `New…`, `Rename space…`, `Delete space…`,
   `Choose a template…`. A label that performs its action immediately or navigates
   straight to a destination gets **no** ellipsis (`Edit CONTEXT.md`, `Star
-  channel`). When in doubt: does clicking it ask for more input or confirmation
+  space`). When in doubt: does clicking it ask for more input or confirmation
   before anything happens? If yes, add the `…`.
 
 ## Spaces & chrome
 
-- Channels is a **top-level space** reached through the app rail (`AppNav`),
+- Spaces is a **top-level space** reached through the app rail (`AppNav`),
   gated behind `project-bluebird` and wired in `routes/__root.tsx`. The rail's
-  spaces are Code (`/code`), Inbox (`/inbox`), and Channels (`/website`).
-- The Channels space has **its own chrome**: rail + a persistent channel-list
+  spaces are Code (`/code`), Inbox (`/inbox`), and Spaces (`/website`).
+- The Spaces UI has **its own chrome**: rail + a persistent channel-list
   sidebar (`ChannelsList`, rendered in `__root`) + the `WebsiteLayout` outlet. It
   does NOT use the code `HeaderRow`/`MainSidebar`, so breadcrumbs render in
   `WebsiteLayout`'s own top bar (below).
@@ -62,7 +62,7 @@ The root `AGENTS.md` architecture rules still apply.
 
 ## Breadcrumbs
 
-- **`WebsiteLayout` renders its own top bar.** The Channels space has no code
+- **`WebsiteLayout` renders its own top bar.** The Spaces UI has no code
   `HeaderRow`, so breadcrumbs (and the dashboard controls) are a local bar inside
   `WebsiteLayout`, not pushed through the header store.
 - **A page does not get its own crumb — its H1 is the title.** A view that

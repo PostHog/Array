@@ -29,6 +29,7 @@ import {
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import {
   useDashboard,
   useDashboards,
@@ -145,6 +146,7 @@ function isAppView(value: string): value is AppView {
 }
 
 export function BrowserTabStrip() {
+  const spacesLayout = useChannelsLayout();
   const logger = useService<RootLogger>(ROOT_LOGGER);
   const snapshot = useTabsSnapshot();
   const navigate = useNavigate();
@@ -509,7 +511,8 @@ export function BrowserTabStrip() {
           const meta = channelSectionFor(section);
           return {
             id: t.id,
-            label: meta?.label ?? channel ?? "Channel",
+            label:
+              meta?.label ?? channel ?? (spacesLayout ? "Space" : "Channel"),
             icon: <HashIcon size={14} />,
             channelName: channel,
             // No section meta → the channel's index page.

@@ -100,6 +100,15 @@ describe("ChannelsList", () => {
       renderList();
       expect(screen.getByText("engineering").closest(".pl-5")).toBeTruthy();
     });
+
+    it("rebrands only the spaces layout", () => {
+      renderList();
+      expect(screen.getByText("Spaces")).toBeTruthy();
+
+      mocks.channelsLayout = false;
+      renderList();
+      expect(screen.getByText("Channels")).toBeTruthy();
+    });
   });
 
   describe("search", () => {
@@ -109,7 +118,7 @@ describe("ChannelsList", () => {
       const user = userEvent.setup();
       renderList();
 
-      await user.type(screen.getByLabelText("Search channels"), "eng");
+      await user.type(screen.getByLabelText("Search spaces"), "eng");
 
       expect(screen.getByText("engineering")).toBeTruthy();
       expect(screen.queryByText("design")).toBeNull();
@@ -124,7 +133,7 @@ describe("ChannelsList", () => {
       renderList();
       expect(screen.getByText("Starred")).toBeTruthy();
 
-      await user.type(screen.getByLabelText("Search channels"), "eng");
+      await user.type(screen.getByLabelText("Search spaces"), "eng");
 
       expect(screen.queryByText("Starred")).toBeNull();
       expect(screen.getByText("engineering")).toBeTruthy();
@@ -135,7 +144,7 @@ describe("ChannelsList", () => {
     it("is absent off the channels layout, along with the shortcut hints", () => {
       mocks.channelsLayout = false;
       renderList();
-      expect(screen.queryByLabelText("Search channels")).toBeNull();
+      expect(screen.queryByLabelText("Search spaces")).toBeNull();
       expect(screen.getByText("me").parentElement?.textContent).toBe("me");
     });
 
@@ -143,9 +152,9 @@ describe("ChannelsList", () => {
       const user = userEvent.setup();
       renderList();
 
-      await user.type(screen.getByLabelText("Search channels"), "zzz");
+      await user.type(screen.getByLabelText("Search spaces"), "zzz");
 
-      expect(screen.getByText(/No channels match/)).toBeTruthy();
+      expect(screen.getByText(/No spaces match/)).toBeTruthy();
     });
   });
 });
