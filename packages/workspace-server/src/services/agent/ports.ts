@@ -61,12 +61,15 @@ export interface AgentAuth {
   getValidAccessToken(): Promise<{ accessToken: string; apiHost: string }>;
   getOAuthCredentials(): Promise<{
     access: string;
-    refresh: string;
+    refresh: string | null;
     expires: number;
     region: CloudRegion;
   } | null>;
   refreshAccessToken(): Promise<{ accessToken: string; apiHost: string }>;
-  getState(): { currentProjectId: number | null };
+  getState(): {
+    currentProjectId: number | null;
+    sessionType?: "persistent" | "impersonated" | null;
+  };
   authenticatedFetch(
     fetchImpl: AgentFetchLike,
     input: string | Request,

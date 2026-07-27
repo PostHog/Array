@@ -23,7 +23,7 @@ export const oAuthTokenResponse = z.object({
   expires_in: z.number(),
   token_type: z.string(),
   scope: z.string().optional().default(""),
-  refresh_token: z.string(),
+  refresh_token: z.string().optional(),
   scoped_organizations: z.array(z.string()).optional(),
 });
 export type OAuthTokenResponse = z.infer<typeof oAuthTokenResponse>;

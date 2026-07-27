@@ -185,6 +185,11 @@ export class AgentAuthAdapter {
   }
 
   private syncTokenEnvironment(token: string): void {
+    if (this.authService.getState().sessionType === "impersonated") {
+      delete process.env.POSTHOG_API_KEY;
+      delete process.env.POSTHOG_AUTH_HEADER;
+      return;
+    }
     process.env.POSTHOG_API_KEY = token;
     process.env.POSTHOG_AUTH_HEADER = `Bearer ${token}`;
   }
