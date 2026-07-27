@@ -362,6 +362,7 @@ function ReplyFooter({
   const { messages } = useTaskThread(taskId, {
     pollIntervalMs: FEED_REPLIES_POLL_INTERVAL_MS,
     enabled: inView,
+    markActivityRead: false,
   });
   const authors = useMemo(() => {
     const seen = new Map<string, (typeof messages)[number]["author"]>();

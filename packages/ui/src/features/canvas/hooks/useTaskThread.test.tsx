@@ -100,6 +100,18 @@ describe("task thread hooks", () => {
     );
   });
 
+  it("does not mark activity read when loading a thread preview", async () => {
+    mockClient.getTaskThreadMessages.mockResolvedValue([message()]);
+
+    const hook = renderHook(
+      () => useTaskThread("task-id", { markActivityRead: false }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(hook.result.current.messages).toHaveLength(1));
+    expect(mockClient.markTaskActivityRead).not.toHaveBeenCalled();
+  });
+
   it("returns a forwarding error after the message has been posted", async () => {
     const sendError = new Error("No active run");
     mockTaskThreadService.postMessageToAgent.mockResolvedValue({

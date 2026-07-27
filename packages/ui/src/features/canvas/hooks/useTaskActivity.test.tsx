@@ -119,4 +119,35 @@ describe("task activity hooks", () => {
     expect(cached?.pages[0]?.results[0]?.is_unread).toBe(true);
     expect(cached?.pages[0]?.unread_count).toBe(1);
   });
+
+  it("keeps an activity row after marking it read", async () => {
+    mockClient.getTaskActivity.mockResolvedValue({
+      results: [activity({ id: "local:task-1" })],
+      unread_count: 1,
+    });
+    mockClient.markTaskActivityRead.mockResolvedValue({
+      marked_read: 0,
+      unread_count: 0,
+    });
+
+    const hook = renderHook(
+      () => ({ activity: useTaskActivity(), mark: useMarkTaskActivityRead() }),
+      { wrapper },
+    );
+    await waitFor(() =>
+      expect(hook.result.current.activity.items).toHaveLength(1),
+    );
+
+    act(() => {
+      hook.result.current.mark.mutate([
+        { task_id: "task-1", seen_before: "2026-07-01T10:00:00Z" },
+      ]);
+    });
+
+    await waitFor(() =>
+      expect(hook.result.current.activity.unreadCount).toBe(0),
+    );
+    expect(hook.result.current.activity.items).toHaveLength(1);
+    expect(mockClient.getTaskActivity).toHaveBeenCalledOnce();
+  });
 });

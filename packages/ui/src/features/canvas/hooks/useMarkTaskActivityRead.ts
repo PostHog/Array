@@ -19,7 +19,7 @@ export function useMarkTaskActivityRead() {
     mutationFn: async (activities: TaskActivityReadMarker[]) => {
       if (!client) throw new Error("Not authenticated");
       if (activities.length === 0) return;
-      await client.markTaskActivityRead(activities);
+      return client.markTaskActivityRead(activities);
     },
     onMutate: async (activities: TaskActivityReadMarker[]) => {
       const marked = new Map(
@@ -55,11 +55,6 @@ export function useMarkTaskActivityRead() {
           };
         },
       );
-    },
-    // The server owns the count (it spans tasks past this page), so reconcile once
-    // the write lands rather than trusting the optimistic subtraction.
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: TASK_ACTIVITY_QUERY_KEY });
     },
   });
 }

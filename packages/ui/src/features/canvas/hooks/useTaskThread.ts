@@ -18,13 +18,18 @@ export function taskThreadQueryKey(taskId: string | undefined) {
 
 export function useTaskThread(
   taskId: string | undefined,
-  options?: { pollIntervalMs?: number; enabled?: boolean },
+  options?: {
+    pollIntervalMs?: number;
+    enabled?: boolean;
+    markActivityRead?: boolean;
+  },
 ): {
   messages: TaskThreadMessage[];
   isLoading: boolean;
 } {
   const pollIntervalMs = options?.pollIntervalMs ?? THREAD_POLL_INTERVAL_MS;
   const enabled = options?.enabled ?? true;
+  const markActivityRead = options?.markActivityRead ?? true;
   const { mutate: markTasksRead } = useMarkTaskActivityRead();
   const opening = useMemo(
     () => ({ taskId, seenBefore: new Date().toISOString() }),
@@ -41,12 +46,20 @@ export function useTaskThread(
     },
   );
   useEffect(() => {
-    if (!taskId || !enabled || query.dataUpdatedAt === 0) return;
+    if (!taskId || !enabled || !markActivityRead || query.dataUpdatedAt === 0)
+      return;
     const openingKey = `${opening.taskId}:${opening.seenBefore}`;
     if (markedOpening.current === openingKey) return;
     markedOpening.current = openingKey;
     markTasksRead([{ task_id: taskId, seen_before: opening.seenBefore }]);
-  }, [taskId, enabled, markTasksRead, opening, query.dataUpdatedAt]);
+  }, [
+    taskId,
+    enabled,
+    markActivityRead,
+    markTasksRead,
+    opening,
+    query.dataUpdatedAt,
+  ]);
   return { messages: query.data ?? [], isLoading: query.isLoading };
 }
 
