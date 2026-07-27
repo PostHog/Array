@@ -1,11 +1,9 @@
 import {
   CaretDown,
   Check,
-  CircleNotch,
   Copy,
   FileText,
   Scroll,
-  WarningCircle,
 } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 import { useService } from "@posthog/di/react";
@@ -271,13 +269,11 @@ function UserBubble({
   timestamp,
   attachments = [],
   keyboardFocused = false,
-  deliveryStatus,
 }: {
   content: string;
   timestamp?: number;
   attachments?: UserMessageAttachment[];
   keyboardFocused?: boolean;
-  deliveryStatus?: "sending" | "sent" | "failed";
 }) {
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
@@ -424,29 +420,8 @@ function UserBubble({
           </ChatBubbleContent>
         </ChatBubble>
         {timestamp != null && (
-          <ChatMessageFooter
-            className={cn(
-              "transition-opacity",
-              !deliveryStatus && "opacity-0 group-hover:opacity-100",
-              deliveryStatus === "failed" && "text-destructive",
-            )}
-          >
-            {deliveryStatus === "sending" && (
-              <CircleNotch className="size-3 animate-spin" aria-hidden />
-            )}
-            {deliveryStatus === "failed" && (
-              <WarningCircle className="size-3" aria-hidden />
-            )}
-            {deliveryStatus === "sent" && (
-              <Check className="size-3" aria-hidden />
-            )}
-            {deliveryStatus === "sending"
-              ? "Sending…"
-              : deliveryStatus === "failed"
-                ? "Failed to send"
-                : deliveryStatus === "sent"
-                  ? "Sent"
-                  : formatTimestamp(timestamp)}
+          <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
+            {formatTimestamp(timestamp)}
           </ChatMessageFooter>
         )}
       </ChatMessageContent>
@@ -563,7 +538,6 @@ function ThreadItemBody({
         timestamp={item.timestamp}
         attachments={item.attachments}
         keyboardFocused={keyboardFocused}
-        deliveryStatus={item.deliveryStatus}
       />
     );
   }

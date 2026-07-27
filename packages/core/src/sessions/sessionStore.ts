@@ -374,27 +374,13 @@ export const sessionStoreSetters = {
         ? Omit<T, "id">
         : never
       : never,
-  ): string => {
+  ): void => {
     const id = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     sessionStore.setState((state) => {
       const session = state.sessions[taskRunId];
       if (session) {
         session.optimisticItems.push({ ...item, id } as OptimisticItem);
       }
-    });
-    return id;
-  },
-
-  updateOptimisticItem: (
-    taskRunId: string,
-    itemId: string,
-    patch: Partial<OptimisticItem>,
-  ): void => {
-    sessionStore.setState((state) => {
-      const session = state.sessions[taskRunId];
-      if (!session) return;
-      const item = session.optimisticItems.find(({ id }) => id === itemId);
-      if (item) Object.assign(item, patch);
     });
   },
 

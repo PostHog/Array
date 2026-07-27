@@ -49,7 +49,6 @@ export type ConversationItem =
       timestamp: number;
       attachments?: UserMessageAttachment[];
       pinToTop?: boolean;
-      deliveryStatus?: "sending" | "sent" | "failed";
     }
   | { type: "git_action"; id: string; actionType: GitActionType }
   | { type: "skill_button_action"; id: string; buttonId: SkillButtonId }

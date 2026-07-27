@@ -71,7 +71,6 @@ function createHarness() {
     clearMessageQueue: vi.fn(),
     clearTailOptimisticItems: vi.fn(),
     appendOptimisticItem: vi.fn(),
-    updateOptimisticItem: vi.fn(),
   };
 
   let onEvent: ((payload: unknown) => void) | undefined;
