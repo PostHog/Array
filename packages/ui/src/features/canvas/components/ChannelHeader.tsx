@@ -15,7 +15,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
-// The feed-side counterpart to the switcher's hover star.
+// The feed-side counterpart to the sidebar back row's hover star.
 function ChannelStarButton({ channel }: { channel: Channel }) {
   const { isStarred, toggleStar } = useChannelStarToggle(channel);
   return (

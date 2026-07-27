@@ -11,9 +11,10 @@ import { useHotkeys } from "react-hotkeys-hook";
  * Renders nothing — the unconditional owner of ⌘1-9 (switch channel) under the
  * channels layout.
  *
- * Mounted from the root rather than from the switcher: the switcher only renders
- * once a channel is already scoped, so binding there left the keys with no owner
- * exactly when the user most needs them (channel list still loading, or failed).
+ * Mounted from the root rather than from the sidebar: the sidebar only renders
+ * its channel pane once a channel is already scoped, so binding there left the
+ * keys with no owner exactly when the user most needs them (channel list still
+ * loading, or failed).
  * GlobalEventHandlers yields SWITCH_TASK to this whenever the layout is on, so
  * there must always be someone listening.
  */
