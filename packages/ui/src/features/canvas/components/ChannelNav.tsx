@@ -1,12 +1,10 @@
 import { BellIcon, EnvelopeSimple, Lightning } from "@phosphor-icons/react";
-import { countUnseenActivity } from "@posthog/core/canvas/mentionActivity";
 import { cn } from "@posthog/quill";
 import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
 } from "@posthog/shared/analytics-events";
-import { useMentionActivity } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
-import { useActivitySeenStore } from "@posthog/ui/features/canvas/stores/activitySeenStore";
+import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
 import {
   formatHotkey,
   SHORTCUTS,
@@ -23,7 +21,6 @@ import {
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import type { ReactNode } from "react";
-import { useMemo } from "react";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -72,12 +69,7 @@ export function ChannelNav() {
     ignoreFilters: true,
     refetchIntervalMs: INBOX_REFETCH_INTERVAL_MS,
   });
-  const { items: activityItems } = useMentionActivity();
-  const lastSeenAt = useActivitySeenStore((s) => s.lastSeenAt);
-  const unseenActivity = useMemo(
-    () => countUnseenActivity(activityItems, lastSeenAt),
-    [activityItems, lastSeenAt],
-  );
+  const { unreadCount: unseenActivity } = useTaskActivity();
   const commandCenterCount = useCommandCenterActiveCount();
 
   const withTrack = (item: SidebarNavItem, action: () => void) => () => {

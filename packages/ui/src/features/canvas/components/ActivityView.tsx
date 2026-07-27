@@ -248,7 +248,8 @@ export function ActivityView() {
           Activity
         </Text>
         <Text size="2" className="block text-muted-foreground">
-          Tasks you're involved in across {spacesLayout ? "spaces" : "channels"}.
+          Tasks you're involved in across {spacesLayout ? "spaces" : "channels"}
+          .
         </Text>
         <div className="mt-4">
           {isLoading && items.length === 0 ? (
@@ -263,7 +264,8 @@ export function ActivityView() {
                 </EmptyMedia>
                 <EmptyTitle>No activity yet</EmptyTitle>
                 <EmptyDescription>
-                  Tasks you create, get tagged in, or reply to across {spacesLayout ? "spaces" : "channels"} land here.
+                  Tasks you create, get tagged in, or reply to across{" "}
+                  {spacesLayout ? "spaces" : "channels"} land here.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

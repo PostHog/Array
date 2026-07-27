@@ -187,7 +187,14 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
           );
         });
     },
-    [backendChannel?.id, channelId, fileTask, invalidateFeed, queryClient],
+    [
+      backendChannel?.id,
+      channelId,
+      fileTask,
+      invalidateFeed,
+      queryClient,
+      spacesLayout,
+    ],
   );
 
   const handleOpenFull = useCallback(
