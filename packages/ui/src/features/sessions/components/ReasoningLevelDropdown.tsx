@@ -17,6 +17,10 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
   Slider,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@posthog/quill";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { openUrlInBrowser } from "@posthog/ui/utils/browser";
@@ -216,7 +220,13 @@ export function ReasoningSliderFace({
   currentKey?: string;
   onSelect: (key: string) => void;
   onAdvanced: () => void;
-  fastToggle?: { active: boolean; disabled?: boolean; onToggle: () => void };
+  fastToggle?: {
+    active: boolean;
+    disabled?: boolean;
+    docsUrl?: string;
+    tooltip?: string;
+    onToggle: () => void;
+  };
 }) {
   const matchedIndex = stops.findIndex((stop) => stop.key === currentKey);
   const activeIndex =
@@ -257,27 +267,47 @@ export function ReasoningSliderFace({
           <CaretRight size={10} weight="bold" />
         </button>
         {fastToggle && (
-          <button
-            type="button"
-            aria-label="Toggle fast mode"
-            aria-pressed={fastToggle.active}
-            disabled={fastToggle.disabled}
+          <span
             className={cn(
-              "rounded-md border border-border p-1.5",
+              "flex items-center gap-1.5",
               // Hidden, not unmounted: the slot keeps its size so sliding
               // across models never reflows the popup.
               fastToggle.disabled && "invisible",
-              fastToggle.active
-                ? "text-amber-11"
-                : "text-muted-foreground hover:text-foreground",
             )}
-            onClick={fastToggle.onToggle}
           >
-            <Lightning
-              size={13}
-              weight={fastToggle.active ? "fill" : "regular"}
-            />
-          </button>
+            {fastToggle.docsUrl && (
+              <DocsLink label="fast mode" docsUrl={fastToggle.docsUrl} />
+            )}
+            <TooltipProvider delay={300}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Toggle fast mode"
+                      aria-pressed={fastToggle.active}
+                      disabled={fastToggle.disabled}
+                      className={cn(
+                        "rounded-md border border-border p-1.5",
+                        fastToggle.active
+                          ? "text-amber-11"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={fastToggle.onToggle}
+                    >
+                      <Lightning
+                        size={13}
+                        weight={fastToggle.active ? "fill" : "regular"}
+                      />
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  {fastToggle.tooltip ?? "Fast mode"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </span>
         )}
       </div>
       <div className="flex items-center justify-between gap-2 text-muted-foreground/60 text-xs">

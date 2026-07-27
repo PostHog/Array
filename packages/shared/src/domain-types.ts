@@ -47,6 +47,12 @@ export const EFFORT_LEVEL_DOCS_URLS: Partial<Record<EffortLevel, string>> = {
   ultracode: "https://code.claude.com/docs/en/workflows",
 };
 
+/** Adapter-specific docs for the fast mode toggle. */
+export const FAST_MODE_DOCS_URLS: Record<string, string> = {
+  claude: "https://code.claude.com/docs/en/model-config",
+  codex: "https://developers.openai.com/codex",
+};
+
 export interface UserBasic {
   id: number;
   uuid: string;

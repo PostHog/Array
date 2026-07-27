@@ -34,7 +34,10 @@ import {
   isRestrictedModelOption,
   selectOptionDocsUrl,
 } from "@posthog/shared";
-import { EFFORT_LEVEL_LABELS } from "@posthog/shared/domain-types";
+import {
+  EFFORT_LEVEL_LABELS,
+  FAST_MODE_DOCS_URLS,
+} from "@posthog/shared/domain-types";
 import { gateRestrictedModelPick } from "@posthog/ui/features/billing/modelGate";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { ModelRadioItem } from "@posthog/ui/features/sessions/components/ModelRadioItem";
@@ -244,6 +247,8 @@ export function ReasoningLevelSelector({
       ? {
           active: fastActive,
           disabled: !fastSelect,
+          docsUrl: FAST_MODE_DOCS_URLS[adapter],
+          tooltip: "Fast mode: faster responses at higher usage",
           onToggle: () => {
             if (fastSelect) {
               onConfigOptionChange(fastSelect.id, fastActive ? "off" : "on");
@@ -320,7 +325,9 @@ export function ReasoningLevelSelector({
     <DropdownMenu
       open={open}
       onOpenChange={(nextOpen) => {
-        if (nextOpen) setAdvanced(!onNotch);
+        // Only on the closed-to-open transition: submenu opens re-fire this
+        // with true and must not yank the view back.
+        if (nextOpen && !open) setAdvanced(!onNotch);
         setOpen(nextOpen);
       }}
       onOpenChangeComplete={(isOpen) => {
