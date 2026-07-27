@@ -1,6 +1,6 @@
 import { Theme } from "@radix-ui/themes";
 import { act, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   featureFlags: new Map<string, boolean>(),
@@ -168,6 +168,79 @@ describe("ChannelsSidebar", () => {
       renderSidebar();
       expect(listIsInteractive()).toBe(true);
       expect(screen.queryByTestId("channel-sidebar")).toBeNull();
+    });
+
+    // A trackpad swipe reaches the panes as a horizontal wheel. Right (negative
+    // deltaX, the platform "back" direction) leaves the channel; left returns to
+    // the one still scoped.
+    describe("swiping", () => {
+      // Wheel deltas within one gesture arrive back to back; a pause between
+      // them is what ends it. Fake timers let a test say which it's sending.
+      const wheel = (deltaX: number, deltaY = 0) =>
+        act(() => {
+          screen.getByTestId("channels-list").dispatchEvent(
+            new WheelEvent("wheel", {
+              deltaX,
+              deltaY,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        });
+      const pause = () => act(() => void vi.advanceTimersByTime(500));
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+        mocks.routeChannelId = ENG.id;
+      });
+      afterEach(() => vi.useRealTimers());
+
+      it("goes back to the list and forward into the channel", () => {
+        renderSidebar();
+
+        wheel(-80);
+        expect(listIsInteractive()).toBe(true);
+        // The channel is browsed away from, not left.
+        expect(useCurrentChannelStore.getState().currentChannelId).toBe(ENG.id);
+
+        pause();
+        wheel(80);
+        expect(listIsInteractive()).toBe(false);
+      });
+
+      // One flick is dozens of small deltas, so the distance has to add up
+      // across them rather than be read off any one event.
+      it("adds a gesture's deltas up", () => {
+        renderSidebar();
+        wheel(-20);
+        expect(listIsInteractive()).toBe(false);
+        wheel(-20);
+        wheel(-20);
+        expect(listIsInteractive()).toBe(true);
+      });
+
+      it("ignores a mostly-vertical wheel", () => {
+        renderSidebar();
+        wheel(-80, -200);
+        expect(listIsInteractive()).toBe(false);
+      });
+
+      it("forgets a nudge once the gesture ends", () => {
+        renderSidebar();
+        wheel(-30);
+        pause();
+        wheel(-30);
+        expect(listIsInteractive()).toBe(false);
+      });
+
+      // The momentum tail of one flick keeps delivering deltas; read as fresh
+      // travel they'd swipe straight back to where the flick started.
+      it("does not let one flick's momentum swipe twice", () => {
+        renderSidebar();
+        wheel(-80);
+        wheel(200);
+        expect(listIsInteractive()).toBe(true);
+      });
     });
   });
 
