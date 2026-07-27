@@ -2818,6 +2818,15 @@ describe("CodexAppServerAgent", () => {
       _meta: {},
     } as unknown as NewSessionRequest);
 
+    // A token-usage update precedes auto-compaction (the window fills mid-turn);
+    // its counts feed the boundary's preTokens/contextSize so the UI isn't NaN.
+    stub.emit("thread/tokenUsage/updated", {
+      tokenUsage: {
+        last: { inputTokens: 180000, outputTokens: 5000, totalTokens: 185000 },
+        modelContextWindow: 200000,
+      },
+    });
+
     // The compaction item brackets it: started → in progress, completed → boundary.
     stub.emit("item/started", {
       item: { type: "contextCompaction", id: "c1" },
@@ -2826,11 +2835,17 @@ describe("CodexAppServerAgent", () => {
       item: { type: "contextCompaction", id: "c1", summary: "…" },
     });
 
-    // compact_boundary clears isCompacting + drains the host queue.
+    // compact_boundary clears isCompacting + drains the host queue, and carries the
+    // trigger/token fields the CompactBoundaryView needs.
     expect(
       extNotifications.find((n) => n.method === "_posthog/compact_boundary")
         ?.params,
-    ).toMatchObject({ sessionId: "t" });
+    ).toMatchObject({
+      sessionId: "t",
+      trigger: "auto",
+      preTokens: 185000,
+      contextSize: 200000,
+    });
     // ...and a user-visible marker lands in the transcript.
     expect(sessionUpdates).toContainEqual({
       sessionId: "t",
