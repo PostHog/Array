@@ -141,15 +141,12 @@ export interface StickyAnchorEntry {
 
 export interface StickyAnchorState {
   anchorId: string | null;
-  /** True once the anchoring row's bottom has scrolled above the viewport top. */
-  offscreen: boolean;
 }
 
 /**
  * The user message anchoring the current viewport: the last user row whose top sits at or above
  * the viewport top plus `peek` — the same band the scroller engine's anchor scan uses in the
- * non-virtualized thread. `offscreen` mirrors the sticky-header geometry there: the overlay only
- * appears once the message's bottom clears the viewport top (4px tolerance).
+ * non-virtualized thread.
  */
 export function computeStickyAnchor(
   entries: readonly StickyAnchorEntry[],
@@ -164,6 +161,5 @@ export function computeStickyAnchor(
       break;
     }
   }
-  if (!anchor) return { anchorId: null, offscreen: false };
-  return { anchorId: anchor.id, offscreen: anchor.end <= scrollTop + 4 };
+  return { anchorId: anchor?.id ?? null };
 }

@@ -86,6 +86,9 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
+  TaskActivityMarkReadResult,
+  TaskActivityPage,
+  TaskActivityReadMarker,
   TaskChannel,
   TaskMention,
   TaskRun,
@@ -2504,6 +2507,53 @@ export class PostHogAPIClient {
       throw new Error(`Failed to fetch task mentions: ${response.statusText}`);
     }
     return (await response.json()) as TaskMention[];
+  }
+
+  // Tasks the current user is involved in (created, mentioned, or messaged),
+  // one row per task, newest activity first.
+  async getTaskActivity(options?: {
+    before?: string;
+    beforeId?: string;
+  }): Promise<TaskActivityPage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_activity/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options?.before && options.beforeId) {
+      url.searchParams.set("before", options.before);
+      url.searchParams.set("before_id", options.beforeId);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task activity: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskActivityPage;
+  }
+
+  // Read state is per task, so callers name the tasks the user has seen rather than
+  // clearing the whole feed.
+  async markTaskActivityRead(
+    activities: TaskActivityReadMarker[],
+  ): Promise<TaskActivityMarkReadResult> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_activity/mark_read/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ activities }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to mark task activity read: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as TaskActivityMarkReadResult;
   }
 
   async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {

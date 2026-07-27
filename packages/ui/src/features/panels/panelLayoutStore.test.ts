@@ -145,6 +145,54 @@ describe("panelLayoutStore", () => {
     });
   });
 
+  describe("openArtifactTab", () => {
+    beforeEach(() => {
+      usePanelLayoutStore.getState().initializeTask("task-1");
+    });
+
+    it("opens and focuses the artifact beside Chat", () => {
+      usePanelLayoutStore.getState().openArtifactTab("task-1", {
+        runId: "run-1",
+        artifactId: "output-1",
+        name: "report.html",
+      });
+
+      const tree = getPanelTree("task-1");
+      if (tree.type !== "leaf") throw new Error("Expected the main panel");
+      expect(tree.content.activeTabId).toBe("artifact-output-1");
+      expect(tree.content.tabs.map((tab) => tab.label)).toEqual([
+        "Chat",
+        "Terminal",
+        "report.html",
+      ]);
+      expect(tree.content.tabs.at(-1)?.data).toEqual({
+        type: "artifact",
+        runId: "run-1",
+        artifactId: "output-1",
+      });
+    });
+
+    it("focuses an existing artifact instead of duplicating it", () => {
+      const artifact = {
+        runId: "run-1",
+        artifactId: "output-1",
+        name: "report.html",
+      };
+      usePanelLayoutStore.getState().openArtifactTab("task-1", artifact);
+      usePanelLayoutStore
+        .getState()
+        .setActiveTab("task-1", "main-panel", "logs");
+      usePanelLayoutStore.getState().openArtifactTab("task-1", artifact);
+
+      const tree = getPanelTree("task-1");
+      if (tree.type !== "leaf") throw new Error("Expected the main panel");
+      expect(tree.content.activeTabId).toBe("artifact-output-1");
+      expect(
+        tree.content.tabs.filter((tab) => tab.id === "artifact-output-1"),
+      ).toHaveLength(1);
+    });
+  });
+
   describe("closeTab", () => {
     beforeEach(() => {
       usePanelLayoutStore.getState().initializeTask("task-1");

@@ -139,6 +139,51 @@ export interface TaskMention {
   created_at: string;
 }
 
+/** Which signal produced an activity row; mirrors the backend `activity_kind`. */
+export type TaskActivityKind =
+  | "awaiting_input"
+  | "completed"
+  | "message"
+  | "mention"
+  | "created";
+
+/**
+ * One task the current user is involved in, from the backend task-activity feed
+ * (`/task_activity/`). One row per task, newest activity first. Mirrors
+ * `TaskActivityDTO`.
+ */
+export interface TaskActivity {
+  id: string;
+  task_id: string;
+  task_title: string;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  activity_at: string;
+  activity_kind: TaskActivityKind;
+  snippet: string;
+  latest_author?: UserBasic | null;
+  latest_message_id?: string | null;
+  is_unread: boolean;
+}
+
+export interface TaskActivityPage {
+  results: TaskActivity[];
+  /** Unread tasks across the whole feed, not just this page. Backs the sidebar badge. */
+  unread_count: number;
+  next_before?: string | null;
+  next_before_id?: string | null;
+}
+
+export interface TaskActivityReadMarker {
+  task_id: string;
+  seen_before: string;
+}
+
+export interface TaskActivityMarkReadResult {
+  marked_read: number;
+  unread_count: number;
+}
+
 export type TaskRunStatus =
   | "not_started"
   | "queued"

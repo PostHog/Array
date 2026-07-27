@@ -45,6 +45,11 @@ export type TabData =
       type: "autoresearch";
     }
   | {
+      type: "artifact";
+      runId: string;
+      artifactId: string;
+    }
+  | {
       type: "other";
     };
 

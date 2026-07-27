@@ -47,7 +47,7 @@ import {
   type PromptRecallHandler,
 } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
-import { StickyHeaderOverlay } from "@posthog/ui/features/sessions/components/chat-thread/ThreadStickyHeader";
+import { MessageMinimap } from "@posthog/ui/features/sessions/components/chat-thread/MessageMinimap";
 import { ToolGroup } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
 import {
@@ -79,7 +79,10 @@ import {
 import { SessionUpdateView } from "@posthog/ui/features/sessions/components/session-update/SessionUpdateView";
 import { UserShellExecuteView } from "@posthog/ui/features/sessions/components/session-update/UserShellExecuteView";
 import { UserMessageAttachments } from "@posthog/ui/features/sessions/components/UserMessageAttachments";
-import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import {
+  CHAT_CONTENT_GUTTER,
+  CHAT_CONTENT_MAX_WIDTH,
+} from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useAgentConversationItems } from "@posthog/ui/features/sessions/hooks/useAgentConversationItems";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
@@ -565,7 +568,7 @@ const ThreadRow = memo(function ThreadRow({
       <ChatMessageScrollerItem
         messageId={item.id}
         scrollAnchor={false}
-        className="group mx-auto w-full px-4 empty:hidden"
+        className="group mx-auto w-full empty:hidden"
         style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
       >
         <div className="flex flex-col gap-4 empty:hidden">
@@ -676,7 +679,7 @@ function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
 /**
  * Keyboard message navigation (Alt/Option+Up/Down) and the Cmd/Ctrl+J jump picker. Rendered inside
  * `ChatMessageScrollerProvider` so it can call `scrollToMessage` from the engine — the same primitive
- * `StickyHeaderOverlay` uses to jump back to the anchored turn.
+ * `MessageMinimap` uses to jump back to an earlier turn.
  */
 function ThreadKeyboardNav({
   items,
@@ -848,13 +851,14 @@ function ThreadScrollBody({
       className="group/thread"
       onPointerDownCapture={onUserInteract}
     >
-      <StickyHeaderOverlay items={items} />
+      <MessageMinimap items={items} />
       <ThreadAutoFollow items={items} />
       <ThreadScrollStateRecorder stateRef={resumeStateRef} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent
           className="gap-4 py-4 pb-8"
           density="default"
+          style={{ paddingInline: CHAT_CONTENT_GUTTER }}
         >
           {keyedRows.map(({ item, key }) => (
             <ThreadRow
@@ -911,7 +915,7 @@ const FlatRowView = memo(
           // collapses entirely (display:none hides the padding too), matching how flex gap
           // skips hidden children there.
           "mx-auto w-full pb-4 [content-visibility:visible] empty:hidden",
-          row.inTurn ? "group px-4" : "px-2.5 pt-1",
+          row.inTurn ? "group" : "px-2.5 pt-1",
         )}
         style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
       >

@@ -144,11 +144,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Flex>
             </Flex>
           ) : (
-            <LoopsEmptyState
-              contextName={contextName}
-              onCreate={startBlank}
-              disabledReason={limitReason}
-            />
+            <LoopsEmptyState contextName={contextName} />
           )}
         </Flex>
       </div>

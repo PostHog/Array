@@ -123,7 +123,7 @@ function ComposerWidth({
 }) {
   return (
     <Box
-      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
+      className={compact ? "p-1" : "mx-auto pb-3"}
       style={compact ? undefined : { maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       {children}
