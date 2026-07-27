@@ -402,7 +402,7 @@ function EditableLoopTitle({ loop }: { loop: LoopSchemas.Loop }) {
       disabled={updateLoop.isPending}
       autoFocus
       aria-label="Loop title"
-      className="min-w-64 font-bold text-[18px]"
+      className="w-full min-w-72 max-w-2xl flex-1 font-bold text-[22px] tracking-tight"
       onChange={(event) => setDraft(event.currentTarget.value)}
       onBlur={(event) => commit(event.currentTarget.value)}
       onKeyDown={(event) => {
