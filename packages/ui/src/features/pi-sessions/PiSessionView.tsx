@@ -24,6 +24,7 @@ import {
   CloudStreamDisconnectedBanner,
 } from "@posthog/ui/features/sessions/components/CloudSessionLifecycle";
 import { ChatThread } from "@posthog/ui/features/sessions/components/chat-thread/ChatThread";
+import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useMessagingMode } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import { useMessagingModeStore } from "@posthog/ui/features/sessions/messagingModeStore";
@@ -32,7 +33,7 @@ import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
 import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
 import { Box, Flex } from "@radix-ui/themes";
-import { type ReactElement, useCallback, useEffect } from "react";
+import { type ReactElement, useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
 import {
   PiMessagingModeSelector,
@@ -59,6 +60,11 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   const messagingMode = useMessagingMode(taskId);
   const setMessagingMode = useMessagingModeStore((state) => state.setMode);
   const { isOnline } = useConnectivity();
+  const promptRecallRef = useRef<PromptRecallHandler | null>(null);
+  const handlePromptRecall = useCallback<PromptRecallHandler>(
+    (direction) => promptRecallRef.current?.(direction) ?? null,
+    [],
+  );
 
   useEffect(() => {
     void piSessionController.ensureConnected(taskId, taskRunId).catch(() => {});
@@ -247,7 +253,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     return <TaskDetailSkeleton />;
   }
 
-  const pending = status ? isStreaming || isBashRunning : false;
+  const controlsPending = status ? isStreaming || isBashRunning : false;
   let modelSelector: ReactElement = <Skeleton className="h-7 w-32" />;
   let reasoningSelector: ReactElement | null = (
     <Skeleton className="h-7 w-20" />
@@ -259,7 +265,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
       <PiModelSelector
         models={session.models}
         currentModel={status.model}
-        disabled={pending || isCompacting}
+        disabled={controlsPending || isCompacting}
         onChange={setModel}
       />
     );
@@ -273,7 +279,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
       <PiThinkingLevelSelector
         level={status.thinkingLevel}
         levels={session.thinkingLevels}
-        disabled={pending || isCompacting}
+        disabled={controlsPending || isCompacting}
         onChange={setThinkingLevel}
       />
     ) : null;
@@ -310,9 +316,10 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
       <Box className="min-h-0 flex-1">
         <ChatThread
           events={session.events}
-          isPromptPending={pending}
+          isPromptPending={isStreaming}
           taskId={taskId}
           repoPath={repoPath}
+          promptRecallRef={promptRecallRef}
         />
       </Box>
       <Box
@@ -325,7 +332,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
           repoPath={repoPath}
           placeholder="Type a message..."
           disabled={isCompacting}
-          isLoading={pending}
+          isLoading={controlsPending}
           submitDisabledExternal={!sessionAvailable || !status || !isOnline}
           submitTooltipOverride={
             !isOnline ? "No internet connection" : undefined
@@ -336,6 +343,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
           reasoningSelector={reasoningSelector}
           messagingModeToggle={messagingModeToggle}
           onToggleMessagingMode={toggleMessagingMode}
+          onPromptRecall={handlePromptRecall}
           onSubmit={sendPrompt}
           onBashCommand={runBashCommand}
           onCancel={cancelPrompt}
