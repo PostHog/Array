@@ -4,6 +4,11 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import { Spinner } from "@posthog/quill";
+import {
+  getAuthIdentity,
+  useAuthStateValue,
+} from "@posthog/ui/features/auth/store";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -37,8 +42,9 @@ export function ArtifactPreview({
   name: string;
 }) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const authIdentity = useAuthStateValue(getAuthIdentity);
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["artifactPreview", taskId, runId, artifactId],
+    queryKey: ["artifactPreview", authIdentity, taskId, runId, artifactId],
     queryFn: async () => {
       const url = await sessionService.getCloudAttachmentPreviewUrl(
         taskId,
@@ -59,8 +65,10 @@ export function ArtifactPreview({
       }
       return blob;
     },
+    enabled: authIdentity !== null,
     staleTime: Infinity,
     retry: false,
+    meta: AUTH_SCOPED_QUERY_META,
   });
   const previewUrl = useMemo(
     () => (data ? URL.createObjectURL(data) : null),
