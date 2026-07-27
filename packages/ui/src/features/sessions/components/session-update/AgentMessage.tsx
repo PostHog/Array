@@ -70,7 +70,7 @@ export const AgentMessage = memo(function AgentMessage({
   }, [content]);
 
   return (
-    <Box className="group/msg relative pl-3 text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]">
+    <Box className="group/msg relative pr-9 pl-3 text-[13px] [&>*:last-child]:mb-0 [&_p]:leading-[1.9]">
       {isStreaming ? (
         <StreamingMarkdown
           content={smoothed}
@@ -82,7 +82,7 @@ export const AgentMessage = memo(function AgentMessage({
           componentsOverride={agentComponents}
         />
       )}
-      <Box className="absolute top-1 left-full ml-2 opacity-0 transition-opacity group-hover/msg:opacity-100">
+      <Box className="absolute top-1 right-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
         <Tooltip content={copied ? "Copied!" : "Copy message"}>
           <IconButton
             size="1"
