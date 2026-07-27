@@ -260,9 +260,17 @@ export function ReasoningLevelSelector({
 
   const resetToDefaults = () => {
     selectAndClose(() => {
-      const defaultEffort = effortOptions.find((option) => option.isDefault);
-      if (defaultEffort && defaultEffort.value !== currentEffort) {
-        onChange?.(defaultEffort.value);
+      if (useLadder) {
+        // The middle notch is the balanced default for the whole ladder.
+        const middle = stops[Math.floor((stops.length - 1) / 2)];
+        const [model, effort] = middle?.key.split(STOP_SEPARATOR) ?? [];
+        if (model && model !== currentModel) changeModel(model);
+        if (effort && effort !== currentEffort) onChange?.(effort);
+      } else {
+        const defaultEffort = effortOptions.find((option) => option.isDefault);
+        if (defaultEffort && defaultEffort.value !== currentEffort) {
+          onChange?.(defaultEffort.value);
+        }
       }
       for (const row of toggleRows) {
         const rowDefault = row.options.find(
