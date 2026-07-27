@@ -217,6 +217,12 @@ export function ReasoningLevelSelector({
     ? `${currentModel}${STOP_SEPARATOR}${currentEffort}`
     : currentEffort;
 
+  // A custom Advanced combination (off the preset ladder) hides the slider:
+  // the menu opens straight on the Advanced view until Reset to default puts
+  // the session back on a notch.
+  const onNotch =
+    !useLadder || ladderStops.some((stop) => stop.key === currentStopKey);
+
   const handleStopSelect = (key: string) => {
     if (key.includes(STOP_SEPARATOR)) {
       const [model, effort] = key.split(STOP_SEPARATOR);
@@ -313,7 +319,10 @@ export function ReasoningLevelSelector({
   return (
     <DropdownMenu
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) setAdvanced(!onNotch);
+        setOpen(nextOpen);
+      }}
       onOpenChangeComplete={(isOpen) => {
         if (!isOpen) {
           setAdvanced(false);
@@ -381,7 +390,7 @@ export function ReasoningLevelSelector({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.12, ease: "easeOut" }}
               >
-                <BackRow onClick={() => setAdvanced(false)} />
+                {onNotch && <BackRow onClick={() => setAdvanced(false)} />}
                 {onAdapterChange && adapter && (
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>

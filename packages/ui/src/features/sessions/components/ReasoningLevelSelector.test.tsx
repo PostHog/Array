@@ -4,10 +4,14 @@ import {
   OPTION_DOCS_URL_META_KEY,
 } from "@posthog/shared";
 import { Theme } from "@radix-ui/themes";
-import { render, screen, waitFor } from "@testing-library/react";
+import { configure, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
+
+// Menu open/close and submenu reveals ride animations that starve under
+// parallel suite load; the default 1s async timeout flakes.
+configure({ asyncUtilTimeout: 5000 });
 
 const openUrlInBrowser = vi.hoisted(() => vi.fn());
 vi.mock("@posthog/ui/utils/browser", () => ({ openUrlInBrowser }));
@@ -44,6 +48,23 @@ function thoughtOption(
   } as unknown as SessionConfigOption;
 }
 
+function claudeModelOption(
+  currentValue = "claude-opus-5",
+): SessionConfigOption {
+  return {
+    type: "select",
+    id: "model",
+    name: "Model",
+    category: "model",
+    currentValue,
+    options: [
+      { name: "Claude Sonnet 5", value: "claude-sonnet-5" },
+      { name: "Claude Opus 5", value: "claude-opus-5" },
+      { name: "Claude Fable 5", value: "claude-fable-5" },
+    ],
+  } as unknown as SessionConfigOption;
+}
+
 function contextOption(currentValue = "1m"): SessionConfigOption {
   return {
     type: "select",
@@ -77,6 +98,9 @@ async function openAdvanced(user: ReturnType<typeof userEvent.setup>) {
 
 async function openSub(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
   const trigger = await screen.findByRole("menuitem", { name });
+  // Hover first: under parallel test load a bare click can race the
+  // submenu's hover-intent handling and toggle it straight closed.
+  await user.hover(trigger);
   await user.click(trigger);
 }
 
@@ -245,6 +269,48 @@ describe("ReasoningLevelSelector", () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("high"));
     expect(onConfigOptionChange).toHaveBeenCalledWith("context_window", "1m");
     expect(onConfigOptionChange).toHaveBeenCalledWith("fast", "off");
+  });
+
+  it("opens on the ladder slider when the combo is a preset", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption()}
+          modelOption={claudeModelOption()}
+          adapter="claude"
+        />
+      </Theme>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Model and reasoning/ }),
+    );
+    expect(await screen.findByRole("slider")).toBeInTheDocument();
+  });
+
+  it("hides the slider when the combo is off the preset ladder", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption({ currentValue: "low" })}
+          modelOption={claudeModelOption()}
+          adapter="claude"
+        />
+      </Theme>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Model and reasoning/ }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: /^Reasoning/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Back" }),
+    ).not.toBeInTheDocument();
   });
 
   it.each([
