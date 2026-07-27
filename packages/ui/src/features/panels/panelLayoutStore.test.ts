@@ -169,7 +169,6 @@ describe("panelLayoutStore", () => {
         type: "artifact",
         runId: "run-1",
         artifactId: "output-1",
-        name: "report.html",
       });
     });
 

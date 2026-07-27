@@ -100,18 +100,6 @@ export function CloudArtifactDownloads({
     [runId, sessionService, taskId],
   );
 
-  const previewArtifact = useCallback(
-    (artifact: TaskRunArtifact): void => {
-      if (!taskId || !runId || !artifact.id) return;
-      openArtifactTab(taskId, {
-        runId,
-        artifactId: artifact.id,
-        name: artifact.name,
-      });
-    },
-    [openArtifactTab, runId, taskId],
-  );
-
   if (!runId || artifacts.length === 0) return null;
 
   return (
@@ -133,7 +121,14 @@ export function CloudArtifactDownloads({
                 type="button"
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                 disabled={!canDownload}
-                onClick={() => previewArtifact(artifact)}
+                onClick={() => {
+                  if (!taskId || !artifact.id) return;
+                  openArtifactTab(taskId, {
+                    runId,
+                    artifactId: artifact.id,
+                    name: artifact.name,
+                  });
+                }}
               >
                 <FileIcon filename={artifact.name} size={16} />
                 <Text className="truncate text-[13px]">{artifact.name}</Text>

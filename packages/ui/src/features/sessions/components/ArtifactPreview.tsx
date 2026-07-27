@@ -81,7 +81,6 @@ export function ArtifactPreview({
     };
   }, [previewUrl]);
 
-  const title = useMemo(() => `Preview of ${name}`, [name]);
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -101,7 +100,7 @@ export function ArtifactPreview({
       className="h-full w-full border-0 bg-white"
       sandbox=""
       src={previewUrl}
-      title={title}
+      title={`Preview of ${name}`}
     />
   );
 }

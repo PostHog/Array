@@ -48,7 +48,6 @@ export type TabData =
       type: "artifact";
       runId: string;
       artifactId: string;
-      name: string;
     }
   | {
       type: "other";

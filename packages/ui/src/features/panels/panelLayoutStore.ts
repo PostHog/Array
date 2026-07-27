@@ -8,7 +8,6 @@ import {
   keepTab as coreKeepTab,
   moveTab as coreMoveTab,
   openReadonlyTab as coreOpenReadonlyTab,
-  openReadonlyTabInSplit as coreOpenReadonlyTabInSplit,
   openTab as coreOpenTab,
   openTabInSplit as coreOpenTabInSplit,
   reorderTabs as coreReorderTabs,
@@ -253,7 +252,7 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenReadonlyTabInSplit(layout, tabId, label, {
+              coreOpenReadonlyTab(layout, tabId, label, {
                 type: "context",
                 channelName: context.channelName,
                 body: context.body,
@@ -268,7 +267,7 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenReadonlyTabInSplit(
+              coreOpenReadonlyTab(
                 layout,
                 "canvas-instructions",
                 "Canvas instructions",
@@ -284,14 +283,9 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenReadonlyTabInSplit(
-                layout,
-                "autoresearch",
-                "Autoresearch",
-                {
-                  type: "autoresearch",
-                },
-              ) as Partial<TaskLayout>,
+              coreOpenReadonlyTab(layout, "autoresearch", "Autoresearch", {
+                type: "autoresearch",
+              }) as Partial<TaskLayout>,
           ),
         );
       },
@@ -303,10 +297,17 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenReadonlyTab(layout, tabId, artifact.name, {
-                type: "artifact",
-                ...artifact,
-              }) as Partial<TaskLayout>,
+              coreOpenReadonlyTab(
+                layout,
+                tabId,
+                artifact.name,
+                {
+                  type: "artifact",
+                  runId: artifact.runId,
+                  artifactId: artifact.artifactId,
+                },
+                "main",
+              ) as Partial<TaskLayout>,
           ),
         );
       },

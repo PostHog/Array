@@ -120,7 +120,7 @@ export function useTabInjection(
           } else if (tab.data.type === "autoresearch") {
             icon = <ChartLineUp size={14} />;
           } else if (tab.data.type === "artifact") {
-            icon = <FileIcon filename={tab.data.name} size={14} />;
+            icon = <FileIcon filename={tab.label} size={14} />;
           }
         }
 

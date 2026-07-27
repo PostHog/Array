@@ -83,7 +83,7 @@ export function TabContentRenderer({
           taskId={taskId}
           runId={data.runId}
           artifactId={data.artifactId}
-          name={data.name}
+          name={tab.label}
         />
       );
 
