@@ -1,4 +1,5 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import { Theme } from "@radix-ui/themes";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -12,7 +13,18 @@ vi.mock("./LoopTemplatesSection", () => ({
   LoopTemplatesSection: () => null,
 }));
 vi.mock("./LoopRow", () => ({
-  LoopRow: ({ loop }: { loop: LoopSchemas.Loop }) => <div>{loop.name}</div>,
+  LoopRow: ({
+    loop,
+    creator,
+  }: {
+    loop: LoopSchemas.Loop;
+    creator?: UserBasic;
+  }) => (
+    <div>
+      {loop.name}
+      {loop.visibility === "team" && creator ? ` by ${creator.email}` : null}
+    </div>
+  ),
 }));
 
 function loop(
@@ -53,6 +65,11 @@ describe("LoopsListViewPresentation", () => {
   });
 
   it("groups loops by ownership rather than visibility", async () => {
+    const currentUser: UserBasic = {
+      id: 1,
+      uuid: "current-user",
+      email: "current@example.com",
+    };
     render(
       <Theme>
         <LoopsListViewPresentation
@@ -62,6 +79,7 @@ describe("LoopsListViewPresentation", () => {
             loop("teammate-team", "team", 2),
           ]}
           currentUserId={1}
+          members={[currentUser]}
           onStartBlank={vi.fn()}
           onStartFromTemplate={vi.fn()}
         />
@@ -73,7 +91,9 @@ describe("LoopsListViewPresentation", () => {
       within(controlledPanel(personalTab)).getByText("personal loop"),
     ).toBeVisible();
     expect(
-      within(controlledPanel(personalTab)).getByText("team loop"),
+      within(controlledPanel(personalTab)).getByText(
+        "team loop by current@example.com",
+      ),
     ).toBeVisible();
 
     const teamTab = screen.getByRole("tab", { name: "Team loops (1)" });
