@@ -16,6 +16,7 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { ghTokenEnv } from "@posthog/git/signed-commit";
 import {
   type Adapter,
   buildPrOutput,
@@ -94,6 +95,7 @@ import {
   resolveGatewayProduct,
   resolveLlmGatewayUrl,
 } from "../utils/gateway";
+import { resolveGithubToken } from "../utils/github-token";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
 import {
@@ -4405,6 +4407,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
+  /** Env for a `gh` call that must run as the *current* actor. Prefers the live
+   *  sandbox token (rewritten on an actor transition) over the process env
+   *  (frozen at launch); returns undefined when unmanaged (local/desktop) so
+   *  execGh falls back to the process env. */
+  private ghActorEnv(): Record<string, string> | undefined {
+    const token = resolveGithubToken();
+    return token === undefined ? undefined : ghTokenEnv(token);
+  }
+
   private async fetchPrAttribution(
     prUrl: string,
   ): Promise<{ createdAt: string | null; author: string | null }> {
@@ -4413,6 +4424,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       {
         cwd: this.config.repositoryPath,
         timeoutMs: 10_000,
+        env: this.ghActorEnv(),
       },
     );
     if (res.exitCode !== 0) return { createdAt: null, author: null };
@@ -4431,11 +4443,21 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   }
 
   private ghLoginPromise: Promise<string | null> | null = null;
+  private ghLoginToken: string | undefined;
 
   private fetchGhLogin(): Promise<string | null> {
-    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+    // Key the memoized login on the live token: an actor transition rebinds
+    // /tmp/agent-env, so a cached login would otherwise attribute the new actor's
+    // work to the previous one (or reject their PR).
+    const token = resolveGithubToken();
+    if (this.ghLoginPromise !== null && this.ghLoginToken === token) {
+      return this.ghLoginPromise;
+    }
+    this.ghLoginToken = token;
+    this.ghLoginPromise = execGh(["api", "user", "--jq", ".login"], {
       cwd: this.config.repositoryPath,
       timeoutMs: 10_000,
+      env: token === undefined ? undefined : ghTokenEnv(token),
     })
       .then((res) => {
         const login = res.exitCode === 0 ? res.stdout.trim() : "";
