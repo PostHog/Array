@@ -533,6 +533,19 @@ export const useSettingsStore = create<SettingsStore>()(
     {
       name: "settings-storage",
       storage: electronStorage,
+      version: 1,
+      // v1 ships the merged model/reasoning control: bust everyone's saved
+      // selection state once so all users start on the new defaults.
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 1) {
+          state.lastUsedModel = null;
+          state.lastUsedReasoningEffort = null;
+          state.lastUsedContextWindow = null;
+          state.lastUsedFastMode = null;
+        }
+        return state;
+      },
       partialize: (state) => ({
         // Run mode + last-used flow defaults
         defaultRunMode: state.defaultRunMode,
