@@ -1,4 +1,8 @@
-import { ArrowLeftIcon, RepeatIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  PencilSimpleIcon,
+  RepeatIcon,
+} from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { isUploadableSkillSource } from "@posthog/core/message-editor/skillTags";
 import { useHostTRPC } from "@posthog/host-router/react";
@@ -32,7 +36,7 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
-import { Flex, Text } from "@radix-ui/themes";
+import { Flex, Text, TextField } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
@@ -215,10 +219,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           </Button>
 
           <Flex align="center" justify="between" gap="3" wrap="wrap">
-            <Flex align="center" gap="2" wrap="wrap">
-              <Text className="font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
-                {loop.name}
-              </Text>
+            <Flex align="center" gap="2" wrap="wrap" className="min-w-0">
+              <EditableLoopTitle loop={loop} />
               <Badge variant={loopStatusBadgeVariant(loop)}>
                 {loopStatusLabel(loop)}
               </Badge>
@@ -257,11 +259,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
             </Flex>
           </Flex>
 
-          {loop.description.trim() ? (
-            <Text className="max-w-3xl text-[12.5px] text-gray-11 leading-snug">
-              {loop.description}
-            </Text>
-          ) : null}
+          <EditableLoopDescription loop={loop} />
 
           <PausedNotice loop={loop} />
         </Flex>
@@ -344,6 +342,161 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function EditableLoopTitle({ loop }: { loop: LoopSchemas.Loop }) {
+  const updateLoop = useUpdateLoop(loop.id);
+  const [draft, setDraft] = useState<string | null>(null);
+  const skipCommit = useRef(false);
+
+  const commit = (value: string) => {
+    if (skipCommit.current) {
+      skipCommit.current = false;
+      return;
+    }
+    const name = value.trim();
+    if (!name || name === loop.name.trim()) {
+      setDraft(null);
+      return;
+    }
+    updateLoop.mutate(
+      { name },
+      {
+        onSuccess: () => {
+          setDraft(null);
+          toast.success("Loop title updated");
+        },
+        onError: (error) => {
+          setDraft(null);
+          toast.error("Failed to update loop title", {
+            description: error.message,
+          });
+        },
+      },
+    );
+  };
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        className="group flex min-w-0 items-center gap-1 rounded-(--radius-1) px-1 py-0.5 text-left hover:bg-(--gray-3)"
+        aria-label="Edit loop title"
+        onClick={() => setDraft(loop.name)}
+      >
+        <Text className="truncate font-bold text-[22px] text-gray-12 leading-tight tracking-tight">
+          {loop.name}
+        </Text>
+        <PencilSimpleIcon
+          size={14}
+          className="shrink-0 text-gray-9 opacity-0 group-hover:opacity-100"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <TextField.Root
+      value={draft}
+      disabled={updateLoop.isPending}
+      autoFocus
+      aria-label="Loop title"
+      className="min-w-64 font-bold text-[18px]"
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={(event) => commit(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          skipCommit.current = true;
+          setDraft(null);
+          event.currentTarget.blur();
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+function EditableLoopDescription({ loop }: { loop: LoopSchemas.Loop }) {
+  const updateLoop = useUpdateLoop(loop.id);
+  const [draft, setDraft] = useState<string | null>(null);
+  const skipCommit = useRef(false);
+
+  const commit = (value: string) => {
+    if (skipCommit.current) {
+      skipCommit.current = false;
+      return;
+    }
+    const description = value.trim();
+    if (description === loop.description.trim()) {
+      setDraft(null);
+      return;
+    }
+    updateLoop.mutate(
+      { description },
+      {
+        onSuccess: () => {
+          setDraft(null);
+          toast.success("Loop description updated");
+        },
+        onError: (error) => {
+          setDraft(null);
+          toast.error("Failed to update loop description", {
+            description: error.message,
+          });
+        },
+      },
+    );
+  };
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        className="group flex max-w-3xl items-center gap-1 rounded-(--radius-1) px-1 py-0.5 text-left hover:bg-(--gray-3)"
+        aria-label="Edit loop description"
+        onClick={() => setDraft(loop.description)}
+      >
+        <Text
+          className={
+            loop.description.trim()
+              ? "text-[12.5px] text-gray-11 leading-snug"
+              : "text-[12.5px] text-gray-9 leading-snug"
+          }
+        >
+          {loop.description.trim() || "Add a description"}
+        </Text>
+        <PencilSimpleIcon
+          size={12}
+          className="shrink-0 text-gray-9 opacity-0 group-hover:opacity-100"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <Textarea
+      value={draft}
+      disabled={updateLoop.isPending}
+      autoFocus
+      aria-label="Loop description"
+      placeholder="Add a description"
+      className="max-w-3xl text-[12.5px] leading-snug"
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={(event) => commit(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          skipCommit.current = true;
+          setDraft(null);
+          event.currentTarget.blur();
+        } else if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+    />
   );
 }
 
