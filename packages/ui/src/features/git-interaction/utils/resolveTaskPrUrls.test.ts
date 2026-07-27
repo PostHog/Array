@@ -38,6 +38,11 @@ describe("resolveTaskPrUrls", () => {
       { primaryUrl: PR_1, otherUrls: [PR_2] },
     ],
     [
+      "two accumulated local PRs surface an Other PRs entry",
+      { cloudUrls: [], cachedUrls: [PR_1, PR_2], currentBranchUrl: PR_2 },
+      { primaryUrl: PR_1, otherUrls: [PR_2] },
+    ],
+    [
       "dedupes across sources preserving cloud order",
       {
         cloudUrls: [PR_1, PR_2],

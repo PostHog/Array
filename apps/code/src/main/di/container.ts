@@ -584,6 +584,11 @@ container
       getWorkspace: (taskId) => workspace().getWorkspace(taskId),
       linkBranch: (taskId, branch, source) =>
         workspace().linkBranch(taskId, branch, source),
+      accumulatePrUrl: (taskId, prUrl) => {
+        void ctx
+          .get<IGitPrStatus>(GIT_PR_STATUS_PROVIDER)
+          .accumulatePrUrl(taskId, prUrl);
+      },
     };
   });
 container.load(gitHostModule);

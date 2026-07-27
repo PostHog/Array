@@ -274,3 +274,89 @@ describe("TaskPrStatusService.setPrimaryPrUrl", () => {
     });
   });
 });
+
+describe("TaskPrStatusService.accumulatePrUrl", () => {
+  const PR_A = "https://github.com/acme/repo/pull/1";
+  const PR_B = "https://github.com/acme/repo/pull/2";
+
+  function makeService(existingUrls: string[]) {
+    const urls = [...existingUrls];
+    const gitService = {
+      getPrDetailsByUrl: vi
+        .fn()
+        .mockResolvedValue({ state: "open", merged: false, draft: false }),
+    } as unknown as GitService;
+    const workspaceService = { emit: vi.fn() };
+    const workspaceRepo = {
+      findByTaskId: vi.fn().mockReturnValue({ id: "ws-1" }),
+      updatePrCache: vi.fn((_taskId, update) => {
+        if (update.prUrl && update.accumulate && !urls.includes(update.prUrl)) {
+          urls.push(update.prUrl);
+        }
+      }),
+      getPrUrls: vi.fn(() => [...urls]),
+    };
+    const service = new TaskPrStatusService(
+      gitService,
+      workspaceRepo as unknown as IWorkspaceRepository,
+      workspaceService as unknown as WorkspaceService,
+    );
+    return { service, gitService, workspaceService, workspaceRepo };
+  }
+
+  it("records the first PR as a fresh accumulate and emits it", async () => {
+    const { service, workspaceService, workspaceRepo } = makeService([]);
+
+    await service.accumulatePrUrl("task-1", PR_A);
+
+    expect(workspaceRepo.updatePrCache).toHaveBeenCalledWith("task-1", {
+      prUrl: PR_A,
+      prState: "open",
+      accumulate: true,
+    });
+    expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
+      taskId: "task-1",
+      prUrl: PR_A,
+      prUrls: [PR_A],
+      prState: "open",
+    });
+  });
+
+  it("appends a second distinct PR so both survive", async () => {
+    const { service, workspaceService } = makeService([PR_A]);
+
+    await service.accumulatePrUrl("task-1", PR_B);
+
+    expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
+      taskId: "task-1",
+      prUrl: PR_B,
+      prUrls: [PR_A, PR_B],
+      prState: "open",
+    });
+  });
+
+  it("is idempotent when re-accumulating an existing PR", async () => {
+    const { service, workspaceService } = makeService([PR_A]);
+
+    await service.accumulatePrUrl("task-1", PR_A);
+
+    expect(workspaceService.emit).toHaveBeenCalledWith("taskPrInfoChanged", {
+      taskId: "task-1",
+      prUrl: PR_A,
+      prUrls: [PR_A],
+      prState: "open",
+    });
+  });
+
+  it("does nothing when the task has no workspace row", async () => {
+    const { service, gitService, workspaceService, workspaceRepo } =
+      makeService([]);
+    workspaceRepo.findByTaskId.mockReturnValue(null);
+
+    await service.accumulatePrUrl("task-1", PR_A);
+
+    expect(gitService.getPrDetailsByUrl).not.toHaveBeenCalled();
+    expect(workspaceRepo.updatePrCache).not.toHaveBeenCalled();
+    expect(workspaceService.emit).not.toHaveBeenCalled();
+  });
+});

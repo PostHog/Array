@@ -47,4 +47,5 @@ export interface GitPrWorkspaceInfo {
 export interface GitWorkspaceLookup {
   getWorkspace(taskId: string): Promise<GitPrWorkspaceInfo | null>;
   linkBranch(taskId: string, branch: string, source: "user"): void;
+  accumulatePrUrl(taskId: string, prUrl: string): void;
 }

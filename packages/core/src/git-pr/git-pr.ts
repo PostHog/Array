@@ -333,6 +333,9 @@ Rules:
       if (linkedBranch) {
         host.linkBranch(input.taskId, linkedBranch, "user");
       }
+      if (result.data.prUrl) {
+        host.accumulatePrUrl(input.taskId, result.data.prUrl);
+      }
     }
 
     onProgress(

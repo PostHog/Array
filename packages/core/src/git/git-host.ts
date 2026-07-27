@@ -185,6 +185,8 @@ export class GitHostService extends TypedEventEmitter<GitServiceEvents> {
         }),
       linkBranch: (taskId, branch, source) =>
         this.workspaceLookup.linkBranch(taskId, branch, source),
+      accumulatePrUrl: (taskId, prUrl) =>
+        this.workspaceLookup.accumulatePrUrl(taskId, prUrl),
       getPrState: (dir) => this.getPrStateSnapshot(dir),
     };
   }

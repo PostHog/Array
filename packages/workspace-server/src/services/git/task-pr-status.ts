@@ -69,6 +69,27 @@ export class TaskPrStatusService {
     });
   }
 
+  async accumulatePrUrl(taskId: string, prUrl: string): Promise<void> {
+    if (!this.workspaceRepo.findByTaskId(taskId)) return;
+    const details = await this.gitService
+      .getPrDetailsByUrl(prUrl)
+      .catch(() => null);
+    const prState: SidebarPrState = details
+      ? mapPrState(details.state, details.merged, details.draft)
+      : null;
+    this.workspaceRepo.updatePrCache(taskId, {
+      prUrl,
+      prState,
+      accumulate: true,
+    });
+    this.workspaceService.emit("taskPrInfoChanged", {
+      taskId,
+      prUrl,
+      prUrls: this.workspaceRepo.getPrUrls(taskId),
+      prState,
+    });
+  }
+
   private async computeWorktreeHasDiff(taskId: string): Promise<boolean> {
     const workspace = await this.workspaceService.getWorkspace(taskId);
     if (

@@ -100,5 +100,6 @@ export interface CreatePrHost {
     env?: Record<string, string>,
   ): Promise<{ success: boolean; message: string; prUrl: string | null }>;
   linkBranch(taskId: string, branch: string, source: "user"): void;
+  accumulatePrUrl(taskId: string, prUrl: string): void;
   getPrState(directoryPath: string): Promise<unknown>;
 }

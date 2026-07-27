@@ -126,6 +126,7 @@ function makeHost(over: Partial<CreatePrHost> = {}): CreatePrHost {
       prUrl: "https://github.com/o/r/pull/1",
     }),
     linkBranch: vi.fn(),
+    accumulatePrUrl: vi.fn(),
     getPrState: vi.fn().mockResolvedValue({ prStatus: "open" }),
     ...over,
   };
@@ -163,6 +164,10 @@ describe("GitPrService.createPr", () => {
     });
     expect(host.push).toHaveBeenCalledWith("/repo", undefined);
     expect(host.linkBranch).toHaveBeenCalledWith("task-1", "feature", "user");
+    expect(host.accumulatePrUrl).toHaveBeenCalledWith(
+      "task-1",
+      "https://github.com/o/r/pull/1",
+    );
     expect(onProgress).toHaveBeenLastCalledWith(
       "complete",
       "Pull request created",
