@@ -36,6 +36,22 @@ function controlledPanel(tab: HTMLElement): HTMLElement {
 }
 
 describe("LoopsListViewPresentation", () => {
+  it("does not render ownership groups while identity is loading", () => {
+    render(
+      <Theme>
+        <LoopsListViewPresentation
+          loops={[loop("mine-team", "team")]}
+          currentUserId={null}
+          isLoading
+          onStartBlank={vi.fn()}
+          onStartFromTemplate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  });
+
   it("groups loops by ownership rather than visibility", async () => {
     render(
       <Theme>

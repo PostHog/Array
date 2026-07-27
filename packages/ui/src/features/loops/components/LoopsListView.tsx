@@ -70,10 +70,21 @@ function startLoopFromTemplate(template: LoopTemplate): void {
 export function LoopsListView() {
   const { data: loops, isLoading, isError, error } = useLoops();
   const authenticatedClient = useOptionalAuthenticatedClient();
-  const { data: currentUser } = useCurrentUser({ client: authenticatedClient });
+  const {
+    data: currentUser,
+    isLoading: currentUserLoading,
+    isError: currentUserError,
+    error: currentUserQueryError,
+  } = useCurrentUser({ client: authenticatedClient });
   const limits = useLoopLimits();
   const limitReason =
     limits?.atLimit === true ? loopLimitReason(limits.max) : null;
+  let listError: unknown = null;
+  if (isError) {
+    listError = error;
+  } else if (currentUserError) {
+    listError = currentUserQueryError;
+  }
 
   const headerContent = useMemo(
     () => (
@@ -139,8 +150,8 @@ export function LoopsListView() {
     <LoopsListViewPresentation
       loops={allLoops}
       currentUserId={currentUser?.id ?? null}
-      isLoading={isLoading}
-      error={isError ? error : null}
+      isLoading={isLoading || currentUserLoading}
+      error={listError}
       limitReason={limitReason}
       members={members}
       membersLoading={membersLoading}
