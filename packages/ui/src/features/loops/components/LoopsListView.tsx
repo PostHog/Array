@@ -8,6 +8,8 @@ import type { LoopSchemas } from "@posthog/api-client/loops";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { UserBasic } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -67,9 +69,22 @@ function startLoopFromTemplate(template: LoopTemplate): void {
 
 export function LoopsListView() {
   const { data: loops, isLoading, isError, error } = useLoops();
+  const authenticatedClient = useOptionalAuthenticatedClient();
+  const {
+    data: currentUser,
+    isLoading: currentUserLoading,
+    isError: currentUserError,
+    error: currentUserQueryError,
+  } = useCurrentUser({ client: authenticatedClient });
   const limits = useLoopLimits();
   const limitReason =
     limits?.atLimit === true ? loopLimitReason(limits.max) : null;
+  let listError: unknown = null;
+  if (isError) {
+    listError = error;
+  } else if (currentUserError) {
+    listError = currentUserQueryError;
+  }
 
   const headerContent = useMemo(
     () => (
@@ -134,8 +149,9 @@ export function LoopsListView() {
   return (
     <LoopsListViewPresentation
       loops={allLoops}
-      isLoading={isLoading}
-      error={isError ? error : null}
+      currentUserId={currentUser?.id ?? null}
+      isLoading={isLoading || currentUserLoading}
+      error={listError}
       limitReason={limitReason}
       members={members}
       membersLoading={membersLoading}
@@ -152,6 +168,7 @@ export function LoopsListView() {
 
 interface LoopsListViewPresentationProps {
   loops: LoopSchemas.Loop[];
+  currentUserId?: number | null;
   isLoading?: boolean;
   error?: unknown;
   limitReason?: string | null;
@@ -168,6 +185,7 @@ interface LoopsListViewPresentationProps {
 
 export function LoopsListViewPresentation({
   loops,
+  currentUserId = null,
   isLoading = false,
   error = null,
   limitReason = null,
@@ -181,8 +199,16 @@ export function LoopsListViewPresentation({
   onResumeBuilderSession,
   onBuilderSessionStopped,
 }: LoopsListViewPresentationProps) {
-  const personalLoops = loops.filter((loop) => loop.visibility === "personal");
-  const teamLoops = loops.filter((loop) => loop.visibility === "team");
+  const personalLoops = loops.filter(
+    (loop) =>
+      loop.visibility === "personal" ||
+      (currentUserId !== null && loop.created_by_id === currentUserId),
+  );
+  const teamLoops = loops.filter(
+    (loop) =>
+      loop.visibility === "team" &&
+      (currentUserId === null || loop.created_by_id !== currentUserId),
+  );
 
   return (
     <Flex direction="column" className="h-full min-h-0">
