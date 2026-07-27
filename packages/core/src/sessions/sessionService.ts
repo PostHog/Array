@@ -4127,8 +4127,19 @@ export class SessionService {
       return { stopReason: "queued" };
     }
 
-    const authStatus = await this.getAuthCredentialsStatus();
+    this.d.store.appendOptimisticItem(session.taskRunId, {
+      type: "user_message",
+      content: transport.promptText,
+      timestamp: Date.now(),
+      pinToTop: false,
+    });
+
+    const authStatus = await this.getAuthCredentialsStatus().catch((error) => {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
+      throw error;
+    });
     if (authStatus.kind === "restoring") {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
       return this.queueRestoringCloudPrompt(
         session,
         normalizedPrompt,
@@ -4136,18 +4147,15 @@ export class SessionService {
       );
     }
 
-    const cloudCommandAuth = await this.getCloudCommandAuth();
+    const cloudCommandAuth = await this.getCloudCommandAuth().catch((error) => {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
+      throw error;
+    });
     if (authStatus.kind !== "ready" || !cloudCommandAuth) {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
       throw new Error("Authentication required for cloud commands");
     }
     const { auth } = authStatus;
-
-    this.d.store.appendOptimisticItem(session.taskRunId, {
-      type: "user_message",
-      content: transport.promptText,
-      timestamp: Date.now(),
-      pinToTop: false,
-    });
 
     this.watchCloudTask(
       session.taskId,

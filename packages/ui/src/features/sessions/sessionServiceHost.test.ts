@@ -6547,6 +6547,12 @@ describe("SessionService", () => {
         mockSessionStoreSetters.appendOptimisticItem.mock
           .invocationCallOrder[0],
       );
+      expect(
+        mockSessionStoreSetters.appendOptimisticItem.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(
+        mockAuth.fetchAuthState.mock.invocationCallOrder.at(-1) ?? 0,
+      );
 
       expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(
         expect.objectContaining({
