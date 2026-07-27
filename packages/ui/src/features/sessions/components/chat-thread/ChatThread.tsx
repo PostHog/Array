@@ -26,6 +26,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
   cn,
   Tooltip,
@@ -99,6 +100,10 @@ import {
   useOptimisticItemsForTask,
   useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
+import {
+  useSessionViewActions,
+  useShowRawLogs,
+} from "@posthog/ui/features/sessions/sessionViewStore";
 import { useThreadScrollRequest } from "@posthog/ui/features/sessions/threadNavigationStore";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
 import {
@@ -486,6 +491,10 @@ function UserBubble({
  * Right-click a message to copy it. Replaces the per-message copy button that used to float in the
  * message's right rail — the turn footer covers the common case, so a single message's copy lives
  * here instead of costing every row a hover affordance.
+ *
+ * This menu sits inside `SessionView`'s own context menu and wins the event over it, so it also
+ * carries that menu's raw-logs toggle; without it, right-clicking a message would be the one spot
+ * in the session where the toggle went missing.
  */
 function MessageContextMenu({
   value,
@@ -495,6 +504,8 @@ function MessageContextMenu({
   children: ReactElement;
 }) {
   const { copy } = useCopy();
+  const showRawLogs = useShowRawLogs();
+  const { setShowRawLogs } = useSessionViewActions();
   return (
     <ContextMenu>
       <ContextMenuTrigger render={children} />
@@ -502,6 +513,11 @@ function MessageContextMenu({
         <ContextMenuItem onClick={() => copy(value)}>
           <Copy size={14} />
           Copy message
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => setShowRawLogs(!showRawLogs)}>
+          <Scroll size={14} />
+          {showRawLogs ? "Back to conversation" : "Show raw logs"}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
