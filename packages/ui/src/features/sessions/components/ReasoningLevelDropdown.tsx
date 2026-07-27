@@ -298,13 +298,13 @@ export function ReasoningSliderFace({
                     </button>
                   }
                 />
-                <TooltipContent>
-                  <span className="flex flex-col gap-0.5">
+                <TooltipContent className="border border-(--gray-6) bg-(--gray-2) text-foreground">
+                  <span className="flex flex-col items-center gap-0.5 text-center">
                     <span>Fast Mode ({fastToggle.active ? "ON" : "OFF"})</span>
                     {fastToggle.docsUrl && (
                       <button
                         type="button"
-                        className="self-start underline"
+                        className="text-muted-foreground underline hover:text-foreground"
                         onClick={() => {
                           if (fastToggle.docsUrl) {
                             void openUrlInBrowser(fastToggle.docsUrl);
