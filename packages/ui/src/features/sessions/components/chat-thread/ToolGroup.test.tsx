@@ -40,6 +40,7 @@ describe("ToolGroup", () => {
       <ServiceProvider container={new Container()}>
         <Theme>
           <ToolGroup
+            groupId="spawn-1"
             tools={[subagentItem("spawn-1"), subagentItem("spawn-2")]}
           />
         </Theme>
@@ -54,6 +55,7 @@ describe("ToolGroup", () => {
       <ServiceProvider container={new Container()}>
         <Theme>
           <ToolGroup
+            groupId="spawn-1"
             tools={[
               subagentItem("spawn-1", {
                 status: "in_progress",

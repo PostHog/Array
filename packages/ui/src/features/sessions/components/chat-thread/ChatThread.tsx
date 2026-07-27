@@ -49,9 +49,9 @@ import {
 import { MessageJumpPicker } from "@posthog/ui/features/sessions/components/chat-thread/MessageJumpPicker";
 import { MessageMinimap } from "@posthog/ui/features/sessions/components/chat-thread/MessageMinimap";
 import { ToolGroup } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
+import { createStableTurnGrouper } from "@posthog/ui/features/sessions/components/chat-thread/threadGrouping";
 import { THREAD_HOTKEY_OPTIONS } from "@posthog/ui/features/sessions/components/chat-thread/threadHotkeys";
 import {
-  type AgentTurn,
   CHAT_THREAD_VIRTUALIZATION_THRESHOLD,
   completedTurnTimestamp,
   countFlatRows,
@@ -66,7 +66,6 @@ import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/
 import { VirtualThreadScrollBody } from "@posthog/ui/features/sessions/components/chat-thread/VirtualThreadScrollBody";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
-import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
 import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
@@ -90,6 +89,7 @@ import {
   useOptimisticItemsForTask,
   useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
+import { useSessionViewActions } from "@posthog/ui/features/sessions/sessionViewStore";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
 import {
   SessionTaskIdProvider,
@@ -115,115 +115,6 @@ import {
   useState,
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-
-type SessionUpdateItem = Extract<ConversationItem, { type: "session_update" }>;
-
-function isToolCallItem(item: ConversationItem): item is SessionUpdateItem {
-  return (
-    item.type === "session_update" && item.update.sessionUpdate === "tool_call"
-  );
-}
-
-/**
- * Session-updates that `SessionUpdateView` always renders as `null`. They produce no row, so they
- * must not break a contiguous tool run.
- */
-const INVISIBLE_UPDATES = new Set([
-  "user_message_chunk",
-  "tool_call_update",
-  "plan",
-  "available_commands_update",
-  "config_option_update",
-]);
-
-/**
- * True when an item renders nothing, so it should be transparent to tool grouping. Besides the
- * always-null updates, this covers text chunks the stream emits with empty/whitespace or non-text
- * content (a stray empty `agent_message_chunk` between two tool calls is hidden via `empty:hidden`
- * but would otherwise split the run into two ungrouped markers).
- */
-function isInvisibleItem(item: ConversationItem): boolean {
-  if (item.type !== "session_update") return false;
-  const update = item.update;
-  if (INVISIBLE_UPDATES.has(update.sessionUpdate)) return true;
-  if (
-    update.sessionUpdate === "agent_message_chunk" ||
-    update.sessionUpdate === "agent_thought_chunk"
-  ) {
-    return update.content.type !== "text" || update.content.text.trim() === "";
-  }
-  return false;
-}
-
-/**
- * Collapse each contiguous run of ≥2 tool-call updates into a single `ToolGroupItem`. A run is
- * broken by any *visible* non-tool item (prose, thought, status) so groups follow reading order;
- * invisible updates (see {@link INVISIBLE_UPDATES}) are transparent and don't split a run. A lone
- * tool call passes through untouched — it stays a single marker, matching the legacy thread.
- */
-function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
-  const out: ThreadItem[] = [];
-  // The buffer holds the active run: tool items plus any invisible items interleaved with them.
-  let buffer: ConversationItem[] = [];
-  let toolCount = 0;
-
-  const flush = () => {
-    if (toolCount >= 2) {
-      const tools = buffer.filter(isToolCallItem);
-      out.push({ type: "tool_group", id: tools[0].id, tools });
-    } else {
-      out.push(...buffer);
-    }
-    buffer = [];
-    toolCount = 0;
-  };
-
-  for (const item of items) {
-    if (isToolCallItem(item)) {
-      buffer.push(item);
-      toolCount++;
-    } else if (isInvisibleItem(item)) {
-      // Don't break the run; carry it along (it renders nothing wherever it lands).
-      buffer.push(item);
-    } else {
-      flush();
-      out.push(item);
-    }
-  }
-  flush();
-  return out;
-}
-
-/**
- * Collapse each contiguous run of non-user rows into one {@link AgentTurn}, broken only by a
- * user-initiated row (which stays standalone so it remains the scroll anchor for the sticky header
- * and auto-follow). The turn block renders as a single muted card, tightening the spacing between
- * the agent's successive replies and tool calls.
- */
-function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
-  const out: TurnRow[] = [];
-  let buffer: ThreadItem[] = [];
-  const flush = () => {
-    if (buffer.length > 0) {
-      out.push({ type: "agent_turn", id: buffer[0].id, items: buffer });
-      buffer = [];
-    }
-  };
-  for (const row of rows) {
-    // git_action and skill_button_action stand in for the user's message when the prompt was a
-    // git operation or a skill button click (see handlePromptRequest) — they open a turn just
-    // like a user message, so they break the agent card too rather than render inside it as if
-    // they were agent output. Same boundary set as the legacy view's buildThreadGroups.
-    if (isUserInitiatedConversationItem(row)) {
-      flush();
-      out.push(row);
-    } else {
-      buffer.push(row);
-    }
-  }
-  flush();
-  return out;
-}
 
 function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleString([], {
@@ -511,8 +402,11 @@ const AgentProse = memo(function AgentProse({
 
 /** Renders a single thread item's body (no scroller wrapper), reused for standalone rows and for
  * each item inside an agent-turn card. `isTrailing` marks the turn's last item — a trailing tool
- * group of a streaming turn may still grow, so its label stays "Using …" between tool calls. */
-function ThreadItemBody({
+ * group of a streaming turn may still grow, so its label stays "Using …" between tool calls.
+ *
+ * Memoized on item identity: the conversation builder freezes completed turns' items and clones
+ * active-turn items per chunk, so identity equality is exactly content equality. */
+const ThreadItemBody = memo(function ThreadItemBody({
   item,
   renderItem,
   isTrailing = false,
@@ -529,6 +423,7 @@ function ThreadItemBody({
       !!context && !context.turnComplete && !context.turnCancelled;
     return (
       <ToolGroup
+        groupId={item.id}
         tools={item.tools}
         mayStillGrow={isTrailing && turnStreaming}
       />
@@ -545,13 +440,13 @@ function ThreadItemBody({
     );
   }
   return <>{renderItem(item)}</>;
-}
+});
 
 /**
  * One transcript row. Memoized and scroll-state-free, so rows never re-render while scrolling — the
  * non-virtualized thread stays cheap. The pinned header is the separate overlay, not the rows.
  *
- * An {@link AgentTurn} renders as a single muted card wrapping its items with tight spacing; a user
+ * An `AgentTurn` renders as a single muted card wrapping its items with tight spacing; a user
  * message stays a standalone anchored row.
  */
 const ThreadRow = memo(function ThreadRow({
@@ -1018,6 +913,10 @@ function ChatThreadRenderer({
     () => ({
       workerFactory: () => diffWorkerFactory(),
       totalASTLRUCacheSize: 200,
+      // Each pooled highlighter worker is a full V8 isolate with shiki
+      // grammars loaded (~40MB RSS); the library default of 8 costs hundreds
+      // of MB for parallelism conversation diffs don't need.
+      poolSize: 2,
     }),
     [diffWorkerFactory],
   );
@@ -1031,10 +930,28 @@ function ChatThreadRenderer({
     [conversationItems, optimisticItems, isCloud],
   );
 
+  // Identity-preserving grouping: per streamed chunk, only the active turn's
+  // wrappers change, so the memoized rows skip everything else (see
+  // createStableTurnGrouper). One grouper per mounted thread — `key={taskId}`
+  // above remounts (and so resets) it on task switch.
+  const turnGrouperRef = useRef<ReturnType<
+    typeof createStableTurnGrouper
+  > | null>(null);
+  turnGrouperRef.current ??= createStableTurnGrouper();
+  const turnGrouper = turnGrouperRef.current;
   const rows = useMemo<TurnRow[]>(
-    () => groupIntoTurns(groupToolRuns(items)),
-    [items],
+    () => turnGrouper.update(items),
+    [items, turnGrouper],
   );
+
+  // Changing the global collapse mode wipes ephemeral per-chip overrides, so
+  // every group snaps to the new mode's base state (same as the legacy view).
+  const sessionViewActions = useSessionViewActions();
+  const collapseMode = useSettingsStore((s) => s.conversationCollapseMode);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on collapseMode only
+  useEffect(() => {
+    sessionViewActions.clearGroupOverrides();
+  }, [collapseMode]);
 
   // Virtualization ratchet: past the threshold the thread switches to the windowed body and
   // stays there for the life of this mount (see CHAT_THREAD_VIRTUALIZATION_THRESHOLD). Long

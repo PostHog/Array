@@ -327,6 +327,20 @@ export function VirtualThreadScrollBody({
     viewportRef,
   );
 
+  // Resize synchronously on mount: the virtualizer's own measureElement path is
+  // ResizeObserver-fed and lands a frame late, so a row scrolled into view
+  // would paint once at the 80px estimate and then jump. Same recipe as the
+  // legacy VirtualizedList.
+  const measureElementImmediately = useCallback(
+    (node: HTMLDivElement | null) => {
+      virtualizer.measureElement(node);
+      if (!node) return;
+      const index = Number(node.dataset.index);
+      virtualizer.resizeItem(index, node.offsetHeight);
+    },
+    [virtualizer],
+  );
+
   const userRows = useMemo(() => {
     const result: UserRow[] = [];
     flatRows.forEach((row, index) => {
@@ -439,7 +453,7 @@ export function VirtualThreadScrollBody({
                 return (
                   <div
                     key={virtualItem.key}
-                    ref={virtualizer.measureElement}
+                    ref={measureElementImmediately}
                     data-index={virtualItem.index}
                     className="absolute top-0 left-0 w-full"
                     style={{ transform: `translateY(${virtualItem.start}px)` }}

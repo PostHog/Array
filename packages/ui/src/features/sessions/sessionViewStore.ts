@@ -67,6 +67,13 @@ export const useShowRawLogs = () => useStore((s) => s.showRawLogs);
 export const useSearchQuery = () => useStore((s) => s.searchQuery);
 export const useShowSearch = () => useStore((s) => s.showSearch);
 export const useGroupOverrides = () => useStore((s) => s.groupOverrides);
+/**
+ * A single group's override, so a tool group re-renders only when its own
+ * entry changes — subscribing to the whole map would re-render every mounted
+ * group on any toggle.
+ */
+export const useGroupOverride = (id: string): boolean | undefined =>
+  useStore((s) => s.groupOverrides[id]);
 export const useQueueCollapsed = (taskId: string) =>
   useStore((s) => s.queueCollapsedByTaskId[taskId] ?? false);
 export const useSessionViewActions = () => useStore((s) => s.actions);

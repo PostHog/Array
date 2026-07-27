@@ -7,7 +7,12 @@ import {
   Spinner,
 } from "@posthog/quill";
 import { readAgentToolName } from "@posthog/shared";
+import {
+  useGroupOverride,
+  useSessionViewActions,
+} from "@posthog/ui/features/sessions/sessionViewStore";
 import type { ToolCall } from "@posthog/ui/features/sessions/types";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { memo } from "react";
 import type { ConversationItem } from "../buildConversationItems";
 import { grouping } from "../new-thread/conversationThreadConfig";
@@ -81,12 +86,22 @@ export function isToolActive(item: ToolGroupItem["tools"][number]): boolean {
  * collapsible body holds each tool's own marker via `SessionUpdateView` (which dispatches through
  * `ToolCallBlock` → `ToolRow` → `ChatMarker`).
  *
- * Expanded by default while the turn is still running (live visibility), collapsed once complete.
+ * Open state follows the global collapse mode (same semantics as the legacy thread's
+ * `buildThreadGroups`): "all" keeps every group collapsed, "partial" streams the live turn
+ * expanded and collapses it when the turn settles, "none" keeps everything expanded. A manual
+ * toggle overrides the mode for this group until the mode changes (the thread wipes overrides
+ * then). Controlled — not `defaultOpen` — so a group that streamed open actually collapses on
+ * completion instead of staying mounted for the session's life; a closed marker unmounts its
+ * body, which is what keeps a long transcript's DOM (and the scroller engine's per-scroll scans
+ * over it) bounded.
  */
 export const ToolGroup = memo(function ToolGroup({
+  groupId,
   tools,
   mayStillGrow = false,
 }: {
+  /** Stable row id (the run's first tool), keying this group's manual expand/collapse override. */
+  groupId: string;
   tools: ToolGroupItem["tools"];
   /**
    * True when this run is the turn's trailing content and the turn is still
@@ -98,7 +113,16 @@ export const ToolGroup = memo(function ToolGroup({
   mayStillGrow?: boolean;
 }) {
   const turnComplete = tools[0]?.turnContext.turnComplete ?? false;
+  const turnCancelled = tools[0]?.turnContext.turnCancelled ?? false;
   const isActive = tools.some(isToolActive) || mayStillGrow;
+
+  const collapseMode = useSettingsStore((s) => s.conversationCollapseMode);
+  const override = useGroupOverride(groupId);
+  const { setGroupOverride } = useSessionViewActions();
+  const settled = turnComplete || turnCancelled;
+  const baseCollapse =
+    collapseMode === "all" || (collapseMode === "partial" && settled);
+  const open = override ?? !baseCollapse;
 
   // Uniform when every tool in the run shares the same name/kind — then we can name it.
   const keys = tools.map(toolKey);
@@ -114,7 +138,8 @@ export const ToolGroup = memo(function ToolGroup({
 
   return (
     <ChatMarker
-      defaultOpen={!turnComplete}
+      open={open}
+      onOpenChange={(next) => setGroupOverride(groupId, next)}
       body={tools.map((item) => (
         <SessionUpdateView
           key={item.id}
