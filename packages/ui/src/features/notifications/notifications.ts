@@ -3,8 +3,10 @@ import {
   NOTIFICATIONS_SERVICE,
   type NotificationTarget,
 } from "@posthog/platform/notifications";
+import type { TaskActivityKind } from "@posthog/shared/domain-types";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openNotificationTarget } from "@posthog/ui/router/navigationBridge";
+import { logger } from "@posthog/ui/shell/logger";
 import {
   playbackRateForTaskDuration,
   playCompletionSound,
@@ -21,6 +23,7 @@ import {
 import { routeNotification } from "./routeNotification";
 
 const MAX_TITLE_LENGTH = 50;
+const log = logger.scope("notifications");
 
 // In-app toast presentation for the focused-but-elsewhere tier. Only levels that
 // support an action link are allowed (the bus derives the action from `target`).
@@ -49,6 +52,13 @@ export interface NotificationDescriptor {
   error?: unknown;
 }
 
+export interface TaskActivitySignal {
+  taskId: string;
+  taskTitle: string;
+  activityKind: Extract<TaskActivityKind, "awaiting_input" | "completed">;
+  activityAt: string;
+}
+
 // The single channel every app notification flows through. Reads focus + the
 // active route, decides suppress / toast / native (see routeNotification), and
 // dispatches accordingly. Native delivery + dock effects are gated by the user's
@@ -56,6 +66,10 @@ export interface NotificationDescriptor {
 // only appears while the app is focused).
 @injectable()
 export class NotificationBus {
+  private readonly taskActivityListeners = new Set<
+    (signal: TaskActivitySignal) => void
+  >();
+
   constructor(
     @inject(NOTIFICATIONS_SERVICE)
     private readonly notifications: INotifications,
@@ -128,6 +142,14 @@ export class NotificationBus {
       toast: { level: "success" },
       soundDurationMs: durationMs,
     });
+    this.emitTaskActivity(taskId, taskTitle, "completed");
+  }
+
+  subscribeToTaskActivity(
+    listener: (signal: TaskActivitySignal) => void,
+  ): () => void {
+    this.taskActivityListeners.add(listener);
+    return () => this.taskActivityListeners.delete(listener);
   }
 
   notifyPermissionRequest(taskTitle: string, taskId?: string): void {
@@ -136,6 +158,7 @@ export class NotificationBus {
       target: taskId ? { kind: "task", taskId } : undefined,
       toast: { level: "warning" },
     });
+    this.emitTaskActivity(taskId, taskTitle, "awaiting_input");
   }
 
   // Error entry point: the toast carries a one-line summary; the raw payload
@@ -189,5 +212,26 @@ export class NotificationBus {
   private truncateTitle(title: string): string {
     if (title.length <= MAX_TITLE_LENGTH) return title;
     return `${title.slice(0, MAX_TITLE_LENGTH)}...`;
+  }
+
+  private emitTaskActivity(
+    taskId: string | undefined,
+    taskTitle: string,
+    activityKind: TaskActivitySignal["activityKind"],
+  ): void {
+    if (!taskId) return;
+    const signal: TaskActivitySignal = {
+      taskId,
+      taskTitle,
+      activityKind,
+      activityAt: new Date().toISOString(),
+    };
+    for (const listener of this.taskActivityListeners) {
+      try {
+        listener(signal);
+      } catch (error) {
+        log.error("Task activity subscriber failed", { error });
+      }
+    }
   }
 }

@@ -5,8 +5,10 @@ import {
 import { useService } from "@posthog/di/react";
 import type { TaskThreadMessage } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef } from "react";
 
 const THREAD_POLL_INTERVAL_MS = 5_000;
 
@@ -16,13 +18,24 @@ export function taskThreadQueryKey(taskId: string | undefined) {
 
 export function useTaskThread(
   taskId: string | undefined,
-  options?: { pollIntervalMs?: number; enabled?: boolean },
+  options?: {
+    pollIntervalMs?: number;
+    enabled?: boolean;
+    markActivityRead?: boolean;
+  },
 ): {
   messages: TaskThreadMessage[];
   isLoading: boolean;
 } {
   const pollIntervalMs = options?.pollIntervalMs ?? THREAD_POLL_INTERVAL_MS;
   const enabled = options?.enabled ?? true;
+  const markActivityRead = options?.markActivityRead ?? true;
+  const { mutate: markTasksRead } = useMarkTaskActivityRead();
+  const opening = useMemo(
+    () => ({ taskId, seenBefore: new Date().toISOString() }),
+    [taskId],
+  );
+  const markedOpening = useRef<string | null>(null);
   const query = useAuthenticatedQuery<TaskThreadMessage[]>(
     taskThreadQueryKey(taskId),
     (client) => client.getTaskThreadMessages(taskId as string),
@@ -32,6 +45,21 @@ export function useTaskThread(
       staleTime: pollIntervalMs,
     },
   );
+  useEffect(() => {
+    if (!taskId || !enabled || !markActivityRead || query.dataUpdatedAt === 0)
+      return;
+    const openingKey = `${opening.taskId}:${opening.seenBefore}`;
+    if (markedOpening.current === openingKey) return;
+    markedOpening.current = openingKey;
+    markTasksRead([{ task_id: taskId, seen_before: opening.seenBefore }]);
+  }, [
+    taskId,
+    enabled,
+    markActivityRead,
+    markTasksRead,
+    opening,
+    query.dataUpdatedAt,
+  ]);
   return { messages: query.data ?? [], isLoading: query.isLoading };
 }
 
