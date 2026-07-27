@@ -407,7 +407,7 @@ function ChannelSection({
                 {channel.name}
               </OverflowTickerText>
               {hotkeySlot != null && (
-                <Kbd className="ml-auto shrink-0 group-hover/chan:opacity-0">
+                <Kbd className="ml-auto shrink-0 opacity-50 group-hover/chan:opacity-0">
                   {formatHotkey(`mod+${hotkeySlot}`)}
                 </Kbd>
               )}
@@ -645,7 +645,7 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
           {PERSONAL_CHANNEL_NAME}
         </span>
         {hotkeySlot != null && (
-          <Kbd className="ml-auto shrink-0 group-hover/chan:opacity-0">
+          <Kbd className="ml-auto shrink-0 opacity-50 group-hover/chan:opacity-0">
             {formatHotkey(`mod+${hotkeySlot}`)}
           </Kbd>
         )}
@@ -708,18 +708,23 @@ const CHANNELS_SECTION_ID = "channels:all";
 // the label styling) and animates the panel height (which janked on a list this
 // long). Unstyled parts give a plain label row that snaps.
 //
-// The whole header row is the trigger. It rests as a "#" and swaps to a chevron
-// on hover or keyboard focus, so the row only advertises the disclosure when
-// you're actually reaching for it.
+// The whole header row is the trigger. Under the layout the icon well rests
+// empty and fills with a chevron on hover or keyboard focus, so the row only
+// advertises the disclosure when you're reaching for it — a "#" there read as a
+// channel named "Starred", and the glyph belongs to the rows, not the label
+// above them.
 function ChannelGroup({
   sectionId,
   label,
   className,
+  flat,
   children,
 }: {
   sectionId: string;
   label: string;
   className?: string;
+  /** Layout-only: rows sit at the label's level instead of indented under it. */
+  flat?: boolean;
   children: ReactNode;
 }) {
   const collapsedSections = useSidebarStore((s) => s.collapsedSections);
@@ -744,10 +749,12 @@ function ChannelGroup({
         render={<MenuLabel render={<button type="button" />} />}
       >
         <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-          <HashIcon
-            size={14}
-            className="group-hover/group-trigger:hidden group-focus-visible/group-trigger:hidden"
-          />
+          {!flat && (
+            <HashIcon
+              size={14}
+              className="group-hover/group-trigger:hidden group-focus-visible/group-trigger:hidden"
+            />
+          )}
           {isOpen ? (
             <CaretDownIcon
               size={14}
@@ -767,7 +774,7 @@ function ChannelGroup({
           makes each expand rebuild the lot (~940ms for 46 channels, vs ~80ms
           to collapse). */}
       <Collapsible.Panel keepMounted>
-        <div className="pl-5">{children}</div>
+        <div className={cn(!flat && "pl-5")}>{children}</div>
       </Collapsible.Panel>
     </Collapsible.Root>
   );
@@ -859,7 +866,11 @@ export function ChannelsList() {
               />
 
               {starred.length > 0 && (
-                <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
+                <ChannelGroup
+                  sectionId={STARRED_SECTION_ID}
+                  label="Starred"
+                  flat={channelsLayout}
+                >
                   {starred.map((channel) => (
                     <ChannelSection
                       key={channel.id}
@@ -871,7 +882,11 @@ export function ChannelsList() {
                 </ChannelGroup>
               )}
 
-              <ChannelGroup sectionId={CHANNELS_SECTION_ID} label="Channels">
+              <ChannelGroup
+                sectionId={CHANNELS_SECTION_ID}
+                label="Channels"
+                flat={channelsLayout}
+              >
                 {!isLoading && channels.length === 0 && (
                   <Empty className="px-2 py-1 text-subtle-foreground text-xs">
                     <EmptyHeader className="text-left">

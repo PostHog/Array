@@ -7,11 +7,13 @@ import { ChannelSidebar } from "@posthog/ui/features/canvas/components/ChannelSi
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
+import { useChannelPaneSwipe } from "@posthog/ui/features/canvas/hooks/useChannelPaneSwipe";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useCurrentChannel } from "@posthog/ui/features/canvas/hooks/useCurrentChannel";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useTrackChannelsSpaceViewed } from "@posthog/ui/features/canvas/hooks/useTrackChannelsSpaceViewed";
 import {
+  showChannelList,
   showChannelPane,
   useChannelPaneStore,
 } from "@posthog/ui/features/canvas/stores/channelPaneStore";
@@ -48,6 +50,10 @@ import { useDeferredValue, useEffect, useRef } from "react";
  * Both panes stay mounted so the slide has something to slide, and so coming
  * back to the list doesn't rebuild every row's menus and dialogs. The offscreen
  * one is `inert`, keeping it out of the tab order and off screen readers.
+ *
+ * A two-finger horizontal swipe moves between them, so the back row isn't the
+ * only way out of a channel — and swiping the other way returns to the channel
+ * that stayed scoped the whole time.
  */
 function ChannelPanes({
   channelId,
@@ -56,8 +62,17 @@ function ChannelPanes({
   channelId: string | null;
   showList: boolean;
 }) {
+  const panesRef = useRef<HTMLDivElement | null>(null);
+  useChannelPaneSwipe(panesRef, {
+    // With no channel to slide to, the list is all there is — leave the gesture
+    // to the platform rather than eat it for a slide that can't happen.
+    enabled: channelId != null,
+    onBack: showChannelList,
+    onForward: showChannelPane,
+  });
+
   return (
-    <Box className="min-h-0 flex-1 overflow-hidden">
+    <Box ref={panesRef} className="min-h-0 flex-1 overflow-hidden">
       <div
         className={cn(
           "flex h-full w-[200%] transition-transform duration-200 ease-out motion-reduce:transition-none",
