@@ -138,6 +138,7 @@ export function PiThinkingLevelSelector({
         label: thinkingLevelLabels[value] ?? value,
       }))}
       onChange={(value) => onChange(value as PiThinkingLevel)}
+      variant="slider"
       disabled={disabled}
     />
   );

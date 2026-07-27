@@ -30,7 +30,6 @@ import {
   getGithubRefUrlFromEventTarget,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
-import { ModelSelector } from "@posthog/ui/features/sessions/components/ModelSelector";
 import { PendingChatView } from "@posthog/ui/features/sessions/components/PendingChatView";
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
 import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
@@ -49,6 +48,7 @@ import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/
 import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/useSessionEventsResidency";
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
+  useAdapterForTask,
   useConfigOptionForTask,
   useModeConfigOptionForTask,
   usePendingPermissionsForTask,
@@ -189,7 +189,9 @@ export function SessionView({
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
   const contextWindowOption = useConfigOptionForTask(taskId, "_context_window");
-  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
+  const sessionModelOption = useConfigOptionForTask(taskId, "model");
+  const adapter = useAdapterForTask(taskId);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG, true);
   const liveFastModeOption = useConfigOptionForTask(taskId, "_fast_mode");
   const fastModeOption = fastModeFlagEnabled ? liveFastModeOption : undefined;
   const toggleMessagingMode = useToggleMessagingMode(taskId);
@@ -752,16 +754,13 @@ export function SessionView({
                           }
                           allowBypassPermissions={allowBypassPermissions}
                           enableBashMode={!isCloudRun}
-                          modelSelector={
-                            <ModelSelector
-                              taskId={taskId}
-                              disabled={!isRunning}
-                            />
-                          }
+                          modelSelector={null}
                           reasoningSelector={
                             thoughtOption ? (
                               <ReasoningLevelSelector
                                 thoughtOption={thoughtOption}
+                                modelOption={sessionModelOption}
+                                adapter={adapter}
                                 contextWindowOption={contextWindowOption}
                                 fastModeOption={fastModeOption}
                                 onChange={handleThoughtChange}

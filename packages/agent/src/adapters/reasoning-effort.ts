@@ -58,3 +58,31 @@ export function getFastModeOptions(
 ): SessionToggleOption[] | null {
   return adapter === "codex" ? null : getClaudeFastModeOptions(modelId);
 }
+
+/** One stop on the Faster/Smarter slider: a model plus effort pairing. */
+export interface CapabilityNotch {
+  model: string;
+  effort: EffortLevel;
+}
+
+const CLAUDE_CAPABILITY_LADDER: CapabilityNotch[] = [
+  { model: "claude-sonnet-5", effort: "medium" },
+  { model: "claude-sonnet-5", effort: "high" },
+  { model: "claude-opus-5", effort: "high" },
+  { model: "claude-opus-5", effort: "xhigh" },
+  { model: "claude-fable-5", effort: "max" },
+];
+
+const CODEX_CAPABILITY_LADDER: CapabilityNotch[] = [
+  { model: "gpt-5.6-terra", effort: "low" },
+  { model: "gpt-5.6-sol", effort: "low" },
+  { model: "gpt-5.6-sol", effort: "medium" },
+  { model: "gpt-5.6-sol", effort: "high" },
+  { model: "gpt-5.6-sol", effort: "xhigh" },
+];
+
+export function getCapabilityLadder(adapter: Adapter): CapabilityNotch[] {
+  return adapter === "codex"
+    ? CODEX_CAPABILITY_LADDER
+    : CLAUDE_CAPABILITY_LADDER;
+}

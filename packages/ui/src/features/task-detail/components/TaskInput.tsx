@@ -83,7 +83,6 @@ import {
 } from "../../pi-sessions/PiSessionControls";
 import { DropZoneOverlay } from "../../sessions/components/DropZoneOverlay";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
-import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
@@ -1417,16 +1416,7 @@ export function TaskInput({
                         disabled={isCreatingTask || isPiConfigLoading}
                         onChange={handlePiModelChange}
                       />
-                    ) : (
-                      <UnifiedModelSelector
-                        modelOption={modelOption}
-                        adapter={adapter ?? "claude"}
-                        onAdapterChange={setAdapter}
-                        disabled={isCreatingTask}
-                        isConnecting={isPreviewLoading}
-                        onModelChange={handleModelChange}
-                      />
-                    )
+                    ) : null
                   }
                   historyButton={
                     <PromptHistoryDialog
@@ -1448,9 +1438,13 @@ export function TaskInput({
                     ) : (
                       <ReasoningLevelSelector
                         thoughtOption={thoughtOption}
+                        modelOption={modelOption}
+                        adapter={adapter ?? "claude"}
                         contextWindowOption={contextWindowOption}
                         fastModeOption={fastModeOption}
                         onChange={handleThoughtChange}
+                        onModelChange={handleModelChange}
+                        onAdapterChange={setAdapter}
                         onConfigOptionChange={setConfigOption}
                         disabled={isCreatingTask}
                         isLoading={isPreviewLoading}

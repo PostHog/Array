@@ -41,6 +41,42 @@ function thoughtOption(
   } as unknown as SessionConfigOption;
 }
 
+function contextOption(currentValue = "1m"): SessionConfigOption {
+  return {
+    type: "select",
+    id: "context_window",
+    name: "Context Window",
+    currentValue,
+    options: [
+      { name: "200k", value: "200k" },
+      { name: "1M", value: "1m", _meta: { [DEFAULT_OPTION_META_KEY]: true } },
+    ],
+  } as unknown as SessionConfigOption;
+}
+
+function fastOption(currentValue = "off"): SessionConfigOption {
+  return {
+    type: "select",
+    id: "fast",
+    name: "Fast Mode",
+    currentValue,
+    options: [
+      { name: "On", value: "on" },
+      { name: "Off", value: "off" },
+    ],
+  } as unknown as SessionConfigOption;
+}
+
+async function openAdvanced(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+  await user.click(await screen.findByRole("button", { name: "Advanced" }));
+}
+
+async function openSub(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+  const trigger = await screen.findByRole("menuitem", { name });
+  await user.click(trigger);
+}
+
 describe("ReasoningLevelSelector", () => {
   it("renders the active level as the trigger label", () => {
     render(
@@ -53,9 +89,24 @@ describe("ReasoningLevelSelector", () => {
     ).toBeInTheDocument();
   });
 
-  it("emits the raw value via onChange once the menu closes", async () => {
+  it("opens on a Faster/Smarter slider without the option lists", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector thoughtOption={thoughtOption()} />
+      </Theme>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    expect(await screen.findByRole("slider")).toBeInTheDocument();
+    expect(screen.getByText("Faster")).toBeInTheDocument();
+    expect(screen.getByText("Smarter")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument();
+  });
+
+  it("emits the raw value via onChange once the advanced menu closes", async () => {
     const onChange = vi.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     render(
       <Theme>
         <ReasoningLevelSelector
@@ -65,7 +116,8 @@ describe("ReasoningLevelSelector", () => {
       </Theme>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    await openAdvanced(user);
+    await openSub(user, /^Reasoning/);
     const lowItem = await screen.findByRole("menuitemradio", { name: "Low" });
     await user.click(lowItem);
 
@@ -74,14 +126,15 @@ describe("ReasoningLevelSelector", () => {
   });
 
   it("marks the adapter default level with a Default badge", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     render(
       <Theme>
         <ReasoningLevelSelector thoughtOption={thoughtOption()} />
       </Theme>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    await openAdvanced(user);
+    await openSub(user, /^Reasoning/);
     const highItem = await screen.findByRole("menuitemradio", {
       name: /High/,
     });
@@ -90,7 +143,7 @@ describe("ReasoningLevelSelector", () => {
 
   it("opens the docs link without selecting the level", async () => {
     const onChange = vi.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     render(
       <Theme>
         <ReasoningLevelSelector
@@ -100,7 +153,8 @@ describe("ReasoningLevelSelector", () => {
       </Theme>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    await openAdvanced(user);
+    await openSub(user, /^Reasoning/);
     const docsButton = await screen.findByRole("button", {
       name: "Learn more about Ultracode",
     });
@@ -110,50 +164,26 @@ describe("ReasoningLevelSelector", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("renders context window and fast mode sections that emit config changes", async () => {
+  it("changes context window from its advanced submenu", async () => {
     const onConfigOptionChange = vi.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     render(
       <Theme>
         <ReasoningLevelSelector
           thoughtOption={thoughtOption()}
-          contextWindowOption={
-            {
-              type: "select",
-              id: "context_window",
-              name: "Context Window",
-              currentValue: "1m",
-              options: [
-                { name: "200k", value: "200k" },
-                {
-                  name: "1M",
-                  value: "1m",
-                  _meta: { [DEFAULT_OPTION_META_KEY]: true },
-                },
-              ],
-            } as unknown as SessionConfigOption
-          }
-          fastModeOption={
-            {
-              type: "select",
-              id: "fast",
-              name: "Fast Mode",
-              currentValue: "off",
-              options: [
-                { name: "On", value: "on" },
-                { name: "Off", value: "off" },
-              ],
-            } as unknown as SessionConfigOption
-          }
+          contextWindowOption={contextOption()}
+          fastModeOption={fastOption()}
           onConfigOptionChange={onConfigOptionChange}
         />
       </Theme>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    await openAdvanced(user);
+    // Fast mode is the slider view's lightning toggle, not an advanced row.
     expect(
-      await screen.findByRole("menuitemradio", { name: "On" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("menuitem", { name: /Fast Mode/ }),
+    ).not.toBeInTheDocument();
+    await openSub(user, /Context Window/);
     await user.click(
       await screen.findByRole("menuitemradio", { name: "200k" }),
     );
@@ -165,6 +195,52 @@ describe("ReasoningLevelSelector", () => {
       ),
     );
     expect(onConfigOptionChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("toggles fast mode from the slider view lightning button", async () => {
+    const onConfigOptionChange = vi.fn();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption()}
+          fastModeOption={fastOption("off")}
+          onConfigOptionChange={onConfigOptionChange}
+        />
+      </Theme>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Toggle fast mode" }),
+    );
+
+    expect(onConfigOptionChange).toHaveBeenCalledWith("fast", "on");
+  });
+
+  it("resets effort and sections to their defaults", async () => {
+    const onChange = vi.fn();
+    const onConfigOptionChange = vi.fn();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption({ currentValue: "max" })}
+          contextWindowOption={contextOption("200k")}
+          fastModeOption={fastOption("on")}
+          onChange={onChange}
+          onConfigOptionChange={onConfigOptionChange}
+        />
+      </Theme>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reasoning: Max" }));
+    await user.click(await screen.findByRole("button", { name: "Advanced" }));
+    await user.click(await screen.findByText("Reset to default"));
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith("high"));
+    expect(onConfigOptionChange).toHaveBeenCalledWith("context_window", "1m");
+    expect(onConfigOptionChange).toHaveBeenCalledWith("fast", "off");
   });
 
   it.each([

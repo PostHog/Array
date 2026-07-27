@@ -20,7 +20,6 @@ import { useDraftStore } from "../../message-editor/draftStore";
 import type { EditorHandle } from "../../message-editor/types";
 import { toastError } from "../../notifications/errorDetails";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
-import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
@@ -431,23 +430,18 @@ export const ChannelHomeComposer = forwardRef<
         canvas={{ active: canvasArmed, onToggle: toggleCanvasMode }}
         enableCommands
         enableBashMode={false}
-        modelSelector={
-          <UnifiedModelSelector
-            modelOption={modelOption}
-            adapter={adapter ?? "claude"}
-            onAdapterChange={setAdapter}
-            disabled={isBusy}
-            isConnecting={isLoading}
-            onModelChange={handleModelChange}
-          />
-        }
+        modelSelector={null}
         reasoningSelector={
           !isLoading && (
             <ReasoningLevelSelector
               thoughtOption={thoughtOption}
+              modelOption={modelOption}
+              adapter={adapter ?? "claude"}
               contextWindowOption={contextWindowOption}
               fastModeOption={fastModeOption}
               onChange={handleThoughtChange}
+              onModelChange={handleModelChange}
+              onAdapterChange={setAdapter}
               onConfigOptionChange={setConfigOption}
               disabled={isBusy}
             />
