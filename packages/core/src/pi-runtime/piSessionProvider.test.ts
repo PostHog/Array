@@ -16,8 +16,6 @@ function localSession(): PiSession {
     compact: vi.fn(async () => undefined),
     setModel: vi.fn(async () => ({ provider: "posthog", id: "model" })),
     setThinkingLevel: vi.fn(async () => {}),
-    setSteeringMode: vi.fn(async () => {}),
-    setFollowUpMode: vi.fn(async () => {}),
     bash: vi.fn(async () => undefined),
     abort: vi.fn(async () => {}),
     abortBash: vi.fn(async () => {}),
@@ -27,6 +25,8 @@ function localSession(): PiSession {
     client,
     health: vi.fn(async () => ({ state: "idle" as const })),
     getConversation: vi.fn(async () => []),
+    getQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
+    clearQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
     onConversationEvent: vi.fn(() => () => {}),
   };
 }

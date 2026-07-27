@@ -36,6 +36,11 @@ export const resumePiSessionInput = z.object({
 
 export const piSessionTaskInput = z.object({ taskId: z.string() });
 
+export const piQueueSnapshotOutput = z.object({
+  steering: z.array(z.string()),
+  followUp: z.array(z.string()),
+});
+
 export const piSessionRpcInput = z.object({
   taskId: z.string(),
   command: piRpcCommandSchema,

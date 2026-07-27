@@ -79,6 +79,8 @@ export const sendCommandInput = z.object({
     "set_config_option",
     "mcp_response",
     "pi/rpc",
+    "queue_get",
+    "queue_clear",
   ]),
   params: z.record(z.string(), z.unknown()).optional(),
 });

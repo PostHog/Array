@@ -408,6 +408,10 @@ export function processAgentConversationEvent(
     return;
   }
 
+  if (event.type === "queue_update") {
+    return;
+  }
+
   if (b.currentTurn) {
     completePromptTurn(b, b.currentTurn, event.timestamp, {
       stopReason: event.stopReason,

@@ -1,6 +1,7 @@
 import type {
   PiCommand,
   PiNativeModelInfo,
+  PiQueueSnapshot,
   PiSessionStatus,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
@@ -19,6 +20,7 @@ export interface PiControllerSessionState {
   thinkingLevels: PiThinkingLevel[];
   thinkingLevelsLoaded: boolean;
   commands: PiCommand[];
+  queue: PiQueueSnapshot;
   status?: PiSessionStatus;
   cloudStatus?: TaskRunStatus;
   errorTitle?: string;
@@ -46,6 +48,7 @@ export function createEmptyPiControllerSession(): PiControllerSessionState {
     thinkingLevels: [],
     thinkingLevelsLoaded: false,
     commands: [],
+    queue: { steering: [], followUp: [] },
     isBashRunning: false,
   };
 }

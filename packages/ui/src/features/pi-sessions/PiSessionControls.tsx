@@ -1,7 +1,6 @@
 import { Brain, CaretDown, Lightning, Stack } from "@phosphor-icons/react";
 import type {
   PiModelSelection,
-  PiQueueMode,
   PiThinkingLevel,
 } from "@posthog/core/pi-runtime/piSessionController";
 import {
@@ -177,20 +176,16 @@ export function PiThinkingLevelSelector({
 
 interface PiMessagingModeSelectorProps {
   mode: MessagingMode;
-  queueMode: PiQueueMode;
   queuedCount: number;
   disabled?: boolean;
   onModeChange: (mode: MessagingMode) => void;
-  onQueueModeChange: (mode: PiQueueMode) => void;
 }
 
 export function PiMessagingModeSelector({
   mode,
-  queueMode,
   queuedCount,
   disabled,
   onModeChange,
-  onQueueModeChange,
 }: PiMessagingModeSelectorProps) {
   let label = "Queue";
   if (mode === "steer") {
@@ -241,17 +236,6 @@ export function PiMessagingModeSelector({
           <DropdownMenuRadioItem value="queue">
             Queue for the next turn
           </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <MenuLabel>Process queued messages</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={queueMode}
-          onValueChange={(value) => onQueueModeChange(value as PiQueueMode)}
-        >
-          <DropdownMenuRadioItem value="one-at-a-time">
-            One per turn
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="all">All at once</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>

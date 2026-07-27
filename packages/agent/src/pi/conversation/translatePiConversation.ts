@@ -317,6 +317,17 @@ export function createPiConversationTranslator(): PiConversationTranslator {
       ];
     }
 
+    if (event.type === "queue_update") {
+      return [
+        {
+          type: "queue_update",
+          timestamp: Date.now(),
+          steering: [...event.steering],
+          followUp: [...event.followUp],
+        },
+      ];
+    }
+
     if (event.type === "message_end") {
       latestRuntimeTimestamp = Math.max(
         latestRuntimeTimestamp,

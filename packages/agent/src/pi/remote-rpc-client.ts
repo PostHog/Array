@@ -18,8 +18,6 @@ export type PiRemoteRpcClient = Pick<
   | "getAvailableModels"
   | "getAvailableThinkingLevels"
   | "setThinkingLevel"
-  | "setSteeringMode"
-  | "setFollowUpMode"
   | "compact"
   | "bash"
   | "abortBash"
@@ -114,18 +112,6 @@ export class RemotePiRpcClient implements PiRemoteRpcClient {
     level: Parameters<PiRemoteRpcClient["setThinkingLevel"]>[0],
   ): Promise<void> {
     await this.request({ type: "set_thinking_level", level });
-  }
-
-  async setSteeringMode(
-    mode: Parameters<PiRemoteRpcClient["setSteeringMode"]>[0],
-  ): Promise<void> {
-    await this.request({ type: "set_steering_mode", mode });
-  }
-
-  async setFollowUpMode(
-    mode: Parameters<PiRemoteRpcClient["setFollowUpMode"]>[0],
-  ): Promise<void> {
-    await this.request({ type: "set_follow_up_mode", mode });
   }
 
   async compact(

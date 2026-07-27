@@ -1,9 +1,7 @@
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
-import type {
-  AgentSessionEvent,
-  RpcClient,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+import type { PiRpcClient } from "./rpc-client";
 import { PiRuntime } from "./runtime";
 
 function assistant(text: string): AssistantMessage {
@@ -35,7 +33,9 @@ function createClient() {
       return () => {};
     }),
     send,
-  } as unknown as RpcClient;
+    getQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
+    clearQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
+  } as unknown as PiRpcClient;
 
   return {
     client,
@@ -163,6 +163,26 @@ describe("PiRuntime", () => {
         id: "message-id",
       }),
     );
+  });
+
+  it("forwards native queue snapshots", () => {
+    const { client, emit } = createClient();
+    const runtime = new PiRuntime(client);
+    const conversationListener = vi.fn();
+    runtime.onConversationEvent(conversationListener);
+
+    emit({
+      type: "queue_update",
+      steering: ["fix this"],
+      followUp: ["then summarize"],
+    });
+
+    expect(conversationListener).toHaveBeenCalledWith({
+      type: "queue_update",
+      timestamp: expect.any(Number),
+      steering: ["fix this"],
+      followUp: ["then summarize"],
+    });
   });
 
   it("normalizes live Pi events before forwarding them", () => {

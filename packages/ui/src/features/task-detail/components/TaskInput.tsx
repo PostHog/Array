@@ -206,6 +206,8 @@ export function TaskInput({
     lastUsedLocalWorkspaceMode,
     lastUsedWorkspaceMode,
     setLastUsedWorkspaceMode,
+    lastUsedAgentRuntime,
+    setLastUsedAgentRuntime,
     lastUsedAdapter,
     setLastUsedAdapter,
     lastUsedCloudRepository,
@@ -250,6 +252,7 @@ export function TaskInput({
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<AgentRuntime>("acp");
+  const didResolveRuntimeRef = useRef(false);
   const [selectedPiModelId, setSelectedPiModelId] = useState<string | null>(
     null,
   );
@@ -369,6 +372,16 @@ export function TaskInput({
     repositoriesCount: repositories.length,
     hasGithubIntegration,
   });
+
+  useEffect(() => {
+    if (didResolveRuntimeRef.current || !settingsHydrated || !flagsLoaded) {
+      return;
+    }
+    didResolveRuntimeRef.current = true;
+    setRuntime(
+      piHarnessEnabled && lastUsedAgentRuntime === "pi" ? "pi" : "acp",
+    );
+  }, [flagsLoaded, lastUsedAgentRuntime, piHarnessEnabled, settingsHydrated]);
 
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(() => {
     if (initialCloudRepository) return "cloud";
@@ -1023,12 +1036,14 @@ export function TaskInput({
 
   const handleRuntimeChange = useCallback(
     (nextRuntime: AgentRuntime) => {
+      didResolveRuntimeRef.current = true;
       setRuntime(nextRuntime);
+      setLastUsedAgentRuntime(nextRuntime);
       if (nextRuntime === "pi") {
         useAutoresearchDraftStore.getState().clearDraft(sessionId);
       }
     },
-    [sessionId],
+    [sessionId, setLastUsedAgentRuntime],
   );
 
   const handlePiModelChange = useCallback(

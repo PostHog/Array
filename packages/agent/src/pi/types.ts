@@ -1,4 +1,4 @@
-import type { QueueMode, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type {
   RpcClient,
   RpcSessionState,
@@ -11,7 +11,6 @@ function exhaustiveValues<T>() {
 }
 
 export type PiThinkingLevel = ThinkingLevel;
-export type PiQueueMode = QueueMode;
 
 export const PI_THINKING_LEVELS = exhaustiveValues<PiThinkingLevel>()([
   "off",
@@ -23,11 +22,6 @@ export const PI_THINKING_LEVELS = exhaustiveValues<PiThinkingLevel>()([
   "max",
 ]);
 
-export const PI_QUEUE_MODES = exhaustiveValues<PiQueueMode>()([
-  "all",
-  "one-at-a-time",
-]);
-
 export type PiNativeModelInfo = Awaited<
   ReturnType<RpcClient["getAvailableModels"]>
 >[number];
@@ -37,5 +31,10 @@ export type PiCommand = Awaited<ReturnType<RpcClient["getCommands"]>>[number];
 export type PiSessionStatus = Omit<RpcSessionState, "model"> & {
   model?: Pick<NonNullable<RpcSessionState["model"]>, "provider" | "id">;
 };
+
+export interface PiQueueSnapshot {
+  steering: string[];
+  followUp: string[];
+}
 
 export type PiSessionStats = Awaited<ReturnType<RpcClient["getSessionStats"]>>;

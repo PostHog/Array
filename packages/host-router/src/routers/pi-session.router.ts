@@ -2,6 +2,7 @@ import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import { PI_SESSION_SERVICE } from "@posthog/workspace-server/services/pi-session/identifiers";
 import type { PiSessionService } from "@posthog/workspace-server/services/pi-session/pi-session";
 import {
+  piQueueSnapshotOutput,
   piRpcResponseSchema,
   piSessionHealthOutput,
   piSessionRpcInput,
@@ -39,6 +40,20 @@ export const piSessionRouter = router({
     .input(piSessionTaskInput)
     .output(piSessionHealthOutput)
     .query(({ ctx, input }) => getService(ctx.container).health(input.taskId)),
+
+  getQueue: publicProcedure
+    .input(piSessionTaskInput)
+    .output(piQueueSnapshotOutput)
+    .query(({ ctx, input }) =>
+      getService(ctx.container).getQueue(input.taskId),
+    ),
+
+  clearQueue: publicProcedure
+    .input(piSessionTaskInput)
+    .output(piQueueSnapshotOutput)
+    .mutation(({ ctx, input }) =>
+      getService(ctx.container).clearQueue(input.taskId),
+    ),
 
   onEvent: publicProcedure
     .input(piSessionTaskInput)

@@ -1,7 +1,10 @@
+import {
+  contentToXml,
+  xmlToContent,
+} from "@posthog/core/message-editor/content";
 import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
 import type {
   PiModelSelection,
-  PiQueueMode,
   PiSessionController,
   PiThinkingLevel,
 } from "@posthog/core/pi-runtime/piSessionController";
@@ -26,7 +29,6 @@ import {
 import { ChatThread } from "@posthog/ui/features/sessions/components/chat-thread/ChatThread";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
-import { useMessagingMode } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import { useMessagingModeStore } from "@posthog/ui/features/sessions/messagingModeStore";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
@@ -35,6 +37,7 @@ import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
 import { Box, Flex } from "@radix-ui/themes";
 import { type ReactElement, useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
+import { PiQueuedMessagesDock } from "./PiQueuedMessagesDock";
 import {
   PiMessagingModeSelector,
   PiModelSelector,
@@ -57,7 +60,9 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   const draftActions = useDraftStore((state) => state.actions);
   const workspace = useWorkspace(taskId);
   const repoPath = workspace?.worktreePath ?? workspace?.folderPath;
-  const messagingMode = useMessagingMode(taskId);
+  const messagingMode = useMessagingModeStore(
+    (state) => state.modesByTaskId[taskId] ?? "steer",
+  );
   const setMessagingMode = useMessagingModeStore((state) => state.setMode);
   const { isOnline } = useConnectivity();
   const promptRecallRef = useRef<PromptRecallHandler | null>(null);
@@ -163,15 +168,6 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     [piSessionController, taskId],
   );
 
-  const setQueueMode = useCallback(
-    (mode: PiQueueMode) => {
-      void piSessionController
-        .setQueueMode(taskId, messagingMode, mode)
-        .catch(() => toast.error("Failed to change Pi queue behavior"));
-    },
-    [messagingMode, piSessionController, taskId],
-  );
-
   const toggleMessagingMode = useCallback(() => {
     const nextMode = messagingMode === "steer" ? "queue" : "steer";
     setMessagingMode(taskId, nextMode);
@@ -202,6 +198,32 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     void piSessionController
       .restart(taskId)
       .catch(() => toast.error("Failed to restart Pi"));
+  }, [piSessionController, taskId]);
+
+  const editQueuedMessage = useCallback(() => {
+    void piSessionController
+      .clearQueue(taskId)
+      .then((queue) => {
+        const queuedText = [...queue.steering, ...queue.followUp].join("\n\n");
+        if (!queuedText) {
+          return;
+        }
+        const draft = draftActions.getDraft(taskId);
+        const draftText =
+          typeof draft === "string" ? draft : draft ? contentToXml(draft) : "";
+        const content = [queuedText, draftText]
+          .filter((value) => value.trim())
+          .join("\n\n");
+        draftActions.setPendingContent(taskId, xmlToContent(content));
+        draftActions.requestFocus(taskId);
+      })
+      .catch(() => toast.error("Failed to edit queued Pi message"));
+  }, [draftActions, piSessionController, taskId]);
+
+  const removeQueuedMessage = useCallback(() => {
+    void piSessionController
+      .clearQueue(taskId)
+      .catch(() => toast.error("Failed to discard queued Pi message"));
   }, [piSessionController, taskId]);
 
   if (!session) {
@@ -254,6 +276,8 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   }
 
   const controlsPending = status ? isStreaming || isBashRunning : false;
+  const hasQueuedMessage =
+    session.queue.steering.length + session.queue.followUp.length > 0;
   let modelSelector: ReactElement = <Skeleton className="h-7 w-32" />;
   let reasoningSelector: ReactElement | null = (
     <Skeleton className="h-7 w-20" />
@@ -286,16 +310,12 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   }
 
   if (status) {
-    const queueMode =
-      messagingMode === "steer" ? status.steeringMode : status.followUpMode;
     messagingModeToggle = (
       <PiMessagingModeSelector
         mode={messagingMode}
-        queueMode={queueMode}
         queuedCount={status.pendingMessageCount}
         disabled={isBashRunning}
         onModeChange={(mode) => setMessagingMode(taskId, mode)}
-        onQueueModeChange={setQueueMode}
       />
     );
   }
@@ -326,6 +346,11 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
         className="mx-auto w-full px-2 pb-3"
         style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
       >
+        <PiQueuedMessagesDock
+          queue={session.queue}
+          onEdit={editQueuedMessage}
+          onRemove={removeQueuedMessage}
+        />
         <PromptInput
           sessionId={taskId}
           taskId={taskId}
@@ -333,9 +358,15 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
           placeholder="Type a message..."
           disabled={isCompacting}
           isLoading={controlsPending}
-          submitDisabledExternal={!sessionAvailable || !status || !isOnline}
+          submitDisabledExternal={
+            !sessionAvailable || !status || !isOnline || hasQueuedMessage
+          }
           submitTooltipOverride={
-            !isOnline ? "No internet connection" : undefined
+            !isOnline
+              ? "No internet connection"
+              : hasQueuedMessage
+                ? "A message is already queued"
+                : undefined
           }
           enableBashMode
           enableCommands

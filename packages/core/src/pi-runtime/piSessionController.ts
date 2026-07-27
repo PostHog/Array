@@ -1,7 +1,7 @@
 import type { PiRemoteRpcClient } from "@posthog/agent/pi/remote-rpc-client";
 import type {
   PiNativeModelInfo,
-  PiQueueMode,
+  PiQueueSnapshot,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
 import type {
@@ -22,7 +22,7 @@ import {
 
 export type {
   PiNativeModelInfo,
-  PiQueueMode,
+  PiQueueSnapshot,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
 
@@ -38,6 +38,8 @@ export interface PiSession {
   readonly resumeRequired?: boolean;
   readonly cloudStatus?: TaskRunStatus;
   retry?(): Promise<void>;
+  getQueue(): Promise<PiQueueSnapshot>;
+  clearQueue(): Promise<PiQueueSnapshot>;
   sendUserMessage?(
     type: "prompt" | "steer" | "follow_up",
     message: string,
@@ -88,6 +90,8 @@ export class PiSessionController {
   private readonly connections = new Map<string, Promise<void>>();
   private readonly readiness = new Map<string, Promise<void>>();
   private readonly sessionVersions = new Map<string, number>();
+  private readonly queueRevisions = new Map<string, number>();
+  private readonly queuesToRestore = new Map<string, PiQueueSnapshot>();
   private readonly taskRunIds = new Map<string, string>();
 
   constructor(
@@ -165,10 +169,13 @@ export class PiSessionController {
     this.resetTransport(taskId);
     this.taskRunIds.delete(taskId);
     this.liveEvents.delete(taskId);
+    this.queueRevisions.delete(taskId);
+    this.queuesToRestore.delete(taskId);
   }
 
   async retry(taskId: string): Promise<void> {
     const taskRunId = this.taskRunIds.get(taskId);
+    this.captureQueueForRestore(taskId);
     const session = await this.getPiSession(taskId);
     this.updateSession(taskId, {
       connectionState: "connecting",
@@ -186,8 +193,17 @@ export class PiSessionController {
     }
   }
 
+  async clearQueue(taskId: string): Promise<PiQueueSnapshot> {
+    const session = await this.getPiSession(taskId);
+    const queue = await session.clearQueue();
+    this.queuesToRestore.delete(taskId);
+    this.applyQueue(taskId, { steering: [], followUp: [] });
+    return queue;
+  }
+
   async restart(taskId: string): Promise<void> {
     const taskRunId = this.taskRunIds.get(taskId);
+    this.captureQueueForRestore(taskId);
     if (!taskRunId) {
       await this.retry(taskId);
       return;
@@ -254,7 +270,18 @@ export class PiSessionController {
     const action = this.getSubmitAction(message, isStreaming, messagingMode);
 
     const currentSession = await this.getPiSession(taskId);
-    const wasStreaming = this.getSession(taskId).status?.isStreaming ?? false;
+    const controllerSession = this.getSession(taskId);
+    const wasStreaming = controllerSession.status?.isStreaming ?? false;
+    const queuesMessage = action === "steer" || action === "followUp";
+    const queuedMessageCount =
+      controllerSession.queue.steering.length +
+      controllerSession.queue.followUp.length;
+    if (queuesMessage && queuedMessageCount > 0) {
+      throw new Error("Pi already has a queued message");
+    }
+    const refreshAfterSubmit =
+      action === "compact" ||
+      this.isExtensionCommand(controllerSession, message);
     if (action === "compact") {
       const session = await this.getWritablePiSession(taskId);
       const command = parseCommandLine(message);
@@ -265,8 +292,17 @@ export class PiSessionController {
       const messageId = currentSession.sendUserMessage
         ? globalThis.crypto.randomUUID()
         : undefined;
-      if (messageId) {
+      const hasOptimisticTranscriptMessage = Boolean(
+        messageId && action === "prompt",
+      );
+      if (messageId && hasOptimisticTranscriptMessage) {
         this.appendOptimisticUserMessage(taskId, messageId, message);
+      }
+      if (queuesMessage) {
+        this.applyQueue(taskId, {
+          steering: action === "steer" ? [message] : [],
+          followUp: action === "followUp" ? [message] : [],
+        });
       }
       this.markTurnPending(taskId);
       if (currentSession.resumeRequired) {
@@ -298,16 +334,24 @@ export class PiSessionController {
         } else {
           await session.client.followUp(message);
         }
+        if (queuesMessage) {
+          await this.refreshQueue(taskId, session);
+        }
       } catch (error) {
-        if (messageId) {
+        if (messageId && hasOptimisticTranscriptMessage) {
           this.removeUserMessage(taskId, messageId);
+        }
+        if (queuesMessage) {
+          this.applyQueue(taskId, controllerSession.queue);
         }
         this.setTurnStreaming(taskId, wasStreaming);
         throw error;
       }
     }
 
-    await this.refreshStatus(taskId);
+    if (refreshAfterSubmit) {
+      await this.refreshStatus(taskId);
+    }
     return action;
   }
 
@@ -328,20 +372,6 @@ export class PiSessionController {
   ): Promise<void> {
     const session = await this.getPiSession(taskId);
     await session.client.setThinkingLevel(level);
-    await this.refreshStatus(taskId);
-  }
-
-  async setQueueMode(
-    taskId: string,
-    messagingMode: PiMessagingMode,
-    queueMode: PiQueueMode,
-  ): Promise<void> {
-    const session = await this.getPiSession(taskId);
-    if (messagingMode === "steer") {
-      await session.client.setSteeringMode(queueMode);
-    } else {
-      await session.client.setFollowUpMode(queueMode);
-    }
     await this.refreshStatus(taskId);
   }
 
@@ -419,18 +449,28 @@ export class PiSessionController {
     const connectedSessionVersion = this.getSessionVersion(taskId);
     try {
       const session = await this.getPiSession(taskId);
-      const events = await session.getConversation();
-      const status = await session.client.getState();
+      const queueRevision = this.queueRevisions.get(taskId) ?? 0;
+      const [events, status, queue] = await Promise.all([
+        session.getConversation(),
+        session.client.getState(),
+        session.getQueue(),
+      ]);
       if (this.getSessionVersion(taskId) !== connectedSessionVersion) {
         return;
       }
 
       const currentSession = this.getSession(taskId);
+      const conversationEvents = events.filter(
+        (event) => event.type !== "queue_update",
+      );
       const liveEvents = this.liveEvents.get(taskId) ?? [];
-      const newLiveEvents = this.reconcileLiveEvents(events, liveEvents);
+      const newLiveEvents = this.reconcileLiveEvents(
+        conversationEvents,
+        liveEvents,
+      );
       this.liveEvents.set(taskId, newLiveEvents);
       const historyUserMessageIds = new Set(
-        events.flatMap((event) =>
+        conversationEvents.flatMap((event) =>
           event.type === "user_message" ? [event.id] : [],
         ),
       );
@@ -441,25 +481,37 @@ export class PiSessionController {
             !historyUserMessageIds.has(event.id)),
       );
       const reconciledEvents = [
-        ...events,
+        ...conversationEvents,
         ...newLiveEvents,
         ...optimisticEvents,
       ];
+      const resolvedQueue =
+        (this.queueRevisions.get(taskId) ?? 0) === queueRevision
+          ? queue
+          : currentSession.queue;
+      const resolvedStatus = {
+        ...status,
+        pendingMessageCount:
+          resolvedQueue.steering.length + resolvedQueue.followUp.length,
+      };
 
       this.setSession(taskId, {
         connectionState: "connected",
         events: reconciledEvents,
-        status,
+        status: resolvedStatus,
         models: currentSession.models,
         modelsLoaded: currentSession.modelsLoaded,
         thinkingLevels: currentSession.thinkingLevels,
         thinkingLevelsLoaded: currentSession.thinkingLevelsLoaded,
         commands: currentSession.commands,
+        queue: resolvedQueue,
         isBashRunning: false,
         errorTitle: undefined,
         errorMessage: undefined,
         errorRetryable: undefined,
       });
+
+      await this.restoreQueueIfNeeded(taskId, session, resolvedStatus);
 
       await Promise.all([
         session.client.getAvailableModels().then((models) => {
@@ -490,6 +542,15 @@ export class PiSessionController {
   }
 
   private handleEvent(taskId: string, event: AgentConversationEvent): void {
+    if (event.type === "queue_update") {
+      const queue = {
+        steering: event.steering,
+        followUp: event.followUp,
+      };
+      this.applyQueue(taskId, queue);
+      return;
+    }
+
     const liveEvents = [...(this.liveEvents.get(taskId) ?? []), event];
     this.liveEvents.set(taskId, liveEvents);
     const session = this.getSession(taskId);
@@ -549,6 +610,107 @@ export class PiSessionController {
     );
     return liveEvents.filter(
       (event) => !event.sourceId || !historySourceIds.has(event.sourceId),
+    );
+  }
+
+  private captureQueueForRestore(taskId: string): void {
+    const queue = this.getSession(taskId).queue;
+    if (queue.steering.length === 0 && queue.followUp.length === 0) {
+      return;
+    }
+    this.queuesToRestore.set(taskId, {
+      steering: [...queue.steering],
+      followUp: [...queue.followUp],
+    });
+  }
+
+  private async restoreQueueIfNeeded(
+    taskId: string,
+    session: PiSession,
+    status: NonNullable<PiControllerSessionState["status"]>,
+  ): Promise<void> {
+    const queue = this.getSession(taskId).queue;
+    const queueToRestore = this.queuesToRestore.get(taskId);
+    if (!queueToRestore) {
+      return;
+    }
+    if (queue.steering.length > 0 || queue.followUp.length > 0) {
+      this.queuesToRestore.delete(taskId);
+      return;
+    }
+
+    const messages = [
+      ...queueToRestore.steering.map((content) => ({
+        content,
+        mode: "steer" as const,
+      })),
+      ...queueToRestore.followUp.map((content) => ({
+        content,
+        mode: "follow_up" as const,
+      })),
+    ];
+    if (!status.isStreaming) {
+      const first = messages.shift();
+      if (first) {
+        await session.client.prompt(first.content);
+      }
+    }
+
+    for (const message of messages) {
+      if (message.mode === "steer") {
+        await session.client.steer(message.content);
+      } else {
+        await session.client.followUp(message.content);
+      }
+    }
+    this.queuesToRestore.delete(taskId);
+  }
+
+  private async refreshQueue(
+    taskId: string,
+    session: PiSession,
+  ): Promise<void> {
+    try {
+      const queue = await session.getQueue();
+      this.applyQueue(taskId, queue);
+    } catch {
+      return;
+    }
+  }
+
+  private applyQueue(taskId: string, queue: PiQueueSnapshot): void {
+    this.queueRevisions.set(taskId, (this.queueRevisions.get(taskId) ?? 0) + 1);
+    this.updateSession(taskId, {
+      queue,
+      status: this.withPendingMessageCount(taskId, queue),
+    });
+  }
+
+  private withPendingMessageCount(
+    taskId: string,
+    queue: PiQueueSnapshot,
+  ): PiControllerSessionState["status"] {
+    const status = this.getSession(taskId).status;
+    if (!status) {
+      return undefined;
+    }
+    return {
+      ...status,
+      pendingMessageCount: queue.steering.length + queue.followUp.length,
+    };
+  }
+
+  private isExtensionCommand(
+    session: PiControllerSessionState,
+    message: string,
+  ): boolean {
+    const command = parseCommandLine(message);
+    if (!command) {
+      return false;
+    }
+    return session.commands.some(
+      (available) =>
+        available.name === command.name && available.source === "extension",
     );
   }
 

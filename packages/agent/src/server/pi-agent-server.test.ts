@@ -298,6 +298,34 @@ describe("PiAgentServer", () => {
     });
   });
 
+  it.each([
+    ["queue_get", "getQueue"],
+    ["queue_clear", "clearQueue"],
+  ] as const)(
+    "forwards %s through the private Pi host API",
+    async (method, operation) => {
+      const queue = {
+        steering: ["fix this"],
+        followUp: ["then summarize"],
+      };
+      const client = {
+        getQueue: vi.fn(async () => queue),
+        clearQueue: vi.fn(async () => queue),
+      };
+      const server = new PiAgentServer(config()) as unknown as {
+        session: unknown;
+        executeCommand(
+          method: string,
+          params: Record<string, unknown>,
+        ): Promise<unknown>;
+      };
+      server.session = { runtime: { client } };
+
+      await expect(server.executeCommand(method, {})).resolves.toEqual(queue);
+      expect(client[operation]).toHaveBeenCalledOnce();
+    },
+  );
+
   it("waits for Pi to create the native session file before syncing", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-session-sync-"));
     const syncTaskSession = vi.fn(async () => "content-hash");

@@ -151,6 +151,12 @@ export type AgentConversationEvent = (
       detail?: string;
     }
   | {
+      type: "queue_update";
+      timestamp: number;
+      steering: string[];
+      followUp: string[];
+    }
+  | {
       type: "runtime_status";
       timestamp: number;
       status: string;

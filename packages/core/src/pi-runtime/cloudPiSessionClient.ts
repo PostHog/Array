@@ -3,6 +3,7 @@ import {
   RemotePiRpcClient,
 } from "@posthog/agent/pi/remote-rpc-client";
 import type { RpcCommand } from "@posthog/agent/pi/rpc-transport";
+import type { PiQueueSnapshot } from "@posthog/agent/pi/types";
 import type {
   AgentConversationEvent,
   PiRuntimeHealth,
@@ -45,8 +46,6 @@ function createTerminalPiRpcClient(
     getAvailableModels: async () => [],
     getAvailableThinkingLevels: async () => [],
     setThinkingLevel: rejectCommand,
-    setSteeringMode: rejectCommand,
-    setFollowUpMode: rejectCommand,
     compact: rejectCommand,
     bash: rejectCommand,
     abortBash: rejectCommand,
@@ -125,6 +124,25 @@ export class CloudPiSessionClient implements PiSession {
 
   async retry(): Promise<void> {
     await this.cloudTaskClient.retry(this.context.taskId, this.context.runId);
+  }
+
+  async getQueue(): Promise<PiQueueSnapshot> {
+    try {
+      return await this.requestQueue("queue_get");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message.includes("Unknown method: queue_get") ||
+        message.includes("queue_get is not supported")
+      ) {
+        return { steering: [], followUp: [] };
+      }
+      throw error;
+    }
+  }
+
+  clearQueue(): Promise<PiQueueSnapshot> {
+    return this.requestQueue("queue_clear");
   }
 
   async sendUserMessage(
@@ -350,6 +368,28 @@ export class CloudPiSessionClient implements PiSession {
       timestamp,
       ...params.data,
     };
+  }
+
+  private async requestQueue(
+    method: "queue_get" | "queue_clear",
+  ): Promise<PiQueueSnapshot> {
+    await this.waitForRuntimeReady();
+    if (isTerminalStatus(this.runStatus)) {
+      return { steering: [], followUp: [] };
+    }
+    const result = await this.cloudTaskClient.sendCommand({
+      taskId: this.context.taskId,
+      runId: this.context.runId,
+      apiHost: this.context.apiHost,
+      teamId: this.context.teamId,
+      id: globalThis.crypto.randomUUID(),
+      method,
+      params: {},
+    });
+    if (!result.success) {
+      throw new Error(result.error ?? `Pi queue command failed: ${method}`);
+    }
+    return result.result as PiQueueSnapshot;
   }
 
   private async request(command: RpcCommand): Promise<unknown> {

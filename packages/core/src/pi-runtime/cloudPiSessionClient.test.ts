@@ -297,6 +297,12 @@ describe("CloudPiSessionClient", () => {
       resolveState = resolve;
     });
     vi.mocked(cloud.client.sendCommand).mockImplementation(async (input) => {
+      if (input.method === "queue_get") {
+        return {
+          success: true,
+          result: { steering: [], followUp: [] },
+        };
+      }
       const command = input.params?.command as { type: string };
       if (command.type === "get_state") {
         return state;
@@ -324,7 +330,7 @@ describe("CloudPiSessionClient", () => {
       totalEntryCount: 1,
     });
     await vi.waitFor(() => {
-      expect(cloud.client.sendCommand).toHaveBeenCalledTimes(1);
+      expect(cloud.client.sendCommand).toHaveBeenCalledTimes(2);
     });
     cloud.sendUpdate({
       taskId: "task-1",
@@ -396,6 +402,31 @@ describe("CloudPiSessionClient", () => {
       expect.objectContaining(snapshotEvent),
     ]);
     expect(cloud.client.sendCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps sessions compatible with queue-unaware cloud runtimes", async () => {
+    const cloud = createCloudTaskClient();
+    vi.mocked(cloud.client.sendCommand).mockResolvedValue({
+      success: false,
+      error: "Unknown method: queue_get",
+    });
+    const session = new CloudPiSessionClient(
+      cloud.client,
+      context("in_progress"),
+    );
+    session.onConversationEvent(vi.fn(), vi.fn());
+    cloud.sendUpdate({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "logs",
+      newEntries: [{ type: "pi_run_started" }],
+      totalEntryCount: 1,
+    });
+
+    await expect(session.getQueue()).resolves.toEqual({
+      steering: [],
+      followUp: [],
+    });
   });
 
   it("preserves structured backend failure details", () => {

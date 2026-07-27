@@ -62,6 +62,28 @@ describe("feature settingsStore cloud selections", () => {
     });
   });
 
+  it("persists and rehydrates the last used agent runtime", async () => {
+    useSettingsStore.getState().setLastUsedAgentRuntime("pi");
+
+    await waitForPersistedWrite();
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+    expect(persisted.state.lastUsedAgentRuntime).toBe("pi");
+
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: { lastUsedAgentRuntime: "pi" },
+        version: 0,
+      }),
+    );
+    useSettingsStore.setState({ lastUsedAgentRuntime: "acp" });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().lastUsedAgentRuntime).toBe("pi");
+  });
+
   it("persists the last used cloud repository", async () => {
     useSettingsStore.getState().setLastUsedCloudRepository("posthog/posthog");
 

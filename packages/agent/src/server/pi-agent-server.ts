@@ -50,6 +50,8 @@ const userMessageCommandSchema = z
 const commandSchemas = {
   user_message: userMessageCommandSchema,
   cancel: emptySchema,
+  queue_get: emptySchema,
+  queue_clear: emptySchema,
   "pi/rpc": z.object({ command: piRpcCommandSchema }),
 } as const;
 
@@ -428,6 +430,11 @@ export class PiAgentServer {
       timestamp: new Date().toISOString(),
       event: { ...event, sourceId: id },
     });
+    if (event.type === "queue_update") {
+      void this.syncTaskSession().catch((error) =>
+        this.logger.error("Failed to persist Pi queue state", error),
+      );
+    }
   }
 
   private async executeCommand(
@@ -444,6 +451,10 @@ export class PiAgentServer {
         return this.deliverUserMessage(runtime, params);
       case "cancel":
         return client.abort();
+      case "queue_get":
+        return client.getQueue();
+      case "queue_clear":
+        return client.clearQueue();
       case "pi/rpc":
         return runtime.sendCommand(params.command as RpcCommand);
     }

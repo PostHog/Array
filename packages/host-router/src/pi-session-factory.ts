@@ -36,6 +36,14 @@ class TrpcPiSession implements PiSession {
     return getRemotePiConversation(this.client);
   }
 
+  getQueue() {
+    return this.hostClient.piSession.getQueue.query({ taskId: this.taskId });
+  }
+
+  clearQueue() {
+    return this.hostClient.piSession.clearQueue.mutate({ taskId: this.taskId });
+  }
+
   onConversationEvent(
     onEvent: Parameters<PiSession["onConversationEvent"]>[0],
     onError: Parameters<PiSession["onConversationEvent"]>[1],

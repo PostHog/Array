@@ -42,8 +42,6 @@ function createSession(): PiSession {
     compact: vi.fn(async () => undefined),
     setModel: vi.fn(async (provider, id) => ({ provider, id })),
     setThinkingLevel: vi.fn(async () => {}),
-    setSteeringMode: vi.fn(async () => {}),
-    setFollowUpMode: vi.fn(async () => {}),
     bash: vi.fn(async () => undefined),
     abort: vi.fn(async () => {}),
     abortBash: vi.fn(async () => {}),
@@ -53,6 +51,8 @@ function createSession(): PiSession {
     client,
     health: vi.fn(async () => ({ state: "idle" as const })),
     getConversation: vi.fn(async () => []),
+    getQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
+    clearQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
     onConversationEvent: vi.fn(() => () => {}),
   };
 }
@@ -163,13 +163,63 @@ describe("PiSessionController", () => {
     );
   });
 
+  it("allows only one queued message and keeps it out of the transcript", async () => {
+    const session = createSession();
+    session.sendUserMessage = vi.fn(async () => {});
+    vi.mocked(session.getQueue)
+      .mockResolvedValueOnce({ steering: [], followUp: [] })
+      .mockResolvedValue({ steering: [], followUp: ["first"] });
+    const controller = createController(session, {
+      prepareCloudPiMessage: vi.fn(async (_taskId, _runId, content) => ({
+        content,
+        artifactIds: [],
+      })),
+    } as unknown as TaskService);
+
+    await controller.connect("task-1", "run-1");
+    await controller.submit("task-1", "first", true, "queue");
+
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      events: [],
+      queue: { steering: [], followUp: ["first"] },
+    });
+    await expect(
+      controller.submit("task-1", "second", true, "queue"),
+    ).rejects.toThrow("Pi already has a queued message");
+    expect(session.sendUserMessage).toHaveBeenCalledOnce();
+  });
+
+  it("clears the optimistic queue when Pi accepted the message as a prompt", async () => {
+    const session = createSession();
+    session.sendUserMessage = vi.fn(async () => {});
+    const controller = createController(session, {
+      prepareCloudPiMessage: vi.fn(async () => ({
+        content: "continue",
+        artifactIds: [],
+      })),
+    } as unknown as TaskService);
+
+    await controller.connect("task-1", "run-1");
+    await controller.submit("task-1", "continue", true, "queue");
+
+    expect(controller.store.getState().sessions["task-1"].queue).toEqual({
+      steering: [],
+      followUp: [],
+    });
+  });
+
   it("marks a submitted turn as streaming while the command starts", async () => {
     let resolveSend: () => void = () => {};
     const sending = new Promise<void>((resolve) => {
       resolveSend = resolve;
     });
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
     const session = createSession();
     session.sendUserMessage = vi.fn(() => sending);
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
     const controller = createController(session, {
       prepareCloudPiMessage: vi.fn(async () => ({
         content: "hello",
@@ -188,6 +238,70 @@ describe("PiSessionController", () => {
 
     resolveSend();
     await submission;
+    expect(controller.store.getState().sessions["task-1"].status).toMatchObject(
+      { isStreaming: true },
+    );
+
+    onEvent({ type: "turn_completed", timestamp: 2 });
+
+    expect(controller.store.getState().sessions["task-1"].status).toMatchObject(
+      { isStreaming: false },
+    );
+  });
+
+  it("restores a native queue after retry replaces the runtime", async () => {
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    session.retry = vi.fn(async () => {});
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    onEvent({
+      type: "queue_update",
+      timestamp: 1,
+      steering: ["fix this"],
+      followUp: ["then summarize"],
+    });
+
+    await controller.retry("task-1");
+
+    expect(session.client.prompt).toHaveBeenCalledWith("fix this");
+    expect(session.client.followUp).toHaveBeenCalledWith("then summarize");
+  });
+
+  it("does not restore a captured queue after the task disconnects", async () => {
+    let resolveRetry: () => void = () => {};
+    const retrying = new Promise<void>((resolve) => {
+      resolveRetry = resolve;
+    });
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    session.retry = vi.fn(() => retrying);
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    onEvent({
+      type: "queue_update",
+      timestamp: 1,
+      steering: ["already handled"],
+      followUp: [],
+    });
+    const retry = controller.retry("task-1");
+    await vi.waitFor(() => expect(session.retry).toHaveBeenCalledOnce());
+
+    controller.disconnect("task-1");
+    resolveRetry();
+    await retry;
+
+    expect(session.client.prompt).not.toHaveBeenCalled();
   });
 
   it("retries a cloud session without discarding its transcript", async () => {
@@ -550,6 +664,54 @@ describe("PiSessionController", () => {
     await controller.connect("task-1");
 
     expect(controller.store.getState().sessions["task-1"].events).toEqual([]);
+  });
+
+  it("tracks native queue updates without adding them to the transcript", async () => {
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1");
+    onEvent({
+      type: "queue_update",
+      timestamp: 1,
+      steering: ["fix this"],
+      followUp: ["then summarize"],
+    });
+
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      events: [],
+      queue: {
+        steering: ["fix this"],
+        followUp: ["then summarize"],
+      },
+      status: { pendingMessageCount: 2 },
+    });
+  });
+
+  it("clears the native queue and returns its contents for editing", async () => {
+    const session = createSession();
+    vi.mocked(session.clearQueue).mockResolvedValue({
+      steering: ["fix this"],
+      followUp: ["then summarize"],
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1");
+    const queue = await controller.clearQueue("task-1");
+
+    expect(queue).toEqual({
+      steering: ["fix this"],
+      followUp: ["then summarize"],
+    });
+    expect(controller.store.getState().sessions["task-1"].queue).toEqual({
+      steering: [],
+      followUp: [],
+    });
   });
 
   it("uses live turn completion without reloading native history", async () => {
