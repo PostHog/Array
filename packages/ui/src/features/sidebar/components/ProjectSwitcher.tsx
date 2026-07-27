@@ -69,6 +69,8 @@ export function ProjectSwitcher() {
   };
 
   const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
+  const sessionType = useAuthStateValue((state) => state.sessionType);
+  const sessionExpiresAt = useAuthStateValue((state) => state.sessionExpiresAt);
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const selectProjectMutation = useSelectProjectMutation();
@@ -82,6 +84,13 @@ export function ProjectSwitcher() {
     currentOrgGroup?.orgName ??
     currentProject?.organization.name ??
     "No organization";
+  const impersonationExpiry =
+    sessionType === "impersonated" && sessionExpiresAt
+      ? new Date(sessionExpiresAt).toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : null;
   const projectItems = useMemo<FlyoutItem[]>(
     () =>
       (currentOrgGroup?.projects ?? []).map((project) => ({
@@ -187,7 +196,9 @@ export function ProjectSwitcher() {
                 {currentProject?.name ?? "No project selected"}
               </ItemTitle>
               <ItemDescription className="text-[11px]">
-                {currentUser?.email ?? "No email"}
+                {impersonationExpiry
+                  ? `Impersonating until ${impersonationExpiry}`
+                  : (currentUser?.email ?? "No email")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -219,6 +230,11 @@ export function ProjectSwitcher() {
                   <ItemDescription className="text-[11px]">
                     {currentUser.email}
                   </ItemDescription>
+                  {impersonationExpiry && (
+                    <ItemDescription className="text-[11px] text-warning">
+                      Impersonated session ends at {impersonationExpiry}
+                    </ItemDescription>
+                  )}
                 </ItemContent>
               </Item>
             ) : (

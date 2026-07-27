@@ -26,9 +26,15 @@ function createDependencies() {
         accessToken: "fresh-access-token",
         apiHost: "https://app.posthog.com",
       }),
-      getState: vi.fn((): { currentProjectId: number | null } => ({
-        currentProjectId: 1,
-      })),
+      getState: vi.fn(
+        (): {
+          currentProjectId: number | null;
+          sessionType?: "persistent" | "impersonated" | null;
+        } => ({
+          currentProjectId: 1,
+          sessionType: "persistent",
+        }),
+      ),
       authenticatedFetch: vi
         .fn()
         .mockImplementation(
@@ -83,6 +89,8 @@ describe("AgentAuthAdapter", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env.POSTHOG_API_KEY;
+    delete process.env.POSTHOG_AUTH_HEADER;
   });
 
   describe("getCurrentCredentials", () => {
@@ -264,6 +272,24 @@ describe("AgentAuthAdapter", () => {
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
     // The node-shim era prepended a shim dir here; PATH must stay untouched.
     expect(process.env.PATH).toBe(pathBefore);
+  });
+
+  it("does not export impersonated credentials to the process environment", async () => {
+    process.env.POSTHOG_API_KEY = "stale-token";
+    process.env.POSTHOG_AUTH_HEADER = "Bearer stale-token";
+    deps.authService.getState.mockReturnValue({
+      currentProjectId: 1,
+      sessionType: "impersonated",
+    });
+
+    await adapter.configureProcessEnv({
+      credentials: baseCredentials,
+      proxyUrl: "http://127.0.0.1:9999",
+      claudeCliPath: "/mock/claude-cli.js",
+    });
+
+    expect(process.env.POSTHOG_API_KEY).toBeUndefined();
+    expect(process.env.POSTHOG_AUTH_HEADER).toBeUndefined();
   });
 
   it.each([
