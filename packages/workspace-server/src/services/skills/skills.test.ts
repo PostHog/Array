@@ -560,6 +560,38 @@ describe("write-path guard", () => {
     expect(bundled.fileName).toBe("linked.zip");
   });
 
+  it("bundles a user skill through a symlinked user skills directory", async () => {
+    const realUserSkillsDir = path.join(root, "real-user-skills");
+    const target = await createSkill(root, "linked");
+    await mkdir(realUserSkillsDir, { recursive: true });
+    await symlink(realUserSkillsDir, userSkillsHome.dir, "dir");
+    const linkPath = path.join(userSkillsHome.dir, "linked");
+    await symlink(target, linkPath, "dir");
+
+    const bundled = await makeService().bundleLocalSkill({
+      name: "linked",
+      source: "user",
+      path: linkPath,
+    });
+
+    expect(bundled.fileName).toBe("linked.zip");
+  });
+
+  it("rejects an open workspace root reached through a user skill symlink", async () => {
+    await writeFile(path.join(folderPath, "SKILL.md"), "workspace");
+    await mkdir(userSkillsHome.dir, { recursive: true });
+    const linkPath = path.join(userSkillsHome.dir, "workspace");
+    await symlink(folderPath, linkPath, "dir");
+
+    await expect(
+      makeService().bundleLocalSkill({
+        name: "workspace",
+        source: "user",
+        path: linkPath,
+      }),
+    ).rejects.toThrow("resolves outside its repository");
+  });
+
   it("rejects a symlinked marketplace skill root", async () => {
     const target = await createSkill(root, "linked");
     const marketplaceSkillsDir = path.join(marketplaceHome.dir, "skills");

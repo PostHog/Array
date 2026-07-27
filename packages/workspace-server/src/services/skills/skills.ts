@@ -500,10 +500,7 @@ export class SkillsService {
   ): Promise<BundleLocalSkillOutput> {
     const skillDir = await this.resolveKnownSkillDir(input.path);
     await this.assertRepoSkillStaysInRepo(skillDir);
-    const parent = path.dirname(skillDir);
-    const allowRootSymlink = [getUserSkillsDir(), getCodexSkillsDir()].some(
-      (root) => path.resolve(root) === parent,
-    );
+    const allowRootSymlink = await this.isUnderUserSkillRoot(skillDir);
     return bundleLocalSkill({
       name: input.name,
       source: input.source,
@@ -523,20 +520,35 @@ export class SkillsService {
   private async assertRepoSkillStaysInRepo(skillDir: string): Promise<void> {
     const parent = path.dirname(skillDir);
     const folders = await this.folders.getFolders();
-    const owningFolder = folders.find(
-      (folder) =>
-        path.resolve(path.join(folder.path, ".claude", "skills")) === parent,
+    const realSkill = await fs.promises.realpath(skillDir);
+    const foldersWithRealPaths = await Promise.all(
+      folders.map(async (folder) => ({
+        folder,
+        realPath: await fs.promises.realpath(path.resolve(folder.path)),
+      })),
+    );
+    const owningFolder = foldersWithRealPaths.find(
+      ({ folder, realPath }) =>
+        path.resolve(path.join(folder.path, ".claude", "skills")) === parent ||
+        realSkill === realPath ||
+        realSkill.startsWith(realPath + path.sep),
     );
     if (!owningFolder) return;
-    const [realSkill, realFolder] = await Promise.all([
-      fs.promises.realpath(skillDir),
-      fs.promises.realpath(path.resolve(owningFolder.path)),
-    ]);
-    if (!realSkill.startsWith(realFolder + path.sep)) {
+    if (!realSkill.startsWith(owningFolder.realPath + path.sep)) {
       throw new Error(
         "Access denied: repository skill resolves outside its repository",
       );
     }
+  }
+
+  private async isUnderUserSkillRoot(skillDir: string): Promise<boolean> {
+    const parent = await fs.promises.realpath(path.dirname(skillDir));
+    const roots = await Promise.all(
+      [getUserSkillsDir(), getCodexSkillsDir()].map((root) =>
+        fs.promises.realpath(root).catch(() => path.resolve(root)),
+      ),
+    );
+    return roots.includes(parent);
   }
 
   /**
