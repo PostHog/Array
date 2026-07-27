@@ -16,6 +16,7 @@ import { Fragment, useRef, useState } from "react";
 export interface ReasoningLevelOption {
   value: string;
   label: string;
+  description?: string;
   isDefault?: boolean;
   docsUrl?: string;
 }
@@ -34,12 +35,17 @@ interface ReasoningLevelDropdownProps {
   onChange?: (value: string) => void;
   sections?: ReasoningMenuSection[];
   disabled?: boolean;
+  label?: string;
+  side?: "top" | "bottom";
+  triggerVariant?: "default" | "outline";
+  triggerClassName?: string;
 }
 
 /**
  * The one reasoning dropdown. Every surface that offers reasoning levels
- * (channel composer, new task, task page, session views) renders this. Extra
- * session settings (context window, fast mode) render as menu sections below.
+ * (composers, session views, loops, settings, autoresearch, agent config)
+ * renders this. Extra session settings (context window, fast mode) render as
+ * menu sections below the reasoning group.
  */
 export function ReasoningLevelDropdown({
   value,
@@ -47,6 +53,10 @@ export function ReasoningLevelDropdown({
   onChange,
   sections,
   disabled,
+  label = "Reasoning",
+  side = "top",
+  triggerVariant = "default",
+  triggerClassName,
 }: ReasoningLevelDropdownProps) {
   const [open, setOpen] = useState(false);
   const pendingChangeRef = useRef<(() => void) | null>(null);
@@ -76,10 +86,11 @@ export function ReasoningLevelDropdown({
         render={
           <Button
             type="button"
-            variant="default"
+            variant={triggerVariant}
             size="sm"
             disabled={disabled}
-            aria-label={`Reasoning: ${activeLabel}`}
+            aria-label={`${label}: ${activeLabel}`}
+            className={triggerClassName}
           >
             <Brain size={14} className="text-muted-foreground" />
             {activeLabel}
@@ -93,11 +104,11 @@ export function ReasoningLevelDropdown({
       />
       <DropdownMenuContent
         align="start"
-        side="top"
+        side={side}
         sideOffset={6}
         className="min-w-[200px]"
       >
-        <MenuLabel>Reasoning</MenuLabel>
+        <MenuLabel>{label}</MenuLabel>
         <DropdownMenuRadioGroup
           value={value}
           onValueChange={(next) => selectAndClose(() => onChange?.(next))}
@@ -130,7 +141,14 @@ export function ReasoningLevelDropdown({
 function LevelItem({ option }: { option: ReasoningLevelOption }) {
   return (
     <DropdownMenuRadioItem value={option.value}>
-      <span className="whitespace-nowrap">{option.label}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="whitespace-nowrap">{option.label}</span>
+        {option.description && (
+          <span className="text-muted-foreground text-xs">
+            {option.description}
+          </span>
+        )}
+      </span>
       {(option.isDefault || option.docsUrl) && (
         <span className="ml-auto flex items-center gap-1.5 pl-3">
           {option.isDefault && <Badge color="gray">Default</Badge>}

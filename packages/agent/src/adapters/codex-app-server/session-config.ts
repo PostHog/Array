@@ -5,6 +5,7 @@ import type {
 import {
   CODEX_MODE_PRESETS,
   type CodexModePreset,
+  DEFAULT_OPTION_META_KEY,
   type ExecutionMode,
   resolveCloudInitialPermissionMode,
   restrictedModelMeta,
@@ -213,7 +214,11 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
       name: "Reasoning effort",
       category: "thought_level",
       currentValue: currentEffort,
-      options: efforts.map((e) => ({ name: humanizeEffort(e), value: e })),
+      options: efforts.map((e) => ({
+        name: humanizeEffort(e),
+        value: e,
+        ...(e === "high" ? { _meta: { [DEFAULT_OPTION_META_KEY]: true } } : {}),
+      })),
     } as unknown as SessionConfigOption,
   ];
 }

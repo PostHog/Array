@@ -44,6 +44,13 @@ export const EFFORT_LEVEL_LABELS: Record<EffortLevel, string> = {
   ultrathink: "Ultrathink",
 };
 
+/** Claude Code docs for the tiers that need explaining. */
+export const EFFORT_LEVEL_DOCS_URLS: Partial<Record<EffortLevel, string>> = {
+  ultracode: "https://code.claude.com/docs/en/workflows",
+  ultrathink:
+    "https://code.claude.com/docs/en/model-config#use-ultrathink-for-one-off-deep-reasoning",
+};
+
 export interface UserBasic {
   id: number;
   uuid: string;

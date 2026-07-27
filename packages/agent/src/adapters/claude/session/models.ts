@@ -2,7 +2,10 @@ import {
   DEFAULT_OPTION_META_KEY,
   OPTION_DOCS_URL_META_KEY,
 } from "@posthog/shared";
-import { EFFORT_LEVEL_LABELS } from "@posthog/shared/domain-types";
+import {
+  EFFORT_LEVEL_DOCS_URLS,
+  EFFORT_LEVEL_LABELS,
+} from "@posthog/shared/domain-types";
 import type { EffortLevel } from "../types";
 
 export const DEFAULT_MODEL = "opus";
@@ -133,16 +136,10 @@ interface EffortOption {
   _meta?: Record<string, unknown>;
 }
 
-const EFFORT_DOCS_URLS: Partial<Record<EffortLevel, string>> = {
-  ultracode: "https://code.claude.com/docs/en/workflows",
-  ultrathink:
-    "https://code.claude.com/docs/en/model-config#use-ultrathink-for-one-off-deep-reasoning",
-};
-
 function effortOptionMeta(
   value: EffortLevel,
 ): Record<string, unknown> | undefined {
-  const docsUrl = EFFORT_DOCS_URLS[value];
+  const docsUrl = EFFORT_LEVEL_DOCS_URLS[value];
   const meta: Record<string, unknown> = {
     ...(value === DEFAULT_EFFORT ? { [DEFAULT_OPTION_META_KEY]: true } : {}),
     ...(docsUrl ? { [OPTION_DOCS_URL_META_KEY]: docsUrl } : {}),

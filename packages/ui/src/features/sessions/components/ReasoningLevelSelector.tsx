@@ -18,7 +18,7 @@ interface ReasoningLevelSelectorProps {
   isLoading?: boolean;
 }
 
-function toDropdownOptions(
+export function toDropdownOptions(
   option: SessionConfigOption,
 ): ReasoningLevelOption[] {
   if (option.type !== "select") return [];

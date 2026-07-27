@@ -1,5 +1,7 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { AUTORESEARCH_MAX_ITERATIONS_LIMIT } from "@posthog/core/autoresearch/schemas";
+import { isDefaultSelectOption, selectOptionDocsUrl } from "@posthog/shared";
+import { ReasoningLevelDropdown } from "@posthog/ui/features/sessions/components/ReasoningLevelDropdown";
 import { Select } from "@radix-ui/themes";
 import { flattenSelectOptions } from "../sessions/sessionStore";
 
@@ -7,6 +9,8 @@ import { flattenSelectOptions } from "../sessions/sessionStore";
 export interface AutoresearchModelOption {
   value: string;
   label: string;
+  isDefault?: boolean;
+  docsUrl?: string;
 }
 
 /**
@@ -28,6 +32,8 @@ export function toStageSelectOptions(
   return flattenSelectOptions(option.options).map((item) => ({
     value: item.value,
     label: item.name ?? item.value,
+    isDefault: isDefaultSelectOption(item._meta),
+    docsUrl: selectOptionDocsUrl(item._meta),
   }));
 }
 
@@ -48,6 +54,38 @@ export function stageModelFromSelectValue(value: string): string | null {
 /** Map a stored stage model to a non-empty select value. */
 export function selectValueFromStageModel(model: string | null): string {
   return model ?? NO_STAGE_MODEL;
+}
+
+/**
+ * The stage-effort dropdown: the shared reasoning menu with the stage
+ * sentinel ("Default effort") folded in as a plain first option.
+ */
+export function StageEffortDropdown({
+  value,
+  options,
+  onChange,
+  noneLabel,
+  className,
+  disabled,
+}: {
+  value: string | null;
+  options: AutoresearchModelOption[];
+  onChange: (value: string | null) => void;
+  noneLabel: string;
+  className?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <ReasoningLevelDropdown
+      value={selectValueFromStageModel(value)}
+      options={[{ value: NO_STAGE_MODEL, label: noneLabel }, ...options]}
+      onChange={(next) => onChange(stageModelFromSelectValue(next))}
+      disabled={disabled}
+      side="bottom"
+      triggerVariant="outline"
+      triggerClassName={className}
+    />
+  );
 }
 
 /** Clamp a user-entered iteration budget to the range the core schema accepts. */
