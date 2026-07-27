@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpAppsService } from "./mcp-apps";
-import type { McpServerConnectionConfig } from "./schemas";
+import { McpAppsServiceEvent, type McpServerConnectionConfig } from "./schemas";
 
 function makeLogger() {
   const scopedLog = {
@@ -114,5 +114,124 @@ describe("McpAppsService config resolver", () => {
     await internals(service).getOrCreateConnection("posthog");
     await internals(service).getOrCreateConnection("installation");
     expect(createConnection).toHaveBeenCalledTimes(2);
+  });
+});
+
+const UI_MIME_TYPE = "text/html;profile=mcp-app";
+const REVIEW_URI = "ui://posthog/loops-review.html";
+const REVIEW_CSP = { connectDomains: ["https://us.posthog.com"] };
+
+function makeClient() {
+  return {
+    listTools: vi.fn(async () => ({
+      tools: [
+        {
+          name: "loops-review",
+          _meta: { ui: { resourceUri: REVIEW_URI } },
+        },
+        { name: "loops-list" },
+      ],
+    })),
+    listResources: vi.fn(async () => ({
+      resources: [{ uri: REVIEW_URI, _meta: { ui: { csp: REVIEW_CSP } } }],
+    })),
+    readResource: vi.fn(async ({ uri }: { uri: string }) => ({
+      contents: [{ uri, mimeType: UI_MIME_TYPE, text: "<html></html>" }],
+    })),
+  };
+}
+
+function connectClient(service: McpAppsService, client = makeClient()) {
+  vi.spyOn(internals(service), "createConnection").mockImplementation(
+    async (c) => ({ name: c.name, client, transport: {} }),
+  );
+  return client;
+}
+
+describe("McpAppsService lazy discovery", () => {
+  let service: McpAppsService;
+
+  beforeEach(() => {
+    service = makeService();
+  });
+
+  it("discovers on first hasUiForTool when no session ran discovery", async () => {
+    service.setConfigResolver(async (name) => {
+      service.addServerConfigs([config(name)]);
+    });
+    const client = connectClient(service);
+
+    await expect(
+      service.hasUiForTool("mcp__posthog__loops-review"),
+    ).resolves.toBe(true);
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits DiscoveryComplete after a lazy discovery", async () => {
+    service.setServerConfigs([config("posthog")]);
+    connectClient(service);
+    const onComplete = vi.fn();
+    service.on(McpAppsServiceEvent.DiscoveryComplete, onComplete);
+
+    await service.hasUiForTool("mcp__posthog__loops-review");
+
+    expect(onComplete).toHaveBeenCalledWith({
+      toolKeys: ["mcp__posthog__loops-review"],
+    });
+  });
+
+  it.each([
+    ["a non-MCP tool", "Bash"],
+    ["a malformed MCP key", "mcp__posthog"],
+  ])("returns false for %s without connecting", async (_label, toolKey) => {
+    const createConnection = vi.spyOn(internals(service), "createConnection");
+
+    await expect(service.hasUiForTool(toolKey)).resolves.toBe(false);
+    expect(createConnection).not.toHaveBeenCalled();
+  });
+
+  it("answers UI-less tools from the discovered cache without re-listing", async () => {
+    service.setServerConfigs([config("posthog")]);
+    const client = connectClient(service);
+
+    await service.hasUiForTool("mcp__posthog__loops-review");
+    await expect(
+      service.hasUiForTool("mcp__posthog__loops-list"),
+    ).resolves.toBe(false);
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+  });
+
+  it("rethrows discovery failures and backs off retries", async () => {
+    const resolver = vi.fn(async () => {});
+    service.setConfigResolver(resolver);
+
+    await expect(
+      service.hasUiForTool("mcp__posthog__loops-review"),
+    ).rejects.toThrow("No server config for: posthog");
+    await expect(
+      service.hasUiForTool("mcp__posthog__loops-review"),
+    ).rejects.toThrow("UI tool discovery recently failed for: posthog");
+    expect(resolver).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves lazily-discovered UI resources for a tool", async () => {
+    service.setServerConfigs([config("posthog")]);
+    connectClient(service);
+
+    const resource = await service.getUiResourceForTool(
+      "mcp__posthog__loops-review",
+    );
+    expect(resource?.uri).toBe(REVIEW_URI);
+    expect(resource?.html).toBe("<html></html>");
+  });
+
+  it("attaches discovered CSP metadata on direct URI fetches", async () => {
+    service.setConfigResolver(async (name) => {
+      service.addServerConfigs([config(name)]);
+    });
+    connectClient(service);
+
+    const resource = await service.getUiResourceByUri("posthog", REVIEW_URI);
+    expect(resource?.csp).toEqual(REVIEW_CSP);
   });
 });
