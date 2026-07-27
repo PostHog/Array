@@ -4,19 +4,25 @@ import type {
   PiQueueSnapshot,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
-import type {
-  AgentConversationEvent,
-  PiMessagingMode,
-  PiRuntimeHealth,
-  TaskRunStatus,
+import {
+  type AgentConversationEvent,
+  classifyPromptFailure,
+  type PiMessagingMode,
+  type PiRuntimeHealth,
+  type PromptFailure,
+  type TaskRunStatus,
 } from "@posthog/shared";
-import { inject, injectable } from "inversify";
+import { inject, injectable, optional } from "inversify";
+import type { AuthService } from "../auth/auth";
+import { AUTH_SERVICE } from "../auth/auth.module";
+import { AuthServiceEvent } from "../auth/schemas";
 import { parseCommandLine } from "../message-editor/commands";
 import { TASK_SERVICE, type TaskService } from "../task-detail/taskService";
 import {
   createEmptyPiControllerSession,
   createPiSessionStore,
   type PiControllerSessionState,
+  type PiSessionError,
   type PiSessionStore,
 } from "./piSessionStore";
 
@@ -63,6 +69,24 @@ export type PiSessionProvider = PiSessionFactory;
 
 export type PiSubmitResult = "prompt" | "steer" | "followUp" | "compact";
 
+type PiOperation =
+  | "prompt"
+  | "compact"
+  | "model"
+  | "thinking"
+  | "bash"
+  | "cancel"
+  | "queue"
+  | "retry"
+  | "restart";
+
+export class PiOperationError extends Error {
+  constructor(readonly failure: PiSessionError) {
+    super(failure.message);
+    this.name = "PiOperationError";
+  }
+}
+
 function normalizeSessionError(error: unknown): {
   title: string;
   message: string;
@@ -92,11 +116,15 @@ export class PiSessionController {
   private readonly sessionVersions = new Map<string, number>();
   private readonly queueRevisions = new Map<string, number>();
   private readonly queuesToRestore = new Map<string, PiQueueSnapshot>();
+  private readonly cancelAuthRestoration = new Map<string, () => void>();
   private readonly taskRunIds = new Map<string, string>();
 
   constructor(
     @inject(PI_SESSION_PROVIDER) private readonly provider: PiSessionProvider,
     @inject(TASK_SERVICE) private readonly taskService: TaskService,
+    @inject(AUTH_SERVICE)
+    @optional()
+    private readonly authService?: AuthService,
   ) {}
 
   ensureConnected(taskId: string, taskRunId?: string): Promise<void> {
@@ -110,9 +138,7 @@ export class PiSessionController {
 
     this.updateSession(taskId, {
       connectionState: "connecting",
-      errorTitle: undefined,
-      errorMessage: undefined,
-      errorRetryable: undefined,
+      error: undefined,
     });
     const connectedSessionVersion = this.getSessionVersion(taskId);
     const readiness = this.ensureConnectedInternal(taskId)
@@ -120,9 +146,7 @@ export class PiSessionController {
         if (this.getSessionVersion(taskId) === connectedSessionVersion) {
           this.updateSession(taskId, {
             connectionState: "connected",
-            errorTitle: undefined,
-            errorMessage: undefined,
-            errorRetryable: undefined,
+            error: undefined,
           });
         }
       })
@@ -150,11 +174,7 @@ export class PiSessionController {
       return existing;
     }
 
-    this.updateSession(taskId, {
-      errorTitle: undefined,
-      errorMessage: undefined,
-      errorRetryable: undefined,
-    });
+    this.updateSession(taskId, { error: undefined });
 
     const connection = this.loadSession(taskId).finally(() => {
       if (this.connections.get(taskId) === connection) {
@@ -166,6 +186,7 @@ export class PiSessionController {
   }
 
   disconnect(taskId: string): void {
+    this.cancelAuthRestoration.get(taskId)?.();
     this.resetTransport(taskId);
     this.taskRunIds.delete(taskId);
     this.liveEvents.delete(taskId);
@@ -179,26 +200,27 @@ export class PiSessionController {
     const session = await this.getPiSession(taskId);
     this.updateSession(taskId, {
       connectionState: "connecting",
-      errorTitle: undefined,
-      errorMessage: undefined,
-      errorRetryable: undefined,
+      error: undefined,
     });
     try {
       await session.retry?.();
       this.resetTransport(taskId);
       await this.ensureConnected(taskId, taskRunId);
     } catch (error) {
-      this.applySessionError(taskId, error);
-      throw error;
+      throw this.recordOperationFailure(taskId, "retry", error);
     }
   }
 
   async clearQueue(taskId: string): Promise<PiQueueSnapshot> {
-    const session = await this.getPiSession(taskId);
-    const queue = await session.clearQueue();
-    this.queuesToRestore.delete(taskId);
-    this.applyQueue(taskId, { steering: [], followUp: [] });
-    return queue;
+    try {
+      const session = await this.getPiSession(taskId);
+      const queue = await session.clearQueue();
+      this.queuesToRestore.delete(taskId);
+      this.applyQueue(taskId, { steering: [], followUp: [] });
+      return queue;
+    } catch (error) {
+      throw this.recordOperationFailure(taskId, "queue", error);
+    }
   }
 
   async restart(taskId: string): Promise<void> {
@@ -211,9 +233,7 @@ export class PiSessionController {
 
     this.updateSession(taskId, {
       connectionState: "connecting",
-      errorTitle: undefined,
-      errorMessage: undefined,
-      errorRetryable: undefined,
+      error: undefined,
     });
     try {
       const resumedRun = await this.taskService.resumeCloudPiRun(
@@ -223,8 +243,7 @@ export class PiSessionController {
       this.resetTransport(taskId);
       await this.ensureConnected(taskId, resumedRun.id);
     } catch (error) {
-      this.applySessionError(taskId, error);
-      throw error;
+      throw this.recordOperationFailure(taskId, "restart", error);
     }
   }
 
@@ -234,7 +253,7 @@ export class PiSessionController {
     )) {
       if (
         session.cloudStatus !== undefined &&
-        session.errorRetryable &&
+        session.error?.retryable &&
         (session.connectionState === "disconnected" ||
           session.connectionState === "error")
       ) {
@@ -270,7 +289,38 @@ export class PiSessionController {
     const action = this.getSubmitAction(message, isStreaming, messagingMode);
 
     const currentSession = await this.getPiSession(taskId);
+    const submissionSessionVersion = this.getSessionVersion(taskId);
+    if (this.getSession(taskId).authRestoring) {
+      throw this.recordOperationFailure(
+        taskId,
+        "prompt",
+        new Error("Authentication required while the session restores"),
+        undefined,
+        message,
+      );
+    }
+    if (currentSession.sendUserMessage) {
+      try {
+        await this.waitForAuthRestoration(taskId);
+        if (this.getSessionVersion(taskId) !== submissionSessionVersion) {
+          throw new Error(
+            "Authentication required; submission cancelled after session changed",
+          );
+        }
+      } catch (error) {
+        throw this.recordOperationFailure(
+          taskId,
+          "prompt",
+          error,
+          undefined,
+          message,
+        );
+      }
+    }
     const controllerSession = this.getSession(taskId);
+    if (controllerSession.error?.scope === "operation") {
+      this.updateSession(taskId, { error: undefined });
+    }
     const wasStreaming = controllerSession.status?.isStreaming ?? false;
     const queuesMessage = action === "steer" || action === "followUp";
     const queuedMessageCount =
@@ -283,10 +333,14 @@ export class PiSessionController {
       action === "compact" ||
       this.isExtensionCommand(controllerSession, message);
     if (action === "compact") {
-      const session = await this.getWritablePiSession(taskId);
-      const command = parseCommandLine(message);
-      const customInstructions = command?.args?.trim() || undefined;
-      await session.client.compact(customInstructions);
+      try {
+        const session = await this.getWritablePiSession(taskId);
+        const command = parseCommandLine(message);
+        const customInstructions = command?.args?.trim() || undefined;
+        await session.client.compact(customInstructions);
+      } catch (error) {
+        throw this.recordOperationFailure(taskId, "compact", error);
+      }
     } else {
       const commandType = action === "followUp" ? "follow_up" : action;
       const messageId = currentSession.sendUserMessage
@@ -345,7 +399,8 @@ export class PiSessionController {
           this.applyQueue(taskId, controllerSession.queue);
         }
         this.setTurnStreaming(taskId, wasStreaming);
-        throw error;
+        const operation = queuesMessage ? "queue" : "prompt";
+        throw this.recordOperationFailure(taskId, operation, error);
       }
     }
 
@@ -356,23 +411,31 @@ export class PiSessionController {
   }
 
   async setModel(taskId: string, model: PiModelSelection): Promise<void> {
-    const session = await this.getPiSession(taskId);
-    await session.client.setModel(model.provider, model.id);
-    await this.refreshStatus(taskId);
-    const thinkingLevels = await session.client.getAvailableThinkingLevels();
-    this.updateSession(taskId, {
-      thinkingLevels,
-      thinkingLevelsLoaded: true,
-    });
+    try {
+      const session = await this.getPiSession(taskId);
+      await session.client.setModel(model.provider, model.id);
+      await this.refreshStatus(taskId);
+      const thinkingLevels = await session.client.getAvailableThinkingLevels();
+      this.updateSession(taskId, {
+        thinkingLevels,
+        thinkingLevelsLoaded: true,
+      });
+    } catch (error) {
+      throw this.recordOperationFailure(taskId, "model", error);
+    }
   }
 
   async setThinkingLevel(
     taskId: string,
     level: PiThinkingLevel,
   ): Promise<void> {
-    const session = await this.getPiSession(taskId);
-    await session.client.setThinkingLevel(level);
-    await this.refreshStatus(taskId);
+    try {
+      const session = await this.getPiSession(taskId);
+      await session.client.setThinkingLevel(level);
+      await this.refreshStatus(taskId);
+    } catch (error) {
+      throw this.recordOperationFailure(taskId, "thinking", error);
+    }
   }
 
   async bash(taskId: string, command: string): Promise<void> {
@@ -380,21 +443,31 @@ export class PiSessionController {
     try {
       const session = await this.getPiSession(taskId);
       await session.client.bash(command);
+    } catch (error) {
+      throw this.recordOperationFailure(taskId, "bash", error);
     } finally {
       this.updateSession(taskId, { isBashRunning: false });
     }
   }
 
   async abort(taskId: string): Promise<void> {
-    const session = await this.getPiSession(taskId);
-    await session.client.abort();
-    await this.refreshStatus(taskId);
+    try {
+      const session = await this.getPiSession(taskId);
+      await session.client.abort();
+      await this.refreshStatus(taskId);
+    } catch (error) {
+      throw this.recordOperationFailure(taskId, "cancel", error);
+    }
   }
 
   async abortBash(taskId: string): Promise<void> {
-    const session = await this.getPiSession(taskId);
-    await session.client.abortBash();
-    this.updateSession(taskId, { isBashRunning: false });
+    try {
+      const session = await this.getPiSession(taskId);
+      await session.client.abortBash();
+      this.updateSession(taskId, { isBashRunning: false });
+    } catch (error) {
+      throw this.recordOperationFailure(taskId, "cancel", error);
+    }
   }
 
   private async ensureConnectedInternal(taskId: string): Promise<void> {
@@ -505,10 +578,12 @@ export class PiSessionController {
         thinkingLevelsLoaded: currentSession.thinkingLevelsLoaded,
         commands: currentSession.commands,
         queue: resolvedQueue,
+        error:
+          currentSession.error?.scope === "operation"
+            ? currentSession.error
+            : undefined,
+        authRestoring: currentSession.authRestoring,
         isBashRunning: false,
-        errorTitle: undefined,
-        errorMessage: undefined,
-        errorRetryable: undefined,
       });
 
       await this.restoreQueueIfNeeded(taskId, session, resolvedStatus);
@@ -551,6 +626,15 @@ export class PiSessionController {
       return;
     }
 
+    if (event.type === "runtime_error") {
+      this.recordOperationFailure(
+        taskId,
+        "prompt",
+        new Error(event.message),
+        event.errorType,
+      );
+    }
+
     const liveEvents = [...(this.liveEvents.get(taskId) ?? []), event];
     this.liveEvents.set(taskId, liveEvents);
     const session = this.getSession(taskId);
@@ -560,6 +644,11 @@ export class PiSessionController {
         status = { ...status, isCompacting: !event.isComplete };
       } else if (event.status === "compacting_failed") {
         status = { ...status, isCompacting: false };
+        this.recordOperationFailure(
+          taskId,
+          "compact",
+          new Error(event.error ?? event.message ?? "Compaction failed"),
+        );
       }
     }
     const hasTurnActivity =
@@ -588,14 +677,22 @@ export class PiSessionController {
       events.push(event);
     }
 
+    const latestSession = this.getSession(taskId);
+    const preserveConnectionError =
+      event.type === "runtime_error" &&
+      latestSession.error?.scope === "connection";
+    const preserveOperationError = latestSession.error?.scope === "operation";
     this.updateSession(taskId, {
       connectionState:
-        event.type === "progress" ? session.connectionState : "connected",
+        event.type === "progress" || preserveConnectionError
+          ? latestSession.connectionState
+          : "connected",
       events,
       status,
-      errorTitle: undefined,
-      errorMessage: undefined,
-      errorRetryable: undefined,
+      error:
+        preserveConnectionError || preserveOperationError
+          ? latestSession.error
+          : undefined,
     });
   }
 
@@ -611,6 +708,133 @@ export class PiSessionController {
     return liveEvents.filter(
       (event) => !event.sourceId || !historySourceIds.has(event.sourceId),
     );
+  }
+
+  acknowledgeOperationFailure(taskId: string, failureId: string): void {
+    const session = this.getSession(taskId);
+    if (
+      session.error?.scope === "operation" &&
+      session.error.id === failureId
+    ) {
+      this.updateSession(taskId, { error: undefined });
+    }
+  }
+
+  private async waitForAuthRestoration(taskId: string): Promise<void> {
+    if (
+      !this.authService ||
+      this.authService.getState().status !== "restoring"
+    ) {
+      return;
+    }
+
+    this.updateSession(taskId, { authRestoring: true });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          this.authService?.off(
+            AuthServiceEvent.StateChanged,
+            handleStateChange,
+          );
+          this.cancelAuthRestoration.delete(taskId);
+        };
+        const handleStateChange = (
+          state: ReturnType<AuthService["getState"]>,
+        ) => {
+          if (state.status === "restoring") {
+            return;
+          }
+          cleanup();
+          if (state.status === "authenticated") {
+            resolve();
+          } else {
+            reject(new Error("Authentication required for cloud commands"));
+          }
+        };
+        this.cancelAuthRestoration.set(taskId, () => {
+          cleanup();
+          reject(
+            new Error(
+              "Authentication required; submission cancelled while restoring",
+            ),
+          );
+        });
+        this.authService?.on(AuthServiceEvent.StateChanged, handleStateChange);
+        if (this.authService) {
+          handleStateChange(this.authService.getState());
+        }
+      });
+    } finally {
+      this.cancelAuthRestoration.delete(taskId);
+      this.updateSession(taskId, { authRestoring: false });
+    }
+  }
+
+  private recordOperationFailure(
+    taskId: string,
+    operation: PiOperation,
+    error: unknown,
+    errorType?: string,
+    recoveryPrompt?: string,
+  ): PiOperationError {
+    const details = (error as { data?: { details?: string } })?.data?.details;
+    const classified = classifyPromptFailure(error, details, errorType);
+    const retryable =
+      classified.retryable ||
+      ((operation === "retry" || operation === "restart") &&
+        classified.kind === "unknown");
+    const scope =
+      classified.kind === "fatal_session" ||
+      operation === "retry" ||
+      operation === "restart"
+        ? "connection"
+        : "operation";
+    const failure: PiSessionError = {
+      id: globalThis.crypto.randomUUID(),
+      scope,
+      kind: classified.kind,
+      title: this.errorTitleForOperation(operation, classified),
+      message: classified.message,
+      retryable,
+      limitCause: classified.limitCause,
+      recoveryPrompt,
+    };
+    this.updateSession(taskId, {
+      error: failure,
+      ...(scope === "connection"
+        ? {
+            connectionState: retryable ? "disconnected" : "error",
+          }
+        : {}),
+    });
+    return new PiOperationError(failure);
+  }
+
+  private errorTitleForOperation(
+    operation: PiOperation,
+    failure: PromptFailure,
+  ): string {
+    if (failure.kind === "usage_limit") {
+      return "Usage limit reached";
+    }
+    if (failure.kind === "transient") {
+      return "Provider temporarily unavailable";
+    }
+    if (failure.kind === "authentication") {
+      return "Authentication required";
+    }
+    const titles: Record<PiOperation, string> = {
+      prompt: "Failed to send message",
+      compact: "Failed to compact Pi context",
+      model: "Failed to change Pi model",
+      thinking: "Failed to change Pi thinking level",
+      bash: "Failed to run Pi bash command",
+      cancel: "Failed to stop Pi",
+      queue: "Failed to update queued message",
+      retry: "Failed to reconnect to Pi",
+      restart: "Failed to restart Pi",
+    };
+    return titles[operation];
   }
 
   private captureQueueForRestore(taskId: string): void {
@@ -840,11 +1064,18 @@ export class PiSessionController {
 
   private applySessionError(taskId: string, error: unknown): void {
     const failure = normalizeSessionError(error);
+    const classified = classifyPromptFailure(error);
     this.updateSession(taskId, {
       connectionState: failure.retryable ? "disconnected" : "error",
-      errorTitle: failure.title,
-      errorMessage: failure.message,
-      errorRetryable: failure.retryable,
+      error: {
+        id: globalThis.crypto.randomUUID(),
+        scope: "connection",
+        kind: classified.kind,
+        title: failure.title,
+        message: failure.message,
+        retryable: failure.retryable,
+        limitCause: classified.limitCause,
+      },
     });
   }
 

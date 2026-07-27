@@ -7,10 +7,23 @@ import type {
 } from "@posthog/agent/pi/types";
 import type {
   AgentConversationEvent,
+  GatewayLimitCause,
+  PromptFailureKind,
   SessionStatus,
   TaskRunStatus,
 } from "@posthog/shared";
 import { createStore, type StoreApi } from "zustand/vanilla";
+
+export interface PiSessionError {
+  id: string;
+  scope: "connection" | "operation";
+  kind: PromptFailureKind;
+  title: string;
+  message: string;
+  retryable: boolean;
+  limitCause: GatewayLimitCause | null;
+  recoveryPrompt?: string;
+}
 
 export interface PiControllerSessionState {
   connectionState: SessionStatus;
@@ -23,9 +36,8 @@ export interface PiControllerSessionState {
   queue: PiQueueSnapshot;
   status?: PiSessionStatus;
   cloudStatus?: TaskRunStatus;
-  errorTitle?: string;
-  errorMessage?: string;
-  errorRetryable?: boolean;
+  error?: PiSessionError;
+  authRestoring: boolean;
   isBashRunning: boolean;
 }
 
@@ -49,6 +61,7 @@ export function createEmptyPiControllerSession(): PiControllerSessionState {
     thinkingLevelsLoaded: false,
     commands: [],
     queue: { steering: [], followUp: [] },
+    authRestoring: false,
     isBashRunning: false,
   };
 }

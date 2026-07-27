@@ -1,8 +1,10 @@
 import type { PiRemoteRpcClient } from "@posthog/agent/pi/remote-rpc-client";
+import type { AuthService } from "@posthog/core/auth/auth";
 import type { TaskService } from "@posthog/core/task-detail/taskService";
 import type { AgentConversationEvent } from "@posthog/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
+  PiOperationError,
   type PiSession,
   PiSessionController,
   type PiSessionProvider,
@@ -13,11 +15,12 @@ function createController(
   taskService = {
     openTask: vi.fn(async () => ({ success: true })),
   } as unknown as TaskService,
+  authService?: AuthService,
 ): PiSessionController {
   const provider: PiSessionProvider = {
     get: vi.fn(async () => session),
   };
-  return new PiSessionController(provider, taskService);
+  return new PiSessionController(provider, taskService, authService);
 }
 
 function createSession(): PiSession {
@@ -161,6 +164,230 @@ describe("PiSessionController", () => {
     ).toContainEqual(
       expect.objectContaining({ type: "user_message", id: messageId }),
     );
+  });
+
+  it("waits for cloud authentication restoration before sending", async () => {
+    let authStatus: "restoring" | "authenticated" = "restoring";
+    let onStateChange: (state: { status: "authenticated" }) => void = () => {};
+    const authService = {
+      getState: vi.fn(() => ({ status: authStatus })),
+      on: vi.fn((_event, handler) => {
+        onStateChange = handler;
+      }),
+      off: vi.fn(),
+    } as unknown as AuthService;
+    const session = createSession();
+    session.sendUserMessage = vi.fn(async () => {});
+    const controller = createController(
+      session,
+      {
+        prepareCloudPiMessage: vi.fn(async () => ({
+          content: "hello",
+          artifactIds: [],
+        })),
+      } as unknown as TaskService,
+      authService,
+    );
+
+    await controller.connect("task-1", "run-1");
+    const submission = controller.submit("task-1", "hello", false, "steer");
+    await vi.waitFor(() => {
+      expect(controller.store.getState().sessions["task-1"].authRestoring).toBe(
+        true,
+      );
+    });
+    expect(session.sendUserMessage).not.toHaveBeenCalled();
+    await expect(
+      controller.submit("task-1", "second", false, "steer"),
+    ).rejects.toMatchObject({
+      failure: {
+        kind: "authentication",
+        recoveryPrompt: "second",
+      },
+    });
+
+    authStatus = "authenticated";
+    onStateChange({ status: "authenticated" });
+    await submission;
+
+    expect(session.sendUserMessage).toHaveBeenCalledOnce();
+    expect(controller.store.getState().sessions["task-1"].authRestoring).toBe(
+      false,
+    );
+  });
+
+  it("cancels auth-held submissions on disconnect and preserves the prompt", async () => {
+    const authService = {
+      getState: vi.fn(() => ({ status: "restoring" })),
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as AuthService;
+    const session = createSession();
+    session.sendUserMessage = vi.fn(async () => {});
+    const controller = createController(
+      session,
+      {} as TaskService,
+      authService,
+    );
+
+    await controller.connect("task-1", "run-1");
+    const submission = controller.submit(
+      "task-1",
+      "do not lose this",
+      false,
+      "steer",
+    );
+    await vi.waitFor(() => {
+      expect(controller.store.getState().sessions["task-1"].authRestoring).toBe(
+        true,
+      );
+    });
+
+    controller.disconnect("task-1");
+
+    await expect(submission).rejects.toBeInstanceOf(PiOperationError);
+    expect(session.sendUserMessage).not.toHaveBeenCalled();
+    expect(controller.store.getState().sessions["task-1"].error).toMatchObject({
+      scope: "operation",
+      kind: "authentication",
+      recoveryPrompt: "do not lose this",
+    });
+  });
+
+  it("classifies usage limits without failing the session", async () => {
+    const session = createSession();
+    session.sendUserMessage = vi.fn(async () => {
+      throw new Error("Rate limit exceeded: User burst rate limit exceeded");
+    });
+    const controller = createController(session, {
+      prepareCloudPiMessage: vi.fn(async () => ({
+        content: "hello",
+        artifactIds: [],
+      })),
+    } as unknown as TaskService);
+
+    await controller.connect("task-1", "run-1");
+    await expect(
+      controller.submit("task-1", "hello", false, "steer"),
+    ).rejects.toBeInstanceOf(PiOperationError);
+
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      connectionState: "connected",
+      error: {
+        scope: "operation",
+        kind: "usage_limit",
+        title: "Usage limit reached",
+        limitCause: "org_limit",
+      },
+    });
+  });
+
+  it("classifies streamed transient provider errors as retryable", async () => {
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1");
+    onEvent({
+      type: "runtime_error",
+      timestamp: 1,
+      errorType: "upstream_timeout",
+      message: "API Error: request timed out",
+    });
+
+    expect(controller.store.getState().sessions["task-1"].error).toMatchObject({
+      scope: "operation",
+      kind: "transient",
+      title: "Provider temporarily unavailable",
+      retryable: true,
+    });
+    expect(controller.store.getState().sessions["task-1"].connectionState).toBe(
+      "connected",
+    );
+  });
+
+  it("keeps fatal runtime errors in a retryable disconnected state", async () => {
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1");
+    onEvent({
+      type: "runtime_error",
+      timestamp: 1,
+      errorType: "agent_error",
+      message: "process exited unexpectedly",
+    });
+
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      connectionState: "disconnected",
+      error: {
+        scope: "connection",
+        kind: "fatal_session",
+        title: "Failed to send message",
+        retryable: true,
+      },
+    });
+  });
+
+  it("uses action-specific model errors", async () => {
+    const session = createSession();
+    vi.mocked(session.client.setModel).mockRejectedValue(
+      new Error("Model is unavailable"),
+    );
+    const controller = createController(session);
+
+    await controller.connect("task-1");
+    await expect(
+      controller.setModel("task-1", { provider: "posthog", id: "missing" }),
+    ).rejects.toBeInstanceOf(PiOperationError);
+
+    expect(controller.store.getState().sessions["task-1"].error).toMatchObject({
+      scope: "operation",
+      kind: "unknown",
+      title: "Failed to change Pi model",
+      message: "Model is unavailable",
+    });
+  });
+
+  it("surfaces compaction failure details and resets compacting state", async () => {
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1");
+    onEvent({
+      type: "runtime_status",
+      timestamp: 1,
+      status: "compacting",
+    });
+    onEvent({
+      type: "runtime_status",
+      timestamp: 2,
+      status: "compacting_failed",
+      error: "Summary request timed out",
+    });
+
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      status: { isCompacting: false },
+      error: {
+        scope: "operation",
+        title: "Failed to compact Pi context",
+        message: "Summary request timed out",
+      },
+    });
   });
 
   it("allows only one queued message and keeps it out of the transcript", async () => {
@@ -322,8 +549,15 @@ describe("PiSessionController", () => {
         "task-1": {
           ...state.sessions["task-1"],
           connectionState: "disconnected",
-          errorMessage: "stream dropped",
-          errorRetryable: true,
+          error: {
+            id: "connection-error",
+            scope: "connection",
+            kind: "unknown",
+            title: "Connection failed",
+            message: "stream dropped",
+            retryable: true,
+            limitCause: null,
+          },
         },
       },
     }));
@@ -334,7 +568,7 @@ describe("PiSessionController", () => {
     expect(controller.store.getState().sessions["task-1"]).toMatchObject({
       connectionState: "connected",
       events: [initialEvent],
-      errorMessage: undefined,
+      error: undefined,
     });
   });
 
@@ -396,7 +630,11 @@ describe("PiSessionController", () => {
     expect(controller.store.getState().sessions["task-1"]).toMatchObject({
       connectionState: "connected",
       events: [initialEvent],
-      errorMessage: undefined,
+      error: {
+        scope: "operation",
+        title: "Failed to send message",
+        message: "temporary command failure",
+      },
     });
   });
 

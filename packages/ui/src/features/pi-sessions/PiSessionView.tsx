@@ -3,10 +3,11 @@ import {
   xmlToContent,
 } from "@posthog/core/message-editor/content";
 import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
-import type {
-  PiModelSelection,
-  PiSessionController,
-  PiThinkingLevel,
+import {
+  type PiModelSelection,
+  PiOperationError,
+  type PiSessionController,
+  type PiThinkingLevel,
 } from "@posthog/core/pi-runtime/piSessionController";
 import { useService } from "@posthog/di/react";
 import {
@@ -19,6 +20,7 @@ import {
   Skeleton,
 } from "@posthog/quill";
 import type { AgentConversationEvent } from "@posthog/shared";
+import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
@@ -65,6 +67,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   );
   const setMessagingMode = useMessagingModeStore((state) => state.setMode);
   const { isOnline } = useConnectivity();
+  const showUsageLimit = useUsageLimitStore((state) => state.show);
   const promptRecallRef = useRef<PromptRecallHandler | null>(null);
   const handlePromptRecall = useCallback<PromptRecallHandler>(
     (direction) => promptRecallRef.current?.(direction) ?? null,
@@ -120,6 +123,16 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     ]);
   }, [draftActions, session?.commands, taskId]);
 
+  const handleControllerError = useCallback(
+    (error: unknown, fallback: string) => {
+      if (error instanceof PiOperationError) {
+        return;
+      }
+      toast.error(fallback);
+    },
+    [],
+  );
+
   const sendPrompt = useCallback(
     (text: string) => {
       const message = text.trim();
@@ -139,33 +152,43 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
             toast.success("Pi context compacted");
           }
         })
-        .catch(() => {
+        .catch((error) => {
           const failureMessage =
             action === "compact"
               ? "Failed to compact Pi context"
               : "Failed to send message to Pi";
-          toast.error(failureMessage);
+          handleControllerError(error, failureMessage);
         });
     },
-    [isStreaming, messagingMode, piSessionController, taskId],
+    [
+      handleControllerError,
+      isStreaming,
+      messagingMode,
+      piSessionController,
+      taskId,
+    ],
   );
 
   const setModel = useCallback(
     (model: PiModelSelection) => {
       void piSessionController
         .setModel(taskId, model)
-        .catch(() => toast.error("Failed to change Pi model"));
+        .catch((error) =>
+          handleControllerError(error, "Failed to change Pi model"),
+        );
     },
-    [piSessionController, taskId],
+    [handleControllerError, piSessionController, taskId],
   );
 
   const setThinkingLevel = useCallback(
     (level: PiThinkingLevel) => {
       void piSessionController
         .setThinkingLevel(taskId, level)
-        .catch(() => toast.error("Failed to change Pi thinking level"));
+        .catch((error) =>
+          handleControllerError(error, "Failed to change Pi thinking level"),
+        );
     },
-    [piSessionController, taskId],
+    [handleControllerError, piSessionController, taskId],
   );
 
   const toggleMessagingMode = useCallback(() => {
@@ -176,29 +199,37 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   const runBashCommand = (command: string) => {
     void piSessionController
       .bash(taskId, command)
-      .catch(() => toast.error("Failed to run Pi bash command"));
+      .catch((error) =>
+        handleControllerError(error, "Failed to run Pi bash command"),
+      );
   };
 
   const cancelPrompt = () => {
     if (isBashRunning) {
-      void piSessionController.abortBash(taskId);
+      void piSessionController
+        .abortBash(taskId)
+        .catch((error) => handleControllerError(error, "Failed to stop bash"));
       return;
     }
 
-    void piSessionController.abort(taskId);
+    void piSessionController
+      .abort(taskId)
+      .catch((error) => handleControllerError(error, "Failed to stop Pi"));
   };
 
   const retry = useCallback(() => {
     void piSessionController
       .retry(taskId)
-      .catch(() => toast.error("Failed to reconnect to Pi"));
-  }, [piSessionController, taskId]);
+      .catch((error) =>
+        handleControllerError(error, "Failed to reconnect to Pi"),
+      );
+  }, [handleControllerError, piSessionController, taskId]);
 
   const restart = useCallback(() => {
     void piSessionController
       .restart(taskId)
-      .catch(() => toast.error("Failed to restart Pi"));
-  }, [piSessionController, taskId]);
+      .catch((error) => handleControllerError(error, "Failed to restart Pi"));
+  }, [handleControllerError, piSessionController, taskId]);
 
   const editQueuedMessage = useCallback(() => {
     void piSessionController
@@ -217,14 +248,46 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
         draftActions.setPendingContent(taskId, xmlToContent(content));
         draftActions.requestFocus(taskId);
       })
-      .catch(() => toast.error("Failed to edit queued Pi message"));
-  }, [draftActions, piSessionController, taskId]);
+      .catch((error) =>
+        handleControllerError(error, "Failed to edit queued Pi message"),
+      );
+  }, [draftActions, handleControllerError, piSessionController, taskId]);
 
   const removeQueuedMessage = useCallback(() => {
     void piSessionController
       .clearQueue(taskId)
-      .catch(() => toast.error("Failed to discard queued Pi message"));
-  }, [piSessionController, taskId]);
+      .catch((error) =>
+        handleControllerError(error, "Failed to discard queued Pi message"),
+      );
+  }, [handleControllerError, piSessionController, taskId]);
+
+  useEffect(() => {
+    const failure = session?.error;
+    if (!failure || failure.scope !== "operation") {
+      return;
+    }
+    if (failure.recoveryPrompt) {
+      draftActions.setPendingContent(
+        taskId,
+        xmlToContent(failure.recoveryPrompt),
+      );
+      draftActions.requestFocus(taskId);
+    }
+    if (failure.kind === "usage_limit") {
+      showUsageLimit(
+        failure.limitCause ? { cause: failure.limitCause } : undefined,
+      );
+    } else {
+      toast.error(failure.title, { description: failure.message });
+    }
+    piSessionController.acknowledgeOperationFailure(taskId, failure.id);
+  }, [
+    draftActions,
+    piSessionController,
+    session?.error,
+    showUsageLimit,
+    taskId,
+  ]);
 
   if (!session) {
     return <TaskDetailSkeleton />;
@@ -235,6 +298,9 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
       event.type === "progress" && event.status === "in_progress",
   );
   const isConnecting = session.connectionState === "connecting";
+  const isAuthRestoring = session.authRestoring;
+  const connectionError =
+    session.error?.scope === "connection" ? session.error : undefined;
   const hasTranscript = session.events.some(
     (event) => event.type !== "progress",
   );
@@ -250,15 +316,15 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     );
   }
 
-  if (session.errorMessage && !hasTranscript) {
+  if (connectionError && !hasTranscript) {
     return (
       <Empty className="h-full">
         <EmptyHeader>
-          <EmptyTitle>{session.errorTitle ?? "Pi session failed"}</EmptyTitle>
-          <EmptyDescription>{session.errorMessage}</EmptyDescription>
+          <EmptyTitle>{connectionError.title}</EmptyTitle>
+          <EmptyDescription>{connectionError.message}</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          {session.errorRetryable && (
+          {connectionError.retryable && (
             <Button variant="primary" onClick={retry}>
               Retry
             </Button>
@@ -322,14 +388,17 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
 
   return (
     <Flex direction="column" height="100%">
-      {isConnecting && hasTranscript && (
+      {isAuthRestoring && (
+        <CloudConnectionBanner message="Restoring authentication..." />
+      )}
+      {isConnecting && hasTranscript && !isAuthRestoring && (
         <CloudConnectionBanner message="Connecting to cloud runner..." />
       )}
-      {session.errorMessage && hasTranscript && (
+      {connectionError && hasTranscript && (
         <CloudStreamDisconnectedBanner
-          errorTitle={session.errorTitle}
-          errorMessage={session.errorMessage}
-          onRetry={session.errorRetryable ? retry : undefined}
+          errorTitle={connectionError.title}
+          errorMessage={connectionError.message}
+          onRetry={connectionError.retryable ? retry : undefined}
           onRestart={restart}
         />
       )}
@@ -359,14 +428,20 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
           disabled={isCompacting}
           isLoading={controlsPending}
           submitDisabledExternal={
-            !sessionAvailable || !status || !isOnline || hasQueuedMessage
+            !sessionAvailable ||
+            !status ||
+            !isOnline ||
+            hasQueuedMessage ||
+            isAuthRestoring
           }
           submitTooltipOverride={
             !isOnline
               ? "No internet connection"
-              : hasQueuedMessage
-                ? "A message is already queued"
-                : undefined
+              : isAuthRestoring
+                ? "Restoring authentication"
+                : hasQueuedMessage
+                  ? "A message is already queued"
+                  : undefined
           }
           enableBashMode
           enableCommands
