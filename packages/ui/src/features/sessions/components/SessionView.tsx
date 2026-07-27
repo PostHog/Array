@@ -6,9 +6,10 @@ import {
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
-import type { AcpMessage } from "@posthog/shared";
+import { type AcpMessage, FAST_MODE_FLAG } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import type { AttachmentUploadStatus } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import {
   PromptInput,
@@ -188,7 +189,9 @@ export function SessionView({
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
   const contextWindowOption = useConfigOptionForTask(taskId, "_context_window");
-  const fastModeOption = useConfigOptionForTask(taskId, "_fast_mode");
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
+  const liveFastModeOption = useConfigOptionForTask(taskId, "_fast_mode");
+  const fastModeOption = fastModeFlagEnabled ? liveFastModeOption : undefined;
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);

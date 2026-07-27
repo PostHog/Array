@@ -13,6 +13,7 @@ import { useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
   defaultEligibleModel,
+  FAST_MODE_FLAG,
   GLM_MODEL_FLAG,
   getCloudUrlFromRegion,
   KIMI_MODEL_FLAG,
@@ -59,6 +60,7 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const kimiEnabled = useFeatureFlag(KIMI_MODEL_FLAG);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const apiHost = useMemo(
     () => (cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null),
@@ -94,10 +96,14 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
       .then((serverOptions) => {
         if (abort.signal.aborted) return;
 
-        const options = serverOptions.map((option) => {
-          const withoutGlm = glmEnabled ? option : stripGlmModelOption(option);
-          return kimiEnabled ? withoutGlm : stripKimiModelOption(withoutGlm);
-        });
+        const options = serverOptions
+          .map((option) => {
+            const withoutGlm = glmEnabled
+              ? option
+              : stripGlmModelOption(option);
+            return kimiEnabled ? withoutGlm : stripKimiModelOption(withoutGlm);
+          })
+          .filter((option) => fastModeFlagEnabled || option.id !== "fast");
 
         const {
           defaultInitialTaskMode,
@@ -138,8 +144,9 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
               getReasoningEffortOptions(adapter, restorableModel) ?? undefined,
             contextWindowOptions:
               getContextWindowOptions(adapter, restorableModel) ?? undefined,
-            fastModeOptions:
-              getFastModeOptions(adapter, restorableModel) ?? undefined,
+            fastModeOptions: fastModeFlagEnabled
+              ? (getFastModeOptions(adapter, restorableModel) ?? undefined)
+              : undefined,
             settings: {
               defaultInitialTaskMode: "",
               lastUsedInitialTaskMode: undefined,
@@ -161,7 +168,15 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
     return () => {
       abort.abort();
     };
-  }, [adapter, apiHost, hostClient, hasHydrated, glmEnabled, kimiEnabled]);
+  }, [
+    adapter,
+    apiHost,
+    hostClient,
+    hasHydrated,
+    glmEnabled,
+    kimiEnabled,
+    fastModeFlagEnabled,
+  ]);
 
   const setConfigOption = useCallback(
     (configId: string, value: string) => {
@@ -172,9 +187,10 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
       const contextWindowOptions = isModelChange
         ? (getContextWindowOptions(adapter, value) ?? undefined)
         : undefined;
-      const fastModeOptions = isModelChange
-        ? (getFastModeOptions(adapter, value) ?? undefined)
-        : undefined;
+      const fastModeOptions =
+        isModelChange && fastModeFlagEnabled
+          ? (getFastModeOptions(adapter, value) ?? undefined)
+          : undefined;
       const { lastUsedReasoningEffort, defaultReasoningEffort } =
         useSettingsStore.getState();
       setConfigOptions((prev) =>
@@ -194,7 +210,7 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
         }),
       );
     },
-    [adapter],
+    [adapter, fastModeFlagEnabled],
   );
 
   const modeOption = getOptionByCategory(configOptions, "mode");
