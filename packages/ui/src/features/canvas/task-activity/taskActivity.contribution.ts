@@ -28,6 +28,12 @@ export class TaskActivityContribution implements Contribution {
   }
 
   private apply(signal: TaskActivitySignal): void {
+    const activityQuery = this.queryClient.getQueryCache().find({
+      queryKey: TASK_ACTIVITY_QUERY_KEY,
+      exact: true,
+    });
+    if (activityQuery?.meta?.authScoped !== true) return;
+
     this.queryClient.setQueryData<InfiniteData<TaskActivityPage>>(
       TASK_ACTIVITY_QUERY_KEY,
       (data) => {

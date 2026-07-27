@@ -3,6 +3,7 @@ import type {
   NotificationBus,
   TaskActivitySignal,
 } from "@posthog/ui/features/notifications/notifications";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { type InfiniteData, QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskActivityContribution } from "./taskActivity.contribution";
@@ -29,6 +30,17 @@ describe("TaskActivityContribution", () => {
   });
 
   it("shows task activity immediately when its backend projection is not available yet", () => {
+    queryClient.setQueryDefaults(["task-activity"], {
+      meta: AUTH_SCOPED_QUERY_META,
+    });
+    queryClient.setQueryData<InfiniteData<TaskActivityPage>>(
+      ["task-activity"],
+      {
+        pages: [{ results: [], unread_count: 0 }],
+        pageParams: [undefined],
+      },
+    );
+
     activityListener?.({
       taskId: "task-1",
       taskTitle: "Channel task",
@@ -50,5 +62,16 @@ describe("TaskActivityContribution", () => {
         },
       ],
     });
+  });
+
+  it("does not recreate activity data after the authenticated query is removed", () => {
+    activityListener?.({
+      taskId: "task-1",
+      taskTitle: "Previous user's task",
+      activityKind: "completed",
+      activityAt: "2026-07-27T10:00:00Z",
+    });
+
+    expect(queryClient.getQueryData(["task-activity"])).toBeUndefined();
   });
 });
