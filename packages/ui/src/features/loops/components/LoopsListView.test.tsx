@@ -18,11 +18,13 @@ vi.mock("./LoopRow", () => ({
 function loop(
   id: string,
   visibility: LoopSchemas.LoopVisibilityEnum,
+  createdById = 1,
 ): LoopSchemas.Loop {
   return {
     id,
     name: `${visibility} loop`,
     visibility,
+    created_by_id: createdById,
   } as LoopSchemas.Loop;
 }
 
@@ -34,22 +36,29 @@ function controlledPanel(tab: HTMLElement): HTMLElement {
 }
 
 describe("LoopsListViewPresentation", () => {
-  it("shows only the selected ownership tab", async () => {
+  it("groups loops by ownership rather than visibility", async () => {
     render(
       <Theme>
         <LoopsListViewPresentation
-          loops={[loop("personal", "personal"), loop("team", "team")]}
+          loops={[
+            loop("personal", "personal"),
+            loop("mine-team", "team"),
+            loop("teammate-team", "team", 2),
+          ]}
+          currentUserId={1}
           onStartBlank={vi.fn()}
           onStartFromTemplate={vi.fn()}
         />
       </Theme>,
     );
 
-    const personalTab = screen.getByRole("tab", { name: "My loops (1)" });
+    const personalTab = screen.getByRole("tab", { name: "My loops (2)" });
     expect(
       within(controlledPanel(personalTab)).getByText("personal loop"),
     ).toBeVisible();
-    expect(screen.queryByText("team loop")).not.toBeInTheDocument();
+    expect(
+      within(controlledPanel(personalTab)).getByText("team loop"),
+    ).toBeVisible();
 
     const teamTab = screen.getByRole("tab", { name: "Team loops (1)" });
     await userEvent.click(teamTab);
